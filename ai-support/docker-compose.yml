@@ -1,0 +1,61 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  دستیارِ پشتیبانی + Ollama
+#
+#      docker compose up -d
+#      docker compose exec ollama ollama pull qwen2.5:3b-instruct-q4_K_M
+#      docker compose exec ollama ollama pull nomic-embed-text
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  ai-support:
+    build: .
+    container_name: pump-ai-support
+    restart: unless-stopped
+    # فقط روی خودِ دستگاه. برای شبکهٔ خانه «8788:8788» بگذار و
+    # حتماً AI_ALLOWED_ORIGINS را هم پر کن.
+    ports:
+      - "127.0.0.1:8788:8788"
+    environment:
+      AI_HOST: "0.0.0.0"
+      AI_OLLAMA_URL: "http://ollama:11434"
+      AI_LLM_MODEL: "${AI_LLM_MODEL:-qwen2.5:3b-instruct-q4_K_M}"
+      AI_EMBED_MODEL: "${AI_EMBED_MODEL:-nomic-embed-text}"
+      AI_ALLOWED_ORIGINS: "${AI_ALLOWED_ORIGINS:-}"
+      AI_ADMIN_TOKEN: "${AI_ADMIN_TOKEN:-}"
+      # ترمزهای بار — همان‌هایی که نمی‌گذارند کامپیوتر داغ کند
+      AI_MAX_CONCURRENT: "1"
+      AI_LOAD_LIMIT: "${AI_LOAD_LIMIT:-0.85}"
+      AI_KEEP_ALIVE: "${AI_KEEP_ALIVE:-5m}"
+    volumes:
+      # دانش از بیرون خوانده می‌شود تا بدونِ ساختِ دوبارهٔ تصویر ویرایش شود
+      - ./knowledge:/app/knowledge:ro
+      - ai-data:/app/data
+    depends_on:
+      - ollama
+    # سقفِ منابع: حتی اگر همه‌چیز خراب شود، کلِ کامپیوتر را نمی‌گیرد
+    mem_limit: 512m
+    cpus: 1.0
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: pump-ai-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      # فقط یک مدل هم‌زمان در حافظه، و بیرون رفتن در بیکاری
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_KEEP_ALIVE: "${AI_KEEP_ALIVE:-5m}"
+    # ── برای کارتِ گرافیکِ NVIDIA، این بخش را از حالتِ توضیح در بیاور ──────────
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+volumes:
+  ai-data:
+  ollama-models:

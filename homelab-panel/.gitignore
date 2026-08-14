@@ -1,0 +1,9 @@
+# وابستگی‌ها و دادهٔ محلی — روی گیت نمی‌روند
+node_modules/
+server/data/
+server/.env
+web/dist/
+*.log
+
+# خروجی build رابط کاربری (server/public) عمداً روی گیت هست
+# تا روی سرور خانگی نیازی به نصب ابزار build نباشد.

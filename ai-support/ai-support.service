@@ -1,0 +1,43 @@
+# اجرای دائمِ دستیارِ پشتیبانی روی لینوکس
+#
+#   sudo cp ai-support.service /etc/systemd/system/
+#   sudo systemctl enable --now ai-support
+#   journalctl -u ai-support -f
+#
+# مسیرها را با مسیرِ واقعیِ خودت عوض کن.
+
+[Unit]
+Description=دستیارِ پشتیبانیِ پمپ یعقوبی (فقط‌خواندنی)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pump
+WorkingDirectory=/opt/pump-yaqobi/ai-support
+ExecStart=/usr/bin/node src/index.js
+Restart=on-failure
+RestartSec=5
+
+# ── سخت‌گیریِ سیستمی ────────────────────────────────────────────────────────
+# همان مرزی که در کد هست، این‌جا در سطحِ سیستم‌عامل هم تکرار می‌شود. اگر روزی
+# کدی اشتباه نوشته شد، هستهٔ سیستم هم جلویش را می‌گیرد.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+# تنها جایی که اجازهٔ نوشتن دارد
+ReadWritePaths=/opt/pump-yaqobi/ai-support/data
+# سقفِ منابع تا سرویس نتواند کلِ کامپیوتر را بگیرد
+MemoryMax=512M
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target

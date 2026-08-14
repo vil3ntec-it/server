@@ -1,0 +1,141 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+   نقش‌های رنگی — تم روشن و تیره هر دو انتخاب‌شده‌اند (نه معکوسِ خودکار).
+   رنگ سری‌ها با اعتبارسنجی کوررنگی انتخاب شده است.
+--------------------------------------------------------------------------- */
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+  --surface-0: #f4f4f2;
+  --surface-1: #fcfcfb;
+  --surface-2: #ffffff;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #86857f;
+  --border: #e3e2dd;
+  --series-1: #2a78d6; /* CPU */
+  --series-2: #eb6834; /* RAM */
+  --series-3: #1baf7a; /* دیسک */
+  --status-good: #008300;
+  --status-warning: #eda100;
+  --status-critical: #e34948;
+  --shadow: 0 1px 2px rgb(11 11 11 / 6%), 0 8px 24px rgb(11 11 11 / 4%);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --surface-0: #101010;
+  --surface-1: #1a1a19;
+  --surface-2: #232322;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #8d8c83;
+  --border: #32322f;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --status-good: #22a06b;
+  --status-warning: #c98500;
+  --status-critical: #e66767;
+  --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 24%);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font-family: Vazirmatn, 'Segoe UI', Tahoma, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* اعداد در همهٔ زبان‌ها لاتین بمانند تا جدول‌ها هم‌تراز شوند */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-line bg-surface;
+    box-shadow: var(--shadow);
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl border border-line px-3 py-2
+           text-sm font-medium text-ink transition-colors select-none
+           hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply border-transparent text-white;
+    background: var(--series-1);
+  }
+  .btn-primary:hover {
+    filter: brightness(1.08);
+  }
+  .btn-danger {
+    @apply border-transparent text-white;
+    background: var(--status-critical);
+  }
+  .btn-sm {
+    @apply px-2.5 py-1.5 text-xs;
+  }
+  .input {
+    @apply w-full rounded-xl border border-line bg-surface-sunken px-3 py-2 text-sm text-ink
+           outline-none transition placeholder:text-ink-muted;
+  }
+  .input:focus {
+    border-color: var(--series-1);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--series-1) 22%, transparent);
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-medium text-ink-soft;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium;
+  }
+}
+
+/* انیمیشن ورود کارت‌ها */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 0.28s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise {
+    animation: none;
+  }
+}
