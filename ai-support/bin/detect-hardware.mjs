@@ -30,7 +30,12 @@ const GB = 1024 ** 3;
 const args = process.argv.slice(2);
 const asJson = args.includes('--json');
 const apply = args.includes('--apply');
-const log = (...a) => { if (!asJson) console.log(...a); };
+// فقط نامِ مدل را چاپ کن و هیچ چیزِ دیگر — تا اسکریپتِ نصب بتواند مستقیم
+// بخواندش. بدونِ این، باید خروجیِ فارسی را با ابزارِ متنی تجزیه می‌کردیم که
+// روی ویندوز و با یونیکد شکننده است.
+const printModel = args.includes('--print-model');
+const quiet = asJson || printModel;
+const log = (...a) => { if (!quiet) console.log(...a); };
 
 /** اجرای امنِ یک دستورِ ثابت — اگر نبود یا خطا داد، خالی برمی‌گردد */
 async function tryRun(cmd, cmdArgs, timeout = 6000) {
@@ -204,7 +209,10 @@ const report = {
 
 report.recommendation = recommend({ gpus, ramGb, cores: cpus.length });
 
-if (asJson) {
+if (printModel) {
+  // خالی یعنی «این کامپیوتر کِشش ندارد» — اسکریپتِ نصب همین را می‌فهمد
+  console.log(report.recommendation.model || '');
+} else if (asJson) {
   console.log(JSON.stringify(report, null, 2));
 } else {
   const r = report.recommendation;
