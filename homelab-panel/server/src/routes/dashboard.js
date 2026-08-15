@@ -1,7 +1,7 @@
 // داشبورد: خلاصهٔ کامل وضعیت سرور — همه از سیستم‌عامل و دیتابیس واقعی
 import { Router } from 'express';
 import { requireAuth } from '../auth.js';
-import { db, getSetting } from '../db.js';
+import { q, db, getSetting } from '../db.js';
 import { collect, getLatest, getHistory } from '../metrics/index.js';
 import { readNetwork } from '../metrics/network.js';
 import { listSites } from '../sites/registry.js';
@@ -16,9 +16,8 @@ router.get('/', async (req, res) => {
   const metrics = getLatest() || (await collect());
   const [network, sites] = await Promise.all([readNetwork(), listSites({ withSize: false })]);
 
-  const domainCount = db.prepare('SELECT COUNT(*) AS n FROM domains').get().n;
-  const errors = db
-    .prepare("SELECT id, site_id, level, source, message, created_at FROM events WHERE level IN ('error','warn') ORDER BY id DESC LIMIT 12")
+  const domainCount = q('SELECT COUNT(*) AS n FROM domains').get().n;
+  const errors = q("SELECT id, site_id, level, source, message, created_at FROM events WHERE level IN ('error','warn') ORDER BY id DESC LIMIT 12")
     .all();
 
   const siteSync = getSiteSync();

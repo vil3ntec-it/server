@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
-import { db, getSetting, setSetting, logEvent } from './db.js';
+import { q, db, getSetting, setSetting, logEvent } from './db.js';
 import { config } from './config.js';
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
@@ -35,39 +35,44 @@ export function verifyPassword(password, stored) {
   }
 }
 
-// راز امضای JWT — یک‌بار ساخته و در دیتابیس نگهداری می‌شود
+// راز امضای JWT — یک‌بار ساخته و در دیتابیس نگهداری می‌شود.
+// چون هر درخواستِ واردشونده یک بار امضا را بررسی می‌کند، بعد از اولین بار در
+// حافظه می‌ماند و دیگر برای هر درخواست به دیتابیس نمی‌رویم.
+let _jwtSecret = null;
 export function jwtSecret() {
+  if (_jwtSecret) return _jwtSecret;
   let s = getSetting('jwt_secret');
   if (!s) {
     s = crypto.randomBytes(32).toString('hex');
     setSetting('jwt_secret', s);
   }
+  _jwtSecret = s;
   return s;
 }
 
 export function isInitialized() {
-  return db.prepare('SELECT COUNT(*) AS n FROM users').get().n > 0;
+  return q('SELECT COUNT(*) AS n FROM users').get().n > 0;
 }
 
 export function createUser(username, password) {
   const now = Date.now();
-  db.prepare('INSERT INTO users(username, password_hash, created_at) VALUES(?, ?, ?)').run(
+  q('INSERT INTO users(username, password_hash, created_at) VALUES(?, ?, ?)').run(
     String(username).trim(),
     hashPassword(password),
     now
   );
-  return db.prepare('SELECT id, username, created_at FROM users WHERE username = ?').get(String(username).trim());
+  return q('SELECT id, username, created_at FROM users WHERE username = ?').get(String(username).trim());
 }
 
 export function findUser(username) {
-  return db.prepare('SELECT * FROM users WHERE username = ?').get(String(username).trim());
+  return q('SELECT * FROM users WHERE username = ?').get(String(username).trim());
 }
 
 export function createSession(user, req) {
   const id = crypto.randomUUID();
   const now = Date.now();
   const expires = now + config.tokenTtlSeconds * 1000;
-  db.prepare(
+  q(
     'INSERT INTO sessions(id, user_id, created_at, expires_at, user_agent, ip) VALUES(?, ?, ?, ?, ?, ?)'
   ).run(
     id,
@@ -84,17 +89,17 @@ export function createSession(user, req) {
 }
 
 export function destroySession(sessionId) {
-  db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+  q('DELETE FROM sessions WHERE id = ?').run(sessionId);
 }
 
 export function pruneSessions() {
-  db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
+  q('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
 }
 
 export function verifyToken(token) {
   try {
     const payload = jwt.verify(token, jwtSecret());
-    const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(payload.sid);
+    const session = q('SELECT * FROM sessions WHERE id = ?').get(payload.sid);
     if (!session || session.expires_at < Date.now()) return null;
     return { id: payload.uid, username: payload.username, sessionId: payload.sid };
   } catch {
@@ -120,18 +125,17 @@ export function requireAuth(req, res, next) {
 }
 
 export function listSessions(userId) {
-  return db
-    .prepare('SELECT id, created_at, expires_at, user_agent, ip FROM sessions WHERE user_id = ? ORDER BY created_at DESC')
+  return q('SELECT id, created_at, expires_at, user_agent, ip FROM sessions WHERE user_id = ? ORDER BY created_at DESC')
     .all(userId);
 }
 
 export function changePassword(userId, oldPassword, newPassword) {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  const user = q('SELECT * FROM users WHERE id = ?').get(userId);
   if (!user) return { ok: false, error: 'user_not_found' };
   if (!verifyPassword(oldPassword, user.password_hash)) return { ok: false, error: 'wrong_password' };
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(newPassword), userId);
+  q('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(newPassword), userId);
   // همهٔ نشست‌های دیگر باطل می‌شوند
-  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+  q('DELETE FROM sessions WHERE user_id = ?').run(userId);
   logEvent('info', 'panel', `رمز عبور کاربر ${user.username} تغییر کرد`);
   return { ok: true };
 }

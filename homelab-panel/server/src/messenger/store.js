@@ -12,7 +12,7 @@
 //      msg_receipts     رسیده / خوانده‌شده (تیک‌ها)
 // ---------------------------------------------------------------------------
 import crypto from 'node:crypto';
-import { db } from '../db.js';
+import { q, db } from '../db.js';
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS msg_users (
@@ -83,7 +83,17 @@ CREATE TABLE IF NOT EXISTS msg_receipts (
   read_at      INTEGER,
   PRIMARY KEY (message_id, user_id)
 );
+
+-- شمردنِ نخوانده‌ها و «چه کسانی در گفت‌وگوهای من هستند» بدونِ این دو ایندکس
+-- مجبور بود کلِ جدول را بخواند؛ روی گوشی همان می‌شد چند ثانیه انتظار.
+CREATE INDEX IF NOT EXISTS idx_msg_messages_sender ON msg_messages(chat_id, sender_id);
+CREATE INDEX IF NOT EXISTS idx_msg_members_user ON msg_members(user_id);
 `);
+
+// همهٔ پرس‌وجوهای این فایل از راهِ `q()` می‌روند: هر عبارت فقط یک‌بار کامپایل
+// می‌شود و بعد هر بار فقط اجرا. در مسیرهای داغ — «در حال نوشتن…» که با هر حرف
+// صدا زده می‌شود، یا فهرستِ گفت‌وگوها که برای هر گفت‌وگو سه پرس‌وجو دارد — همین
+// کامپایلِ تکراری بیشتر از خودِ پرس‌وجو وقت می‌گرفت.
 
 // --------------------------------- کاربران ---------------------------------
 /** شماره را به یک شکلِ واحد در می‌آورد تا «۰۷۰۰…» و «+93700…» یکی حساب شوند */
@@ -119,23 +129,23 @@ export function verifyPassword(password, stored) {
 }
 
 export function findUserByPhone(phone) {
-  return db.prepare('SELECT * FROM msg_users WHERE phone = ?').get(String(phone));
+  return q('SELECT * FROM msg_users WHERE phone = ?').get(String(phone));
 }
 
 export function getUser(id) {
-  return db.prepare('SELECT * FROM msg_users WHERE id = ?').get(Number(id));
+  return q('SELECT * FROM msg_users WHERE id = ?').get(Number(id));
 }
 
 export function createUser({ phone, name, password }) {
   const now = Date.now();
-  db.prepare(
+  q(
     'INSERT INTO msg_users(phone, name, password_hash, created_at, last_seen_at) VALUES(?, ?, ?, ?, ?)'
   ).run(phone, name, password ? hashPassword(password) : null, now, now);
   return findUserByPhone(phone);
 }
 
 export function touchUser(id) {
-  db.prepare('UPDATE msg_users SET last_seen_at = ? WHERE id = ?').run(Date.now(), Number(id));
+  q('UPDATE msg_users SET last_seen_at = ? WHERE id = ?').run(Date.now(), Number(id));
 }
 
 export function updateUser(id, { name, about }) {
@@ -151,7 +161,7 @@ export function updateUser(id, { name, about }) {
   }
   if (!fields.length) return getUser(id);
   values.push(Number(id));
-  db.prepare(`UPDATE msg_users SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  q(`UPDATE msg_users SET ${fields.join(', ')} WHERE id = ?`).run(...values);
   return getUser(id);
 }
 
@@ -169,7 +179,7 @@ export function findUsersByPhones(phones) {
   const clean = [...new Set(phones.map((p) => normalizePhone(p)).filter(Boolean))];
   if (!clean.length) return [];
   const marks = clean.map(() => '?').join(',');
-  return db.prepare(`SELECT * FROM msg_users WHERE phone IN (${marks})`).all(...clean);
+  return q(`SELECT * FROM msg_users WHERE phone IN (${marks})`).all(...clean);
 }
 
 // -------------------------------- گفت‌وگوها --------------------------------
@@ -178,18 +188,18 @@ const pairKey = (a, b) => [Number(a), Number(b)].sort((x, y) => x - y).join(':')
 /** گفت‌وگوی دونفره را پیدا می‌کند یا می‌سازد — هرگز دوتا ساخته نمی‌شود */
 export function directChat(userA, userB) {
   const key = pairKey(userA, userB);
-  const found = db.prepare('SELECT * FROM msg_chats WHERE pair_key = ?').get(key);
+  const found = q('SELECT * FROM msg_chats WHERE pair_key = ?').get(key);
   if (found) return found;
 
   const now = Date.now();
-  db.prepare('INSERT INTO msg_chats(kind, created_by, created_at, pair_key) VALUES(?, ?, ?, ?)').run(
+  q('INSERT INTO msg_chats(kind, created_by, created_at, pair_key) VALUES(?, ?, ?, ?)').run(
     'direct',
     Number(userA),
     now,
     key
   );
-  const chat = db.prepare('SELECT * FROM msg_chats WHERE pair_key = ?').get(key);
-  const addMember = db.prepare('INSERT OR IGNORE INTO msg_members(chat_id, user_id, joined_at) VALUES(?, ?, ?)');
+  const chat = q('SELECT * FROM msg_chats WHERE pair_key = ?').get(key);
+  const addMember = q('INSERT OR IGNORE INTO msg_members(chat_id, user_id, joined_at) VALUES(?, ?, ?)');
   addMember.run(chat.id, Number(userA), now);
   addMember.run(chat.id, Number(userB), now);
   return chat;
@@ -197,14 +207,14 @@ export function directChat(userA, userB) {
 
 export function createGroup({ title, createdBy, memberIds }) {
   const now = Date.now();
-  db.prepare('INSERT INTO msg_chats(kind, title, created_by, created_at) VALUES(?, ?, ?, ?)').run(
+  q('INSERT INTO msg_chats(kind, title, created_by, created_at) VALUES(?, ?, ?, ?)').run(
     'group',
     String(title || '').trim().slice(0, 80) || 'گروه',
     Number(createdBy),
     now
   );
-  const chat = db.prepare('SELECT * FROM msg_chats WHERE id = last_insert_rowid()').get();
-  const addMember = db.prepare(
+  const chat = q('SELECT * FROM msg_chats WHERE id = last_insert_rowid()').get();
+  const addMember = q(
     'INSERT OR IGNORE INTO msg_members(chat_id, user_id, role, joined_at) VALUES(?, ?, ?, ?)'
   );
   addMember.run(chat.id, Number(createdBy), 'admin', now);
@@ -215,18 +225,17 @@ export function createGroup({ title, createdBy, memberIds }) {
 }
 
 export function getChat(id) {
-  return db.prepare('SELECT * FROM msg_chats WHERE id = ?').get(Number(id));
+  return q('SELECT * FROM msg_chats WHERE id = ?').get(Number(id));
 }
 
 export function isMember(chatId, userId) {
   return Boolean(
-    db.prepare('SELECT 1 FROM msg_members WHERE chat_id = ? AND user_id = ?').get(Number(chatId), Number(userId))
+    q('SELECT 1 FROM msg_members WHERE chat_id = ? AND user_id = ?').get(Number(chatId), Number(userId))
   );
 }
 
 export function chatMembers(chatId) {
-  return db
-    .prepare(
+  return q(
       `SELECT u.*, m.role, m.muted FROM msg_members m
          JOIN msg_users u ON u.id = m.user_id
         WHERE m.chat_id = ?`
@@ -234,21 +243,40 @@ export function chatMembers(chatId) {
     .all(Number(chatId));
 }
 
+/**
+ * فقط شناسهٔ اعضا — بدون JOIN و بدون کشیدنِ کلِ ردیفِ کاربر.
+ * «در حال نوشتن…» و تیکِ آبی با هر حرف صدا زده می‌شوند؛ آنجا به نام و عکس و
+ * بقیهٔ ستون‌ها نیازی نیست.
+ */
+export function chatMemberIds(chatId) {
+  return q('SELECT user_id FROM msg_members WHERE chat_id = ?').all(Number(chatId)).map((r) => r.user_id);
+}
+
+/** هرکسی که با این کاربر در یک گفت‌وگوست — برای خبرِ آنلاین/آفلاین */
+export function peerIds(userId) {
+  return q(
+    `SELECT DISTINCT other.user_id FROM msg_members mine
+       JOIN msg_members other ON other.chat_id = mine.chat_id
+      WHERE mine.user_id = ? AND other.user_id <> ?`
+  )
+    .all(Number(userId), Number(userId))
+    .map((r) => r.user_id);
+}
+
 export function addMembers(chatId, memberIds) {
   const now = Date.now();
-  const stmt = db.prepare('INSERT OR IGNORE INTO msg_members(chat_id, user_id, joined_at) VALUES(?, ?, ?)');
+  const stmt = q('INSERT OR IGNORE INTO msg_members(chat_id, user_id, joined_at) VALUES(?, ?, ?)');
   for (const id of new Set(memberIds || [])) stmt.run(Number(chatId), Number(id), now);
   return chatMembers(chatId);
 }
 
 export function leaveChat(chatId, userId) {
-  db.prepare('DELETE FROM msg_members WHERE chat_id = ? AND user_id = ?').run(Number(chatId), Number(userId));
+  q('DELETE FROM msg_members WHERE chat_id = ? AND user_id = ?').run(Number(chatId), Number(userId));
 }
 
 /** فهرست گفت‌وگوهای یک کاربر با آخرین پیام و تعداد نخوانده — همان صفحهٔ اولِ واتساپ */
 export function listChats(userId) {
-  const rows = db
-    .prepare(
+  const rows = q(
       `SELECT c.* FROM msg_chats c
          JOIN msg_members m ON m.chat_id = c.id
         WHERE m.user_id = ?`
@@ -256,11 +284,9 @@ export function listChats(userId) {
     .all(Number(userId));
 
   const out = rows.map((chat) => {
-    const last = db
-      .prepare('SELECT * FROM msg_messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1')
+    const last = q('SELECT * FROM msg_messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1')
       .get(chat.id);
-    const unread = db
-      .prepare(
+    const unread = q(
         `SELECT COUNT(*) AS n FROM msg_messages m
           WHERE m.chat_id = ? AND m.sender_id <> ?
             AND NOT EXISTS (
@@ -305,7 +331,7 @@ export const publicMessage = (m) =>
 
 export function addMessage({ chatId, senderId, body, kind = 'text', fileName, fileSize, replyTo }) {
   const now = Date.now();
-  db.prepare(
+  q(
     `INSERT INTO msg_messages(chat_id, sender_id, body, kind, file_name, file_size, reply_to, created_at)
      VALUES(?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
@@ -318,20 +344,18 @@ export function addMessage({ chatId, senderId, body, kind = 'text', fileName, fi
     replyTo ? Number(replyTo) : null,
     now
   );
-  return db.prepare('SELECT * FROM msg_messages WHERE id = last_insert_rowid()').get();
+  return q('SELECT * FROM msg_messages WHERE id = last_insert_rowid()').get();
 }
 
 export function getMessage(id) {
-  return db.prepare('SELECT * FROM msg_messages WHERE id = ?').get(Number(id));
+  return q('SELECT * FROM msg_messages WHERE id = ?').get(Number(id));
 }
 
 export function history(chatId, { before = null, limit = 50 } = {}) {
   const rows = before
-    ? db
-      .prepare('SELECT * FROM msg_messages WHERE chat_id = ? AND id < ? ORDER BY id DESC LIMIT ?')
+    ? q('SELECT * FROM msg_messages WHERE chat_id = ? AND id < ? ORDER BY id DESC LIMIT ?')
       .all(Number(chatId), Number(before), Math.min(200, Number(limit) || 50))
-    : db
-      .prepare('SELECT * FROM msg_messages WHERE chat_id = ? ORDER BY id DESC LIMIT ?')
+    : q('SELECT * FROM msg_messages WHERE chat_id = ? ORDER BY id DESC LIMIT ?')
       .all(Number(chatId), Math.min(200, Number(limit) || 50));
   return rows.reverse().map(publicMessage);
 }
@@ -339,48 +363,53 @@ export function history(chatId, { before = null, limit = 50 } = {}) {
 export function editMessage(id, senderId, body) {
   const m = getMessage(id);
   if (!m || m.sender_id !== Number(senderId) || m.deleted_at) return null;
-  db.prepare('UPDATE msg_messages SET body = ?, edited_at = ? WHERE id = ?').run(String(body), Date.now(), Number(id));
+  q('UPDATE msg_messages SET body = ?, edited_at = ? WHERE id = ?').run(String(body), Date.now(), Number(id));
   return getMessage(id);
 }
 
 export function deleteMessage(id, senderId) {
   const m = getMessage(id);
   if (!m || m.sender_id !== Number(senderId)) return null;
-  db.prepare('UPDATE msg_messages SET deleted_at = ?, body = NULL WHERE id = ?').run(Date.now(), Number(id));
+  q('UPDATE msg_messages SET deleted_at = ?, body = NULL WHERE id = ?').run(Date.now(), Number(id));
   return getMessage(id);
 }
 
 // ---------------------------- تیک‌ها (رسید/خوانده) --------------------------
 export function markDelivered(messageId, userId) {
-  db.prepare(
+  q(
     `INSERT INTO msg_receipts(message_id, user_id, delivered_at) VALUES(?, ?, ?)
      ON CONFLICT(message_id, user_id) DO UPDATE SET delivered_at = COALESCE(delivered_at, excluded.delivered_at)`
   ).run(Number(messageId), Number(userId), Date.now());
 }
 
-/** همهٔ پیام‌های این گفت‌وگو تا این شناسه، خوانده شدند */
+/**
+ * همهٔ پیام‌های این گفت‌وگو تا این شناسه، خوانده شدند.
+ *
+ * قبلاً شناسهٔ *همهٔ* پیام‌ها خوانده می‌شد و برای هرکدام یک INSERT جدا می‌رفت —
+ * هر کدام هم یک تراکنشِ مستقل. باز کردنِ یک گفت‌وگوی چندهزار پیامی یعنی چند هزار
+ * نوشتن روی دیسک و چند ثانیه قفلِ کامل. حالا یک عبارتِ SQL همه را با هم می‌نویسد،
+ * و فقط آن‌هایی را که هنوز خوانده‌نشده‌اند.
+ */
 export function markRead(chatId, userId, upToId = null) {
   const now = Date.now();
-  const rows = upToId
-    ? db
-      .prepare('SELECT id FROM msg_messages WHERE chat_id = ? AND id <= ? AND sender_id <> ?')
-      .all(Number(chatId), Number(upToId), Number(userId))
-    : db.prepare('SELECT id FROM msg_messages WHERE chat_id = ? AND sender_id <> ?').all(Number(chatId), Number(userId));
-
-  const stmt = db.prepare(
-    `INSERT INTO msg_receipts(message_id, user_id, delivered_at, read_at) VALUES(?, ?, ?, ?)
-     ON CONFLICT(message_id, user_id) DO UPDATE SET
+  const sql =
+    `INSERT INTO msg_receipts(message_id, user_id, delivered_at, read_at)
+     SELECT m.id, ?, ?, ? FROM msg_messages m
+      WHERE m.chat_id = ? AND m.sender_id <> ?` +
+    (upToId ? ' AND m.id <= ?' : '') +
+    `\n     ON CONFLICT(message_id, user_id) DO UPDATE SET
        delivered_at = COALESCE(delivered_at, excluded.delivered_at),
-       read_at      = COALESCE(read_at, excluded.read_at)`
-  );
-  for (const r of rows) stmt.run(r.id, Number(userId), now, now);
-  return rows.length;
+       read_at      = COALESCE(read_at, excluded.read_at)
+     WHERE msg_receipts.read_at IS NULL`;
+
+  const args = [Number(userId), now, now, Number(chatId), Number(userId)];
+  if (upToId) args.push(Number(upToId));
+  return q(sql).run(...args).changes ?? 0;
 }
 
 /** وضعیت تیک برای فرستنده: به چند نفر رسیده و چند نفر خوانده‌اند */
 export function receiptSummary(messageId) {
-  const row = db
-    .prepare(
+  const row = q(
       `SELECT COUNT(delivered_at) AS delivered, COUNT(read_at) AS read
          FROM msg_receipts WHERE message_id = ?`
     )
@@ -392,7 +421,7 @@ export function receiptSummary(messageId) {
 export function saveDevice(userId, { label, endpoint, p256dh, auth }) {
   const now = Date.now();
   if (endpoint) {
-    db.prepare(
+    q(
       `INSERT INTO msg_devices(user_id, label, push_endpoint, push_p256dh, push_auth, created_at, seen_at)
        VALUES(?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(push_endpoint) DO UPDATE SET
@@ -400,18 +429,17 @@ export function saveDevice(userId, { label, endpoint, p256dh, auth }) {
          push_auth = excluded.push_auth, seen_at = excluded.seen_at`
     ).run(Number(userId), label ?? null, endpoint, p256dh ?? null, auth ?? null, now, now);
   }
-  return db.prepare('SELECT * FROM msg_devices WHERE user_id = ?').all(Number(userId));
+  return q('SELECT * FROM msg_devices WHERE user_id = ?').all(Number(userId));
 }
 
 export function removeDevice(endpoint) {
-  db.prepare('DELETE FROM msg_devices WHERE push_endpoint = ?').run(String(endpoint));
+  q('DELETE FROM msg_devices WHERE push_endpoint = ?').run(String(endpoint));
 }
 
 export function devicesFor(userIds) {
   const ids = [...new Set((userIds || []).map(Number))].filter(Boolean);
   if (!ids.length) return [];
   const marks = ids.map(() => '?').join(',');
-  return db
-    .prepare(`SELECT * FROM msg_devices WHERE user_id IN (${marks}) AND push_endpoint IS NOT NULL`)
+  return q(`SELECT * FROM msg_devices WHERE user_id IN (${marks}) AND push_endpoint IS NOT NULL`)
     .all(...ids);
 }

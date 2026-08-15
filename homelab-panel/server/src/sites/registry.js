@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { db, logEvent, getSetting, setSetting } from '../db.js';
+import { q, db, logEvent, getSetting, setSetting } from '../db.js';
 import { config } from '../config.js';
 import { sitesRoot } from './root.js';
 import { detectProject, defaultScanRoots } from './detect.js';
@@ -19,15 +19,15 @@ const PORT_RANGE_START = 8100;
 const PORT_RANGE_END = 8999;
 
 export function listSitesRaw() {
-  return db.prepare('SELECT * FROM sites ORDER BY name COLLATE NOCASE').all();
+  return q('SELECT * FROM sites ORDER BY name COLLATE NOCASE').all();
 }
 
 export function getSite(id) {
-  return db.prepare('SELECT * FROM sites WHERE id = ?').get(Number(id));
+  return q('SELECT * FROM sites WHERE id = ?').get(Number(id));
 }
 
 export function getSiteBySlug(slug) {
-  return db.prepare('SELECT * FROM sites WHERE slug = ?').get(String(slug));
+  return q('SELECT * FROM sites WHERE slug = ?').get(String(slug));
 }
 
 function uniqueSlug(base) {
@@ -42,8 +42,7 @@ function uniqueSlug(base) {
 // پورت آزاد: هم با سایت‌های ثبت‌شده تداخل نداشته باشد، هم واقعاً روی سیستم آزاد باشد
 export async function allocatePort(preferred) {
   const used = new Set(
-    db
-      .prepare('SELECT port FROM sites WHERE port IS NOT NULL')
+    q('SELECT port FROM sites WHERE port IS NOT NULL')
       .all()
       .map((r) => r.port)
   );
@@ -72,8 +71,7 @@ export function normalizeDomain(value) {
 
 /** همهٔ دامنه‌هایی که به این سایت وصل‌اند — یک سایت می‌تواند چند دامنه داشته باشد */
 export function domainsForSite(siteId) {
-  return db
-    .prepare('SELECT id, name FROM domains WHERE site_id = ? ORDER BY name COLLATE NOCASE')
+  return q('SELECT id, name FROM domains WHERE site_id = ? ORDER BY name COLLATE NOCASE')
     .all(Number(siteId));
 }
 
@@ -87,20 +85,20 @@ export function attachDomain(siteId, domainName) {
   const site = getSite(siteId);
   if (!site) return { ok: false, error: 'not_found' };
 
-  const existing = db.prepare('SELECT * FROM domains WHERE name = ?').get(name);
+  const existing = q('SELECT * FROM domains WHERE name = ?').get(name);
   if (existing) {
     if (existing.site_id !== site.id) {
-      db.prepare('UPDATE domains SET site_id = ? WHERE id = ?').run(site.id, existing.id);
+      q('UPDATE domains SET site_id = ? WHERE id = ?').run(site.id, existing.id);
       logEvent('info', 'panel', `دامنهٔ ${name} از این پس به سایت «${site.name}» می‌رود`, site.id);
     }
   } else {
-    db.prepare('INSERT INTO domains(name, site_id, created_at) VALUES(?, ?, ?)').run(name, site.id, Date.now());
+    q('INSERT INTO domains(name, site_id, created_at) VALUES(?, ?, ?)').run(name, site.id, Date.now());
     logEvent('info', 'panel', `دامنهٔ ${name} به سایت «${site.name}» وصل شد`, site.id);
   }
 
   // دامنهٔ اصلیِ سایت: اگر نداشت، همین تازه را اصلی می‌کنیم
   if (!site.domain) {
-    db.prepare('UPDATE sites SET domain = ?, updated_at = ? WHERE id = ?').run(name, Date.now(), site.id);
+    q('UPDATE sites SET domain = ?, updated_at = ? WHERE id = ?').run(name, Date.now(), site.id);
   }
   return { ok: true, domain: name };
 }
@@ -110,10 +108,10 @@ export function detachDomain(siteId, domainName) {
   const name = normalizeDomain(domainName);
   const site = getSite(siteId);
   if (!site || !name) return { ok: false, error: 'not_found' };
-  db.prepare('UPDATE domains SET site_id = NULL WHERE name = ? AND site_id = ?').run(name, site.id);
+  q('UPDATE domains SET site_id = NULL WHERE name = ? AND site_id = ?').run(name, site.id);
   if (site.domain === name) {
     const next = domainsForSite(site.id)[0]?.name ?? null;
-    db.prepare('UPDATE sites SET domain = ?, updated_at = ? WHERE id = ?').run(next, Date.now(), site.id);
+    q('UPDATE sites SET domain = ?, updated_at = ? WHERE id = ?').run(next, Date.now(), site.id);
   }
   logEvent('info', 'panel', `دامنهٔ ${name} از سایت «${site.name}» جدا شد`, site.id);
   return { ok: true };
@@ -125,7 +123,7 @@ export async function addSite({ rootPath, name, domain, port, kind, startCommand
   if (!resolved || !fs.existsSync(resolved)) return { ok: false, error: 'path_not_found' };
   if (!fs.statSync(resolved).isDirectory()) return { ok: false, error: 'not_a_directory' };
 
-  const existing = db.prepare('SELECT * FROM sites WHERE root_path = ?').get(resolved);
+  const existing = q('SELECT * FROM sites WHERE root_path = ?').get(resolved);
   if (existing) return { ok: false, error: 'already_exists', site: existing };
 
   const detected = detectProject(resolved);
@@ -144,7 +142,7 @@ export async function addSite({ rootPath, name, domain, port, kind, startCommand
     autostart: autostart ? 1 : 0,
   };
 
-  db.prepare(
+  q(
     `INSERT INTO sites(slug, name, root_path, domain, port, kind, start_command, autostart, enabled, created_at, updated_at)
      VALUES(?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
   ).run(
@@ -206,7 +204,7 @@ function freeSubdomain(site, zone) {
   for (let n = 1; n <= 20; n++) {
     const candidate = normalizeDomain(`${n === 1 ? label : `${label}-${n}`}.${zone}`);
     if (!candidate) return null;
-    const owner = db.prepare('SELECT site_id FROM domains WHERE name = ?').get(candidate);
+    const owner = q('SELECT site_id FROM domains WHERE name = ?').get(candidate);
     if (!owner || owner.site_id === site.id || owner.site_id == null) return candidate;
   }
   return null;
@@ -295,7 +293,7 @@ export async function ensureMainSite({ siteUrl, tunnelHostname } = {}) {
   if (!site) {
     // شاید از قبل با همین دامنه ساخته شده باشد
     if (primary) {
-      const owner = db.prepare('SELECT site_id FROM domains WHERE name = ?').get(primary);
+      const owner = q('SELECT site_id FROM domains WHERE name = ?').get(primary);
       if (owner?.site_id) site = getSite(owner.site_id);
     }
   }
@@ -316,7 +314,7 @@ export async function ensureMainSite({ siteUrl, tunnelHostname } = {}) {
     if (!added.ok) return added;
     site = added.site;
     // پورتِ محلی ندارد؛ آنلاین بودنش از روی خودِ دامنه فهمیده می‌شود
-    db.prepare('UPDATE sites SET port = NULL, updated_at = ? WHERE id = ?').run(Date.now(), site.id);
+    q('UPDATE sites SET port = NULL, updated_at = ? WHERE id = ?').run(Date.now(), site.id);
     setSetting(MAIN_SITE_SETTING, site.id);
     logEvent('info', 'panel', `سایت «${label}» خودکار در پنل ثبت شد`, site.id);
   }
@@ -389,7 +387,7 @@ export function updateSite(id, patch) {
 
   fields.push('updated_at = ?');
   values.push(Date.now(), site.id);
-  db.prepare(`UPDATE sites SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+  q(`UPDATE sites SET ${fields.join(', ')} WHERE id = ?`).run(...values);
 
   // دامنهٔ تازه باید واقعاً به همین سایت وصل شود، نه فقط یک برچسب باشد
   if (nextDomain && nextDomain !== site.domain) attachDomain(site.id, nextDomain);
@@ -404,7 +402,7 @@ export async function removeSite(id, { deleteWorkspace = true } = {}) {
   if (!site) return { ok: false, error: 'not_found' };
   await stopSite(site);
   stopSiteTunnel(site.slug);
-  db.prepare('DELETE FROM sites WHERE id = ?').run(site.id);
+  q('DELETE FROM sites WHERE id = ?').run(site.id);
   if (deleteWorkspace) {
     await removeWorkspace(site.slug);
     // دادهٔ اختصاصی همین سایت هم می‌رود؛ با «نگه‌داشتن داده» دست‌نخورده می‌ماند
@@ -548,8 +546,7 @@ export async function describeSite(site, { withSize = true } = {}) {
     }
   }
 
-  const errors = db
-    .prepare("SELECT COUNT(*) AS n FROM events WHERE site_id = ? AND level = 'error'")
+  const errors = q("SELECT COUNT(*) AS n FROM events WHERE site_id = ? AND level = 'error'")
     .get(site.id).n;
 
   return {

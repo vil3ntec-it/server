@@ -24,7 +24,7 @@ import { startSiteTunnel, stopSiteTunnel, restartSiteTunnel, siteTunnelState } f
 import { syncTunnelRoutes } from '../tunnel.js';
 import { getSiteSync } from '../state.js';
 import { readInterfaces } from '../metrics/network.js';
-import { db, logEvent } from '../db.js';
+import { q, db, logEvent } from '../db.js';
 import { config } from '../config.js';
 import { sitesRoot } from '../sites/root.js';
 
@@ -120,8 +120,7 @@ router.get('/:id/logs', (req, res) => {
     const [at, level, ...rest] = line.split('\t');
     return { at, level: level || 'info', text: rest.join('\t') || line };
   });
-  const events = db
-    .prepare('SELECT * FROM events WHERE site_id = ? ORDER BY id DESC LIMIT 200')
+  const events = q('SELECT * FROM events WHERE site_id = ? ORDER BY id DESC LIMIT 200')
     .all(site.id);
   res.json({ lines, events });
 });
@@ -130,7 +129,7 @@ router.delete('/:id/logs', (req, res) => {
   const site = getSite(req.params.id);
   if (!site) return res.status(404).json({ error: 'not_found' });
   clearLog(site.slug);
-  db.prepare('DELETE FROM events WHERE site_id = ?').run(site.id);
+  q('DELETE FROM events WHERE site_id = ?').run(site.id);
   res.json({ ok: true });
 });
 
