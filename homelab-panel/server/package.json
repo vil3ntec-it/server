@@ -1,6 +1,6 @@
 {
   "name": "homelab-panel-server",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "Backend of the home server management panel (Express + Socket.IO + SQLite)",
   "type": "module",
@@ -17,6 +17,7 @@
     "test:notify": "node test/notify.mjs",
     "test:notify-readkey": "node test/notify-readkey.mjs",
     "test:app-auth": "node test/app-auth.mjs",
+    "test:desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File ../desktop/test/lib.tests.ps1",
     "test:pump-notify": "node test/pump-notify.mjs"
   },
   "dependencies": {

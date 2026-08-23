@@ -13,6 +13,8 @@
 import express, { Router } from 'express';
 import { requireAuth } from '../auth.js';
 import { versionInfo } from '../version.js';
+import { config } from '../config.js';
+import { publicState as tunnelState } from '../tunnel.js';
 import { otpSettings, saveOtpSettings, safeOtpSettings } from '../appauth/settings.js';
 import { smsProviders } from '../appauth/send.js';
 import {
@@ -64,6 +66,19 @@ router.get('/config', (req, res) => {
       // آیا واقعاً پیامک/ایمیل می‌رود یا هنوز تنظیم نشده
       smsReady: s.sms.provider !== 'none',
       emailReady: s.email.provider !== 'none' && Boolean(s.email.host),
+    },
+    // آدرس‌هایی که برنامه می‌تواند با آن‌ها وصل شود — آدرسِ اینترنتی (تونل)
+    // همان چیزی است که باید در اپِ روی گوشیِ بیرون از خانه گذاشته شود
+    server: {
+      port: config.port,
+      publicPort: config.siteSync.port || null,
+      internet: (() => {
+        try {
+          return tunnelState().url || null;
+        } catch {
+          return null;
+        }
+      })(),
     },
     endpoints: {
       requestCode: '/api/app/auth/request-code',

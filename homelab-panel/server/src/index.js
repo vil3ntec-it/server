@@ -331,6 +331,7 @@ async function main() {
     console.log(`     فرستادنِ کد:  POST /api/app/auth/request-code   {"phone":"09121234567"}`);
     console.log(`     تأییدِ کد:     POST /api/app/auth/verify-code    {"phone":"...","code":"123456"}`);
     console.log(`     پیامک: ${smsOn ? `روشن (${otp.sms.provider})` : 'خاموش'}   ·   ایمیل: ${mailOn ? `روشن (${otp.email.host})` : 'خاموش'}`);
+    console.log('     برنامهٔ ویندوزیِ همین کارها:  homelab-panel\\desktop\\برنامه-سرور.bat');
     if (!smsOn && !mailOn) {
       console.log('     ⚠️  تا وقتی پیامک/ایمیل تنظیم نشده، کد در همین پنجره و در «لاگ‌ها» نوشته می‌شود.');
       console.log('        روشن کردنش: صفحهٔ /connect را باز کنید، بخشِ ۴.');

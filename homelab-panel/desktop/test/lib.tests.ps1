@@ -1,0 +1,213 @@
+﻿# ---------------------------------------------------------------------------
+#  آزمونِ مغزِ برنامهٔ سرور — بدونِ باز شدنِ هیچ پنجره‌ای
+#      pwsh homelab-panel/desktop/test/lib.tests.ps1
+#      (روی ویندوز: powershell -ExecutionPolicy Bypass -File ...)
+# ---------------------------------------------------------------------------
+
+$ErrorActionPreference = 'Stop'
+. (Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) 'lib.ps1')
+
+$script:Passed = 0
+$script:Failed = 0
+
+function Check {
+  param([string]$Name, [bool]$Ok, [string]$Extra = '')
+  if ($Ok) {
+    $script:Passed++
+    Write-Host "  [ok] $Name"
+  } else {
+    $script:Failed++
+    Write-Host "  [X ] $Name $Extra"
+  }
+}
+
+$temp = Join-Path ([System.IO.Path]::GetTempPath()) ("hlp-desktop-test-" + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+New-Item -ItemType Directory -Path $temp -Force | Out-Null
+
+try {
+  # ------------------------------------------------------------------ .env --
+  Write-Host "`n> فایل .env"
+  $envPath = Join-Path $temp '.env'
+
+  Set-EnvValues -Path $envPath -Values @{ 'OTP_SMS_PROVIDER' = 'kavenegar'; 'OTP_SMS_KEY' = 'abc123' } | Out-Null
+  $values = Read-EnvFile -Path $envPath
+  Check 'کلیدِ تازه نوشته می‌شود' ($values['OTP_SMS_PROVIDER'] -eq 'kavenegar')
+  Check 'کلیدِ دوم هم نوشته می‌شود' ($values['OTP_SMS_KEY'] -eq 'abc123')
+
+  $bytes = [System.IO.File]::ReadAllBytes($envPath)
+  $hasBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+  Check 'فایل بدونِ BOM نوشته می‌شود (وگرنه سرور اولین کلید را نمی‌خواند)' (-not $hasBom)
+
+  Set-EnvValues -Path $envPath -Values @{ 'OTP_SMS_KEY' = 'xyz789' } | Out-Null
+  $values = Read-EnvFile -Path $envPath
+  Check 'کلیدِ موجود عوض می‌شود' ($values['OTP_SMS_KEY'] -eq 'xyz789')
+  Check 'کلیدِ دیگر دست نمی‌خورد' ($values['OTP_SMS_PROVIDER'] -eq 'kavenegar')
+
+  $lineCount = ([System.IO.File]::ReadAllLines($envPath) | Where-Object { $_ -match '^OTP_SMS_KEY=' }).Count
+  Check 'کلید تکراری نمی‌شود' ($lineCount -eq 1) "شمار=$lineCount"
+
+  Set-EnvValues -Path $envPath -Values @{ 'OTP_SMS_KEY' = '' } | Out-Null
+  $values = Read-EnvFile -Path $envPath
+  Check 'مقدارِ خالی یعنی کلید برداشته شود' (-not $values.ContainsKey('OTP_SMS_KEY'))
+
+  Set-EnvValues -Path $envPath -Values @{ 'OTP_SMS_TEXT' = 'کد ورود شما: {code}' } | Out-Null
+  $values = Read-EnvFile -Path $envPath
+  Check 'متنِ فارسی سالم می‌ماند' ($values['OTP_SMS_TEXT'] -eq 'کد ورود شما: {code}') $values['OTP_SMS_TEXT']
+
+  # کامنت‌های فایل نباید پاک شوند
+  $handWritten = Join-Path $temp 'hand.env'
+  [System.IO.File]::WriteAllText($handWritten, "# یادداشتِ من`nHLP_PORT=4700`n", (New-Object System.Text.UTF8Encoding($false)))
+  Set-EnvValues -Path $handWritten -Values @{ 'HLP_PORT' = '4800' } | Out-Null
+  $text = [System.IO.File]::ReadAllText($handWritten)
+  Check 'کامنت‌های فایل دست نمی‌خورد' ($text.Contains('# یادداشتِ من'))
+  Check 'پورت عوض شد' ($text.Contains('HLP_PORT=4800'))
+
+  # ------------------------------------------------------------ پوشهٔ داده --
+  Write-Host "`n> پیدا کردنِ پوشهٔ داده"
+  $srv = Join-Path $temp 'srv1'
+  New-Item -ItemType Directory -Path $srv -Force | Out-Null
+  Check 'پیش‌فرض، پوشهٔ data کنارِ سرور است' ((Get-DataDir -ServerDir $srv) -eq (Join-Path $srv 'data'))
+
+  Set-EnvValues -Path (Join-Path $srv '.env') -Values @{ 'HLP_DATA_DIR' = './my-data' } | Out-Null
+  Check 'مسیرِ نسبیِ .env رعایت می‌شود' ((Get-DataDir -ServerDir $srv) -eq ([System.IO.Path]::GetFullPath((Join-Path $srv 'my-data'))))
+
+  $absolute = Join-Path $temp 'elsewhere'
+  Set-EnvValues -Path (Join-Path $srv '.env') -Values @{ 'HLP_DATA_DIR' = $absolute } | Out-Null
+  Check 'مسیرِ کاملِ .env رعایت می‌شود' ((Get-DataDir -ServerDir $srv) -eq $absolute)
+
+  # -------------------------------------------------------------- مقایسهٔ نسخه --
+  Write-Host "`n> مقایسهٔ نسخه"
+  Check '1.1.2 از 1.1.1 جدیدتر است' ((Compare-AppVersion -Left '1.1.2' -Right '1.1.1') -eq 1)
+  Check '1.1.1 با 1.1.1 برابر است' ((Compare-AppVersion -Left '1.1.1' -Right '1.1.1') -eq 0)
+  Check '1.1.0 از 1.1.1 قدیمی‌تر است' ((Compare-AppVersion -Left '1.1.0' -Right '1.1.1') -eq -1)
+  Check '2.0.0 از 1.9.9 جدیدتر است' ((Compare-AppVersion -Left '2.0.0' -Right '1.9.9') -eq 1)
+  Check '1.2 با 1.2.0 برابر است' ((Compare-AppVersion -Left '1.2' -Right '1.2.0') -eq 0)
+  Check '1.10.0 از 1.9.0 جدیدتر است' ((Compare-AppVersion -Left '1.10.0' -Right '1.9.0') -eq 1)
+
+  # ------------------------------------------------------ کپیِ به‌روزرسانی --
+  Write-Host "`n> کپیِ فایل‌های به‌روزرسانی"
+  $newRoot = Join-Path $temp 'new'
+  $oldRoot = Join-Path $temp 'old'
+  foreach ($dir in @(
+      (Join-Path $newRoot 'homelab-panel/server/src'),
+      (Join-Path $newRoot 'homelab-panel/server/data'),
+      (Join-Path $newRoot 'homelab-panel/server/node_modules/express'),
+      (Join-Path $oldRoot 'homelab-panel/server/src'),
+      (Join-Path $oldRoot 'homelab-panel/server/data'))) {
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+  }
+  Set-Content -LiteralPath (Join-Path $newRoot 'homelab-panel/server/src/index.js') -Value 'new code' -NoNewline
+  Set-Content -LiteralPath (Join-Path $newRoot 'homelab-panel/server/data/panel.db') -Value 'EMPTY DB' -NoNewline
+  Set-Content -LiteralPath (Join-Path $newRoot 'homelab-panel/server/.env') -Value 'OTP_SMS_KEY=theirs' -NoNewline
+  Set-Content -LiteralPath (Join-Path $newRoot 'homelab-panel/server/node_modules/express/index.js') -Value 'x' -NoNewline
+  Set-Content -LiteralPath (Join-Path $newRoot 'README.md') -Value 'new readme' -NoNewline
+
+  Set-Content -LiteralPath (Join-Path $oldRoot 'homelab-panel/server/src/index.js') -Value 'old code' -NoNewline
+  Set-Content -LiteralPath (Join-Path $oldRoot 'homelab-panel/server/data/panel.db') -Value 'MY REAL DATA' -NoNewline
+  Set-Content -LiteralPath (Join-Path $oldRoot 'homelab-panel/server/.env') -Value 'OTP_SMS_KEY=mine' -NoNewline
+
+  $result = Copy-UpdateFiles -FromDir $newRoot -ToDir $oldRoot
+  Check 'کدِ تازه کپی شد' ((Get-Content -LiteralPath (Join-Path $oldRoot 'homelab-panel/server/src/index.js') -Raw).Trim() -eq 'new code')
+  Check 'فایلِ تازه ساخته شد' (Test-Path -LiteralPath (Join-Path $oldRoot 'README.md'))
+  Check 'دیتابیسِ من دست نخورد' ((Get-Content -LiteralPath (Join-Path $oldRoot 'homelab-panel/server/data/panel.db') -Raw).Trim() -eq 'MY REAL DATA')
+  Check 'رمزهای من (.env) دست نخورد' ((Get-Content -LiteralPath (Join-Path $oldRoot 'homelab-panel/server/.env') -Raw).Trim() -eq 'OTP_SMS_KEY=mine')
+  Check 'node_modules کپی نشد' (-not (Test-Path -LiteralPath (Join-Path $oldRoot 'homelab-panel/server/node_modules/express/index.js')))
+  Check 'شمارشِ فایل‌ها درست است' ($result.copied -eq 2) "copied=$($result.copied)"
+
+  # ------------------------------------------------------------- پشتیبان --
+  Write-Host "`n> نسخهٔ پشتیبان"
+  $backupServerDir = Join-Path $oldRoot 'homelab-panel/server'
+  $firstBackup = Backup-Project -ProjectRoot $oldRoot -ServerDir $backupServerDir
+  Check 'پوشهٔ پشتیبان ساخته شد' ($firstBackup -and (Test-Path -LiteralPath $firstBackup)) "$firstBackup"
+  Check 'کد در پشتیبان هست' (Test-Path -LiteralPath (Join-Path $firstBackup 'homelab-panel/server/src/index.js'))
+  Check 'دادهٔ سنگین در پشتیبان نیست (وگرنه بی‌نهایت بزرگ می‌شد)' (-not (Test-Path -LiteralPath (Join-Path $firstBackup 'homelab-panel/server/data')))
+  Check 'فایلِ رمزها در پشتیبان نیست' (-not (Test-Path -LiteralPath (Join-Path $firstBackup 'homelab-panel/server/.env')))
+
+  $backupsDir = Join-Path (Join-Path $backupServerDir 'data') 'backups'
+  foreach ($name in @('code-2024-01-01-0900', 'code-2024-01-02-0900', 'code-2024-01-03-0900', 'code-2024-01-04-0900')) {
+    New-Item -ItemType Directory -Path (Join-Path $backupsDir $name) -Force | Out-Null
+  }
+  Backup-Project -ProjectRoot $oldRoot -ServerDir $backupServerDir | Out-Null
+  $kept = @(Get-ChildItem -LiteralPath $backupsDir -Directory | Where-Object { $_.Name -like 'code-*' })
+  Check 'فقط سه پشتیبانِ آخر می‌ماند' ($kept.Count -eq 3) "شمار=$($kept.Count)"
+
+  Check 'مسیرِ data رد می‌شود' (Test-SkipPath -RelativePath 'homelab-panel/server/data/panel.db')
+  Check 'مسیرِ node_modules رد می‌شود' (Test-SkipPath -RelativePath 'homelab-panel/server/node_modules/ws/index.js')
+  Check 'فایلِ .env رد می‌شود' (Test-SkipPath -RelativePath 'homelab-panel/server/.env')
+  Check 'کدِ معمولی رد نمی‌شود' (-not (Test-SkipPath -RelativePath 'homelab-panel/server/src/index.js'))
+  Check 'پوشه‌ای به نامِ data-old رد نمی‌شود' (-not (Test-SkipPath -RelativePath 'homelab-panel/data-old/x.js'))
+
+  # ------------------------------------------------------------ نسخهٔ محلی --
+  Write-Host "`n> خواندنِ نسخه از package.json"
+  $fakeServer = Join-Path $temp 'fake-server'
+  New-Item -ItemType Directory -Path $fakeServer -Force | Out-Null
+  Set-Content -LiteralPath (Join-Path $fakeServer 'package.json') -Value '{ "name": "x", "version": "1.1.1" }'
+  Check 'نسخه از package.json خوانده می‌شود' ((Get-LocalVersion -ServerDir $fakeServer) -eq '1.1.1')
+  Check 'نبودنِ فایل، برنامه را نمی‌خواباند' ((Get-LocalVersion -ServerDir (Join-Path $temp 'nowhere')) -eq '0.0.0')
+
+  # --------------------------------------------------------------- نمونه‌کد --
+  Write-Host "`n> نمونه‌کدها"
+  foreach ($kind in (Get-SnippetKinds)) {
+    $snippet = Get-CodeSnippet -Kind $kind -BaseUrl 'http://192.168.1.20:4700'
+    Check "نمونهٔ «$kind» ساخته می‌شود" ($snippet.Contains('http://192.168.1.20:4700') -and $snippet.Length -gt 80)
+  }
+
+  # ------------------------------------------------- گفت‌وگو با سرورِ واقعی --
+  Write-Host "`n> گفت‌وگو با سرورِ واقعی"
+  $serverDir = Join-Path (Split-Path -Parent (Split-Path -Parent $PSCommandPath)) '../server'
+  $serverDir = [System.IO.Path]::GetFullPath($serverDir)
+  $entry = Join-Path $serverDir 'src/index.js'
+
+  if (Test-Path -LiteralPath $entry) {
+    $port = 4795
+    $dataDir = Join-Path $temp 'srv-data'
+    $env:HLP_PORT = "$port"
+    $env:HLP_HOST = '127.0.0.1'
+    $env:HLP_DATA_DIR = $dataDir
+    $env:HLP_SITES_ROOT = (Join-Path $temp 'srv-sites')
+    $env:HLP_TUNNEL = '0'
+    $env:HLP_AI_ENABLED = '0'
+    $env:HLP_SITESYNC_PORT = '4794'
+
+    $node = Start-Process -FilePath 'node' -ArgumentList @('--disable-warning=ExperimentalWarning', 'src/index.js') `
+      -WorkingDirectory $serverDir -PassThru -RedirectStandardOutput (Join-Path $temp 'out.log') -RedirectStandardError (Join-Path $temp 'err.log')
+
+    $up = $null
+    for ($i = 0; $i -lt 60; $i++) {
+      Start-Sleep -Milliseconds 400
+      $up = Get-ServerHealth -Port $port
+      if ($up) { break }
+    }
+    Check 'سرور پیدا شد' ($null -ne $up)
+    if ($up) {
+      Check 'نسخه از /health می‌آید' ($up.version -eq (Get-LocalVersion -ServerDir $serverDir)) "health=$($up.version)"
+
+      $cfg = Get-AppConfig -Port $port
+      Check 'شناسنامهٔ ورودِ برنامه‌ها خوانده می‌شود' ($null -ne $cfg -and $cfg.login.codeLength -eq 6)
+
+      $send = Invoke-Json -Url "http://127.0.0.1:$port/api/app/auth/request-code" -Method 'POST' -Body @{ phone = '09121234567' }
+      Check 'درخواستِ کد از برنامه کار می‌کند' ($send.ok -and $send.data.ok -eq $true) "$($send.error)"
+      Check 'پیامِ فارسیِ سرور سالم می‌رسد' ($send.data.message -and $send.data.message.Contains('کد'))  $send.data.message
+
+      $bad = Invoke-Json -Url "http://127.0.0.1:$port/api/app/auth/request-code" -Method 'POST' -Body @{ phone = '12' }
+      Check 'خطای ۴۰۰ هم با متنِ فارسی خوانده می‌شود' ((-not $bad.ok) -and $bad.status -eq 400 -and $bad.data.error -eq 'bad_phone') "status=$($bad.status)"
+
+      $log = Get-PanelLog -ServerDir $serverDir
+      Check 'خواندنِ لاگ برنامه را نمی‌خواباند' ($log.Length -gt 0)
+    }
+    try { Stop-Process -Id $node.Id -Force -ErrorAction SilentlyContinue } catch { }
+  } else {
+    Write-Host '  (سرور پیدا نشد — این بخش رد شد)'
+  }
+} finally {
+  try { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue } catch { }
+}
+
+Write-Host ""
+if ($script:Failed -eq 0) {
+  Write-Host "همه درست: $($script:Passed) آزمون"
+  exit 0
+} else {
+  Write-Host "$($script:Passed) درست، $($script:Failed) خراب"
+  exit 1
+}
