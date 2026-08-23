@@ -145,6 +145,48 @@ try {
   Check 'نسخه از package.json خوانده می‌شود' ((Get-LocalVersion -ServerDir $fakeServer) -eq '1.1.1')
   Check 'نبودنِ فایل، برنامه را نمی‌خواباند' ((Get-LocalVersion -ServerDir (Join-Path $temp 'nowhere')) -eq '0.0.0')
 
+  # ------------------------------------------------------- ترمینال و نصب --
+  Write-Host "`n> ترمینالِ داخلِ برنامه"
+  $termServer = Join-Path $temp 'term-server'
+  New-Item -ItemType Directory -Path (Join-Path $termServer 'data') -Force | Out-Null
+  $logPath = Get-PanelLogPath -ServerDir $termServer
+  Check 'مسیرِ ترمینال کنارِ داده است' ($logPath -eq (Join-Path (Join-Path $termServer 'data') 'panel.log'))
+
+  Check 'وقتی چیزی نیست، پیامِ راهنما می‌دهد' ((Get-PanelLog -ServerDir $termServer).Contains('روشن کردنِ سرور'))
+
+  Write-PanelLogMark -ServerDir $termServer -Message 'روشن کردنِ سرور'
+  [System.IO.File]::AppendAllText($logPath, "خط اول`r`nخط دوم`r`n", (New-Object System.Text.UTF8Encoding($false)))
+  $shown = Get-PanelLog -ServerDir $termServer
+  Check 'خط‌های ترمینال خوانده می‌شود' ($shown.Contains('خط دوم'))
+  Check 'خطِ جداکننده نوشته می‌شود' ($shown.Contains('روشن کردنِ سرور'))
+
+  [System.IO.File]::AppendAllText($logPath, (1..500 | ForEach-Object { "line $_`r`n" }) -join '', (New-Object System.Text.UTF8Encoding($false)))
+  $tail = Get-PanelLog -ServerDir $termServer -Lines 50
+  Check 'فقط دنبالهٔ ترمینال برمی‌گردد' ((($tail -split "`r?`n").Count -le 51) -and $tail.Contains('line 500')) "خط‌ها=$(($tail -split "`r?`n").Count)"
+
+  $cleared = Clear-PanelLog -ServerDir $termServer
+  Check 'پاک کردنِ ترمینال کار می‌کند' ($cleared -and ([System.IO.File]::ReadAllText($logPath) -eq ''))
+
+  Write-Host "`n> نصب‌کننده"
+  Check 'پوشهٔ برنامه شناخته می‌شود' (Test-ProgramFolder -Root $oldRoot)
+  Check 'پوشهٔ بی‌ربط، پوشهٔ برنامه نیست' (-not (Test-ProgramFolder -Root $temp))
+
+  $freshTarget = Join-Path $temp 'install-here'
+  $checkFresh = Test-InstallTarget -Target $freshTarget
+  Check 'پوشهٔ تازه برای نصب قبول است' ($checkFresh.ok -and -not $checkFresh.upgrade)
+
+  $checkUpgrade = Test-InstallTarget -Target $oldRoot
+  Check 'روی نصبِ قبلی، حالتِ به‌روزرسانی می‌شود' ($checkUpgrade.ok -and $checkUpgrade.upgrade)
+
+  $checkEmpty = Test-InstallTarget -Target '   '
+  Check 'مسیرِ خالی رد می‌شود' (-not $checkEmpty.ok)
+
+  $someFile = Join-Path $temp 'not-a-folder.txt'
+  Set-Content -LiteralPath $someFile -Value 'x'
+  Check 'فایل به‌جای پوشه رد می‌شود' (-not (Test-InstallTarget -Target $someFile).ok)
+
+  Check 'Node.js پیدا می‌شود' ($null -ne (Find-NodeExe))
+
   # --------------------------------------------------------------- نمونه‌کد --
   Write-Host "`n> نمونه‌کدها"
   foreach ($kind in (Get-SnippetKinds)) {

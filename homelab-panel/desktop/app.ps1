@@ -325,21 +325,27 @@ $tabCode.Controls.Add($btnCopyCode)
 $script:SnippetBox = New-Output -X 18 -Y 52 -Width 900 -Height 460 -Code $true
 $tabCode.Controls.Add($script:SnippetBox)
 
-# ═══════════════════════════ ۵) لاگ ═════════════════════════════════════
-$tabLog = New-Tab -Title '  لاگِ سرور  '
+# ═══════════════════ ۵) ترمینالِ سرور (داخلِ خودِ برنامه) ══════════════════
+#  دیگر هیچ پنجرهٔ سیاهی باز نمی‌شود؛ همان چیزی که آن‌جا می‌دیدید این‌جاست.
+$tabLog = New-Tab -Title '  ترمینالِ سرور  '
 
-$btnRefreshLog = New-Button -Text 'تازه کردن' -X 18 -Y 14 -Width 120
+$btnRefreshLog = New-Button -Text 'تازه کردن' -X 18 -Y 14 -Width 110
+$btnClearLog = New-Button -Text 'پاک کردن' -X 136 -Y 14 -Width 110
+$btnCopyLog = New-Button -Text 'کپیِ متن' -X 254 -Y 14 -Width 110
 $script:AutoLog = New-Object System.Windows.Forms.CheckBox
-$script:AutoLog.Text = 'خودکار هر ۳ ثانیه'
-$script:AutoLog.Location = New-Object System.Drawing.Point(146, 18)
-$script:AutoLog.Size = New-Object System.Drawing.Size(180, 24)
+$script:AutoLog.Text = 'دنبال کردنِ زنده'
+$script:AutoLog.Location = New-Object System.Drawing.Point(376, 18)
+$script:AutoLog.Size = New-Object System.Drawing.Size(160, 24)
 $script:AutoLog.Font = $Face
 $script:AutoLog.Checked = $true
-$tabLog.Controls.AddRange(@($btnRefreshLog, $script:AutoLog))
+$tabLog.Controls.AddRange(@($btnRefreshLog, $btnClearLog, $btnCopyLog, $script:AutoLog))
 
-$tabLog.Controls.Add((New-Label -Text 'اگر پیامک/ایمیل تنظیم نشده باشد، کدِ ورود همین‌جا نوشته می‌شود.' -X 340 -Y 18 -Width 480 -Color $Muted))
+$tabLog.Controls.Add((New-Label -Text 'اگر پیامک/ایمیل تنظیم نشده باشد، کدِ ورود همین‌جا نوشته می‌شود.' -X 546 -Y 18 -Width 380 -Color $Muted))
 
 $script:LogBox = New-Output -X 18 -Y 50 -Width 900 -Height 460 -Code $true
+# ظاهرِ ترمینالِ واقعی
+$script:LogBox.BackColor = [System.Drawing.Color]::FromArgb(15, 20, 36)
+$script:LogBox.ForeColor = [System.Drawing.Color]::FromArgb(205, 232, 212)
 $tabLog.Controls.Add($script:LogBox)
 
 # ═══════════════════════ ۶) به‌روزرسانی ═════════════════════════════════
@@ -466,8 +472,9 @@ function Restart-Server {
   Start-Sleep -Seconds 2
   Show-Busy 'در حالِ روشن کردنِ سرور…'
   Start-PanelServer -ServerDir $script:ServerDir | Out-Null
-  for ($i = 0; $i -lt 40; $i++) {
+  for ($i = 0; $i -lt 80; $i++) {
     Start-Sleep -Milliseconds 500
+    Update-Terminal
     [System.Windows.Forms.Application]::DoEvents()
     if (Get-ServerHealth -Port $script:Port) { break }
   }
@@ -477,13 +484,24 @@ function Restart-Server {
 
 # ------------------------------- دکمه‌ها -----------------------------------
 $btnStart.Add_Click({
+  if (-not (Find-NodeExe)) {
+    [System.Windows.Forms.MessageBox]::Show(
+      "Node.js روی این کامپیوتر پیدا نشد.`r`n`r`nاول از nodejs.org نصبش کنید (نسخهٔ ۲۲ به بالا)، بعد دوباره امتحان کنید.",
+      'برنامهٔ سرور') | Out-Null
+    Start-Process 'https://nodejs.org/fa/download'
+    return
+  }
   Show-Busy 'در حالِ روشن کردنِ سرور… (بارِ اول ممکن است کمی طول بکشد)'
+  # ترمینال را نشان می‌دهیم تا ببیند دارد چه اتفاقی می‌افتد
+  $tabs.SelectedTab = $tabLog
   Start-PanelServer -ServerDir $script:ServerDir | Out-Null
-  for ($i = 0; $i -lt 60; $i++) {
+  for ($i = 0; $i -lt 120; $i++) {
     Start-Sleep -Milliseconds 500
+    Update-Terminal
     [System.Windows.Forms.Application]::DoEvents()
     if (Get-ServerHealth -Port $script:Port) { break }
   }
+  Update-Terminal -Force $true
   Update-Status | Out-Null
   Update-Addresses
 })
@@ -494,6 +512,7 @@ $btnStop.Add_Click({
     [System.Windows.Forms.MessageBox]::Show('سرور پیدا نشد. شاید از راهِ دیگری اجرا شده باشد.', 'برنامهٔ سرور') | Out-Null
   }
   Start-Sleep -Seconds 1
+  Update-Terminal -Force $true
   Update-Status | Out-Null
 })
 
@@ -609,10 +628,26 @@ $btnOpenEnv.Add_Click({
   Start-Process 'notepad.exe' -ArgumentList "`"$($script:EnvPath)`""
 })
 
-$btnRefreshLog.Add_Click({
-  $script:LogBox.Text = (Get-PanelLog -ServerDir $script:ServerDir -Lines 300)
+<#
+  .SYNOPSIS
+  ترمینال را تازه می‌کند. فقط وقتی متن عوض شده باشد دست می‌زند، تا اگر کاربر
+  چیزی را انتخاب کرده یا بالا رفته، هر ثانیه از دستش نپرد.
+#>
+function Update-Terminal {
+  param([bool]$Force = $false)
+
+  $text = Get-PanelLog -ServerDir $script:ServerDir -Lines 400
+  if (-not $Force -and $text -eq $script:LogBox.Text) { return }
+  $script:LogBox.Text = $text
   $script:LogBox.SelectionStart = $script:LogBox.TextLength
   $script:LogBox.ScrollToCaret()
+}
+
+$btnRefreshLog.Add_Click({ Update-Terminal -Force $true })
+$btnCopyLog.Add_Click({ Copy-Text -Text $script:LogBox.Text })
+$btnClearLog.Add_Click({
+  Clear-PanelLog -ServerDir $script:ServerDir | Out-Null
+  Update-Terminal -Force $true
 })
 
 $btnCheckUpdate.Add_Click({
@@ -688,21 +723,20 @@ $btnShortcut.Add_Click({
 
 # ------------------------------- تایمر -------------------------------------
 $timer = New-Object System.Windows.Forms.Timer
-$timer.Interval = 3000
+$timer.Interval = 1500
+$script:Ticks = 0
 $timer.Add_Tick({
-  Update-Status | Out-Null
-  if ($script:AutoLog.Checked -and $tabs.SelectedTab -eq $tabLog) {
-    $script:LogBox.Text = (Get-PanelLog -ServerDir $script:ServerDir -Lines 300)
-    $script:LogBox.SelectionStart = $script:LogBox.TextLength
-    $script:LogBox.ScrollToCaret()
-  }
+  $script:Ticks++
+  # وضعیت هر ۳ ثانیه، ترمینال هر ۱.۵ ثانیه (تا زنده به‌نظر برسد)
+  if ($script:Ticks % 2 -eq 0) { Update-Status | Out-Null }
+  if ($script:AutoLog.Checked -and $tabs.SelectedTab -eq $tabLog) { Update-Terminal }
 })
 
 $form.Add_Shown({
   Load-Settings
   Update-Status | Out-Null
   Update-Addresses
-  $script:LogBox.Text = (Get-PanelLog -ServerDir $script:ServerDir -Lines 300)
+  Update-Terminal -Force $true
   $timer.Start()
 })
 

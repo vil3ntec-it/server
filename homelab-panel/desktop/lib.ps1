@@ -252,19 +252,33 @@ function Get-PanelPid {
   return 0
 }
 
+<#
+  .SYNOPSIS
+  سرور را بی‌هیچ پنجره‌ای روشن می‌کند.
+  هیچ ترمینالی باز نمی‌شود؛ همهٔ خروجی در data\panel.log می‌نشیند و برنامه
+  همان را زنده در تبِ «ترمینالِ سرور» نشان می‌دهد.
+#>
 function Start-PanelServer {
   param([string]$ServerDir)
 
+  $dataDir = Get-DataDir -ServerDir $ServerDir
+  if (-not (Test-Path -LiteralPath $dataDir)) {
+    New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+  }
+  Write-PanelLogMark -ServerDir $ServerDir -Message 'روشن کردنِ سرور'
+
+  # run-quiet.bat خودش خروجی را به فایل می‌فرستد و اگر node_modules نبود نصبش می‌کند
   $quiet = Join-Path $ServerDir 'run-quiet.bat'
   if (Test-Path -LiteralPath $quiet) {
-    # همهٔ خروجی در data\panel.log می‌نشیند — تبِ «لاگ» همان را نشان می‌دهد
     Start-Process -FilePath $quiet -WorkingDirectory $ServerDir -WindowStyle Hidden | Out-Null
     return $true
   }
 
   $entry = Join-Path $ServerDir 'src\index.js'
   if (-not (Test-Path -LiteralPath $entry)) { return $false }
-  Start-Process -FilePath 'node' -ArgumentList @('--disable-warning=ExperimentalWarning', 'src\index.js') `
+  $node = Find-NodeExe
+  if (-not $node) { return $false }
+  Start-Process -FilePath $node -ArgumentList @('--disable-warning=ExperimentalWarning', 'src\index.js') `
     -WorkingDirectory $ServerDir -WindowStyle Hidden | Out-Null
   return $true
 }
@@ -272,6 +286,7 @@ function Start-PanelServer {
 function Stop-PanelServer {
   param([string]$ServerDir)
 
+  Write-PanelLogMark -ServerDir $ServerDir -Message 'خاموش کردنِ سرور'
   $panelPid = Get-PanelPid -ServerDir $ServerDir
   if ($panelPid -le 0) { return $false }
   try {
@@ -282,12 +297,34 @@ function Stop-PanelServer {
   }
 }
 
-function Get-PanelLog {
-  param([string]$ServerDir, [int]$Lines = 200)
+<#
+  .SYNOPSIS
+  فایلی که همهٔ خروجیِ سرور در آن می‌نشیند — همان چیزی که در پنجرهٔ سیاه
+  می‌دیدید. حالا به‌جای پنجره، داخلِ خودِ برنامه نشان داده می‌شود.
+#>
+function Get-PanelLogPath {
+  param([Parameter(Mandatory = $true)][string]$ServerDir)
 
-  $logFile = Join-Path (Get-DataDir -ServerDir $ServerDir) 'panel.log'
+  $candidates = @(
+    (Join-Path (Get-DataDir -ServerDir $ServerDir) 'panel.log'),
+    (Join-Path (Join-Path $ServerDir 'data') 'panel.log')
+  )
+  foreach ($path in $candidates) {
+    if (Test-Path -LiteralPath $path) { return $path }
+  }
+  return $candidates[0]
+}
+
+<#
+  .SYNOPSIS
+  آخرین خط‌های ترمینالِ سرور.
+#>
+function Get-PanelLog {
+  param([string]$ServerDir, [int]$Lines = 400)
+
+  $logFile = Get-PanelLogPath -ServerDir $ServerDir
   if (-not (Test-Path -LiteralPath $logFile)) {
-    return 'هنوز لاگی نیست. سرور را از همین برنامه روشن کنید تا این‌جا زنده نوشته شود.'
+    return 'هنوز چیزی نوشته نشده. دکمهٔ «روشن کردنِ سرور» را بزنید تا همین‌جا زنده ببینید.'
   }
   try {
     # فایل ممکن است همین لحظه در حالِ نوشته شدن باشد، پس قفلش نمی‌کنیم
@@ -301,8 +338,56 @@ function Get-PanelLog {
     if ($all.Count -le $Lines) { return ($all -join [Environment]::NewLine) }
     return (($all[($all.Count - $Lines)..($all.Count - 1)]) -join [Environment]::NewLine)
   } catch {
-    return "لاگ خوانده نشد: $($_.Exception.Message)"
+    return "ترمینال خوانده نشد: $($_.Exception.Message)"
   }
+}
+
+<#
+  .SYNOPSIS
+  ترمینال را خالی می‌کند (فایلِ لاگ را صفر می‌کند).
+#>
+function Clear-PanelLog {
+  param([string]$ServerDir)
+  $logFile = Get-PanelLogPath -ServerDir $ServerDir
+  try {
+    [System.IO.File]::WriteAllText($logFile, '', (New-Object System.Text.UTF8Encoding($false)))
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+<#
+  .SYNOPSIS
+  یک خطِ جداکننده در ترمینال می‌نویسد تا معلوم باشد از کجا شروعِ تازه است.
+#>
+function Write-PanelLogMark {
+  param([string]$ServerDir, [string]$Message)
+  try {
+    $logFile = Get-PanelLogPath -ServerDir $ServerDir
+    $dir = Split-Path -Parent $logFile
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $stamp = Get-Date -Format 'HH:mm:ss'
+    $line = "`r`n────────────────  $stamp  $Message  ────────────────`r`n"
+    [System.IO.File]::AppendAllText($logFile, $line, (New-Object System.Text.UTF8Encoding($false)))
+  } catch { }
+}
+
+<#
+  .SYNOPSIS
+  Node.js کجاست؟ اگر نصب نباشد $null برمی‌گردد.
+#>
+function Find-NodeExe {
+  try {
+    $found = Get-Command 'node' -ErrorAction SilentlyContinue
+    if ($found) { return $found.Source }
+  } catch { }
+  foreach ($guess in @(
+      (Join-Path $env:ProgramFiles 'nodejs\node.exe'),
+      (Join-Path ${env:ProgramFiles(x86)} 'nodejs\node.exe'))) {
+    if ($guess -and (Test-Path -LiteralPath $guess)) { return $guess }
+  }
+  return $null
 }
 
 # ---------------------------------------------------------------------------
@@ -660,4 +745,74 @@ curl $b/api/app/me -H "Authorization: Bearer <token>"
 
 function Get-SnippetKinds {
   return @('سایت (JavaScript)', 'اندروید (Kotlin)', 'فلاتر', 'ویندوز (C#)', 'تستِ سریع (curl)')
+}
+
+# ---------------------------------------------------------------------------
+#  نصبِ برنامه روی کامپیوتر
+# ---------------------------------------------------------------------------
+
+<#
+  .SYNOPSIS
+  آیا این پوشه، پوشهٔ خودِ برنامه است؟ (تا نصب‌کننده اشتباهی جای دیگری نریزد)
+#>
+function Test-ProgramFolder {
+  param([string]$Root)
+  if (-not $Root) { return $false }
+  return (Test-Path -LiteralPath (Join-Path $Root 'homelab-panel\server\src\index.js'))
+}
+
+<#
+  .SYNOPSIS
+  آیا پوشهٔ مقصد برای نصب مناسب است؟ پیامِ فارسی برمی‌گرداند.
+#>
+function Test-InstallTarget {
+  param([string]$Target)
+
+  if (-not $Target -or -not $Target.Trim()) {
+    return @{ ok = $false; message = 'مسیرِ نصب را انتخاب کنید' }
+  }
+  try {
+    $full = [System.IO.Path]::GetFullPath($Target)
+  } catch {
+    return @{ ok = $false; message = 'این مسیر درست نیست' }
+  }
+  if ($full -match '[<>|?*]') {
+    return @{ ok = $false; message = 'در نامِ پوشه نشانه‌های < > | ? * نگذارید' }
+  }
+  if (Test-Path -LiteralPath $full -PathType Leaf) {
+    return @{ ok = $false; message = 'این یک فایل است، نه پوشه' }
+  }
+  if ((Test-Path -LiteralPath $full) -and (Test-ProgramFolder -Root $full)) {
+    return @{ ok = $true; full = $full; upgrade = $true; message = 'در این پوشه نسخه‌ای از برنامه هست — روی همان به‌روزرسانی می‌شود (دادهٔ شما می‌ماند)' }
+  }
+  return @{ ok = $true; full = $full; upgrade = $false; message = 'آمادهٔ نصب' }
+}
+
+<#
+  .SYNOPSIS
+  یک میان‌بر می‌سازد که برنامه را بدونِ هیچ پنجرهٔ سیاهی باز می‌کند.
+#>
+function New-ProgramShortcut {
+  param(
+    [Parameter(Mandatory = $true)][string]$InstallRoot,
+    [Parameter(Mandatory = $true)][string]$LinkPath
+  )
+
+  $launcher = Join-Path $InstallRoot 'homelab-panel\desktop\launch.vbs'
+  if (-not (Test-Path -LiteralPath $launcher)) { return $null }
+  try {
+    $dir = Split-Path -Parent $LinkPath
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $shell = New-Object -ComObject WScript.Shell
+    $link = $shell.CreateShortcut($LinkPath)
+    # wscript یعنی هیچ پنجرهٔ سیاهی حتی یک لحظه هم دیده نمی‌شود
+    $link.TargetPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
+    $link.Arguments = """$launcher"""
+    $link.WorkingDirectory = Join-Path $InstallRoot 'homelab-panel\desktop'
+    $link.Description = 'برنامهٔ سرور خانگی'
+    $link.Save()
+    return $LinkPath
+  } catch {
+    return $null
+  }
 }
