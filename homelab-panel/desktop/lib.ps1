@@ -386,10 +386,18 @@ function Find-NodeExe {
     $found = Get-Command 'node' -ErrorAction SilentlyContinue
     if ($found) { return $found.Source }
   } catch { }
-  foreach ($guess in @(
-      (Join-Path $env:ProgramFiles 'nodejs\node.exe'),
-      (Join-Path ${env:ProgramFiles(x86)} 'nodejs\node.exe'))) {
-    if ($guess -and (Test-Path -LiteralPath $guess)) { return $guess }
+  # ⚠️ اگر این متغیرها خالی باشند، Join-Path خطا می‌دهد و کلِ برنامه می‌خوابد.
+  #    برای همین اول وجودشان بررسی می‌شود.
+  $roots = @()
+  foreach ($name in @('ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432', 'LOCALAPPDATA')) {
+    $value = [Environment]::GetEnvironmentVariable($name)
+    if ($value) { $roots += $value }
+  }
+  foreach ($root in $roots) {
+    try {
+      $guess = Join-Path $root 'nodejs\node.exe'
+      if (Test-Path -LiteralPath $guess) { return $guess }
+    } catch { }
   }
   return $null
 }
@@ -996,4 +1004,96 @@ Authorization: Bearer <token>
 GET  $BaseUrl/api/app/config?app=$Slug
 GET  $BaseUrl/api/app/ping
 "@
+}
+
+# ---------------------------------------------------------------------------
+#  وقتی چیزی خراب می‌شود
+#
+#  برنامه بدونِ پنجرهٔ سیاه اجرا می‌شود، پس اگر خطایی بدهد کسی چیزی نمی‌بیند و
+#  فقط «باز شد و گم شد» به‌نظر می‌رسد. این‌جا هر خطا هم در فایل نوشته می‌شود و
+#  هم روی صفحه نشان داده می‌شود.
+# ---------------------------------------------------------------------------
+
+function Get-ErrorLogPath {
+  param([string]$ServerDir = '')
+  if ($ServerDir) {
+    try { return (Join-Path (Get-DataDir -ServerDir $ServerDir) 'desktop-error.log') } catch { }
+  }
+  return (Join-Path ([System.IO.Path]::GetTempPath()) 'homelab-desktop-error.log')
+}
+
+<#
+  .SYNOPSIS
+  خطا را در فایل می‌نویسد و مسیرِ فایل را برمی‌گرداند.
+#>
+function Write-AppError {
+  param(
+    [Parameter(Mandatory = $true)]$ErrorRecord,
+    [string]$Where = '',
+    [string]$ServerDir = ''
+  )
+
+  $path = Get-ErrorLogPath -ServerDir $ServerDir
+  $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+  $message = try { $ErrorRecord.Exception.Message } catch { [string]$ErrorRecord }
+  $stack = try { $ErrorRecord.ScriptStackTrace } catch { '' }
+  $line = "[$stamp] $Where`r`n$message`r`n$stack`r`n----------------------------------------`r`n"
+  try {
+    $dir = Split-Path -Parent $path
+    if ($dir -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    [System.IO.File]::AppendAllText($path, $line, (New-Object System.Text.UTF8Encoding($false)))
+  } catch { }
+  return $path
+}
+
+<#
+  .SYNOPSIS
+  یک کادرِ کوچکِ «یک چیز بنویس» — با خودِ WinForms، بدونِ وابستگی به چیزِ دیگر.
+#>
+function Show-InputDialog {
+  param(
+    [string]$Message = '',
+    [string]$Title = 'برنامهٔ سرور خانگی',
+    [string]$Default = ''
+  )
+
+  $dialog = New-Object System.Windows.Forms.Form
+  $dialog.Text = $Title
+  $dialog.Size = New-Object System.Drawing.Size(420, 190)
+  $dialog.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+  $dialog.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+  $dialog.MinimizeBox = $false
+  $dialog.MaximizeBox = $false
+  $dialog.RightToLeft = [System.Windows.Forms.RightToLeft]::Yes
+  $dialog.RightToLeftLayout = $true
+  $dialog.Font = New-Object System.Drawing.Font('Tahoma', 9.75)
+
+  $label = New-Object System.Windows.Forms.Label
+  $label.Text = $Message
+  $label.Location = New-Object System.Drawing.Point(16, 16)
+  $label.Size = New-Object System.Drawing.Size(380, 46)
+
+  $box = New-Object System.Windows.Forms.TextBox
+  $box.Location = New-Object System.Drawing.Point(16, 68)
+  $box.Size = New-Object System.Drawing.Size(380, 26)
+  $box.Text = $Default
+
+  $ok = New-Object System.Windows.Forms.Button
+  $ok.Text = 'باشد'
+  $ok.Location = New-Object System.Drawing.Point(216, 106)
+  $ok.Size = New-Object System.Drawing.Size(90, 30)
+  $ok.DialogResult = [System.Windows.Forms.DialogResult]::OK
+
+  $cancel = New-Object System.Windows.Forms.Button
+  $cancel.Text = 'بی‌خیال'
+  $cancel.Location = New-Object System.Drawing.Point(112, 106)
+  $cancel.Size = New-Object System.Drawing.Size(90, 30)
+  $cancel.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+
+  $dialog.Controls.AddRange(@($label, $box, $ok, $cancel))
+  $dialog.AcceptButton = $ok
+  $dialog.CancelButton = $cancel
+
+  if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { return $box.Text }
+  return ''
 }

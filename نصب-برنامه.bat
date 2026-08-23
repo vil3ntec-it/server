@@ -2,13 +2,22 @@
 REM ---------------------------------------------------------------------------
 REM   نصبِ برنامهٔ سرور خانگی — همین فایل را دوبار کلیک کنید.
 REM   یک پنجرهٔ نصب باز می‌شود: پوشه را انتخاب می‌کنید و «نصب کن» را می‌زنید.
+REM
+REM   اگر پنجره باز نشد یا باز شد و رفت، فایلِ «اگر-باز-نشد.bat» را بزنید تا
+REM   خطا را ببینید.
 REM ---------------------------------------------------------------------------
+chcp 65001 >nul 2>nul
 cd /d "%~dp0"
 
-if exist "%~dp0homelab-panel\desktop\install-hidden.vbs" (
-  start "" wscript.exe "%~dp0homelab-panel\desktop\install-hidden.vbs"
-  exit
+if not exist "homelab-panel\desktop\install.ps1" (
+  echo.
+  echo   فایل‌های برنامه پیدا نشد.
+  echo   زیپ را کامل باز کنید و بعد این فایل را از داخلِ همان پوشه اجرا کنید.
+  echo.
+  pause
+  exit /b 1
 )
 
-start "" powershell -NoProfile -Sta -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0homelab-panel\desktop\install.ps1"
+REM مسیرها عمداً نسبی‌اند: نامِ پوشهٔ فارسی هرگز وارد خطِ فرمان نمی‌شود
+start "" wscript.exe "homelab-panel\desktop\install-hidden.vbs"
 exit

@@ -14,20 +14,22 @@
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-Add-Type -AssemblyName Microsoft.VisualBasic   # فقط برای کادرِ کوچکِ «نامِ برنامه را بنویس»
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-# اگر چیزی از پایه خراب شد، به‌جای «هیچ اتفاقی نیفتاد» یک پیام دیده شود
-trap {
+# مغزِ برنامه. اگر همین هم بالا نیامد، دیگر هیچ‌چیز کار نمی‌کند — پس خطایش
+# را حتماً نشان می‌دهیم، وگرنه کاربر فقط می‌بیند «باز شد و گم شد».
+try {
+  . (Join-Path $PSScriptRoot 'lib.ps1')
+} catch {
+  $logPath = Join-Path ([System.IO.Path]::GetTempPath()) 'homelab-desktop-error.log'
   try {
-    [System.Windows.Forms.MessageBox]::Show(
-      "برنامه بالا نیامد:`r`n`r`n$($_.Exception.Message)`r`n`r`n$($_.ScriptStackTrace)",
-      'برنامهٔ سرور خانگی') | Out-Null
+    [System.IO.File]::AppendAllText($logPath, "$(Get-Date)`r`nlib.ps1`r`n$($_.Exception.Message)`r`n$($_.ScriptStackTrace)`r`n`r`n")
   } catch { }
+  [System.Windows.Forms.MessageBox]::Show(
+    "فایلِ lib.ps1 بالا نیامد:`r`n`r`n$($_.Exception.Message)`r`n`r`nگزارش: $logPath",
+    'برنامهٔ سرور خانگی') | Out-Null
   exit 1
 }
-
-. (Join-Path $PSScriptRoot 'lib.ps1')
 
 $script:DesktopDir = $PSScriptRoot
 $script:ServerDir  = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\server'))
@@ -654,13 +656,14 @@ function Load-Clients {
     [void]$script:AppsList.Items.Add("$($client.name)  ·  $($client.slug)  —  $($client.users) کاربر$lock$state")
   }
 
-  if ($script:Clients.Count -gt 0) {
+  if ($script:Clients.Count -gt 0 -and $script:AppsList.Items.Count -gt 0) {
     $index = 0
     if ($Select) {
       for ($i = 0; $i -lt $script:Clients.Count; $i++) {
         if ($script:Clients[$i].slug -eq $Select) { $index = $i; break }
       }
     }
+    if ($index -ge $script:AppsList.Items.Count) { $index = 0 }
     $script:AppsList.SelectedIndex = $index
   }
   Show-ClientDetails
@@ -671,8 +674,7 @@ $script:AppsList.Add_SelectedIndexChanged({ Show-ClientDetails })
 $btnReloadApps.Add_Click({ Load-Clients })
 
 $btnNewApp.Add_Click({
-  $name = [Microsoft.VisualBasic.Interaction]::InputBox(
-    "نامِ برنامه یا سایت را بنویسید:`r`n(مثلاً: فروشگاه یعقوبی  یا  shop)", 'برنامهٔ تازه', '')
+  $name = Show-InputDialog -Title 'برنامهٔ تازه' -Message "نامِ برنامه یا سایت را بنویسید:`r`n(مثلاً: فروشگاه یعقوبی  یا  shop)"
   if (-not $name -or -not $name.Trim()) { return }
 
   $result = Invoke-AdminJson -ServerDir $script:ServerDir -Path '/api/app-admin/clients' -Method 'POST' `
@@ -965,19 +967,46 @@ $timer.Add_Tick({
   if ($script:AutoLog.Checked -and $tabs.SelectedTab -eq $tabLog) { Update-Terminal }
 })
 
-$form.Add_Shown({
-  Load-Settings
-  Update-Status | Out-Null
-  Update-Addresses
-  Update-Terminal -Force $true
-  Load-Clients
+<#
+  .SYNOPSIS
+  یک کارِ راه‌اندازی را انجام می‌دهد و اگر خراب شد، فقط همان یکی خراب می‌شود —
+  نه اینکه کلِ پنجره بسته شود.
+#>
+function Invoke-Safely {
+  param([string]$Name, [scriptblock]$Work)
+  try {
+    & $Work
+    return $true
+  } catch {
+    $script:StartupErrors += $Name
+    Write-AppError -ErrorRecord $_ -Where $Name -ServerDir $script:ServerDir | Out-Null
+    return $false
+  }
+}
 
-  # شاخه و تنظیمِ بررسیِ خودکار را از دفعهٔ قبل به یاد می‌آورد
-  $saved = Get-DesktopSettings -ServerDir $script:ServerDir
-  $script:BranchBox.Text = $saved.branch
-  $script:AutoCheck.Checked = [bool]$saved.autoCheck
+$script:StartupErrors = @()
+
+$form.Add_Shown({
+  $form.Activate()
+
+  Invoke-Safely 'خواندنِ تنظیمات' { Load-Settings } | Out-Null
+  Invoke-Safely 'وضعیتِ سرور' { Update-Status | Out-Null } | Out-Null
+  Invoke-Safely 'آدرس‌ها' { Update-Addresses } | Out-Null
+  Invoke-Safely 'ترمینال' { Update-Terminal -Force $true } | Out-Null
+  Invoke-Safely 'فهرستِ برنامه‌ها' { Load-Clients } | Out-Null
+
+  Invoke-Safely 'تنظیماتِ به‌روزرسانی' {
+    $saved = Get-DesktopSettings -ServerDir $script:ServerDir
+    $script:BranchBox.Text = $saved.branch
+    $script:AutoCheck.Checked = [bool]$saved.autoCheck
+  } | Out-Null
 
   $timer.Start()
+
+  if ($script:StartupErrors.Count -gt 0) {
+    $script:SubLabel.Text = "چند بخش بالا نیامد: $($script:StartupErrors -join '، ') — گزارش در desktop-error.log"
+    $script:SubLabel.ForeColor = $Bad
+  }
 
   # بررسیِ نسخه چند لحظه بعد از باز شدنِ پنجره، تا معطلش نکند
   if ($script:AutoCheck.Checked) {
@@ -985,9 +1014,13 @@ $form.Add_Shown({
     $script:StartupCheck.Interval = 2500
     $script:StartupCheck.Add_Tick({
       $script:StartupCheck.Stop()
-      if (Test-Update -Quiet $true) {
-        $script:SubLabel.Text = "نسخهٔ تازه ($($script:UpdateReady)) روی GitHub هست — تبِ «به‌روزرسانی»"
-        $script:SubLabel.ForeColor = $Brand
+      try {
+        if (Test-Update -Quiet $true) {
+          $script:SubLabel.Text = "نسخهٔ تازه ($($script:UpdateReady)) روی GitHub هست — تبِ «به‌روزرسانی»"
+          $script:SubLabel.ForeColor = $Brand
+        }
+      } catch {
+        Write-AppError -ErrorRecord $_ -Where 'بررسیِ نسخه' -ServerDir $script:ServerDir | Out-Null
       }
     })
     $script:StartupCheck.Start()
@@ -999,4 +1032,24 @@ $form.Add_FormClosed({
   if ($script:StartupCheck) { $script:StartupCheck.Stop() }
 })
 
-[void]$form.ShowDialog()
+# نمایشِ پنجره. اگر این‌جا چیزی خراب شود، پنجره «باز می‌شود و گم می‌شود» —
+# پس خطا را می‌نویسیم و نشان می‌دهیم.
+$openedAt = Get-Date
+try {
+  $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+  $form.ShowInTaskbar = $true
+  [System.Windows.Forms.Application]::Run($form)
+
+  # اگر پنجره در یک چشم‌به‌هم‌زدن بسته شد، یعنی چیزی خراب است — بی‌صدا نرویم
+  if (((Get-Date) - $openedAt).TotalSeconds -lt 1.5) {
+    $logPath = Get-ErrorLogPath -ServerDir $script:ServerDir
+    [System.Windows.Forms.MessageBox]::Show(
+      "پنجره باز شد ولی بی‌درنگ بسته شد.`r`n`r`nبرای دیدنِ علت، فایلِ «عیب‌یابی.bat» را اجرا کنید.`r`n`r`nگزارش: $logPath",
+      'برنامهٔ سرور خانگی') | Out-Null
+  }
+} catch {
+  $logPath = Write-AppError -ErrorRecord $_ -Where 'اجرای پنجره' -ServerDir $script:ServerDir
+  [System.Windows.Forms.MessageBox]::Show(
+    "برنامه بسته شد:`r`n`r`n$($_.Exception.Message)`r`n`r`nگزارش: $logPath",
+    'برنامهٔ سرور خانگی') | Out-Null
+}

@@ -9,15 +9,13 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-trap {
-  try {
-    [System.Windows.Forms.MessageBox]::Show(
-      "نصب‌کننده بالا نیامد:`r`n`r`n$($_.Exception.Message)", 'نصبِ برنامهٔ سرور خانگی') | Out-Null
-  } catch { }
+try {
+  . (Join-Path $PSScriptRoot 'lib.ps1')
+} catch {
+  [System.Windows.Forms.MessageBox]::Show(
+    "فایلِ lib.ps1 بالا نیامد:`r`n`r`n$($_.Exception.Message)", 'نصبِ برنامهٔ سرور خانگی') | Out-Null
   exit 1
 }
-
-. (Join-Path $PSScriptRoot 'lib.ps1')
 
 $script:SourceRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $script:Version = Get-LocalVersion -ServerDir (Join-Path (Join-Path $script:SourceRoot 'homelab-panel') 'server')
@@ -411,8 +409,11 @@ $btnNext.Add_Click({
 })
 
 $form.Add_Shown({
+  $form.Activate()
   Show-Page -Number 1
-  if (-not (Find-NodeExe)) {
+  $nodeFound = $true
+  try { $nodeFound = [bool](Find-NodeExe) } catch { $nodeFound = $false }
+  if (-not $nodeFound) {
     $script:NodeNote.Text = 'Node.js روی این کامپیوتر پیدا نشد. برنامه نصب می‌شود، ولی تا Node.js نباشد سرور بالا نمی‌آید.'
     $script:BtnNode.Visible = $true
   }
@@ -424,4 +425,23 @@ $form.Add_Shown({
   }
 })
 
-[void]$form.ShowDialog()
+$openedAt = Get-Date
+try {
+  $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+  $form.ShowInTaskbar = $true
+  [System.Windows.Forms.Application]::Run($form)
+
+  if (((Get-Date) - $openedAt).TotalSeconds -lt 1.5) {
+    [System.Windows.Forms.MessageBox]::Show(
+      "پنجرهٔ نصب باز شد ولی بی‌درنگ بسته شد.`r`n`r`nفایلِ «اگر-باز-نشد.bat» را اجرا کنید تا علتش دیده شود.",
+      'نصبِ برنامهٔ سرور خانگی') | Out-Null
+  }
+} catch {
+  $logPath = Join-Path ([System.IO.Path]::GetTempPath()) 'homelab-install-error.log'
+  try {
+    [System.IO.File]::AppendAllText($logPath, "$(Get-Date)`r`n$($_.Exception.Message)`r`n$($_.ScriptStackTrace)`r`n`r`n")
+  } catch { }
+  [System.Windows.Forms.MessageBox]::Show(
+    "نصب‌کننده بسته شد:`r`n`r`n$($_.Exception.Message)`r`n`r`nگزارش: $logPath",
+    'نصبِ برنامهٔ سرور خانگی') | Out-Null
+}

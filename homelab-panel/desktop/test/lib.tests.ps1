@@ -145,6 +145,32 @@ try {
   Check 'نسخه از package.json خوانده می‌شود' ((Get-LocalVersion -ServerDir $fakeServer) -eq '1.1.1')
   Check 'نبودنِ فایل، برنامه را نمی‌خواباند' ((Get-LocalVersion -ServerDir (Join-Path $temp 'nowhere')) -eq '0.0.0')
 
+  # ------------------------------------------------------- گزارشِ خطاها --
+  Write-Host "`n> گزارشِ خطا (تا پنجره بی‌صدا گم نشود)"
+  $errServer = Join-Path $temp 'err-server'
+  New-Item -ItemType Directory -Path (Join-Path $errServer 'data') -Force | Out-Null
+  Check 'مسیرِ گزارشِ خطا کنارِ داده است' ((Get-ErrorLogPath -ServerDir $errServer) -eq (Join-Path (Join-Path $errServer 'data') 'desktop-error.log'))
+  Check 'بدونِ پوشهٔ سرور هم مسیری دارد' ((Get-ErrorLogPath).Length -gt 0)
+
+  try { throw 'یک خطای ساختگی' } catch {
+    $written = Write-AppError -ErrorRecord $_ -Where 'آزمون' -ServerDir $errServer
+    Check 'خطا در فایل نوشته می‌شود' (Test-Path -LiteralPath $written)
+    $body = [System.IO.File]::ReadAllText($written)
+    Check 'متنِ خطا و جایش نوشته می‌شود' ($body.Contains('یک خطای ساختگی') -and $body.Contains('آزمون'))
+  }
+
+  # همان اشکالی که پنجره را می‌بست: نبودنِ متغیرهای محیطی نباید خطا بدهد
+  $savedProgram = $env:ProgramFiles
+  try {
+    $env:ProgramFiles = ''
+    $node = Find-NodeExe
+    Check 'نبودنِ ProgramFiles برنامه را نمی‌خواباند' ($true)
+  } catch {
+    Check 'نبودنِ ProgramFiles برنامه را نمی‌خواباند' ($false) $_.Exception.Message
+  } finally {
+    $env:ProgramFiles = $savedProgram
+  }
+
   # ------------------------------------------------ تنظیماتِ خودِ برنامه --
   Write-Host "`n> تنظیماتِ برنامه (شاخهٔ به‌روزرسانی)"
   $prefServer = Join-Path $temp 'pref-server'
