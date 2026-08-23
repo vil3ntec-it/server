@@ -14,6 +14,10 @@ try {
 
 $script:Repo = 'vil3ntec-it/server'
 
+# شاخه‌ای که تغییرها روی آن می‌نشیند. هر وقت در main ادغام شد، در تبِ
+# «به‌روزرسانی» بنویسید main — همان‌جا یادش می‌ماند.
+$script:DefaultBranch = 'claude/server-connection-auth-sfxbex'
+
 # ---------------------------------------------------------------------------
 #  مسیرها
 # ---------------------------------------------------------------------------
@@ -815,4 +819,181 @@ function New-ProgramShortcut {
   } catch {
     return $null
   }
+}
+
+# ---------------------------------------------------------------------------
+#  تنظیماتِ خودِ برنامه (نه سرور) — شاخهٔ به‌روزرسانی و مانندِ آن
+# ---------------------------------------------------------------------------
+
+function Get-DesktopSettingsPath {
+  param([Parameter(Mandatory = $true)][string]$ServerDir)
+  return (Join-Path (Get-DataDir -ServerDir $ServerDir) 'desktop.json')
+}
+
+<#
+  .SYNOPSIS
+  تنظیماتِ ذخیره‌شدهٔ برنامه. اگر چیزی نبود، پیش‌فرض‌ها.
+#>
+function Get-DesktopSettings {
+  param([Parameter(Mandatory = $true)][string]$ServerDir)
+
+  $defaults = @{ branch = $script:DefaultBranch; autoCheck = $true }
+  $path = Get-DesktopSettingsPath -ServerDir $ServerDir
+  if (-not (Test-Path -LiteralPath $path)) { return $defaults }
+  try {
+    $saved = ([System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8) | ConvertFrom-Json)
+    if ($saved.branch) { $defaults.branch = [string]$saved.branch }
+    if ($null -ne $saved.autoCheck) { $defaults.autoCheck = [bool]$saved.autoCheck }
+  } catch { }
+  return $defaults
+}
+
+function Save-DesktopSettings {
+  param(
+    [Parameter(Mandatory = $true)][string]$ServerDir,
+    [Parameter(Mandatory = $true)][hashtable]$Settings
+  )
+  $path = Get-DesktopSettingsPath -ServerDir $ServerDir
+  try {
+    $dir = Split-Path -Parent $path
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $json = ($Settings | ConvertTo-Json -Depth 4)
+    [System.IO.File]::WriteAllText($path, $json, (New-Object System.Text.UTF8Encoding($false)))
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+# ---------------------------------------------------------------------------
+#  مدیریتِ برنامه‌ها و سایت‌ها (از راهِ کلیدِ محلی)
+# ---------------------------------------------------------------------------
+
+<#
+  .SYNOPSIS
+  کلیدی که سرور برای برنامهٔ رویِ همین کامپیوتر گذاشته است.
+  فقط برنامه‌ای که به فایل‌های سرور دسترسی دارد می‌تواند بخواندش.
+#>
+function Get-LocalAdminKey {
+  param(
+    [Parameter(Mandatory = $true)][string]$ServerDir,
+    # فقط برای آزمون: وقتی پوشهٔ داده جای دیگری است و در .env هم ننوشته
+    [string]$DataDir = ''
+  )
+
+  $base = if ($DataDir) { $DataDir } else { Get-DataDir -ServerDir $ServerDir }
+  $path = Join-Path $base 'local-admin.key'
+  if (-not (Test-Path -LiteralPath $path)) { return $null }
+  try {
+    $key = ([System.IO.File]::ReadAllText($path)).Trim()
+    if ($key.Length -ge 32) { return $key }
+  } catch { }
+  return $null
+}
+
+<#
+  .SYNOPSIS
+  یک درخواستِ مدیریتی به سرورِ محلی، با کلیدِ محلی.
+#>
+function Invoke-AdminJson {
+  param(
+    [Parameter(Mandatory = $true)][string]$ServerDir,
+    [Parameter(Mandatory = $true)][string]$Path,
+    [string]$Method = 'GET',
+    $Body = $null,
+    [int]$Port = 4700,
+    [string]$DataDir = ''
+  )
+
+  $key = Get-LocalAdminKey -ServerDir $ServerDir -DataDir $DataDir
+  if (-not $key) {
+    return @{ ok = $false; status = 0; data = $null; error = 'کلیدِ محلی پیدا نشد — سرور را یک بار روشن کنید' }
+  }
+
+  $params = @{
+    Uri             = "http://127.0.0.1:$Port$Path"
+    Method          = $Method
+    TimeoutSec      = 15
+    UseBasicParsing = $true
+    Headers         = @{ 'X-Local-Key' = $key }
+  }
+  if ($null -ne $Body) {
+    $json = ($Body | ConvertTo-Json -Depth 6 -Compress)
+    $params['Body'] = [System.Text.Encoding]::UTF8.GetBytes($json)
+    $params['ContentType'] = 'application/json; charset=utf-8'
+  }
+
+  try {
+    $response = Invoke-WebRequest @params
+    $text = [System.Text.Encoding]::UTF8.GetString($response.RawContentStream.ToArray())
+    $data = $null
+    if ($text) { try { $data = $text | ConvertFrom-Json } catch { } }
+    return @{ ok = $true; status = [int]$response.StatusCode; data = $data; error = $null }
+  } catch {
+    $status = 0
+    $text = $null
+    $data = $null
+    $webResponse = $null
+    try { $webResponse = $_.Exception.Response } catch { }
+    if ($webResponse) {
+      try { $status = [int]$webResponse.StatusCode } catch { }
+      try {
+        if ($webResponse | Get-Member -Name 'GetResponseStream' -MemberType Method -ErrorAction SilentlyContinue) {
+          $reader = New-Object System.IO.StreamReader($webResponse.GetResponseStream(), [System.Text.Encoding]::UTF8)
+          $text = $reader.ReadToEnd()
+          $reader.Close()
+        }
+      } catch { }
+    }
+    if (-not $text) { try { $text = $_.ErrorDetails.Message } catch { } }
+    if ($text) { try { $data = $text | ConvertFrom-Json } catch { } }
+    return @{ ok = $false; status = $status; data = $data; error = $_.Exception.Message }
+  }
+}
+
+<#
+  .SYNOPSIS
+  متنِ آماده‌ای که به سازندهٔ هر برنامه می‌دهید: آدرس‌ها، کلید، و نمونهٔ درخواست.
+#>
+function Get-ApiCard {
+  param(
+    [Parameter(Mandatory = $true)][string]$Slug,
+    [Parameter(Mandatory = $true)][string]$BaseUrl,
+    [string]$ApiKey = '',
+    [bool]$KeyRequired = $false,
+    [int]$CodeLength = 6
+  )
+
+  $keyLine = if ($KeyRequired) { "کلید (اجباری):   $ApiKey" } else { "کلید (اختیاری):  $ApiKey" }
+  $keyField = if ($KeyRequired) { ",`"key`":`"$ApiKey`"" } else { '' }
+
+  return @"
+شناسهٔ برنامه:   $Slug
+آدرسِ سرور:      $BaseUrl
+$keyLine
+
+──────────  فرستادنِ کدِ $CodeLength رقمی  ──────────
+POST $BaseUrl/api/app/auth/request-code
+Content-Type: application/json
+
+{"phone":"09121234567","app":"$Slug"$keyField}
+
+  (به‌جای phone می‌شود email فرستاد: {"email":"a@gmail.com","app":"$Slug"})
+
+──────────  تأییدِ کد و گرفتنِ توکن  ──────────
+POST $BaseUrl/api/app/auth/verify-code
+Content-Type: application/json
+
+{"phone":"09121234567","code":"123456","app":"$Slug"$keyField}
+
+  پاسخ:  {"ok":true,"token":"eyJ…","user":{…}}
+
+──────────  درخواست‌های بعدی  ──────────
+GET  $BaseUrl/api/app/me
+Authorization: Bearer <token>
+
+──────────  شناسنامه و تستِ اتصال  ──────────
+GET  $BaseUrl/api/app/config?app=$Slug
+GET  $BaseUrl/api/app/ping
+"@
 }

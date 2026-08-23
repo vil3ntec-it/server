@@ -145,6 +145,26 @@ try {
   Check 'نسخه از package.json خوانده می‌شود' ((Get-LocalVersion -ServerDir $fakeServer) -eq '1.1.1')
   Check 'نبودنِ فایل، برنامه را نمی‌خواباند' ((Get-LocalVersion -ServerDir (Join-Path $temp 'nowhere')) -eq '0.0.0')
 
+  # ------------------------------------------------ تنظیماتِ خودِ برنامه --
+  Write-Host "`n> تنظیماتِ برنامه (شاخهٔ به‌روزرسانی)"
+  $prefServer = Join-Path $temp 'pref-server'
+  New-Item -ItemType Directory -Path $prefServer -Force | Out-Null
+  $pref = Get-DesktopSettings -ServerDir $prefServer
+  Check 'پیش‌فرض دارد' ($pref.branch -and $pref.autoCheck -eq $true) "$($pref.branch)"
+
+  Save-DesktopSettings -ServerDir $prefServer -Settings @{ branch = 'main'; autoCheck = $false } | Out-Null
+  $pref2 = Get-DesktopSettings -ServerDir $prefServer
+  Check 'شاخه یادش می‌ماند' ($pref2.branch -eq 'main')
+  Check 'بررسیِ خودکار یادش می‌ماند' ($pref2.autoCheck -eq $false)
+
+  Write-Host "`n> کارتِ آدرسِ API"
+  $card = Get-ApiCard -Slug 'shop' -BaseUrl 'https://x.example.com' -ApiKey 'hlp_abc' -KeyRequired $true -CodeLength 6
+  Check 'آدرسِ فرستادنِ کد در کارت هست' ($card.Contains('https://x.example.com/api/app/auth/request-code'))
+  Check 'شناسهٔ برنامه در کارت هست' ($card.Contains('"app":"shop"'))
+  Check 'کلید در کارت هست' ($card.Contains('hlp_abc') -and $card.Contains('"key":"hlp_abc"'))
+  $cardNoKey = Get-ApiCard -Slug 'shop' -BaseUrl 'http://a' -ApiKey '' -KeyRequired $false
+  Check 'وقتی کلید اجباری نیست، در نمونهٔ درخواست نمی‌آید' (-not $cardNoKey.Contains('"key"'))
+
   # ------------------------------------------------------- ترمینال و نصب --
   Write-Host "`n> ترمینالِ داخلِ برنامه"
   $termServer = Join-Path $temp 'term-server'
@@ -233,6 +253,28 @@ try {
 
       $bad = Invoke-Json -Url "http://127.0.0.1:$port/api/app/auth/request-code" -Method 'POST' -Body @{ phone = '12' }
       Check 'خطای ۴۰۰ هم با متنِ فارسی خوانده می‌شود' ((-not $bad.ok) -and $bad.status -eq 400 -and $bad.data.error -eq 'bad_phone') "status=$($bad.status)"
+
+      Write-Host "`n> مدیریتِ برنامه‌ها از داخلِ برنامه (کلیدِ محلی)"
+      $key = Get-LocalAdminKey -ServerDir $serverDir -DataDir $dataDir
+      Check 'کلیدِ محلی خوانده می‌شود' ($key -and $key.Length -ge 32)
+
+      $list = Invoke-AdminJson -ServerDir $serverDir -Path '/api/app-admin/clients' -Port $port -DataDir $dataDir
+      Check 'فهرستِ برنامه‌ها گرفته می‌شود' ($list.ok -and $null -ne $list.data.clients) "$($list.error)"
+
+      $created = Invoke-AdminJson -ServerDir $serverDir -Path '/api/app-admin/clients' -Method 'POST' `
+        -Body @{ name = 'فروشگاه من'; slug = 'my-shop' } -Port $port -DataDir $dataDir
+      Check 'برنامهٔ تازه از داخلِ برنامه ساخته می‌شود' ($created.ok -and $created.data.client.slug -eq 'my-shop') "$($created.error)"
+      Check 'کلیدِ اختصاصی برمی‌گردد' ($created.data.client.apiKey -like 'hlp_*')
+
+      $saved = Invoke-AdminJson -ServerDir $serverDir -Path '/api/app-admin/clients/my-shop' -Method 'PUT' `
+        -Body @{ smsText = 'کد فروشگاه: {code}'; requireKey = $true } -Port $port -DataDir $dataDir
+      Check 'تنظیماتِ برنامه ذخیره می‌شود' ($saved.ok -and $saved.data.client.requireKey -eq $true)
+
+      $rotated = Invoke-AdminJson -ServerDir $serverDir -Path '/api/app-admin/clients/my-shop/key' -Method 'POST' -Port $port -DataDir $dataDir
+      Check 'کلیدِ تازه ساخته می‌شود' ($rotated.ok -and $rotated.data.client.apiKey -ne $created.data.client.apiKey)
+
+      $gone = Invoke-AdminJson -ServerDir $serverDir -Path '/api/app-admin/clients/my-shop' -Method 'DELETE' -Port $port -DataDir $dataDir
+      Check 'برنامه حذف می‌شود' ($gone.ok)
 
       $log = Get-PanelLog -ServerDir $serverDir
       Check 'خواندنِ لاگ برنامه را نمی‌خواباند' ($log.Length -gt 0)

@@ -273,6 +273,63 @@ try {
   const pubPage = await fetch(`http://127.0.0.1:${PUBLIC_PORT}/connect`);
   check('صفحهٔ راهنما از پورتِ عمومی هم باز می‌شود', pubPage.ok);
 
+  console.log('\n▶ دفترِ برنامه‌ها و سایت‌ها');
+  const localKey = fs.readFileSync(path.join(dataDir, 'local-admin.key'), 'utf8').trim();
+  check('کلیدِ محلی ساخته می‌شود', localKey.length >= 32);
+
+  const adminHeaders = { 'X-Local-Key': localKey };
+  const clientsRes = await fetch(`${BASE}/api/app-admin/clients`, { headers: adminHeaders });
+  const clientsBody = await clientsRes.json().catch(() => ({}));
+  check('فهرستِ برنامه‌ها با کلیدِ محلی باز می‌شود', clientsRes.ok, `status=${clientsRes.status}`);
+  const slugs = (clientsBody.clients || []).map((c) => c.slug);
+  check('برنامه‌هایی که کد گرفتند خودشان ثبت شده‌اند', slugs.includes('my-app') && slugs.includes('shop'), slugs.join(','));
+
+  const noKey = await fetch(`${BASE}/api/app-admin/clients`);
+  check('بدونِ کلیدِ محلی بسته است', noKey.status === 401, `status=${noKey.status}`);
+
+  const made = await post('/api/app-admin/clients', { name: 'فروشگاه تست', slug: 'test-shop' }, adminHeaders);
+  check('برنامهٔ تازه ساخته می‌شود', made.status === 200 && made.body.client?.slug === 'test-shop', JSON.stringify(made.body));
+  check('کلیدِ اختصاصی می‌گیرد', /^hlp_[0-9a-f]{32}$/.test(made.body.client?.apiKey || ''), made.body.client?.apiKey);
+
+  const dup = await post('/api/app-admin/clients', { slug: 'test-shop' }, adminHeaders);
+  check('شناسهٔ تکراری رد می‌شود', dup.status === 409);
+
+  // متنِ پیامکِ اختصاصیِ همین برنامه
+  const tuned = await fetch(`${BASE}/api/app-admin/clients/test-shop`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...adminHeaders },
+    body: JSON.stringify({ smsText: 'کد فروشگاه: {code}', codeLength: 5, requireKey: true }),
+  });
+  const tunedBody = await tuned.json().catch(() => ({}));
+  check('تنظیماتِ اختصاصیِ برنامه ذخیره می‌شود', tuned.ok && tunedBody.client?.codeLength === 5 && tunedBody.client?.requireKey === true, JSON.stringify(tunedBody));
+
+  await wait(2100);
+  const withoutKey = await post('/api/app-admin/../app/auth/request-code', { phone: '09120000001', app: 'test-shop' });
+  check('وقتی کلید لازم است، بی‌کلید رد می‌شود', withoutKey.status === 401 && withoutKey.body.error === 'bad_api_key', JSON.stringify(withoutKey.body));
+
+  const withKey = await post('/api/app/auth/request-code', { phone: '09120000001', app: 'test-shop', key: made.body.client.apiKey });
+  check('با کلیدِ درست قبول می‌شود', withKey.status === 200 && withKey.body.ok === true, JSON.stringify(withKey.body));
+  const shopSms = smsInbox[smsInbox.length - 1];
+  check('متنِ پیامکِ اختصاصی رفت', String(shopSms?.text || '').includes('کد فروشگاه'), shopSms?.text);
+  check('طولِ کدِ اختصاصی ۵ شد', /^\d{5}$/.test(String(shopSms?.code)), String(shopSms?.code));
+  check('زمانِ فرستادن گزارش می‌شود', typeof withKey.body.tookMs === 'number' && withKey.body.tookMs < 5000, String(withKey.body.tookMs));
+
+  // خاموش کردنِ یک برنامه
+  await fetch(`${BASE}/api/app-admin/clients/test-shop`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...adminHeaders },
+    body: JSON.stringify({ enabled: false }),
+  });
+  await wait(2100);
+  const off = await post('/api/app/auth/request-code', { phone: '09120000002', app: 'test-shop', key: made.body.client.apiKey });
+  check('برنامهٔ خاموش کد نمی‌گیرد', off.status === 403 && off.body.error === 'app_disabled', JSON.stringify(off.body));
+
+  const cfgShop = await (await fetch(`${BASE}/api/app/config?app=test-shop`)).json();
+  check('شناسنامهٔ هر برنامه جدا است', cfgShop.app?.slug === 'test-shop' && cfgShop.app?.keyRequired === true, JSON.stringify(cfgShop.app));
+
+  const removed = await fetch(`${BASE}/api/app-admin/clients/test-shop`, { method: 'DELETE', headers: adminHeaders });
+  check('حذفِ برنامه کار می‌کند', removed.ok);
+
   console.log('\n▶ خروج');
   const out = await post('/api/app/auth/logout', {}, { Authorization: `Bearer ${token}` });
   check('خروج انجام شد', out.status === 200 && out.body.ok === true);

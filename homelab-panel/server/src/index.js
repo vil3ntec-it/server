@@ -39,6 +39,7 @@ import messengerRoutes from './routes/messenger.js';
 import notifyRoutes, { adminRouter as notifyAdminRoutes } from './routes/notify.js';
 import appRoutes, { adminRouter as appAdminRoutes } from './routes/app.js';
 import { pruneAppAuth } from './appauth/index.js';
+import { localKey } from './local-key.js';
 import { otpSettings } from './appauth/settings.js';
 import * as notify from './notify/index.js';
 import * as messenger from './messenger/index.js';
@@ -57,6 +58,10 @@ function serveConnectPage(req, res) {
 }
 
 ensureDirs();
+
+// کلیدِ محلی همین اول ساخته می‌شود تا «برنامهٔ سرور خانگی» روی همین کامپیوتر
+// بتواند بدونِ ورودِ دستی، برنامه‌ها و تنظیمات را اداره کند.
+localKey();
 
 // شمارهٔ پروسه روی دیسک می‌ماند تا اسکریپت‌های سرویس (وقتی پنجره‌ای باز نیست)
 // بتوانند همین سرور را پیدا و متوقف کنند.

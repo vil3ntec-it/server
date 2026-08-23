@@ -11,7 +11,7 @@
 //  نه رمز عبوری، نه ثبت‌نامِ جدا. هر کس کد را داشته باشد، وارد است.
 // ---------------------------------------------------------------------------
 import express, { Router } from 'express';
-import { requireAuth } from '../auth.js';
+import { requireLocalOrAuth } from '../local-key.js';
 import { versionInfo } from '../version.js';
 import { config } from '../config.js';
 import { publicState as tunnelState } from '../tunnel.js';
@@ -34,6 +34,18 @@ import {
   stats,
 } from '../appauth/index.js';
 import { db } from '../db.js';
+import {
+  ensureClient,
+  getClient,
+  listClients,
+  publicClient,
+  updateClient,
+  rotateKey,
+  removeClient,
+  settingsFor,
+  checkAccess,
+  touchClient,
+} from '../appauth/clients.js';
 
 const router = Router();
 
@@ -50,12 +62,21 @@ const appOf = (req) => cleanApp(req.body?.app || req.query?.app || req.headers['
 //  ۱) شناسنامهٔ سرور — برنامه با همین می‌فهمد «وصل شدم»
 // ---------------------------------------------------------------------------
 router.get('/config', (req, res) => {
-  const s = otpSettings();
+  const app = appOf(req);
+  const s = settingsFor(app);
+  const client = getClient(app);
   res.json({
     ok: true,
     service: 'pump-yaqobi-server',
     version: versionInfo.version,
     time: new Date().toISOString(),
+    app: {
+      slug: app,
+      name: client ? client.name : app,
+      registered: Boolean(client),
+      enabled: client ? Boolean(client.enabled) : true,
+      keyRequired: client ? Boolean(client.require_key) : false,
+    },
     login: {
       // برنامه از روی همین دو تا تصمیم می‌گیرد کدام دکمه را نشان بدهد
       phone: true,
@@ -95,8 +116,14 @@ router.get('/ping', (req, res) => res.json({ ok: true, pong: Date.now() }));
 // ---------------------------------------------------------------------------
 //  ۲) درخواستِ کد
 // ---------------------------------------------------------------------------
+const apiKeyOf = (req) =>
+  req.headers['x-api-key'] || req.body?.apiKey || req.body?.key || req.query?.key || null;
+
 async function handleRequestCode(req, res) {
-  const settings = otpSettings();
+  const app = appOf(req);
+  // برنامهٔ تازه خودش ثبت می‌شود تا هیچ‌کس پشتِ در نماند
+  ensureClient(app, { name: req.body?.appName || null });
+  const settings = settingsFor(app);
   const picked = pickTarget(req.body || {}, settings);
   if (picked.error) {
     const message =
@@ -108,8 +135,14 @@ async function handleRequestCode(req, res) {
     return res.status(400).json({ ok: false, error: picked.error, message });
   }
 
+  const access = checkAccess(app, { key: apiKeyOf(req), channel: picked.channel });
+  if (!access.ok) {
+    return res.status(access.status).json({ ok: false, error: access.error, message: access.message });
+  }
+  touchClient(app);
+
   const result = await requestCode({
-    app: appOf(req),
+    app,
     channel: picked.channel,
     target: picked.target,
     ip: clientIp(req),
@@ -141,14 +174,20 @@ router.post(
 //  ۳) بررسیِ کد → توکن
 // ---------------------------------------------------------------------------
 function handleVerifyCode(req, res) {
-  const settings = otpSettings();
+  const app = appOf(req);
+  const settings = settingsFor(app);
   const picked = pickTarget(req.body || {}, settings);
   if (picked.error) {
     return res.status(400).json({ ok: false, error: picked.error, message: 'شماره یا ایمیل درست نیست' });
   }
 
+  const access = checkAccess(app, { key: apiKeyOf(req) });
+  if (!access.ok) {
+    return res.status(access.status).json({ ok: false, error: access.error, message: access.message });
+  }
+
   const result = verifyCode({
-    app: appOf(req),
+    app,
     target: picked.target,
     code: req.body?.code ?? req.body?.otp ?? req.body?.token,
     name: req.body?.name,
@@ -190,7 +229,8 @@ export default router;
 //  مسیرهای مدیریتی — فقط از پنل و با حسابِ مدیر
 // ---------------------------------------------------------------------------
 export const adminRouter = Router();
-adminRouter.use(requireAuth);
+// یا با حسابِ مدیرِ پنل، یا با کلیدِ محلیِ برنامهٔ روی همین کامپیوتر
+adminRouter.use(requireLocalOrAuth);
 
 adminRouter.get('/', (req, res) => {
   res.json({
@@ -199,6 +239,40 @@ adminRouter.get('/', (req, res) => {
     settings: safeOtpSettings(),
     smsProviders,
   });
+});
+
+/* ── برنامه‌ها و سایت‌ها ────────────────────────────────────────────────────
+   هر ردیف یعنی یک برنامه/سایت با آدرسِ API و کلیدِ خودش. */
+adminRouter.get('/clients', (req, res) => {
+  res.json({ clients: listClients() });
+});
+
+adminRouter.post('/clients', (req, res) => {
+  const slug = cleanApp(req.body?.slug || req.body?.name);
+  if (!slug) return res.status(400).json({ ok: false, error: 'bad_slug', message: 'نامِ برنامه را بنویسید' });
+  if (getClient(slug)) {
+    return res.status(409).json({ ok: false, error: 'exists', message: 'برنامه‌ای با همین شناسه هست' });
+  }
+  const client = ensureClient(slug, { name: req.body?.name || slug });
+  res.json({ ok: true, client: publicClient(client) });
+});
+
+adminRouter.put('/clients/:slug', (req, res) => {
+  const client = updateClient(req.params.slug, req.body || {});
+  if (!client) return res.status(404).json({ ok: false, error: 'not_found' });
+  res.json({ ok: true, client: publicClient(client) });
+});
+
+adminRouter.post('/clients/:slug/key', (req, res) => {
+  const client = rotateKey(req.params.slug);
+  if (!client) return res.status(404).json({ ok: false, error: 'not_found' });
+  res.json({ ok: true, client: publicClient(client) });
+});
+
+adminRouter.delete('/clients/:slug', (req, res) => {
+  const result = removeClient(req.params.slug, { withUsers: req.query.withUsers === '1' });
+  if (!result.ok) return res.status(404).json(result);
+  res.json(result);
 });
 
 adminRouter.get('/users', (req, res) => {
@@ -234,11 +308,12 @@ adminRouter.put('/settings', (req, res) => {
 
 /* آزمونِ واقعی: یک کد به شماره/ایمیلِ خودتان می‌فرستد و می‌گوید کجا گیر کرده */
 adminRouter.post('/test', async (req, res) => {
-  const settings = otpSettings();
+  const app = cleanApp(req.body?.app || 'main');
+  const settings = settingsFor(app);
   const picked = pickTarget(req.body || {}, settings);
   if (picked.error) return res.status(400).json({ ok: false, error: picked.error });
   const result = await requestCode({
-    app: cleanApp(req.body?.app || 'main'),
+    app,
     channel: picked.channel,
     target: picked.target,
     ip: clientIp(req),
