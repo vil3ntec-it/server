@@ -38,7 +38,7 @@ $self = $env:PUMP_SETUP_SELF
 $text = [System.IO.File]::ReadAllText($self, [System.Text.Encoding]::ASCII)
 $mark = '${MARK}'
 $at = $text.IndexOf($mark)
-if ($at -lt 0) { throw 'بستهٔ برنامه داخلِ این فایل پیدا نشد.' }
+if ($at -lt 0) { throw 'Payload not found inside this file.' }
 $b64 = ($text.Substring($at + $mark.Length) -replace '\\s', '')
 $temp = Join-Path $env:TEMP ('pump-setup-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Path $temp -Force | Out-Null
@@ -49,8 +49,8 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 Remove-Item -LiteralPath $zip -Force
 $root = (Get-ChildItem -LiteralPath $temp -Directory | Select-Object -First 1).FullName
 $installer = Join-Path $root 'homelab-panel\\desktop\\install.ps1'
-if (-not (Test-Path -LiteralPath $installer)) { throw 'فایلِ نصب‌کننده داخلِ بسته نبود.' }
-Write-Output ('آماده شد: ' + $root)
+if (-not (Test-Path -LiteralPath $installer)) { throw 'Installer missing inside payload.' }
+Write-Output ('Ready: ' + $root)
 & powershell -NoProfile -Sta -ExecutionPolicy Bypass -File $installer
 `.trim();
 
