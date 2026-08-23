@@ -37,6 +37,9 @@ import settingsRoutes from './routes/settings.js';
 import siteServerRoutes from './routes/site-server.js';
 import messengerRoutes from './routes/messenger.js';
 import notifyRoutes, { adminRouter as notifyAdminRoutes } from './routes/notify.js';
+import appRoutes, { adminRouter as appAdminRoutes } from './routes/app.js';
+import { pruneAppAuth } from './appauth/index.js';
+import { otpSettings } from './appauth/settings.js';
 import * as notify from './notify/index.js';
 import * as messenger from './messenger/index.js';
 import { aiProxy, AI_PREFIX } from './ai/proxy.js';
@@ -45,6 +48,13 @@ import aiRoutes from './routes/ai.js';
 
 const PUBLIC_DIR = path.join(SERVER_ROOT, 'public');
 const PID_FILE = path.join(config.dataDir, 'panel.pid');
+const CONNECT_PAGE = path.join(SERVER_ROOT, 'src', 'appauth', 'connect.html');
+
+/** صفحهٔ راهنمای اتصال — روی هر دو پورت (پنل و پورتِ عمومی) سرو می‌شود */
+function serveConnectPage(req, res) {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(CONNECT_PAGE);
+}
 
 ensureDirs();
 
@@ -107,9 +117,16 @@ app.use('/api/site-server', siteServerRoutes);
 app.use('/api/messenger', messengerRoutes);
 app.use('/api/notify', notifyRoutes);
 app.use('/api/notify-admin', notifyAdminRoutes);
+// ورودِ کاربرانِ برنامه‌ها (اپِ اندروید، برنامهٔ ویندوز، سایت‌ها) با کدِ شش‌رقمی
+app.use('/api/app', appRoutes);
+app.use('/api/app-admin', appAdminRoutes);
 app.use('/api/ai', aiRoutes);
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));
+
+// صفحهٔ «اتصالِ برنامه‌ها» — آدرسِ سرور، تستِ زندهٔ ورود با کد، و کدِ آمادهٔ
+// اندروید/ویندوز/سایت. همان چیزی که باید به سازندهٔ برنامه بدهید.
+app.get(['/connect', '/اتصال'], serveConnectPage);
 
 
 // ---------------------------- رابط کاربری ----------------------------------
@@ -195,6 +212,10 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
   });
   publicApp.use('/api/messenger', messengerRoutes);
   publicApp.use('/api/notify', notifyRoutes);
+  // برنامه‌ها از اینترنت هم باید بتوانند وارد شوند — پس ورودِ کاربران این‌جا هم هست.
+  // (پنل و فایل‌منیجر هرگز روی این پورت نمی‌آیند.)
+  publicApp.use('/api/app', appRoutes);
+  publicApp.get(['/connect', '/اتصال'], serveConnectPage);
   publicApp.use((req, res) => res.status(404).type('text/plain; charset=utf-8').send('not found'));
 
   syncOnlyServer = http.createServer(publicApp);
@@ -238,6 +259,7 @@ startCollector((snapshot) => {
 // نگهداری دوره‌ای
 const housekeeping = setInterval(() => {
   pruneSessions();
+  pruneAppAuth();
   pruneEvents();
 }, 15 * 60 * 1000);
 housekeeping.unref?.();
@@ -299,6 +321,21 @@ async function main() {
       console.log('     مرورگر جلویش را می‌گیرد. آنجا باید wss:// داشته باشید (تونل).');
       console.log('');
     }
+    // ---- ورودِ برنامه‌ها: همان چیزی که باید در اپِ اندروید/ویندوز/سایت بگذارید ----
+    const otp = otpSettings();
+    const smsOn = otp.sms.provider !== 'none';
+    const mailOn = otp.email.provider !== 'none' && Boolean(otp.email.host);
+    console.log('  📱 ورودِ برنامه‌ها با شماره یا ایمیل (کدِ شش‌رقمی):');
+    console.log(`     آدرسی که در برنامه می‌گذارید:  http://${ips[0] || 'localhost'}:${config.port}`);
+    console.log(`     راهنما و تستِ زنده:            http://${ips[0] || 'localhost'}:${config.port}/connect`);
+    console.log(`     فرستادنِ کد:  POST /api/app/auth/request-code   {"phone":"09121234567"}`);
+    console.log(`     تأییدِ کد:     POST /api/app/auth/verify-code    {"phone":"...","code":"123456"}`);
+    console.log(`     پیامک: ${smsOn ? `روشن (${otp.sms.provider})` : 'خاموش'}   ·   ایمیل: ${mailOn ? `روشن (${otp.email.host})` : 'خاموش'}`);
+    if (!smsOn && !mailOn) {
+      console.log('     ⚠️  تا وقتی پیامک/ایمیل تنظیم نشده، کد در همین پنجره و در «لاگ‌ها» نوشته می‌شود.');
+      console.log('        روشن کردنش: صفحهٔ /connect را باز کنید، بخشِ ۴.');
+    }
+    console.log('');
     console.log(`  پوشهٔ داده:  ${config.dataDir}`);
     console.log(`  ریشهٔ سایت‌ها: ${sitesRoot()}`);
     console.log('==============================================================');

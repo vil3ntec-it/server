@@ -94,6 +94,8 @@ export function pruneSessions() {
 export function verifyToken(token) {
   try {
     const payload = jwt.verify(token, jwtSecret());
+    // توکنِ کاربرانِ برنامه (ورود با کدِ شش‌رقمی) هرگز کلیدِ پنل نمی‌شود
+    if (payload.typ === 'app') return null;
     const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(payload.sid);
     if (!session || session.expires_at < Date.now()) return null;
     return { id: payload.uid, username: payload.username, sessionId: payload.sid };
