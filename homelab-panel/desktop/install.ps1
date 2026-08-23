@@ -243,6 +243,14 @@ $btnBrowse.Add_Click({
   $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
   $dialog.Description = 'پوشه‌ای که برنامه در آن نصب شود'
   $dialog.ShowNewFolderButton = $true
+  # از «این رایانه» شروع شود، نه از پوشهٔ دانلود
+  try {
+    $dialog.RootFolder = [System.Environment+SpecialFolder]::MyComputer
+    $current = $script:PathBox.Text.Trim()
+    $parent = if ($current) { Split-Path -Parent $current } else { '' }
+    if ($parent -and (Test-Path -LiteralPath $parent)) { $dialog.SelectedPath = $parent }
+    elseif (Test-Path -LiteralPath $env:USERPROFILE) { $dialog.SelectedPath = $env:USERPROFILE }
+  } catch { }
   if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
     $chosen = $dialog.SelectedPath
     # اگر پوشهٔ برنامه را انتخاب نکرده، یک پوشهٔ اختصاصی داخلش می‌سازیم
@@ -283,6 +291,14 @@ function Start-Install {
   try {
     Write-Console "نصب در: $target"
     Write-Console ''
+
+    $script:StepLabel.Text = 'بستنِ نسخهٔ در حالِ اجرا…'
+    [System.Windows.Forms.Application]::DoEvents()
+    $closed = Stop-RunningApp
+    if ($closed -gt 0) {
+      Write-Console "$closed نسخهٔ در حالِ اجرا بسته شد (وگرنه فایل‌ها قفل می‌ماندند)."
+      Start-Sleep -Milliseconds 800
+    }
 
     $script:StepLabel.Text = 'کپیِ فایل‌ها…'
     $script:Bar.Value = 10
@@ -338,8 +354,16 @@ function Start-Install {
     [System.Windows.Forms.Application]::DoEvents()
 
     if ($script:OptShortcut.Checked) {
-      $link = New-ProgramShortcut -InstallRoot $target -LinkPath (Join-Path ([Environment]::GetFolderPath('Desktop')) 'برنامهٔ سرور خانگی.lnk')
-      if ($link) { Write-Console "میان‌برِ دسکتاپ: $link" } else { Write-Console 'میان‌برِ دسکتاپ ساخته نشد.' }
+      $desktopPath = [Environment]::GetFolderPath('Desktop')
+      $linkPath = Join-Path $desktopPath 'برنامهٔ سرور خانگی.lnk'
+      $link = New-ProgramShortcut -InstallRoot $target -LinkPath $linkPath
+      if ($link -and (Test-Path -LiteralPath $linkPath)) {
+        Write-Console "✔ میان‌برِ دسکتاپ ساخته شد: $linkPath"
+      } else {
+        # اگر نشد، دستِ‌کم یک میان‌برِ ساده بسازیم تا کاربر بی‌راه نماند
+        Write-Console 'میان‌برِ دسکتاپ ساخته نشد — به‌جایش از این فایل باز کنید:'
+        Write-Console (Join-Path $target 'homelab-panel\desktop\برنامه-سرور.bat')
+      }
     }
     if ($script:OptMenu.Checked) {
       $menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'برنامهٔ سرور خانگی.lnk'
@@ -409,7 +433,8 @@ $btnNext.Add_Click({
 })
 
 $form.Add_Shown({
-  $form.Activate()
+  # پنجرهٔ سیاهِ نصب عمداً پنهان نمی‌شود: اگر چیزی خراب شد، باید دیده شود
+  Show-WindowForReal -Form $form
   Show-Page -Number 1
   $nodeFound = $true
   try { $nodeFound = [bool](Find-NodeExe) } catch { $nodeFound = $false }
@@ -429,6 +454,10 @@ $openedAt = Get-Date
 try {
   $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
   $form.ShowInTaskbar = $true
+  $form.TopMost = $true
+  $form.Show()
+  Show-WindowForReal -Form $form
+  $form.TopMost = $false
   [System.Windows.Forms.Application]::Run($form)
 
   if (((Get-Date) - $openedAt).TotalSeconds -lt 1.5) {

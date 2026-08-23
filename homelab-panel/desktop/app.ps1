@@ -301,11 +301,28 @@ $groupSms.Controls.Add($smsNote)
 
 $tabSettings.Controls.AddRange(@($groupMail, $groupSms))
 
-$btnSaveSettings = New-Button -Text 'ذخیره و راه‌اندازیِ دوبارهٔ سرور' -X 18 -Y 278 -Width 250 -Primary $true
-$btnOpenEnv = New-Button -Text 'باز کردنِ فایل .env' -X 276 -Y 278 -Width 160
+$groupAi = New-Object System.Windows.Forms.GroupBox
+$groupAi.Text = ' دستیارِ هوش مصنوعی '
+$groupAi.Location = New-Object System.Drawing.Point(18, 272)
+$groupAi.Size = New-Object System.Drawing.Size(900, 86)
+$groupAi.Font = $Bold
+
+$script:AiEnabled = New-Object System.Windows.Forms.CheckBox
+$script:AiEnabled.Text = 'دستیار روشن باشد'
+$script:AiEnabled.Location = New-Object System.Drawing.Point(16, 30)
+$script:AiEnabled.Size = New-Object System.Drawing.Size(180, 24)
+$script:AiEnabled.Font = $Face
+$groupAi.Controls.Add($script:AiEnabled)
+
+$script:AiNote = New-Label -Text '' -X 206 -Y 30 -Width 660 -Height 44 -Color $Muted -Font $Face
+$groupAi.Controls.Add($script:AiNote)
+$tabSettings.Controls.Add($groupAi)
+
+$btnSaveSettings = New-Button -Text 'ذخیره و راه‌اندازیِ دوبارهٔ سرور' -X 18 -Y 370 -Width 250 -Primary $true
+$btnOpenEnv = New-Button -Text 'باز کردنِ فایل .env' -X 276 -Y 370 -Width 160
 $tabSettings.Controls.AddRange(@($btnSaveSettings, $btnOpenEnv))
 
-$script:SettingsOut = New-Output -X 18 -Y 320 -Width 900 -Height 190
+$script:SettingsOut = New-Output -X 18 -Y 410 -Width 900 -Height 100
 $script:SettingsOut.Text = 'تنظیمات در فایل .env کنارِ سرور ذخیره می‌شود. بعد از ذخیره، سرور خودش دوباره بالا می‌آید.'
 $tabSettings.Controls.Add($script:SettingsOut)
 
@@ -531,6 +548,15 @@ function Load-Settings {
   $script:SmsKey.Text = & $get 'OTP_SMS_KEY' ''
   $script:SmsSender.Text = & $get 'OTP_SMS_SENDER' ''
   $script:SmsTemplate.Text = & $get 'OTP_SMS_TEMPLATE' ''
+
+  # دستیارِ هوش مصنوعی: نبودنِ کلید یعنی روشن (پیش‌فرضِ سرور)
+  $aiValue = & $get 'HLP_AI_ENABLED' '1'
+  $script:AiEnabled.Checked = ($aiValue -ne '0')
+  $script:AiNote.Text = if ($script:AiEnabled.Checked) {
+    'روشن است: با سرور بالا می‌آید و سایت از راهِ /ai/support به آن می‌رسد. اگر کامپیوتر ضعیف است یا لازمش ندارید، تیک را بردارید.'
+  } else {
+    'خاموش است: هیچ پروسه‌ای برای دستیار اجرا نمی‌شود و رَم و پردازنده آزاد می‌ماند.'
+  }
 
   $provider = & $get 'OTP_SMS_PROVIDER' 'none'
   $index = $script:SmsProvider.Items.IndexOf($provider)
@@ -808,6 +834,7 @@ $btnSaveSettings.Add_Click({
     'OTP_SMS_KEY'      = $script:SmsKey.Text.Trim()
     'OTP_SMS_SENDER'   = $script:SmsSender.Text.Trim()
     'OTP_SMS_TEMPLATE' = $script:SmsTemplate.Text.Trim()
+    'HLP_AI_ENABLED'   = $(if ($script:AiEnabled.Checked) { '1' } else { '0' })
   }
   # اگر ایمیل خالی است، کلِ بخشِ ایمیل برداشته شود تا سرور فکر نکند تنظیم شده
   if (-not $values['OTP_EMAIL_USER']) {
@@ -987,7 +1014,9 @@ function Invoke-Safely {
 $script:StartupErrors = @()
 
 $form.Add_Shown({
-  $form.Activate()
+  # ⚠️ مهم: وگرنه پنجره اجرا می‌شود ولی نامرئی می‌ماند
+  Hide-OwnConsole
+  Show-WindowForReal -Form $form
 
   Invoke-Safely 'خواندنِ تنظیمات' { Load-Settings } | Out-Null
   Invoke-Safely 'وضعیتِ سرور' { Update-Status | Out-Null } | Out-Null
@@ -1038,6 +1067,10 @@ $openedAt = Get-Date
 try {
   $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
   $form.ShowInTaskbar = $true
+  $form.TopMost = $true      # یک لحظه بالای همه، تا حتماً دیده شود
+  $form.Show()
+  Show-WindowForReal -Form $form
+  $form.TopMost = $false
   [System.Windows.Forms.Application]::Run($form)
 
   # اگر پنجره در یک چشم‌به‌هم‌زدن بسته شد، یعنی چیزی خراب است — بی‌صدا نرویم

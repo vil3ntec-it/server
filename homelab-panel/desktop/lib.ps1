@@ -1097,3 +1097,89 @@ function Show-InputDialog {
   if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { return $box.Text }
   return ''
 }
+
+# ---------------------------------------------------------------------------
+#  نمایشِ اجباریِ پنجره
+#
+#  چرا لازم است: وقتی برنامه را بی‌پنجرهٔ سیاه اجرا می‌کنیم، ویندوز به پروسه
+#  می‌گوید «پنهان باش». اولین پنجره‌ای که .NET باز می‌کند همان دستور را به ارث
+#  می‌برد و **نامرئی** می‌ماند — برنامه در حالِ اجراست (پوشه قفل می‌شود) ولی
+#  هیچ‌چیز دیده نمی‌شود. راهِ حل: با خودِ ویندوز صریحاً بگوییم «نشانش بده».
+# ---------------------------------------------------------------------------
+
+$script:Win32Ready = $false
+try {
+  if (-not ('HomeLab.Win32' -as [type])) {
+    Add-Type -Namespace HomeLab -Name Win32 -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+[DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
+[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+'@
+  }
+  $script:Win32Ready = $true
+} catch {
+  $script:Win32Ready = $false
+}
+
+<#
+  .SYNOPSIS
+  پنجره را به‌زور نشان می‌دهد و می‌آورد جلو.
+#>
+function Show-WindowForReal {
+  param([Parameter(Mandatory = $true)]$Form)
+
+  try { $Form.Visible = $true } catch { }
+  try { $Form.WindowState = [System.Windows.Forms.FormWindowState]::Normal } catch { }
+
+  if (-not $script:Win32Ready) { return }
+  try {
+    $handle = $Form.Handle
+    if ($handle -ne [IntPtr]::Zero) {
+      [HomeLab.Win32]::ShowWindow($handle, 5) | Out-Null   # SW_SHOW
+      [HomeLab.Win32]::BringWindowToTop($handle) | Out-Null
+      [HomeLab.Win32]::SetForegroundWindow($handle) | Out-Null
+    }
+  } catch { }
+  try { $Form.Activate() } catch { }
+}
+
+<#
+  .SYNOPSIS
+  اگر پنجرهٔ سیاهی به این پروسه چسبیده، پنهانش می‌کند.
+#>
+function Hide-OwnConsole {
+  if (-not $script:Win32Ready) { return }
+  try {
+    $console = [HomeLab.Win32]::GetConsoleWindow()
+    if ($console -ne [IntPtr]::Zero) { [HomeLab.Win32]::ShowWindow($console, 0) | Out-Null }
+  } catch { }
+}
+
+<#
+  .SYNOPSIS
+  اگر نسخهٔ دیگری از خودِ برنامه در حالِ اجراست، می‌بنددش.
+  (وگرنه پوشه قفل می‌ماند و نصبِ تازه نمی‌تواند فایل‌ها را عوض کند.)
+#>
+function Stop-RunningApp {
+  $closed = 0
+  foreach ($name in @('powershell.exe', 'wscript.exe')) {
+    try {
+      $rows = Get-CimInstance Win32_Process -Filter "Name='$name'" -ErrorAction SilentlyContinue
+    } catch {
+      $rows = $null
+    }
+    foreach ($row in @($rows)) {
+      if (-not $row) { continue }
+      $line = [string]$row.CommandLine
+      if (-not $line) { continue }
+      if ($line -notmatch 'app\.ps1|launch\.vbs') { continue }
+      if ($row.ProcessId -eq $PID) { continue }
+      try {
+        Stop-Process -Id $row.ProcessId -Force -ErrorAction Stop
+        $closed++
+      } catch { }
+    }
+  }
+  return $closed
+}
