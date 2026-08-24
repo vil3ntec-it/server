@@ -1078,8 +1078,15 @@ function Write-AppError {
 
   $path = Get-ErrorLogPath -ServerDir $ServerDir
   $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-  $message = try { $ErrorRecord.Exception.Message } catch { [string]$ErrorRecord }
-  $stack = try { $ErrorRecord.ScriptStackTrace } catch { '' }
+  # ورودی می‌تواند ErrorRecord باشد (از catch) یا Exception خام (از WPF)
+  $message = ''
+  try { if ($ErrorRecord.Exception -and $ErrorRecord.Exception.Message) { $message = [string]$ErrorRecord.Exception.Message } } catch { }
+  if (-not $message) { try { if ($ErrorRecord.Message) { $message = [string]$ErrorRecord.Message } } catch { } }
+  if (-not $message) { $message = [string]$ErrorRecord }
+
+  $stack = ''
+  try { if ($ErrorRecord.ScriptStackTrace) { $stack = [string]$ErrorRecord.ScriptStackTrace } } catch { }
+  if (-not $stack) { try { if ($ErrorRecord.StackTrace) { $stack = [string]$ErrorRecord.StackTrace } } catch { } }
   $line = "[$stamp] $Where`r`n$message`r`n$stack`r`n----------------------------------------`r`n"
   try {
     $dir = Split-Path -Parent $path
@@ -1109,6 +1116,10 @@ function Show-InputDialog {
   $dialog.MaximizeBox = $false
   $dialog.RightToLeft = [System.Windows.Forms.RightToLeft]::Yes
   $dialog.RightToLeftLayout = $true
+  # ⚠️ پنجرهٔ اصلی تمام‌صفحه است؛ بدونِ این، کادر پشتش می‌رود و به‌نظر می‌رسد
+  #    دکمه هیچ کاری نکرده.
+  $dialog.TopMost = $true
+  $dialog.ShowInTaskbar = $false
   $dialog.Font = New-Object System.Drawing.Font('Tahoma', 9.75)
 
   $label = New-Object System.Windows.Forms.Label

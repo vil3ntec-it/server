@@ -124,12 +124,22 @@ function Copy-Clip {
 
 function Say {
   param([string]$Message)
-  [System.Windows.MessageBox]::Show($Message, 'سرور خانگی') | Out-Null
+  # صاحبِ پنجره را می‌دهیم تا پیام پشتِ پنجرهٔ تمام‌صفحه گم نشود
+  try {
+    [System.Windows.MessageBox]::Show($script:Window, $Message, 'سرور خانگی') | Out-Null
+  } catch {
+    [System.Windows.MessageBox]::Show($Message, 'سرور خانگی') | Out-Null
+  }
 }
 
 function Ask {
   param([string]$Message)
-  return ([System.Windows.MessageBox]::Show($Message, 'سرور خانگی', [System.Windows.MessageBoxButton]::YesNo) -eq [System.Windows.MessageBoxResult]::Yes)
+  $answer = try {
+    [System.Windows.MessageBox]::Show($script:Window, $Message, 'سرور خانگی', [System.Windows.MessageBoxButton]::YesNo)
+  } catch {
+    [System.Windows.MessageBox]::Show($Message, 'سرور خانگی', [System.Windows.MessageBoxButton]::YesNo)
+  }
+  return ($answer -eq [System.Windows.MessageBoxResult]::Yes)
 }
 
 function Pump {
@@ -380,10 +390,16 @@ function Update-Sites {
     return
   }
   foreach ($site in $rows) {
-    $state = if ($site.running) { '● در حالِ اجرا' } else { '○ خاموش' }
-    $port = if ($site.port) { "پورت $($site.port)" } else { 'بدونِ پورت' }
-    $domain = if ($site.domain) { " · $($site.domain)" } else { '' }
-    [void]$ui.LstSites.Items.Add("$state   $($site.name)   —   $($site.kind) · $port$domain")
+    $state = if ($site.online) { '● آنلاین' } else { '○ خاموش' }
+    $bits = @()
+    if ($site.kind) { $bits += [string]$site.kind }
+    if ($site.port) { $bits += "پورت $($site.port)" }
+    $address = ''
+    if ($site.publicUrls -and @($site.publicUrls).Count -gt 0) { $address = [string]@($site.publicUrls)[0] }
+    elseif ($site.domain) { $address = [string]$site.domain }
+    if ($address) { $bits += $address }
+    if ($site.liveConnections) { $bits += "$($site.liveConnections) دستگاهِ وصل" }
+    [void]$ui.LstSites.Items.Add("$state   $($site.name)   —   " + ($bits -join '  ·  '))
   }
 }
 
