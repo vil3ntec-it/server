@@ -45,6 +45,8 @@ import {
   settingsFor,
   checkAccess,
   touchClient,
+  summaryByKind,
+  cleanKind,
 } from '../appauth/clients.js';
 
 const router = Router();
@@ -253,7 +255,7 @@ adminRouter.post('/clients', (req, res) => {
   if (getClient(slug)) {
     return res.status(409).json({ ok: false, error: 'exists', message: 'برنامه‌ای با همین شناسه هست' });
   }
-  const client = ensureClient(slug, { name: req.body?.name || slug });
+  const client = ensureClient(slug, { name: req.body?.name || slug, kind: cleanKind(req.body?.kind) });
   res.json({ ok: true, client: publicClient(client) });
 });
 
@@ -273,6 +275,39 @@ adminRouter.delete('/clients/:slug', (req, res) => {
   const result = removeClient(req.params.slug, { withUsers: req.query.withUsers === '1' });
   if (!result.ok) return res.status(404).json(result);
   res.json(result);
+});
+
+/* همه‌چیزِ صفحهٔ نخستِ برنامه در یک درخواست: وضعیتِ سرور، آدرس‌ها، سه کادر،
+   و آن‌چه روشن یا خاموش است. */
+adminRouter.get('/overview', (req, res) => {
+  const s = otpSettings();
+  let tunnel = null;
+  try {
+    const state = tunnelState();
+    tunnel = { status: state.status, url: state.url || null, error: state.error || null };
+  } catch {
+    tunnel = null;
+  }
+
+  res.json({
+    ok: true,
+    version: versionInfo.version,
+    startedAt: versionInfo.startedAt,
+    port: config.port,
+    publicPort: config.siteSync.port || null,
+    tunnel,
+    ai: { enabled: config.aiEnabled, port: config.aiPort },
+    delivery: {
+      smsReady: s.sms.provider !== 'none',
+      smsProvider: s.sms.provider,
+      emailReady: s.email.provider !== 'none' && Boolean(s.email.host),
+      emailHost: s.email.host || null,
+      codeLength: s.codeLength,
+      codeTtl: s.codeTtlSeconds,
+    },
+    kinds: summaryByKind(),
+    stats: stats(),
+  });
 });
 
 adminRouter.get('/users', (req, res) => {

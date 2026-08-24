@@ -1129,19 +1129,34 @@ try {
 function Show-WindowForReal {
   param([Parameter(Mandatory = $true)]$Form)
 
-  try { $Form.Visible = $true } catch { }
-  try { $Form.WindowState = [System.Windows.Forms.FormWindowState]::Normal } catch { }
+  $handle = [IntPtr]::Zero
+
+  # پنجرهٔ WPF (برنامهٔ اصلی)
+  try {
+    if ($null -ne $Form.Dispatcher) {
+      $Form.Visibility = [System.Windows.Visibility]::Visible
+      $Form.Activate() | Out-Null
+      $helper = New-Object System.Windows.Interop.WindowInteropHelper($Form)
+      $handle = $helper.Handle
+    }
+  } catch { }
+
+  # پنجرهٔ WinForms (نصب‌کننده)
+  if ($handle -eq [IntPtr]::Zero) {
+    try { $Form.Visible = $true } catch { }
+    try { $Form.WindowState = [System.Windows.Forms.FormWindowState]::Normal } catch { }
+    try { $handle = $Form.Handle } catch { }
+  }
 
   if (-not $script:Win32Ready) { return }
   try {
-    $handle = $Form.Handle
     if ($handle -ne [IntPtr]::Zero) {
       [HomeLab.Win32]::ShowWindow($handle, 5) | Out-Null   # SW_SHOW
       [HomeLab.Win32]::BringWindowToTop($handle) | Out-Null
       [HomeLab.Win32]::SetForegroundWindow($handle) | Out-Null
     }
   } catch { }
-  try { $Form.Activate() } catch { }
+  try { $Form.Activate() | Out-Null } catch { }
 }
 
 <#

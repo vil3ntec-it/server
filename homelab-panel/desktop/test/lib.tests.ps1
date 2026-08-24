@@ -145,6 +145,63 @@ try {
   Check 'نسخه از package.json خوانده می‌شود' ((Get-LocalVersion -ServerDir $fakeServer) -eq '1.1.1')
   Check 'نبودنِ فایل، برنامه را نمی‌خواباند' ((Get-LocalVersion -ServerDir (Join-Path $temp 'nowhere')) -eq '0.0.0')
 
+  # --------------------------------------------------- ظاهرِ برنامه (XAML) --
+  Write-Host "`n> ظاهرِ برنامه"
+  $desktopDir = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
+  $xamlPath = Join-Path $desktopDir 'ui.xaml'
+  $appPath = Join-Path $desktopDir 'app.ps1'
+
+  Check 'فایلِ ظاهر هست' (Test-Path -LiteralPath $xamlPath)
+  $xaml = $null
+  try {
+    $xaml = [xml][System.IO.File]::ReadAllText($xamlPath, [System.Text.Encoding]::UTF8)
+    Check 'XAML خوانده می‌شود' ($null -ne $xaml)
+  } catch {
+    Check 'XAML خوانده می‌شود' $false $_.Exception.Message
+  }
+
+  if ($xaml) {
+    # همهٔ نام‌های داخلِ ظاهر
+    $names = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($node in $xaml.SelectNodes('//*')) {
+      $value = $node.GetAttribute('Name', 'http://schemas.microsoft.com/winfx/2006/xaml')
+      if ($value) { [void]$names.Add($value) }
+    }
+    Check 'ظاهر نام‌گذاری شده است' ($names.Count -gt 40) "شمار=$($names.Count)"
+
+    $appText = [System.IO.File]::ReadAllText($appPath, [System.Text.Encoding]::UTF8)
+
+    # نام‌هایی که کد از FindName می‌خواهد باید در ظاهر باشند
+    $wanted = @()
+    foreach ($match in [regex]::Matches($appText, "'([A-Z][A-Za-z0-9]+)'")) {
+      $candidate = $match.Groups[1].Value
+      if ($candidate -match '^(Lbl|Btn|Txt|Cmb|Chk|Lst|Nav|Page|Card)') { $wanted += $candidate }
+    }
+    $missing = @($wanted | Sort-Object -Unique | Where-Object { -not $names.Contains($_) })
+    Check 'هر نامی که کد می‌خواهد در ظاهر هست' ($missing.Count -eq 0) ($missing -join '، ')
+
+    # و برعکس: هر عنصرِ نام‌دار باید در کد به کار رفته باشد (وگرنه یعنی جا مانده)
+    $unused = @($names | Where-Object { $_ -match '^(Lbl|Btn|Txt|Cmb|Chk|Lst|Nav|Page|Card)' -and $appText -notlike "*$_*" })
+    Check 'چیزی در ظاهر بی‌استفاده نمانده' ($unused.Count -eq 0) ($unused -join '، ')
+
+    Check 'خطِ وزیر همراهِ برنامه است' (Test-Path -LiteralPath (Join-Path $desktopDir 'fonts/Vazirmatn-Regular.ttf'))
+    Check 'پنجره تمام‌صفحه باز می‌شود' ($appText.Contains('WindowState]::Maximized'))
+
+    # کادرهایی که کاربر باید در آن‌ها بنویسد نباید فقط‌خواندنی باشند
+    $mustType = @('TxtOtpTarget', 'TxtOtpCode', 'TxtBranch', 'TxtMailUser', 'TxtMailHost', 'TxtAppName')
+    $locked = @()
+    foreach ($node in $xaml.SelectNodes('//*')) {
+      $nodeName = $node.GetAttribute('Name', 'http://schemas.microsoft.com/winfx/2006/xaml')
+      if (-not $nodeName -or $mustType -notcontains $nodeName) { continue }
+      $style = [string]$node.GetAttribute('Style')
+      $readOnly = [string]$node.GetAttribute('IsReadOnly')
+      # سبکِ Mono فقط‌خواندنی است، مگر خودش خلافش را بگوید
+      if ($style -like '*Mono*' -and $readOnly -ne 'False') { $locked += $nodeName }
+      if ($readOnly -eq 'True') { $locked += $nodeName }
+    }
+    Check 'کادرهای نوشتنی قفل نیستند' ($locked.Count -eq 0) ($locked -join '، ')
+  }
+
   # ------------------------------------------------------- گزارشِ خطاها --
   Write-Host "`n> گزارشِ خطا (تا پنجره بی‌صدا گم نشود)"
   $errServer = Join-Path $temp 'err-server'

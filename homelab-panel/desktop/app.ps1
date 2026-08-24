@@ -1,43 +1,38 @@
 ﻿# ---------------------------------------------------------------------------
-#  برنامهٔ سرور خانگی — پنجرهٔ ویندوزیِ واقعی (WinForms)
+#  برنامهٔ سرور خانگی — پنجرهٔ اصلی (WPF)
 #
-#  نه مرورگر است نه WebView؛ همان دکمه‌ها و کادرهای خودِ ویندوز.
-#  با فایلِ «برنامه-سرور.bat» باز می‌شود.
+#  چرا WPF و نه WinForms: WinForms قیافهٔ ویندوزِ قدیم را دارد و نمی‌شود
+#  خوشگلش کرد. WPF بومیِ ویندوز است (نه مرورگر و نه WebView) ولی رنگ، گوشهٔ
+#  گرد، سایه، انیمیشن و خطِ دلخواه (وزیرمتن) را می‌پذیرد.
 #
-#  کاری که می‌کند:
-#    • سرور را روشن/خاموش می‌کند و می‌گوید بالاست یا نه
-#    • آدرسی که باید در اپِ اندروید/ویندوز/سایت بگذارید را نشان می‌دهد
-#    • ورود با کدِ شش‌رقمی را همین‌جا تست می‌کند
-#    • تنظیماتِ پیامک و جی‌میل را در .env می‌نویسد
-#    • خودش را از GitHub به‌روز می‌کند
+#  ظاهر در ui.xaml است و رفتار این‌جا. مغزِ کار (API، .env، به‌روزرسانی)
+#  در lib.ps1 است تا بشود بدونِ پنجره آزمودش.
 # ---------------------------------------------------------------------------
 
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-[System.Windows.Forms.Application]::EnableVisualStyles()
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName PresentationCore
+Add-Type -AssemblyName WindowsBase
+Add-Type -AssemblyName System.Windows.Forms   # فقط برای پیام‌های ساده و کلیپ‌بورد
 
-# مغزِ برنامه. اگر همین هم بالا نیامد، دیگر هیچ‌چیز کار نمی‌کند — پس خطایش
-# را حتماً نشان می‌دهیم، وگرنه کاربر فقط می‌بیند «باز شد و گم شد».
 try {
   . (Join-Path $PSScriptRoot 'lib.ps1')
 } catch {
-  $logPath = Join-Path ([System.IO.Path]::GetTempPath()) 'homelab-desktop-error.log'
-  try {
-    [System.IO.File]::AppendAllText($logPath, "$(Get-Date)`r`nlib.ps1`r`n$($_.Exception.Message)`r`n$($_.ScriptStackTrace)`r`n`r`n")
-  } catch { }
-  [System.Windows.Forms.MessageBox]::Show(
-    "فایلِ lib.ps1 بالا نیامد:`r`n`r`n$($_.Exception.Message)`r`n`r`nگزارش: $logPath",
-    'برنامهٔ سرور خانگی') | Out-Null
+  [System.Windows.MessageBox]::Show("فایلِ lib.ps1 بالا نیامد:`r`n`r`n$($_.Exception.Message)", 'سرور خانگی')
   exit 1
 }
 
-$script:DesktopDir = $PSScriptRoot
-$script:ServerDir  = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\server'))
+$script:DesktopDir  = $PSScriptRoot
+$script:ServerDir   = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\server'))
 $script:ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
-$script:EnvPath    = Join-Path $script:ServerDir '.env'
-$script:Version    = Get-LocalVersion -ServerDir $script:ServerDir
-$script:Config     = $null
-$script:BaseUrl    = 'http://localhost:4700'
+$script:EnvPath     = Join-Path $script:ServerDir '.env'
+$script:Version     = Get-LocalVersion -ServerDir $script:ServerDir
+$script:Clients     = @()
+$script:Sites       = @()
+$script:Overview    = $null
+$script:BaseUrl     = ''
+$script:LanUrl      = ''
+$script:NetUrl      = ''
+$script:UpdateReady = ''
 
 function Get-PanelPort {
   $values = Read-EnvFile -Path $script:EnvPath
@@ -47,755 +42,528 @@ function Get-PanelPort {
 $script:Port = Get-PanelPort
 
 # ---------------------------------------------------------------------------
-#  ساختنِ کنترل‌ها — چند کمکیِ کوتاه تا کدِ پایین شلوغ نشود
+#  ساختنِ پنجره از روی XAML
 # ---------------------------------------------------------------------------
-$Ink   = [System.Drawing.Color]::FromArgb(18, 23, 43)
-$Muted = [System.Drawing.Color]::FromArgb(105, 113, 140)
-$Brand = [System.Drawing.Color]::FromArgb(43, 87, 214)
-$Good  = [System.Drawing.Color]::FromArgb(15, 130, 80)
-$Bad   = [System.Drawing.Color]::FromArgb(200, 40, 35)
-$Face  = New-Object System.Drawing.Font('Tahoma', 9.75)
-$Bold  = New-Object System.Drawing.Font('Tahoma', 9.75, [System.Drawing.FontStyle]::Bold)
-$Mono  = New-Object System.Drawing.Font('Consolas', 9.75)
-
-function New-Label {
-  param([string]$Text, [int]$X, [int]$Y, [int]$Width = 300, [int]$Height = 22,
-        $Color = $null, $Font = $null)
-  $label = New-Object System.Windows.Forms.Label
-  $label.Text = $Text
-  $label.Location = New-Object System.Drawing.Point($X, $Y)
-  $label.Size = New-Object System.Drawing.Size($Width, $Height)
-  $label.ForeColor = if ($Color) { $Color } else { $Ink }
-  $label.Font = if ($Font) { $Font } else { $Face }
-  return $label
+$xamlPath = Join-Path $PSScriptRoot 'ui.xaml'
+try {
+  $xamlText = [System.IO.File]::ReadAllText($xamlPath, [System.Text.Encoding]::UTF8)
+  $reader = New-Object System.Xml.XmlNodeReader ([xml]$xamlText)
+  $script:Window = [Windows.Markup.XamlReader]::Load($reader)
+} catch {
+  $logPath = Write-AppError -ErrorRecord $_ -Where 'ساختنِ پنجره' -ServerDir $script:ServerDir
+  [System.Windows.MessageBox]::Show("ظاهرِ برنامه بالا نیامد:`r`n`r`n$($_.Exception.Message)`r`n`r`nگزارش: $logPath", 'سرور خانگی')
+  exit 1
 }
 
-function New-Box {
-  param([int]$X, [int]$Y, [int]$Width, [string]$Value = '', [bool]$Password = $false)
-  $box = New-Object System.Windows.Forms.TextBox
-  $box.Location = New-Object System.Drawing.Point($X, $Y)
-  $box.Size = New-Object System.Drawing.Size($Width, 24)
-  $box.Font = $Face
-  $box.Text = $Value
-  if ($Password) { $box.UseSystemPasswordChar = $true }
-  return $box
+<# هر عنصرِ نام‌دارِ XAML را با همان نام صدا می‌زنیم: $ui.BtnStart #>
+$script:ui = @{}
+foreach ($name in @(
+    'LblVersion','LblServerState','BtnStart','BtnStop','LblTitle','LblSubtitle','BtnRefresh',
+    'NavHome','NavApps','NavOtp','NavSites','NavSettings','NavTerminal','NavUpdate',
+    'PageHome','PageApps','PageOtp','PageSites','PageSettings','PageTerminal','PageUpdate',
+    'TxtMainAddress','LblAddressHint','BtnCopyMain','BtnCopyLan','BtnCopyNet',
+    'CardAndroid','CardWeb','CardDesktop','LblAndroidCount','LblAndroidInfo',
+    'LblWebCount','LblWebInfo','LblDesktopCount','LblDesktopInfo',
+    'LblSms','LblMail','LblTunnel','LblAi','LblUsers','LblOnline','LblCodes','LblLogins',
+    'CmbKindFilter','BtnNewApp','LstApps','LblAppTitle','TxtAppName','CmbAppKind','TxtAppSms',
+    'TxtAppKey','TxtAppLen','ChkAppKeyReq','ChkAppEnabled','BtnSaveApp','BtnNewKey','BtnDelApp',
+    'BtnCopyApi','TxtApiCard',
+    'TxtOtpTarget','CmbOtpApp','BtnSendCode','TxtOtpCode','BtnVerifyCode','LblOtpState','TxtOtpOut',
+    'LstSites',
+    'TxtMailHost','TxtMailUser','TxtMailPort','TxtMailPass','CmbSmsProvider','TxtSmsSender',
+    'TxtSmsKey','TxtSmsTemplate','ChkAi','LblAiNote','BtnSaveSettings','BtnOpenEnv','LblSettingsState',
+    'BtnLogRefresh','BtnLogClear','BtnLogCopy','ChkLogAuto','TxtLog',
+    'LblUpdateVersion','TxtBranch','ChkAutoCheck','BtnCheckUpdate','BtnDoUpdate','BtnShortcut','TxtUpdateOut'
+  )) {
+  $script:ui[$name] = $script:Window.FindName($name)
 }
+$ui = $script:ui
 
-function New-Button {
-  param([string]$Text, [int]$X, [int]$Y, [int]$Width = 130, [int]$Height = 30, [bool]$Primary = $false)
-  $button = New-Object System.Windows.Forms.Button
-  $button.Text = $Text
-  $button.Location = New-Object System.Drawing.Point($X, $Y)
-  $button.Size = New-Object System.Drawing.Size($Width, $Height)
-  $button.Font = $Face
-  $button.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
-  $button.FlatAppearance.BorderSize = 1
-  if ($Primary) {
-    $button.BackColor = $Brand
-    $button.ForeColor = [System.Drawing.Color]::White
-    $button.FlatAppearance.BorderColor = $Brand
-  } else {
-    $button.BackColor = [System.Drawing.Color]::FromArgb(238, 242, 253)
-    $button.ForeColor = $Brand
-    $button.FlatAppearance.BorderColor = [System.Drawing.Color]::FromArgb(214, 223, 245)
+# ------------------------------ خطِ وزیر ------------------------------------
+try {
+  $fontDir = Join-Path $PSScriptRoot 'fonts'
+  if (Test-Path -LiteralPath $fontDir) {
+    $uri = 'file:///' + ($fontDir -replace '\\', '/') + '/#Vazirmatn'
+    $script:Window.FontFamily = New-Object System.Windows.Media.FontFamily($uri)
   }
-  return $button
+} catch { }   # اگر نشد، خطِ پیش‌فرضِ ویندوز
+$script:Window.FontSize = 14
+
+# ---------------------------------------------------------------------------
+#  کمکی‌های کوچک
+# ---------------------------------------------------------------------------
+$script:Brushes = @{
+  Ink   = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(238, 242, 255))
+  Muted = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(142, 154, 196))
+  Good  = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(61, 214, 140))
+  Warn  = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(245, 177, 76))
+  Bad   = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(255, 107, 107))
+  Brand = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(76, 125, 255))
 }
 
-function New-Output {
-  param([int]$X, [int]$Y, [int]$Width, [int]$Height, [bool]$Code = $false)
-  $box = New-Object System.Windows.Forms.TextBox
-  $box.Location = New-Object System.Drawing.Point($X, $Y)
-  $box.Size = New-Object System.Drawing.Size($Width, $Height)
-  $box.Multiline = $true
-  $box.ReadOnly = $true
-  $box.ScrollBars = [System.Windows.Forms.ScrollBars]::Vertical
-  $box.BackColor = [System.Drawing.Color]::FromArgb(248, 250, 255)
-  if ($Code) {
-    $box.Font = $Mono
-    $box.RightToLeft = [System.Windows.Forms.RightToLeft]::No
-    $box.WordWrap = $false
-    $box.ScrollBars = [System.Windows.Forms.ScrollBars]::Both
-  } else {
-    $box.Font = $Face
-  }
-  return $box
+function Set-Text {
+  param($Element, [string]$Text, $Brush = $null)
+  if (-not $Element) { return }
+  $Element.Text = $Text
+  if ($Brush) { $Element.Foreground = $Brush }
 }
 
-function Copy-Text {
+function Copy-Clip {
   param([string]$Text)
   if (-not $Text) { return }
-  try { [System.Windows.Forms.Clipboard]::SetText($Text) } catch { }
+  try { [System.Windows.Clipboard]::SetText($Text) } catch { }
 }
 
-function Show-Busy {
+function Say {
   param([string]$Message)
-  $script:StatusLabel.Text = $Message
-  $script:StatusLabel.ForeColor = $Muted
-  [System.Windows.Forms.Application]::DoEvents()
+  [System.Windows.MessageBox]::Show($Message, 'سرور خانگی') | Out-Null
+}
+
+function Ask {
+  param([string]$Message)
+  return ([System.Windows.MessageBox]::Show($Message, 'سرور خانگی', [System.Windows.MessageBoxButton]::YesNo) -eq [System.Windows.MessageBoxResult]::Yes)
+}
+
+function Pump {
+  # تا پنجره وسطِ کارهای طولانی یخ نزند
+  try {
+    $frame = New-Object System.Windows.Threading.DispatcherFrame
+    [System.Windows.Threading.Dispatcher]::CurrentDispatcher.BeginInvoke(
+      [System.Windows.Threading.DispatcherPriority]::Background,
+      [action] { $frame.Continue = $false }) | Out-Null
+    [System.Windows.Threading.Dispatcher]::PushFrame($frame)
+  } catch { }
+}
+
+function Admin {
+  param([string]$Path, [string]$Method = 'GET', $Body = $null)
+  return Invoke-AdminJson -ServerDir $script:ServerDir -Path $Path -Method $Method -Body $Body -Port $script:Port
 }
 
 # ---------------------------------------------------------------------------
-#  پنجرهٔ اصلی
+#  رفت‌وآمد بینِ صفحه‌ها
 # ---------------------------------------------------------------------------
-$form = New-Object System.Windows.Forms.Form
-$form.Text = "برنامهٔ سرور خانگی — نسخهٔ $($script:Version)"
-$form.Size = New-Object System.Drawing.Size(1000, 720)
-$form.MinimumSize = New-Object System.Drawing.Size(880, 620)
-$form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
-$form.RightToLeft = [System.Windows.Forms.RightToLeft]::Yes
-$form.RightToLeftLayout = $true
-$form.Font = $Face
-$form.BackColor = [System.Drawing.Color]::White
-
-# ------------------------------ نوارِ بالا ---------------------------------
-$header = New-Object System.Windows.Forms.Panel
-$header.Dock = [System.Windows.Forms.DockStyle]::Top
-$header.Height = 70
-$header.BackColor = [System.Drawing.Color]::FromArgb(243, 246, 252)
-
-$script:StatusLabel = New-Label -Text 'در حالِ بررسی…' -X 16 -Y 12 -Width 420 -Height 24 -Color $Muted -Font $Bold
-$script:SubLabel = New-Label -Text '' -X 16 -Y 38 -Width 520 -Height 22 -Color $Muted
-$header.Controls.AddRange(@($script:StatusLabel, $script:SubLabel))
-
-$btnStart = New-Button -Text 'روشن کردنِ سرور' -X 470 -Y 20 -Width 150 -Primary $true
-$btnStop = New-Button -Text 'خاموش کردن' -X 628 -Y 20 -Width 120
-$btnPanel = New-Button -Text 'پنلِ مدیریت' -X 756 -Y 20 -Width 120
-$header.Controls.AddRange(@($btnStart, $btnStop, $btnPanel))
-
-$tabs = New-Object System.Windows.Forms.TabControl
-$tabs.Dock = [System.Windows.Forms.DockStyle]::Fill
-$tabs.Font = $Face
-$tabs.Padding = New-Object System.Drawing.Point(14, 6)
-
-function New-Tab {
-  param([string]$Title)
-  $page = New-Object System.Windows.Forms.TabPage
-  $page.Text = $Title
-  $page.BackColor = [System.Drawing.Color]::White
-  $page.Padding = New-Object System.Windows.Forms.Padding(14)
-  return $page
+$script:PageMap = @{
+  NavHome     = @{ Page = 'PageHome';     Title = 'خانه';                    Sub = 'یک نگاه به همه‌چیز' }
+  NavApps     = @{ Page = 'PageApps';     Title = 'برنامه‌ها و سایت‌ها';      Sub = 'هر کدام آدرس و کلیدِ خودش' }
+  NavOtp      = @{ Page = 'PageOtp';      Title = 'ورود با کدِ یک‌بارمصرف';   Sub = 'همان مسیری که کاربرِ شما طی می‌کند' }
+  NavSites    = @{ Page = 'PageSites';    Title = 'سایت‌های روی سرور';        Sub = 'بدونِ باز کردنِ مرورگر' }
+  NavSettings = @{ Page = 'PageSettings'; Title = 'تنظیمات';                  Sub = 'پیامک، ایمیل، و دستیارِ هوشمند' }
+  NavTerminal = @{ Page = 'PageTerminal'; Title = 'ترمینالِ سرور';            Sub = 'خروجیِ زنده — بدونِ پنجرهٔ سیاه' }
+  NavUpdate   = @{ Page = 'PageUpdate';   Title = 'به‌روزرسانی';              Sub = 'نسخهٔ تازه را از GitHub می‌گیرد' }
 }
 
-# ═══════════════════════════ ۱) آدرسِ سرور ═══════════════════════════════
-$tabAddress = New-Tab -Title '  آدرسِ سرور  '
-
-$tabAddress.Controls.Add((New-Label -Text 'این آدرس را در برنامهٔ اندروید / ویندوز / سایتِ خودتان بگذارید:' -X 18 -Y 16 -Width 600 -Font $Bold))
-$script:AddressBox = New-Output -X 18 -Y 46 -Width 900 -Height 150 -Code $true
-$tabAddress.Controls.Add($script:AddressBox)
-
-$btnCopyLan = New-Button -Text 'کپیِ آدرسِ خانگی' -X 18 -Y 206 -Width 160
-$btnCopyNet = New-Button -Text 'کپیِ آدرسِ اینترنتی' -X 186 -Y 206 -Width 170
-$btnRefreshAddress = New-Button -Text 'بررسیِ دوباره' -X 364 -Y 206 -Width 130
-$tabAddress.Controls.AddRange(@($btnCopyLan, $btnCopyNet, $btnRefreshAddress))
-
-$help = New-Output -X 18 -Y 250 -Width 900 -Height 250
-$help.Text = @'
-کدام آدرس را کجا بگذارم؟
-
-  • برنامه روی همین کامپیوتر است            →  آدرسِ localhost
-  • گوشی یا لپ‌تاپِ دیگر، روی همان وای‌فای   →  آدرسِ خانگی (۱۹۲.۱۶۸.…)
-  • از بیرونِ خانه، یا سایتی که روی هاست است →  آدرسِ اینترنتی (https)
-
-چهار دلیلِ همیشگیِ «وصل نمی‌شود»:
-
-  ۱) سایتِ شما https است ولی آدرسِ سرور را http گذاشته‌اید — مرورگر جلویش را می‌گیرد.
-     راه‌حل: آدرسِ اینترنتی (https) را بگذارید.
-
-  ۲) اپِ اندروید با آدرسِ http: اندروید ۹ به بالا جلویش را می‌گیرد.
-     راه‌حل: یا آدرسِ https، یا در AndroidManifest.xml:  android:usesCleartextTraffic="true"
-
-  ۳) فایروالِ ویندوز پورت را بسته — بارِ اول که ویندوز پرسید، «Allow» را بزنید.
-
-  ۴) گوشی روی اینترنتِ همراه است، نه وای‌فایِ خانه — آن‌وقت آدرسِ ۱۹۲.۱۶۸.… کار نمی‌کند.
-'@
-$tabAddress.Controls.Add($help)
-
-# ═══════════════════════ ۲) تستِ ورود با کد ══════════════════════════════
-$tabLogin = New-Tab -Title '  تستِ ورود با کد  '
-
-$tabLogin.Controls.Add((New-Label -Text 'شمارهٔ موبایل یا ایمیل:' -X 18 -Y 20 -Width 160))
-$script:TargetBox = New-Box -X 182 -Y 17 -Width 260 -Value ''
-$tabLogin.Controls.Add($script:TargetBox)
-
-$tabLogin.Controls.Add((New-Label -Text 'نامِ برنامه:' -X 456 -Y 20 -Width 80))
-$script:AppBox = New-Box -X 540 -Y 17 -Width 150 -Value 'main'
-$tabLogin.Controls.Add($script:AppBox)
-
-$btnSendCode = New-Button -Text 'فرستادنِ کد' -X 704 -Y 15 -Width 130 -Primary $true
-$tabLogin.Controls.Add($btnSendCode)
-
-$tabLogin.Controls.Add((New-Label -Text 'کدِ شش‌رقمی:' -X 18 -Y 62 -Width 160))
-$script:CodeBox = New-Box -X 182 -Y 59 -Width 150
-$script:CodeBox.RightToLeft = [System.Windows.Forms.RightToLeft]::No
-$tabLogin.Controls.Add($script:CodeBox)
-
-$btnVerifyCode = New-Button -Text 'تأییدِ کد' -X 346 -Y 57 -Width 120
-$tabLogin.Controls.Add($btnVerifyCode)
-
-$tabLogin.Controls.Add((New-Label -Text 'نتیجه:' -X 18 -Y 100 -Width 100 -Font $Bold))
-$script:LoginOut = New-Output -X 18 -Y 126 -Width 900 -Height 380 -Code $true
-$script:LoginOut.Text = 'شماره یا ایمیل را بنویسید و «فرستادنِ کد» را بزنید.'
-$tabLogin.Controls.Add($script:LoginOut)
-
-# ═══════════════════ ۳) تنظیماتِ پیامک و ایمیل ═══════════════════════════
-$tabSettings = New-Tab -Title '  پیامک و ایمیل  '
-
-$groupMail = New-Object System.Windows.Forms.GroupBox
-$groupMail.Text = ' ایمیل (جی‌میل یا هر SMTP) '
-$groupMail.Location = New-Object System.Drawing.Point(18, 14)
-$groupMail.Size = New-Object System.Drawing.Size(440, 250)
-$groupMail.Font = $Bold
-
-$groupMail.Controls.Add((New-Label -Text 'سرورِ ایمیل:' -X 16 -Y 32 -Width 110 -Font $Face))
-$script:MailHost = New-Box -X 130 -Y 29 -Width 280 -Value 'smtp.gmail.com'
-$groupMail.Controls.Add($script:MailHost)
-
-$groupMail.Controls.Add((New-Label -Text 'پورت:' -X 16 -Y 66 -Width 110 -Font $Face))
-$script:MailPort = New-Box -X 130 -Y 63 -Width 90 -Value '465'
-$groupMail.Controls.Add($script:MailPort)
-$groupMail.Controls.Add((New-Label -Text '۴۶۵ یا ۵۸۷' -X 228 -Y 66 -Width 120 -Color $Muted -Font $Face))
-
-$groupMail.Controls.Add((New-Label -Text 'آدرسِ ایمیل:' -X 16 -Y 100 -Width 110 -Font $Face))
-$script:MailUser = New-Box -X 130 -Y 97 -Width 280
-$script:MailUser.RightToLeft = [System.Windows.Forms.RightToLeft]::No
-$groupMail.Controls.Add($script:MailUser)
-
-$groupMail.Controls.Add((New-Label -Text 'رمز:' -X 16 -Y 134 -Width 110 -Font $Face))
-$script:MailPass = New-Box -X 130 -Y 131 -Width 280 -Password $true
-$groupMail.Controls.Add($script:MailPass)
-
-$mailNote = New-Label -Text 'جی‌میل: رمزِ عادی کار نمی‌کند. باید App Password بسازید (رمزِ ۱۶ حرفیِ گوگل).' -X 16 -Y 170 -Width 400 -Height 60 -Color $Muted -Font $Face
-$groupMail.Controls.Add($mailNote)
-
-$groupSms = New-Object System.Windows.Forms.GroupBox
-$groupSms.Text = ' پیامک '
-$groupSms.Location = New-Object System.Drawing.Point(474, 14)
-$groupSms.Size = New-Object System.Drawing.Size(444, 250)
-$groupSms.Font = $Bold
-
-$groupSms.Controls.Add((New-Label -Text 'سرویس:' -X 16 -Y 32 -Width 100 -Font $Face))
-$script:SmsProvider = New-Object System.Windows.Forms.ComboBox
-$script:SmsProvider.Location = New-Object System.Drawing.Point(120, 29)
-$script:SmsProvider.Size = New-Object System.Drawing.Size(180, 24)
-$script:SmsProvider.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-$script:SmsProvider.Font = $Face
-[void]$script:SmsProvider.Items.AddRange(@('none', 'kavenegar', 'smsir', 'melipayamak', 'ghasedak', 'webhook'))
-$script:SmsProvider.SelectedIndex = 0
-$groupSms.Controls.Add($script:SmsProvider)
-
-$groupSms.Controls.Add((New-Label -Text 'کلید (API Key):' -X 16 -Y 66 -Width 100 -Font $Face))
-$script:SmsKey = New-Box -X 120 -Y 63 -Width 300 -Password $true
-$groupSms.Controls.Add($script:SmsKey)
-
-$groupSms.Controls.Add((New-Label -Text 'شمارهٔ خط:' -X 16 -Y 100 -Width 100 -Font $Face))
-$script:SmsSender = New-Box -X 120 -Y 97 -Width 180
-$groupSms.Controls.Add($script:SmsSender)
-
-$groupSms.Controls.Add((New-Label -Text 'قالبِ تأیید:' -X 16 -Y 134 -Width 100 -Font $Face))
-$script:SmsTemplate = New-Box -X 120 -Y 131 -Width 180
-$groupSms.Controls.Add($script:SmsTemplate)
-
-$smsNote = New-Label -Text 'اگر قالبِ تأیید ندارید، خالی بگذارید تا پیامکِ ساده فرستاده شود.' -X 16 -Y 170 -Width 400 -Height 50 -Color $Muted -Font $Face
-$groupSms.Controls.Add($smsNote)
-
-$tabSettings.Controls.AddRange(@($groupMail, $groupSms))
-
-$groupAi = New-Object System.Windows.Forms.GroupBox
-$groupAi.Text = ' دستیارِ هوش مصنوعی '
-$groupAi.Location = New-Object System.Drawing.Point(18, 272)
-$groupAi.Size = New-Object System.Drawing.Size(900, 86)
-$groupAi.Font = $Bold
-
-$script:AiEnabled = New-Object System.Windows.Forms.CheckBox
-$script:AiEnabled.Text = 'دستیار روشن باشد'
-$script:AiEnabled.Location = New-Object System.Drawing.Point(16, 30)
-$script:AiEnabled.Size = New-Object System.Drawing.Size(180, 24)
-$script:AiEnabled.Font = $Face
-$groupAi.Controls.Add($script:AiEnabled)
-
-$script:AiNote = New-Label -Text '' -X 206 -Y 30 -Width 660 -Height 44 -Color $Muted -Font $Face
-$groupAi.Controls.Add($script:AiNote)
-$tabSettings.Controls.Add($groupAi)
-
-$btnSaveSettings = New-Button -Text 'ذخیره و راه‌اندازیِ دوبارهٔ سرور' -X 18 -Y 370 -Width 250 -Primary $true
-$btnOpenEnv = New-Button -Text 'باز کردنِ فایل .env' -X 276 -Y 370 -Width 160
-$tabSettings.Controls.AddRange(@($btnSaveSettings, $btnOpenEnv))
-
-$script:SettingsOut = New-Output -X 18 -Y 410 -Width 900 -Height 100
-$script:SettingsOut.Text = 'تنظیمات در فایل .env کنارِ سرور ذخیره می‌شود. بعد از ذخیره، سرور خودش دوباره بالا می‌آید.'
-$tabSettings.Controls.Add($script:SettingsOut)
-
-# ═══════════════ ۴) برنامه‌ها و سایت‌ها (هر کدام آدرسِ API خودش) ═══════════
-$tabApps = New-Tab -Title '  برنامه‌ها و سایت‌ها  '
-
-$btnNewApp = New-Button -Text 'برنامهٔ تازه' -X 18 -Y 14 -Width 120 -Primary $true
-$btnReloadApps = New-Button -Text 'تازه کردن' -X 146 -Y 14 -Width 110
-$btnNewKey = New-Button -Text 'کلیدِ تازه' -X 264 -Y 14 -Width 110
-$btnDeleteApp = New-Button -Text 'حذف' -X 382 -Y 14 -Width 90
-$tabApps.Controls.AddRange(@($btnNewApp, $btnReloadApps, $btnNewKey, $btnDeleteApp))
-
-$script:AppsList = New-Object System.Windows.Forms.ListBox
-$script:AppsList.Location = New-Object System.Drawing.Point(18, 52)
-$script:AppsList.Size = New-Object System.Drawing.Size(270, 458)
-$script:AppsList.Font = $Face
-$tabApps.Controls.Add($script:AppsList)
-
-$tabApps.Controls.Add((New-Label -Text 'نامِ نمایشی:' -X 300 -Y 56 -Width 90))
-$script:AppName = New-Box -X 392 -Y 53 -Width 200
-$tabApps.Controls.Add($script:AppName)
-
-$tabApps.Controls.Add((New-Label -Text 'شناسه:' -X 606 -Y 56 -Width 60))
-$script:AppSlug = New-Label -Text '—' -X 668 -Y 56 -Width 250 -Font $Bold
-$script:AppSlug.ForeColor = $Brand
-$tabApps.Controls.Add($script:AppSlug)
-
-$tabApps.Controls.Add((New-Label -Text 'کلیدِ برنامه:' -X 300 -Y 90 -Width 90))
-$script:AppKey = New-Box -X 392 -Y 87 -Width 340
-$script:AppKey.ReadOnly = $true
-$script:AppKey.RightToLeft = [System.Windows.Forms.RightToLeft]::No
-$tabApps.Controls.Add($script:AppKey)
-
-$script:AppRequireKey = New-Object System.Windows.Forms.CheckBox
-$script:AppRequireKey.Text = 'بدونِ کلید کار نکند'
-$script:AppRequireKey.Location = New-Object System.Drawing.Point(742, 88)
-$script:AppRequireKey.Size = New-Object System.Drawing.Size(180, 24)
-$script:AppRequireKey.Font = $Face
-
-$script:AppEnabled = New-Object System.Windows.Forms.CheckBox
-$script:AppEnabled.Text = 'روشن'
-$script:AppEnabled.Location = New-Object System.Drawing.Point(300, 120)
-$script:AppEnabled.Size = New-Object System.Drawing.Size(90, 24)
-$script:AppEnabled.Font = $Face
-$tabApps.Controls.AddRange(@($script:AppRequireKey, $script:AppEnabled))
-
-$tabApps.Controls.Add((New-Label -Text 'متنِ پیامکِ این برنامه:' -X 392 -Y 122 -Width 150))
-$script:AppSmsText = New-Box -X 546 -Y 119 -Width 260
-$tabApps.Controls.Add($script:AppSmsText)
-
-$tabApps.Controls.Add((New-Label -Text 'طولِ کد:' -X 818 -Y 122 -Width 60))
-$script:AppCodeLength = New-Box -X 880 -Y 119 -Width 40
-$script:AppCodeLength.RightToLeft = [System.Windows.Forms.RightToLeft]::No
-$tabApps.Controls.Add($script:AppCodeLength)
-
-$btnSaveApp = New-Button -Text 'ذخیرهٔ این برنامه' -X 300 -Y 152 -Width 160 -Primary $true
-$btnCopyApi = New-Button -Text 'کپیِ آدرس‌های API' -X 468 -Y 152 -Width 170
-$tabApps.Controls.AddRange(@($btnSaveApp, $btnCopyApi))
-
-$script:AppCard = New-Output -X 300 -Y 192 -Width 620 -Height 318 -Code $true
-$script:AppCard.Text = 'از فهرستِ سمتِ راست یک برنامه را انتخاب کنید، یا «برنامهٔ تازه» بسازید.'
-$tabApps.Controls.Add($script:AppCard)
-
-# ═══════════════════════ ۴) کدِ آمادهٔ برنامه ════════════════════════════
-$tabCode = New-Tab -Title '  کدِ برنامه‌ها  '
-
-$tabCode.Controls.Add((New-Label -Text 'برنامه‌ات با چه چیزی نوشته شده؟' -X 18 -Y 18 -Width 240))
-$script:SnippetKind = New-Object System.Windows.Forms.ComboBox
-$script:SnippetKind.Location = New-Object System.Drawing.Point(262, 15)
-$script:SnippetKind.Size = New-Object System.Drawing.Size(220, 24)
-$script:SnippetKind.DropDownStyle = [System.Windows.Forms.ComboBoxStyle]::DropDownList
-$script:SnippetKind.Font = $Face
-[void]$script:SnippetKind.Items.AddRange((Get-SnippetKinds))
-$script:SnippetKind.SelectedIndex = 0
-$tabCode.Controls.Add($script:SnippetKind)
-
-$btnCopyCode = New-Button -Text 'کپیِ کد' -X 496 -Y 13 -Width 120 -Primary $true
-$tabCode.Controls.Add($btnCopyCode)
-
-$script:SnippetBox = New-Output -X 18 -Y 52 -Width 900 -Height 460 -Code $true
-$tabCode.Controls.Add($script:SnippetBox)
-
-# ═══════════════════ ۵) ترمینالِ سرور (داخلِ خودِ برنامه) ══════════════════
-#  دیگر هیچ پنجرهٔ سیاهی باز نمی‌شود؛ همان چیزی که آن‌جا می‌دیدید این‌جاست.
-$tabLog = New-Tab -Title '  ترمینالِ سرور  '
-
-$btnRefreshLog = New-Button -Text 'تازه کردن' -X 18 -Y 14 -Width 110
-$btnClearLog = New-Button -Text 'پاک کردن' -X 136 -Y 14 -Width 110
-$btnCopyLog = New-Button -Text 'کپیِ متن' -X 254 -Y 14 -Width 110
-$script:AutoLog = New-Object System.Windows.Forms.CheckBox
-$script:AutoLog.Text = 'دنبال کردنِ زنده'
-$script:AutoLog.Location = New-Object System.Drawing.Point(376, 18)
-$script:AutoLog.Size = New-Object System.Drawing.Size(160, 24)
-$script:AutoLog.Font = $Face
-$script:AutoLog.Checked = $true
-$tabLog.Controls.AddRange(@($btnRefreshLog, $btnClearLog, $btnCopyLog, $script:AutoLog))
-
-$tabLog.Controls.Add((New-Label -Text 'اگر پیامک/ایمیل تنظیم نشده باشد، کدِ ورود همین‌جا نوشته می‌شود.' -X 546 -Y 18 -Width 380 -Color $Muted))
-
-$script:LogBox = New-Output -X 18 -Y 50 -Width 900 -Height 460 -Code $true
-# ظاهرِ ترمینالِ واقعی
-$script:LogBox.BackColor = [System.Drawing.Color]::FromArgb(15, 20, 36)
-$script:LogBox.ForeColor = [System.Drawing.Color]::FromArgb(205, 232, 212)
-$tabLog.Controls.Add($script:LogBox)
-
-# ═══════════════════════ ۶) به‌روزرسانی ═════════════════════════════════
-$tabUpdate = New-Tab -Title '  به‌روزرسانی  '
-
-$tabUpdate.Controls.Add((New-Label -Text "نسخهٔ نصب‌شده روی این کامپیوتر:  $($script:Version)" -X 18 -Y 18 -Width 420 -Font $Bold))
-
-$tabUpdate.Controls.Add((New-Label -Text 'شاخهٔ به‌روزرسانی:' -X 18 -Y 56 -Width 130))
-$script:BranchBox = New-Box -X 152 -Y 53 -Width 320 -Value $script:DefaultBranch
-$script:BranchBox.RightToLeft = [System.Windows.Forms.RightToLeft]::No
-$tabUpdate.Controls.Add($script:BranchBox)
-
-$btnCheckUpdate = New-Button -Text 'بررسیِ نسخهٔ تازه' -X 486 -Y 51 -Width 160
-$script:BtnDoUpdate = New-Button -Text 'به‌روزرسانی کن' -X 654 -Y 51 -Width 160 -Primary $true
-$script:BtnDoUpdate.Enabled = $false
-$tabUpdate.Controls.AddRange(@($btnCheckUpdate, $script:BtnDoUpdate))
-
-$script:AutoCheck = New-Object System.Windows.Forms.CheckBox
-$script:AutoCheck.Text = 'هر بار که برنامه باز می‌شود، خودش نسخهٔ تازه را بررسی کند'
-$script:AutoCheck.Location = New-Object System.Drawing.Point(18, 90)
-$script:AutoCheck.Size = New-Object System.Drawing.Size(440, 24)
-$script:AutoCheck.Font = $Face
-$script:AutoCheck.Checked = $true
-$tabUpdate.Controls.Add($script:AutoCheck)
-
-$btnShortcut = New-Button -Text 'ساختنِ میان‌بر روی دسکتاپ' -X 486 -Y 88 -Width 220
-$tabUpdate.Controls.Add($btnShortcut)
-
-$script:UpdateOut = New-Output -X 18 -Y 126 -Width 900 -Height 386
-$script:UpdateOut.Text = @'
-اول «بررسیِ نسخهٔ تازه» را بزنید.
-
-اگر نسخهٔ تازه‌ای باشد، دکمهٔ «به‌روزرسانی کن» روشن می‌شود و بعد خودش:
-  ۱) از کدِ فعلی نسخهٔ پشتیبان می‌گیرد (در data\backups)
-  ۲) نسخهٔ تازه را از GitHub می‌گیرد
-  ۳) سرور را خاموش، فایل‌ها را عوض، و دوباره روشن می‌کند
-
-پوشهٔ data (دیتابیس، کاربران، لاگ) و فایل .env (رمزها) هرگز پاک نمی‌شوند.
-'@
-$tabUpdate.Controls.Add($script:UpdateOut)
-
-$tabs.TabPages.AddRange(@($tabAddress, $tabLogin, $tabSettings, $tabApps, $tabCode, $tabLog, $tabUpdate))
-$form.Controls.Add($tabs)
-$form.Controls.Add($header)
+function Show-Page {
+  param([string]$NavName)
+
+  $info = $script:PageMap[$NavName]
+  if (-not $info) { return }
+
+  foreach ($entry in $script:PageMap.GetEnumerator()) {
+    $page = $ui[$entry.Value.Page]
+    if ($page) { $page.Visibility = [System.Windows.Visibility]::Collapsed }
+  }
+  $current = $ui[$info.Page]
+  if ($current) {
+    $current.Visibility = [System.Windows.Visibility]::Visible
+    # ورودِ نرمِ صفحه
+    try {
+      $fade = New-Object System.Windows.Media.Animation.DoubleAnimation(0.0, 1.0, (New-Object System.Windows.Duration ([TimeSpan]::FromMilliseconds(180))))
+      $current.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
+    } catch { }
+  }
+  Set-Text $ui.LblTitle $info.Title
+  Set-Text $ui.LblSubtitle $info.Sub
+  $script:CurrentNav = $NavName
+
+  switch ($NavName) {
+    'NavApps'     { Update-Clients }
+    'NavSites'    { Update-Sites }
+    'NavTerminal' { Update-Terminal -Force $true }
+    'NavSettings' { Update-SettingsForm }
+  }
+}
 
 # ---------------------------------------------------------------------------
-#  رفتارها
+#  خواندنِ وضعیت از سرور
 # ---------------------------------------------------------------------------
-
 function Update-Status {
   $health = Get-ServerHealth -Port $script:Port
   if ($health) {
-    $script:StatusLabel.Text = "● سرور روشن است — نسخهٔ $($health.version)"
-    $script:StatusLabel.ForeColor = $Good
-    $script:SubLabel.Text = "پورت $($script:Port) · پنل: http://localhost:$($script:Port)"
-    $btnStart.Enabled = $false
-    $btnStop.Enabled = $true
+    Set-Text $ui.LblServerState "● سرور روشن است" $script:Brushes.Good
+    $ui.BtnStart.IsEnabled = $false
+    $ui.BtnStop.IsEnabled = $true
   } else {
-    $script:StatusLabel.Text = '● سرور خاموش است'
-    $script:StatusLabel.ForeColor = $Bad
-    $script:SubLabel.Text = 'دکمهٔ «روشن کردنِ سرور» را بزنید.'
-    $btnStart.Enabled = $true
-    $btnStop.Enabled = $false
+    Set-Text $ui.LblServerState "● سرور خاموش است" $script:Brushes.Bad
+    $ui.BtnStart.IsEnabled = $true
+    $ui.BtnStop.IsEnabled = $false
   }
   return $health
 }
 
 function Update-Addresses {
-  $lines = New-Object System.Collections.Generic.List[string]
-  $lines.Add("روی همین کامپیوتر:   http://localhost:$($script:Port)") | Out-Null
-
-  $script:LanUrl = ''
-  foreach ($ip in (Get-LanAddresses)) {
-    if (-not $script:LanUrl) { $script:LanUrl = "http://$($ip):$($script:Port)" }
-    $lines.Add("در شبکهٔ خانگی:      http://$($ip):$($script:Port)") | Out-Null
-  }
-  if (-not $script:LanUrl) { $lines.Add('در شبکهٔ خانگی:      (کارتِ شبکه‌ای پیدا نشد)') | Out-Null }
+  $lan = @(Get-LanAddresses)
+  $script:LanUrl = if ($lan.Count -gt 0) { "http://$($lan[0]):$($script:Port)" } else { "http://localhost:$($script:Port)" }
 
   $script:NetUrl = ''
-  $script:Config = Get-AppConfig -Port $script:Port
-  if ($script:Config) {
-    if ($script:Config.server -and $script:Config.server.internet) {
-      $script:NetUrl = [string]$script:Config.server.internet
-      $lines.Add("از اینترنت (تونل):   $($script:NetUrl)") | Out-Null
-    } else {
-      $lines.Add('از اینترنت (تونل):   هنوز آماده نیست — در پنل، بخشِ «تونل»') | Out-Null
-    }
-    $sms = if ($script:Config.login.smsReady) { 'روشن' } else { 'خاموش' }
-    $mail = if ($script:Config.login.emailReady) { 'روشن' } else { 'خاموش' }
-    $lines.Add('') | Out-Null
-    $lines.Add("وضعیتِ فرستادنِ کد:   پیامک: $sms   ·   ایمیل: $mail") | Out-Null
+  if ($script:Overview -and $script:Overview.tunnel -and $script:Overview.tunnel.url) {
+    $script:NetUrl = [string]$script:Overview.tunnel.url
+  }
+
+  $script:BaseUrl = if ($script:NetUrl) { $script:NetUrl } else { $script:LanUrl }
+  Set-Text $ui.TxtMainAddress $script:BaseUrl
+
+  if ($script:NetUrl) {
+    Set-Text $ui.LblAddressHint 'این آدرسِ اینترنتی است: از هر جای دنیا کار می‌کند. هر کاربری که با شماره یا ایمیلِ خودش وارد شود، روی هر دستگاهی همان اطلاعاتِ حسابِ خودش را می‌بیند.'
   } else {
-    $lines.Add('') | Out-Null
-    $lines.Add('(سرور خاموش است — برای دیدنِ آدرسِ اینترنتی و وضعیتِ پیامک، روشنش کنید)') | Out-Null
+    Set-Text $ui.LblAddressHint 'این آدرسِ شبکهٔ خانگی است (فقط روی همین وای‌فای کار می‌کند). برای دسترسی از بیرونِ خانه، تونل را روشن کنید تا آدرسِ https داشته باشید.'
   }
-
-  $script:AddressBox.Text = ($lines -join [Environment]::NewLine)
-
-  $script:BaseUrl = if ($script:NetUrl) { $script:NetUrl } elseif ($script:LanUrl) { $script:LanUrl } else { "http://localhost:$($script:Port)" }
-  Update-Snippet
-  if ($script:Clients -and $script:Clients.Count -gt 0) { Show-ClientDetails }
 }
 
-function Update-Snippet {
-  $kind = [string]$script:SnippetKind.SelectedItem
-  $script:SnippetBox.Text = (Get-CodeSnippet -Kind $kind -BaseUrl $script:BaseUrl)
-}
-
-function Load-Settings {
-  $values = Read-EnvFile -Path $script:EnvPath
-  $get = {
-    param($key, $fallback)
-    if ($values.ContainsKey($key) -and $values[$key]) { return [string]$values[$key] }
-    return $fallback
-  }
-  $script:MailHost.Text = & $get 'OTP_EMAIL_HOST' 'smtp.gmail.com'
-  $script:MailPort.Text = & $get 'OTP_EMAIL_PORT' '465'
-  $script:MailUser.Text = & $get 'OTP_EMAIL_USER' ''
-  $script:MailPass.Text = & $get 'OTP_EMAIL_PASS' ''
-  $script:SmsKey.Text = & $get 'OTP_SMS_KEY' ''
-  $script:SmsSender.Text = & $get 'OTP_SMS_SENDER' ''
-  $script:SmsTemplate.Text = & $get 'OTP_SMS_TEMPLATE' ''
-
-  # دستیارِ هوش مصنوعی: نبودنِ کلید یعنی روشن (پیش‌فرضِ سرور)
-  $aiValue = & $get 'HLP_AI_ENABLED' '1'
-  $script:AiEnabled.Checked = ($aiValue -ne '0')
-  $script:AiNote.Text = if ($script:AiEnabled.Checked) {
-    'روشن است: با سرور بالا می‌آید و سایت از راهِ /ai/support به آن می‌رسد. اگر کامپیوتر ضعیف است یا لازمش ندارید، تیک را بردارید.'
-  } else {
-    'خاموش است: هیچ پروسه‌ای برای دستیار اجرا نمی‌شود و رَم و پردازنده آزاد می‌ماند.'
-  }
-
-  $provider = & $get 'OTP_SMS_PROVIDER' 'none'
-  $index = $script:SmsProvider.Items.IndexOf($provider)
-  if ($index -lt 0) { $index = 0 }
-  $script:SmsProvider.SelectedIndex = $index
-}
-
-function Restart-Server {
-  Show-Busy 'در حالِ خاموش کردنِ سرور…'
-  Stop-PanelServer -ServerDir $script:ServerDir | Out-Null
-  Start-Sleep -Seconds 2
-  Show-Busy 'در حالِ روشن کردنِ سرور…'
-  Start-PanelServer -ServerDir $script:ServerDir | Out-Null
-  for ($i = 0; $i -lt 80; $i++) {
-    Start-Sleep -Milliseconds 500
-    Update-Terminal
-    [System.Windows.Forms.Application]::DoEvents()
-    if (Get-ServerHealth -Port $script:Port) { break }
-  }
-  Update-Status | Out-Null
-  Update-Addresses
-}
-
-# ------------------------------- دکمه‌ها -----------------------------------
-$btnStart.Add_Click({
-  if (-not (Find-NodeExe)) {
-    [System.Windows.Forms.MessageBox]::Show(
-      "Node.js روی این کامپیوتر پیدا نشد.`r`n`r`nاول از nodejs.org نصبش کنید (نسخهٔ ۲۲ به بالا)، بعد دوباره امتحان کنید.",
-      'برنامهٔ سرور') | Out-Null
-    Start-Process 'https://nodejs.org/fa/download'
+function Update-Overview {
+  $result = Admin '/api/app-admin/overview'
+  if (-not $result.ok) {
+    $script:Overview = $null
+    Set-Text $ui.LblSms '—' $script:Brushes.Muted
+    Set-Text $ui.LblMail '—' $script:Brushes.Muted
+    Set-Text $ui.LblTunnel '—' $script:Brushes.Muted
+    Set-Text $ui.LblAi '—' $script:Brushes.Muted
+    foreach ($name in @('LblAndroidCount','LblWebCount','LblDesktopCount')) { Set-Text $ui[$name] '—' }
+    foreach ($name in @('LblAndroidInfo','LblWebInfo','LblDesktopInfo')) { Set-Text $ui[$name] 'سرور خاموش است' }
+    foreach ($name in @('LblUsers','LblOnline','LblCodes','LblLogins')) { Set-Text $ui[$name] '—' }
+    Update-Addresses
     return
   }
-  Show-Busy 'در حالِ روشن کردنِ سرور… (بارِ اول ممکن است کمی طول بکشد)'
-  # ترمینال را نشان می‌دهیم تا ببیند دارد چه اتفاقی می‌افتد
-  $tabs.SelectedTab = $tabLog
-  Start-PanelServer -ServerDir $script:ServerDir | Out-Null
-  for ($i = 0; $i -lt 120; $i++) {
-    Start-Sleep -Milliseconds 500
-    Update-Terminal
-    [System.Windows.Forms.Application]::DoEvents()
-    if (Get-ServerHealth -Port $script:Port) { break }
+
+  $data = $result.data
+  $script:Overview = $data
+  Set-Text $ui.LblVersion "نسخهٔ $($script:Version)"
+
+  $delivery = $data.delivery
+  if ($delivery.smsReady) { Set-Text $ui.LblSms "روشن ($($delivery.smsProvider))" $script:Brushes.Good }
+  else { Set-Text $ui.LblSms 'تنظیم نشده' $script:Brushes.Warn }
+
+  if ($delivery.emailReady) { Set-Text $ui.LblMail 'روشن' $script:Brushes.Good }
+  else { Set-Text $ui.LblMail 'تنظیم نشده' $script:Brushes.Warn }
+
+  if ($data.tunnel -and $data.tunnel.url) { Set-Text $ui.LblTunnel 'وصل' $script:Brushes.Good }
+  elseif ($data.tunnel) { Set-Text $ui.LblTunnel ([string]$data.tunnel.status) $script:Brushes.Warn }
+  else { Set-Text $ui.LblTunnel 'خاموش' $script:Brushes.Muted }
+
+  if ($data.ai.enabled) { Set-Text $ui.LblAi 'روشن' $script:Brushes.Good }
+  else { Set-Text $ui.LblAi 'خاموش' $script:Brushes.Muted }
+
+  foreach ($row in @($data.kinds)) {
+    $count = [string]$row.count
+    $info = "$($row.users) کاربر · $($row.online) آنلاین · $($row.codesToday) کدِ امروز"
+    switch ($row.kind) {
+      'android' { Set-Text $ui.LblAndroidCount $count; Set-Text $ui.LblAndroidInfo $info }
+      'web'     { Set-Text $ui.LblWebCount $count;     Set-Text $ui.LblWebInfo $info }
+      'desktop' { Set-Text $ui.LblDesktopCount $count; Set-Text $ui.LblDesktopInfo $info }
+    }
   }
-  Update-Terminal -Force $true
-  Update-Status | Out-Null
+
+  Set-Text $ui.LblUsers  ([string]$data.stats.users)
+  Set-Text $ui.LblOnline ([string]$data.stats.activeSessions)
+  Set-Text $ui.LblCodes  ([string]$data.stats.codesLastHour)
+  Set-Text $ui.LblLogins ([string]$data.stats.loginsToday)
+
   Update-Addresses
-})
+}
 
-$btnStop.Add_Click({
-  Show-Busy 'در حالِ خاموش کردن…'
-  if (-not (Stop-PanelServer -ServerDir $script:ServerDir)) {
-    [System.Windows.Forms.MessageBox]::Show('سرور پیدا نشد. شاید از راهِ دیگری اجرا شده باشد.', 'برنامهٔ سرور') | Out-Null
+# ---------------------------------------------------------------------------
+#  برنامه‌ها و سایت‌ها
+# ---------------------------------------------------------------------------
+$script:KindNames = @{ android = 'برنامهٔ اندروید'; web = 'سایت'; desktop = 'برنامهٔ کامپیوتری' }
+$script:KindOrder = @('android', 'web', 'desktop')
+
+function Selected-Kind {
+  $index = $ui.CmbKindFilter.SelectedIndex
+  if ($index -le 0) { return '' }
+  return $script:KindOrder[$index - 1]
+}
+
+function Update-Clients {
+  param([string]$Select = '')
+
+  $result = Admin '/api/app-admin/clients'
+  $ui.LstApps.Items.Clear()
+  if (-not $result.ok) {
+    $script:Clients = @()
+    Set-Text $ui.LblAppTitle 'برای دیدنِ برنامه‌ها، اول سرور را روشن کنید'
+    Set-Text $ui.TxtApiCard ''
+    return
   }
-  Start-Sleep -Seconds 1
-  Update-Terminal -Force $true
-  Update-Status | Out-Null
-})
 
-$btnPanel.Add_Click({
-  Start-Process "http://localhost:$($script:Port)"
-})
+  $all = @($result.data.clients)
+  $kind = Selected-Kind
+  if ($kind) { $all = @($all | Where-Object { $_.kind -eq $kind }) }
+  $script:Clients = $all
 
-$btnCopyLan.Add_Click({ Copy-Text -Text $script:LanUrl })
-$btnCopyNet.Add_Click({
-  if ($script:NetUrl) { Copy-Text -Text $script:NetUrl }
-  else { [System.Windows.Forms.MessageBox]::Show('آدرسِ اینترنتی هنوز آماده نیست. سرور را روشن کنید و چند لحظه صبر کنید.', 'برنامهٔ سرور') | Out-Null }
-})
-$btnRefreshAddress.Add_Click({ Update-Status | Out-Null; Update-Addresses })
+  foreach ($client in $all) {
+    $mark = if ($client.enabled) { '●' } else { '○' }
+    $lock = if ($client.requireKey) { ' 🔑' } else { '' }
+    [void]$ui.LstApps.Items.Add("$mark  $($client.name)   —   $($client.kindLabel)   ·   $($client.users) کاربر$lock")
+  }
 
-# ------------------------- برنامه‌ها و سایت‌ها ------------------------------
-$script:Clients = @()
+  if ($all.Count -gt 0) {
+    $index = 0
+    if ($Select) {
+      for ($i = 0; $i -lt $all.Count; $i++) { if ($all[$i].slug -eq $Select) { $index = $i; break } }
+    }
+    $ui.LstApps.SelectedIndex = $index
+  } else {
+    Set-Text $ui.LblAppTitle 'هنوز برنامه‌ای از این نوع نیست'
+    Set-Text $ui.TxtApiCard ''
+  }
+
+  # فهرستِ برنامه‌ها برای صفحهٔ OTP هم به‌روز شود
+  $selectedApp = [string]$ui.CmbOtpApp.SelectedItem
+  $ui.CmbOtpApp.Items.Clear()
+  foreach ($client in @($result.data.clients)) { [void]$ui.CmbOtpApp.Items.Add($client.slug) }
+  if ($ui.CmbOtpApp.Items.Count -gt 0) {
+    $ui.CmbOtpApp.SelectedIndex = 0
+    if ($selectedApp) {
+      for ($i = 0; $i -lt $ui.CmbOtpApp.Items.Count; $i++) {
+        if ([string]$ui.CmbOtpApp.Items[$i] -eq $selectedApp) { $ui.CmbOtpApp.SelectedIndex = $i; break }
+      }
+    }
+  }
+}
 
 function Get-SelectedClient {
-  $index = $script:AppsList.SelectedIndex
+  $index = $ui.LstApps.SelectedIndex
   if ($index -lt 0 -or $index -ge $script:Clients.Count) { return $null }
   return $script:Clients[$index]
 }
 
 function Show-ClientDetails {
   $client = Get-SelectedClient
-  if (-not $client) {
-    $script:AppSlug.Text = '—'
-    $script:AppName.Text = ''
-    $script:AppKey.Text = ''
-    $script:AppSmsText.Text = ''
-    $script:AppCodeLength.Text = ''
-    $script:AppCard.Text = 'از فهرستِ سمتِ راست یک برنامه را انتخاب کنید، یا «برنامهٔ تازه» بسازید.'
-    return
-  }
+  if (-not $client) { return }
 
-  $script:AppSlug.Text = $client.slug
-  $script:AppName.Text = [string]$client.name
-  $script:AppKey.Text = [string]$client.apiKey
-  $script:AppRequireKey.Checked = [bool]$client.requireKey
-  $script:AppEnabled.Checked = [bool]$client.enabled
-  $script:AppSmsText.Text = [string]$client.smsText
-  $script:AppCodeLength.Text = if ($client.codeLength) { [string]$client.codeLength } else { '' }
+  Set-Text $ui.LblAppTitle "$($client.name)   ·   شناسه: $($client.slug)"
+  $ui.TxtAppName.Text = [string]$client.name
+  $ui.TxtAppKey.Text = [string]$client.apiKey
+  $ui.TxtAppSms.Text = [string]$client.smsText
+  $ui.TxtAppLen.Text = if ($client.codeLength) { [string]$client.codeLength } else { '' }
+  $ui.ChkAppKeyReq.IsChecked = [bool]$client.requireKey
+  $ui.ChkAppEnabled.IsChecked = [bool]$client.enabled
+
+  for ($i = 0; $i -lt $script:KindOrder.Count; $i++) {
+    if ($script:KindOrder[$i] -eq $client.kind) { $ui.CmbAppKind.SelectedIndex = $i; break }
+  }
 
   $length = if ($client.codeLength) { [int]$client.codeLength } else { 6 }
-  $script:AppCard.Text = Get-ApiCard -Slug $client.slug -BaseUrl $script:BaseUrl `
-    -ApiKey ([string]$client.apiKey) -KeyRequired ([bool]$client.requireKey) -CodeLength $length
+  $card = Get-ApiCard -Slug $client.slug -BaseUrl $script:BaseUrl -ApiKey ([string]$client.apiKey) `
+    -KeyRequired ([bool]$client.requireKey) -CodeLength $length
+  Set-Text $ui.TxtApiCard $card
 }
 
-function Load-Clients {
-  param([string]$Select = '')
-
-  $result = Invoke-AdminJson -ServerDir $script:ServerDir -Path '/api/app-admin/clients' -Port $script:Port
-  $script:AppsList.Items.Clear()
-
-  if (-not $result.ok) {
-    $script:Clients = @()
-    $script:AppCard.Text = if (Get-ServerHealth -Port $script:Port) {
-      "فهرستِ برنامه‌ها خوانده نشد: $($result.error)"
-    } else {
-      'برای دیدن و ساختنِ برنامه‌ها، اول سرور را روشن کنید.'
-    }
+function Update-Sites {
+  $result = Admin '/api/sites'
+  $ui.LstSites.Items.Clear()
+  if (-not $result.ok -or -not $result.data) {
+    [void]$ui.LstSites.Items.Add('برای دیدنِ سایت‌ها، اول سرور را روشن کنید.')
     return
   }
-
-  $script:Clients = @($result.data.clients)
-  foreach ($client in $script:Clients) {
-    $state = if ($client.enabled) { '' } else { '  (خاموش)' }
-    $lock = if ($client.requireKey) { '  🔑' } else { '' }
-    [void]$script:AppsList.Items.Add("$($client.name)  ·  $($client.slug)  —  $($client.users) کاربر$lock$state")
+  $rows = @($result.data.sites)
+  if ($rows.Count -eq 0) {
+    [void]$ui.LstSites.Items.Add('هنوز سایتی روی این سرور ثبت نشده است.')
+    return
   }
-
-  if ($script:Clients.Count -gt 0 -and $script:AppsList.Items.Count -gt 0) {
-    $index = 0
-    if ($Select) {
-      for ($i = 0; $i -lt $script:Clients.Count; $i++) {
-        if ($script:Clients[$i].slug -eq $Select) { $index = $i; break }
-      }
-    }
-    if ($index -ge $script:AppsList.Items.Count) { $index = 0 }
-    $script:AppsList.SelectedIndex = $index
+  foreach ($site in $rows) {
+    $state = if ($site.running) { '● در حالِ اجرا' } else { '○ خاموش' }
+    $port = if ($site.port) { "پورت $($site.port)" } else { 'بدونِ پورت' }
+    $domain = if ($site.domain) { " · $($site.domain)" } else { '' }
+    [void]$ui.LstSites.Items.Add("$state   $($site.name)   —   $($site.kind) · $port$domain")
   }
-  Show-ClientDetails
 }
 
-$script:AppsList.Add_SelectedIndexChanged({ Show-ClientDetails })
+# ---------------------------------------------------------------------------
+#  ترمینال
+# ---------------------------------------------------------------------------
+function Update-Terminal {
+  param([bool]$Force = $false)
+  $text = Get-PanelLog -ServerDir $script:ServerDir -Lines 400
+  if (-not $Force -and $text -eq $ui.TxtLog.Text) { return }
+  $ui.TxtLog.Text = $text
+  $ui.TxtLog.ScrollToEnd()
+}
 
-$btnReloadApps.Add_Click({ Load-Clients })
+# ---------------------------------------------------------------------------
+#  تنظیمات
+# ---------------------------------------------------------------------------
+function Update-SettingsForm {
+  $values = Read-EnvFile -Path $script:EnvPath
+  $get = {
+    param($key, $fallback)
+    if ($values.ContainsKey($key) -and $values[$key]) { return [string]$values[$key] }
+    return $fallback
+  }
 
-$btnNewApp.Add_Click({
-  $name = Show-InputDialog -Title 'برنامهٔ تازه' -Message "نامِ برنامه یا سایت را بنویسید:`r`n(مثلاً: فروشگاه یعقوبی  یا  shop)"
+  $ui.TxtMailHost.Text = & $get 'OTP_EMAIL_HOST' 'smtp.gmail.com'
+  $ui.TxtMailPort.Text = & $get 'OTP_EMAIL_PORT' '465'
+  $ui.TxtMailUser.Text = & $get 'OTP_EMAIL_USER' ''
+  $ui.TxtMailPass.Password = & $get 'OTP_EMAIL_PASS' ''
+  $ui.TxtSmsKey.Password = & $get 'OTP_SMS_KEY' ''
+  $ui.TxtSmsSender.Text = & $get 'OTP_SMS_SENDER' ''
+  $ui.TxtSmsTemplate.Text = & $get 'OTP_SMS_TEMPLATE' ''
+
+  $provider = & $get 'OTP_SMS_PROVIDER' 'none'
+  for ($i = 0; $i -lt $ui.CmbSmsProvider.Items.Count; $i++) {
+    if ([string]$ui.CmbSmsProvider.Items[$i] -eq $provider) { $ui.CmbSmsProvider.SelectedIndex = $i; break }
+  }
+
+  $aiOn = ((& $get 'HLP_AI_ENABLED' '1') -ne '0')
+  $ui.ChkAi.IsChecked = $aiOn
+  Set-Text $ui.LblAiNote $(if ($aiOn) {
+    'روشن است: با سرور بالا می‌آید و سایت از راهِ /ai/support به آن می‌رسد.'
+  } else {
+    'خاموش است: هیچ پروسه‌ای برای دستیار اجرا نمی‌شود و رَم آزاد می‌ماند.'
+  })
+}
+
+# ---------------------------------------------------------------------------
+#  دکمه‌ها
+# ---------------------------------------------------------------------------
+function Restart-Server {
+  Set-Text $ui.LblServerState '… در حالِ راه‌اندازیِ دوباره' $script:Brushes.Muted
+  Pump
+  Stop-PanelServer -ServerDir $script:ServerDir | Out-Null
+  Start-Sleep -Seconds 2
+  Start-PanelServer -ServerDir $script:ServerDir | Out-Null
+  for ($i = 0; $i -lt 80; $i++) {
+    Start-Sleep -Milliseconds 500
+    Pump
+    if (Get-ServerHealth -Port $script:Port) { break }
+  }
+  Refresh-All
+}
+
+function Refresh-All {
+  Update-Status | Out-Null
+  Update-Overview
+  if ($script:CurrentNav -eq 'NavApps') { Update-Clients }
+  if ($script:CurrentNav -eq 'NavSites') { Update-Sites }
+}
+
+$ui.BtnStart.Add_Click({
+  if (-not (Find-NodeExe)) {
+    Say "Node.js روی این کامپیوتر پیدا نشد.`r`n`r`nاول از nodejs.org نصبش کنید (نسخهٔ ۲۲ به بالا)."
+    Start-Process 'https://nodejs.org/fa/download'
+    return
+  }
+  Set-Text $ui.LblServerState '… در حالِ روشن شدن' $script:Brushes.Muted
+  $ui.BtnStart.IsEnabled = $false
+  Pump
+  Start-PanelServer -ServerDir $script:ServerDir | Out-Null
+  for ($i = 0; $i -lt 120; $i++) {
+    Start-Sleep -Milliseconds 500
+    Pump
+    if (Get-ServerHealth -Port $script:Port) { break }
+  }
+  Refresh-All
+})
+
+$ui.BtnStop.Add_Click({
+  Set-Text $ui.LblServerState '… در حالِ خاموش شدن' $script:Brushes.Muted
+  Pump
+  if (-not (Stop-PanelServer -ServerDir $script:ServerDir)) {
+    Say 'سرور پیدا نشد. شاید از راهِ دیگری اجرا شده باشد.'
+  }
+  Start-Sleep -Seconds 1
+  Refresh-All
+})
+
+$ui.BtnRefresh.Add_Click({ Refresh-All })
+
+$ui.BtnCopyMain.Add_Click({ Copy-Clip $script:BaseUrl })
+$ui.BtnCopyLan.Add_Click({ Copy-Clip $script:LanUrl })
+$ui.BtnCopyNet.Add_Click({
+  if ($script:NetUrl) { Copy-Clip $script:NetUrl }
+  else { Say 'آدرسِ اینترنتی هنوز آماده نیست. سرور را روشن کنید و چند لحظه صبر کنید.' }
+})
+
+# سه کادرِ صفحهٔ نخست → صفحهٔ همان نوع
+function Open-Kind {
+  param([string]$Kind)
+  $ui.NavApps.IsChecked = $true
+  for ($i = 0; $i -lt $script:KindOrder.Count; $i++) {
+    if ($script:KindOrder[$i] -eq $Kind) { $ui.CmbKindFilter.SelectedIndex = $i + 1; break }
+  }
+  Show-Page 'NavApps'
+}
+$ui.CardAndroid.Add_MouseLeftButtonUp({ Open-Kind 'android' })
+$ui.CardWeb.Add_MouseLeftButtonUp({ Open-Kind 'web' })
+$ui.CardDesktop.Add_MouseLeftButtonUp({ Open-Kind 'desktop' })
+
+foreach ($navName in @('NavHome','NavApps','NavOtp','NavSites','NavSettings','NavTerminal','NavUpdate')) {
+  $button = $ui[$navName]
+  if (-not $button) { continue }
+  $button.Add_Checked({
+    param($sender, $eventArgs)
+    Show-Page $sender.Name
+  })
+}
+
+$ui.CmbKindFilter.Add_SelectionChanged({ if ($script:Ready) { Update-Clients } })
+$ui.LstApps.Add_SelectionChanged({ Show-ClientDetails })
+
+$ui.BtnNewApp.Add_Click({
+  $name = Show-InputDialog -Title 'برنامهٔ تازه' -Message "نامِ برنامه یا سایت را بنویسید:`r`n(مثلاً: فروشگاه یعقوبی)"
   if (-not $name -or -not $name.Trim()) { return }
-
-  $result = Invoke-AdminJson -ServerDir $script:ServerDir -Path '/api/app-admin/clients' -Method 'POST' `
-    -Body @{ name = $name.Trim(); slug = $name.Trim() } -Port $script:Port
+  $kind = Selected-Kind
+  if (-not $kind) { $kind = 'web' }
+  $result = Admin '/api/app-admin/clients' 'POST' @{ name = $name.Trim(); slug = $name.Trim(); kind = $kind }
   if (-not $result.ok) {
     $message = if ($result.data -and $result.data.message) { $result.data.message } else { $result.error }
-    [System.Windows.Forms.MessageBox]::Show("ساخته نشد: $message", 'برنامه‌ها') | Out-Null
+    Say "ساخته نشد: $message"
     return
   }
-  Load-Clients -Select $result.data.client.slug
+  Update-Clients -Select $result.data.client.slug
+  Update-Overview
 })
 
-$btnSaveApp.Add_Click({
+$ui.BtnSaveApp.Add_Click({
   $client = Get-SelectedClient
   if (-not $client) { return }
+  $kindIndex = $ui.CmbAppKind.SelectedIndex
+  $kind = if ($kindIndex -ge 0) { $script:KindOrder[$kindIndex] } else { $client.kind }
 
-  $body = @{
-    name        = $script:AppName.Text.Trim()
-    requireKey  = [bool]$script:AppRequireKey.Checked
-    enabled     = [bool]$script:AppEnabled.Checked
-    smsText     = $script:AppSmsText.Text.Trim()
-    codeLength  = $script:AppCodeLength.Text.Trim()
+  $result = Admin "/api/app-admin/clients/$($client.slug)" 'PUT' @{
+    name       = $ui.TxtAppName.Text.Trim()
+    kind       = $kind
+    requireKey = [bool]$ui.ChkAppKeyReq.IsChecked
+    enabled    = [bool]$ui.ChkAppEnabled.IsChecked
+    smsText    = $ui.TxtAppSms.Text.Trim()
+    codeLength = $ui.TxtAppLen.Text.Trim()
   }
-  $result = Invoke-AdminJson -ServerDir $script:ServerDir -Path "/api/app-admin/clients/$($client.slug)" `
-    -Method 'PUT' -Body $body -Port $script:Port
-  if (-not $result.ok) {
-    [System.Windows.Forms.MessageBox]::Show("ذخیره نشد: $($result.error)", 'برنامه‌ها') | Out-Null
-    return
-  }
-  Load-Clients -Select $client.slug
+  if (-not $result.ok) { Say "ذخیره نشد: $($result.error)"; return }
+  Update-Clients -Select $client.slug
+  Update-Overview
 })
 
-$btnNewKey.Add_Click({
+$ui.BtnNewKey.Add_Click({
   $client = Get-SelectedClient
   if (-not $client) { return }
-  $answer = [System.Windows.Forms.MessageBox]::Show(
-    "کلیدِ تازه ساخته شود؟`r`n`r`nبرنامه‌هایی که کلیدِ قدیمی را دارند دیگر وصل نمی‌شوند تا کلیدِ تازه را بگذارید.",
-    'کلیدِ تازه', [System.Windows.Forms.MessageBoxButtons]::YesNo)
-  if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
-
-  $result = Invoke-AdminJson -ServerDir $script:ServerDir -Path "/api/app-admin/clients/$($client.slug)/key" `
-    -Method 'POST' -Port $script:Port
-  if ($result.ok) { Load-Clients -Select $client.slug }
+  if (-not (Ask "کلیدِ تازه ساخته شود؟`r`n`r`nبرنامه‌هایی که کلیدِ قدیمی را دارند تا کلیدِ تازه را نگذارید وصل نمی‌شوند.")) { return }
+  $result = Admin "/api/app-admin/clients/$($client.slug)/key" 'POST'
+  if ($result.ok) { Update-Clients -Select $client.slug }
 })
 
-$btnDeleteApp.Add_Click({
+$ui.BtnDelApp.Add_Click({
   $client = Get-SelectedClient
   if (-not $client) { return }
-  $answer = [System.Windows.Forms.MessageBox]::Show(
-    "برنامهٔ «$($client.name)» حذف شود؟`r`n`r`nکاربرانش سرِ جایشان می‌مانند؛ فقط تنظیمات و کلیدش پاک می‌شود.",
-    'حذفِ برنامه', [System.Windows.Forms.MessageBoxButtons]::YesNo)
-  if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
-
-  $result = Invoke-AdminJson -ServerDir $script:ServerDir -Path "/api/app-admin/clients/$($client.slug)" `
-    -Method 'DELETE' -Port $script:Port
-  if ($result.ok) { Load-Clients }
+  if (-not (Ask "برنامهٔ «$($client.name)» حذف شود؟`r`n`r`nکاربرانش می‌مانند؛ فقط تنظیمات و کلیدش پاک می‌شود.")) { return }
+  $result = Admin "/api/app-admin/clients/$($client.slug)" 'DELETE'
+  if ($result.ok) { Update-Clients; Update-Overview }
 })
 
-$btnCopyApi.Add_Click({ Copy-Text -Text $script:AppCard.Text })
+$ui.BtnCopyApi.Add_Click({ Copy-Clip $ui.TxtApiCard.Text })
 
-$script:SnippetKind.Add_SelectedIndexChanged({ Update-Snippet })
-$btnCopyCode.Add_Click({ Copy-Text -Text $script:SnippetBox.Text })
-
-$btnSendCode.Add_Click({
-  $target = $script:TargetBox.Text.Trim()
-  if (-not $target) {
-    $script:LoginOut.Text = 'اول شماره یا ایمیل را بنویسید.'
-    return
-  }
-  Show-Busy 'در حالِ فرستادنِ کد…'
-  $appName = $script:AppBox.Text.Trim()
-  if (-not $appName) { $appName = 'main' }
-  $result = Invoke-Json -Url "http://127.0.0.1:$($script:Port)/api/app/auth/request-code" -Method 'POST' -Body @{ to = $target; app = $appName }
-  $script:LoginOut.Text = (Format-Result -Result $result -Title 'درخواستِ کد')
-  Update-Status | Out-Null
-})
-
-$btnVerifyCode.Add_Click({
-  $target = $script:TargetBox.Text.Trim()
-  $code = $script:CodeBox.Text.Trim()
-  if (-not $target -or -not $code) {
-    $script:LoginOut.Text = 'شماره/ایمیل و کد را بنویسید.'
-    return
-  }
-  Show-Busy 'در حالِ بررسیِ کد…'
-  $appName = $script:AppBox.Text.Trim()
-  if (-not $appName) { $appName = 'main' }
-  $result = Invoke-Json -Url "http://127.0.0.1:$($script:Port)/api/app/auth/verify-code" -Method 'POST' -Body @{ to = $target; code = $code; app = $appName }
-  $script:LoginOut.Text = (Format-Result -Result $result -Title 'بررسیِ کد')
-  Update-Status | Out-Null
-})
-
+# ------------------------------- OTP ---------------------------------------
 function Format-Result {
   param($Result, [string]$Title)
-
   if (-not $Result.ok -and $Result.status -eq 0) {
     return "$Title`r`n`r`nسرور جواب نداد. آیا روشن است؟`r`n$($Result.error)"
   }
@@ -803,40 +571,70 @@ function Format-Result {
   if ($Result.data) {
     try { $body = ($Result.data | ConvertTo-Json -Depth 6) } catch { $body = [string]$Result.data }
   }
-  $head = "$Title — پاسخِ سرور: $($Result.status)"
   $hint = ''
   if ($Result.data -and $Result.data.message) { $hint = "`r`n$($Result.data.message)`r`n" }
-  return "$head$hint`r`n$body"
+  return "$Title — پاسخِ سرور: $($Result.status)$hint`r`n$body"
 }
 
-$btnSaveSettings.Add_Click({
-  $port = $script:MailPort.Text.Trim()
-  if (-not $port) { $port = '465' }
+$ui.BtnSendCode.Add_Click({
+  $target = $ui.TxtOtpTarget.Text.Trim()
+  if (-not $target) { Set-Text $ui.LblOtpState 'اول شماره یا ایمیل را بنویسید' $script:Brushes.Warn; return }
+  $app = [string]$ui.CmbOtpApp.SelectedItem
+  if (-not $app) { $app = 'main' }
 
-  # App Password گوگل را چهار حرف چهار حرف نشان می‌دهد؛ مردم با فاصله کپی می‌کنند
-  # و بعد «رمز اشتباه» می‌گیرند. همین‌جا فاصله‌ها را برمی‌داریم.
-  $mailPass = $script:MailPass.Text
+  Set-Text $ui.LblOtpState '… در حالِ فرستادن' $script:Brushes.Muted
+  Pump
+  $result = Invoke-Json -Url "http://127.0.0.1:$($script:Port)/api/app/auth/request-code" -Method 'POST' -Body @{ to = $target; app = $app }
+  Set-Text $ui.TxtOtpOut (Format-Result -Result $result -Title 'درخواستِ کد')
+
+  if ($result.ok -and $result.data.sent) {
+    Set-Text $ui.LblOtpState "رفت — $($result.data.tookMs) میلی‌ثانیه" $script:Brushes.Good
+  } elseif ($result.ok -and $result.data.needsSetup) {
+    Set-Text $ui.LblOtpState 'پیامک/ایمیل تنظیم نشده — کد در ترمینال نوشته شد' $script:Brushes.Warn
+  } else {
+    Set-Text $ui.LblOtpState 'نرفت — نتیجه را بخوانید' $script:Brushes.Bad
+  }
+})
+
+$ui.BtnVerifyCode.Add_Click({
+  $target = $ui.TxtOtpTarget.Text.Trim()
+  $code = $ui.TxtOtpCode.Text.Trim()
+  if (-not $target -or -not $code) { Set-Text $ui.LblOtpState 'شماره و کد را بنویسید' $script:Brushes.Warn; return }
+  $app = [string]$ui.CmbOtpApp.SelectedItem
+  if (-not $app) { $app = 'main' }
+
+  $result = Invoke-Json -Url "http://127.0.0.1:$($script:Port)/api/app/auth/verify-code" -Method 'POST' -Body @{ to = $target; code = $code; app = $app }
+  Set-Text $ui.TxtOtpOut (Format-Result -Result $result -Title 'بررسیِ کد')
+  if ($result.ok -and $result.data.ok) {
+    Set-Text $ui.LblOtpState 'وارد شد ✔' $script:Brushes.Good
+  } else {
+    Set-Text $ui.LblOtpState 'کد قبول نشد' $script:Brushes.Bad
+  }
+})
+
+# ----------------------------- تنظیمات -------------------------------------
+$ui.BtnSaveSettings.Add_Click({
+  $port = $ui.TxtMailPort.Text.Trim()
+  if (-not $port) { $port = '465' }
+  $mailPass = $ui.TxtMailPass.Password
   if ($mailPass -match '^\w{4}\s+\w{4}\s+\w{4}\s+\w{4}$') {
     $mailPass = ($mailPass -replace '\s', '')
-    $script:MailPass.Text = $mailPass
+    $ui.TxtMailPass.Password = $mailPass
   }
-  $secure = '0'
-  if ($port -eq '465') { $secure = '1' }
 
   $values = @{
-    'OTP_EMAIL_HOST'   = $script:MailHost.Text.Trim()
+    'OTP_EMAIL_HOST'   = $ui.TxtMailHost.Text.Trim()
     'OTP_EMAIL_PORT'   = $port
-    'OTP_EMAIL_SECURE' = $secure
-    'OTP_EMAIL_USER'   = $script:MailUser.Text.Trim()
+    'OTP_EMAIL_SECURE' = $(if ($port -eq '465') { '1' } else { '0' })
+    'OTP_EMAIL_USER'   = $ui.TxtMailUser.Text.Trim()
     'OTP_EMAIL_PASS'   = $mailPass
-    'OTP_EMAIL_FROM'   = $script:MailUser.Text.Trim()
-    'OTP_SMS_PROVIDER' = [string]$script:SmsProvider.SelectedItem
-    'OTP_SMS_KEY'      = $script:SmsKey.Text.Trim()
-    'OTP_SMS_SENDER'   = $script:SmsSender.Text.Trim()
-    'OTP_SMS_TEMPLATE' = $script:SmsTemplate.Text.Trim()
-    'HLP_AI_ENABLED'   = $(if ($script:AiEnabled.Checked) { '1' } else { '0' })
+    'OTP_EMAIL_FROM'   = $ui.TxtMailUser.Text.Trim()
+    'OTP_SMS_PROVIDER' = [string]$ui.CmbSmsProvider.SelectedItem
+    'OTP_SMS_KEY'      = $ui.TxtSmsKey.Password.Trim()
+    'OTP_SMS_SENDER'   = $ui.TxtSmsSender.Text.Trim()
+    'OTP_SMS_TEMPLATE' = $ui.TxtSmsTemplate.Text.Trim()
+    'HLP_AI_ENABLED'   = $(if ($ui.ChkAi.IsChecked) { '1' } else { '0' })
   }
-  # اگر ایمیل خالی است، کلِ بخشِ ایمیل برداشته شود تا سرور فکر نکند تنظیم شده
   if (-not $values['OTP_EMAIL_USER']) {
     $values['OTP_EMAIL_HOST'] = ''
     $values['OTP_EMAIL_PASS'] = ''
@@ -844,245 +642,177 @@ $btnSaveSettings.Add_Click({
   }
 
   Set-EnvValues -Path $script:EnvPath -Values $values | Out-Null
-  $script:SettingsOut.Text = "ذخیره شد در:`r`n$($script:EnvPath)`r`n`r`nحالا سرور دوباره بالا می‌آید تا تنظیماتِ تازه خوانده شود…"
-  [System.Windows.Forms.Application]::DoEvents()
+  Set-Text $ui.LblSettingsState 'ذخیره شد — سرور دوباره بالا می‌آید…' $script:Brushes.Muted
+  Pump
   Restart-Server
-  $ready = ''
-  if ($script:Config) {
-    $sms = if ($script:Config.login.smsReady) { 'روشن' } else { 'خاموش' }
-    $mail = if ($script:Config.login.emailReady) { 'روشن' } else { 'خاموش' }
-    $ready = "`r`n`r`nوضعیتِ تازه →  پیامک: $sms   ·   ایمیل: $mail"
-  }
-  $script:SettingsOut.Text = "ذخیره شد و سرور دوباره بالا آمد.$ready`r`n`r`nحالا در تبِ «تستِ ورود با کد» شمارهٔ خودتان را امتحان کنید."
+  Set-Text $ui.LblSettingsState 'ذخیره شد و سرور دوباره بالا آمد ✔' $script:Brushes.Good
 })
 
-$btnOpenEnv.Add_Click({
-  if (-not (Test-Path -LiteralPath $script:EnvPath)) {
-    Set-EnvValues -Path $script:EnvPath -Values @{} | Out-Null
-  }
-  Start-Process 'notepad.exe' -ArgumentList "`"$($script:EnvPath)`""
+$ui.BtnOpenEnv.Add_Click({
+  if (-not (Test-Path -LiteralPath $script:EnvPath)) { Set-EnvValues -Path $script:EnvPath -Values @{} | Out-Null }
+  Start-Process 'notepad.exe' -ArgumentList """$($script:EnvPath)"""
 })
 
-<#
-  .SYNOPSIS
-  ترمینال را تازه می‌کند. فقط وقتی متن عوض شده باشد دست می‌زند، تا اگر کاربر
-  چیزی را انتخاب کرده یا بالا رفته، هر ثانیه از دستش نپرد.
-#>
-function Update-Terminal {
-  param([bool]$Force = $false)
-
-  $text = Get-PanelLog -ServerDir $script:ServerDir -Lines 400
-  if (-not $Force -and $text -eq $script:LogBox.Text) { return }
-  $script:LogBox.Text = $text
-  $script:LogBox.SelectionStart = $script:LogBox.TextLength
-  $script:LogBox.ScrollToCaret()
-}
-
-$btnRefreshLog.Add_Click({ Update-Terminal -Force $true })
-$btnCopyLog.Add_Click({ Copy-Text -Text $script:LogBox.Text })
-$btnClearLog.Add_Click({
+# ----------------------------- ترمینال -------------------------------------
+$ui.BtnLogRefresh.Add_Click({ Update-Terminal -Force $true })
+$ui.BtnLogCopy.Add_Click({ Copy-Clip $ui.TxtLog.Text })
+$ui.BtnLogClear.Add_Click({
   Clear-PanelLog -ServerDir $script:ServerDir | Out-Null
   Update-Terminal -Force $true
 })
 
-<#
-  .SYNOPSIS
-  از GitHub می‌پرسد نسخهٔ تازه‌ای هست یا نه. اگر بود، دکمهٔ به‌روزرسانی روشن
-  می‌شود و بالای پنجره هم خبر می‌دهد.
-#>
+# --------------------------- به‌روزرسانی ------------------------------------
 function Test-Update {
   param([bool]$Quiet = $false)
 
-  $branch = $script:BranchBox.Text.Trim()
-  if (-not $branch) { $branch = 'main' }
-  Save-DesktopSettings -ServerDir $script:ServerDir -Settings @{ branch = $branch; autoCheck = [bool]$script:AutoCheck.Checked } | Out-Null
+  $branch = $ui.TxtBranch.Text.Trim()
+  if (-not $branch) { $branch = $script:DefaultBranch }
+  Save-DesktopSettings -ServerDir $script:ServerDir -Settings @{ branch = $branch; autoCheck = [bool]$ui.ChkAutoCheck.IsChecked } | Out-Null
 
   if (-not $Quiet) {
-    $script:UpdateOut.Text = "در حالِ پرسیدن از GitHub (شاخهٔ $branch)…"
-    [System.Windows.Forms.Application]::DoEvents()
+    Set-Text $ui.TxtUpdateOut "در حالِ پرسیدن از GitHub (شاخهٔ $branch)…"
+    Pump
   }
 
   $remote = Get-RemoteVersion -Branch $branch
   if (-not $remote) {
-    if (-not $Quiet) {
-      $script:UpdateOut.Text = "نسخهٔ تازه خوانده نشد.`r`n`r`nیا اینترنت وصل نیست، یا نامِ شاخه ($branch) اشتباه است."
-    }
-    $script:BtnDoUpdate.Enabled = $false
+    if (-not $Quiet) { Set-Text $ui.TxtUpdateOut "نسخهٔ تازه خوانده نشد.`r`n`r`nیا اینترنت وصل نیست، یا نامِ شاخه ($branch) اشتباه است." }
+    $ui.BtnDoUpdate.IsEnabled = $false
     return $false
   }
 
-  $compare = Compare-AppVersion -Left $remote -Right $script:Version
-  if ($compare -eq 1) {
-    $script:UpdateOut.Text = "نسخهٔ تازه هست!`r`n`r`n  نسخهٔ شما:  $($script:Version)`r`n  روی GitHub: $remote`r`n`r`nدکمهٔ «به‌روزرسانی کن» را بزنید."
-    $script:BtnDoUpdate.Enabled = $true
+  if ((Compare-AppVersion -Left $remote -Right $script:Version) -eq 1) {
+    Set-Text $ui.TxtUpdateOut "نسخهٔ تازه هست!`r`n`r`n  نسخهٔ شما:  $($script:Version)`r`n  روی GitHub: $remote`r`n`r`nدکمهٔ «به‌روزرسانی کن» را بزنید."
+    $ui.BtnDoUpdate.IsEnabled = $true
     $script:UpdateReady = $remote
-    $tabUpdate.Text = '  ● به‌روزرسانی  '
     return $true
   }
 
-  $script:UpdateReady = ''
-  $script:BtnDoUpdate.Enabled = $false
-  if (-not $Quiet) {
-    if ($compare -eq 0) {
-      $script:UpdateOut.Text = "شما آخرین نسخه را دارید ($($script:Version))."
-    } else {
-      $script:UpdateOut.Text = "نسخهٔ شما ($($script:Version)) از نسخهٔ روی GitHub ($remote) جدیدتر است."
-    }
-  }
+  $ui.BtnDoUpdate.IsEnabled = $false
+  if (-not $Quiet) { Set-Text $ui.TxtUpdateOut "شما آخرین نسخه را دارید ($($script:Version))." }
   return $false
 }
 
-$btnCheckUpdate.Add_Click({ Test-Update | Out-Null })
-$script:AutoCheck.Add_CheckedChanged({
-  Save-DesktopSettings -ServerDir $script:ServerDir -Settings @{ branch = $script:BranchBox.Text.Trim(); autoCheck = [bool]$script:AutoCheck.Checked } | Out-Null
-})
+$ui.BtnCheckUpdate.Add_Click({ Test-Update | Out-Null })
 
-$script:BtnDoUpdate.Add_Click({
-  $answer = [System.Windows.Forms.MessageBox]::Show(
-    'سرور چند لحظه خاموش می‌شود و بعد خودش برمی‌گردد. ادامه بدهم؟',
-    'به‌روزرسانی',
-    [System.Windows.Forms.MessageBoxButtons]::YesNo)
-  if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
-
-  $branch = $script:BranchBox.Text.Trim()
-  if (-not $branch) { $branch = 'main' }
-  $script:BtnDoUpdate.Enabled = $false
-  $script:UpdateOut.Text = ''
+$ui.BtnDoUpdate.Add_Click({
+  if (-not (Ask 'سرور چند لحظه خاموش می‌شود و بعد خودش برمی‌گردد. ادامه بدهم؟')) { return }
+  $branch = $ui.TxtBranch.Text.Trim()
+  if (-not $branch) { $branch = $script:DefaultBranch }
+  $ui.BtnDoUpdate.IsEnabled = $false
+  Set-Text $ui.TxtUpdateOut ''
 
   $report = Install-Update -Branch $branch -ProjectRoot $script:ProjectRoot -ServerDir $script:ServerDir -OnStep {
     param($message)
-    $script:UpdateOut.AppendText("$message`r`n")
-    [System.Windows.Forms.Application]::DoEvents()
+    $ui.TxtUpdateOut.AppendText("$message`r`n")
+    $ui.TxtUpdateOut.ScrollToEnd()
+    Pump
   }
 
   if ($report.ok) {
-    $tabUpdate.Text = '  به‌روزرسانی  '
-    $script:UpdateOut.AppendText("`r`nتمام شد. نسخهٔ تازه: $($report.version)`r`n")
-    $script:UpdateOut.AppendText("برای اینکه خودِ همین پنجره هم تازه شود، یک‌بار ببندید و دوباره باز کنید.`r`n")
+    $ui.TxtUpdateOut.AppendText("`r`nتمام شد. نسخهٔ تازه: $($report.version)`r`nبرای اینکه خودِ پنجره هم تازه شود، یک‌بار ببندید و باز کنید.`r`n")
   } else {
-    $script:UpdateOut.AppendText("`r`nبه‌روزرسانی نشد: $($report.error)`r`n")
-    $script:UpdateOut.AppendText('دادهٔ شما دست‌نخورده است. دوباره امتحان کنید یا اینترنت را بررسی کنید.')
+    $ui.TxtUpdateOut.AppendText("`r`nبه‌روزرسانی نشد: $($report.error)`r`nدادهٔ شما دست‌نخورده است.`r`n")
   }
-  Update-Status | Out-Null
-  Update-Addresses
+  Refresh-All
 })
 
-$btnShortcut.Add_Click({
-  try {
-    $desktop = [Environment]::GetFolderPath('Desktop')
-    $linkPath = Join-Path $desktop 'برنامهٔ سرور خانگی.lnk'
-    $shell = New-Object -ComObject WScript.Shell
-    $link = $shell.CreateShortcut($linkPath)
-    $link.TargetPath = Join-Path $script:DesktopDir 'برنامه-سرور.bat'
-    $link.WorkingDirectory = $script:DesktopDir
-    $link.Description = 'برنامهٔ سرور خانگی'
-    $link.Save()
-    [System.Windows.Forms.MessageBox]::Show("میان‌بر ساخته شد:`r`n$linkPath", 'برنامهٔ سرور') | Out-Null
-  } catch {
-    [System.Windows.Forms.MessageBox]::Show("میان‌بر ساخته نشد: $($_.Exception.Message)", 'برنامهٔ سرور') | Out-Null
-  }
+$ui.BtnShortcut.Add_Click({
+  $link = New-ProgramShortcut -InstallRoot $script:ProjectRoot -LinkPath (Join-Path ([Environment]::GetFolderPath('Desktop')) 'سرور خانگی.lnk')
+  if ($link) { Say "میان‌بر ساخته شد:`r`n$link" } else { Say 'میان‌بر ساخته نشد.' }
 })
 
-# ------------------------------- تایمر -------------------------------------
-$timer = New-Object System.Windows.Forms.Timer
-$timer.Interval = 1500
-$script:Ticks = 0
-$timer.Add_Tick({
-  $script:Ticks++
-  # وضعیت هر ۳ ثانیه، ترمینال هر ۱.۵ ثانیه (تا زنده به‌نظر برسد)
-  if ($script:Ticks % 2 -eq 0) { Update-Status | Out-Null }
-  if ($script:AutoLog.Checked -and $tabs.SelectedTab -eq $tabLog) { Update-Terminal }
-})
+# ---------------------------------------------------------------------------
+#  راه‌اندازی
+# ---------------------------------------------------------------------------
+$script:Ready = $false
+$script:StartupErrors = @()
 
-<#
-  .SYNOPSIS
-  یک کارِ راه‌اندازی را انجام می‌دهد و اگر خراب شد، فقط همان یکی خراب می‌شود —
-  نه اینکه کلِ پنجره بسته شود.
-#>
 function Invoke-Safely {
   param([string]$Name, [scriptblock]$Work)
-  try {
-    & $Work
-    return $true
-  } catch {
+  try { & $Work } catch {
     $script:StartupErrors += $Name
     Write-AppError -ErrorRecord $_ -Where $Name -ServerDir $script:ServerDir | Out-Null
-    return $false
   }
 }
 
-$script:StartupErrors = @()
+# پر کردنِ فهرست‌های آماده
+[void]$ui.CmbKindFilter.Items.Add('همه')
+foreach ($kind in $script:KindOrder) {
+  [void]$ui.CmbKindFilter.Items.Add($script:KindNames[$kind])
+  [void]$ui.CmbAppKind.Items.Add($script:KindNames[$kind])
+}
+$ui.CmbKindFilter.SelectedIndex = 0
+$ui.CmbAppKind.SelectedIndex = 1
+foreach ($provider in @('none', 'kavenegar', 'smsir', 'melipayamak', 'ghasedak', 'webhook')) {
+  [void]$ui.CmbSmsProvider.Items.Add($provider)
+}
+$ui.CmbSmsProvider.SelectedIndex = 0
 
-$form.Add_Shown({
-  # ⚠️ مهم: وگرنه پنجره اجرا می‌شود ولی نامرئی می‌ماند
+Set-Text $ui.LblVersion "نسخهٔ $($script:Version)"
+Set-Text $ui.LblUpdateVersion "نسخهٔ نصب‌شده: $($script:Version)"
+$ui.TxtOtpTarget.Text = ''
+$ui.TxtBranch.Text = $script:DefaultBranch
+
+$timer = New-Object System.Windows.Threading.DispatcherTimer
+$timer.Interval = [TimeSpan]::FromMilliseconds(2000)
+$script:Ticks = 0
+$timer.Add_Tick({
+  $script:Ticks++
+  Invoke-Safely 'وضعیت' { Update-Status | Out-Null }
+  if ($script:Ticks % 5 -eq 0) { Invoke-Safely 'خلاصه' { Update-Overview } }
+  if ($script:CurrentNav -eq 'NavTerminal' -and $ui.ChkLogAuto.IsChecked) {
+    Invoke-Safely 'ترمینال' { Update-Terminal }
+  }
+})
+
+$script:Window.Add_ContentRendered({
   Hide-OwnConsole
-  Show-WindowForReal -Form $form
+  Show-WindowForReal -Form $script:Window
+})
 
-  Invoke-Safely 'خواندنِ تنظیمات' { Load-Settings } | Out-Null
-  Invoke-Safely 'وضعیتِ سرور' { Update-Status | Out-Null } | Out-Null
-  Invoke-Safely 'آدرس‌ها' { Update-Addresses } | Out-Null
-  Invoke-Safely 'ترمینال' { Update-Terminal -Force $true } | Out-Null
-  Invoke-Safely 'فهرستِ برنامه‌ها' { Load-Clients } | Out-Null
-
-  Invoke-Safely 'تنظیماتِ به‌روزرسانی' {
+$script:Window.Add_Loaded({
+  Invoke-Safely 'وضعیت' { Update-Status | Out-Null }
+  Invoke-Safely 'خلاصه' { Update-Overview }
+  Invoke-Safely 'تنظیمات' { Update-SettingsForm }
+  Invoke-Safely 'ترمینال' { Update-Terminal -Force $true }
+  Invoke-Safely 'به‌روزرسانی' {
     $saved = Get-DesktopSettings -ServerDir $script:ServerDir
-    $script:BranchBox.Text = $saved.branch
-    $script:AutoCheck.Checked = [bool]$saved.autoCheck
-  } | Out-Null
+    $ui.TxtBranch.Text = $saved.branch
+    $ui.ChkAutoCheck.IsChecked = [bool]$saved.autoCheck
+  }
 
+  $script:Ready = $true
+  Show-Page 'NavHome'
   $timer.Start()
 
   if ($script:StartupErrors.Count -gt 0) {
-    $script:SubLabel.Text = "چند بخش بالا نیامد: $($script:StartupErrors -join '، ') — گزارش در desktop-error.log"
-    $script:SubLabel.ForeColor = $Bad
+    Set-Text $ui.LblSubtitle "چند بخش بالا نیامد: $($script:StartupErrors -join '، ')" $script:Brushes.Warn
   }
 
-  # بررسیِ نسخه چند لحظه بعد از باز شدنِ پنجره، تا معطلش نکند
-  if ($script:AutoCheck.Checked) {
-    $script:StartupCheck = New-Object System.Windows.Forms.Timer
-    $script:StartupCheck.Interval = 2500
-    $script:StartupCheck.Add_Tick({
-      $script:StartupCheck.Stop()
-      try {
+  if ($ui.ChkAutoCheck.IsChecked) {
+    $once = New-Object System.Windows.Threading.DispatcherTimer
+    $once.Interval = [TimeSpan]::FromMilliseconds(2500)
+    $once.Add_Tick({
+      $once.Stop()
+      Invoke-Safely 'بررسیِ نسخه' {
         if (Test-Update -Quiet $true) {
-          $script:SubLabel.Text = "نسخهٔ تازه ($($script:UpdateReady)) روی GitHub هست — تبِ «به‌روزرسانی»"
-          $script:SubLabel.ForeColor = $Brand
+          $ui.NavUpdate.Content = "به‌روزرسانی  ●"
         }
-      } catch {
-        Write-AppError -ErrorRecord $_ -Where 'بررسیِ نسخه' -ServerDir $script:ServerDir | Out-Null
       }
     })
-    $script:StartupCheck.Start()
+    $once.Start()
   }
 })
 
-$form.Add_FormClosed({
-  $timer.Stop()
-  if ($script:StartupCheck) { $script:StartupCheck.Stop() }
-})
+$script:Window.Add_Closed({ try { $timer.Stop() } catch { } })
 
-# نمایشِ پنجره. اگر این‌جا چیزی خراب شود، پنجره «باز می‌شود و گم می‌شود» —
-# پس خطا را می‌نویسیم و نشان می‌دهیم.
-$openedAt = Get-Date
+# پنجره تمام‌صفحه باز می‌شود — همان چیزی که خواسته شده
+$script:Window.WindowState = [System.Windows.WindowState]::Maximized
+
 try {
-  $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
-  $form.ShowInTaskbar = $true
-  $form.TopMost = $true      # یک لحظه بالای همه، تا حتماً دیده شود
-  $form.Show()
-  Show-WindowForReal -Form $form
-  $form.TopMost = $false
-  [System.Windows.Forms.Application]::Run($form)
-
-  # اگر پنجره در یک چشم‌به‌هم‌زدن بسته شد، یعنی چیزی خراب است — بی‌صدا نرویم
-  if (((Get-Date) - $openedAt).TotalSeconds -lt 1.5) {
-    $logPath = Get-ErrorLogPath -ServerDir $script:ServerDir
-    [System.Windows.Forms.MessageBox]::Show(
-      "پنجره باز شد ولی بی‌درنگ بسته شد.`r`n`r`nبرای دیدنِ علت، فایلِ «عیب‌یابی.bat» را اجرا کنید.`r`n`r`nگزارش: $logPath",
-      'برنامهٔ سرور خانگی') | Out-Null
-  }
+  $null = $script:Window.ShowDialog()
 } catch {
   $logPath = Write-AppError -ErrorRecord $_ -Where 'اجرای پنجره' -ServerDir $script:ServerDir
-  [System.Windows.Forms.MessageBox]::Show(
-    "برنامه بسته شد:`r`n`r`n$($_.Exception.Message)`r`n`r`nگزارش: $logPath",
-    'برنامهٔ سرور خانگی') | Out-Null
+  [System.Windows.MessageBox]::Show("برنامه بسته شد:`r`n`r`n$($_.Exception.Message)`r`n`r`nگزارش: $logPath", 'سرور خانگی') | Out-Null
 }

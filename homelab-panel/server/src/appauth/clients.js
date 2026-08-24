@@ -35,6 +35,18 @@ CREATE TABLE IF NOT EXISTS app_clients (
 );
 `);
 
+/* نوعِ برنامه بعداً اضافه شد: اپِ اندروید، سایت، یا برنامهٔ کامپیوتری.
+   ردیف‌های قدیمی «سایت» حساب می‌شوند تا چیزی عوض نشود. */
+try {
+  const cols = db.prepare('PRAGMA table_info(app_clients)').all().map((c) => c.name);
+  if (!cols.includes('kind')) db.exec("ALTER TABLE app_clients ADD COLUMN kind TEXT NOT NULL DEFAULT 'web'");
+} catch { /* ستون از قبل هست */ }
+
+/** سه نوعی که پشتیبانی می‌شود */
+export const KINDS = ['android', 'web', 'desktop'];
+export const KIND_LABELS = { android: 'برنامهٔ اندروید', web: 'سایت', desktop: 'برنامهٔ کامپیوتری' };
+export const cleanKind = (value) => (KINDS.includes(String(value)) ? String(value) : 'web');
+
 const newKey = () => `hlp_${crypto.randomBytes(16).toString('hex')}`;
 
 export function getClient(slug) {
@@ -42,14 +54,14 @@ export function getClient(slug) {
 }
 
 /** برنامه را می‌سازد اگر نبود — همان چیزی که «ثبتِ خودکار» می‌گوید */
-export function ensureClient(slug, { name = null, autoKey = true } = {}) {
+export function ensureClient(slug, { name = null, autoKey = true, kind = 'web' } = {}) {
   const key = cleanApp(slug);
   const found = getClient(key);
   if (found) return found;
 
   db.prepare(
-    'INSERT INTO app_clients(slug, name, api_key, created_at) VALUES(?,?,?,?)'
-  ).run(key, name || key, autoKey ? newKey() : null, Date.now());
+    'INSERT INTO app_clients(slug, name, api_key, kind, created_at) VALUES(?,?,?,?,?)'
+  ).run(key, name || key, autoKey ? newKey() : null, cleanKind(kind), Date.now());
   logEvent('info', 'panel', `برنامهٔ تازه ثبت شد: ${key}`);
   return getClient(key);
 }
@@ -79,6 +91,8 @@ export function listClients() {
 export const publicClient = (row) => ({
   slug: row.slug,
   name: row.name,
+  kind: cleanKind(row.kind),
+  kindLabel: KIND_LABELS[cleanKind(row.kind)],
   apiKey: row.api_key || null,
   requireKey: Boolean(row.require_key),
   enabled: Boolean(row.enabled),
@@ -94,6 +108,7 @@ export const publicClient = (row) => ({
 
 const FIELDS = {
   name: 'name',
+  kind: 'kind',
   requireKey: 'require_key',
   enabled: 'enabled',
   channels: 'channels',
@@ -114,6 +129,7 @@ export function updateClient(slug, patch = {}) {
     if (!(key in patch)) continue;
     let value = patch[key];
     if (key === 'requireKey' || key === 'enabled') value = value ? 1 : 0;
+    else if (key === 'kind') value = cleanKind(value);
     else if (key === 'channels') value = Array.isArray(value) ? value.join(',') : String(value || '');
     else if (key === 'codeLength' || key === 'codeTtl') value = value ? Number(value) : null;
     else if (value === '' ) value = null;
@@ -188,4 +204,25 @@ export function checkAccess(slug, { key = null, channel = null } = {}) {
     }
   }
   return { ok: true, client: row };
+}
+
+/**
+ * خلاصهٔ هر سه نوع — همان چیزی که سه کادرِ صفحهٔ نخست نشان می‌دهند.
+ */
+export function summaryByKind() {
+  const all = listClients();
+  const now = Date.now();
+  return KINDS.map((kind) => {
+    const rows = all.filter((c) => c.kind === kind);
+    return {
+      kind,
+      label: KIND_LABELS[kind],
+      count: rows.length,
+      users: rows.reduce((sum, c) => sum + c.users, 0),
+      online: rows.reduce((sum, c) => sum + c.activeSessions, 0),
+      codesToday: rows.reduce((sum, c) => sum + c.codesToday, 0),
+      // «زنده» یعنی در یک ساعتِ گذشته درخواستی داشته
+      live: rows.filter((c) => c.lastSeenAt && now - c.lastSeenAt < 3600 * 1000).length,
+    };
+  });
 }
