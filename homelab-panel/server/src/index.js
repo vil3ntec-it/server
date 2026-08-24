@@ -22,7 +22,7 @@ import { readInterfaces } from './metrics/network.js';
 import { autostartAll, ensureAllSiteWorkspaces, ensureMainSite } from './sites/registry.js';
 import { sitesRoot, ensureSitesRoot } from './sites/root.js';
 import { stopAll } from './sites/process.js';
-import { startTunnel, stopTunnel, tunnelEvents } from './tunnel.js';
+import { startTunnel, stopTunnel, tunnelEvents, publicState as tunnelState } from './tunnel.js';
 import { versionInfo, versionLine } from './version.js';
 import { siteTunnelEvents, stopAllSiteTunnels } from './site-tunnels.js';
 
@@ -41,6 +41,7 @@ import appRoutes, { adminRouter as appAdminRoutes } from './routes/app.js';
 import storageRoutes from './routes/storage.js';
 import { pruneAppAuth } from './appauth/index.js';
 import { localKey } from './local-key.js';
+import { rateLimit, pruneRateLimits } from './lib/rate-limit.js';
 import { otpSettings } from './appauth/settings.js';
 import * as notify from './notify/index.js';
 import * as messenger from './messenger/index.js';
@@ -73,15 +74,56 @@ try {
 const app = express();
 app.disable('x-powered-by');
 
-// در شبکهٔ خانگی، پنل ممکن است از آدرس‌های مختلف باز شود
+/* ── CORS ────────────────────────────────────────────────────────────────────
+   پیش از این هر سایتی در دنیا می‌توانست با کوکی و توکنِ کاربر به این سرور
+   درخواست بزند. حالا:
+
+     • مسیرهای «برنامه‌ها» (/api/app) عمداً برای همه باز است — اپِ اندروید و
+       سایتِ روی هاست باید بتوانند صدا بزنند — ولی چون با هدرِ Authorization
+       کار می‌کند نه کوکی، credentials را نمی‌دهیم؛ پس مرورگرِ قربانی
+       نمی‌تواند نشستِ او را سوءاستفاده کند.
+     • بقیهٔ مسیرها فقط از خودِ همین کامپیوتر، شبکهٔ خانگی، یا آدرسِ تونل.
+     • هر مبدأ دیگری: بدونِ هدرِ CORS، یعنی مرورگر خودش جلویش را می‌گیرد.
+   ── */
+const PRIVATE_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|10\.[\d.]+|192\.168\.[\d.]+|172\.(1[6-9]|2\d|3[01])\.[\d.]+)(:\d+)?$/i;
+
+function originAllowed(origin) {
+  if (!origin) return true;                       // curl و اپِ موبایل اصلاً Origin ندارند
+  if (PRIVATE_ORIGIN.test(origin)) return true;   // خودِ کامپیوتر و شبکهٔ خانگی
+  try {
+    const tunnel = tunnelState().url;
+    if (tunnel && origin === tunnel) return true; // آدرسِ اینترنتیِ خودمان
+  } catch { /* تونل هنوز بالا نیامده */ }
+  const extra = getSetting('allowed_origins', []) || [];
+  return Array.isArray(extra) && extra.includes(origin);
+}
+
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  const origin = req.headers.origin;
+  const openApi = req.path.startsWith('/api/app/') || req.path === '/health';
+
+  if (openApi) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+    // عمداً بدونِ credentials: توکن با هدر می‌آید، نه با کوکی
+  } else if (originAllowed(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Api-Key, X-Local-Key, X-Read-Key');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') return res.status(204).end();
   next();
 });
+
+/* ── محدودیتِ نرخ ────────────────────────────────────────────────────────────
+   ورود و کدِ یک‌بارمصرف سخت‌گیرانه‌تر است، چون هدفِ حدس‌زدن‌اند. */
+app.use('/api/auth/login', rateLimit('login', 10, 5 * 60 * 1000));
+app.use('/api/auth/setup', rateLimit('setup', 5, 60 * 60 * 1000));
+app.use('/api/app/auth', rateLimit('app-auth', 60, 10 * 60 * 1000));
+app.use('/api/notify', rateLimit('notify', 240, 60 * 1000));
+app.use('/api/messenger', rateLimit('messenger', 600, 60 * 1000));
+app.use('/api', rateLimit('api', 1200, 60 * 1000));
 
 // دستیارِ پشتیبانی — پیش از میان‌افزارِ JSON، به همان دلیلِ بالا
 app.use(AI_PREFIX, aiProxy);
@@ -205,12 +247,17 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
   const publicApp = express();
   publicApp.disable('x-powered-by');
   publicApp.use((req, res, next) => {
+    // این پورت عمداً عمومی است (اپ‌ها از اینترنت می‌آیند) ولی بدونِ credentials
     res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Api-Key, X-Read-Key');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     if (req.method === 'OPTIONS') return res.status(204).end();
     next();
   });
+  publicApp.use('/api/app/auth', rateLimit('pub-app-auth', 60, 10 * 60 * 1000));
+  publicApp.use('/api/notify', rateLimit('pub-notify', 240, 60 * 1000));
+  publicApp.use('/api', rateLimit('pub-api', 1200, 60 * 1000));
   // ⚠️ پراکسیِ دستیار **پیش از** express.json می‌نشیند: آن میان‌افزار جریانِ
   //    بدنه را می‌خورد و بعدش دیگر چیزی برای لوله کردن نمی‌ماند.
   publicApp.use(AI_PREFIX, aiProxy);
@@ -268,6 +315,7 @@ startCollector((snapshot) => {
 const housekeeping = setInterval(() => {
   pruneSessions();
   pruneAppAuth();
+  pruneRateLimits();
   pruneEvents();
 }, 15 * 60 * 1000);
 housekeeping.unref?.();

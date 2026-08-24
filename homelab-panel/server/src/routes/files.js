@@ -5,7 +5,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { requireAuth } from '../auth.js';
-import { resolveSafe, rootsWithMeta } from '../lib/safe-path.js';
+import { resolveSafe, rootsWithMeta, safeName } from '../lib/safe-path.js';
 import { config } from '../config.js';
 import { sitesRoot } from '../sites/root.js';
 import { logEvent } from '../db.js';
@@ -152,8 +152,8 @@ router.post('/mkdir', async (req, res) => {
 router.post('/rename', async (req, res) => {
   const safe = resolveSafe(req.body?.path);
   if (!safe.ok) return fail(res, 403, safe.error);
-  const name = path.basename(String(req.body?.newName || '').trim());
-  if (!name || name === '.' || name === '..') return fail(res, 400, 'bad_name');
+  const name = safeName(req.body?.newName);
+  if (!name) return fail(res, 400, 'bad_name');
   const target = path.join(path.dirname(safe.path), name);
   if (!resolveSafe(target).ok) return fail(res, 403, 'path_not_allowed');
   try {

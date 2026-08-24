@@ -1,13 +1,13 @@
 {
   "name": "homelab-panel-server",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "Backend of the home server management panel (Express + Socket.IO + SQLite)",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/index.js",
-    "test": "node test/smoke.mjs && node test/multisite.mjs && node test/protected-domains.mjs && node test/tunnel-recovery.mjs && node test/messenger.mjs && node test/notify.mjs && node test/notify-readkey.mjs && node test/ai-proxy.mjs && node test/app-auth.mjs && node test/storage.mjs",
+    "test": "node test/smoke.mjs && node test/multisite.mjs && node test/protected-domains.mjs && node test/tunnel-recovery.mjs && node test/messenger.mjs && node test/notify.mjs && node test/notify-readkey.mjs && node test/ai-proxy.mjs && node test/app-auth.mjs && node test/storage.mjs && node test/security.mjs",
     "test:multisite": "node test/multisite.mjs",
     "test:ui": "node test/ui.mjs",
     "test:perf": "node test/perf.mjs",
@@ -17,7 +17,7 @@
     "test:notify": "node test/notify.mjs",
     "test:notify-readkey": "node test/notify-readkey.mjs",
     "test:app-auth": "node test/app-auth.mjs",
-    "test:storage": "node test/storage.mjs",
+    "test:storage": "node test/storage.mjs && node test/security.mjs",
     "test:desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File ../desktop/test/lib.tests.ps1",
     "test:pump-notify": "node test/pump-notify.mjs"
   },
