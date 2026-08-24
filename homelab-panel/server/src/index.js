@@ -38,6 +38,7 @@ import siteServerRoutes from './routes/site-server.js';
 import messengerRoutes from './routes/messenger.js';
 import notifyRoutes, { adminRouter as notifyAdminRoutes } from './routes/notify.js';
 import appRoutes, { adminRouter as appAdminRoutes } from './routes/app.js';
+import storageRoutes from './routes/storage.js';
 import { pruneAppAuth } from './appauth/index.js';
 import { localKey } from './local-key.js';
 import { otpSettings } from './appauth/settings.js';
@@ -125,6 +126,8 @@ app.use('/api/notify-admin', notifyAdminRoutes);
 // ورودِ کاربرانِ برنامه‌ها (اپِ اندروید، برنامهٔ ویندوز، سایت‌ها) با کدِ شش‌رقمی
 app.use('/api/app', appRoutes);
 app.use('/api/app-admin', appAdminRoutes);
+// کتابخانه: یک جای مرتب برای سایت‌ها، برنامه‌ها، پشتیبان‌ها و فایل‌های موقت
+app.use('/api/storage', storageRoutes);
 app.use('/api/ai', aiRoutes);
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));

@@ -70,6 +70,9 @@ foreach ($name in @(
     'BtnCopyApi','TxtApiCard',
     'TxtOtpTarget','CmbOtpApp','BtnSendCode','TxtOtpCode','BtnVerifyCode','LblOtpState','TxtOtpOut',
     'LstSites',
+    'NavLibrary','PageLibrary','TxtLibRoot','BtnLibChange','BtnLibOpen','BtnLibRepair','BtnLibClean',
+    'LblLibState','LblLibDisk','BarLibDisk','LblLibWarn','LstLibSites','LstLibApps',
+    'BtnLibScan','BtnLibOrganize','LblLibScan','LstLibStray',
     'TxtMailHost','TxtMailUser','TxtMailPort','TxtMailPass','CmbSmsProvider','TxtSmsSender',
     'TxtSmsKey','TxtSmsTemplate','ChkAi','LblAiNote','BtnSaveSettings','BtnOpenEnv','LblSettingsState',
     'BtnLogRefresh','BtnLogClear','BtnLogCopy','ChkLogAuto','TxtLog',
@@ -166,6 +169,7 @@ $script:PageMap = @{
   NavApps     = @{ Page = 'PageApps';     Title = 'برنامه‌ها و سایت‌ها';      Sub = 'هر کدام آدرس و کلیدِ خودش' }
   NavOtp      = @{ Page = 'PageOtp';      Title = 'ورود با کدِ یک‌بارمصرف';   Sub = 'همان مسیری که کاربرِ شما طی می‌کند' }
   NavSites    = @{ Page = 'PageSites';    Title = 'سایت‌های روی سرور';        Sub = 'بدونِ باز کردنِ مرورگر' }
+  NavLibrary  = @{ Page = 'PageLibrary';  Title = 'کتابخانه';                 Sub = 'یک جای مرتب برای همهٔ فایل‌ها' }
   NavSettings = @{ Page = 'PageSettings'; Title = 'تنظیمات';                  Sub = 'پیامک، ایمیل، و دستیارِ هوشمند' }
   NavTerminal = @{ Page = 'PageTerminal'; Title = 'ترمینالِ سرور';            Sub = 'خروجیِ زنده — بدونِ پنجرهٔ سیاه' }
   NavUpdate   = @{ Page = 'PageUpdate';   Title = 'به‌روزرسانی';              Sub = 'نسخهٔ تازه را از GitHub می‌گیرد' }
@@ -197,6 +201,7 @@ function Show-Page {
   switch ($NavName) {
     'NavApps'     { Update-Clients }
     'NavSites'    { Update-Sites }
+    'NavLibrary'  { Update-Library }
     'NavTerminal' { Update-Terminal -Force $true }
     'NavSettings' { Update-SettingsForm }
   }
@@ -448,6 +453,178 @@ function Update-SettingsForm {
 }
 
 # ---------------------------------------------------------------------------
+#  کتابخانه
+# ---------------------------------------------------------------------------
+$script:Stray = @()
+
+<# بایت را به شکلی می‌نویسد که آدم بفهمد #>
+function Format-Bytes {
+  param($Bytes)
+  if ($null -eq $Bytes) { return '—' }
+  $value = [double]$Bytes
+  foreach ($unit in @('بایت', 'کیلوبایت', 'مگابایت', 'گیگابایت', 'ترابایت')) {
+    if ($value -lt 1024 -or $unit -eq 'ترابایت') {
+      if ($unit -eq 'بایت') { return "$([Math]::Round($value)) $unit" }
+      return "$([Math]::Round($value, 1)) $unit"
+    }
+    $value = $value / 1024
+  }
+  return "$value"
+}
+
+function Update-Library {
+  $result = Admin '/api/storage'
+  if (-not $result.ok) {
+    Set-Text $ui.TxtLibRoot ''
+    Set-Text $ui.LblLibState 'برای دیدنِ کتابخانه، اول سرور را روشن کنید.' $script:Brushes.Warn
+    return
+  }
+
+  $data = $result.data
+  Set-Text $ui.TxtLibRoot ([string]$data.root)
+
+  if (-not $data.configured) {
+    Set-Text $ui.LblLibState 'هنوز محلی انتخاب نشده. دکمهٔ «انتخاب / تغییرِ محل» را بزنید — پیشنهادِ ما همین مسیرِ بالاست.' $script:Brushes.Warn
+  } elseif (-not $data.healthy) {
+    Set-Text $ui.LblLibState 'ساختارِ کتابخانه ناقص است. «ترمیمِ ساختار» را بزنید.' $script:Brushes.Warn
+  } else {
+    $counts = @()
+    foreach ($name in @('Sites', 'Apps', 'Backups')) {
+      $branch = $data.branches.$name
+      if ($branch) { $counts += "$name : $($branch.count)" }
+    }
+    Set-Text $ui.LblLibState ('ساختار سالم است  ·  ' + ($counts -join '   ·   ')) $script:Brushes.Good
+  }
+
+  # فضای دیسک
+  if ($data.disk -and $data.disk.ok) {
+    $usedPercent = 0
+    if ($data.disk.total -gt 0) { $usedPercent = [Math]::Round(($data.disk.used / $data.disk.total) * 100) }
+    Set-Text $ui.LblLibDisk ("$(Format-Bytes $data.disk.free) آزاد از $(Format-Bytes $data.disk.total)   ·   $usedPercent٪ پر")
+    try {
+      $track = $ui.BarLibDisk.Parent
+      $full = if ($track -and $track.ActualWidth -gt 0) { $track.ActualWidth } else { 600 }
+      $ui.BarLibDisk.Width = [Math]::Max(4, ($full * $usedPercent / 100))
+    } catch { }
+  } else {
+    Set-Text $ui.LblLibDisk 'فضای دیسک خوانده نشد'
+  }
+
+  if ($data.warning) {
+    $brush = if ($data.warning.level -eq 'critical') { $script:Brushes.Bad } else { $script:Brushes.Warn }
+    Set-Text $ui.LblLibWarn ([string]$data.warning.message) $brush
+  } else {
+    Set-Text $ui.LblLibWarn 'فضای کافی هست.' $script:Brushes.Muted
+  }
+
+  # پروژه‌ها
+  $ui.LstLibSites.Items.Clear()
+  foreach ($row in @($data.sites)) {
+    [void]$ui.LstLibSites.Items.Add("$($row.name)   —   $(Format-Bytes $row.bytes)   ·   $($row.files) فایل")
+  }
+  if ($ui.LstLibSites.Items.Count -eq 0) { [void]$ui.LstLibSites.Items.Add('هنوز سایتی نیست') }
+
+  $ui.LstLibApps.Items.Clear()
+  foreach ($row in @($data.apps)) {
+    [void]$ui.LstLibApps.Items.Add("$($row.name)   —   $(Format-Bytes $row.bytes)   ·   $($row.files) فایل")
+  }
+  if ($ui.LstLibApps.Items.Count -eq 0) { [void]$ui.LstLibApps.Items.Add('هنوز برنامه‌ای نیست') }
+}
+
+$ui.BtnLibChange.Add_Click({
+  $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+  $dialog.Description = 'پوشه‌ای که همهٔ دادهٔ سرور در آن بنشیند'
+  $dialog.ShowNewFolderButton = $true
+  try {
+    $dialog.RootFolder = [System.Environment+SpecialFolder]::MyComputer
+    $current = $ui.TxtLibRoot.Text.Trim()
+    if ($current -and (Test-Path -LiteralPath $current)) { $dialog.SelectedPath = $current }
+  } catch { }
+  if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return }
+
+  $chosen = $dialog.SelectedPath
+  # اگر ریشهٔ درایو را داد، یک پوشهٔ اختصاصی داخلش می‌سازیم
+  if ($chosen -match '^[A-Za-z]:\\?$') { $chosen = Join-Path $chosen 'HomeServer' }
+
+  $check = Admin '/api/storage/check' 'POST' @{ root = $chosen }
+  if (-not ($check.ok -and $check.data.ok)) {
+    $message = if ($check.data -and $check.data.message) { $check.data.message } else { $check.error }
+    Say "این محل قابلِ استفاده نیست:`r`n`r`n$message"
+    return
+  }
+
+  if (-not (Ask "کتابخانه این‌جا ساخته شود؟`r`n`r`n$chosen`r`n`r`nدادهٔ فعلی جابه‌جا نمی‌شود؛ فقط ساختار ساخته می‌شود و از این به بعد پروژه‌های تازه این‌جا می‌نشینند.")) { return }
+
+  Set-Text $ui.LblLibState '… در حالِ ساختن' $script:Brushes.Muted
+  Pump
+  $made = Admin '/api/storage/setup' 'POST' @{ root = $chosen }
+  if (-not $made.ok) {
+    $message = if ($made.data -and $made.data.message) { $made.data.message } else { $made.error }
+    Say "ساخته نشد: $message"
+  }
+  Update-Library
+})
+
+$ui.BtnLibOpen.Add_Click({
+  $root = $ui.TxtLibRoot.Text.Trim()
+  if ($root -and (Test-Path -LiteralPath $root)) { Start-Process 'explorer.exe' -ArgumentList $root }
+  else { Say 'این پوشه هنوز ساخته نشده.' }
+})
+
+$ui.BtnLibRepair.Add_Click({
+  $result = Admin '/api/storage/repair' 'POST'
+  if ($result.ok) { Set-Text $ui.LblLibState 'ساختار ترمیم شد.' $script:Brushes.Good }
+  Update-Library
+})
+
+$ui.BtnLibClean.Add_Click({
+  $result = Admin '/api/storage/clean-temp' 'POST' @{ olderThanHours = 24 }
+  if ($result.ok) { Set-Text $ui.LblLibState "$($result.data.removed) موردِ موقت پاک شد." $script:Brushes.Good }
+})
+
+$ui.BtnLibScan.Add_Click({
+  Set-Text $ui.LblLibScan '… در حالِ گشتن' $script:Brushes.Muted
+  $ui.LstLibStray.Items.Clear()
+  Pump
+
+  $result = Admin '/api/storage/scan'
+  if (-not $result.ok) { Set-Text $ui.LblLibScan 'گشتن نشد — سرور روشن است؟' $script:Brushes.Warn; return }
+
+  $script:Stray = @($result.data.found)
+  foreach ($row in $script:Stray) {
+    [void]$ui.LstLibStray.Items.Add("$($row.name)   →   $($row.suggestedBranch)   ·   $(Format-Bytes $row.bytes)   ·   $($row.path)")
+  }
+  if ($script:Stray.Count -eq 0) {
+    [void]$ui.LstLibStray.Items.Add('چیزی بیرونِ کتابخانه نمانده — همه‌چیز مرتب است.')
+    Set-Text $ui.LblLibScan 'همه‌چیز مرتب است' $script:Brushes.Good
+    $ui.BtnLibOrganize.IsEnabled = $false
+  } else {
+    Set-Text $ui.LblLibScan "$($script:Stray.Count) پوشه بیرونِ کتابخانه است" $script:Brushes.Warn
+    $ui.BtnLibOrganize.IsEnabled = $true
+  }
+})
+
+$ui.BtnLibOrganize.Add_Click({
+  if ($script:Stray.Count -eq 0) { return }
+  if (-not (Ask "$($script:Stray.Count) پوشه به کتابخانه کپی شود؟`r`n`r`nپوشه‌های اصلی سرِ جایشان می‌مانند و چیزی پاک نمی‌شود — بعد از اطمینان، خودتان می‌توانید پاکشان کنید.")) { return }
+
+  $items = @()
+  foreach ($row in $script:Stray) {
+    $items += @{ path = $row.path; name = $row.name; branch = $row.suggestedBranch }
+  }
+
+  Set-Text $ui.LblLibScan '… در حالِ کپی' $script:Brushes.Muted
+  Pump
+  $result = Admin '/api/storage/organize/apply' 'POST' @{ items = $items }
+  if (-not $result.ok) { Set-Text $ui.LblLibScan "نشد: $($result.error)" $script:Brushes.Bad; return }
+
+  $moved = @($result.data.done | Where-Object { $_.moved })
+  Set-Text $ui.LblLibScan "$($moved.Count) پوشه به کتابخانه آمد (اصلی‌ها دست‌نخورده‌اند)" $script:Brushes.Good
+  $ui.BtnLibOrganize.IsEnabled = $false
+  Update-Library
+})
+
+# ---------------------------------------------------------------------------
 #  دکمه‌ها
 # ---------------------------------------------------------------------------
 function Restart-Server {
@@ -469,6 +646,7 @@ function Refresh-All {
   Update-Overview
   if ($script:CurrentNav -eq 'NavApps') { Update-Clients }
   if ($script:CurrentNav -eq 'NavSites') { Update-Sites }
+  if ($script:CurrentNav -eq 'NavLibrary') { Update-Library }
 }
 
 $ui.BtnStart.Add_Click({
@@ -521,7 +699,7 @@ $ui.CardAndroid.Add_MouseLeftButtonUp({ Open-Kind 'android' })
 $ui.CardWeb.Add_MouseLeftButtonUp({ Open-Kind 'web' })
 $ui.CardDesktop.Add_MouseLeftButtonUp({ Open-Kind 'desktop' })
 
-foreach ($navName in @('NavHome','NavApps','NavOtp','NavSites','NavSettings','NavTerminal','NavUpdate')) {
+foreach ($navName in @('NavHome','NavApps','NavOtp','NavSites','NavLibrary','NavSettings','NavTerminal','NavUpdate')) {
   $button = $ui[$navName]
   if (-not $button) { continue }
   $button.Add_Checked({
