@@ -802,7 +802,14 @@ function Test-InstallTarget {
 
 <#
   .SYNOPSIS
-  یک میان‌بر می‌سازد که برنامه را بدونِ هیچ پنجرهٔ سیاهی باز می‌کند.
+  نامِ میان‌برِ برنامه — یک جا نوشته شده تا همه‌جا یکی باشد.
+#>
+function Get-ShortcutName { return 'سرور خانگی.lnk' }
+
+<#
+  .SYNOPSIS
+  یک میان‌بر می‌سازد که برنامه را بدونِ هیچ پنجرهٔ سیاهی باز می‌کند،
+  با آیکونِ خودِ برنامه تا روی دسکتاپ پیدا شود.
 #>
 function New-ProgramShortcut {
   param(
@@ -810,20 +817,56 @@ function New-ProgramShortcut {
     [Parameter(Mandatory = $true)][string]$LinkPath
   )
 
-  $launcher = Join-Path $InstallRoot 'homelab-panel\desktop\launch.vbs'
+  $desktopDir = Join-Path $InstallRoot 'homelab-panel\desktop'
+  $launcher = Join-Path $desktopDir 'launch.vbs'
   if (-not (Test-Path -LiteralPath $launcher)) { return $null }
+
   try {
     $dir = Split-Path -Parent $LinkPath
-    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    if ($dir -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+
     $shell = New-Object -ComObject WScript.Shell
     $link = $shell.CreateShortcut($LinkPath)
     # wscript یعنی هیچ پنجرهٔ سیاهی حتی یک لحظه هم دیده نمی‌شود
     $link.TargetPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
     $link.Arguments = """$launcher"""
-    $link.WorkingDirectory = Join-Path $InstallRoot 'homelab-panel\desktop'
+    $link.WorkingDirectory = $desktopDir
     $link.Description = 'برنامهٔ سرور خانگی'
+
+    $icon = Join-Path $desktopDir 'server.ico'
+    if (Test-Path -LiteralPath $icon) { $link.IconLocation = "$icon,0" }
+
     $link.Save()
-    return $LinkPath
+    if (Test-Path -LiteralPath $LinkPath) { return $LinkPath }
+    return $null
+  } catch {
+    return $null
+  }
+}
+
+<#
+  .SYNOPSIS
+  مطمئن می‌شود میان‌برِ دسکتاپ سرِ جایش هست؛ اگر نبود، می‌سازدش.
+  برنامه هر بار که باز می‌شود این را صدا می‌زند، تا اگر نصب یادش رفته بود
+  یا کسی پاکش کرده، دفعهٔ بعد باز هم پیدایش کند.
+#>
+function Repair-DesktopShortcut {
+  param([Parameter(Mandatory = $true)][string]$InstallRoot)
+
+  try {
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    if (-not $desktop -or -not (Test-Path -LiteralPath $desktop)) { return $null }
+
+    $linkPath = Join-Path $desktop (Get-ShortcutName)
+    if (Test-Path -LiteralPath $linkPath) { return $linkPath }
+
+    # نامِ قدیمیِ میان‌بر هم بررسی می‌شود تا دو تا نشود
+    $legacy = Join-Path $desktop 'برنامهٔ سرور خانگی.lnk'
+    if (Test-Path -LiteralPath $legacy) {
+      try { Remove-Item -LiteralPath $legacy -Force -ErrorAction SilentlyContinue } catch { }
+    }
+
+    return (New-ProgramShortcut -InstallRoot $InstallRoot -LinkPath $linkPath)
   } catch {
     return $null
   }

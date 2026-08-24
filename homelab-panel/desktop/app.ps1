@@ -89,6 +89,14 @@ try {
 } catch { }   # اگر نشد، خطِ پیش‌فرضِ ویندوز
 $script:Window.FontSize = 14
 
+# آیکونِ برنامه روی نوارِ وظیفه و گوشهٔ پنجره
+try {
+  $iconPath = Join-Path $PSScriptRoot 'server.ico'
+  if (Test-Path -LiteralPath $iconPath) {
+    $script:Window.Icon = New-Object System.Windows.Media.Imaging.BitmapImage (New-Object Uri $iconPath)
+  }
+} catch { }
+
 # ---------------------------------------------------------------------------
 #  کمکی‌های کوچک
 # ---------------------------------------------------------------------------
@@ -718,7 +726,8 @@ $ui.BtnDoUpdate.Add_Click({
 })
 
 $ui.BtnShortcut.Add_Click({
-  $link = New-ProgramShortcut -InstallRoot $script:ProjectRoot -LinkPath (Join-Path ([Environment]::GetFolderPath('Desktop')) 'سرور خانگی.lnk')
+  $linkPath = Join-Path ([Environment]::GetFolderPath('Desktop')) (Get-ShortcutName)
+  $link = New-ProgramShortcut -InstallRoot $script:ProjectRoot -LinkPath $linkPath
   if ($link) { Say "میان‌بر ساخته شد:`r`n$link" } else { Say 'میان‌بر ساخته نشد.' }
 })
 
@@ -754,10 +763,10 @@ Set-Text $ui.LblUpdateVersion "نسخهٔ نصب‌شده: $($script:Version)"
 $ui.TxtOtpTarget.Text = ''
 $ui.TxtBranch.Text = $script:DefaultBranch
 
-$timer = New-Object System.Windows.Threading.DispatcherTimer
-$timer.Interval = [TimeSpan]::FromMilliseconds(2000)
+$script:Timer = New-Object System.Windows.Threading.DispatcherTimer
+$script:Timer.Interval = [TimeSpan]::FromMilliseconds(2000)
 $script:Ticks = 0
-$timer.Add_Tick({
+$script:Timer.Add_Tick({
   $script:Ticks++
   Invoke-Safely 'وضعیت' { Update-Status | Out-Null }
   if ($script:Ticks % 5 -eq 0) { Invoke-Safely 'خلاصه' { Update-Overview } }
@@ -782,30 +791,58 @@ $script:Window.Add_Loaded({
     $ui.ChkAutoCheck.IsChecked = [bool]$saved.autoCheck
   }
 
+  # اگر میان‌برِ دسکتاپ نبود (نصب نساخته بود، یا کسی پاکش کرده) همین‌جا ساخته
+  # می‌شود — تا دفعهٔ بعد کاربر دنبالِ راهِ باز کردنِ برنامه نگردد.
+  Invoke-Safely 'میان‌بر' {
+    $made = Repair-DesktopShortcut -InstallRoot $script:ProjectRoot
+    if ($made) { Set-Text $ui.LblSubtitle 'میان‌برِ برنامه روی دسکتاپ ساخته شد.' $script:Brushes.Good }
+  }
+
   $script:Ready = $true
   Show-Page 'NavHome'
-  $timer.Start()
+  $script:Timer.Start()
 
   if ($script:StartupErrors.Count -gt 0) {
     Set-Text $ui.LblSubtitle "چند بخش بالا نیامد: $($script:StartupErrors -join '، ')" $script:Brushes.Warn
   }
 
   if ($ui.ChkAutoCheck.IsChecked) {
-    $once = New-Object System.Windows.Threading.DispatcherTimer
-    $once.Interval = [TimeSpan]::FromMilliseconds(2500)
-    $once.Add_Tick({
-      $once.Stop()
+    # ⚠️ این تایمر باید در سطحِ اسکریپت بماند: اگر متغیرِ محلی باشد، وقتی
+    #    تیکش می‌زند دیگر پیدا نمی‌شود و $null.Stop() کلِ پنجره را می‌بندد.
+    $script:StartupCheck = New-Object System.Windows.Threading.DispatcherTimer
+    $script:StartupCheck.Interval = [TimeSpan]::FromMilliseconds(2500)
+    $script:StartupCheck.Add_Tick({
+      try { $script:StartupCheck.Stop() } catch { }
       Invoke-Safely 'بررسیِ نسخه' {
         if (Test-Update -Quiet $true) {
-          $ui.NavUpdate.Content = "به‌روزرسانی  ●"
+          $ui.NavUpdate.Content = 'به‌روزرسانی  ●'
         }
       }
     })
-    $once.Start()
+    $script:StartupCheck.Start()
   }
 })
 
-$script:Window.Add_Closed({ try { $timer.Stop() } catch { } })
+$script:Window.Add_Closed({
+  try { $script:Timer.Stop() } catch { }
+  try { if ($script:StartupCheck) { $script:StartupCheck.Stop() } } catch { }
+})
+
+<#
+  تورِ ایمنی: اگر خطایی در هر دکمه یا تایمری رخ دهد، ویندوز آن را به بیرون
+  پرتاب می‌کند و پنجره بسته می‌شود. این‌جا می‌گیریمش، در گزارش می‌نویسیم و
+  بالای پنجره خبر می‌دهیم — ولی برنامه باز می‌ماند.
+#>
+try {
+  $script:Window.Dispatcher.Add_UnhandledException({
+    param($sender, $eventArgs)
+    try {
+      $logPath = Write-AppError -ErrorRecord $eventArgs.Exception -Where 'یکی از دکمه‌ها' -ServerDir $script:ServerDir
+      Set-Text $ui.LblSubtitle "یک خطا رخ داد ولی برنامه باز ماند — گزارش: $logPath" $script:Brushes.Warn
+    } catch { }
+    $eventArgs.Handled = $true
+  })
+} catch { }
 
 # پنجره تمام‌صفحه باز می‌شود — همان چیزی که خواسته شده
 $script:Window.WindowState = [System.Windows.WindowState]::Maximized

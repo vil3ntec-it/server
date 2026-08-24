@@ -191,7 +191,7 @@ $page3.Controls.Add($script:Bar)
 
 $script:Console = New-Object System.Windows.Forms.TextBox
 $script:Console.Location = New-Object System.Drawing.Point(30, 88)
-$script:Console.Size = New-Object System.Drawing.Size(600, 270)
+$script:Console.Size = New-Object System.Drawing.Size(600, 266)
 $script:Console.Multiline = $true
 $script:Console.ReadOnly = $true
 $script:Console.ScrollBars = [System.Windows.Forms.ScrollBars]::Vertical
@@ -200,6 +200,15 @@ $script:Console.ForeColor = [System.Drawing.Color]::FromArgb(200, 230, 210)
 $script:Console.Font = $Mono
 $script:Console.RightToLeft = [System.Windows.Forms.RightToLeft]::No
 $page3.Controls.Add($script:Console)
+
+$script:BtnFolder = New-Btn -Text 'بازکردنِ پوشهٔ برنامه' -X 30 -Y 364 -Width 200
+$script:BtnFolder.Visible = $false
+$script:BtnFolder.Add_Click({
+  if ($script:InstalledAt -and (Test-Path -LiteralPath $script:InstalledAt)) {
+    Start-Process 'explorer.exe' -ArgumentList """$($script:InstalledAt)"""
+  }
+})
+$page3.Controls.Add($script:BtnFolder)
 
 $body.Controls.AddRange(@($page1, $page2, $page3))
 
@@ -310,7 +319,36 @@ function Start-Install {
     $copied = Copy-UpdateFiles -FromDir $script:SourceRoot -ToDir $target
     Write-Console "$($copied.copied) فایل کپی شد."
     if ($check.upgrade) { Write-Console 'نسخهٔ قبلی به‌روزرسانی شد — دادهٔ شما و فایل .env دست نخورد.' }
-    $script:Bar.Value = 40
+    $script:Bar.Value = 35
+
+    # ⚠️ میان‌برها همین‌جا ساخته می‌شوند، پیش از npm — تا اگر نصبِ وابستگی‌ها خطا
+    #    داد یا اینترنت قطع بود، کاربر باز هم آیکونش را روی دسکتاپ داشته باشد.
+    $script:StepLabel.Text = 'ساختنِ میان‌برها…'
+    [System.Windows.Forms.Application]::DoEvents()
+    $script:ShortcutPath = ''
+
+    if ($script:OptShortcut.Checked) {
+      $desktopPath = [Environment]::GetFolderPath('Desktop')
+      $linkPath = Join-Path $desktopPath (Get-ShortcutName)
+      $legacy = Join-Path $desktopPath 'برنامهٔ سرور خانگی.lnk'
+      if (Test-Path -LiteralPath $legacy) {
+        try { Remove-Item -LiteralPath $legacy -Force -ErrorAction SilentlyContinue } catch { }
+      }
+      $link = New-ProgramShortcut -InstallRoot $target -LinkPath $linkPath
+      if ($link) {
+        $script:ShortcutPath = $link
+        Write-Console 'میان‌برِ دسکتاپ ساخته شد:'
+        Write-Console "   $link"
+      } else {
+        Write-Console 'میان‌برِ دسکتاپ ساخته نشد. برنامه را از این فایل باز کنید:'
+        Write-Console (Join-Path $target 'homelab-panel\desktop\برنامه-سرور.bat')
+      }
+    }
+    if ($script:OptMenu.Checked) {
+      $menu = Join-Path ([Environment]::GetFolderPath('Programs')) (Get-ShortcutName)
+      if (New-ProgramShortcut -InstallRoot $target -LinkPath $menu) { Write-Console "منوی استارت: $menu" }
+    }
+    $script:Bar.Value = 45
 
     $serverDir = Join-Path (Join-Path $target 'homelab-panel') 'server'
 
@@ -353,31 +391,21 @@ function Start-Install {
     $script:StepLabel.Text = 'ساختنِ میان‌برها…'
     [System.Windows.Forms.Application]::DoEvents()
 
-    if ($script:OptShortcut.Checked) {
-      $desktopPath = [Environment]::GetFolderPath('Desktop')
-      $linkPath = Join-Path $desktopPath 'برنامهٔ سرور خانگی.lnk'
-      $link = New-ProgramShortcut -InstallRoot $target -LinkPath $linkPath
-      if ($link -and (Test-Path -LiteralPath $linkPath)) {
-        Write-Console "✔ میان‌برِ دسکتاپ ساخته شد: $linkPath"
-      } else {
-        # اگر نشد، دستِ‌کم یک میان‌برِ ساده بسازیم تا کاربر بی‌راه نماند
-        Write-Console 'میان‌برِ دسکتاپ ساخته نشد — به‌جایش از این فایل باز کنید:'
-        Write-Console (Join-Path $target 'homelab-panel\desktop\برنامه-سرور.bat')
-      }
-    }
-    if ($script:OptMenu.Checked) {
-      $menu = Join-Path ([Environment]::GetFolderPath('Programs')) 'برنامهٔ سرور خانگی.lnk'
-      $link = New-ProgramShortcut -InstallRoot $target -LinkPath $menu
-      if ($link) { Write-Console "منوی استارت: $link" }
-    }
-
     $script:Bar.Value = 100
     $script:StepLabel.Text = 'نصب تمام شد ✔'
     Write-Console ''
     Write-Console '──────────────────────────────────────────'
-    Write-Console 'تمام شد. برنامه را از میان‌برِ روی دسکتاپ باز کنید.'
+    if ($script:ShortcutPath) {
+      Write-Console 'تمام شد. روی دسکتاپ آیکونِ آبیِ «سرور خانگی» را ببینید و دوبار کلیک کنید.'
+    } else {
+      Write-Console 'تمام شد. برنامه را از این فایل باز کنید:'
+      Write-Console (Join-Path $target 'homelab-panel\desktop\برنامه-سرور.bat')
+    }
+    Write-Console ''
+    Write-Console "پوشهٔ نصب: $target"
     $script:Done = $true
     $script:InstalledAt = $target
+    $script:BtnFolder.Visible = $true
   } catch {
     $script:StepLabel.Text = 'نصب ناتمام ماند'
     Write-Console ''

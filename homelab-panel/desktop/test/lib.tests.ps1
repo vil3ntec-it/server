@@ -200,6 +200,18 @@ try {
       if ($readOnly -eq 'True') { $locked += $nodeName }
     }
     Check 'کادرهای نوشتنی قفل نیستند' ($locked.Count -eq 0) ($locked -join '، ')
+
+    # تایمرها باید در سطحِ اسکریپت باشند. اگر متغیرِ محلی باشند، وقتی تیکشان
+    # می‌زند دیگر پیدا نمی‌شوند و $null.Stop() کلِ پنجره را می‌بندد.
+    $badTimers = @()
+    foreach ($match in [regex]::Matches($appText, '\$([A-Za-z:]+)\s*=\s*New-Object\s+System\.Windows\.Threading\.DispatcherTimer')) {
+      $varName = $match.Groups[1].Value
+      if ($varName -notlike 'script:*') { $badTimers += $varName }
+    }
+    Check 'تایمرها در سطحِ اسکریپت‌اند' ($badTimers.Count -eq 0) ($badTimers -join '، ')
+
+    Check 'تورِ ایمنیِ خطاها هست' ($appText.Contains('Add_UnhandledException'))
+    Check 'آیکونِ برنامه همراهش است' (Test-Path -LiteralPath (Join-Path $desktopDir 'server.ico'))
   }
 
   # ------------------------------------------------------- گزارشِ خطاها --
