@@ -6,6 +6,7 @@
 //    ۳) سرورِ سایتِ پمپ یعقوبی (پروتکل ws)     → همان آدرس، بدون مسیر اضافه
 // ---------------------------------------------------------------------------
 import http from 'node:http';
+import https from 'node:https';
 import path from 'node:path';
 import fs from 'node:fs';
 import express from 'express';
@@ -42,7 +43,9 @@ import storageRoutes from './routes/storage.js';
 import { pruneAppAuth } from './appauth/index.js';
 import { localKey } from './local-key.js';
 import { runMigrations, dbVersion } from './lib/migrations.js';
+import { startDiscovery, stopDiscovery, serverCard, DISCOVERY_PORT } from './discovery.js';
 import { pruneAudit } from './lib/audit.js';
+import { pruneTickets } from './lib/ws-ticket.js';
 import { rateLimit, pruneRateLimits } from './lib/rate-limit.js';
 import { otpSettings } from './appauth/settings.js';
 import * as notify from './notify/index.js';
@@ -225,7 +228,32 @@ app.use((err, req, res, next) => {
 });
 
 // ------------------------------ راه‌اندازی ----------------------------------
-const httpServer = http.createServer(app);
+/* ── HTTPS ───────────────────────────────────────────────────────────────────
+   اگر گواهی بدهید (HLP_TLS_CERT و HLP_TLS_KEY)، سرور روی همان پورت با
+   https بالا می‌آید و وب‌سوکت هم خودبه‌خود wss می‌شود.
+
+   عمداً گواهیِ خودامضا نمی‌سازیم: مرورگر و اندروید به آن اعتماد نمی‌کنند و
+   کاربر با صفحهٔ «این سایت امن نیست» روبه‌رو می‌شود — بدتر از http. راهِ
+   درست برای دسترسی از اینترنت همان تونل است که گواهیِ معتبرِ واقعی دارد و
+   از قبل کار می‌کند. این گزینه برای کسی است که گواهیِ خودش را دارد. */
+function tlsOptions() {
+  const certPath = process.env.HLP_TLS_CERT;
+  const keyPath = process.env.HLP_TLS_KEY;
+  if (!certPath || !keyPath) return null;
+  try {
+    return {
+      cert: fs.readFileSync(certPath),
+      key: fs.readFileSync(keyPath),
+    };
+  } catch (e) {
+    console.error(`⚠️  گواهیِ TLS خوانده نشد (${e.code || e.message}) — سرور با http بالا می‌آید.`);
+    return null;
+  }
+}
+
+const tls = tlsOptions();
+const httpServer = tls ? https.createServer(tls, app) : http.createServer(app);
+export const scheme = tls ? 'https' : 'http';
 
 // ۱) Socket.IO (روی مسیر /socket.io/)
 const io = attachRealtime(httpServer);
@@ -316,6 +344,9 @@ siteTunnelEvents.on('change', (payload) => {
   } catch { /* هنوز کسی وصل نیست */ }
 });
 
+// ۲.۹) کشفِ خودکار — تا اپ‌ها بدونِ دانستنِ IP سرور را پیدا کنند
+if ((process.env.HLP_DISCOVERY ?? '1') !== '0') startDiscovery();
+
 // ۳) معیارهای زنده
 // روی ویندوز یک پروسهٔ PowerShell دائمی به‌جای ده‌ها بار باز و بسته کردن آن
 startWinSampler();
@@ -328,6 +359,7 @@ const housekeeping = setInterval(() => {
   pruneSessions();
   pruneAppAuth();
   pruneRateLimits();
+  pruneTickets();
   pruneAudit();
   pruneEvents();
 }, 15 * 60 * 1000);
@@ -373,8 +405,9 @@ async function main() {
     console.log('  ✅ پنل مدیریت سرور خانگی بالا آمد' + (name ? ` — ${name}` : ''));
     console.log(`  ${versionLine()}`);
     console.log('==============================================================');
-    console.log(`  پنل روی این کامپیوتر:   http://localhost:${config.port}`);
-    for (const ip of ips) console.log(`  از شبکهٔ خانگی:          http://${ip}:${config.port}`);
+    console.log(`  پنل روی این کامپیوتر:   ${scheme}://localhost:${config.port}`);
+    for (const ip of ips) console.log(`  از شبکهٔ خانگی:          ${scheme}://${ip}:${config.port}`);
+    if (tls) console.log('  🔒 با گواهیِ شما روی HTTPS بالا آمد (وب‌سوکت هم wss است)');
     console.log('');
     if (siteSync) {
       console.log('  🔗 سرورِ سایت — این‌ها را در خودِ سایت وارد کنید:');
@@ -445,6 +478,7 @@ async function shutdown(signal) {
   try {
     stopTunnel();
     stopAllSiteTunnels();
+    stopDiscovery();
   } catch { /* بسته شده */ }
   try {
     syncOnlyServer?.close();

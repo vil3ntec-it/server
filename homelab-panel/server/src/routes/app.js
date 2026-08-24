@@ -14,6 +14,8 @@ import express, { Router } from 'express';
 import { requireLocalOrAuth } from '../local-key.js';
 import { versionInfo } from '../version.js';
 import { config } from '../config.js';
+import { serverCard, DISCOVERY_PORT } from '../discovery.js';
+import { issueTicket } from '../lib/ws-ticket.js';
 import { publicState as tunnelState } from '../tunnel.js';
 import { otpSettings, saveOtpSettings, safeOtpSettings } from '../appauth/settings.js';
 import { smsProviders } from '../appauth/send.js';
@@ -116,6 +118,10 @@ router.get('/config', (req, res) => {
 // آزمونِ سریعِ اتصال از داخلِ خودِ برنامه: GET /api/app/ping
 router.get('/ping', (req, res) => res.json({ ok: true, pong: Date.now() }));
 
+/* شناسنامهٔ سرور برای پیدا شدنِ خودکار. اپ اول یک بستهٔ UDP در شبکه پخش
+   می‌کند؛ اگر جواب نگرفت (شبکهٔ سخت‌گیر)، می‌تواند همین را صدا بزند. */
+router.get('/discover', (req, res) => res.json({ ok: true, ...serverCard(), discoveryPort: DISCOVERY_PORT }));
+
 // ---------------------------------------------------------------------------
 //  ۲) درخواستِ کد
 // ---------------------------------------------------------------------------
@@ -211,6 +217,12 @@ router.post(
 // ---------------------------------------------------------------------------
 //  ۴) کاربرِ واردشده
 // ---------------------------------------------------------------------------
+/* بلیتِ وب‌سوکت — به‌جای فرستادنِ توکنِ دائمی در آدرس.
+   ۶۰ ثانیه اعتبار دارد و فقط یک بار مصرف می‌شود. */
+router.post('/ws-ticket', requireAppUser, (req, res) => {
+  res.json({ ok: true, ...issueTicket({ kind: 'app', userId: req.appUser.id, app: req.appUser.app }) });
+});
+
 router.get('/me', requireAppUser, (req, res) => {
   res.json({ ok: true, user: publicUser(req.appUser) });
 });

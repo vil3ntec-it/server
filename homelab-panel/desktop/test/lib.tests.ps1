@@ -214,6 +214,13 @@ try {
     Check 'آیکونِ برنامه همراهش است' (Test-Path -LiteralPath (Join-Path $desktopDir 'server.ico'))
   }
 
+  # ------------------------------------------------------------ Node.js --
+  Write-Host "`n> بررسیِ Node.js"
+  $nodeCheck = Test-NodeOk
+  Check 'نسخهٔ Node خوانده می‌شود' ($null -ne $nodeCheck -and $nodeCheck.ContainsKey('ok'))
+  Check 'روی این ماشین Node هست و کافی است' ($nodeCheck.ok -eq $true) "$($nodeCheck.message)"
+  Check 'شمارهٔ نسخه گزارش می‌شود' ($nodeCheck.version -match '^\d+\.')
+
   # ------------------------------------------------ بالا آمدن با ویندوز --
   Write-Host "`n> بالا آمدن با ویندوز"
   $autoState = Get-AutoStartState -ServerDir $temp

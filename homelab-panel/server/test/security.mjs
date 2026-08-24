@@ -8,6 +8,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { WebSocket } from 'ws';
+import dgram from 'node:dgram';
 
 const PORT = Number(process.env.TEST_PORT || 4786);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -48,6 +49,8 @@ const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 
     HLP_SITES_ROOT: sitesRoot, HLP_TUNNEL: '0', HLP_AI_ENABLED: '0',
     HLP_SITESYNC_PORT: String(PORT + 1),
     HLP_WS_PING_MS: '400',
+    HLP_DISCOVERY_PORT: String(PORT + 2),
+    HLP_WS_TICKET_TTL: '1500',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -173,6 +176,67 @@ try {
 
   const backupsDir = path.join(dataDir, 'backups');
   check('پوشهٔ پشتیبانِ دیتابیس آماده است', !fs.existsSync(backupsDir) || fs.statSync(backupsDir).isDirectory());
+
+  console.log('\n▶ پیدا شدنِ خودکارِ سرور');
+  const card = await new Promise((resolve) => {
+    const probe = dgram.createSocket('udp4');
+    let done = false;
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      try { probe.close(); } catch { /* بسته */ }
+      resolve(value);
+    };
+    probe.on('message', (msg) => {
+      try { finish(JSON.parse(String(msg))); } catch { finish(null); }
+    });
+    probe.on('error', () => finish(null));
+    probe.bind(0, () => {
+      probe.send(Buffer.from('PUMP-SERVER-DISCOVER?'), PORT + 2, '127.0.0.1');
+    });
+    setTimeout(() => finish(null), 3000);
+  });
+  check('سرور به پرسشِ شبکه جواب می‌دهد', card && card.reply === 'PUMP-SERVER-HERE', JSON.stringify(card).slice(0, 100));
+  check('آدرس و پورتش را می‌گوید', card && card.port === PORT && typeof card.id === 'string');
+  check('هیچ رمزی در پاسخ نیست', card && !JSON.stringify(card).toLowerCase().includes('token'));
+
+  const silent = await new Promise((resolve) => {
+    const probe = dgram.createSocket('udp4');
+    let got = false;
+    probe.on('message', () => { got = true; });
+    probe.bind(0, () => probe.send(Buffer.from('HELLO-RANDOM'), PORT + 2, '127.0.0.1'));
+    setTimeout(() => { try { probe.close(); } catch { /* بسته */ } resolve(got); }, 800);
+  });
+  check('به بستهٔ بی‌ربط جواب نمی‌دهد', silent === false);
+
+  const httpCard = await (await fetch(`${BASE}/api/app/discover`)).json();
+  check('از راهِ HTTP هم پیدا می‌شود', httpCard.ok === true && httpCard.port === PORT);
+
+  console.log('\n▶ بلیتِ کوتاه‌عمرِ وب‌سوکت');
+  const codeReq = await fetch(`${BASE}/api/app/auth/request-code`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone: '09121110000', app: 'main' }),
+  });
+  check('کد ساخته شد', codeReq.ok);
+  const codeMatch = out.match(/کد ورود برای \+\d+\s+→\s+(\d{6})/);
+  if (codeMatch) {
+    const verify = await (await fetch(`${BASE}/api/app/auth/verify-code`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: '09121110000', code: codeMatch[1], app: 'main' }),
+    })).json();
+    check('ورود انجام شد', verify.ok === true);
+
+    const ticketRes = await (await fetch(`${BASE}/api/app/ws-ticket`, {
+      method: 'POST', headers: { Authorization: `Bearer ${verify.token}` },
+    })).json();
+    check('بلیت صادر می‌شود', ticketRes.ok === true && typeof ticketRes.ticket === 'string');
+    check('و عمرش کوتاه است', ticketRes.expiresIn <= 60);
+
+    const noAuth = await fetch(`${BASE}/api/app/ws-ticket`, { method: 'POST' });
+    check('بدونِ ورود بلیت نمی‌دهد', noAuth.status === 401);
+  } else {
+    console.log('  (کد در خروجی پیدا نشد — این بخش رد شد)');
+  }
 
   console.log('\n▶ جداییِ توکن‌ها');
   const panelWithLocal = await fetch(`${BASE}/api/dashboard`, { headers: { 'X-Local-Key': 'wrong-key-here-1234567890' } });

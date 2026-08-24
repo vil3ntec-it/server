@@ -1327,3 +1327,101 @@ function Disable-AutoStart {
     return @{ ok = $false; message = $_.Exception.Message }
   }
 }
+
+# ---------------------------------------------------------------------------
+#  نصبِ خودکارِ Node.js
+#
+#  کاربرِ عادی نباید برود سایتِ nodejs.org و نصب‌کننده دانلود کند. اگر Node
+#  نبود، خودمان نسخهٔ درست را می‌گیریم و بی‌صدا نصب می‌کنیم.
+#
+#  از نصب‌کنندهٔ رسمیِ MSI استفاده می‌شود (نه zip)، تا PATH و همه‌چیز را خودِ
+#  ویندوز درست کند.
+# ---------------------------------------------------------------------------
+
+$script:NodeVersion = '22.14.0'
+
+<#
+  .SYNOPSIS
+  نسخهٔ Node نصب‌شده. اگر نبود $null.
+#>
+function Get-NodeVersion {
+  $exe = Find-NodeExe
+  if (-not $exe) { return $null }
+  try {
+    $output = & $exe '--version' 2>&1
+    if ($LASTEXITCODE -eq 0) { return ([string]$output).Trim().TrimStart('v') }
+  } catch { }
+  return $null
+}
+
+<#
+  .SYNOPSIS
+  آیا نسخهٔ نصب‌شده به‌اندازهٔ کافی تازه است؟ (۲۲ به بالا)
+#>
+function Test-NodeOk {
+  $version = Get-NodeVersion
+  if (-not $version) { return @{ ok = $false; version = $null; message = 'Node.js نصب نیست' } }
+  $major = 0
+  try { $major = [int](($version -split '\.')[0]) } catch { }
+  if ($major -lt 22) {
+    return @{ ok = $false; version = $version; message = "نسخهٔ Node.js شما ($version) قدیمی است؛ ۲۲ به بالا لازم است" }
+  }
+  return @{ ok = $true; version = $version; message = "Node.js $version" }
+}
+
+<#
+  .SYNOPSIS
+  Node.js را دانلود و بی‌صدا نصب می‌کند.
+  $OnStep هر مرحله را می‌گوید تا در پنجرهٔ نصب دیده شود.
+#>
+function Install-NodeJs {
+  param([scriptblock]$OnStep = $null)
+
+  $say = {
+    param($message)
+    if ($OnStep) { & $OnStep $message }
+  }
+
+  if ($env:OS -ne 'Windows_NT') {
+    return @{ ok = $false; message = 'نصبِ خودکار فقط روی ویندوز' }
+  }
+
+  $arch = if ([Environment]::Is64BitOperatingSystem) { 'x64' } else { 'x86' }
+  $file = "node-v$($script:NodeVersion)-$arch.msi"
+  $url = "https://nodejs.org/dist/v$($script:NodeVersion)/$file"
+  $temp = Join-Path ([System.IO.Path]::GetTempPath()) ('node-' + [Guid]::NewGuid().ToString('N').Substring(0, 6))
+  New-Item -ItemType Directory -Path $temp -Force | Out-Null
+  $msi = Join-Path $temp $file
+
+  try {
+    & $say "دانلودِ Node.js نسخهٔ $($script:NodeVersion) ($arch)…"
+    Invoke-WebRequest -Uri $url -OutFile $msi -UseBasicParsing -TimeoutSec 600
+
+    $size = (Get-Item -LiteralPath $msi).Length
+    if ($size -lt 1MB) { throw "فایلِ دانلودشده خراب است ($size بایت)" }
+    & $say ("دانلود شد: " + [Math]::Round($size / 1MB, 1) + " مگابایت")
+
+    & $say 'نصب… (ممکن است ویندوز اجازه بخواهد)'
+    $process = Start-Process 'msiexec.exe' -ArgumentList @('/i', """$msi""", '/qn', '/norestart') -Wait -PassThru
+    if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
+      throw "نصب‌کنندهٔ ویندوز کدِ $($process.ExitCode) داد"
+    }
+
+    # PATH این پروسه را تازه می‌کنیم تا همین حالا node پیدا شود
+    & $say 'تازه کردنِ مسیرها…'
+    $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $user = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ';'
+
+    $check = Test-NodeOk
+    if (-not $check.ok) {
+      return @{ ok = $false; message = 'نصب شد ولی هنوز پیدا نمی‌شود — یک بار ویندوز را راه‌اندازیِ دوباره کنید' }
+    }
+    & $say "آماده شد: Node.js $($check.version)"
+    return @{ ok = $true; version = $check.version; message = "Node.js $($check.version) نصب شد" }
+  } catch {
+    return @{ ok = $false; message = $_.Exception.Message }
+  } finally {
+    try { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue } catch { }
+  }
+}

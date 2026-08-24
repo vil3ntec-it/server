@@ -171,7 +171,7 @@ $script:OptRun.Font = $Face
 $page2.Controls.AddRange(@($script:OptShortcut, $script:OptMenu, $script:OptNpm, $script:OptRun))
 
 $script:NodeNote = New-Text -Text '' -X 30 -Y 304 -Width 480 -Height 44 -Color $Bad -Font $Small
-$script:BtnNode = New-Btn -Text 'دانلودِ Node.js' -X 510 -Y 306 -Width 120
+$script:BtnNode = New-Btn -Text 'نصبِ خودکارِ Node.js' -X 470 -Y 306 -Width 160
 $script:BtnNode.Visible = $false
 $page2.Controls.AddRange(@($script:NodeNote, $script:BtnNode))
 
@@ -277,7 +277,29 @@ $btnBrowse.Add_Click({
   }
 })
 
-$script:BtnNode.Add_Click({ Start-Process 'https://nodejs.org/fa/download' })
+$script:BtnNode.Add_Click({
+  $script:BtnNode.Enabled = $false
+  $script:NodeNote.ForeColor = $Muted
+  $script:NodeNote.Text = 'در حالِ دانلود و نصبِ Node.js… چند دقیقه طول می‌کشد.'
+  [System.Windows.Forms.Application]::DoEvents()
+
+  $result = Install-NodeJs -OnStep {
+    param($message)
+    $script:NodeNote.Text = $message
+    [System.Windows.Forms.Application]::DoEvents()
+  }
+
+  if ($result.ok) {
+    $script:NodeNote.ForeColor = [System.Drawing.Color]::FromArgb(15, 130, 80)
+    $script:NodeNote.Text = $result.message
+    $script:BtnNode.Visible = $false
+  } else {
+    $script:NodeNote.ForeColor = $Bad
+    $script:NodeNote.Text = "خودکار نشد: $($result.message)`\r`\nاز nodejs.org دستی نصب کنید."
+    $script:BtnNode.Enabled = $true
+    Start-Process 'https://nodejs.org/fa/download'
+  }
+})
 
 $btnBack.Add_Click({ if (-not $script:Busy) { Show-Page -Number 1 } })
 
@@ -363,12 +385,27 @@ function Start-Install {
     $serverDir = Join-Path (Join-Path $target 'homelab-panel') 'server'
 
     if ($script:OptNpm.Checked) {
+      $nodeCheck = Test-NodeOk
+      if (-not $nodeCheck.ok) {
+        Write-Console ''
+        Write-Console "$($nodeCheck.message) — خودمان نصبش می‌کنیم…"
+        $script:StepLabel.Text = 'نصبِ Node.js…'
+        [System.Windows.Forms.Application]::DoEvents()
+        $nodeInstall = Install-NodeJs -OnStep {
+          param($message)
+          Write-Console "  $message"
+        }
+        if (-not $nodeInstall.ok) {
+          Write-Console "نصبِ خودکارِ Node.js نشد: $($nodeInstall.message)"
+        }
+      }
+
       $node = Find-NodeExe
       if (-not $node) {
         Write-Console ''
         Write-Console 'Node.js پیدا نشد — نصبِ وابستگی‌ها رد شد.'
-        Write-Console 'اول Node.js را از nodejs.org نصب کنید؛ بعد برنامه را باز کنید،'
-        Write-Console 'با اولین «روشن کردنِ سرور» خودش وابستگی‌ها را می‌گیرد.'
+        Write-Console 'از nodejs.org نصبش کنید؛ بعد برنامه را باز کنید و'
+        Write-Console 'با اولین «روشن کردنِ سرور» وابستگی‌ها خودشان می‌آیند.'
       } else {
         $script:StepLabel.Text = 'نصبِ وابستگی‌ها (npm install) — کمی طول می‌کشد…'
         Write-Console ''
@@ -477,7 +514,7 @@ $form.Add_Shown({
   $nodeFound = $true
   try { $nodeFound = [bool](Find-NodeExe) } catch { $nodeFound = $false }
   if (-not $nodeFound) {
-    $script:NodeNote.Text = 'Node.js روی این کامپیوتر پیدا نشد. برنامه نصب می‌شود، ولی تا Node.js نباشد سرور بالا نمی‌آید.'
+    $script:NodeNote.Text = 'Node.js روی این کامپیوتر نیست. نگران نباشید — یا همین‌جا دکمه را بزنید، یا موقعِ نصب خودش می‌آید.'
     $script:BtnNode.Visible = $true
   }
   if (-not (Test-ProgramFolder -Root $script:SourceRoot)) {
