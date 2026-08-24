@@ -891,13 +891,14 @@ function Get-DesktopSettingsPath {
 function Get-DesktopSettings {
   param([Parameter(Mandatory = $true)][string]$ServerDir)
 
-  $defaults = @{ branch = $script:DefaultBranch; autoCheck = $true }
+  $defaults = @{ branch = $script:DefaultBranch; autoCheck = $true; advanced = $false }
   $path = Get-DesktopSettingsPath -ServerDir $ServerDir
   if (-not (Test-Path -LiteralPath $path)) { return $defaults }
   try {
     $saved = ([System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8) | ConvertFrom-Json)
     if ($saved.branch) { $defaults.branch = [string]$saved.branch }
     if ($null -ne $saved.autoCheck) { $defaults.autoCheck = [bool]$saved.autoCheck }
+    if ($null -ne $saved.advanced) { $defaults.advanced = [bool]$saved.advanced }
   } catch { }
   return $defaults
 }

@@ -73,6 +73,10 @@ foreach ($name in @(
     'NavLibrary','PageLibrary','TxtLibRoot','BtnLibChange','BtnLibOpen','BtnLibRepair','BtnLibClean',
     'LblLibState','LblLibDisk','BarLibDisk','LblLibWarn','LstLibSites','LstLibApps',
     'BtnLibScan','BtnLibOrganize','LblLibScan','LstLibStray',
+    'TxtSearch','ChkAdvanced','PageSearch','LblSearchTitle','LstSearch',
+    'NavBackup','PageBackup','BtnBackupNow','BtnBackupOpen','BtnBackupPrune','LblBackupState',
+    'ChkBackupDaily','ChkBackupWeekly','TxtBackupHour','LstBackups','BtnRestore',
+    'LblCpu','LblRam','LblDisk','LblLastBackup',
     'ChkAutoStart','LblAutoStart',
     'TxtMailHost','TxtMailUser','TxtMailPort','TxtMailPass','CmbSmsProvider','TxtSmsSender',
     'TxtSmsKey','TxtSmsTemplate','ChkAi','LblAiNote','BtnSaveSettings','BtnOpenEnv','LblSettingsState',
@@ -171,6 +175,7 @@ $script:PageMap = @{
   NavOtp      = @{ Page = 'PageOtp';      Title = 'ورود با کدِ یک‌بارمصرف';   Sub = 'همان مسیری که کاربرِ شما طی می‌کند' }
   NavSites    = @{ Page = 'PageSites';    Title = 'سایت‌های روی سرور';        Sub = 'بدونِ باز کردنِ مرورگر' }
   NavLibrary  = @{ Page = 'PageLibrary';  Title = 'کتابخانه';                 Sub = 'یک جای مرتب برای همهٔ فایل‌ها' }
+  NavBackup   = @{ Page = 'PageBackup';   Title = 'پشتیبان';                  Sub = 'گرفتن، زمان‌بندی، و بازگرداندن' }
   NavSettings = @{ Page = 'PageSettings'; Title = 'تنظیمات';                  Sub = 'پیامک، ایمیل، و دستیارِ هوشمند' }
   NavTerminal = @{ Page = 'PageTerminal'; Title = 'ترمینالِ سرور';            Sub = 'خروجیِ زنده — بدونِ پنجرهٔ سیاه' }
   NavUpdate   = @{ Page = 'PageUpdate';   Title = 'به‌روزرسانی';              Sub = 'نسخهٔ تازه را از GitHub می‌گیرد' }
@@ -186,6 +191,7 @@ function Show-Page {
     $page = $ui[$entry.Value.Page]
     if ($page) { $page.Visibility = [System.Windows.Visibility]::Collapsed }
   }
+  $ui.PageSearch.Visibility = [System.Windows.Visibility]::Collapsed
   $current = $ui[$info.Page]
   if ($current) {
     $current.Visibility = [System.Windows.Visibility]::Visible
@@ -203,6 +209,7 @@ function Show-Page {
     'NavApps'     { Update-Clients }
     'NavSites'    { Update-Sites }
     'NavLibrary'  { Update-Library }
+    'NavBackup'   { Update-Backups }
     'NavTerminal' { Update-Terminal -Force $true }
     'NavSettings' { Update-SettingsForm }
   }
@@ -285,6 +292,28 @@ function Update-Overview {
       'web'     { Set-Text $ui.LblWebCount $count;     Set-Text $ui.LblWebInfo $info }
       'desktop' { Set-Text $ui.LblDesktopCount $count; Set-Text $ui.LblDesktopInfo $info }
     }
+  }
+
+  # این کامپیوتر
+  if ($data.system) {
+    Set-Text $ui.LblCpu ("$([Math]::Round([double]$data.system.cpu))٪")
+    Set-Text $ui.LblRam ("$([Math]::Round([double]$data.system.memory))٪")
+  } else {
+    Set-Text $ui.LblCpu '—'
+    Set-Text $ui.LblRam '—'
+  }
+  if ($data.storage -and $data.storage.disk -and $data.storage.disk.ok) {
+    Set-Text $ui.LblDisk ("$(Format-Bytes $data.storage.disk.free) آزاد")
+  } else {
+    Set-Text $ui.LblDisk '—'
+  }
+  if ($data.lastBackup -and $data.lastBackup.at) {
+    $when = (Get-Date '1970-01-01').AddMilliseconds([double]$data.lastBackup.at).ToLocalTime()
+    $days = [Math]::Floor(((Get-Date) - $when).TotalDays)
+    $text = if ($days -le 0) { 'امروز' } elseif ($days -eq 1) { 'دیروز' } else { "$days روز پیش" }
+    Set-Text $ui.LblLastBackup $text $(if ($days -gt 7) { $script:Brushes.Warn } else { $script:Brushes.Good })
+  } else {
+    Set-Text $ui.LblLastBackup 'هرگز' $script:Brushes.Warn
   }
 
   Set-Text $ui.LblUsers  ([string]$data.stats.users)
@@ -634,6 +663,185 @@ $ui.BtnLibOrganize.Add_Click({
 })
 
 # ---------------------------------------------------------------------------
+#  پشتیبان
+# ---------------------------------------------------------------------------
+$script:Backups = @()
+
+function Update-Backups {
+  $result = Admin '/api/storage/backups'
+  $ui.LstBackups.Items.Clear()
+  if (-not $result.ok) {
+    $script:Backups = @()
+    Set-Text $ui.LblBackupState 'برای دیدنِ پشتیبان‌ها، اول سرور را روشن کنید.' $script:Brushes.Warn
+    return
+  }
+
+  $script:Backups = @($result.data.backups)
+  foreach ($row in $script:Backups) {
+    $when = if ($row.createdAt) { (Get-Date '1970-01-01').AddMilliseconds([double]$row.createdAt).ToLocalTime().ToString('yyyy/MM/dd  HH:mm') } else { '—' }
+    $mark = if ($row.healthy) { '●' } else { '○' }
+    [void]$ui.LstBackups.Items.Add("$mark  $when   —   $($row.kind)   ·   $(Format-Bytes $row.bytes)")
+  }
+  if ($script:Backups.Count -eq 0) { [void]$ui.LstBackups.Items.Add('هنوز پشتیبانی گرفته نشده') }
+  $ui.BtnRestore.IsEnabled = ($script:Backups.Count -gt 0)
+
+  $plan = $result.data.schedule
+  if ($plan) {
+    $ui.ChkBackupDaily.IsChecked = [bool]$plan.daily
+    $ui.ChkBackupWeekly.IsChecked = [bool]$plan.weekly
+    $ui.TxtBackupHour.Text = [string]$plan.hour
+  }
+  Set-Text $ui.LblBackupState "$($script:Backups.Count) پشتیبان" $script:Brushes.Muted
+}
+
+function Save-BackupSchedule {
+  $hour = 3
+  [void][int]::TryParse($ui.TxtBackupHour.Text.Trim(), [ref]$hour)
+  Admin '/api/storage/backups/schedule' 'PUT' @{
+    daily = [bool]$ui.ChkBackupDaily.IsChecked
+    weekly = [bool]$ui.ChkBackupWeekly.IsChecked
+    hour = $hour
+  } | Out-Null
+}
+
+$ui.BtnBackupNow.Add_Click({
+  Set-Text $ui.LblBackupState '… در حالِ گرفتن' $script:Brushes.Muted
+  $ui.BtnBackupNow.IsEnabled = $false
+  Pump
+  $result = Admin '/api/storage/backups' 'POST' @{ note = 'دستی' }
+  $ui.BtnBackupNow.IsEnabled = $true
+  if ($result.ok -and $result.data.ok) {
+    Set-Text $ui.LblBackupState "گرفته شد: $($result.data.folder)" $script:Brushes.Good
+  } else {
+    $message = if ($result.data -and $result.data.message) { $result.data.message } else { $result.error }
+    Set-Text $ui.LblBackupState "نشد: $message" $script:Brushes.Bad
+  }
+  Update-Backups
+})
+
+$ui.BtnBackupOpen.Add_Click({
+  $root = $ui.TxtLibRoot.Text.Trim()
+  $folder = if ($root) { Join-Path $root 'Backups' } else { '' }
+  if ($folder -and (Test-Path -LiteralPath $folder)) { Start-Process 'explorer.exe' -ArgumentList $folder }
+  else { Say 'هنوز پشتیبانی گرفته نشده.' }
+})
+
+$ui.BtnBackupPrune.Add_Click({
+  $result = Admin '/api/storage/backups/prune' 'POST' @{}
+  if ($result.ok) { Set-Text $ui.LblBackupState "$(@($result.data.removed).Count) پشتیبانِ قدیمی پاک شد" $script:Brushes.Good }
+  Update-Backups
+})
+
+$ui.ChkBackupDaily.Add_Click({ Save-BackupSchedule })
+$ui.ChkBackupWeekly.Add_Click({ Save-BackupSchedule })
+$ui.TxtBackupHour.Add_LostFocus({ Save-BackupSchedule })
+
+$ui.BtnRestore.Add_Click({
+  $index = $ui.LstBackups.SelectedIndex
+  if ($index -lt 0 -or $index -ge $script:Backups.Count) { Say 'اول یک پشتیبان را از فهرست انتخاب کنید.'; return }
+  $row = $script:Backups[$index]
+  if (-not (Ask "از این پشتیبان برگردانده شود؟`r`n`r`n$($row.name)`r`n`r`nپیش از هر کاری، از وضعِ فعلی هم پشتیبان گرفته می‌شود.")) { return }
+
+  Set-Text $ui.LblBackupState '… در حالِ بازگرداندن' $script:Brushes.Muted
+  Pump
+  $result = Admin '/api/storage/backups/restore' 'POST' @{ path = $row.path }
+  if ($result.ok -and $result.data.ok) {
+    Set-Text $ui.LblBackupState 'برگردانده شد — سرور دوباره بالا می‌آید' $script:Brushes.Good
+    Pump
+    Restart-Server
+  } else {
+    $message = if ($result.data -and $result.data.message) { $result.data.message } else { $result.error }
+    Set-Text $ui.LblBackupState "نشد: $message" $script:Brushes.Bad
+  }
+  Update-Backups
+})
+
+# ---------------------------------------------------------------------------
+#  جست‌وجوی سراسری
+# ---------------------------------------------------------------------------
+$script:SearchIndex = @(
+  @{ Nav = 'NavHome';     Words = 'خانه آدرس سرور وضعیت داشبورد کپی وصل ip' ; Label = 'خانه — آدرسِ سرور و وضعیت' }
+  @{ Nav = 'NavApps';     Words = 'برنامه سایت اپ اندروید کلید api شناسه کاربر client' ; Label = 'برنامه‌ها و سایت‌ها — کلید و آدرسِ API' }
+  @{ Nav = 'NavOtp';      Words = 'کد ورود otp پیامک تایید شش رقمی login' ; Label = 'ورود با کد — فرستادن و تأیید' }
+  @{ Nav = 'NavSites';    Words = 'سایت روی سرور پنل آنلاین پورت دامنه' ; Label = 'سایت‌های روی سرور' }
+  @{ Nav = 'NavLibrary';  Words = 'کتابخانه فایل پوشه دیسک فضا ذخیره مرتب storage درایو' ; Label = 'کتابخانه — محلِ ذخیره‌سازی و فضای دیسک' }
+  @{ Nav = 'NavBackup';   Words = 'پشتیبان بکاپ backup بازگرداندن restore زمان‌بندی' ; Label = 'پشتیبان — گرفتن و بازگرداندن' }
+  @{ Nav = 'NavSettings'; Words = 'تنظیمات ایمیل جیمیل smtp پیامک sms کاوه نگار دستیار هوش ویندوز خودکار' ; Label = 'تنظیمات — پیامک، ایمیل، دستیار، بالا آمدن با ویندوز' }
+  @{ Nav = 'NavTerminal'; Words = 'ترمینال لاگ خروجی خطا log' ; Label = 'ترمینالِ سرور — خروجیِ زنده' }
+  @{ Nav = 'NavUpdate';   Words = 'به‌روزرسانی اپدیت نسخه update میان‌بر' ; Label = 'به‌روزرسانی' }
+)
+
+function Update-Search {
+  $query = $ui.TxtSearch.Text.Trim()
+  if ($query.Length -lt 2) {
+    if ($script:CurrentNav) { Show-Page $script:CurrentNav }
+    return
+  }
+
+  foreach ($entry in $script:PageMap.GetEnumerator()) {
+    $page = $ui[$entry.Value.Page]
+    if ($page) { $page.Visibility = [System.Windows.Visibility]::Collapsed }
+  }
+  $ui.PageSearch.Visibility = [System.Windows.Visibility]::Visible
+  Set-Text $ui.LblTitle 'جست‌وجو'
+  Set-Text $ui.LblSubtitle "دنبالِ «$query»"
+
+  $ui.LstSearch.Items.Clear()
+  $script:SearchHits = @()
+  foreach ($row in $script:SearchIndex) {
+    if (($row.Words -like "*$query*") -or ($row.Label -like "*$query*")) {
+      $script:SearchHits += $row.Nav
+      [void]$ui.LstSearch.Items.Add($row.Label)
+    }
+  }
+  # نامِ برنامه‌ها هم جست‌وجو شود
+  foreach ($client in @($script:Clients)) {
+    if ("$($client.name) $($client.slug)" -like "*$query*") {
+      $script:SearchHits += 'NavApps'
+      [void]$ui.LstSearch.Items.Add("برنامه: $($client.name)  ·  $($client.slug)")
+    }
+  }
+  if ($ui.LstSearch.Items.Count -eq 0) {
+    [void]$ui.LstSearch.Items.Add('چیزی پیدا نشد')
+  }
+  Set-Text $ui.LblSearchTitle "$($ui.LstSearch.Items.Count) نتیجه"
+}
+
+$ui.TxtSearch.Add_TextChanged({ if ($script:Ready) { Update-Search } })
+$ui.LstSearch.Add_MouseDoubleClick({
+  $index = $ui.LstSearch.SelectedIndex
+  if ($index -lt 0 -or $index -ge $script:SearchHits.Count) { return }
+  $ui.TxtSearch.Text = ''
+  $ui[$script:SearchHits[$index]].IsChecked = $true
+})
+
+# ---------------------------------------------------------------------------
+#  حالتِ ساده و پیشرفته
+# ---------------------------------------------------------------------------
+$script:AdvancedOnly = @('NavTerminal', 'NavSites')
+
+function Apply-Mode {
+  $advanced = [bool]$ui.ChkAdvanced.IsChecked
+  foreach ($name in $script:AdvancedOnly) {
+    $button = $ui[$name]
+    if (-not $button) { continue }
+    $button.Visibility = if ($advanced) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+  }
+  # اگر در صفحه‌ای بودیم که تازه پنهان شد، برگرد خانه
+  if (-not $advanced -and $script:AdvancedOnly -contains $script:CurrentNav) {
+    $ui.NavHome.IsChecked = $true
+  }
+  if ($script:Ready) {
+    $saved = Get-DesktopSettings -ServerDir $script:ServerDir
+    Save-DesktopSettings -ServerDir $script:ServerDir -Settings @{
+      branch = $saved.branch; autoCheck = $saved.autoCheck; advanced = $advanced
+    } | Out-Null
+  }
+}
+
+$ui.ChkAdvanced.Add_Click({ Apply-Mode })
+
+# ---------------------------------------------------------------------------
 #  دکمه‌ها
 # ---------------------------------------------------------------------------
 function Restart-Server {
@@ -708,7 +916,7 @@ $ui.CardAndroid.Add_MouseLeftButtonUp({ Open-Kind 'android' })
 $ui.CardWeb.Add_MouseLeftButtonUp({ Open-Kind 'web' })
 $ui.CardDesktop.Add_MouseLeftButtonUp({ Open-Kind 'desktop' })
 
-foreach ($navName in @('NavHome','NavApps','NavOtp','NavSites','NavLibrary','NavSettings','NavTerminal','NavUpdate')) {
+foreach ($navName in @('NavHome','NavApps','NavOtp','NavSites','NavLibrary','NavBackup','NavSettings','NavTerminal','NavUpdate')) {
   $button = $ui[$navName]
   if (-not $button) { continue }
   $button.Add_Checked({
@@ -1008,7 +1216,9 @@ $script:Window.Add_Loaded({
     $saved = Get-DesktopSettings -ServerDir $script:ServerDir
     $ui.TxtBranch.Text = $saved.branch
     $ui.ChkAutoCheck.IsChecked = [bool]$saved.autoCheck
+    $ui.ChkAdvanced.IsChecked = [bool]$saved.advanced
   }
+  Invoke-Safely 'حالتِ ساده' { Apply-Mode }
 
   # اگر میان‌برِ دسکتاپ نبود (نصب نساخته بود، یا کسی پاکش کرده) همین‌جا ساخته
   # می‌شود — تا دفعهٔ بعد کاربر دنبالِ راهِ باز کردنِ برنامه نگردد.

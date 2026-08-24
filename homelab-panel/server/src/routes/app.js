@@ -35,7 +35,9 @@ import {
   recentCodes,
   stats,
 } from '../appauth/index.js';
-import { db } from '../db.js';
+import { db, getSetting } from '../db.js';
+import { libraryRoot, diskInfo, diskWarning } from '../storage/library.js';
+import { getLatest } from '../metrics/index.js';
 import { audit, recentAudit } from '../lib/audit.js';
 import {
   ensureClient,
@@ -322,6 +324,23 @@ adminRouter.get('/overview', (req, res) => {
     },
     kinds: summaryByKind(),
     stats: stats(),
+    // این کامپیوتر — همان چیزی که داشبورد نشان می‌دهد
+    system: (() => {
+      try {
+        const snap = getLatest();
+        return snap ? { cpu: snap.cpu?.usage ?? null, memory: snap.memory?.usage ?? null, disk: snap.disk?.usage ?? null } : null;
+      } catch {
+        return null;
+      }
+    })(),
+    storage: (() => {
+      try {
+        return { root: libraryRoot(), disk: diskInfo(), warning: diskWarning() };
+      } catch {
+        return null;
+      }
+    })(),
+    lastBackup: getSetting('last_backup', null),
   });
 });
 

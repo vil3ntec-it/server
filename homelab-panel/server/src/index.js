@@ -44,6 +44,7 @@ import { pruneAppAuth } from './appauth/index.js';
 import { localKey } from './local-key.js';
 import { runMigrations, dbVersion } from './lib/migrations.js';
 import { startDiscovery, stopDiscovery, serverCard, DISCOVERY_PORT } from './discovery.js';
+import { startBackupSchedule, stopBackupSchedule } from './storage/backup.js';
 import { pruneAudit } from './lib/audit.js';
 import { pruneTickets } from './lib/ws-ticket.js';
 import { rateLimit, pruneRateLimits } from './lib/rate-limit.js';
@@ -347,6 +348,9 @@ siteTunnelEvents.on('change', (payload) => {
 // ۲.۹) کشفِ خودکار — تا اپ‌ها بدونِ دانستنِ IP سرور را پیدا کنند
 if ((process.env.HLP_DISCOVERY ?? '1') !== '0') startDiscovery();
 
+// ۲.۹۵) پشتیبانِ زمان‌بندی‌شده — اگر کاربر روشنش کرده باشد
+startBackupSchedule();
+
 // ۳) معیارهای زنده
 // روی ویندوز یک پروسهٔ PowerShell دائمی به‌جای ده‌ها بار باز و بسته کردن آن
 startWinSampler();
@@ -479,6 +483,7 @@ async function shutdown(signal) {
     stopTunnel();
     stopAllSiteTunnels();
     stopDiscovery();
+    stopBackupSchedule();
   } catch { /* بسته شده */ }
   try {
     syncOnlyServer?.close();

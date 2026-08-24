@@ -190,6 +190,7 @@
           <RadioButton x:Name="NavOtp"      Style="{StaticResource NavBtn}" Tag="🔑" Content="ورود با کد (OTP)"/>
           <RadioButton x:Name="NavSites"    Style="{StaticResource NavBtn}" Tag="🌐" Content="سایت‌های روی سرور"/>
           <RadioButton x:Name="NavLibrary"  Style="{StaticResource NavBtn}" Tag="📚" Content="کتابخانه (فایل‌ها)"/>
+          <RadioButton x:Name="NavBackup"   Style="{StaticResource NavBtn}" Tag="🛡" Content="پشتیبان"/>
           <RadioButton x:Name="NavSettings" Style="{StaticResource NavBtn}" Tag="⚙" Content="تنظیمات"/>
           <RadioButton x:Name="NavTerminal" Style="{StaticResource NavBtn}" Tag="🖥" Content="ترمینال سرور"/>
           <RadioButton x:Name="NavUpdate"   Style="{StaticResource NavBtn}" Tag="⬆" Content="به‌روزرسانی"/>
@@ -210,8 +211,14 @@
             <TextBlock x:Name="LblTitle" Text="خانه" Style="{StaticResource H1}"/>
             <TextBlock x:Name="LblSubtitle" Text="" Style="{StaticResource Sub}"/>
           </StackPanel>
-          <Button x:Name="BtnRefresh" Content="⟳  تازه کردن" Style="{StaticResource BtnGhost}"
-                  HorizontalAlignment="Left" VerticalAlignment="Top" FontSize="13" Padding="14,8"/>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top">
+            <TextBox x:Name="TxtSearch" Style="{StaticResource Field}" Width="230" Padding="10,7"
+                     FontSize="13" ToolTip="دنبالِ چه می‌گردید؟"/>
+            <Button x:Name="BtnRefresh" Content="⟳  تازه کردن" Style="{StaticResource BtnGhost}"
+                    FontSize="13" Padding="14,8" Margin="10,0,0,0"/>
+            <CheckBox x:Name="ChkAdvanced" Content="حالتِ پیشرفته" VerticalAlignment="Center"
+                      Margin="14,0,0,0" FontSize="13"/>
+          </StackPanel>
         </Grid>
       </Border>
 
@@ -260,6 +267,30 @@
                 </StackPanel>
               </Border>
             </UniformGrid>
+
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="این کامپیوتر" Style="{StaticResource H2}"/>
+                <UniformGrid Rows="1" Columns="4">
+                  <StackPanel Margin="0,0,10,0">
+                    <TextBlock Text="پردازنده" Style="{StaticResource Sub}"/>
+                    <TextBlock x:Name="LblCpu" Text="…" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                  </StackPanel>
+                  <StackPanel Margin="0,0,10,0">
+                    <TextBlock Text="حافظه" Style="{StaticResource Sub}"/>
+                    <TextBlock x:Name="LblRam" Text="…" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                  </StackPanel>
+                  <StackPanel Margin="0,0,10,0">
+                    <TextBlock Text="دیسکِ کتابخانه" Style="{StaticResource Sub}"/>
+                    <TextBlock x:Name="LblDisk" Text="…" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                  </StackPanel>
+                  <StackPanel>
+                    <TextBlock Text="آخرین پشتیبان" Style="{StaticResource Sub}"/>
+                    <TextBlock x:Name="LblLastBackup" Text="…" FontSize="15" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                  </StackPanel>
+                </UniformGrid>
+              </StackPanel>
+            </Border>
 
             <Border Style="{StaticResource CardBox}">
               <StackPanel>
@@ -420,6 +451,50 @@
             </Border>
           </StackPanel>
 
+
+          <!-- ─────────── نتیجهٔ جست‌وجو ─────────── -->
+          <StackPanel x:Name="PageSearch" Visibility="Collapsed">
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock x:Name="LblSearchTitle" Text="نتیجهٔ جست‌وجو" Style="{StaticResource H2}"/>
+                <ListBox x:Name="LstSearch" Background="Transparent" BorderThickness="0" MinHeight="420"
+                         Foreground="{StaticResource Ink}" FontSize="14"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <!-- ─────────── پشتیبان ─────────── -->
+          <StackPanel x:Name="PageBackup" Visibility="Collapsed">
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="پشتیبان‌گیری" Style="{StaticResource H2}"/>
+                <TextBlock Text="دیتابیس، کاربران، تنظیمات، دادهٔ سایت‌ها و رمزهای پیامک و ایمیل — همه در یک پوشهٔ تاریخ‌دار داخلِ کتابخانه." Style="{StaticResource Sub}" Margin="0,0,0,14"/>
+                <StackPanel Orientation="Horizontal">
+                  <Button x:Name="BtnBackupNow" Content="همین حالا پشتیبان بگیر" Style="{StaticResource BtnPrimary}"/>
+                  <Button x:Name="BtnBackupOpen" Content="بازکردنِ پوشه" Style="{StaticResource BtnGhost}" Margin="10,0,0,0"/>
+                  <Button x:Name="BtnBackupPrune" Content="پاک‌کردنِ قدیمی‌ها" Style="{StaticResource Btn}" Margin="10,0,0,0"/>
+                  <TextBlock x:Name="LblBackupState" Style="{StaticResource Sub}" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                  <CheckBox x:Name="ChkBackupDaily" Content="هر روز خودکار" Margin="0,0,20,0"/>
+                  <CheckBox x:Name="ChkBackupWeekly" Content="هر هفته خودکار"/>
+                  <TextBlock Text="ساعتِ:" Style="{StaticResource Sub}" VerticalAlignment="Center" Margin="20,0,6,0"/>
+                  <TextBox x:Name="TxtBackupHour" Style="{StaticResource Field}" Width="60" Padding="8,6"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="پشتیبان‌های موجود" Style="{StaticResource H2}"/>
+                <TextBlock Text="برای بازگرداندن، یکی را انتخاب کنید. پیش از بازگرداندن، خودش از وضعِ فعلی پشتیبان می‌گیرد." Style="{StaticResource Sub}" Margin="0,0,0,12"/>
+                <ListBox x:Name="LstBackups" Background="Transparent" BorderThickness="0" MinHeight="240"
+                         Foreground="{StaticResource Ink}" FontSize="13"/>
+                <Button x:Name="BtnRestore" Content="بازگرداندنِ انتخاب‌شده" Style="{StaticResource Btn}"
+                        HorizontalAlignment="Right" Margin="0,12,0,0" IsEnabled="False"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
 
           <!-- ─────────── کتابخانه ─────────── -->
           <StackPanel x:Name="PageLibrary" Visibility="Collapsed">

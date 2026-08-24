@@ -142,6 +142,34 @@ try {
   check('فایلِ موقتِ قدیمی پاک شد', cleaned.body.removed === 1 && !fs.existsSync(oldFile));
   check('فایلِ تازه دست نخورد', fs.existsSync(path.join(library, 'Temp', 'new.txt')));
 
+  console.log('\n▶ پشتیبان‌گیری');
+  const made1 = await post('/api/storage/backups', { note: 'آزمون' });
+  check('پشتیبان ساخته شد', made1.status === 200 && made1.body.ok === true, JSON.stringify(made1.body).slice(0, 120));
+  check('و بررسی شد', made1.body.verified === true);
+  check('دیتابیس داخلش هست', fs.existsSync(path.join(made1.body.path, 'panel.db')));
+  check('شناسنامه دارد', fs.existsSync(path.join(made1.body.path, 'backup.json')));
+
+  const list1 = await get('/api/storage/backups');
+  check('در فهرست دیده می‌شود', (list1.backups || []).some((b) => b.name === made1.body.folder));
+  check('سالم گزارش می‌شود', (list1.backups || [])[0].healthy === true);
+
+  const schedule = await fetch(`${BASE}/api/storage/backups/schedule`, {
+    method: 'PUT', headers: H, body: JSON.stringify({ daily: true, hour: 4 }),
+  });
+  const scheduleBody = await schedule.json();
+  check('زمان‌بندی ذخیره می‌شود', scheduleBody.schedule.daily === true && scheduleBody.schedule.hour === 4);
+
+  // چیزی را خراب می‌کنیم و از پشتیبان برمی‌گردانیم
+  const marker = path.join(library, 'Sites', 'restore-check');
+  fs.mkdirSync(marker, { recursive: true });
+  const restored = await post('/api/storage/backups/restore', { path: made1.body.path });
+  check('بازگرداندن انجام شد', restored.status === 200 && restored.body.ok === true, JSON.stringify(restored.body).slice(0, 140));
+  check('پیش از بازگرداندن، پشتیبانِ ایمنی گرفته شد', Boolean(restored.body.safety) && fs.existsSync(restored.body.safety));
+  check('دیتابیس برگردانده شد', (restored.body.restored || []).includes('panel.db'));
+
+  const badRestore = await post('/api/storage/backups/restore', { path: path.join(library, 'Backups', 'nope') });
+  check('پشتیبانِ نبوده رد می‌شود', badRestore.status === 400 && badRestore.body.error === 'not_found');
+
   console.log('\n▶ ترمیم');
   await fsp.rm(path.join(library, 'Backups', 'Weekly'), { recursive: true, force: true });
   const repaired = await post('/api/storage/repair', {});

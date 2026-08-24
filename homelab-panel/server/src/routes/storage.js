@@ -23,6 +23,14 @@ import {
   safeFolderName,
 } from '../storage/library.js';
 import { scanStray, planMove, applyMove } from '../storage/migrate.js';
+import {
+  createBackup,
+  listBackups,
+  pruneBackups,
+  restoreBackup,
+  backupSchedule,
+  setBackupSchedule,
+} from '../storage/backup.js';
 
 const router = Router();
 router.use(requireLocalOrAuth);
@@ -95,6 +103,37 @@ router.post('/organize/apply', async (req, res) => {
   // پاک کردنِ منبع فقط وقتی صریحاً خواسته شود
   audit(req, 'storage.organize', { target: `${items.length} پوشه`, detail: req.body?.removeSource === true ? 'با پاک کردنِ منبع' : 'فقط کپی' });
   res.json({ ok: true, ...(await applyMove(items, { removeSource: req.body?.removeSource === true })) });
+});
+
+// --------------------------- پشتیبان‌گیری -----------------------------------
+router.get('/backups', async (req, res) => {
+  res.json({ ok: true, backups: await listBackups(), schedule: backupSchedule() });
+});
+
+router.post('/backups', async (req, res) => {
+  const result = await createBackup({ kind: req.body?.kind || 'Manual', note: req.body?.note });
+  audit(req, 'backup.create', { target: result.folder || null, ok: result.ok });
+  if (!result.ok) return res.status(400).json(result);
+  res.json(result);
+});
+
+router.put('/backups/schedule', (req, res) => {
+  audit(req, 'backup.schedule', { detail: JSON.stringify(req.body || {}) });
+  res.json({ ok: true, schedule: setBackupSchedule(req.body || {}) });
+});
+
+router.post('/backups/prune', async (req, res) => {
+  res.json({ ok: true, ...(await pruneBackups(req.body || {})) });
+});
+
+/* بازگرداندن — پیش از هر چیز از وضعِ فعلی پشتیبان می‌گیرد */
+router.post('/backups/restore', async (req, res) => {
+  const target = String(req.body?.path || '').trim();
+  if (!target) return res.status(400).json({ ok: false, error: 'no_path' });
+  const result = await restoreBackup(target);
+  audit(req, 'backup.restore', { target, ok: result.ok });
+  if (!result.ok) return res.status(400).json(result);
+  res.json(result);
 });
 
 // ------------------------------ نظافت ---------------------------------------
