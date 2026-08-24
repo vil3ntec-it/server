@@ -214,6 +214,15 @@ try {
     Check 'آیکونِ برنامه همراهش است' (Test-Path -LiteralPath (Join-Path $desktopDir 'server.ico'))
   }
 
+  # ------------------------------------------------ بالا آمدن با ویندوز --
+  Write-Host "`n> بالا آمدن با ویندوز"
+  $autoState = Get-AutoStartState -ServerDir $temp
+  Check 'وضعیتِ راه‌اندازیِ خودکار خوانده می‌شود' ($null -ne $autoState -and $autoState.ContainsKey('installed'))
+  Check 'روی غیرِ ویندوز، بی‌سروصدا پشتیبانی‌نشده گزارش می‌شود' (($autoState.supported -eq $true) -or ($autoState.detail -like '*ویندوز*')) "$($autoState.detail)"
+
+  $noLauncher = Enable-AutoStart -ServerDir (Join-Path $temp 'nowhere-at-all')
+  Check 'بدونِ فایلِ اجرا، پیامِ روشن می‌دهد' ($noLauncher.ok -eq $false -and $noLauncher.message)
+
   # ------------------------------------------------------- گزارشِ خطاها --
   Write-Host "`n> گزارشِ خطا (تا پنجره بی‌صدا گم نشود)"
   $errServer = Join-Path $temp 'err-server'

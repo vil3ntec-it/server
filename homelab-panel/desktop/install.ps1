@@ -226,7 +226,11 @@ function Show-Page {
   $btnBack.Enabled = ($Number -eq 2)
   switch ($Number) {
     1 { $btnNext.Text = 'بعدی'; $btnNext.Enabled = $true }
-    2 { $btnNext.Text = 'نصب کن'; $btnNext.Enabled = $true; Update-PathNote }
+    2 {
+      Update-PathNote
+      $existing = Test-InstallTarget -Target $script:PathBox.Text
+      $btnNext.Text = if ($existing.ok -and $existing.upgrade) { 'به‌روزرسانی / ترمیم' } else { 'نصب کن' }
+    }
     3 { $btnNext.Text = 'پایان'; $btnNext.Enabled = $script:Done }
   }
 }
@@ -236,6 +240,9 @@ function Update-PathNote {
   $script:PathNote.Text = $check.message
   $script:PathNote.ForeColor = if ($check.ok) { $Muted } else { $Bad }
   $btnNext.Enabled = [bool]$check.ok
+  if ($script:Page -eq 2 -and $check.ok) {
+    $btnNext.Text = if ($check.upgrade) { 'به‌روزرسانی / ترمیم' } else { 'نصب کن' }
+  }
 }
 
 function Write-Console {
@@ -347,6 +354,9 @@ function Start-Install {
     if ($script:OptMenu.Checked) {
       $menu = Join-Path ([Environment]::GetFolderPath('Programs')) (Get-ShortcutName)
       if (New-ProgramShortcut -InstallRoot $target -LinkPath $menu) { Write-Console "منوی استارت: $menu" }
+      # حذف‌کننده هم کنارش، همان‌جایی که کاربر انتظار دارد
+      $removeLink = Join-Path ([Environment]::GetFolderPath('Programs')) 'حذفِ سرور خانگی.lnk'
+      New-ProgramShortcut -InstallRoot $target -LinkPath $removeLink -Launcher 'uninstall.vbs' -Description 'حذفِ برنامهٔ سرور خانگی' | Out-Null
     }
     $script:Bar.Value = 45
 

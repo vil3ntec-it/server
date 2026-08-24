@@ -795,7 +795,7 @@ function Test-InstallTarget {
     return @{ ok = $false; message = 'این یک فایل است، نه پوشه' }
   }
   if ((Test-Path -LiteralPath $full) -and (Test-ProgramFolder -Root $full)) {
-    return @{ ok = $true; full = $full; upgrade = $true; message = 'در این پوشه نسخه‌ای از برنامه هست — روی همان به‌روزرسانی می‌شود (دادهٔ شما می‌ماند)' }
+    return @{ ok = $true; full = $full; upgrade = $true; message = 'در این پوشه نسخه‌ای از برنامه هست — به‌روزرسانی و ترمیم می‌شود (دادهٔ شما و فایل .env می‌مانند)' }
   }
   return @{ ok = $true; full = $full; upgrade = $false; message = 'آمادهٔ نصب' }
 }
@@ -814,11 +814,14 @@ function Get-ShortcutName { return 'سرور خانگی.lnk' }
 function New-ProgramShortcut {
   param(
     [Parameter(Mandatory = $true)][string]$InstallRoot,
-    [Parameter(Mandatory = $true)][string]$LinkPath
+    [Parameter(Mandatory = $true)][string]$LinkPath,
+    # کدام فایل باز شود — پیش‌فرض خودِ برنامه، ولی حذف‌کننده هم میان‌بر می‌خواهد
+    [string]$Launcher = 'launch.vbs',
+    [string]$Description = 'برنامهٔ سرور خانگی'
   )
 
   $desktopDir = Join-Path $InstallRoot 'homelab-panel\desktop'
-  $launcher = Join-Path $desktopDir 'launch.vbs'
+  $launcher = Join-Path $desktopDir $Launcher
   if (-not (Test-Path -LiteralPath $launcher)) { return $null }
 
   try {
@@ -831,7 +834,7 @@ function New-ProgramShortcut {
     $link.TargetPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
     $link.Arguments = """$launcher"""
     $link.WorkingDirectory = $desktopDir
-    $link.Description = 'برنامهٔ سرور خانگی'
+    $link.Description = $Description
 
     $icon = Join-Path $desktopDir 'server.ico'
     if (Test-Path -LiteralPath $icon) { $link.IconLocation = "$icon,0" }
@@ -1251,4 +1254,76 @@ function Stop-RunningApp {
     }
   }
   return $closed
+}
+
+# ---------------------------------------------------------------------------
+#  بالا آمدنِ خودکار با ویندوز
+#
+#  سرور نباید به پنجرهٔ برنامه وابسته باشد: کاربر برنامه را می‌بندد، ولی سایت
+#  و اپ‌ها باید همچنان کار کنند. این‌جا یک کارِ زمان‌بندی‌شدهٔ ویندوز ساخته
+#  می‌شود که با ورودِ کاربر، سرور را بی‌پنجره بالا می‌آورد.
+#
+#  عمداً Task Scheduler و نه Windows Service: سرویسِ واقعی دسترسیِ مدیر
+#  می‌خواهد و هر بار پنجرهٔ UAC بالا می‌آید؛ این یکی بدونِ آن کار می‌کند.
+# ---------------------------------------------------------------------------
+
+$script:TaskName = 'PumpYaqobiPanel'
+
+<#
+  .SYNOPSIS
+  آیا با روشن شدنِ ویندوز، سرور خودش بالا می‌آید؟
+#>
+function Get-AutoStartState {
+  param([Parameter(Mandatory = $true)][string]$ServerDir)
+
+  $state = @{ supported = ($env:OS -eq 'Windows_NT'); installed = $false; detail = '' }
+  if (-not $state.supported) {
+    $state.detail = 'فقط روی ویندوز'
+    return $state
+  }
+  try {
+    $output = & schtasks.exe /Query /TN $script:TaskName 2>&1
+    $state.installed = ($LASTEXITCODE -eq 0)
+    if (-not $state.installed) { $state.detail = 'ثبت نشده' }
+    else { $state.detail = 'با ورودِ شما خودش بالا می‌آید' }
+  } catch {
+    $state.detail = "بررسی نشد: $($_.Exception.Message)"
+  }
+  return $state
+}
+
+<#
+  .SYNOPSIS
+  سرور را در راه‌اندازیِ خودکارِ ویندوز ثبت می‌کند.
+#>
+function Enable-AutoStart {
+  param([Parameter(Mandatory = $true)][string]$ServerDir)
+
+  $launcher = Join-Path $ServerDir 'run-hidden.vbs'
+  if (-not (Test-Path -LiteralPath $launcher)) {
+    return @{ ok = $false; message = 'فایلِ اجرای بی‌پنجره پیدا نشد (run-hidden.vbs)' }
+  }
+  try {
+    $command = '"' + (Join-Path $env:SystemRoot 'System32\wscript.exe') + '" "' + $launcher + '"'
+    $null = & schtasks.exe /Create /TN $script:TaskName /TR $command /SC ONLOGON /RL LIMITED /F 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      return @{ ok = $false; message = 'ویندوز اجازهٔ ثبت نداد' }
+    }
+    return @{ ok = $true; message = 'از این به بعد با روشن شدنِ ویندوز خودش بالا می‌آید' }
+  } catch {
+    return @{ ok = $false; message = $_.Exception.Message }
+  }
+}
+
+<#
+  .SYNOPSIS
+  راه‌اندازیِ خودکار را برمی‌دارد. سرورِ در حالِ اجرا خاموش نمی‌شود.
+#>
+function Disable-AutoStart {
+  try {
+    $null = & schtasks.exe /Delete /TN $script:TaskName /F 2>&1
+    return @{ ok = ($LASTEXITCODE -eq 0); message = 'راه‌اندازیِ خودکار برداشته شد' }
+  } catch {
+    return @{ ok = $false; message = $_.Exception.Message }
+  }
 }

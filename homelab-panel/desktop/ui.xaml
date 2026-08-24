@@ -541,6 +541,15 @@
 
             <Border Style="{StaticResource CardBox}">
               <StackPanel>
+                <TextBlock Text="بالا آمدن با ویندوز" Style="{StaticResource H2}"/>
+                <CheckBox x:Name="ChkAutoStart" Content="سرور با روشن شدنِ ویندوز خودش بالا بیاید"/>
+                <TextBlock x:Name="LblAutoStart" Style="{StaticResource Sub}" Margin="0,6,0,0"/>
+                <TextBlock Text="با این کار، بستنِ همین پنجره سرور را خاموش نمی‌کند — سایت‌ها و اپ‌ها همچنان کار می‌کنند." Style="{StaticResource Sub}" Margin="0,6,0,0"/>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
                 <TextBlock Text="دستیارِ هوش مصنوعی" Style="{StaticResource H2}"/>
                 <CheckBox x:Name="ChkAi" Content="دستیار با سرور بالا بیاید"/>
                 <TextBlock x:Name="LblAiNote" Style="{StaticResource Sub}" Margin="0,6,0,0"/>

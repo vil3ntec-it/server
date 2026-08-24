@@ -73,6 +73,7 @@ foreach ($name in @(
     'NavLibrary','PageLibrary','TxtLibRoot','BtnLibChange','BtnLibOpen','BtnLibRepair','BtnLibClean',
     'LblLibState','LblLibDisk','BarLibDisk','LblLibWarn','LstLibSites','LstLibApps',
     'BtnLibScan','BtnLibOrganize','LblLibScan','LstLibStray',
+    'ChkAutoStart','LblAutoStart',
     'TxtMailHost','TxtMailUser','TxtMailPort','TxtMailPass','CmbSmsProvider','TxtSmsSender',
     'TxtSmsKey','TxtSmsTemplate','ChkAi','LblAiNote','BtnSaveSettings','BtnOpenEnv','LblSettingsState',
     'BtnLogRefresh','BtnLogClear','BtnLogCopy','ChkLogAuto','TxtLog',
@@ -442,6 +443,14 @@ function Update-SettingsForm {
   for ($i = 0; $i -lt $ui.CmbSmsProvider.Items.Count; $i++) {
     if ([string]$ui.CmbSmsProvider.Items[$i] -eq $provider) { $ui.CmbSmsProvider.SelectedIndex = $i; break }
   }
+
+  # بالا آمدن با ویندوز — وضعیتِ واقعی را از خودِ ویندوز می‌پرسیم
+  $script:AutoStartLoading = $true
+  $auto = Get-AutoStartState -ServerDir $script:ServerDir
+  $ui.ChkAutoStart.IsChecked = [bool]$auto.installed
+  $ui.ChkAutoStart.IsEnabled = [bool]$auto.supported
+  Set-Text $ui.LblAutoStart ([string]$auto.detail) $(if ($auto.installed) { $script:Brushes.Good } else { $script:Brushes.Muted })
+  $script:AutoStartLoading = $false
 
   $aiOn = ((& $get 'HLP_AI_ENABLED' '1') -ne '0')
   $ui.ChkAi.IsChecked = $aiOn
@@ -848,6 +857,22 @@ $ui.BtnSaveSettings.Add_Click({
   Pump
   Restart-Server
   Set-Text $ui.LblSettingsState 'ذخیره شد و سرور دوباره بالا آمد ✔' $script:Brushes.Good
+})
+
+$ui.ChkAutoStart.Add_Click({
+  if ($script:AutoStartLoading) { return }
+  $result = if ($ui.ChkAutoStart.IsChecked) {
+    Enable-AutoStart -ServerDir $script:ServerDir
+  } else {
+    Disable-AutoStart
+  }
+  Set-Text $ui.LblAutoStart ([string]$result.message) $(if ($result.ok) { $script:Brushes.Good } else { $script:Brushes.Bad })
+  if (-not $result.ok) {
+    # اگر نشد، تیک را به حالتِ واقعی برگردان
+    $script:AutoStartLoading = $true
+    $ui.ChkAutoStart.IsChecked = (Get-AutoStartState -ServerDir $script:ServerDir).installed
+    $script:AutoStartLoading = $false
+  }
 })
 
 $ui.BtnOpenEnv.Add_Click({
