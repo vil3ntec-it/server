@@ -41,6 +41,8 @@ import appRoutes, { adminRouter as appAdminRoutes } from './routes/app.js';
 import storageRoutes from './routes/storage.js';
 import { pruneAppAuth } from './appauth/index.js';
 import { localKey } from './local-key.js';
+import { runMigrations, dbVersion } from './lib/migrations.js';
+import { pruneAudit } from './lib/audit.js';
 import { rateLimit, pruneRateLimits } from './lib/rate-limit.js';
 import { otpSettings } from './appauth/settings.js';
 import * as notify from './notify/index.js';
@@ -60,6 +62,15 @@ function serveConnectPage(req, res) {
 }
 
 ensureDirs();
+
+// نسخهٔ دیتابیس اول بالا می‌آید — پیش از هر چیزی که به جدول‌ها دست بزند
+const migration = runMigrations();
+if (migration.ran.length) {
+  console.log(`[دیتابیس] ${migration.ran.length} تغییر اعمال شد → نسخهٔ ${migration.to}`);
+}
+if (migration.failed) {
+  console.error(`❌ تغییرِ دیتابیس شمارهٔ ${migration.failed.id} انجام نشد: ${migration.failed.error}`);
+}
 
 // کلیدِ محلی همین اول ساخته می‌شود تا «برنامهٔ سرور خانگی» روی همین کامپیوتر
 // بتواند بدونِ ورودِ دستی، برنامه‌ها و تنظیمات را اداره کند.
@@ -148,6 +159,7 @@ app.get('/health', (req, res) => {
     version: versionInfo.version,
     build: versionInfo.build,
     root: versionInfo.root,
+    db: dbVersion(),
     time: new Date().toISOString(),
   });
 });
@@ -316,6 +328,7 @@ const housekeeping = setInterval(() => {
   pruneSessions();
   pruneAppAuth();
   pruneRateLimits();
+  pruneAudit();
   pruneEvents();
 }, 15 * 60 * 1000);
 housekeeping.unref?.();

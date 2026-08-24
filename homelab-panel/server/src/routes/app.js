@@ -34,6 +34,7 @@ import {
   stats,
 } from '../appauth/index.js';
 import { db } from '../db.js';
+import { audit, recentAudit } from '../lib/audit.js';
 import {
   ensureClient,
   getClient,
@@ -268,11 +269,13 @@ adminRouter.put('/clients/:slug', (req, res) => {
 adminRouter.post('/clients/:slug/key', (req, res) => {
   const client = rotateKey(req.params.slug);
   if (!client) return res.status(404).json({ ok: false, error: 'not_found' });
+  audit(req, 'client.key.rotate', { target: req.params.slug });
   res.json({ ok: true, client: publicClient(client) });
 });
 
 adminRouter.delete('/clients/:slug', (req, res) => {
   const result = removeClient(req.params.slug, { withUsers: req.query.withUsers === '1' });
+  audit(req, 'client.delete', { target: req.params.slug, ok: result.ok });
   if (!result.ok) return res.status(404).json(result);
   res.json(result);
 });
@@ -321,12 +324,23 @@ adminRouter.get('/users', (req, res) => {
   });
 });
 
-adminRouter.post('/users/:id/block', (req, res) => res.json(setBlocked(req.params.id, req.body?.blocked !== false)));
-adminRouter.delete('/users/:id', (req, res) => res.json(deleteUser(req.params.id)));
+adminRouter.post('/users/:id/block', (req, res) => {
+  audit(req, 'user.block', { target: req.params.id, detail: req.body?.blocked !== false ? 'blocked' : 'unblocked' });
+  res.json(setBlocked(req.params.id, req.body?.blocked !== false));
+});
+adminRouter.delete('/users/:id', (req, res) => {
+  audit(req, 'user.delete', { target: req.params.id });
+  res.json(deleteUser(req.params.id));
+});
 
 /* آخرین کدها — بدونِ خودِ کد (کد اصلاً ذخیره نمی‌شود). برای وقتی که می‌خواهید
    ببینید درخواست‌ها می‌رسند و از چه راهی فرستاده شده‌اند. */
 adminRouter.get('/codes', (req, res) => res.json({ codes: recentCodes(req.query.limit) }));
+
+/* دفترِ کارهای حساس — چه کسی، کِی، چه کرد */
+adminRouter.get('/audit', (req, res) => {
+  res.json({ entries: recentAudit({ limit: Number(req.query.limit) || 100, action: req.query.action || null }) });
+});
 
 adminRouter.get('/settings', (req, res) => res.json(safeOtpSettings()));
 

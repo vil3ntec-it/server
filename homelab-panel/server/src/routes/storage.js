@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import path from 'node:path';
 import { requireLocalOrAuth } from '../local-key.js';
+import { audit } from '../lib/audit.js';
 import { config } from '../config.js';
 import {
   overview,
@@ -51,6 +52,7 @@ router.post('/check', async (req, res) => {
 router.post('/setup', async (req, res) => {
   const target = String(req.body?.root || '').trim() || libraryRoot();
   const result = await setLibraryRoot(target);
+  audit(req, 'storage.setRoot', { target, ok: result.ok });
   if (!result.ok) return res.status(400).json(result);
   res.json({ ok: true, ...result, ...(await overview({ withSize: false })) });
 });
@@ -91,6 +93,7 @@ router.post('/organize/apply', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'nothing_to_move' });
   }
   // پاک کردنِ منبع فقط وقتی صریحاً خواسته شود
+  audit(req, 'storage.organize', { target: `${items.length} پوشه`, detail: req.body?.removeSource === true ? 'با پاک کردنِ منبع' : 'فقط کپی' });
   res.json({ ok: true, ...(await applyMove(items, { removeSource: req.body?.removeSource === true })) });
 });
 

@@ -159,6 +159,21 @@ try {
   }
   try { live.terminate(); } catch { /* بسته */ }
 
+  console.log('\n▶ نسخه‌بندیِ دیتابیس و دفترِ کارها');
+  const health = await (await fetch(`${BASE}/health`)).json();
+  check('نسخهٔ دیتابیس گزارش می‌شود', health.db && health.db.current === health.db.latest, JSON.stringify(health.db));
+
+  const localKey = fs.readFileSync(path.join(dataDir, 'local-admin.key'), 'utf8').trim();
+  const auditRes = await (await fetch(`${BASE}/api/app-admin/audit`, { headers: { 'X-Local-Key': localKey } })).json();
+  const actions = (auditRes.entries || []).map((e) => e.action);
+  check('ورودِ ناموفق ثبت شده', actions.includes('panel.login'), actions.join(', '));
+  const failedLogin = (auditRes.entries || []).find((e) => e.action === 'panel.login' && e.ok === false);
+  check('و «ناموفق» بودنش هم ثبت شده', Boolean(failedLogin));
+  check('ساختِ حسابِ مدیر ثبت شده', actions.includes('panel.setup'));
+
+  const backupsDir = path.join(dataDir, 'backups');
+  check('پوشهٔ پشتیبانِ دیتابیس آماده است', !fs.existsSync(backupsDir) || fs.statSync(backupsDir).isDirectory());
+
   console.log('\n▶ جداییِ توکن‌ها');
   const panelWithLocal = await fetch(`${BASE}/api/dashboard`, { headers: { 'X-Local-Key': 'wrong-key-here-1234567890' } });
   check('کلیدِ محلیِ غلط رد می‌شود', panelWithLocal.status === 401, `status=${panelWithLocal.status}`);
