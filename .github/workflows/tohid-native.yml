@@ -1,0 +1,100 @@
+name: توحید بومی
+
+on:
+  push:
+    branches: ['claude/**', main]
+    paths:
+      - 'homelab-panel/tohid-native/**'
+      - '.github/workflows/tohid-native.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: tohid-native-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ساخت نسخهٔ بومی
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: ساخت APK
+        working-directory: homelab-panel/tohid-native
+        run: gradle --no-daemon assembleRelease
+
+      - name: نام‌گذاری و جمع کنترلی
+        working-directory: homelab-panel/tohid-native
+        run: |
+          mkdir -p out
+          version=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          cp app/build/outputs/apk/release/app-release.apk "out/Tohid-Native-$version.apk"
+          cd out && sha256sum *.apk > SHA256SUMS.txt && cat SHA256SUMS.txt
+          echo "APK_NAME=Tohid-Native-$version.apk" >> "$GITHUB_ENV"
+          echo "APK_MB=$(du -m *.apk | cut -f1)" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tohid-Native
+          path: homelab-panel/tohid-native/out/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: جابه‌جا کردن برچسب
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh api -X PATCH "repos/${{ github.repository }}/git/refs/tags/tohid-native" \
+                 -f sha='${{ github.sha }}' -F force=true >/dev/null 2>&1; then
+            gh api -X POST "repos/${{ github.repository }}/git/refs" \
+              -f ref='refs/tags/tohid-native' -f sha='${{ github.sha }}' >/dev/null
+          fi
+
+      - name: انتشار
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: tohid-native
+          name: توحید — نسخهٔ بومی اندروید
+          prerelease: true
+          target_commitish: ${{ github.sha }}
+          overwrite_files: true
+          files: |
+            homelab-panel/tohid-native/out/*.apk
+            homelab-panel/tohid-native/out/SHA256SUMS.txt
+          body: |
+            ## توحید — نسخهٔ بومی اندروید
+
+            بازنویسی کامل با Kotlin و Jetpack Compose. بدون HTML، بدون WebView.
+
+            **دانلود:** `${{ env.APK_NAME }}` (حدود ${{ env.APK_MB }} مگابایت)
+
+            > این نسخه **در حال ساخت** است. مرحله‌به‌مرحله کامل می‌شود و هر
+            > مرحله از داخل خود برنامه به‌روزرسانی می‌گیرد.
+
+            ---
+            <sub>ساخته‌شده از `${{ github.sha }}`</sub>
+
+      - name: پاک کردن نسخه‌های قبلی
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/releases/tags/tohid-native" \
+            | jq -r '.assets[] | "\(.id) \(.name)"' | while read -r id name; do
+              if [ "$name" != "${{ env.APK_NAME }}" ] && [ "$name" != "SHA256SUMS.txt" ]; then
+                gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$id"
+              fi
+            done
