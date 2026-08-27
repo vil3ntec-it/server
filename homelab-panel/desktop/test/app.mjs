@@ -154,7 +154,12 @@ try {
   );
   check('سطرهای تازه به پنجرهٔ جدا هم می‌رسند', true);
 
-  await term.click('#btnBack');
+  // این کلیک همان پنجره را می‌بندد، پس Playwright منتظرِ پاسخی از صفحه‌ای
+  // می‌ماند که دیگر وجود ندارد. خودِ بسته شدن نتیجهٔ درست است.
+  await Promise.all([
+    term.waitForEvent('close').catch(() => {}),
+    term.click('#btnBack', { noWaitAfter: true }).catch(() => {}),
+  ]);
   await win.waitForSelector('#termAway', { state: 'hidden', timeout: 10000 });
   check('«برگشت به برنامه» ترمینال را برمی‌گرداند', await win.isVisible('#term'));
 
