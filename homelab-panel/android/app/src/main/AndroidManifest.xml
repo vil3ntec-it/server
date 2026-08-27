@@ -5,6 +5,14 @@
   <uses-permission android:name="android.permission.INTERNET" />
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+  <!-- برای چاپگر حرارتیِ بلوتوثی -->
+  <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+  <uses-permission android:name="android.permission.BLUETOOTH"
+      android:maxSdkVersion="30" />
+  <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
+      android:maxSdkVersion="30" />
+  <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+
   <!-- برای اسکنر بارکد و عکسِ جنس؛ اگر گوشی دوربین نداشته باشد هم
        برنامه نصب می‌شود و بقیهٔ بخش‌ها کار می‌کنند -->
   <uses-permission android:name="android.permission.CAMERA" />
@@ -30,6 +38,10 @@
         <action android:name="android.intent.action.MAIN" />
         <category android:name="android.intent.category.LAUNCHER" />
       </intent-filter>
+
+      <meta-data
+          android:name="android.app.shortcuts"
+          android:resource="@xml/shortcuts" />
     </activity>
   </application>
 </manifest>

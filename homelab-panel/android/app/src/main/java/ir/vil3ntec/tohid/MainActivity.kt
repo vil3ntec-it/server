@@ -3,7 +3,10 @@ package ir.vil3ntec.tohid
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.net.Uri
 import android.os.Bundle
 import android.print.PrintAttributes
@@ -23,7 +26,11 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.appcompat.app.AlertDialog
 import androidx.core.view.WindowCompat
+import android.widget.ArrayAdapter
+import android.widget.EditText
+import android.widget.LinearLayout
 import androidx.webkit.WebViewAssetLoader
 import java.io.OutputStream
 
@@ -49,6 +56,7 @@ class MainActivity : AppCompatActivity() {
   private var filePathCallback: ValueCallback<Array<Uri>>? = null
   private var pendingPermission: PermissionRequest? = null
   private var pendingBytes: ByteArray? = null
+  private lateinit var prefs: SharedPreferences
 
   /** انتخاب فایل — برای بازگرداندن بکاپ و گذاشتن عکس روی جنس */
   private val pickFiles = registerForActivityResult(
@@ -70,6 +78,13 @@ class MainActivity : AppCompatActivity() {
     if (granted) request.grant(request.resources) else request.deny()
   }
 
+  /** اجازهٔ بلوتوث — برای دیدن و وصل شدن به چاپگرِ حرارتی */
+  private val askBluetooth = registerForActivityResult(
+    ActivityResultContracts.RequestPermission()
+  ) { granted ->
+    if (granted) askPrinter() else toast("بدون اجازهٔ بلوتوث، چاپگر پیدا نمی‌شود")
+  }
+
   /** جایی که کاربر انتخاب می‌کند فایلِ خروجی کجا ذخیره شود */
   private val saveFile = registerForActivityResult(
     ActivityResultContracts.CreateDocument("*/*")
@@ -89,6 +104,8 @@ class MainActivity : AppCompatActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     WindowCompat.setDecorFitsSystemWindows(window, true)
+
+    prefs = getSharedPreferences("tohid", MODE_PRIVATE)
 
     web = WebView(this)
     setContentView(web)
@@ -117,10 +134,21 @@ class MainActivity : AppCompatActivity() {
     web.webViewClient = object : WebViewClient() {
       override fun shouldInterceptRequest(
         view: WebView, request: WebResourceRequest
-      ): WebResourceResponse? = loader.shouldInterceptRequest(request.url)
+      ): WebResourceResponse? =
+        // اول فایل‌های خودِ برنامه، بعد چیزهایی که وگرنه از اینترنت می‌آمدند
+        loader.shouldInterceptRequest(request.url)
+          ?: Offline.handle(this@MainActivity, request.url)
 
       override fun onPageFinished(view: WebView, url: String) {
         injectBridge(view)
+        applyServerAddress(view)
+        // بارِ اول: بپرس آدرس سرور کجاست. اگر کاربر خالی بگذارد، دیگر
+        // نمی‌پرسیم — برنامه بدونِ سرور هم کامل کار می‌کند.
+        if (!prefs.contains(KEY_SERVER)) {
+          prefs.edit().putString(KEY_SERVER, "").apply()
+          view.post { askServerAddress() }
+        }
+        handleShortcut(intent)
       }
 
       override fun shouldOverrideUrlLoading(
@@ -189,6 +217,148 @@ class MainActivity : AppCompatActivity() {
     }
   }
 
+  /* ------------------------- تنظیماتِ خودِ برنامه ------------------------- */
+
+  /**
+   * صفحه تمام‌صفحه است و نوار عنوان ندارد — عمداً، تا هیچ‌چیز شبیه مرورگر
+   * نباشد. پس تنظیمات از دو راه در دسترس است:
+   *   • بارِ اول خودش می‌پرسد
+   *   • بعد از آن: نگه داشتنِ آیکنِ برنامه روی صفحهٔ گوشی
+   */
+  private fun handleShortcut(intent: Intent?) {
+    when (intent?.getStringExtra(EXTRA_OPEN)) {
+      "server" -> askServerAddress()
+      "printer" -> askPrinter()
+    }
+    intent?.removeExtra(EXTRA_OPEN)
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    handleShortcut(intent)
+  }
+
+  /**
+   * آدرس سرور.
+   *
+   * خودِ برنامه هیچ جایی برای وارد کردنِ آدرس سرور ندارد — نه در تنظیمات و
+   * نه جای دیگر؛ فقط از localStorage می‌خواندش. پس این صفحه را سمتِ اندروید
+   * می‌گذاریم و مقدار را در همان کلید می‌نشانیم. برنامه دست‌نخورده می‌ماند.
+   */
+  private fun askServerAddress() {
+    val input = EditText(this).apply {
+      hint = "http://192.168.1.10:4700"
+      setText(prefs.getString(KEY_SERVER, "") ?: "")
+      setSingleLine()
+    }
+    val box = LinearLayout(this).apply {
+      orientation = LinearLayout.VERTICAL
+      setPadding(48, 24, 48, 0)
+      addView(input)
+    }
+    AlertDialog.Builder(this)
+      .setTitle("آدرس سرور")
+      .setMessage("آدرس را از پنل، بخش «برنامه توحید» → «تنظیمات» بردارید.\nخالی بگذارید تا برنامه بدون سرور کار کند.")
+      .setView(box)
+      .setPositiveButton("ذخیره") { _, _ ->
+        val value = input.text.toString().trim().trimEnd('/')
+        if (value.isNotEmpty() && !value.startsWith("http://") && !value.startsWith("https://")) {
+          toast("آدرس باید با http:// شروع شود")
+          return@setPositiveButton
+        }
+        prefs.edit().putString(KEY_SERVER, value).apply()
+        // برنامه آدرس را موقعِ بالا آمدن می‌خواند، پس باید دوباره بار شود
+        web.reload()
+        toast(if (value.isEmpty()) "آدرس پاک شد" else "ذخیره شد")
+      }
+      .setNegativeButton("بی‌خیال", null)
+      .show()
+  }
+
+  /** آدرس را در همان کلیدی می‌گذارد که برنامه می‌خواند */
+  private fun applyServerAddress(view: WebView) {
+    val value = prefs.getString(KEY_SERVER, "") ?: ""
+    val js = if (value.isEmpty()) {
+      "try{localStorage.removeItem('tohid-license-server-url')}catch(e){}"
+    } else {
+      "try{localStorage.setItem('tohid-license-server-url', ${quote(value)})}catch(e){}"
+    }
+    view.evaluateJavascript(js, null)
+  }
+
+  private fun quote(value: String) =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+  /** انتخابِ چاپگرِ حرارتی از میانِ دستگاه‌های جفت‌شدهٔ بلوتوث */
+  private fun askPrinter() {
+    // اندروید ۱۲ به بعد برای دیدنِ دستگاه‌های بلوتوث اجازه می‌خواهد
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
+      ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
+      != PackageManager.PERMISSION_GRANTED
+    ) {
+      askBluetooth.launch(Manifest.permission.BLUETOOTH_CONNECT)
+      return
+    }
+
+    val printers = ThermalPrinter.paired(this)
+    if (printers.isEmpty()) {
+      AlertDialog.Builder(this)
+        .setTitle("چاپگر حرارتی")
+        .setMessage("چاپگری پیدا نشد.\n\nاول در تنظیماتِ بلوتوثِ گوشی، چاپگر را جفت (pair) کنید، بعد اینجا برگردید.")
+        .setPositiveButton("باشد", null)
+        .show()
+      return
+    }
+
+    val names = printers.map { it.name }.toTypedArray()
+    val saved = prefs.getString(KEY_PRINTER, null)
+    var chosen = printers.indexOfFirst { it.address == saved }.coerceAtLeast(0)
+
+    AlertDialog.Builder(this)
+      .setTitle("چاپگر حرارتی")
+      .setSingleChoiceItems(ArrayAdapter(this, android.R.layout.simple_list_item_single_choice, names), chosen) { _, which ->
+        chosen = which
+      }
+      .setPositiveButton("انتخاب") { _, _ ->
+        prefs.edit().putString(KEY_PRINTER, printers[chosen].address).apply()
+        askPaperWidth()
+      }
+      .setNeutralButton("چاپگر معمولی") { _, _ ->
+        prefs.edit().remove(KEY_PRINTER).apply()
+        toast("چاپ از راهِ چاپگرِ اندروید انجام می‌شود")
+      }
+      .setNegativeButton("بی‌خیال", null)
+      .show()
+  }
+
+  private fun askPaperWidth() {
+    val widths = arrayOf("۵۸ میلی‌متر", "۸۰ میلی‌متر")
+    val current = if (prefs.getInt(KEY_PAPER, ThermalPrinter.WIDTH_58MM) == ThermalPrinter.WIDTH_80MM) 1 else 0
+    AlertDialog.Builder(this)
+      .setTitle("عرض کاغذ")
+      .setSingleChoiceItems(widths, current) { dialog, which ->
+        prefs.edit().putInt(
+          KEY_PAPER,
+          if (which == 1) ThermalPrinter.WIDTH_80MM else ThermalPrinter.WIDTH_58MM,
+        ).apply()
+        dialog.dismiss()
+        toast("چاپگر تنظیم شد")
+      }
+      .show()
+  }
+
+  /** صفحه را همان‌طور که هست به تصویر می‌گیرد — با فارسیِ درست */
+  private fun snapshot(): Bitmap {
+    val width = if (web.width > 0) web.width else 720
+    val height = (web.contentHeight * web.scale).toInt().coerceAtLeast(web.height).coerceAtLeast(1)
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    canvas.drawColor(android.graphics.Color.WHITE)
+    web.draw(canvas)
+    return bitmap
+  }
+
   override fun onSaveInstanceState(outState: Bundle) {
     super.onSaveInstanceState(outState)
     web.saveState(outState)
@@ -240,6 +410,13 @@ class MainActivity : AppCompatActivity() {
     view.evaluateJavascript(js, null)
   }
 
+  companion object {
+    private const val KEY_SERVER = "server_url"
+    private const val KEY_PRINTER = "printer_address"
+    private const val KEY_PAPER = "paper_width"
+    const val EXTRA_OPEN = "open"
+  }
+
   inner class Bridge {
     @JavascriptInterface
     fun saveFile(name: String, mime: String, base64: String) {
@@ -258,13 +435,27 @@ class MainActivity : AppCompatActivity() {
     @JavascriptInterface
     fun printPage() {
       runOnUiThread {
-        val manager = getSystemService(PRINT_SERVICE) as PrintManager
-        val adapter = web.createPrintDocumentAdapter("توحید")
-        manager.print(
-          "توحید",
-          adapter,
-          PrintAttributes.Builder().setMediaSize(PrintAttributes.MediaSize.ISO_A4).build()
-        )
+        val printer = prefs.getString(KEY_PRINTER, null)
+        if (printer.isNullOrEmpty()) {
+          // چاپگرِ حرارتی انتخاب نشده — از راهِ چاپگرِ خودِ اندروید
+          val manager = getSystemService(PRINT_SERVICE) as PrintManager
+          val adapter = web.createPrintDocumentAdapter("توحید")
+          manager.print(
+            "توحید",
+            adapter,
+            PrintAttributes.Builder().setMediaSize(PrintAttributes.MediaSize.ISO_A4).build(),
+          )
+          return@runOnUiThread
+        }
+
+        toast("در حال چاپ…")
+        val bitmap = snapshot()
+        val width = prefs.getInt(KEY_PAPER, ThermalPrinter.WIDTH_58MM)
+        // شبکه و بلوتوث نباید روی نخِ رابط کاربری باشند، وگرنه برنامه یخ می‌زند
+        Thread {
+          val error = ThermalPrinter.print(this@MainActivity, printer, bitmap, width)
+          runOnUiThread { toast(error ?: "چاپ شد") }
+        }.start()
       }
     }
   }
