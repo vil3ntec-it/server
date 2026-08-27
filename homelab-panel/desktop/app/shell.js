@@ -241,31 +241,41 @@ $('btnTermBack').addEventListener('click', async () => {
 
 let drag = null;
 
-el.termGrip.addEventListener('pointerdown', (e) => {
-  drag = { y: e.clientY, start: el.term.getBoundingClientRect().height };
-  el.termGrip.setPointerCapture(e.pointerId);
-  document.body.classList.add('resizing');
-  e.preventDefault();
-});
-
-el.termGrip.addEventListener('pointermove', (e) => {
+/*
+ * حرکت و رها شدن روی خودِ پنجره دنبال می‌شود، نه روی دستگیره.
+ *
+ * قبلاً همه‌چیز به setPointerCapture بند بود و شنونده‌ها روی نوارِ هفت
+ * پیکسلیِ دستگیره بودند: اگر گرفتنِ اشاره‌گر نمی‌گرفت یا ماوس تندتر از آن
+ * بیرون می‌زد، حرکت‌ها دیگر نمی‌رسید و کشیدن بی‌صدا هیچ کاری نمی‌کرد.
+ */
+function onDragMove(e) {
   if (!drag) return;
   // دستگیره بالای ترمینال است: بالا کشیدن یعنی بلندتر
   applyHeight(drag.start + (drag.y - e.clientY));
-});
+  e.preventDefault();
+}
 
-function endDrag(e) {
+function endDrag() {
   if (!drag) return;
   drag = null;
   document.body.classList.remove('resizing');
-  try { el.termGrip.releasePointerCapture(e.pointerId); } catch { /* رها شده */ }
+  window.removeEventListener('pointermove', onDragMove);
+  window.removeEventListener('pointerup', endDrag);
+  window.removeEventListener('pointercancel', endDrag);
+
   const h = Math.round(el.term.getBoundingClientRect().height);
   window.cc.setUi({ terminalHeight: h }).catch(() => {});
   scrollTerminalToEnd();
 }
 
-el.termGrip.addEventListener('pointerup', endDrag);
-el.termGrip.addEventListener('pointercancel', endDrag);
+el.termGrip.addEventListener('pointerdown', (e) => {
+  drag = { y: e.clientY, start: el.term.getBoundingClientRect().height };
+  document.body.classList.add('resizing');
+  window.addEventListener('pointermove', onDragMove);
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+  e.preventDefault();
+});
 
 // کوچک شدنِ پنجره نباید ترمینال را از حدش بزرگ‌تر بگذارد
 window.addEventListener('resize', () => {
