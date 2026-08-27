@@ -3,12 +3,25 @@ name: برنامه ویندوز
 on:
   push:
     tags: ['v*']
+    # تا پیش از merge، فهرستِ Actions این گردشِ کار را نشان نمی‌دهد (چون فایلش
+    # روی شاخهٔ اصلی نیست). پس روی شاخه‌های کاری هم — وقتی خودِ برنامهٔ ویندوز
+    # عوض شد — ساخته می‌شود تا فایل نصبی از همان‌جا قابلِ دانلود باشد.
+    branches: ['claude/**']
+    paths:
+      - 'homelab-panel/desktop/**'
+      - 'homelab-panel/server/**'
+      - 'homelab-panel/web/**'
+      - '.github/workflows/windows-app.yml'
   workflow_dispatch:
     inputs:
       release:
         description: انتشار به‌عنوان Release
         type: boolean
         default: false
+
+concurrency:
+  group: windows-app-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write

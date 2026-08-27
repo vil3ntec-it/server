@@ -1,9 +1,15 @@
 name: تست‌ها
 
 on:
+  # روی شاخه‌های کاری، خودِ Pull Request کافی است — وگرنه هر push دو بار
+  # کلِ مجموعه را اجرا می‌کند و دو برابر وقت می‌گیرد.
   push:
-    branches: [main, 'claude/**']
+    branches: [main]
   pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:

@@ -31,7 +31,8 @@ Cloudflare، کاربران و فروشگاه‌ها و اشتراک‌ها، ب
 داخلِ خودش است — و **به نصبِ Node.js هم نیاز ندارد**.
 
 از [Releases](https://github.com/vil3ntec-it/server/releases) فایل
-`ControlCenter-Setup-<نسخه>.exe` را بگیر و اجرا کن. موقعِ نصب می‌پرسد **کجا
+`ControlCenter-Setup-<نسخه>.exe` را بگیر و اجرا کن. (اگر هنوز Release نیست،
+از زبانهٔ **Actions** → «برنامه ویندوز» → **Artifacts** برش دار.) موقعِ نصب می‌پرسد **کجا
 نصب شود**، و بارِ اولِ اجرا می‌پرسد **اطلاعات کجا ذخیره شود**.
 
 راهنما: [`homelab-panel/desktop/README-fa.md`](homelab-panel/desktop/README-fa.md)
