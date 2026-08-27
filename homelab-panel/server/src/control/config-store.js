@@ -16,6 +16,7 @@ import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { audit } from './audit.js';
 import { putSecret, readSecret } from './vault.js';
+import { writeProjectLog } from './project-log.js';
 
 export const ENVIRONMENTS = ['development', 'staging', 'production'];
 
@@ -104,6 +105,11 @@ export function saveVersion(project, { environment = 'production', data, note = 
     projectId: project.id,
     detail: { environment, version, keys: Object.keys(clean), rejected },
   });
+  writeProjectLog(project, {
+    category: 'deployment',
+    message: `پیکربندی نسخهٔ ${version} برای «${environment}» ذخیره شد`,
+    detail: { keys: Object.keys(clean), rejected: rejected.map((r) => r.key), actor },
+  });
 
   return { id, version, environment, rejected, data: clean };
 }
@@ -128,6 +134,11 @@ export function activateVersion(project, id, actor = 'admin') {
     entityId: row.id,
     projectId: project.id,
     detail: { environment: row.environment, version: row.version },
+  });
+  writeProjectLog(project, {
+    category: 'deployment',
+    message: `نسخهٔ ${row.version} پیکربندیِ «${row.environment}» فعال شد`,
+    detail: { actor },
   });
   return { ...row, data: JSON.parse(row.data), active: 1 };
 }

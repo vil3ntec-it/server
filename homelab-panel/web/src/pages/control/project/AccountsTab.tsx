@@ -22,6 +22,11 @@ export default function AccountsTab({ projectId }: { projectId: string }) {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<'shop' | 'user' | 'sub' | null>(null);
 
+  // «کارکنان» همان کاربرانِ همین پروژه‌اند که نقشِ کاری دارند — نه فهرستِ جدا،
+  // تا یک نفر دوبار در دو جا ثبت نشود.
+  const STAFF_ROLES = ['owner', 'manager', 'staff'];
+  const staff = users.filter((u) => STAFF_ROLES.includes(u.role));
+
   const load = useCallback(async () => {
     try {
       const [s, u, sub] = await Promise.all([
@@ -52,6 +57,7 @@ export default function AccountsTab({ projectId }: { projectId: string }) {
       <Tabs
         tabs={[
           { id: 'users', label: t('ccUsers'), badge: total },
+          { id: 'staff', label: t('ccStaff'), badge: staff.length },
           { id: 'shops', label: t('ccAccounts'), badge: shops.length },
           { id: 'subs', label: t('ccPlan'), badge: summary.active || 0 },
         ]}
@@ -91,6 +97,60 @@ export default function AccountsTab({ projectId }: { projectId: string }) {
                   <div className="flex justify-end">
                     <ActionButton onClick={async () => { await cc.deleteUser(projectId, u.id); load(); }}>
                       <Trash2 className="h-3.5 w-3.5" />
+                    </ActionButton>
+                  </div>
+                </Cell>
+              </Row>
+            ))}
+          </Table>
+        </Card>
+      )}
+
+      {tab === 'staff' && (
+        <Card
+          title={t('ccStaff')}
+          icon={<Users className="h-4 w-4" />}
+          action={
+            <button className="btn btn-sm btn-primary" onClick={() => setModal('user')}>
+              <Plus className="h-4 w-4" />
+            </button>
+          }
+        >
+          <Table head={[t('name'), t('ccRole'), t('ccAccounts'), t('ccPhone'), t('status'), '']} empty={staff.length === 0}>
+            {staff.map((u) => (
+              <Row key={u.id}>
+                <Cell>
+                  {u.name || '—'}
+                  <span dir="ltr" className="block font-mono text-[10px] text-ink-muted">{u.user_uid}</span>
+                </Cell>
+                <Cell>
+                  <span
+                    className="chip"
+                    style={{
+                      background: `color-mix(in srgb, ${u.role === 'owner' ? 'var(--series-2)' : u.role === 'manager' ? 'var(--series-1)' : 'var(--text-muted)'} 15%, transparent)`,
+                      color: u.role === 'owner' ? 'var(--series-2)' : u.role === 'manager' ? 'var(--series-1)' : 'var(--text-secondary)',
+                    }}
+                  >
+                    {u.role}
+                  </span>
+                </Cell>
+                <Cell>{u.shop_name || '—'}</Cell>
+                <Cell mono>{u.phone || '—'}</Cell>
+                <Cell>{u.status}</Cell>
+                <Cell>
+                  <div className="flex justify-end gap-1">
+                    <ActionButton
+                      title={t('ccRole')}
+                      onClick={async () => {
+                        const next = u.role === 'staff' ? 'manager' : u.role === 'manager' ? 'owner' : 'staff';
+                        await cc.updateUser(projectId, u.id, { role: next });
+                        load();
+                      }}
+                    >
+                      {u.role === 'staff' ? '↑' : u.role === 'manager' ? '↑' : '↓'}
+                    </ActionButton>
+                    <ActionButton onClick={async () => { await cc.updateUser(projectId, u.id, { role: 'user' }); load(); }}>
+                      {t('ccDelete')}
                     </ActionButton>
                   </div>
                 </Cell>

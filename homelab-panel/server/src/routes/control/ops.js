@@ -12,6 +12,7 @@ import { planMigration, migrateProject, listMigrations } from '../../control/mig
 import * as updater from '../../update/github.js';
 import { setSetting, getSetting } from '../../db.js';
 import { guard, fail, withProject, actorOf, num, str, bool, rateLimit } from './_shared.js';
+import { requireRole } from '../../control/roles.js';
 
 const router = Router();
 
@@ -89,6 +90,7 @@ router.get(
 
 router.post(
   '/alerts/:id/ack',
+  requireRole('operator'),
   guard(async (req, res) => {
     if (!ackAlert(req.params.id)) return fail(res, 404, 'not_found');
     auditFromReq(req, 'alert.ack', { entity: 'alert', entityId: req.params.id });
@@ -98,6 +100,7 @@ router.post(
 
 router.post(
   '/alerts/:id/resolve',
+  requireRole('operator'),
   guard(async (req, res) => {
     if (!resolveAlert(req.params.id)) return fail(res, 404, 'not_found');
     auditFromReq(req, 'alert.resolve', { entity: 'alert', entityId: req.params.id });
@@ -126,6 +129,7 @@ router.get(
 
 router.get(
   '/vault',
+  requireRole('admin'),
   guard(async (req, res) => {
     res.json({
       secrets: listSecrets({
@@ -141,6 +145,7 @@ router.get(
 
 router.post(
   '/vault',
+  requireRole('admin'),
   rateLimit({ windowMs: 60000, max: 20 }),
   guard(async (req, res) => {
     // ⚠️ مقدار فقط از این‌جا می‌رود داخل و دیگر هرگز بیرون نمی‌آید
@@ -160,6 +165,7 @@ router.post(
 
 router.delete(
   '/vault/:id',
+  requireRole('admin'),
   guard(async (req, res) => {
     if (!deleteSecret(req.params.id, actorOf(req))) return fail(res, 404, 'not_found');
     res.json({ ok: true });
@@ -182,6 +188,7 @@ router.post(
 
 router.post(
   '/projects/:id/migrate',
+  requireRole('admin'),
   withProject,
   rateLimit({ windowMs: 300000, max: 3 }),
   guard(async (req, res) => {
@@ -225,6 +232,7 @@ router.post(
 
 router.post(
   '/update/settings',
+  requireRole('admin'),
   guard(async (req, res) => {
     if (req.body?.repo !== undefined) {
       const repo = str(req.body.repo, 120);
@@ -255,6 +263,7 @@ router.post(
  */
 router.post(
   '/update/install',
+  requireRole('admin'),
   rateLimit({ windowMs: 600000, max: 3 }),
   guard(async (req, res) => {
     if (!bool(req.body?.confirm)) return fail(res, 400, 'confirmation_required');
@@ -278,6 +287,7 @@ router.post(
 
 router.post(
   '/update/rollback',
+  requireRole('admin'),
   rateLimit({ windowMs: 600000, max: 3 }),
   guard(async (req, res) => {
     if (!bool(req.body?.confirm)) return fail(res, 400, 'confirmation_required');

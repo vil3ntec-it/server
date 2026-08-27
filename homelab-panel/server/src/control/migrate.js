@@ -22,6 +22,7 @@ import { getServer, endpointUrl } from './models.js';
 import { saveVersion, resolvedConfig } from './config-store.js';
 import { probeUrl } from './checks.js';
 import { run } from '../lib/exec.js';
+import { writeProjectLog } from './project-log.js';
 
 const STEP = (name, status, detail = null) => ({ name, status, detail, at: Date.now() });
 
@@ -227,6 +228,12 @@ export async function migrateProject(project, { toServerId, actor = 'admin', ssh
     entityId: project.project_id,
     projectId: project.id,
     detail: { migrationId, from: from?.name || null, to: to.name, backup: backup.filename, health },
+  });
+  writeProjectLog(project, {
+    category: 'deployment',
+    level: allGood ? 'info' : 'warn',
+    message: `انتقال از «${from?.name || '—'}» به «${to.name}» — وضعیت: ${finalStatus}`,
+    detail: { steps: steps.map((s) => `${s.name}:${s.status}`), health, backup: backup.filename, actor },
   });
 
   return {

@@ -24,13 +24,14 @@ import {
   Server,
   Settings as SettingsIcon,
   Sun,
+  UserCog,
   X,
 } from 'lucide-react';
 import { useApp } from '../app-context';
 import { LANGUAGES, type Dict } from '../i18n';
 import { logoUrl } from '../api';
 
-type NavItem = { to: string; key: keyof Dict; icon: typeof Gauge; end?: boolean };
+type NavItem = { to: string; key: keyof Dict; icon: typeof Gauge; end?: boolean; needs?: 'operator' | 'admin' };
 type NavGroup = { id: string; key: keyof Dict; items: NavItem[] };
 
 /**
@@ -61,7 +62,7 @@ const NAV_GROUPS: NavGroup[] = [
     key: 'ccData',
     items: [
       { to: '/control/storage', key: 'ccStorage', icon: Archive },
-      { to: '/control/vault', key: 'ccVault', icon: KeyRound },
+      { to: '/control/vault', key: 'ccVault', icon: KeyRound, needs: 'admin' },
     ],
   },
   {
@@ -70,6 +71,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/control/monitoring', key: 'ccMonitoring', icon: AlertTriangle },
       { to: '/control/audit', key: 'ccAudit', icon: ScrollText },
+      { to: '/control/panel-users', key: 'ccPanelUsers', icon: UserCog, needs: 'admin' },
       { to: '/control/updates', key: 'ccUpdates', icon: Download },
     ],
   },
@@ -93,7 +95,7 @@ const NAV_GROUPS: NavGroup[] = [
 const COLLAPSE_KEY = 'hlp.nav.collapsed';
 
 export default function Layout() {
-  const { t, serverName, hasLogo, resolvedTheme, setTheme, lang, setLang, logout, connected, username } = useApp();
+  const { t, serverName, hasLogo, resolvedTheme, setTheme, lang, setLang, logout, connected, username, role, can } = useApp();
   const [open, setOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<string[]>(() => {
@@ -121,6 +123,9 @@ export default function Layout() {
     <nav className="flex flex-col gap-1 p-3">
       {NAV_GROUPS.map((group) => {
         const isCollapsed = collapsed.includes(group.id);
+        // چیزی که نقشِ کاربر به آن دسترسی ندارد، اصلاً نشان داده نمی‌شود
+        const items = group.items.filter((item) => !item.needs || can(item.needs));
+        if (items.length === 0) return null;
         return (
           <section key={group.id} className="mb-1">
             <button
@@ -133,7 +138,7 @@ export default function Layout() {
             </button>
             {!isCollapsed && (
               <div className="flex flex-col gap-0.5">
-                {group.items.map(({ to, key, icon: Icon, end }) => (
+                {items.map(({ to, key, icon: Icon, end }) => (
                   <NavLink
                     key={to}
                     to={to}
@@ -164,7 +169,20 @@ export default function Layout() {
         <Brand serverName={serverName} hasLogo={hasLogo} subtitle={t('appName')} />
         <div className="flex-1 overflow-y-auto">{nav}</div>
         <footer className="border-t border-line p-3 text-[11px] text-ink-muted">
-          {username && <p className="truncate">{username}</p>}
+          {username && (
+            <p className="flex items-center gap-1.5">
+              <span className="truncate">{username}</span>
+              <span
+                className="chip shrink-0"
+                style={{
+                  background: `color-mix(in srgb, ${role === 'admin' ? 'var(--series-2)' : role === 'operator' ? 'var(--series-1)' : 'var(--text-muted)'} 16%, transparent)`,
+                  color: role === 'admin' ? 'var(--series-2)' : role === 'operator' ? 'var(--series-1)' : 'var(--text-secondary)',
+                }}
+              >
+                {role === 'admin' ? t('ccRoleAdmin') : role === 'operator' ? t('ccRoleOperator') : t('ccRoleViewer')}
+              </span>
+            </p>
+          )}
         </footer>
       </aside>
 

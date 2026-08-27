@@ -19,6 +19,7 @@ import { createZip, walk, verifyZip, readZipEntry, extractZip, readZipIndex } fr
 import { projectDir, ensureProjectStorage } from './storage.js';
 import { exportProjectData, importProjectData } from './dataset.js';
 import { versionInfo } from '../version.js';
+import { writeProjectLog } from './project-log.js';
 
 export const BACKUP_KINDS = ['manual', 'auto', 'pre-restore', 'pre-migrate', 'pre-delete', 'pre-change'];
 
@@ -110,6 +111,11 @@ export async function createBackup(project, { kind = 'manual', note = null, acto
       projectId: project.id,
       detail: { filename, kind, size: result.size, files: result.files },
     });
+    writeProjectLog(project, {
+      category: 'backup',
+      message: `بکاپ گرفته شد: ${filename}`,
+      detail: { kind, size: result.size, files: result.files, actor },
+    });
   } catch (e) {
     db.prepare('UPDATE cc_backups SET status = ?, error = ? WHERE id = ?').run('failed', String(e.message).slice(0, 500), rowId);
     audit({
@@ -121,6 +127,7 @@ export async function createBackup(project, { kind = 'manual', note = null, acto
       result: 'failed',
       detail: { error: e.message },
     });
+    writeProjectLog(project, { category: 'backup', level: 'error', message: `بکاپ ناموفق بود: ${e.message}`, detail: { filename, kind } });
     try {
       await fsp.rm(filePath, { force: true });
     } catch { /* نبود */ }
@@ -291,6 +298,12 @@ export async function restoreBackup(backup, project, { actor = 'admin', confirm 
     entityId: backup.id,
     projectId: project.id,
     detail: { filename: backup.filename, ...report },
+  });
+  writeProjectLog(project, {
+    category: 'backup',
+    level: 'warn',
+    message: `بازگردانی از ${backup.filename} انجام شد`,
+    detail: { actor, safetyBackupId: report.safetyBackupId, files: report.files, data: report.data },
   });
   return { ok: true, ...report, validation };
 }

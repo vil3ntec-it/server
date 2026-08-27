@@ -28,8 +28,10 @@ import {
 } from '../../control/backup.js';
 import * as releases from '../../control/releases.js';
 import * as configStore from '../../control/config-store.js';
+import { listProjectLogs, tailProjectLog, pruneProjectLogs, CATEGORIES as LOG_CATEGORIES, logsDirOf } from '../../control/project-log.js';
 import { auditFromReq } from '../../control/audit.js';
 import { guard, fail, withProject, actorOf, num, str, bool, rateLimit } from './_shared.js';
+import { requireRole } from '../../control/roles.js';
 
 const router = Router();
 
@@ -46,6 +48,7 @@ router.get(
 /** انتخابِ محلِ انبار — «D:\\Projects» یا «E:\\ServerData» */
 router.post(
   '/root',
+  requireRole('admin'),
   guard(async (req, res) => {
     const target = str(req.body?.path, 400);
     if (!target) return fail(res, 400, 'path_required');
@@ -123,6 +126,7 @@ router.post(
 /** بازگردانی — فقط با confirm، و همیشه بعد از یک بکاپِ ایمنی */
 router.post(
   '/projects/:id/backups/:backupId/restore',
+  requireRole('admin'),
   withProject,
   rateLimit({ windowMs: 300000, max: 5 }),
   guard(async (req, res) => {
@@ -145,6 +149,7 @@ router.post(
 
 router.delete(
   '/projects/:id/backups/:backupId',
+  requireRole('admin'),
   withProject,
   guard(async (req, res) => {
     const backup = getBackup(req.params.backupId);
@@ -293,6 +298,45 @@ router.post(
       warning: 'این توکن دیگر نشان داده نمی‌شود.',
       example: `curl -H "Authorization: Bearer ${token}" ${req.protocol}://${req.headers.host}/api/app-config/${req.project.project_id}`,
     });
+  })
+);
+
+/* ------------------------------ لاگ‌ها --------------------------------- */
+
+router.get(
+  '/projects/:id/logs',
+  withProject,
+  guard(async (req, res) => {
+    res.json({
+      files: await listProjectLogs(req.project),
+      categories: LOG_CATEGORIES,
+      dir: logsDirOf(req.project),
+    });
+  })
+);
+
+router.get(
+  '/projects/:id/logs/:file',
+  withProject,
+  guard(async (req, res) => {
+    const result = await tailProjectLog(req.project, req.params.file, {
+      lines: num(req.query.lines, 300),
+      level: req.query.level || null,
+      q: req.query.q ? String(req.query.q).slice(0, 80) : null,
+    });
+    if (result.error) return fail(res, result.error === 'not_found' ? 404 : 400, result.error);
+    res.json(result);
+  })
+);
+
+router.post(
+  '/projects/:id/logs/prune',
+  withProject,
+  requireRole('admin'),
+  guard(async (req, res) => {
+    const removed = await pruneProjectLogs(req.project, Math.max(1, num(req.body?.keepDays, 30)));
+    auditFromReq(req, 'logs.prune', { entity: 'project', entityId: req.project.project_id, projectId: req.project.id, detail: { removed } });
+    res.json({ removed });
   })
 );
 

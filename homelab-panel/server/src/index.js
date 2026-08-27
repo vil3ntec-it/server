@@ -6,6 +6,7 @@
 //    ۳) سرورِ سایتِ پمپ یعقوبی (پروتکل ws)     → همان آدرس، بدون مسیر اضافه
 // ---------------------------------------------------------------------------
 import http from 'node:http';
+import https from 'node:https';
 import path from 'node:path';
 import fs from 'node:fs';
 import express from 'express';
@@ -53,6 +54,7 @@ import { pruneAlerts, alertEvents } from './control/alerts.js';
 import { monitorEvents } from './control/monitor.js';
 import { startUpdateWatcher, stopUpdateWatcher } from './update/github.js';
 import { requireAuth } from './auth.js';
+import { writeNeedsOperator } from './control/roles.js';
 
 const PUBLIC_DIR = path.join(SERVER_ROOT, 'public');
 const PID_FILE = path.join(config.dataDir, 'panel.pid');
@@ -130,7 +132,8 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/control/agent', agentRouter);
 app.use('/api/app-config', appConfigRouter);
 // بقیهٔ مرکز فرمان فقط برای مدیرِ واردشده
-app.use('/api/control', requireAuth, controlRoutes);
+// خواندن برای همه، نوشتن دستِ‌کم برای operator، و کارهای حساس فقط برای admin
+app.use('/api/control', requireAuth, writeNeedsOperator, controlRoutes);
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));
 
@@ -169,7 +172,49 @@ app.use((err, req, res, next) => {
 });
 
 // ------------------------------ راه‌اندازی ----------------------------------
-const httpServer = http.createServer(app);
+
+/**
+ * اگر گواهی داده شده باشد، پنل خودش https سرو می‌کند؛ وگرنه http.
+ * فایل‌های گواهی همین‌جا خوانده می‌شوند تا اگر مسیرشان غلط بود، همان اول
+ * با پیامِ روشن بفهمیم — نه وسطِ کار.
+ */
+function createServer() {
+  const { cert, key } = config.tls;
+  if (!cert && !key) return { server: http.createServer(app), secure: false };
+  if (!cert || !key) {
+    console.error('❌ برای https هم HLP_TLS_CERT و هم HLP_TLS_KEY لازم است.');
+    process.exit(1);
+  }
+  try {
+    const options = { cert: fs.readFileSync(cert), key: fs.readFileSync(key) };
+    if (process.env.HLP_TLS_CA) options.ca = fs.readFileSync(process.env.HLP_TLS_CA);
+    return { server: https.createServer(options, app), secure: true };
+  } catch (e) {
+    console.error(`❌ گواهی خوانده نشد: ${e.message}`);
+    console.error(`   cert: ${cert}`);
+    console.error(`   key:  ${key}`);
+    process.exit(1);
+  }
+}
+
+const { server: httpServer, secure: panelSecure } = createServer();
+
+// وقتی https روشن است، یک شنوندهٔ کوچکِ http فقط آدرس را عوض می‌کند
+let redirectServer = null;
+if (panelSecure && config.tls.redirectHttp) {
+  const redirectPort = config.tls.redirectPort || (config.port === 443 ? 80 : config.port + 1);
+  redirectServer = http.createServer((req, res) => {
+    const host = String(req.headers.host || '').replace(/:\d+$/, '');
+    const suffix = config.port === 443 ? '' : `:${config.port}`;
+    res.writeHead(301, { location: `https://${host}${suffix}${req.url}` });
+    res.end();
+  });
+  redirectServer.on('error', (e) => {
+    console.warn(`⚠️  شنوندهٔ تغییرِ مسیرِ http بالا نیامد (${e.code}) — https خودش کار می‌کند.`);
+    redirectServer = null;
+  });
+  redirectServer.listen(redirectPort, config.host);
+}
 
 // ۱) Socket.IO (روی مسیر /socket.io/)
 const io = attachRealtime(httpServer);
@@ -347,8 +392,10 @@ async function main() {
     console.log('  ✅ پنل مدیریت سرور خانگی بالا آمد' + (name ? ` — ${name}` : ''));
     console.log(`  ${versionLine()}`);
     console.log('==============================================================');
-    console.log(`  پنل روی این کامپیوتر:   http://localhost:${config.port}`);
-    for (const ip of ips) console.log(`  از شبکهٔ خانگی:          http://${ip}:${config.port}`);
+    const scheme = panelSecure ? 'https' : 'http';
+    console.log(`  پنل روی این کامپیوتر:   ${scheme}://localhost:${config.port}`);
+    for (const ip of ips) console.log(`  از شبکهٔ خانگی:          ${scheme}://${ip}:${config.port}`);
+    if (panelSecure) console.log('  🔒 با گواهیِ خودتان، مستقیم روی https');
     console.log('');
     if (siteSync) {
       console.log('  🔗 سرورِ سایت — این‌ها را در خودِ سایت وارد کنید:');
@@ -410,6 +457,7 @@ async function shutdown(signal) {
   } catch { /* بسته شده */ }
   try {
     syncOnlyServer?.close();
+    redirectServer?.close();
   } catch { /* بسته شده */ }
   try {
     stopAi();

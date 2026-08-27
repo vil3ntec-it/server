@@ -11,6 +11,8 @@ import { probeUrl, probeTcp, probeTls, probeDns, probeDatabase } from './checks.
 import { endpointUrl } from './models.js';
 import { raiseAlert, clearAlert } from './alerts.js';
 import { markStaleServers, AGENT_STALE_MS } from './agent.js';
+import { writeProjectLog } from './project-log.js';
+import { getProject } from './models.js';
 
 export const monitorEvents = new EventEmitter();
 
@@ -229,6 +231,19 @@ function applyResult(monitor, result) {
       ts,
       monitor.ref_id
     );
+  }
+
+  // تغییرِ وضعیت در لاگِ همان پروژه می‌ماند — نه هر بررسی، فقط وقتی چیزی عوض شود
+  if (monitor.project_id && monitor.status !== result.status) {
+    const project = getProject(String(monitor.project_id));
+    if (project) {
+      writeProjectLog(project, {
+        category: monitor.kind === 'endpoint' || monitor.kind === 'tunnel' ? 'api' : 'server',
+        level: good ? 'info' : 'error',
+        message: `${monitor.label}: ${monitor.status} → ${result.status}`,
+        detail: { target: monitor.target, code: result.code ?? null, latencyMs: result.latencyMs ?? null, error: result.error ?? null },
+      });
+    }
   }
 
   // هشدار — فقط بعد از چند خطای پشتِ‌هم

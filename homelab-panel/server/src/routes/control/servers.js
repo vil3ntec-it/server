@@ -12,6 +12,7 @@ import { probeTcp } from '../../control/checks.js';
 import { readInterfaces } from '../../metrics/network.js';
 import { syncMonitors } from '../../control/monitor.js';
 import { guard, fail, actorOf, num, str, bool } from './_shared.js';
+import { requireRole } from '../../control/roles.js';
 
 const router = Router();
 
@@ -128,6 +129,7 @@ router.patch(
 
 router.delete(
   '/:id',
+  requireRole('admin'),
   guard(async (req, res) => {
     const server = getServer(req.params.id);
     if (!server) return fail(res, 404, 'not_found');
@@ -167,6 +169,7 @@ router.post(
 /** کلیدِ تازه — همین یک‌بار در پاسخ می‌آید و بعد دیگر هرگز */
 router.post(
   '/:id/agent/key',
+  requireRole('admin'),
   guard(async (req, res) => {
     const server = getServer(req.params.id);
     if (!server) return fail(res, 404, 'not_found');
@@ -182,6 +185,7 @@ router.post(
 
 router.delete(
   '/:id/agent/key',
+  requireRole('admin'),
   guard(async (req, res) => {
     const server = getServer(req.params.id);
     if (!server) return fail(res, 404, 'not_found');

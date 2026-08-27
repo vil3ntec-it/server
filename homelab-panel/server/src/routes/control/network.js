@@ -13,6 +13,7 @@ import { checkDomain } from '../../lib/domain-check.js';
 import * as cf from '../../control/cloudflare.js';
 import { syncMonitors } from '../../control/monitor.js';
 import { guard, fail, actorOf, num, str, bool, rateLimit } from './_shared.js';
+import { requireRole } from '../../control/roles.js';
 
 const router = Router();
 
@@ -467,6 +468,7 @@ router.get(
 
 router.post(
   '/cloudflare/accounts',
+  requireRole('admin'),
   rateLimit({ windowMs: 60000, max: 10 }),
   guard(async (req, res) => {
     const account = await cf.saveAccount({
@@ -490,6 +492,7 @@ router.post(
 
 router.delete(
   '/cloudflare/accounts/:id',
+  requireRole('admin'),
   guard(async (req, res) => {
     if (!cf.deleteAccount(num(req.params.id), actorOf(req))) return fail(res, 404, 'not_found');
     res.json({ ok: true });

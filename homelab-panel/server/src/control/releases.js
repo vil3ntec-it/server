@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { audit } from './audit.js';
 import { projectDir, ensureProjectStorage } from './storage.js';
+import { writeProjectLog } from './project-log.js';
 
 export const PLATFORMS = ['android', 'windows', 'linux', 'mac', 'web', 'backend'];
 export const CHANNELS = ['stable', 'beta', 'alpha'];
@@ -113,6 +114,11 @@ export async function createRelease(project, input, actor = 'admin') {
     );
 
   const id = Number(info.lastInsertRowid);
+  writeProjectLog(project, {
+    category: 'deployment',
+    message: `انتشار ${platform} نسخهٔ ${version} ثبت شد`,
+    detail: { channel, size: fileSize, published: Boolean(input.published), actor },
+  });
   audit({
     actor,
     action: 'release.create',

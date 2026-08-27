@@ -21,6 +21,7 @@ import { auditFromReq } from '../../control/audit.js';
 import { probeUrl, probeTcp, probeDatabase } from '../../control/checks.js';
 import { syncMonitors } from '../../control/monitor.js';
 import { guard, fail, withProject, actorOf, num, bool, str } from './_shared.js';
+import { requireRole } from '../../control/roles.js';
 
 const router = Router();
 
@@ -128,6 +129,7 @@ router.patch(
  */
 router.delete(
   '/:id',
+  requireRole('admin'),
   withProject,
   guard(async (req, res) => {
     if (!bool(req.query.confirm ?? req.body?.confirm)) return fail(res, 400, 'confirmation_required');

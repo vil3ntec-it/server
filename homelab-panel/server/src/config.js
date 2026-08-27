@@ -80,6 +80,19 @@ export const config = {
     token: process.env.HLP_SITESYNC_TOKEN || '',
   },
 
+  // ── HTTPS مستقیم روی خودِ پنل ────────────────────────────────────────────
+  // اگر گواهی و کلید بدهید، پنل خودش https سرو می‌کند. لازم نیست: وقتی از
+  // راهِ تونل باز می‌شود، Cloudflare خودش https را فراهم می‌کند.
+  //   HLP_TLS_CERT=/etc/letsencrypt/live/example.com/fullchain.pem
+  //   HLP_TLS_KEY=/etc/letsencrypt/live/example.com/privkey.pem
+  tls: {
+    cert: process.env.HLP_TLS_CERT || '',
+    key: process.env.HLP_TLS_KEY || '',
+    // اگر روشن باشد، هر درخواستِ http به https فرستاده می‌شود
+    redirectHttp: (process.env.HLP_TLS_REDIRECT ?? '1') !== '0',
+    redirectPort: num(process.env.HLP_TLS_REDIRECT_PORT, 0),
+  },
+
   // ── دستیارِ پشتیبانیِ هوشمند (پوشهٔ ai-support کنارِ همین پنل) ─────────────
   // با بالا آمدنِ پنل خودش روشن می‌شود و اگر افتاد برمی‌گردد. روی 127.0.0.1
   // گوش می‌دهد و تنها راهِ رسیدنِ سایت به آن، پراکسیِ /ai/support روی همین

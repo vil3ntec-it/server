@@ -26,6 +26,7 @@ import Vault from './pages/control/Vault';
 import MonitoringPage from './pages/control/MonitoringPage';
 import Audit from './pages/control/Audit';
 import Updates from './pages/control/Updates';
+import PanelUsers from './pages/control/PanelUsers';
 
 function Shell() {
   const { ready, authed } = useApp();
@@ -58,6 +59,7 @@ function Shell() {
         <Route path="/control/monitoring" element={<MonitoringPage />} />
         <Route path="/control/audit" element={<Audit />} />
         <Route path="/control/updates" element={<Updates />} />
+        <Route path="/control/panel-users" element={<PanelUsers />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

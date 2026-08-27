@@ -398,6 +398,16 @@ CREATE TABLE IF NOT EXISTS cc_migrations (
 );
 `);
 
+  // نقشِ کاربرانِ پنل — اولین حساب همیشه مدیرِ کامل است
+  if (addColumn('users', 'role', "TEXT NOT NULL DEFAULT 'admin'")) {
+    // نصب‌های قبلی فقط یک حساب داشتند و آن حساب مدیر بوده
+    try {
+      db.exec("UPDATE users SET role = 'admin' WHERE role IS NULL OR role = ''");
+    } catch { /* جدول خالی است */ }
+  }
+  addColumn('users', 'disabled', 'INTEGER NOT NULL DEFAULT 0');
+  addColumn('users', 'last_login', 'INTEGER');
+
   // ستون‌های تازه روی جدولِ دامنه‌های موجود — دامنه‌ها یک‌جا می‌مانند
   addColumn('domains', 'project_id', 'INTEGER REFERENCES cc_projects(id) ON DELETE SET NULL');
   addColumn('domains', 'server_id', 'INTEGER REFERENCES cc_servers(id) ON DELETE SET NULL');

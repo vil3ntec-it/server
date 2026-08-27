@@ -17,6 +17,7 @@ import AccountsTab from './project/AccountsTab';
 import StorageTab from './project/StorageTab';
 import ConfigTab from './project/ConfigTab';
 import MigrateTab from './project/MigrateTab';
+import LogsTab from './project/LogsTab';
 
 export default function ProjectDetail() {
   const { t, lang } = useApp();
@@ -59,6 +60,7 @@ export default function ProjectDetail() {
     { id: 'accounts', label: t('ccAccounts'), badge: data.counts.users + data.counts.shops },
     { id: 'storage', label: t('ccStorage'), badge: data.backups.length },
     { id: 'config', label: t('ccConfig'), badge: data.configs.length },
+    { id: 'logs', label: t('ccLogs') },
     { id: 'migrate', label: t('ccMigrate') },
   ];
 
@@ -210,6 +212,7 @@ export default function ProjectDetail() {
       {tab === 'accounts' && <AccountsTab projectId={projectId} />}
       {tab === 'storage' && <StorageTab bundle={data} reload={load} />}
       {tab === 'config' && <ConfigTab bundle={data} reload={load} />}
+      {tab === 'logs' && <LogsTab bundle={data} />}
       {tab === 'migrate' && <MigrateTab bundle={data} servers={servers} reload={load} />}
 
       {/* نتیجهٔ آزمایشِ همه‌چیز */}
