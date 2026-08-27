@@ -138,6 +138,66 @@ try {
   check('نسخه داخلش هست', applied.version === '9.9.9', JSON.stringify(applied));
   check('چیدمان داخلش هست', applied.layout === 'packaged');
 
+  console.log('\n── بسته‌ای که بخش‌های نصب را ندارد ──');
+  // همان اتفاقی که واقعاً افتاد: بسته از شاخه‌ای آمد که مرکز فرمان و پوستهٔ
+  // برنامه را ندارد. اگر بنشیند، همه‌شان پاک می‌شوند.
+  const thinRoot = path.join(tmp, 'thin-src', 'server-main');
+  const writeThin = async (rel, text) => {
+    const full = path.join(thinRoot, rel);
+    await fsp.mkdir(path.dirname(full), { recursive: true });
+    await fsp.writeFile(full, text, 'utf8');
+  };
+  await writeThin('homelab-panel/server/package.json', JSON.stringify({ name: 'homelab-panel-server', version: '9.9.9', dependencies: realDeps }, null, 2));
+  await writeThin('homelab-panel/server/src/index.js', '// پنلِ قدیمی\n');
+  await writeThin('homelab-panel/server/public/index.html', '<!doctype html><title>قدیمی</title>');
+  // نه src/control، نه src/update، نه desktop/app
+
+  const thinZip = path.join(tmp, 'thin.zip');
+  await createZip(thinZip, await walk(path.join(tmp, 'thin-src')));
+
+  const before = read(path.join(serverRoot, 'src', 'index.js'));
+  let refused = null;
+  try {
+    await updater.applyUpdate({ latest: '9.9.9', repo: 'x/y' }, { path: thinZip }, { actor: 'آزمون', restart: false });
+  } catch (e) {
+    refused = e;
+  }
+  check('چنین بسته‌ای نصب نمی‌شود', refused?.message === 'package_incomplete', refused?.message || 'نصب شد!');
+  check('می‌گوید دقیقاً چه چیزی کم است',
+        (refused?.problems || []).some((x) => x.includes('src/control')) &&
+        (refused?.problems || []).some((x) => x.includes('desktop/app')),
+        JSON.stringify(refused?.problems || []));
+  check('هیچ فایلی عوض نشد', read(path.join(serverRoot, 'src', 'index.js')) === before);
+  check('مرکز فرمان سرِ جایش ماند', exists(path.join(serverRoot, 'src', 'control', 'schema.js')));
+  check('پوستهٔ برنامه سرِ جایش ماند', exists(path.join(shellDir, 'shell.js')));
+
+  console.log('\n── بستهٔ عقب‌تر ──');
+  const oldRoot = path.join(tmp, 'old-src', 'server-main');
+  const writeOld = async (rel, text) => {
+    const full = path.join(oldRoot, rel);
+    await fsp.mkdir(path.dirname(full), { recursive: true });
+    await fsp.writeFile(full, text, 'utf8');
+  };
+  await writeOld('homelab-panel/server/package.json', JSON.stringify({ name: 'homelab-panel-server', version: '0.0.1', dependencies: realDeps }, null, 2));
+  await writeOld('homelab-panel/server/src/index.js', '// خیلی قدیمی\n');
+  await writeOld('homelab-panel/server/src/control/schema.js', '// هست');
+  await writeOld('homelab-panel/server/src/update/github.js', '// هست');
+  await writeOld('homelab-panel/server/public/index.html', '<!doctype html>');
+  await writeOld('homelab-panel/desktop/app/main-impl.js', '// هست');
+  const oldZip = path.join(tmp, 'old.zip');
+  await createZip(oldZip, await walk(path.join(tmp, 'old-src')));
+
+  let refusedOld = null;
+  try {
+    await updater.applyUpdate({ latest: '0.0.1', repo: 'x/y' }, { path: oldZip }, { actor: 'آزمون', restart: false });
+  } catch (e) {
+    refusedOld = e;
+  }
+  check('نسخهٔ عقب‌تر هم نصب نمی‌شود', refusedOld?.message === 'package_incomplete', refusedOld?.message || 'نصب شد!');
+  check('دلیلش را می‌گوید',
+        (refusedOld?.problems || []).some((x) => x.includes('عقب‌تر')),
+        JSON.stringify(refusedOld?.problems || []));
+
   console.log('\n── برگشت ──');
   await updater.rollback({ actor: 'آزمون' });
   check('کدِ قبلیِ سرور برگشت', read(path.join(serverRoot, 'src', 'index.js')).includes('قدیمی'));

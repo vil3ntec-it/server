@@ -84,7 +84,14 @@ export default function Updates() {
                   load();
                 } catch (e) {
                   const message = (e as Error).message;
-                  toast(message.includes('needs_installer') ? t('ccUpdateNeedsInstaller') : message, 'bad');
+                  toast(
+                    message.includes('package_incomplete')
+                      ? t('ccUpdateIncomplete')
+                      : message.includes('needs_installer')
+                        ? t('ccUpdateNeedsInstaller')
+                        : message,
+                    'bad',
+                  );
                 }
               }}
             >

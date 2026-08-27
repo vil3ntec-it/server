@@ -28,6 +28,7 @@ import { get as httpGet, getJson } from './http.js';
 import {
   LAYOUT,
   SERVER_ROOT,
+  installedServerRoot,
   SHELL_DIR,
   INSTALL_ROOT as ROOT,
   isProtected,
@@ -147,14 +148,34 @@ export async function checkForUpdate({ force = false } = {}) {
 
   try {
     if (channel === 'release') {
-      const release = await ghJson(`/repos/${repo}/releases/latest`);
+      // /releases/latest نسخه‌های پیش‌نمایش را نادیده می‌گیرد. اگر مخزن فقط
+      // پیش‌نمایش داشته باشد، این تابع خالی برمی‌گردد و قبلاً می‌افتادیم روی
+      // شاخهٔ main — که می‌تواند اصلاً برنامهٔ دیگری باشد. پس اگر نسخهٔ نهایی
+      // نبود، تازه‌ترین پیش‌نمایش را برمی‌داریم، نه شاخه را.
+      let release = await ghJson(`/repos/${repo}/releases/latest`);
+      if (!release || !release.tag_name) {
+        const all = await ghJson(`/repos/${repo}/releases?per_page=10`);
+        const usable = (Array.isArray(all) ? all : []).filter((r) => r && r.tag_name && !r.draft);
+        release = usable[0] || null;
+        if (release) out.prerelease = Boolean(release.prerelease);
+      }
       if (release && release.tag_name) {
         out.latest = normalizeVersion(release.tag_name);
         out.tag = release.tag_name;
         out.publishedAt = release.published_at ? Date.parse(release.published_at) : null;
         out.notes = release.body ? String(release.body).slice(0, 8000) : null;
         out.downloadUrl = release.zipball_url;
-        out.available = force || isNewer(out.latest, current);
+
+        // برچسبِ «پیش‌نمایش» شماره نیست، پس مقایسهٔ نسخه معنی ندارد و همیشه
+        // می‌گفت «به‌روزرسانی هست». برای این‌ها کامیت را می‌سنجیم.
+        const sha = /^[0-9a-f]{40}$/i.test(String(release.target_commitish || ''))
+          ? release.target_commitish
+          : null;
+        if (sha) out.commit = sha;
+        out.available = force || (/^\d/.test(out.latest)
+          ? isNewer(out.latest, current)
+          : (sha ? sha !== installedCommit : true));
+
         setSetting('cc_update_last_check', out.checkedAt);
         return out;
       }
@@ -269,6 +290,38 @@ export async function backupInstall(label = 'pre-update') {
 }
 
 /**
+ * بسته باید همین برنامه باشد، نه یک برنامهٔ دیگر و نه نسخه‌ای عقب‌تر.
+ *
+ * چرا لازم است: به‌روزرسانی هر بسته‌ای را روی نصب می‌نشاند. اگر بسته از
+ * شاخه‌ای بیاید که این بخش‌ها را ندارد، همه‌شان پاک می‌شوند و کاربر با یک
+ * پنلِ قدیمی روبه‌رو می‌شود که حتی صفحهٔ به‌روزرسانی ندارد تا برگردد.
+ * پس هرچه الان نصب است، باید در بسته هم باشد.
+ */
+function packageProblems(sourceRoot, newPkg, installedVersion) {
+  const problems = [];
+
+  if (installedVersion && newPkg.version && isNewer(installedVersion, newPkg.version)) {
+    problems.push(`نسخهٔ بسته (${newPkg.version}) از نسخهٔ نصب‌شده (${installedVersion}) عقب‌تر است`);
+  }
+
+  const root = installedServerRoot();
+  const installed = (...parts) => fs.existsSync(path.join(root, ...parts));
+  const needed = ['homelab-panel/server/src/index.js'];
+
+  if (installed('src', 'control')) needed.push('homelab-panel/server/src/control');
+  if (installed('src', 'update')) needed.push('homelab-panel/server/src/update');
+  if (installed('public', 'index.html')) needed.push('homelab-panel/server/public/index.html');
+  // برنامهٔ ویندوز حتماً از بسته‌ای ساخته شده که پوستهٔ برنامه را داشته
+  if (LAYOUT === 'packaged') needed.push('homelab-panel/desktop/app/main-impl.js');
+
+  for (const rel of needed) {
+    if (!fs.existsSync(path.join(sourceRoot, ...rel.split('/')))) problems.push(`بسته «${rel}» را ندارد`);
+  }
+
+  return problems;
+}
+
+/**
  * نصبِ بستهٔ دانلودشده.
  * @returns گزارشِ کامل؛ اگر جایی خطا بدهد، پیش از جابه‌جاییِ فایل‌ها متوقف می‌شود.
  */
@@ -297,6 +350,19 @@ export async function applyUpdate(info, downloaded, { actor = 'admin', restart =
     throw Object.assign(new Error('invalid_package'), { steps });
   }
   const newPkg = JSON.parse(await fsp.readFile(marker, 'utf8'));
+
+  // نسخه و محتوای نصبِ فعلی — قبل از اینکه به چیزی دست بزنیم
+  let installedPkg = {};
+  try {
+    installedPkg = JSON.parse(await fsp.readFile(path.join(installedServerRoot(), 'package.json'), 'utf8'));
+  } catch { /* نصبِ ناقص؛ آن‌وقت فقط سنجشِ محتوا می‌ماند */ }
+
+  const problems = packageProblems(sourceRoot, newPkg, installedPkg.version);
+  if (problems.length) {
+    await fsp.rm(staging, { recursive: true, force: true });
+    step('validate', 'error', { reason: 'package_incomplete', problems });
+    throw Object.assign(new Error('package_incomplete'), { steps, problems, incomplete: true });
+  }
   step('validate', 'ok', { version: newPkg.version });
 
   // ۳) بکاپ از نصبِ فعلی
@@ -311,13 +377,8 @@ export async function applyUpdate(info, downloaded, { actor = 'admin', restart =
   }
 
   // ۴) آیا وابستگی‌ها عوض شده‌اند؟ (قبل از جایگزینی می‌سنجیم)
-  let depsChanged = false;
-  try {
-    const oldPkg = JSON.parse(await fsp.readFile(path.join(SERVER_ROOT, 'package.json'), 'utf8'));
-    depsChanged = JSON.stringify(oldPkg.dependencies || {}) !== JSON.stringify(newPkg.dependencies || {});
-  } catch {
-    depsChanged = true;
-  }
+  const depsChanged =
+    JSON.stringify(installedPkg.dependencies || {}) !== JSON.stringify(newPkg.dependencies || {});
 
   // ۴ب) در برنامهٔ بسته‌بندی‌شده npm وجود ندارد. اگر وابستگی‌ها عوض شده باشند
   //     و npm در دسترس نباشد، همین‌جا می‌ایستیم — هنوز هیچ فایلی جابه‌جا نشده.

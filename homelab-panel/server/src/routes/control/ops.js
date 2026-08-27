@@ -282,6 +282,11 @@ router.post(
     } catch (e) {
       // در برنامهٔ ویندوز، اگر نسخهٔ تازه کتابخانهٔ تازه بخواهد هیچ فایلی
       // جابه‌جا نشده — همین را صریح می‌گوییم تا کاربر دنبالِ فایلِ نصبی برود.
+      // بسته‌ای که بخش‌های نصبِ فعلی را ندارد، نصب نمی‌شود. هیچ فایلی هم
+      // جابه‌جا نشده.
+      if (e.incomplete) {
+        return res.status(409).json({ error: 'package_incomplete', problems: e.problems || [], steps: e.steps || [] });
+      }
       if (e.needsInstaller) {
         return res.status(409).json({ error: 'needs_installer', detail: e.message, steps: e.steps || [] });
       }

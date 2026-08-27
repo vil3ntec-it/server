@@ -156,6 +156,26 @@ jobs:
       # روی شاخه‌های کاری هم یک نسخهٔ «پیش‌نمایش» منتشر می‌شود که با هر ساخت
       # به‌روز می‌شود — وگرنه تا merge نشدن، فایل فقط از راهِ artifact در دسترس
       # بود و آن یکی وسطِ دانلود می‌ایستد.
+      # برچسبِ «پیش‌نمایش» باید روی همین ساخت بنشیند. action-gh-release فقط
+      # target_commitish را عوض می‌کند و اگر برچسب از قبل باشد جابه‌جایش
+      # نمی‌کند — نتیجه‌اش این بود که فایلِ zip منتشرشده مالِ یک کامیتِ قدیمی
+      # می‌ماند و به‌روزرسانیِ داخلِ برنامه نسخهٔ کهنه می‌گرفت.
+      - name: جابه‌جا کردن برچسب پیش‌نمایش
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $body = @{ sha = '${{ github.sha }}'; force = $true } | ConvertTo-Json -Compress
+          try {
+            $body | gh api -X PATCH "repos/${{ github.repository }}/git/refs/tags/windows-preview" --input -
+            Write-Host 'برچسب جابه‌جا شد.'
+          } catch {
+            $create = @{ ref = 'refs/tags/windows-preview'; sha = '${{ github.sha }}' } | ConvertTo-Json -Compress
+            $create | gh api -X POST "repos/${{ github.repository }}/git/refs" --input -
+            Write-Host 'برچسب ساخته شد.'
+          }
+
       - name: انتشار
         uses: softprops/action-gh-release@v2
         with:

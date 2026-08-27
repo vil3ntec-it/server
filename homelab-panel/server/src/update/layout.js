@@ -104,6 +104,14 @@ export function backupSources() {
   return sources;
 }
 
+/**
+ * ریشهٔ سرورِ *نصب‌شده* — همان چیزی که به‌روزرسانی رویش می‌نشیند.
+ * در چیدمانِ معمولی زیرِ ریشهٔ نصب است، در برنامهٔ ویندوز خودِ resources/server.
+ */
+export function installedServerRoot() {
+  return LAYOUT === 'packaged' ? SERVER_ROOT : path.join(INSTALL_ROOT, 'homelab-panel', 'server');
+}
+
 /** برای نمایش در پنل */
 export function layoutInfo() {
   return {
