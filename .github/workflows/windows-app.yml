@@ -163,10 +163,15 @@ jobs:
           name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'مرکز فرمان — پیش‌نمایش ویندوز' }}
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') || contains(github.ref_name, '-') }}
           target_commitish: ${{ github.sha }}
+          # parts/* عمداً باز نشده: SHA256SUMS.txt هم آنجا کپی می‌شود و هم
+          # اینجا هست. با نامِ تکراری، دو بارگذاریِ هم‌زمان به هم می‌خورند —
+          # یکی همان چیزی را پاک می‌کند که دیگری دارد می‌نویسد، و فایل اصلاً
+          # منتشر نمی‌شود.
           files: |
             homelab-panel/desktop/dist/*.exe
             homelab-panel/desktop/dist/SHA256SUMS.txt
-            homelab-panel/desktop/dist/parts/*
+            homelab-panel/desktop/dist/parts/*.part*
+            homelab-panel/desktop/dist/parts/JOIN-PARTS.bat
           body: |
             ## مرکز فرمان — برنامهٔ ویندوز
 
@@ -207,3 +212,23 @@ jobs:
 
             ---
             <sub>ساخته‌شده از `${{ github.sha }}` روی شاخهٔ `${{ github.ref_name }}`</sub>
+
+      # نسخهٔ «پیش‌نمایش» یکی است و با هر ساخت به‌روز می‌شود، پس فایل‌های
+      # نسخه‌های قبلی باید بروند — وگرنه کاربر با چند فایلِ .exe روبه‌رو می‌شود
+      # و نمی‌داند کدام تازه است. بعد از بارگذاری اجرا می‌شود تا هیچ لحظه‌ای
+      # نسخهٔ منتشرشده بدونِ فایل نماند.
+      - name: پاک کردن فایل‌های نسخه‌های قبلی
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $keep = @($env:EXE_NAME, 'SHA256SUMS.txt', 'JOIN-PARTS.bat')
+          $release = gh api "repos/${{ github.repository }}/releases/tags/windows-preview" | ConvertFrom-Json
+          foreach ($asset in $release.assets) {
+            $mine = ($keep -contains $asset.name) -or $asset.name.StartsWith("$($env:EXE_NAME).part")
+            if ($mine) { continue }
+            Write-Host "پاک کردن $($asset.name)"
+            gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$($asset.id)"
+          }
+          Write-Host 'فقط فایل‌های همین ساخت ماندند.'
