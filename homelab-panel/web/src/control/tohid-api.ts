@@ -3,11 +3,18 @@ import { api } from '../api';
 
 const T = '/api/control/tohid';
 
+export type ThAddresses = {
+  port: number;
+  lan: { ip: string; otp: string; api: string }[];
+  local: { otp: string; api: string };
+};
+
 export type ThOverview = {
   accounts: number; disabled: number; withVip: number; expiring: number;
   devices: number; newRequests: number; online: number; activeToday: number;
   keyId: string | null;
   settings: ThSettings;
+  addresses: ThAddresses;
   features: { paid: string[]; free: string[]; core: string[] };
 };
 
@@ -94,7 +101,7 @@ export const th = {
   setRequestStatus: (id: number, status: string) =>
     api(`${T}/requests/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
 
-  settings: () => api<{ settings: ThSettings; keyId: string | null }>(`${T}/settings`),
+  settings: () => api<{ settings: ThSettings; addresses: ThAddresses; keyId: string | null }>(`${T}/settings`),
   saveSettings: (body: Record<string, unknown>) =>
     api<{ settings: ThSettings }>(`${T}/settings`, { method: 'PUT', body: JSON.stringify(body) }),
   testMail: (to: string) =>

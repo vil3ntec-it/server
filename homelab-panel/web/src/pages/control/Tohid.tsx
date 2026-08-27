@@ -9,11 +9,11 @@ import {
   Store, Users, Crown, Wifi, Settings2, Mail, Tag, RefreshCw, Ban, CheckCircle2, Plus,
 } from 'lucide-react';
 import { useApp } from '../../app-context';
-import { Badge, Card, Field, Loading, Modal, toast } from '../../components/ui';
+import { Badge, Card, CopyButton, Field, Loading, Modal, toast } from '../../components/ui';
 import { dateTime, relative } from '../../format';
 import { ActionButton, Cell, KV, Notice, Row, Select, Stat, Table, Tabs } from '../../control/ui';
 import { th } from '../../control/tohid-api';
-import type { ThAccount, ThOverview, ThPlan, ThOnline, ThRequest, ThSettings } from '../../control/tohid-api';
+import type { ThAccount, ThAddresses, ThOverview, ThPlan, ThOnline, ThRequest, ThSettings } from '../../control/tohid-api';
 
 const UNITS = [
   { value: 'day', key: 'thDay' },
@@ -81,7 +81,9 @@ export default function Tohid() {
       {tab === 'online' && <Online />}
       {tab === 'plans' && <Plans paid={overview?.features.paid ?? []} />}
       {tab === 'requests' && <Requests onChanged={load} />}
-      {tab === 'settings' && <SettingsTab settings={overview?.settings} keyId={overview?.keyId} onSaved={load} />}
+      {tab === 'settings' && (
+        <SettingsTab settings={overview?.settings} addresses={overview?.addresses} keyId={overview?.keyId} onSaved={load} />
+      )}
     </div>
   );
 
@@ -529,8 +531,8 @@ export default function Tohid() {
   }
 
   function SettingsTab({
-    settings, keyId, onSaved,
-  }: { settings?: ThSettings; keyId?: string | null; onSaved: () => void }) {
+    settings, addresses, keyId, onSaved,
+  }: { settings?: ThSettings; addresses?: ThAddresses; keyId?: string | null; onSaved: () => void }) {
     const [form, setForm] = useState<ThSettings | null>(settings ?? null);
     const [password, setPassword] = useState('');
     const [testTo, setTestTo] = useState('');
@@ -544,9 +546,24 @@ export default function Tohid() {
       <div className="space-y-4">
         <Card title={t('thConnection')} icon={<Settings2 className="h-4 w-4" />}>
           <Notice>{t('thConnectionHint')}</Notice>
-          <KV label={t('thConnectionExample')} mono>
-            <span dir="ltr">ws://192.168.1.10:4700/tohid</span>
-          </KV>
+
+          {/* آدرس‌های واقعیِ همین کامپیوتر — نه نمونه، نه حدس */}
+          {(addresses?.lan.length ? addresses.lan : []).map((a) => (
+            <div key={a.ip} className="mb-2 rounded-xl border border-line/60 p-3">
+              <p className="mb-1.5 text-[11px] text-ink-muted">{t('thFromThisNetwork')} — {a.ip}</p>
+              <KV label={t('thAddrOtp')} mono>
+                <span dir="ltr">{a.otp}</span> <CopyButton value={a.otp} />
+              </KV>
+              <KV label={t('thAddrApi')} mono>
+                <span dir="ltr">{a.api}</span> <CopyButton value={a.api} />
+              </KV>
+            </div>
+          ))}
+          {!addresses?.lan.length && (
+            <KV label={t('thAddrOtp')} mono>
+              <span dir="ltr">{addresses?.local.otp ?? '—'}</span>
+            </KV>
+          )}
           <label className="mb-3 flex items-center gap-2 text-sm">
             <input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
             {t('thEnable')}

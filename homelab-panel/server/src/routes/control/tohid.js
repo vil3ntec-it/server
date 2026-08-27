@@ -19,6 +19,8 @@ import { sendMail } from '../../tohid/smtp.js';
 import { onlineNow, connectionStats } from '../../tohid/presence.js';
 import { shopInfo } from '../../tohid/shop.js';
 import { licensePublicKey } from '../../tohid/keys.js';
+import { readInterfaces } from '../../metrics/network.js';
+import { config } from '../../config.js';
 
 const router = express.Router();
 
@@ -39,6 +41,28 @@ const actorOf = (req) => req.user?.username || 'admin';
 
 /* ------------------------------ خلاصه --------------------------------- */
 
+/**
+ * آدرس‌هایی که باید در خودِ برنامه وارد شود.
+ *
+ * هیچ دامنه‌ای و هیچ سرویسِ بیرونی‌ای لازم نیست: برنامه مستقیم به همین
+ * کامپیوتر وصل می‌شود. اینجا همان آی‌پی‌های واقعیِ این دستگاه خوانده می‌شود
+ * تا کاربر چیزی را حدس نزند.
+ */
+function appAddresses() {
+  const port = config.port;
+  const ips = readInterfaces().map((i) => i.address).filter(Boolean);
+  const hosts = [...new Set(ips)];
+  return {
+    port,
+    lan: hosts.map((ip) => ({
+      ip,
+      otp: `ws://${ip}:${port}/tohid`,
+      api: `http://${ip}:${port}`,
+    })),
+    local: { otp: `ws://127.0.0.1:${port}/tohid`, api: `http://127.0.0.1:${port}` },
+  };
+}
+
 router.get('/overview', guard(async (_req, res) => {
   const accounts = db.prepare('SELECT COUNT(*) AS n FROM th_accounts').get().n;
   const disabled = db.prepare('SELECT COUNT(*) AS n FROM th_accounts WHERE disabled = 1').get().n;
@@ -58,6 +82,7 @@ router.get('/overview', guard(async (_req, res) => {
     accounts, disabled, withVip, expiring, devices, newRequests: requests,
     ...connectionStats(),
     settings: publicTohidSettings(),
+    addresses: appAddresses(),
     keyId: licensePublicKey().keyId,
     features: { paid: PAID, free: FREE, core: CORE },
   });
@@ -254,7 +279,11 @@ router.post('/requests/:id/status', requireRole('operator'), guard(async (req, r
 /* ------------------------------ تنظیمات ------------------------------- */
 
 router.get('/settings', guard(async (_req, res) => {
-  res.json({ settings: publicTohidSettings(), keyId: licensePublicKey().keyId });
+  res.json({
+    settings: publicTohidSettings(),
+    addresses: appAddresses(),
+    keyId: licensePublicKey().keyId,
+  });
 }));
 
 router.put('/settings', requireRole('admin'), guard(async (req, res) => {

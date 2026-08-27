@@ -43,6 +43,11 @@ await fsp.writeFile(path.join(installRoot, 'homelab-panel', 'server', 'data', 'P
 await fsp.writeFile(path.join(installRoot, 'README.md'), '# قدیمی\n');
 
 process.env.HLP_INSTALL_ROOT = installRoot;
+// بدونِ این، وقتی وابستگی‌های بستهٔ دانلودشده با نصبِ فعلی فرق کند،
+// «npm install --omit=dev» روی پوشهٔ *واقعیِ* سرور اجرا می‌شود و
+// devDependencies را پاک می‌کند — یعنی همین اجرای آزمون، آزمون‌های
+// مرورگر را از کار می‌اندازد.
+process.env.HLP_SERVER_ROOT = path.join(installRoot, 'homelab-panel', 'server');
 process.env.HLP_DATA_DIR = dataDir;
 
 const { ensureControlSchema } = await import('../src/control/schema.js');
