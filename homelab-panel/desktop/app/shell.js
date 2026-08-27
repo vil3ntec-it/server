@@ -21,6 +21,8 @@ const el = {
   termBody: $('termBody'),
   follow: $('follow'),
   btnTerminal: $('btnTerminal'),
+  updated: $('updated'),
+  updatedText: $('updatedText'),
 };
 
 let loadedUrl = null;
@@ -289,6 +291,21 @@ $('btnCopy').addEventListener('click', async () => {
   } catch { /* بی‌خیال */ }
 });
 
+/* ------------------------ به‌روزرسانی نشست ------------------------------ */
+
+function showUpdated(applied) {
+  if (!applied?.at) return;
+  el.updatedText.textContent = applied.version
+    ? `به‌روزرسانی به نسخهٔ ${applied.version} نصب شد — برای اعمال، برنامه باید دوباره باز شود.`
+    : 'به‌روزرسانی نصب شد — برای اعمال، برنامه باید دوباره باز شود.';
+  el.updated.hidden = false;
+}
+
+$('btnRelaunch').addEventListener('click', () => window.cc.relaunch());
+$('btnUpdatedClose').addEventListener('click', () => {
+  el.updated.hidden = true;
+});
+
 /* ------------------------------- شروع ----------------------------------- */
 
 (async () => {
@@ -303,6 +320,7 @@ $('btnCopy').addEventListener('click', async () => {
 
   window.cc.onLog(appendLine);
   window.cc.onStatus(applyStatus);
+  window.cc.onUpdateApplied(showUpdated);
 
   for (const entry of await window.cc.getLogs()) appendLine(entry);
 

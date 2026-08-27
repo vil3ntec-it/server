@@ -360,6 +360,8 @@ export type UpdateStatus = {
   current: string | null;
   build: string | null;
   installRoot: string;
+  layout?: 'repo' | 'packaged';
+  shellDir?: string | null;
   installedVersion: string | null;
   installedCommit: string | null;
   installedAt: number | null;

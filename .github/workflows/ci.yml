@@ -69,3 +69,29 @@ jobs:
             exit 1
           fi
           echo "خروجی build با مخزن یکی است."
+
+  desktop:
+    name: برنامهٔ ویندوز
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: نصب وابستگی‌های سرور
+        working-directory: homelab-panel/server
+        run: npm ci
+
+      - name: نصب وابستگی‌های برنامه
+        working-directory: homelab-panel/desktop
+        run: npm ci
+
+      # خودِ برنامه واقعاً بالا می‌آید و کلیک می‌شود؛ روی لینوکس به صفحهٔ
+      # مجازی نیاز دارد. آنچه اینجا سنجیده می‌شود روی ویندوز هم همان است.
+      - name: آزمون‌های برنامه
+        working-directory: homelab-panel/desktop
+        run: xvfb-run -a npm test

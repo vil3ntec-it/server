@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('cc', {
   toggleFullScreen: () => ipcRenderer.invoke('terminal-fullscreen'),
   focusMain: () => ipcRenderer.invoke('focus-main'),
 
+  updateApplied: () => ipcRenderer.invoke('update-applied'),
+  relaunch: () => ipcRenderer.invoke('relaunch'),
+
   getUi: () => ipcRenderer.invoke('get-ui'),
   setUi: (patch) => ipcRenderer.invoke('set-ui', patch),
 
@@ -36,6 +39,11 @@ contextBridge.exposeInMainWorld('cc', {
     const handler = (_e, s) => fn(s);
     ipcRenderer.on('status', handler);
     return () => ipcRenderer.off('status', handler);
+  },
+  onUpdateApplied: (fn) => {
+    const handler = (_e, applied) => fn(applied);
+    ipcRenderer.on('update-applied', handler);
+    return () => ipcRenderer.off('update-applied', handler);
   },
   onTerminalPlace: (fn) => {
     const handler = (_e, place) => fn(place);

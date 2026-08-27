@@ -267,3 +267,16 @@ body.term-window .bar { background: var(--surface-1); }
   padding: 12px 16px;
   font-size: 12.5px;
 }
+
+/* ─────────────── نوارِ «به‌روزرسانی نشست» ─────────────── */
+.updated {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--good) 18%, var(--surface-1));
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  flex-shrink: 0;
+}

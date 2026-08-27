@@ -280,6 +280,11 @@ router.post(
       setSetting('cc_update_pending', null);
       res.json({ ok: true, info, downloaded: { size: downloaded.size, checksum: downloaded.checksum }, ...result });
     } catch (e) {
+      // در برنامهٔ ویندوز، اگر نسخهٔ تازه کتابخانهٔ تازه بخواهد هیچ فایلی
+      // جابه‌جا نشده — همین را صریح می‌گوییم تا کاربر دنبالِ فایلِ نصبی برود.
+      if (e.needsInstaller) {
+        return res.status(409).json({ error: 'needs_installer', detail: e.message, steps: e.steps || [] });
+      }
       return res.status(500).json({ error: 'update_failed', detail: e.message, steps: e.steps || [] });
     }
   })

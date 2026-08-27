@@ -17,7 +17,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { pipeline } from 'node:stream/promises';
-import { config, SERVER_ROOT } from '../config.js';
+import { config } from '../config.js';
 import { db, getSetting, setSetting, logEvent } from '../db.js';
 import { readSecret } from '../control/vault.js';
 import { audit } from '../control/audit.js';
@@ -25,31 +25,21 @@ import { extractZip, readZipIndex, createZip, walk } from '../control/zip.js';
 import { versionInfo } from '../version.js';
 import { run } from '../lib/exec.js';
 import { get as httpGet, getJson } from './http.js';
+import {
+  LAYOUT,
+  SERVER_ROOT,
+  SHELL_DIR,
+  INSTALL_ROOT as ROOT,
+  isProtected,
+  destinationFor,
+  backupSources,
+  layoutInfo,
+} from './layout.js';
 
-/**
- * ریشهٔ نصب — همان مخزنی که پنل و دستیار داخلش هستند.
- * با HLP_INSTALL_ROOT می‌شود جای دیگری را نشان داد (چیدمانِ غیرمعمول یا آزمون).
- */
-export const INSTALL_ROOT = path.resolve(process.env.HLP_INSTALL_ROOT || path.resolve(SERVER_ROOT, '..', '..'));
+/** ریشهٔ نصب — از layout.js می‌آید، چون در برنامهٔ ویندوز جای دیگری است */
+export const INSTALL_ROOT = ROOT;
 const UPDATE_DIR = path.join(config.dataDir, 'updates');
 const API = 'https://api.github.com';
-
-/** پوشه‌ها و فایل‌هایی که به‌روزرسانی هرگز لمسشان نمی‌کند */
-const PROTECTED = [
-  'homelab-panel/server/data',
-  'homelab-panel/server/.env',
-  'homelab-panel/server/node_modules',
-  'homelab-panel/web/node_modules',
-  'ai-support/node_modules',
-  'ai-support/.env',
-  'ai-support/data',
-  '.git',
-];
-
-function isProtected(relPath) {
-  const norm = relPath.replace(/\\/g, '/');
-  return PROTECTED.some((p) => norm === p || norm.startsWith(`${p}/`));
-}
 
 /* ------------------------- کدام مخزن؟ ---------------------------------- */
 
@@ -221,27 +211,40 @@ export async function downloadUpdate(info) {
 
 /* ------------------------------- نصب ----------------------------------- */
 
-async function copyTree(from, to, { onFile = null } = {}) {
+/**
+ * درختِ باز شده را روی نصبِ واقعی می‌نشاند.
+ *
+ * هر مسیر از destinationFor رد می‌شود، چون در برنامهٔ ویندوز مقصدِ
+ * homelab-panel/server جای دیگری است و بقیهٔ مخزن اصلاً مقصدی ندارد.
+ */
+async function copyTree(from, { onFile = null } = {}) {
   let copied = 0;
   let skipped = 0;
   async function visit(src, rel) {
     for (const entry of await fsp.readdir(src, { withFileTypes: true })) {
       const childRel = rel ? `${rel}/${entry.name}` : entry.name;
-      if (isProtected(childRel)) {
+      const srcPath = path.join(src, entry.name);
+
+      if (entry.isDirectory()) {
+        // پوشه‌ها را دنبال می‌کنیم مگر اینکه کلِ شاخه محافظت‌شده باشد
+        if (LAYOUT === 'repo' && isProtected(childRel)) {
+          skipped++;
+          continue;
+        }
+        await visit(srcPath, childRel);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+
+      const dstPath = destinationFor(childRel);
+      if (!dstPath) {
         skipped++;
         continue;
       }
-      const srcPath = path.join(src, entry.name);
-      const dstPath = path.join(to, childRel);
-      if (entry.isDirectory()) {
-        await fsp.mkdir(dstPath, { recursive: true });
-        await visit(srcPath, childRel);
-      } else if (entry.isFile()) {
-        await fsp.mkdir(path.dirname(dstPath), { recursive: true });
-        await fsp.copyFile(srcPath, dstPath);
-        copied++;
-        onFile?.(childRel);
-      }
+      await fsp.mkdir(path.dirname(dstPath), { recursive: true });
+      await fsp.copyFile(srcPath, dstPath);
+      copied++;
+      onFile?.(childRel);
     }
   }
   await visit(from, '');
@@ -252,9 +255,15 @@ async function copyTree(from, to, { onFile = null } = {}) {
 export async function backupInstall(label = 'pre-update') {
   await fsp.mkdir(UPDATE_DIR, { recursive: true });
   const target = path.join(UPDATE_DIR, `install-${label}-${Date.now()}.zip`);
-  const entries = await walk(INSTALL_ROOT, {
-    skip: (name) => isProtected(name.replace(/\/$/, '')) || name.startsWith('.git/'),
-  });
+
+  // نامِ داخلِ بکاپ همیشه نامِ نسبیِ مخزن است، تا برگرداندن از همان نگاشتِ
+  // نصب رد شود و در هر چیدمانی سرِ جای درست بنشیند.
+  const entries = [];
+  for (const source of backupSources()) {
+    const found = await walk(source.root, { skip: source.skip });
+    for (const entry of found) entries.push({ ...entry, name: `${source.prefix}${entry.name}` });
+  }
+
   const result = await createZip(target, entries);
   return { path: target, ...result };
 }
@@ -310,10 +319,28 @@ export async function applyUpdate(info, downloaded, { actor = 'admin', restart =
     depsChanged = true;
   }
 
+  // ۴ب) در برنامهٔ بسته‌بندی‌شده npm وجود ندارد. اگر وابستگی‌ها عوض شده باشند
+  //     و npm در دسترس نباشد، همین‌جا می‌ایستیم — هنوز هیچ فایلی جابه‌جا نشده.
+  //     نصبِ نیمه‌کاره‌ای که وابستگی‌اش کم است، بدتر از به‌روز نشدن است.
+  let npmAvailable = true;
+  if (depsChanged) {
+    const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+    const probe = await run(npmCmd, ['--version'], { timeout: 30000 }).catch(() => ({ ok: false }));
+    npmAvailable = Boolean(probe.ok);
+    if (!npmAvailable && LAYOUT === 'packaged') {
+      await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
+      step('dependencies', 'error', 'needs_installer');
+      throw Object.assign(
+        new Error('deps_need_installer'),
+        { steps, backup, needsInstaller: true },
+      );
+    }
+  }
+
   // ۵) جایگزینی
   let copyReport;
   try {
-    copyReport = await copyTree(sourceRoot, INSTALL_ROOT);
+    copyReport = await copyTree(sourceRoot);
     step('install', 'ok', copyReport);
   } catch (e) {
     step('install', 'error', e.message);
@@ -323,7 +350,9 @@ export async function applyUpdate(info, downloaded, { actor = 'admin', restart =
   }
 
   // ۶) وابستگی‌ها
-  if (depsChanged) {
+  if (depsChanged && !npmAvailable) {
+    step('dependencies', 'error', 'npm در دسترس نیست');
+  } else if (depsChanged) {
     const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
     const res = await run(npm, ['install', '--omit=dev', '--no-audit', '--no-fund'], {
       timeout: 10 * 60 * 1000,
@@ -340,6 +369,21 @@ export async function applyUpdate(info, downloaded, { actor = 'admin', restart =
   setSetting('cc_update_installed_at', Date.now());
   setSetting('cc_update_last_backup', backup?.path || null);
   step('record', 'ok', { version: newPkg.version, commit: info.commit || null });
+
+  // نشانهٔ «به‌روزرسانی نشست» برای برنامهٔ ویندوز. پوستهٔ برنامه داخلِ فایلِ
+  // برنامه است، نه داخلِ سرور، پس تا کلِ برنامه دوباره باز نشود عوض نمی‌شود.
+  try {
+    await fsp.mkdir(UPDATE_DIR, { recursive: true });
+    await fsp.writeFile(
+      path.join(UPDATE_DIR, 'applied.json'),
+      JSON.stringify(
+        { version: newPkg.version || null, commit: info.commit || null, at: Date.now(), layout: LAYOUT },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+  } catch { /* نشانه ننشست؛ به‌روزرسانی سرِ جایش هست */ }
 
   audit({
     actor,
@@ -368,6 +412,9 @@ export function scheduleRestart(delayMs = 1200) {
   } catch { /* بی‌خیال */ }
 
   setTimeout(() => {
+    // در برنامهٔ ویندوز، خودِ برنامه سرور را دوباره بالا می‌آورد — و چون
+    // پوستهٔ برنامه هم عوض شده، کلِ برنامه دوباره باز می‌شود.
+    if (LAYOUT === 'packaged') process.exit(0);
     try {
       const child = spawn(process.execPath, [path.join(SERVER_ROOT, 'src', 'index.js')], {
         cwd: SERVER_ROOT,
@@ -389,7 +436,7 @@ export async function rollback({ actor = 'admin' } = {}) {
   if (!backupPath || !fs.existsSync(backupPath)) throw new Error('no_backup');
   const staging = path.join(UPDATE_DIR, `rollback-${Date.now()}`);
   await extractZip(backupPath, staging);
-  const report = await copyTree(staging, INSTALL_ROOT);
+  const report = await copyTree(staging);
   await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
   audit({ actor, action: 'update.rollback', entity: 'panel', detail: { backupPath, ...report } });
   scheduleRestart();
@@ -403,7 +450,7 @@ export function updateStatus() {
     branch: updateBranch(),
     current: versionInfo.version,
     build: versionInfo.build,
-    installRoot: INSTALL_ROOT,
+    ...layoutInfo(),
     installedVersion: getSetting('cc_update_version', null),
     installedCommit: getSetting('cc_update_commit', null),
     installedAt: getSetting('cc_update_installed_at', null),

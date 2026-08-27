@@ -83,7 +83,8 @@ export default function Updates() {
                   else toast(res.available ? t('ccUpdateAvailable') : t('ccUpToDate'), res.available ? 'bad' : 'good');
                   load();
                 } catch (e) {
-                  toast((e as Error).message, 'bad');
+                  const message = (e as Error).message;
+                  toast(message.includes('needs_installer') ? t('ccUpdateNeedsInstaller') : message, 'bad');
                 }
               }}
             >
@@ -102,6 +103,14 @@ export default function Updates() {
         <KV label={t('ccLastCheck')}>{status.lastCheck ? relative(status.lastCheck, lang) : t('ccNever')}</KV>
         <KV label={t('lastUpdate')}>{status.installedAt ? dateTime(status.installedAt, lang) : t('ccNever')}</KV>
         <KV label={t('path')} mono>{status.installRoot}</KV>
+
+        {status.layout === 'packaged' && (
+          <div className="mt-3">
+            <Notice>
+              <span className="font-medium">{t('ccUpdateApp')}</span> — {t('ccUpdateAppHow')} {t('ccUpdateAppDeps')}
+            </Notice>
+          </div>
+        )}
 
         {(info?.available || pending) && (
           <div className="mt-4 rounded-xl border p-3" style={{ borderColor: 'color-mix(in srgb, var(--series-1) 35%, transparent)' }}>
