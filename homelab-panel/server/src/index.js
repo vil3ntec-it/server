@@ -43,10 +43,24 @@ import { aiProxy, AI_PREFIX } from './ai/proxy.js';
 import { autostartAi, stopAi } from './ai/supervisor.js';
 import aiRoutes from './routes/ai.js';
 
+// ── مرکز فرمان ────────────────────────────────────────────────────────────
+import { ensureControlSchema } from './control/schema.js';
+import controlRoutes, { agentRouter, appConfigRouter } from './routes/control/index.js';
+import { ensureLocalServer } from './routes/control/servers.js';
+import { startMonitor, stopMonitor, syncMonitors } from './control/monitor.js';
+import { pruneAudit } from './control/audit.js';
+import { pruneAlerts, alertEvents } from './control/alerts.js';
+import { monitorEvents } from './control/monitor.js';
+import { startUpdateWatcher, stopUpdateWatcher } from './update/github.js';
+import { requireAuth } from './auth.js';
+
 const PUBLIC_DIR = path.join(SERVER_ROOT, 'public');
 const PID_FILE = path.join(config.dataDir, 'panel.pid');
 
 ensureDirs();
+
+// جدول‌های مرکز فرمان پیش از هر پرس‌وجویی ساخته/به‌روز می‌شوند
+ensureControlSchema();
 
 // شمارهٔ پروسه روی دیسک می‌ماند تا اسکریپت‌های سرویس (وقتی پنجره‌ای باز نیست)
 // بتوانند همین سرور را پیدا و متوقف کنند.
@@ -74,6 +88,8 @@ app.use(AI_PREFIX, aiProxy);
 const MSG_LIMIT = `${Math.max(1, Math.round(config.messengerMaxBytes / (1024 * 1024)))}mb`;
 app.use((req, res, next) => {
   if (req.path === '/api/files/upload' || req.path === '/api/settings/logo') return next();
+  // گزارشِ Agent باید خام بماند تا امضایش قابلِ سنجش باشد
+  if (req.path.startsWith('/api/control/agent')) return next();
   // پیام‌رسان سقفِ خودش را دارد تا پیام‌های بلند رد نشوند
   const limit = req.path.startsWith('/api/messenger') ? MSG_LIMIT : '5mb';
   express.json({ limit })(req, res, next);
@@ -108,6 +124,13 @@ app.use('/api/messenger', messengerRoutes);
 app.use('/api/notify', notifyRoutes);
 app.use('/api/notify-admin', notifyAdminRoutes);
 app.use('/api/ai', aiRoutes);
+
+// ── مرکز فرمان ────────────────────────────────────────────────────────────
+// Agentها و خودِ برنامه‌ها درِ ورودیِ خودشان را دارند (امضای HMAC / توکنِ پروژه)
+app.use('/api/control/agent', agentRouter);
+app.use('/api/app-config', appConfigRouter);
+// بقیهٔ مرکز فرمان فقط برای مدیرِ واردشده
+app.use('/api/control', requireAuth, controlRoutes);
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));
 
@@ -228,6 +251,33 @@ siteTunnelEvents.on('change', (payload) => {
   } catch { /* هنوز کسی وصل نیست */ }
 });
 
+// مرکز فرمان: هشدارها و نتیجهٔ بررسی‌ها زنده به پنل می‌روند
+alertEvents.on('alert', (payload) => {
+  try {
+    getIo()?.emit('control:alert', payload);
+  } catch { /* هنوز کسی وصل نیست */ }
+});
+alertEvents.on('cleared', (payload) => {
+  try {
+    getIo()?.emit('control:alert-cleared', payload);
+  } catch { /* هنوز کسی وصل نیست */ }
+});
+monitorEvents.on('result', ({ monitor, result }) => {
+  try {
+    getIo()?.emit('control:monitor', {
+      id: monitor.id,
+      kind: monitor.kind,
+      refId: monitor.ref_id,
+      projectId: monitor.project_id,
+      label: monitor.label,
+      status: result.status,
+      code: result.code ?? null,
+      latencyMs: result.latencyMs ?? null,
+      at: result.checkedAt ?? Date.now(),
+    });
+  } catch { /* هنوز کسی وصل نیست */ }
+});
+
 // ۳) معیارهای زنده
 // روی ویندوز یک پروسهٔ PowerShell دائمی به‌جای ده‌ها بار باز و بسته کردن آن
 startWinSampler();
@@ -239,6 +289,8 @@ startCollector((snapshot) => {
 const housekeeping = setInterval(() => {
   pruneSessions();
   pruneEvents();
+  pruneAudit();
+  pruneAlerts();
 }, 15 * 60 * 1000);
 housekeeping.unref?.();
 
@@ -261,6 +313,19 @@ async function main() {
 
   ensureSitesRoot();
   await autostartAll();
+
+  // ── مرکز فرمان ──────────────────────────────────────────────────────────
+  // سرورِ خانگی (همین کامپیوتر) یک‌بار خودش ثبت می‌شود؛ بعد فهرستِ هدف‌های
+  // مانیتورینگ از روی چیزهایی که واقعاً ثبت شده‌اند ساخته می‌شود.
+  try {
+    ensureLocalServer();
+    syncMonitors();
+    startMonitor();
+    startUpdateWatcher();
+  } catch (e) {
+    console.warn(`⚠️  مرکز فرمان کامل بالا نیامد: ${e.message}`);
+    logEvent('error', 'panel', `راه‌اندازی مرکز فرمان: ${e.message}`);
+  }
 
   // دستیارِ پشتیبانی هم با پنل بالا می‌آید. اگر پوشه‌اش نبود یا خاموش بود،
   // فقط یک سطر لاگ می‌شود و بقیهٔ پنل عادی کار می‌کند.
@@ -338,6 +403,10 @@ async function shutdown(signal) {
   try {
     stopTunnel();
     stopAllSiteTunnels();
+  } catch { /* بسته شده */ }
+  try {
+    stopMonitor();
+    stopUpdateWatcher();
   } catch { /* بسته شده */ }
   try {
     syncOnlyServer?.close();

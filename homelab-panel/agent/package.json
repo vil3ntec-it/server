@@ -1,0 +1,14 @@
+{
+  "name": "control-center-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lightweight reporting agent for the Control Center — no dependencies, no inbound port, no remote command execution",
+  "type": "module",
+  "main": "agent.mjs",
+  "scripts": {
+    "start": "node agent.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
