@@ -73,14 +73,16 @@
       "installerLanguages": [
         "en_US"
       ],
-      "language": "1033"
+      "language": "1033",
+      "differentialPackage": false
     },
     "linux": {
       "target": [
         "AppImage"
       ],
       "category": "Development"
-    }
+    },
+    "compression": "maximum"
   },
   "author": {
     "name": "vil3ntec-it"

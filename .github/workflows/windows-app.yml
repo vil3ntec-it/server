@@ -5,7 +5,7 @@ on:
     tags: ['v*']
     # تا پیش از merge، فهرستِ Actions این گردشِ کار را نشان نمی‌دهد (چون فایلش
     # روی شاخهٔ اصلی نیست). پس روی شاخه‌های کاری هم — وقتی خودِ برنامهٔ ویندوز
-    # عوض شد — ساخته می‌شود تا فایل نصبی از همان‌جا قابلِ دانلود باشد.
+    # عوض شد — ساخته می‌شود.
     branches: ['claude/**']
     paths:
       - 'homelab-panel/desktop/**'
@@ -19,12 +19,12 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: write
+
 concurrency:
   group: windows-app-${{ github.ref }}
   cancel-in-progress: true
-
-permissions:
-  contents: write
 
 jobs:
   build:
@@ -60,19 +60,142 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # ── تکه‌تکه کردن ────────────────────────────────────────────────────
+      # دانلودِ یک فایلِ ۹۰ مگابایتی روی اینترنتِ ناپایدار وسطِ کار می‌ایستد.
+      # تکه‌های ۲۰ مگابایتی را می‌شود جدا گرفت و بعد به هم چسباند.
+      - name: تکه‌های کوچک و جمعِ کنترلی
+        shell: pwsh
+        working-directory: homelab-panel/desktop/dist
+        run: |
+          $exe = Get-ChildItem -Filter '*.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'فایل نصبی ساخته نشد' }
+          Write-Host "فایل: $($exe.Name) — $([math]::Round($exe.Length/1MB,1)) MB"
+
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($exe.Name)" | Set-Content -Path 'SHA256SUMS.txt' -Encoding ascii
+          "SHA256=$hash" >> $env:GITHUB_ENV
+          "EXE_NAME=$($exe.Name)" >> $env:GITHUB_ENV
+          "EXE_MB=$([math]::Round($exe.Length/1MB,1))" >> $env:GITHUB_ENV
+
+          New-Item -ItemType Directory -Force -Path 'parts' | Out-Null
+          $chunk  = 20MB
+          $stream = [System.IO.File]::OpenRead($exe.FullName)
+          $buffer = New-Object byte[] (1MB)
+          $names  = @()
+          $index  = 1
+          try {
+            while ($stream.Position -lt $stream.Length) {
+              $name = '{0}.part{1:d2}' -f $exe.Name, $index
+              $names += $name
+              $out = [System.IO.File]::Create((Join-Path 'parts' $name))
+              try {
+                $written = 0
+                while ($written -lt $chunk -and $stream.Position -lt $stream.Length) {
+                  $want = [Math]::Min($buffer.Length, $chunk - $written)
+                  $read = $stream.Read($buffer, 0, $want)
+                  if ($read -le 0) { break }
+                  $out.Write($buffer, 0, $read)
+                  $written += $read
+                }
+              } finally { $out.Dispose() }
+              $index++
+            }
+          } finally { $stream.Dispose() }
+          Write-Host "$($names.Count) تکه ساخته شد"
+
+          # چسباننده — ASCII و CRLF، چون cmd.exe فایلِ غیرِ این را درست نمی‌خواند
+          $joiner = @()
+          $joiner += '@echo off'
+          $joiner += 'setlocal'
+          $joiner += 'REM  Joins the downloaded parts back into one installer.'
+          $joiner += 'REM  Put this file in the same folder as all the .partNN files.'
+          $joiner += 'cd /d "%~dp0"'
+          $joiner += 'echo.'
+          $joiner += 'echo Joining parts...'
+          $joiner += ('copy /b ' + (($names | ForEach-Object { '"' + $_ + '"' }) -join ' + ') + ' "' + $exe.Name + '" >nul')
+          $joiner += 'if errorlevel 1 goto failed'
+          $joiner += 'echo.'
+          $joiner += ('echo Done: ' + $exe.Name)
+          $joiner += 'echo.'
+          $joiner += 'echo Verify the checksum (compare with SHA256SUMS.txt):'
+          $joiner += ('certutil -hashfile "' + $exe.Name + '" SHA256')
+          $joiner += 'echo.'
+          $joiner += 'pause'
+          $joiner += 'exit /b 0'
+          $joiner += ':failed'
+          $joiner += 'echo.'
+          $joiner += 'echo Joining failed. Make sure every .partNN file is here.'
+          $joiner += 'pause'
+          $joiner += 'exit /b 1'
+          [System.IO.File]::WriteAllText(
+            (Join-Path 'parts' 'JOIN-PARTS.bat'),
+            (($joiner -join "`r`n") + "`r`n"),
+            [System.Text.Encoding]::ASCII)
+          Copy-Item 'SHA256SUMS.txt' 'parts/SHA256SUMS.txt'
+
       - name: بارگذاری خروجی
         uses: actions/upload-artifact@v4
         with:
           name: ControlCenter-Setup
           path: |
             homelab-panel/desktop/dist/*.exe
-            homelab-panel/desktop/dist/*.exe.blockmap
+            homelab-panel/desktop/dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
 
+      - name: بارگذاری تکه‌ها
+        uses: actions/upload-artifact@v4
+        with:
+          name: ControlCenter-Setup-parts
+          path: homelab-panel/desktop/dist/parts/*
+          if-no-files-found: error
+          retention-days: 30
+
+      # ── انتشار ─────────────────────────────────────────────────────────
+      # فایلِ Release روی CDN می‌نشیند: بدونِ لاگین، و اگر قطع شد ادامه می‌گیرد.
       - name: انتشار
         if: startsWith(github.ref, 'refs/tags/v') || inputs.release
         uses: softprops/action-gh-release@v2
         with:
-          files: homelab-panel/desktop/dist/*.exe
-          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            homelab-panel/desktop/dist/*.exe
+            homelab-panel/desktop/dist/SHA256SUMS.txt
+            homelab-panel/desktop/dist/parts/*
+          body: |
+            ## مرکز فرمان — برنامهٔ ویندوز
+
+            پنل و ترمینال در یک پنجره، با آیکن روی دسکتاپ.
+            **به نصبِ Node.js نیاز ندارد** — همه‌چیز داخلِ خودِ فایل است.
+
+            ### دانلود
+
+            **راهِ اول — یک فایل** (`${{ env.EXE_NAME }}`، حدود ${{ env.EXE_MB }} مگابایت)
+
+            این فایل روی CDN است، پس اگر وسطِ کار قطع شد، دانلود **ادامه می‌گیرد**
+            و از اول شروع نمی‌شود. با یک دانلود‌منیجر (مثل IDM یا FDM) مطمئن‌تر است.
+
+            **راهِ دوم — تکه‌های ۲۰ مگابایتی**
+
+            اگر باز هم گیر کرد، فایل‌های `.part01` تا آخر را جدا‌جدا بگیر، همه را
+            کنارِ هم در یک پوشه بگذار و روی **`JOIN-PARTS.bat`** دوبار کلیک کن.
+            خودش به هم می‌چسباندشان و جمعِ کنترلی را هم نشان می‌دهد.
+
+            ### درستیِ فایل
+
+            ```
+            SHA256: ${{ env.SHA256 }}
+            ```
+
+            در PowerShell:
+            ```powershell
+            Get-FileHash .\${{ env.EXE_NAME }} -Algorithm SHA256
+            ```
+
+            ### نصب
+
+            فایل را اجرا کن. می‌پرسد **کجا نصب شود**، و بارِ اولِ اجرا می‌پرسد
+            **اطلاعات کجا ذخیره شود**.
+
+            > ویندوز چون فایل امضای دیجیتال ندارد اخطارِ «Unknown publisher» می‌دهد.
+            > **More info → Run anyway** را بزن.
