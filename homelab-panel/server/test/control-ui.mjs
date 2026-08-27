@@ -102,7 +102,7 @@ try {
 
   console.log('\n── ناوبریِ مرکز فرمان ──');
   const navText = await page.locator('aside nav').first().innerText();
-  for (const label of ['مرکز فرمان', 'پروژه‌ها', 'سرورها', 'شبکه', 'انبار', 'گاوصندوق', 'پایش', 'به‌روزرسانی']) {
+  for (const label of ['مرکز فرمان', 'پروژه‌ها', 'سرورها', 'شبکه', 'انبار', 'گاوصندوق', 'پایش', 'به‌روزرسانی', 'برنامه توحید']) {
     check(`«${label}» در منو هست`, navText.includes(label), navText.slice(0, 200));
   }
 
@@ -119,6 +119,7 @@ try {
     ['/control/monitoring', 'پایش'],
     ['/control/audit', 'دفتر رخدادها'],
     ['/control/updates', 'به‌روزرسانی'],
+    ['/control/tohid', 'حساب‌ها'],
   ];
 
   for (const [route, heading] of PAGES) {

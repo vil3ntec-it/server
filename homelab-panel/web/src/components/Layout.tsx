@@ -8,7 +8,7 @@ import {
   ChevronDown,
   Cloud,
   Command as CommandIcon,
-  Download,
+  Download, Store,
   FolderTree,
   Gauge,
   Globe,
@@ -73,6 +73,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/control/audit', key: 'ccAudit', icon: ScrollText },
       { to: '/control/panel-users', key: 'ccPanelUsers', icon: UserCog, needs: 'admin' },
       { to: '/control/updates', key: 'ccUpdates', icon: Download },
+      { to: '/control/tohid', key: 'thTitle', icon: Store },
     ],
   },
   {

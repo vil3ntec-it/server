@@ -46,6 +46,10 @@ import aiRoutes from './routes/ai.js';
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
 import { ensureControlSchema } from './control/schema.js';
+import { ensureTohidSchema } from './tohid/schema.js';
+import tohidPublicRoutes from './routes/tohid.js';
+import tohidAdminRoutes from './routes/control/tohid.js';
+import { createTohidWs } from './tohid/ws.js';
 import controlRoutes, { agentRouter, appConfigRouter } from './routes/control/index.js';
 import { ensureLocalServer } from './routes/control/servers.js';
 import { startMonitor, stopMonitor, syncMonitors } from './control/monitor.js';
@@ -63,6 +67,7 @@ ensureDirs();
 
 // جدول‌های مرکز فرمان پیش از هر پرس‌وجویی ساخته/به‌روز می‌شوند
 ensureControlSchema();
+ensureTohidSchema();
 
 // شمارهٔ پروسه روی دیسک می‌ماند تا اسکریپت‌های سرویس (وقتی پنجره‌ای باز نیست)
 // بتوانند همین سرور را پیدا و متوقف کنند.
@@ -129,10 +134,14 @@ app.use('/api/ai', aiRoutes);
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
 // Agentها و خودِ برنامه‌ها درِ ورودیِ خودشان را دارند (امضای HMAC / توکنِ پروژه)
+// API برنامهٔ توحید — احرازِ هویتش مالِ خودش است، نه ورودِ پنل
+app.use('/api/v1', tohidPublicRoutes);
+
 app.use('/api/control/agent', agentRouter);
 app.use('/api/app-config', appConfigRouter);
 // بقیهٔ مرکز فرمان فقط برای مدیرِ واردشده
 // خواندن برای همه، نوشتن دستِ‌کم برای operator، و کارهای حساس فقط برای admin
+app.use('/api/control/tohid', requireAuth, writeNeedsOperator, tohidAdminRoutes);
 app.use('/api/control', requireAuth, writeNeedsOperator, controlRoutes);
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));
@@ -220,6 +229,8 @@ if (panelSecure && config.tls.redirectHttp) {
 const io = attachRealtime(httpServer);
 setIo(io);
 
+const tohidWs = createTohidWs();
+
 // ۲) سرورِ سایت روی همان پورت — هر ارتقای WebSocket که مسیرش /socket.io نباشد
 let siteSync = null;
 if (config.siteSync.enabled) {
@@ -234,7 +245,25 @@ if (config.siteSync.enabled) {
     if (pathname.startsWith('/socket.io')) return; // مالِ Socket.IO است
     if (pathname.startsWith('/messenger')) return messenger.handleUpgrade(req, socket, head);
     if (pathname.startsWith('/notify')) return notify.handleUpgrade(req, socket, head);
+    if (pathname.startsWith('/tohid')) return tohidWs.handleUpgrade(req, socket, head);
     siteSync.handleUpgrade(req, socket, head);
+  });
+}
+
+// ورودِ با کدِ برنامهٔ توحید. اگر سرورِ سایت خاموش باشد هیچ شنوندهٔ upgrade ای
+// وجود ندارد، پس اینجا خودمان یکی می‌گذاریم — وگرنه این قابلیت فقط در یک
+// پیکربندیِ خاص کار می‌کرد.
+if (!config.siteSync.enabled) {
+  httpServer.on('upgrade', (req, socket, head) => {
+    let pathname = '/';
+    try {
+      pathname = new URL(req.url, 'http://x').pathname;
+    } catch { /* مسیر خراب */ }
+    if (pathname.startsWith('/socket.io')) return;
+    if (pathname.startsWith('/messenger')) return messenger.handleUpgrade(req, socket, head);
+    if (pathname.startsWith('/notify')) return notify.handleUpgrade(req, socket, head);
+    if (pathname.startsWith('/tohid')) return tohidWs.handleUpgrade(req, socket, head);
+    socket.destroy();
   });
 }
 
