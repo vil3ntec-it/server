@@ -153,11 +153,16 @@ jobs:
 
       # ── انتشار ─────────────────────────────────────────────────────────
       # فایلِ Release روی CDN می‌نشیند: بدونِ لاگین، و اگر قطع شد ادامه می‌گیرد.
+      # روی شاخه‌های کاری هم یک نسخهٔ «پیش‌نمایش» منتشر می‌شود که با هر ساخت
+      # به‌روز می‌شود — وگرنه تا merge نشدن، فایل فقط از راهِ artifact در دسترس
+      # بود و آن یکی وسطِ دانلود می‌ایستد.
       - name: انتشار
-        if: startsWith(github.ref, 'refs/tags/v') || inputs.release
         uses: softprops/action-gh-release@v2
         with:
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'windows-preview' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'مرکز فرمان — پیش‌نمایش ویندوز' }}
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') || contains(github.ref_name, '-') }}
+          target_commitish: ${{ github.sha }}
           files: |
             homelab-panel/desktop/dist/*.exe
             homelab-panel/desktop/dist/SHA256SUMS.txt
@@ -199,3 +204,6 @@ jobs:
 
             > ویندوز چون فایل امضای دیجیتال ندارد اخطارِ «Unknown publisher» می‌دهد.
             > **More info → Run anyway** را بزن.
+
+            ---
+            <sub>ساخته‌شده از `${{ github.sha }}` روی شاخهٔ `${{ github.ref_name }}`</sub>
