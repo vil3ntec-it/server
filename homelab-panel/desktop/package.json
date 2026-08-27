@@ -1,7 +1,7 @@
 {
   "name": "control-center-desktop",
   "productName": "Control Center",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "Control Center — Windows desktop app for the home server panel",
   "type": "module",
@@ -30,6 +30,8 @@
       "shell.html",
       "shell.css",
       "shell.js",
+      "terminal.html",
+      "terminal.js",
       "assets/**/*"
     ],
     "extraResources": [

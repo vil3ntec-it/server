@@ -16,11 +16,16 @@ const el = {
   placeholderText: $('placeholderText'),
   placeholderHint: $('placeholderHint'),
   term: $('term'),
+  termGrip: $('termGrip'),
+  termAway: $('termAway'),
   termBody: $('termBody'),
   follow: $('follow'),
+  btnTerminal: $('btnTerminal'),
 };
 
 let loadedUrl = null;
+/** ترمینال در پنجرهٔ خودش باز است؟ */
+let popped = false;
 
 /* ------------------------------- ترمینال -------------------------------- */
 
@@ -80,7 +85,9 @@ function applyStatus(s) {
     el.placeholder.hidden = false;
     el.placeholder.querySelector('.spinner')?.remove();
     el.placeholderText.textContent = s.error || 'سرور بالا نیامد.';
-    el.placeholderHint.textContent = 'ترمینالِ پایین می‌گوید دقیقاً چه شد.';
+    el.placeholderHint.textContent = 'ترمینال می‌گوید دقیقاً چه شد.';
+    // خرابی را نباید پشتِ ترمینالِ بسته قایم کرد
+    if (!popped) setTerminalOpen(true);
     loadedUrl = null;
   }
 }
@@ -152,12 +159,119 @@ $('btnSaveSetup').addEventListener('click', async () => {
   }
 });
 
+/* -------------------- کادرِ ترمینال: باز، بسته، جدا --------------------- */
+
+const MIN_TERM = 108;
+const DEFAULT_TERM = 240;
+
+/** بلندیِ ترمینال هیچ‌وقت نباید بیشتر از سهمِ معقولش از پنجره شود */
+function clampHeight(px) {
+  const max = Math.max(MIN_TERM, Math.round(window.innerHeight * 0.75));
+  return Math.min(max, Math.max(MIN_TERM, Math.round(px)));
+}
+
+function applyHeight(px) {
+  const h = clampHeight(px);
+  el.term.style.setProperty('--term-height', `${h}px`);
+  return h;
+}
+
+/**
+ * باز و بستنِ ترمینال.
+ *
+ * از صفتِ hidden استفاده می‌شود، نه کلاس: قانونِ [hidden] در shell.css با
+ * ‎!important‎ نوشته شده، پس بستن همیشه کار می‌کند و هیچ قانونِ دیگری
+ * نمی‌تواند دوباره بازش کند.
+ */
+function setTerminalOpen(open, remember = true) {
+  if (popped) open = false;
+  el.term.hidden = !open;
+  el.btnTerminal.classList.toggle('on', open && !popped);
+  el.btnTerminal.setAttribute('aria-pressed', String(open && !popped));
+  if (open) scrollTerminalToEnd();
+  if (remember && !popped) window.cc.setUi({ terminalOpen: open }).catch(() => {});
+}
+
+function scrollTerminalToEnd() {
+  if (el.follow.checked) el.termBody.scrollTop = el.termBody.scrollHeight;
+}
+
+/** ترمینال داخلِ برنامه است یا در پنجرهٔ خودش */
+function applyTerminalPlace(place) {
+  popped = Boolean(place?.popped);
+  el.termAway.hidden = !popped;
+  el.btnTerminal.textContent = popped ? 'ترمینال ⧉' : 'ترمینال';
+  if (popped) {
+    el.term.hidden = true;
+    el.btnTerminal.classList.remove('on');
+  } else {
+    // پنجره که بسته شد، به همان حالتی برمی‌گردیم که کاربر قبلاً انتخاب کرده بود
+    setTerminalOpen(wantedOpen, false);
+  }
+}
+
+/** آخرین انتخابِ خودِ کاربر برای بازبودنِ ترمینالِ داخلِ برنامه */
+let wantedOpen = false;
+
+el.btnTerminal.addEventListener('click', () => {
+  if (popped) {
+    window.cc.focusMain();
+    window.cc.popOutTerminal(); // پنجره‌اش را جلو می‌آورد
+    return;
+  }
+  wantedOpen = el.term.hidden;
+  setTerminalOpen(wantedOpen);
+});
+
+$('btnTermClose').addEventListener('click', () => {
+  wantedOpen = false;
+  setTerminalOpen(false);
+});
+
+$('btnPopout').addEventListener('click', () => window.cc.popOutTerminal());
+$('btnTermFocus').addEventListener('click', () => window.cc.popOutTerminal());
+$('btnTermBack').addEventListener('click', async () => {
+  wantedOpen = true;
+  await window.cc.dockTerminal();
+});
+
+/* --------- کشیدنِ دستگیره: بلندیِ ترمینال دستِ خودِ کاربر است ---------- */
+
+let drag = null;
+
+el.termGrip.addEventListener('pointerdown', (e) => {
+  drag = { y: e.clientY, start: el.term.getBoundingClientRect().height };
+  el.termGrip.setPointerCapture(e.pointerId);
+  document.body.classList.add('resizing');
+  e.preventDefault();
+});
+
+el.termGrip.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  // دستگیره بالای ترمینال است: بالا کشیدن یعنی بلندتر
+  applyHeight(drag.start + (drag.y - e.clientY));
+});
+
+function endDrag(e) {
+  if (!drag) return;
+  drag = null;
+  document.body.classList.remove('resizing');
+  try { el.termGrip.releasePointerCapture(e.pointerId); } catch { /* رها شده */ }
+  const h = Math.round(el.term.getBoundingClientRect().height);
+  window.cc.setUi({ terminalHeight: h }).catch(() => {});
+  scrollTerminalToEnd();
+}
+
+el.termGrip.addEventListener('pointerup', endDrag);
+el.termGrip.addEventListener('pointercancel', endDrag);
+
+// کوچک شدنِ پنجره نباید ترمینال را از حدش بزرگ‌تر بگذارد
+window.addEventListener('resize', () => {
+  applyHeight(el.term.getBoundingClientRect().height || DEFAULT_TERM);
+});
+
 /* ------------------------------ دکمه‌ها --------------------------------- */
 
-$('btnTerminal').addEventListener('click', (e) => {
-  el.term.classList.toggle('hidden');
-  e.currentTarget.classList.toggle('on', !el.term.classList.contains('hidden'));
-});
 $('btnBrowser').addEventListener('click', () => window.cc.openInBrowser());
 $('btnData').addEventListener('click', () => window.cc.openDataFolder());
 $('btnRestart').addEventListener('click', () => window.cc.restart());
@@ -178,8 +292,14 @@ $('btnCopy').addEventListener('click', async () => {
 /* ------------------------------- شروع ----------------------------------- */
 
 (async () => {
-  $('btnTerminal').classList.add('on');
   setEmptyTerminal();
+
+  const ui = await window.cc.getUi().catch(() => ({}));
+  applyHeight(Number(ui?.terminalHeight) || DEFAULT_TERM);
+  wantedOpen = ui?.terminalOpen === true;
+
+  window.cc.onTerminalPlace(applyTerminalPlace);
+  applyTerminalPlace(await window.cc.terminalPlace().catch(() => ({ popped: false })));
 
   window.cc.onLog(appendLine);
   window.cc.onStatus(applyStatus);

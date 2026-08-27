@@ -94,15 +94,71 @@ try {
   const src = await win.getAttribute('#view', 'src');
   check('پنل داخلِ پنجره بار شد', /^http:\/\/127\.0\.0\.1:\d+\/?$/.test(src || ''), src);
 
-  console.log('\n── دکمه‌ها ──');
-  await win.click('#btnTerminal');
-  await win.waitForTimeout(400);
-  check('ترمینال پنهان می‌شود', await win.isHidden('#termBody'));
+  console.log('\n── کادرِ ترمینال ──');
+  check('اولِ کار ترمینال بسته است و جلوی پنل را نمی‌گیرد', await win.isHidden('#term'));
   await win.screenshot({ path: path.join(SHOTS, '3-no-terminal.png') });
-  await win.click('#btnTerminal');
-  await win.waitForTimeout(400);
-  check('و دوباره برمی‌گردد', await win.isVisible('#termBody'));
 
+  await win.click('#btnTerminal');
+  await win.waitForSelector('#term:not([hidden])', { timeout: 5000 });
+  check('با دکمهٔ بالا باز می‌شود', await win.isVisible('#termBody'));
+
+  // همان چیزی که کاربر گفت کار نمی‌کند: بسته شدن
+  await win.click('#btnTermClose');
+  await win.waitForSelector('#term', { state: 'hidden', timeout: 5000 });
+  check('با ✕ واقعاً بسته می‌شود', await win.isHidden('#term'));
+
+  await win.click('#btnTerminal');
+  await win.waitForSelector('#term:not([hidden])', { timeout: 5000 });
+  await win.click('#btnTerminal');
+  await win.waitForSelector('#term', { state: 'hidden', timeout: 5000 });
+  check('دکمهٔ بالا هم باز و هم می‌بندد', await win.isHidden('#term'));
+
+  await win.click('#btnTerminal');
+  await win.waitForSelector('#term:not([hidden])', { timeout: 5000 });
+
+  console.log('\n── تغییرِ بلندی با دستگیره ──');
+  const before = (await win.locator('#term').boundingBox()).height;
+  const grip = await win.locator('#termGrip').boundingBox();
+  await win.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await win.mouse.down();
+  await win.mouse.move(grip.x + grip.width / 2, grip.y - 120, { steps: 8 });
+  await win.mouse.up();
+  await win.waitForTimeout(400);
+  const after = (await win.locator('#term').boundingBox()).height;
+  check('کشیدنِ دستگیره ترمینال را بلندتر می‌کند', after > before + 60, `${before} → ${after}`);
+  await win.screenshot({ path: path.join(SHOTS, '4-terminal-resized.png') });
+
+  console.log('\n── پنجرهٔ جداگانه ──');
+  await win.click('#btnPopout');
+  const term = await app.waitForEvent('window', { timeout: 20000 });
+  await term.waitForLoadState('domcontentloaded');
+  check('ترمینال در پنجرهٔ خودش باز شد', (await term.title()) === 'ترمینال — مرکز فرمان', await term.title());
+
+  await term.waitForSelector('#termBody .line', { timeout: 20000 });
+  const popLines = await term.$$eval('#termBody .line', (els) => els.map((e) => e.textContent));
+  check('همان خروجیِ زندهٔ سرور را دارد', popLines.length > 3, `${popLines.length} سطر`);
+  await term.screenshot({ path: path.join(SHOTS, '5-terminal-window.png') });
+
+  await win.waitForSelector('#term', { state: 'hidden', timeout: 5000 });
+  check('در همان حال از صفحهٔ اصلی کنار می‌رود', await win.isHidden('#term'));
+  check('و به کاربر می‌گوید کجاست', await win.isVisible('#termAway'));
+  await win.screenshot({ path: path.join(SHOTS, '6-main-without-terminal.png') });
+
+  // سرور که کار می‌کند، سطرِ تازه باید به پنجرهٔ جدا هم برسد
+  const popBefore = popLines.length;
+  await win.click('#btnRestart');
+  await term.waitForFunction(
+    (n) => document.querySelectorAll('#termBody .line').length > n,
+    popBefore,
+    { timeout: 30000 },
+  );
+  check('سطرهای تازه به پنجرهٔ جدا هم می‌رسند', true);
+
+  await term.click('#btnBack');
+  await win.waitForSelector('#termAway', { state: 'hidden', timeout: 10000 });
+  check('«برگشت به برنامه» ترمینال را برمی‌گرداند', await win.isVisible('#term'));
+
+  await win.waitForSelector('#dot.running', { timeout: 60000 });
   await win.click('#btnClear');
   await win.waitForTimeout(600);
   check('پاک کردنِ ترمینال کار می‌کند', (await win.$$('#termBody .line')).length === 0);

@@ -74,6 +74,7 @@ async function pickPort(preferred = 4700) {
 
 const state = {
   win: null,
+  termWin: null, // پنجرهٔ جدا گانهٔ ترمینال — وقتی کاربر «پنجرهٔ جدا» را می‌زند
   child: null,
   port: 4700,
   url: null,
@@ -86,6 +87,13 @@ const state = {
 
 const MAX_LOG_LINES = 3000;
 
+/** به هر پنجره‌ای که باز است می‌فرستد — هم پوسته، هم ترمینالِ جدا شده */
+function broadcast(channel, payload) {
+  for (const win of [state.win, state.termWin]) {
+    if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
+  }
+}
+
 function pushLog(text, stream = 'out') {
   for (const raw of String(text).split(/\r?\n/)) {
     const line = raw.replace(/\r/g, '').trimEnd();
@@ -93,14 +101,14 @@ function pushLog(text, stream = 'out') {
     const entry = { at: Date.now(), stream, text: line.slice(0, 2000) };
     state.logs.push(entry);
     if (state.logs.length > MAX_LOG_LINES) state.logs.shift();
-    state.win?.webContents.send('log', entry);
+    broadcast('log', entry);
   }
 }
 
 function setStatus(status, error = null) {
   state.status = status;
   state.error = error;
-  state.win?.webContents.send('status', publicState());
+  broadcast('status', publicState());
 }
 
 function publicState() {
@@ -250,9 +258,61 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  // بستنِ پنجرهٔ اصلی یعنی پایانِ کار — ترمینالِ جدا شده هم با آن می‌رود
   state.win.on('closed', () => {
     state.win = null;
+    closeTerminalWindow();
   });
+}
+
+/* --------------------- ترمینال در پنجرهٔ جداگانه ------------------------- */
+
+/** به هر دو پنجره می‌گوید ترمینال الان کجاست: داخلِ برنامه یا پنجرهٔ خودش */
+function announceTerminalPlace() {
+  broadcast('terminal-place', { popped: Boolean(state.termWin && !state.termWin.isDestroyed()) });
+}
+
+function openTerminalWindow() {
+  if (state.termWin && !state.termWin.isDestroyed()) {
+    if (state.termWin.isMinimized()) state.termWin.restore();
+    state.termWin.focus();
+    return;
+  }
+
+  state.termWin = new BrowserWindow({
+    width: 1100,
+    height: 720,
+    minWidth: 480,
+    minHeight: 260,
+    backgroundColor: '#0b0b0b',
+    show: false,
+    title: 'ترمینال — مرکز فرمان',
+    icon: path.join(__dirname, 'assets', 'icon.png'),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  state.termWin.loadFile(path.join(__dirname, 'terminal.html'));
+  state.termWin.once('ready-to-show', () => {
+    // خواستهٔ کاربر: در پنجرهٔ جدا، تمامِ صفحه باشد
+    state.termWin.maximize();
+    state.termWin.show();
+  });
+
+  state.termWin.on('closed', () => {
+    state.termWin = null;
+    // پنجره که بسته شد، ترمینال دوباره به داخلِ برنامه برمی‌گردد
+    announceTerminalPlace();
+  });
+
+  announceTerminalPlace();
+}
+
+function closeTerminalWindow() {
+  if (state.termWin && !state.termWin.isDestroyed()) state.termWin.close();
 }
 
 /* --------------------------------- IPC ---------------------------------- */
@@ -264,6 +324,43 @@ ipcMain.handle('open-browser', () => (state.url ? shell.openExternal(state.url) 
 ipcMain.handle('open-data', () => (state.dataDir ? shell.openPath(state.dataDir) : null));
 ipcMain.handle('clear-logs', () => {
   state.logs = [];
+});
+
+ipcMain.handle('terminal-popout', () => {
+  openTerminalWindow();
+  return { popped: true };
+});
+
+ipcMain.handle('terminal-dock', () => {
+  closeTerminalWindow();
+  return { popped: false };
+});
+
+ipcMain.handle('terminal-place', () => ({
+  popped: Boolean(state.termWin && !state.termWin.isDestroyed()),
+}));
+
+ipcMain.handle('terminal-fullscreen', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return { full: false };
+  const next = !win.isFullScreen();
+  win.setFullScreen(next);
+  return { full: next };
+});
+
+ipcMain.handle('focus-main', () => {
+  if (!state.win || state.win.isDestroyed()) return null;
+  if (state.win.isMinimized()) state.win.restore();
+  state.win.focus();
+  return null;
+});
+
+/* تنظیماتِ کوچکِ رابط (مثلِ بلندیِ ترمینال) — کنارِ بقیهٔ تنظیماتِ برنامه */
+ipcMain.handle('get-ui', () => readSettings().ui || {});
+ipcMain.handle('set-ui', (_event, patch) => {
+  const ui = { ...(readSettings().ui || {}), ...(patch && typeof patch === 'object' ? patch : {}) };
+  writeSettings({ ui });
+  return ui;
 });
 
 ipcMain.handle('setup-needed', () => !readSettings().dataDir);

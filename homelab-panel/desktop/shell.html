@@ -16,7 +16,7 @@
     </span>
     <span class="status" id="statusText">در حال آماده‌سازی…</span>
     <span class="spacer"></span>
-    <button class="btn" id="btnTerminal" title="نمایش یا پنهان کردن ترمینال">ترمینال</button>
+    <button class="btn" id="btnTerminal" title="نمایش یا بستن ترمینال">ترمینال</button>
     <button class="btn" id="btnData" title="پوشه‌ای که اطلاعات آنجا ذخیره می‌شود">پوشهٔ اطلاعات</button>
     <button class="btn" id="btnBrowser" title="باز کردن در مرورگر">مرورگر</button>
     <button class="btn" id="btnRestart" title="راه‌اندازی دوباره سرور">راه‌اندازی دوباره</button>
@@ -57,15 +57,27 @@
     </div>
 
     <!-- ───────────────── ترمینال ───────────────── -->
-    <div class="term" id="term">
+    <section class="term" id="term" hidden>
+      <!-- دستگیره: با کشیدنِ آن بلندیِ ترمینال کم و زیاد می‌شود -->
+      <div class="term-grip" id="termGrip" title="برای تغییر بلندی بکشید"></div>
       <div class="term-bar">
         <span class="term-title">ترمینال — خروجی واقعی سرور</span>
         <span class="spacer"></span>
         <label class="follow"><input type="checkbox" id="follow" checked /> دنبال کردن</label>
         <button class="btn tiny" id="btnCopy">کپی</button>
         <button class="btn tiny" id="btnClear">پاک کردن</button>
+        <button class="btn tiny" id="btnPopout" title="بردن ترمینال به پنجرهٔ جداگانه و تمام‌صفحه">پنجرهٔ جدا ⧉</button>
+        <button class="btn tiny close" id="btnTermClose" title="بستن ترمینال" aria-label="بستن ترمینال">✕</button>
       </div>
       <div class="term-body" id="termBody" dir="ltr"></div>
+    </section>
+
+    <!-- وقتی ترمینال در پنجرهٔ خودش است، اینجا فقط یک نوار نازک می‌ماند -->
+    <div class="term-away" id="termAway" hidden>
+      <span>ترمینال در پنجرهٔ جداگانه باز است.</span>
+      <span class="spacer"></span>
+      <button class="btn tiny" id="btnTermFocus">نمایشِ آن پنجره</button>
+      <button class="btn tiny" id="btnTermBack">برگرداندن به این صفحه</button>
     </div>
   </main>
 

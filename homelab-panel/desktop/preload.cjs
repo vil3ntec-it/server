@@ -12,6 +12,16 @@ contextBridge.exposeInMainWorld('cc', {
   openDataFolder: () => ipcRenderer.invoke('open-data'),
   clearLogs: () => ipcRenderer.invoke('clear-logs'),
 
+  // ترمینال: داخلِ برنامه یا در پنجرهٔ خودش
+  popOutTerminal: () => ipcRenderer.invoke('terminal-popout'),
+  dockTerminal: () => ipcRenderer.invoke('terminal-dock'),
+  terminalPlace: () => ipcRenderer.invoke('terminal-place'),
+  toggleFullScreen: () => ipcRenderer.invoke('terminal-fullscreen'),
+  focusMain: () => ipcRenderer.invoke('focus-main'),
+
+  getUi: () => ipcRenderer.invoke('get-ui'),
+  setUi: (patch) => ipcRenderer.invoke('set-ui', patch),
+
   setupNeeded: () => ipcRenderer.invoke('setup-needed'),
   defaultDataDir: () => ipcRenderer.invoke('default-data-dir'),
   chooseFolder: (current) => ipcRenderer.invoke('choose-folder', current),
@@ -26,5 +36,10 @@ contextBridge.exposeInMainWorld('cc', {
     const handler = (_e, s) => fn(s);
     ipcRenderer.on('status', handler);
     return () => ipcRenderer.off('status', handler);
+  },
+  onTerminalPlace: (fn) => {
+    const handler = (_e, place) => fn(place);
+    ipcRenderer.on('terminal-place', handler);
+    return () => ipcRenderer.off('terminal-place', handler);
   },
 });
