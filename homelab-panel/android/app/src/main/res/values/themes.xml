@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- بدون نوار عنوان: چیزی نباید شبیه مرورگر باشد. رنگِ پس‌زمینه همان
+       رنگِ خودِ برنامه است تا موقعِ باز شدن، سفیدیِ ناگهانی دیده نشود. -->
+  <style name="Theme.Tohid" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <item name="android:windowBackground">@color/splash</item>
+    <item name="android:statusBarColor">@color/brand</item>
+    <item name="android:navigationBarColor">@color/splash</item>
+  </style>
+</resources>

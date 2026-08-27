@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- تمِ تاریکِ خودِ برنامه؛ پس‌زمینهٔ پنجره هم باید تیره باشد -->
+  <color name="brand">#0f1420</color>
+  <color name="splash">#0f1420</color>
+</resources>
