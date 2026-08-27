@@ -1,0 +1,65 @@
+name: تست‌ها
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+
+jobs:
+  test:
+    name: پنل و مرکز فرمان
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: homelab-panel/server/package-lock.json
+
+      - name: نصب وابستگی‌ها
+        working-directory: homelab-panel/server
+        run: npm ci
+
+      - name: بررسی سلامت نصب
+        working-directory: homelab-panel/server
+        run: npm run doctor
+
+      - name: آزمون‌ها
+        working-directory: homelab-panel/server
+        run: npm test
+
+  typecheck:
+    name: بررسی نوع‌ها و ساخت رابط کاربری
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: homelab-panel/web/package-lock.json
+
+      - name: نصب وابستگی‌ها
+        working-directory: homelab-panel/web
+        run: npm ci
+
+      - name: ساخت
+        working-directory: homelab-panel/web
+        run: npm run build
+
+      - name: خروجی build نباید با مخزن فرق کند
+        run: |
+          if ! git diff --quiet -- homelab-panel/server/public; then
+            echo "::error::خروجی build با چیزی که در مخزن است فرق دارد."
+            echo "در پوشهٔ web دستور «npm run build» را بزنید و نتیجه را کامیت کنید."
+            git diff --stat -- homelab-panel/server/public
+            exit 1
+          fi
+          echo "خروجی build با مخزن یکی است."
