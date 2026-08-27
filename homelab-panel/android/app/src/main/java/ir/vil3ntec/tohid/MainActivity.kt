@@ -27,7 +27,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.appcompat.app.AlertDialog
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import android.widget.ArrayAdapter
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -103,12 +105,25 @@ class MainActivity : AppCompatActivity() {
   @SuppressLint("SetJavaScriptEnabled")
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    WindowCompat.setDecorFitsSystemWindows(window, true)
+    // اندروید ۱۵ صفحه را لبه‌به‌لبه می‌کند و راهی برای خاموش کردنش نمانده.
+    // اگر فضای نوارها کنار گذاشته نشود، نوار وضعیت (ساعت و باطری) می‌افتد
+    // روی دکمهٔ ورود و تم، و دکمه‌های برگشت و خانهٔ اندروید می‌افتند روی
+    // نوار پایینِ خودِ برنامه.
+    WindowCompat.setDecorFitsSystemWindows(window, false)
 
     prefs = getSharedPreferences("tohid", MODE_PRIVATE)
 
     web = WebView(this)
     setContentView(web)
+
+    ViewCompat.setOnApplyWindowInsetsListener(web) { view, insets ->
+      val bars = insets.getInsets(
+        WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+      )
+      val keyboard = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+      view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, keyboard))
+      WindowInsetsCompat.CONSUMED
+    }
 
     val loader = WebViewAssetLoader.Builder()
       .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
@@ -405,6 +420,47 @@ class MainActivity : AppCompatActivity() {
           var name = a.getAttribute('download') || 'file';
           fetch(href).then(function (r) { return r.blob(); }).then(function (b) { send(b, name); });
         }, true);
+
+        /* ---------------- اسکنر ----------------
+           سه ایراد که روی گوشی دیده می‌شد:
+             • بعد از یک اسکن دوربین می‌خوابید و باید دستی روشن می‌شد
+             • وارد صفحهٔ فروش که می‌شدی گاهی روشن نمی‌شد
+             • وقتی خاموش بود، جای دوربین یک تصویرِ پیش‌فرضِ زشت می‌آمد
+           هر سه از همین‌جا درست می‌شوند؛ خودِ فایلِ برنامه دست نمی‌خورد. */
+
+        // فقط خودِ ویدیو پنهان می‌شود. رنگِ پس‌زمینه دستِ خودِ برنامه
+        // می‌ماند تا در تمِ تاریک و روشن هر دو درست باشد.
+        var css = document.createElement('style');
+        css.textContent = '.scanner-frame video.cam-off{opacity:0;}';
+        document.head.appendChild(css);
+
+        // کاربر خودش دوربین را خاموش کرده؟ آن‌وقت دوباره روشنش نمی‌کنیم.
+        var userStopped = false;
+        document.addEventListener('click', function (e) {
+          var b = e.target && e.target.closest ? e.target.closest('#btn-toggle-scanner') : null;
+          if (b) userStopped = /توقف/.test(b.textContent || '');
+        }, true);
+
+        function modalOpen() {
+          return !!document.querySelector('.modal.open, [id^="modal-"].open');
+        }
+
+        setInterval(function () {
+          // تصویرِ پیش‌فرضِ ویدیو وقتی جریانی نیست
+          var vids = document.querySelectorAll('video');
+          for (var i = 0; i < vids.length; i++) {
+            if (vids[i].srcObject) vids[i].classList.remove('cam-off');
+            else vids[i].classList.add('cam-off');
+          }
+
+          // نگهبانِ دوربینِ صفحهٔ فروش
+          var page = document.getElementById('page-sale');
+          if (!page || page.className.indexOf('active') < 0) return;
+          if (userStopped || modalOpen()) return;
+          var v = document.getElementById('scanner-video');
+          var btn = document.getElementById('btn-toggle-scanner');
+          if (v && btn && !v.srcObject && /شروع/.test(btn.textContent || '')) btn.click();
+        }, 1200);
       })();
     """.trimIndent()
     view.evaluateJavascript(js, null)
