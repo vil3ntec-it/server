@@ -125,7 +125,9 @@ fun SaleScreen(
     }
     val product = d.products.first { it.id == productId }
     ScanFeedback.ok(context)
-    cartStore.set(SalesEngine.addToCart(cart, productId, multiplier.toDouble()))
+    // از خودِ انبارهٔ سبد خوانده می‌شود، نه از مقدارِ لحظهٔ ترکیب: دو
+    // اسکنِ پشتِ سرِ هم نباید همدیگر را پاک کنند
+    cartStore.set(SalesEngine.addToCart(cartStore.lines.value, productId, multiplier.toDouble()))
     selectedId = productId
     toast("${product.name} به سبد اضافه شد")
   }
