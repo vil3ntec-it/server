@@ -55,6 +55,11 @@ fun MoreScreen(store: ShopStore, d: ShopData, onOpen: (String) -> Unit) {
     SectionTitle("بخش‌های دیگر")
     Panel {
       MoreCard(
+        title = "تاریخچه فروش",
+        subtitle = "فاکتورهای ثبت‌شده، مرجوعی و لغو فروش",
+        onClick = { onOpen("sales") },
+      )
+      MoreCard(
         title = "خرید و تأمین‌کننده",
         subtitle = "حساب تأمین‌کننده‌ها و بدهی به آن‌ها",
         onClick = { onOpen("purchasing") },
@@ -181,7 +186,6 @@ fun MoreScreen(store: ShopStore, d: ShopData, onOpen: (String) -> Unit) {
     SectionTitle("در راه")
     Panel {
       listOf(
-        "تاریخچهٔ فروش، مرجوعی و لغو فروش",
         "گزارش‌ها و دفتر رویدادها",
         "اشتراک و همگام‌سازی با سرور",
       ).forEach {

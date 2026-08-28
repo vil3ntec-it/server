@@ -241,4 +241,176 @@ object SalesEngine {
       saleId = saleId,
     )
   }
+
+  /* ========================= لغو فروش و مرجوعی ========================= */
+
+  /**
+   * لغوِ یک فروش.
+   *
+   * فاکتور پاک نمی‌شود، فقط «لغوشده» می‌شود — سابقه‌ای که افتاده نباید
+   * از دفتر برود. موجودی خودبه‌خود برمی‌گردد، چون فروشِ لغوشده در
+   * حسابِ «فروخته‌شده» شمرده نمی‌شود.
+   *
+   * اگر نسیه بوده، فقط همان مقداری از بدهی خنثی می‌شود که هنوز تسویه
+   * نشده — نه کلِ مبلغِ اولیه. وگرنه فروشی که پیش‌تر مرجوعی خورده، با
+   * لغو شدن بدهیِ قرض‌دار را منفی می‌کرد.
+   */
+  fun cancel(d: ShopData, saleId: String, today: String, now: Long, newId: () -> String): Result {
+    val sale = d.sales.find { it.id == saleId } ?: return Result.Failed("فاکتور پیدا نشد")
+    if (sale.status == "cancelled") return Result.Failed("این فاکتور قبلاً لغو شده است")
+
+    var updated = sale.copy(status = "cancelled")
+    val transactions = d.transactions.toMutableList()
+
+    if (sale.debtorId != null) {
+      val outstanding = sale.debtGiven - sale.debtSettled
+      if (outstanding > 0) {
+        transactions += DebtTransaction(
+          id = newId(),
+          debtorId = sale.debtorId,
+          type = "receive",
+          amount = outstanding,
+          date = today,
+          notes = "لغو فروش — فاکتور #${sale.invoiceNumber ?: 0}",
+          createdAt = now,
+        )
+        updated = updated.copy(debtSettled = sale.debtSettled + outstanding)
+      }
+    }
+
+    return Result.Ok(
+      d.copy(
+        sales = d.sales.map { if (it.id == saleId) updated else it },
+        transactions = transactions,
+        auditLog = d.auditLog + AuditEntry(
+          id = newId(),
+          type = "cancel_sale",
+          date = today,
+          refId = saleId,
+          notes = "لغو فروش فاکتور #${sale.invoiceNumber ?: 0}",
+          createdAt = now,
+        ),
+      ),
+      invoiceNumber = sale.invoiceNumber ?: 0,
+      saleId = saleId,
+    )
+  }
+
+  /** جملهٔ هشدارِ پیش از لغو */
+  fun cancelWarning(sale: Sale): String =
+    "فروش #${ir.vil3ntec.tohid.plain(sale.invoiceNumber ?: 0)} لغو می‌شود و موجودی کالاهای آن به انبار برمی‌گردد. سابقه فروش حذف نمی‌شود."
+
+  /** مقداری از یک قلم که هنوز می‌شود برگرداند */
+  fun returnable(item: SaleItem): Double = (item.quantity - item.returnedQty).coerceAtLeast(0.0)
+
+  /**
+   * مرجوعیِ جزئی — چند قلم از یک فاکتور، هرکدام به هر مقدار.
+   *
+   * مبلغِ هر قلم از قیمتِ واقعیِ همان قلم در همان فاکتور حساب می‌شود، نه
+   * از قیمتِ امروز: جنسی که ماه پیش ارزان‌تر فروخته شده، گران‌تر پس
+   * گرفته نمی‌شود.
+   */
+  fun recordReturn(
+    d: ShopData,
+    saleId: String,
+    quantities: Map<String, Double>,
+    reason: String,
+    today: String,
+    now: Long,
+    newId: () -> String,
+  ): Result {
+    val sale = d.sales.find { it.id == saleId } ?: return Result.Failed("فاکتور پیدا نشد")
+
+    val items = d.saleItems.toMutableList()
+    val returns = d.saleReturns.toMutableList()
+    val movements = d.stockMovements.toMutableList()
+    var totalAmount = 0.0
+    var any = false
+
+    d.saleItems.forEachIndexed { index, item ->
+      if (item.saleId != saleId) return@forEachIndexed
+      var quantity = quantities[item.id] ?: return@forEachIndexed
+      if (quantity.isNaN() || quantity <= 0) return@forEachIndexed
+
+      val allowed = returnable(item)
+      if (quantity > allowed) quantity = allowed
+      if (quantity <= 0) return@forEachIndexed
+
+      // قیمتِ همان قلم در همان فاکتور، نه قیمتِ امروز
+      val amount = if (item.quantity > 0) {
+        (item.totalPrice / item.quantity * quantity).roundToLong().toDouble()
+      } else 0.0
+
+      items[index] = item.copy(returnedQty = item.returnedQty + quantity)
+
+      val returnId = newId()
+      returns += SaleReturn(
+        id = returnId,
+        saleId = saleId,
+        saleItemId = item.id,
+        productId = item.productId,
+        quantity = quantity,
+        amount = amount,
+        reason = reason,
+        date = today,
+        createdAt = now,
+      )
+      movements += StockMovement(
+        id = newId(),
+        productId = item.productId,
+        type = "customer_return",
+        qty = quantity,
+        date = today,
+        notes = reason.ifBlank { "مرجوعی فاکتور #${sale.invoiceNumber ?: 0}" },
+        refId = returnId,
+        createdAt = now,
+      )
+      totalAmount += amount
+      any = true
+    }
+
+    if (!any) return Result.Failed("مقدار معتبری برای مرجوعی وارد نشده")
+
+    var updatedSale = sale
+    val transactions = d.transactions.toMutableList()
+
+    // در فروشِ نسیه، معادلِ مرجوعی از حسابِ قرض‌دار کم می‌شود — حداکثر تا
+    // سقفِ بدهیِ باقی‌ماندهٔ همین فروش، تا با لغوِ بعدی منفی نشود
+    if (sale.debtorId != null && totalAmount > 0) {
+      val outstanding = sale.debtGiven - sale.debtSettled
+      val settle = minOf(totalAmount, max(0.0, outstanding))
+      if (settle > 0) {
+        transactions += DebtTransaction(
+          id = newId(),
+          debtorId = sale.debtorId,
+          type = "receive",
+          amount = settle,
+          date = today,
+          notes = "مرجوعی کالا — فاکتور #${sale.invoiceNumber ?: 0}",
+          createdAt = now,
+        )
+        updatedSale = updatedSale.copy(debtSettled = sale.debtSettled + settle)
+      }
+    }
+
+    return Result.Ok(
+      d.copy(
+        sales = d.sales.map { if (it.id == saleId) updatedSale else it },
+        saleItems = items,
+        saleReturns = returns,
+        stockMovements = movements,
+        transactions = transactions,
+        auditLog = d.auditLog + AuditEntry(
+          id = newId(),
+          type = "return",
+          date = today,
+          refId = saleId,
+          notes = "مرجوعی به مبلغ ${money(totalAmount)} افغانی — فاکتور #${sale.invoiceNumber ?: 0}",
+          createdAt = now,
+        ),
+      ),
+      invoiceNumber = sale.invoiceNumber ?: 0,
+      saleId = saleId,
+    )
+  }
 }
