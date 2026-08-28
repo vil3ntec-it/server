@@ -1,6 +1,9 @@
 package ir.vil3ntec.tohid.sync
 
-import org.json.JSONObject
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,6 +14,10 @@ import java.security.spec.ECGenParameterSpec
 
 /**
  *  بررسیِ مجوزِ اشتراک.
+ *
+ *  توکن‌ها با kotlinx ساخته می‌شوند نه org.json — آن یکی روی رایانه فقط
+ *  یک پوستهٔ خالی است و هر متدش خطا می‌دهد، پس بررسیِ مجوز اصلاً قابلِ
+ *  آزمودن نمی‌شد.
  *
  *  اینجا مجوزِ ساختگی نمی‌سازیم که بعد خودمان قبولش کنیم: یک کلیدِ واقعیِ
  *  P-256 ساخته می‌شود، توکن با همان امضا می‌شود، و بعد از همان راهی که
@@ -52,8 +59,10 @@ class LicenseTest {
   }
 
   private fun token(
-    payload: JSONObject,
-    header: JSONObject = JSONObject(mapOf("alg" to "ES256", "typ" to "TLIC")),
+    payload: JsonObject,
+    header: JsonObject = buildJsonObject {
+      put("alg", JsonPrimitive("ES256")); put("typ", JsonPrimitive("TLIC"))
+    },
     signWith: KeyPair = keys,
   ): String {
     val h = encodeUrl(header.toString().toByteArray())
@@ -73,14 +82,22 @@ class LicenseTest {
     exp: Long = now + 30L * 24 * 3600 * 1000,
     subEnds: Long = now + 30L * 24 * 3600 * 1000,
     nbf: Long = now - 60_000,
-  ) = JSONObject(
-    mapOf(
-      "iss" to issuer, "aud" to audience, "duid" to duid, "sub" to "acc-1",
-      "iat" to now, "nbf" to nbf, "exp" to exp, "sub_ends" to subEnds,
-      "feat" to listOf("sync", "multi_device"), "core" to listOf("dashboard", "products", "settings"),
-      "plan" to "pro", "plan_title" to "حرفه‌ای",
-    )
-  )
+  ) = buildJsonObject {
+    put("iss", JsonPrimitive(issuer))
+    put("aud", JsonPrimitive(audience))
+    put("duid", JsonPrimitive(duid))
+    put("sub", JsonPrimitive("acc-1"))
+    put("iat", JsonPrimitive(now))
+    put("nbf", JsonPrimitive(nbf))
+    put("exp", JsonPrimitive(exp))
+    put("sub_ends", JsonPrimitive(subEnds))
+    put("feat", buildJsonArray { add(JsonPrimitive("sync")); add(JsonPrimitive("multi_device")) })
+    put("core", buildJsonArray {
+      add(JsonPrimitive("dashboard")); add(JsonPrimitive("products")); add(JsonPrimitive("settings"))
+    })
+    put("plan", JsonPrimitive("pro"))
+    put("plan_title", JsonPrimitive("حرفه‌ای"))
+  }
 
   /* ------------------------------ پذیرش ------------------------------ */
 
@@ -108,8 +125,12 @@ class LicenseTest {
     val good = token(payload())
     val parts = good.split(".")
     // یک اشتراکِ همیشگی برای خودمان می‌سازیم — باید رد شود
-    val tampered = JSONObject(String(License.decodeUrl(parts[1])))
-      .put("exp", now + 100L * 365 * 24 * 3600 * 1000)
+    val original = kotlinx.serialization.json.Json
+      .parseToJsonElement(String(License.decodeUrl(parts[1])))
+      .let { it as JsonObject }
+    val tampered = JsonObject(
+      original + ("exp" to JsonPrimitive(now + 100L * 365 * 24 * 3600 * 1000))
+    )
     val forged = parts[0] + "." + encodeUrl(tampered.toString().toByteArray()) + "." + parts[2]
     assertEquals("signature", reasonOf(forged))
   }
@@ -136,9 +157,9 @@ class LicenseTest {
   @Test
   fun `الگوریتم دیگری قبول نمی شود`() {
     // «none» همان حمله‌ی کلاسیک روی توکن‌های امضاشده است
-    val none = JSONObject(mapOf("alg" to "none", "typ" to "TLIC"))
+    val none = buildJsonObject { put("alg", JsonPrimitive("none")); put("typ", JsonPrimitive("TLIC")) }
     assertEquals("header", reasonOf(token(payload(), header = none)))
-    val wrongType = JSONObject(mapOf("alg" to "ES256", "typ" to "JWT"))
+    val wrongType = buildJsonObject { put("alg", JsonPrimitive("ES256")); put("typ", JsonPrimitive("JWT")) }
     assertEquals("header", reasonOf(token(payload(), header = wrongType)))
   }
 

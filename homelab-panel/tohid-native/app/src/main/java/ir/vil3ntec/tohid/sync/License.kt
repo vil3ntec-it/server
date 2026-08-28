@@ -1,6 +1,10 @@
 package ir.vil3ntec.tohid.sync
 
-import org.json.JSONObject
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.security.KeyFactory
 import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
@@ -64,16 +68,16 @@ object License {
     val parts = token.split('.')
     if (parts.size != 3) return Verdict.Invalid("format")
 
-    val header: JSONObject
-    val payload: JSONObject
+    val header: JsonObject
+    val payload: JsonObject
     try {
-      header = JSONObject(String(decodeUrl(parts[0]), Charsets.UTF_8))
-      payload = JSONObject(String(decodeUrl(parts[1]), Charsets.UTF_8))
+      header = parser.parseToJsonElement(String(decodeUrl(parts[0]), Charsets.UTF_8)).jsonObject
+      payload = parser.parseToJsonElement(String(decodeUrl(parts[1]), Charsets.UTF_8)).jsonObject
     } catch (e: Exception) {
       return Verdict.Invalid("format")
     }
 
-    if (header.optString("alg") != "ES256" || header.optString("typ") != "TLIC") {
+    if (header.text("alg") != "ES256" || header.text("typ") != "TLIC") {
       return Verdict.Invalid("header")
     }
 
@@ -92,22 +96,22 @@ object License {
     if (!ok) return Verdict.Invalid("signature")
 
     // امضا درست است؛ حالا ببینیم مالِ همین برنامه و همین دستگاه است
-    if (payload.optString("iss") != ISSUER) return Verdict.Invalid("issuer")
-    if (payload.optString("aud") != AUDIENCE) return Verdict.Invalid("audience")
-    if (payload.optString("duid") != deviceUid) return Verdict.Invalid("device_mismatch")
+    if (payload.text("iss") != ISSUER) return Verdict.Invalid("issuer")
+    if (payload.text("aud") != AUDIENCE) return Verdict.Invalid("audience")
+    if (payload.text("duid") != deviceUid) return Verdict.Invalid("device_mismatch")
 
     return Verdict.Valid(
       Payload(
-        deviceUid = payload.optString("duid"),
-        accountId = payload.optString("sub"),
-        issuedAt = payload.optLong("iat"),
-        notBefore = payload.optLong("nbf"),
-        expiresAt = payload.optLong("exp"),
-        subscriptionEndsAt = payload.optLong("sub_ends"),
-        features = payload.optJSONArray("feat").toStringList(),
-        core = payload.optJSONArray("core").toStringList(),
-        plan = payload.optString("plan").ifBlank { null },
-        planTitle = payload.optString("plan_title").ifBlank { null },
+        deviceUid = payload.text("duid"),
+        accountId = payload.text("sub"),
+        issuedAt = payload.number("iat"),
+        notBefore = payload.number("nbf"),
+        expiresAt = payload.number("exp"),
+        subscriptionEndsAt = payload.number("sub_ends"),
+        features = payload.list("feat"),
+        core = payload.list("core"),
+        plan = payload.text("plan").ifBlank { null },
+        planTitle = payload.text("plan_title").ifBlank { null },
       )
     )
   }
@@ -135,10 +139,24 @@ object License {
 
   /* ------------------------------ ریزه‌کاری ------------------------------ */
 
-  private fun org.json.JSONArray?.toStringList(): List<String> {
-    if (this == null) return emptyList()
-    return (0 until length()).mapNotNull { optString(it).takeIf { s -> s.isNotBlank() } }
-  }
+  /*
+   * از kotlinx خوانده می‌شود، نه org.json: آن یکی روی رایانه فقط یک
+   * پوستهٔ خالی است و هر متدش خطا می‌دهد، پس بررسیِ مجوز — که مهم‌ترین
+   * چیز برای سنجیدن است — اصلاً قابلِ آزمودن نمی‌شد.
+   */
+  private val parser = Json { ignoreUnknownKeys = true; isLenient = true }
+
+  private fun JsonObject.text(key: String): String =
+    (this[key] as? kotlinx.serialization.json.JsonPrimitive)
+      ?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.content.orEmpty()
+
+  private fun JsonObject.number(key: String): Long =
+    (this[key] as? kotlinx.serialization.json.JsonPrimitive)?.content?.toDoubleOrNull()?.toLong() ?: 0L
+
+  private fun JsonObject.list(key: String): List<String> =
+    (this[key] as? kotlinx.serialization.json.JsonArray)
+      ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.takeIf { s -> s.isNotBlank() } }
+      .orEmpty()
 
   /** base64url — بدونِ padding، با `-` و `_` به‌جای `+` و `/` */
   fun decodeUrl(text: String): ByteArray = decodeBase64(text.replace('-', '+').replace('_', '/'))

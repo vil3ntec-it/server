@@ -210,11 +210,11 @@ class SyncEngineTest {
 
   @Test
   fun `اثر انگشت با هر تغییر کوچکی عوض می شود`() {
-    val a = SyncEngine.collect(base, SyncEngine.Shadow(), 1).changes.first()
-    val b = SyncEngine.collect(
-      base.copy(products = listOf(base.products.single().copy(minStock = 1.0))),
-      SyncEngine.Shadow(), 1,
-    ).changes.first()
+    fun productChange(d: ShopData) = SyncEngine.collect(d, SyncEngine.Shadow(), 1).changes
+      .first { it.jsonObject["collection"]!!.jsonPrimitive.content == "products" }
+
+    val a = productChange(base)
+    val b = productChange(base.copy(products = listOf(base.products.single().copy(minStock = 1.0))))
     assertTrue(SyncEngine.fingerprint(a.jsonObject["data"]!!) != SyncEngine.fingerprint(b.jsonObject["data"]!!))
   }
 }

@@ -8,7 +8,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.json.JSONObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -34,13 +35,14 @@ class ServerClient(private val baseUrl: String) {
   /* ------------------------------ حساب ------------------------------ */
 
   suspend fun register(name: String, email: String, phone: String, password: String): JsonObject =
-    post("/api/v1/auth/register", buildBody {
-      put("name", name); put("email", email); put("phone", phone); put("password", password)
+    post("/api/v1/auth/register", buildJsonObject {
+      put("name", JsonPrimitive(name)); put("email", JsonPrimitive(email))
+      put("phone", JsonPrimitive(phone)); put("password", JsonPrimitive(password))
     })
 
   suspend fun login(identifier: String, password: String): Session {
-    val body = post("/api/v1/auth/login", buildBody {
-      put("identifier", identifier); put("password", password)
+    val body = post("/api/v1/auth/login", buildJsonObject {
+      put("identifier", JsonPrimitive(identifier)); put("password", JsonPrimitive(password))
     })
     val access = body["accessToken"]?.jsonPrimitive?.content
       ?: throw ServerError("سرور توکن نداد", "bad_response")
@@ -54,7 +56,7 @@ class ServerClient(private val baseUrl: String) {
   }
 
   suspend fun refresh(refreshToken: String): String =
-    post("/api/v1/auth/refresh", buildBody { put("refreshToken", refreshToken) })["accessToken"]
+    post("/api/v1/auth/refresh", buildJsonObject { put("refreshToken", JsonPrimitive(refreshToken)) })["accessToken"]
       ?.jsonPrimitive?.content ?: throw ServerError("توکن تازه نشد", "bad_response")
 
   /* ------------------------------ اشتراک ------------------------------ */
@@ -67,8 +69,11 @@ class ServerClient(private val baseUrl: String) {
   suspend fun license(token: String, deviceUid: String, deviceName: String): JsonObject =
     post(
       "/api/v1/license/sync",
-      buildBody {
-        put("device", JSONObject(mapOf("uid" to deviceUid, "name" to deviceName)))
+      buildJsonObject {
+        put("device", buildJsonObject {
+          put("uid", JsonPrimitive(deviceUid))
+          put("name", JsonPrimitive(deviceName))
+        })
       },
       token,
     )
@@ -81,18 +86,18 @@ class ServerClient(private val baseUrl: String) {
   suspend fun shopMe(token: String): JsonObject = get("/api/v1/shop/me", token)
 
   suspend fun createShop(token: String, name: String): JsonObject =
-    post("/api/v1/shop/create", buildBody { put("name", name) }, token)
+    post("/api/v1/shop/create", buildJsonObject { put("name", JsonPrimitive(name)) }, token)
 
   suspend fun joinShop(token: String, code: String): JsonObject =
-    post("/api/v1/shop/join", buildBody { put("code", code) }, token)
+    post("/api/v1/shop/join", buildJsonObject { put("code", JsonPrimitive(code)) }, token)
 
   suspend fun push(token: String, deviceId: String, changes: JsonArray, settings: JsonObject): JsonObject =
     post(
       "/api/v1/shop/sync/push",
-      JSONObject().apply {
-        put("deviceId", deviceId)
-        put("changes", org.json.JSONArray(changes.toString()))
-        put("settings", JSONObject(settings.toString()))
+      buildJsonObject {
+        put("deviceId", JsonPrimitive(deviceId))
+        put("changes", changes)
+        put("settings", settings)
       },
       token,
     )
@@ -114,18 +119,16 @@ class ServerClient(private val baseUrl: String) {
 
   /* ------------------------------ لایهٔ HTTP ------------------------------ */
 
-  private fun buildBody(build: JSONObject.() -> Unit) = JSONObject().apply(build)
-
   private suspend fun get(path: String, token: String? = null): JsonObject =
     request("GET", path, null, token)
 
-  private suspend fun post(path: String, body: JSONObject, token: String? = null): JsonObject =
+  private suspend fun post(path: String, body: JsonObject, token: String? = null): JsonObject =
     request("POST", path, body, token)
 
   private suspend fun request(
     method: String,
     path: String,
-    body: JSONObject?,
+    body: JsonObject?,
     token: String?,
   ): JsonObject = withContext(Dispatchers.IO) {
     val base = baseUrl.trim().trimEnd('/')
