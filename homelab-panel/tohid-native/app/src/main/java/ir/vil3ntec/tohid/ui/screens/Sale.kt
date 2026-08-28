@@ -59,6 +59,7 @@ fun SaleScreen(
   cartStore: CartStore,
   d: ShopData,
   snackbar: SnackbarHostState,
+  onRegisterBarcode: (String) -> Unit,
 ) {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
@@ -117,10 +118,17 @@ fun SaleScreen(
     val productId = index[code]
     if (productId == null) {
       ScanFeedback.unknown(context)
-      // بارکد گم نمی‌شود: در کادرِ دستی می‌ماند تا هنگام ثبتِ کالا
-      // بشود همان را گذاشت
+      // بارکد گم نمی‌شود: هم در کادرِ دستی می‌ماند، هم می‌شود همان‌جا
+      // کالای تازه‌اش را ثبت کرد و برگشت
       manual = code
-      toast("بارکد ناشناس — این کالا هنوز ثبت نشده است")
+      scope.launch {
+        val answer = snackbar.showSnackbar(
+          message = "بارکد ناشناس — این کالا هنوز ثبت نشده است",
+          actionLabel = "ثبت کالا",
+          duration = SnackbarDuration.Long,
+        )
+        if (answer == SnackbarResult.ActionPerformed) onRegisterBarcode(code)
+      }
       return
     }
     val product = d.products.first { it.id == productId }

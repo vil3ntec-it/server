@@ -27,6 +27,11 @@ data class Product(
   val minStock: Double = 0.0,
   val notes: String = "",
   val barcodes: List<String> = emptyList(),
+  /**
+   * فقط یک نشانه است، نه خودِ عکس: عکس‌ها جای دیگری نگهداری می‌شدند.
+   * نگه داشته می‌شود تا با نوشتنِ دوبارهٔ دفتر پاک نشود.
+   */
+  val photo: Boolean = false,
   val createdAt: Long = 0,
 )
 
@@ -41,6 +46,8 @@ data class WarehouseEntry(
   val price: Double = 0.0,
   val date: String = "",
   val notes: String = "",
+  /** ردیفِ «اصلاح موجودی»، نه ورودِ واقعیِ کالا */
+  val isAdjustment: Boolean = false,
   val createdAt: Long = 0,
 )
 

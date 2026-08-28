@@ -35,6 +35,8 @@ fun AppRoot(store: ShopStore) {
   val cartStore = remember { CartStore(context) }
   var tab by rememberSaveable { mutableStateOf("dashboard") }
   var migration by remember { mutableStateOf<String?>(null) }
+  // بارکدی که در فروش خوانده شد ولی کالایش ثبت نبود
+  var pendingBarcode by remember { mutableStateOf<String?>(null) }
 
   // یک بار، هنگام اولین اجرا: دفترِ دکان از نسخهٔ قبلی آورده می‌شود
   LaunchedEffect(Unit) {
@@ -82,9 +84,18 @@ fun AppRoot(store: ShopStore) {
     ) {
       when (tab) {
         "dashboard" -> DashboardScreen(data)
-        "sale" -> SaleScreen(store, cartStore, data, snackbar)
+        "sale" -> SaleScreen(store, cartStore, data, snackbar) { code ->
+          pendingBarcode = code
+          tab = "warehouse"
+        }
         "debtors" -> DebtorsScreen(data)
-        "warehouse" -> ComingSoon("انبار", "موجودی، ورود کالا و حرکات انبار")
+        "warehouse" -> WarehouseScreen(
+          store = store,
+          d = data,
+          snackbar = snackbar,
+          newBarcode = pendingBarcode,
+          onConsumed = { pendingBarcode = null },
+        )
         "more" -> MoreScreen(store, data)
       }
     }
