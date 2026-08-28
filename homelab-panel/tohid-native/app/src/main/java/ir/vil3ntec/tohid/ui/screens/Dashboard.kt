@@ -6,6 +6,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import ir.vil3ntec.tohid.data.ShopData
@@ -41,13 +46,25 @@ fun DashboardScreen(d: ShopData) {
       .verticalScroll(rememberScrollState())
       .padding(16.dp)
   ) {
-    Text("داشبورد", style = MaterialTheme.typography.headlineMedium, color = Shop.colors.text)
-    Spacer(Modifier.height(4.dp))
-    Text(
-      "خلاصهٔ امروزِ دکان",
-      style = MaterialTheme.typography.bodySmall,
-      color = Shop.colors.muted,
-    )
+    // سربرگ: عنوان در یک طرف، نشانِ طلایی اشتراک در طرف دیگر — مثل وب
+    var vipOpen by remember { mutableStateOf(false) }
+    Row(
+      Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+      Column {
+        Text("داشبورد", style = MaterialTheme.typography.headlineMedium, color = Shop.colors.text)
+        Spacer(Modifier.height(4.dp))
+        Text(
+          "خلاصهٔ امروزِ دکان",
+          style = MaterialTheme.typography.bodySmall,
+          color = Shop.colors.muted,
+        )
+      }
+      VipBadge(onClick = { vipOpen = true })
+    }
+    if (vipOpen) VipSheet { vipOpen = false }
     Spacer(Modifier.height(16.dp))
 
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

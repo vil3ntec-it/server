@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.lifecycle.lifecycleScope
 import ir.vil3ntec.tohid.data.ShopStore
 import ir.vil3ntec.tohid.ui.AppRoot
+import ir.vil3ntec.tohid.ui.screens.WelcomeScreen
 import ir.vil3ntec.tohid.ui.theme.ThemeChoice
 import ir.vil3ntec.tohid.ui.theme.TohidTheme
 import kotlinx.coroutines.launch
@@ -36,17 +37,28 @@ class MainActivity : ComponentActivity() {
         )
       }
 
+      // دروازهٔ ورود فقط بارِ اول می‌آید: یا وارد می‌شوید یا «ادامه بدون
+      // حساب» را می‌زنید. از آن به بعد سرِ راه کسی نمی‌ایستد.
+      var welcomed by remember { mutableStateOf(prefs.getBoolean("welcomed", false)) }
+
       TohidTheme(theme) {
         // کلِ برنامه راست‌به‌چپ است
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-          AppRoot(
-            store = store,
-            theme = theme,
-            onTheme = {
-              theme = it
-              prefs.edit().putString("theme", it.name).apply()
-            },
-          )
+          if (!welcomed) {
+            WelcomeScreen {
+              prefs.edit().putBoolean("welcomed", true).apply()
+              welcomed = true
+            }
+          } else {
+            AppRoot(
+              store = store,
+              theme = theme,
+              onTheme = {
+                theme = it
+                prefs.edit().putString("theme", it.name).apply()
+              },
+            )
+          }
         }
       }
     }
