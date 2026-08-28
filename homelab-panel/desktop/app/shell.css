@@ -60,7 +60,22 @@ body { display: flex; flex-direction: column; }
 
 @keyframes pulse { 50% { opacity: .35; } }
 
-.status { color: var(--text-muted); font-size: 12px; }
+/*
+ * نوارِ بالا نباید بلندتر و کوتاه‌تر شود.
+ *
+ * وضعیت گاهی کوتاه است («در حال اجرا») و گاهی بلند (نشانیِ کامل یا متنِ
+ * خطا). بدونِ این، متنِ بلند به سطر دوم می‌رفت، نوار یک سطر بلندتر
+ * می‌شد و هرچه زیرش بود — از جمله دستگیرهٔ ترمینال — چند پیکسل پایین
+ * می‌پرید. برای کسی که همان لحظه دستگیره را گرفته، یعنی از دستش در رفت.
+ */
+.status {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
 .spacer { flex: 1; }
 
 .btn {
@@ -185,9 +200,15 @@ webview { width: 100%; height: 100%; border: 0; display: flex; }
   overflow: hidden;
 }
 
-/* دستگیرهٔ تغییرِ بلندی */
+/*
+ * دستگیرهٔ تغییرِ بلندی.
+ *
+ * نوارِ هفت پیکسلی برای گرفتن باریک بود — با ماوس هم به‌سختی و با انگشت
+ * تقریباً نه. خطِ دیده‌شده همان‌قدر باریک مانده، ولی ناحیه‌ای که رویداد
+ * را می‌گیرد پهن‌تر است.
+ */
 .term-grip {
-  height: 7px;
+  height: 12px;
   flex-shrink: 0;
   cursor: ns-resize;
   background: var(--surface-1);
@@ -196,7 +217,7 @@ webview { width: 100%; height: 100%; border: 0; display: flex; }
 .term-grip::after {
   content: '';
   position: absolute;
-  top: 3px;
+  top: 5px;
   left: 50%;
   transform: translateX(-50%);
   width: 46px;

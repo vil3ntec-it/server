@@ -118,9 +118,26 @@ try {
 
   console.log('\n── تغییرِ بلندی با دستگیره ──');
   const before = (await win.locator('#term').boundingBox()).height;
+
+  /*
+   * جای دستگیره درست پیش از فشار دادن اندازه گرفته می‌شود و همان‌جا
+   * سنجیده می‌شود که گرفتن واقعاً شروع شده یا نه.
+   *
+   * قبلاً اگر فشار به دستگیره نمی‌خورد، آزمون فقط می‌گفت «۲۴۰ → ۲۴۰» و
+   * معلوم نبود کشیدن خراب است یا فشار اصلاً به هدف نخورده. حالا اگر
+   * نخورد، همان لحظه معلوم می‌شود.
+   */
+  let started = false;
+  for (let attempt = 0; attempt < 2 && !started; attempt++) {
+    const grip = await win.locator('#termGrip').boundingBox();
+    await win.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+    await win.mouse.down();
+    started = await win.evaluate(() => document.body.classList.contains('resizing'));
+    if (!started) await win.mouse.up();
+  }
+  check('فشار روی دستگیره گرفته می‌شود', started);
+
   const grip = await win.locator('#termGrip').boundingBox();
-  await win.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
-  await win.mouse.down();
   await win.mouse.move(grip.x + grip.width / 2, grip.y - 120, { steps: 8 });
   await win.mouse.up();
   await win.waitForTimeout(400);
