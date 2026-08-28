@@ -15,9 +15,16 @@ android {
     applicationId = "ir.vil3ntec.tohid"
     minSdk = 24
     targetSdk = 35
-    versionCode = 3
-    versionName = "2.1.0"
+    versionCode = 4
+    versionName = "2.1.1"
     resourceConfigurations += listOf("fa", "en")
+
+    ndk {
+      // فقط پردازندهٔ گوشی‌های واقعی. نسخه‌های x86 فقط به دردِ
+      // شبیه‌سازِ رایانه می‌خورند و ۱۲ مگابایت الکی به فایلِ نصبی
+      // اضافه می‌کنند — یعنی همان‌قدر اینترنت، هر بار.
+      abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+    }
   }
 
   signingConfigs {
@@ -32,8 +39,9 @@ android {
   buildTypes {
     release {
       signingConfig = signingConfigs.getByName("release")
-      isMinifyEnabled = false
-      isShrinkResources = false
+      isMinifyEnabled = true
+      isShrinkResources = true
+      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
     }
   }
 
