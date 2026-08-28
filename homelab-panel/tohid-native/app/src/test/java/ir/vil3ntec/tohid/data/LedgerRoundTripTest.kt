@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -38,7 +39,7 @@ class LedgerRoundTripTest {
     "productUnits": ["عدد","کیلوگرم"],
     "warehouseEntries": [
       {"id":"w1","productId":"p1","cartons":4,"perCarton":25,"units":100,"unit":"کیلو","price":200,
-       "date":"2026-08-02","notes":"از تأمین‌کننده","createdAt":1700000000000},
+       "date":"2026-08-02","notes":"از تأمین‌کننده","purchaseId":"pu1","createdAt":1700000000000},
       {"id":"w2","productId":"p1","cartons":0,"perCarton":0,"units":-3,"unit":"کیلو","price":0,
        "date":"2026-08-10","notes":"خراب شد","isAdjustment":true,"createdAt":1700000000000}
     ],
@@ -81,6 +82,8 @@ class LedgerRoundTripTest {
     assertEquals(true, decoded.products.single().photo)
     assertEquals(280.0, decoded.products.single().wholesalePrice, 0.0)
     assertEquals(true, decoded.warehouseEntries.first { it.id == "w2" }.isAdjustment)
+    assertEquals("pu1", decoded.warehouseEntries.first { it.id == "w1" }.purchaseId)
+    assertNull(decoded.warehouseEntries.first { it.id == "w2" }.purchaseId)
     assertEquals(false, decoded.warehouseEntries.first { it.id == "w1" }.isAdjustment)
     assertEquals(0.5, decoded.saleItems.single().returnedQty, 0.0)
     assertEquals("w1", decoded.purchases.single().warehouseEntryId)

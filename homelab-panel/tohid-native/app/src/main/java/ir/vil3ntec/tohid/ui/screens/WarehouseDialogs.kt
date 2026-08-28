@@ -125,7 +125,7 @@ fun ProductDialog(
         }
 
         Spacer(Modifier.height(14.dp))
-        Picker(
+        ChipPicker(
           title = "واحد",
           options = d.productUnits,
           selected = form.unit,
@@ -134,7 +134,7 @@ fun ProductDialog(
         )
 
         Spacer(Modifier.height(14.dp))
-        Picker(
+        ChipPicker(
           title = "دسته‌بندی",
           options = d.productCategories,
           selected = form.category,
@@ -234,7 +234,7 @@ fun EntryDialog(
         }
 
         Spacer(Modifier.height(14.dp))
-        Picker(
+        ChipPicker(
           title = "واحد اندازه‌گیری",
           options = d.productUnits,
           selected = unit,
@@ -349,92 +349,6 @@ fun AdjustDialog(
 
 /* ============================ ریزه‌کاری ============================ */
 
-/**
- * کادرِ عدد.
- *
- * صفحه‌کلیدِ عددی باز می‌شود و فقط رقم و نقطه پذیرفته می‌شود — رقمِ فارسی
- * هم به لاتین برمی‌گردد، چون بعضی صفحه‌کلیدها فارسی می‌فرستند و
- * `toDouble` آن را نمی‌شناسد.
- */
-@Composable
-private fun NumberField(
-  value: String,
-  onValueChange: (String) -> Unit,
-  label: String,
-  modifier: Modifier = Modifier,
-) {
-  OutlinedTextField(
-    value = value,
-    onValueChange = { raw -> onValueChange(latinDigits(raw).filter { it.isDigit() || it == '.' }) },
-    label = { Text(label) },
-    singleLine = true,
-    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-    modifier = modifier,
-  )
-}
-
-private fun latinDigits(text: String): String = text.map { c ->
-  when (c) {
-    in '۰'..'۹' -> '0' + (c - '۰')
-    in '٠'..'٩' -> '0' + (c - '٠')
-    '٫', '٬' -> '.'
-    else -> c
-  }
-}.joinToString("")
-
-/** انتخاب از فهرست، با امکانِ نوشتنِ مقدارِ تازه */
-@Composable
-private fun Picker(
-  title: String,
-  options: List<String>,
-  selected: String,
-  onSelect: (String) -> Unit,
-  placeholder: String,
-) {
-  var adding by remember { mutableStateOf(false) }
-  var fresh by remember { mutableStateOf("") }
-
-  Text(title, style = MaterialTheme.typography.labelMedium, color = Shop.colors.muted)
-  Spacer(Modifier.height(6.dp))
-
-  Row(
-    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-    horizontalArrangement = Arrangement.spacedBy(6.dp),
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    // مقدارِ فعلی ممکن است در فهرست نباشد (از نسخهٔ قبلی آمده)
-    val all = if (selected.isNotBlank() && !options.contains(selected)) options + selected else options
-    all.forEach { option ->
-      FilterChip(
-        selected = selected == option,
-        onClick = { onSelect(if (selected == option) "" else option) },
-        label = { Text(option) },
-      )
-    }
-    AssistChip(onClick = { adding = !adding }, label = { Text("+ تازه") })
-  }
-
-  if (adding) {
-    Spacer(Modifier.height(8.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-      OutlinedTextField(
-        value = fresh,
-        onValueChange = { fresh = it },
-        placeholder = { Text(placeholder) },
-        singleLine = true,
-        modifier = Modifier.weight(1f),
-      )
-      Button(onClick = {
-        val v = fresh.trim()
-        if (v.isNotEmpty()) {
-          onSelect(v)
-          fresh = ""
-          adding = false
-        }
-      }) { Text("افزودن") }
-    }
-  }
-}
 
 @Composable
 private fun <T> Segment(options: List<Pair<String, T>>, selected: T, onSelect: (T) -> Unit) {

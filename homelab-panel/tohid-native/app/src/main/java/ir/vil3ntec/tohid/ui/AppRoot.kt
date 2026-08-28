@@ -1,5 +1,6 @@
 package ir.vil3ntec.tohid.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -24,8 +25,10 @@ private val TABS = listOf(
   Tab("sale", "فروش", Icons.Filled.PointOfSale),
   Tab("debtors", "قرض‌داران", Icons.Filled.Groups),
   Tab("warehouse", "انبار", Icons.Filled.Inventory2),
+  Tab("expenses", "مصارف", Icons.Filled.BarChart),
   Tab("more", "بیشتر", Icons.Filled.MoreHoriz),
 )
+
 
 @Composable
 fun AppRoot(store: ShopStore) {
@@ -37,6 +40,8 @@ fun AppRoot(store: ShopStore) {
   var migration by remember { mutableStateOf<String?>(null) }
   // بارکدی که در فروش خوانده شد ولی کالایش ثبت نبود
   var pendingBarcode by remember { mutableStateOf<String?>(null) }
+  // صفحهٔ فرعیِ باز، اگر باز باشد
+  var sub by rememberSaveable { mutableStateOf<String?>(null) }
 
   // یک بار، هنگام اولین اجرا: دفترِ دکان از نسخهٔ قبلی آورده می‌شود
   LaunchedEffect(Unit) {
@@ -47,6 +52,9 @@ fun AppRoot(store: ShopStore) {
       .onSuccess { migration = "اطلاعات نسخهٔ قبلی آورده شد" }
       .onFailure { migration = "اطلاعات نسخهٔ قبلی خوانده نشد" }
   }
+
+  // دکمهٔ برگشتِ گوشی از صفحهٔ فرعی برمی‌گردد، نه اینکه برنامه را ببندد
+  BackHandler(enabled = sub != null) { sub = null }
 
   val snackbar = remember { SnackbarHostState() }
   LaunchedEffect(migration) {
@@ -60,8 +68,8 @@ fun AppRoot(store: ShopStore) {
       NavigationBar(containerColor = Shop.colors.surface, tonalElevation = 0.dp) {
         TABS.forEach { t ->
           NavigationBarItem(
-            selected = tab == t.id,
-            onClick = { tab = t.id },
+            selected = tab == t.id && sub == null,
+            onClick = { tab = t.id; sub = null },
             icon = { Icon(t.icon, contentDescription = t.label) },
             label = { Text(t.label, style = MaterialTheme.typography.labelSmall) },
             colors = NavigationBarItemDefaults.colors(
@@ -82,7 +90,9 @@ fun AppRoot(store: ShopStore) {
         .fillMaxSize()
         .background(Shop.colors.bg)
     ) {
-      when (tab) {
+      when (sub ?: tab) {
+        "purchasing" -> PurchasingScreen(store, data, snackbar)
+        "expenses" -> ExpensesScreen(store, data, snackbar)
         "dashboard" -> DashboardScreen(data)
         "sale" -> SaleScreen(store, cartStore, data, snackbar) { code ->
           pendingBarcode = code
@@ -96,7 +106,7 @@ fun AppRoot(store: ShopStore) {
           newBarcode = pendingBarcode,
           onConsumed = { pendingBarcode = null },
         )
-        "more" -> MoreScreen(store, data)
+        "more" -> MoreScreen(store, data) { sub = it }
       }
     }
   }

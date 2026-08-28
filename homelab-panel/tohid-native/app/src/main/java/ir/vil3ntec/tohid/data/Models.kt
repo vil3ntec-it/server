@@ -48,6 +48,8 @@ data class WarehouseEntry(
   val notes: String = "",
   /** ردیفِ «اصلاح موجودی»، نه ورودِ واقعیِ کالا */
   val isAdjustment: Boolean = false,
+  /** اگر این ورودی از ثبتِ یک خرید آمده باشد، شناسهٔ همان خرید */
+  val purchaseId: String? = null,
   val createdAt: Long = 0,
 )
 

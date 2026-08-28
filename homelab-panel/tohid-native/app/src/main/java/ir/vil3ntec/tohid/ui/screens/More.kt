@@ -1,11 +1,13 @@
 package ir.vil3ntec.tohid.ui.screens
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -21,7 +23,7 @@ import kotlinx.coroutines.launch
  *  بیشتر — وضعیت برنامه، به‌روزرسانی، و بخش‌هایی که هنوز در راه‌اند.
  */
 @Composable
-fun MoreScreen(store: ShopStore, d: ShopData) {
+fun MoreScreen(store: ShopStore, d: ShopData, onOpen: (String) -> Unit) {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val prefs = remember { context.getSharedPreferences("tohid", android.content.Context.MODE_PRIVATE) }
@@ -47,6 +49,16 @@ fun MoreScreen(store: ShopStore, d: ShopData) {
       InfoRow("قرض‌داران", d.debtors.size.fa())
       InfoRow("مصارف", d.expenses.size.fa())
       InfoRow("تأمین‌کننده‌ها", d.suppliers.size.fa())
+    }
+
+    Spacer(Modifier.height(20.dp))
+    SectionTitle("بخش‌های دیگر")
+    Panel {
+      MoreCard(
+        title = "خرید و تأمین‌کننده",
+        subtitle = "حساب تأمین‌کننده‌ها و بدهی به آن‌ها",
+        onClick = { onOpen("purchasing") },
+      )
     }
 
     Spacer(Modifier.height(20.dp))
@@ -169,7 +181,7 @@ fun MoreScreen(store: ShopStore, d: ShopData) {
     SectionTitle("در راه")
     Panel {
       listOf(
-        "مصارف و خرید و تأمین‌کننده",
+        "تاریخچهٔ فروش، مرجوعی و لغو فروش",
         "گزارش‌ها و دفتر رویدادها",
         "اشتراک و همگام‌سازی با سرور",
       ).forEach {
@@ -182,6 +194,24 @@ fun MoreScreen(store: ShopStore, d: ShopData) {
       }
     }
     Spacer(Modifier.height(24.dp))
+  }
+}
+
+@Composable
+private fun MoreCard(title: String, subtitle: String, onClick: () -> Unit) {
+  Row(
+    Modifier
+      .fillMaxWidth()
+      .clip(androidx.compose.foundation.shape.RoundedCornerShape(ir.vil3ntec.tohid.ui.theme.Radius.sm))
+      .clickable(onClick = onClick)
+      .padding(vertical = 10.dp, horizontal = 4.dp),
+    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+  ) {
+    Column(Modifier.weight(1f)) {
+      Text(title, style = MaterialTheme.typography.titleSmall, color = Shop.colors.text)
+      Text(subtitle, style = MaterialTheme.typography.labelSmall, color = Shop.colors.muted)
+    }
+    Text("‹", style = MaterialTheme.typography.headlineSmall, color = Shop.colors.muted2)
   }
 }
 
