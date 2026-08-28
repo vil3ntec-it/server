@@ -26,6 +26,7 @@ private val TABS = listOf(
   Tab("debtors", "قرض‌داران", Icons.Filled.Groups),
   Tab("warehouse", "انبار", Icons.Filled.Inventory2),
   Tab("expenses", "مصارف", Icons.Filled.BarChart),
+  Tab("products", "محصولات", Icons.Filled.ShoppingBag),
   Tab("more", "بیشتر", Icons.Filled.MoreHoriz),
 )
 
@@ -44,6 +45,8 @@ fun AppRoot(
   var migration by remember { mutableStateOf<String?>(null) }
   // بارکدی که در فروش خوانده شد ولی کالایش ثبت نبود
   var pendingBarcode by remember { mutableStateOf<String?>(null) }
+  // کالایی که از صفحهٔ محصولات، در انبار باز می‌شود
+  var pendingProduct by remember { mutableStateOf<String?>(null) }
   // صفحهٔ فرعیِ باز، اگر باز باشد
   var sub by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -108,12 +111,17 @@ fun AppRoot(
           tab = "warehouse"
         }
         "debtors" -> DebtorsScreen(store, data, snackbar)
+        "products" -> ProductsScreen(store, data, snackbar) { productId ->
+          pendingProduct = productId
+          tab = "warehouse"
+        }
         "warehouse" -> WarehouseScreen(
           store = store,
           d = data,
           snackbar = snackbar,
+          openProductId = pendingProduct,
           newBarcode = pendingBarcode,
-          onConsumed = { pendingBarcode = null },
+          onConsumed = { pendingBarcode = null; pendingProduct = null },
         )
         "more" -> MoreScreen(store, data) { sub = it }
       }
