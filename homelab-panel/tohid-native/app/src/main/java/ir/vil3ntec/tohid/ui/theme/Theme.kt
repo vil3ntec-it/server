@@ -88,11 +88,19 @@ object Shop {
     @Composable get() = LocalShopColors.current
 }
 
+/** انتخابِ کاربر برای ظاهر — همان `theme` در تنظیماتِ نسخهٔ وب */
+enum class ThemeChoice { SYSTEM, LIGHT, DARK }
+
 @Composable
 fun TohidTheme(
-  dark: Boolean = isSystemInDarkTheme(),
+  choice: ThemeChoice = ThemeChoice.SYSTEM,
   content: @Composable () -> Unit,
 ) {
+  val dark = when (choice) {
+    ThemeChoice.LIGHT -> false
+    ThemeChoice.DARK -> true
+    ThemeChoice.SYSTEM -> isSystemInDarkTheme()
+  }
   val colors = if (dark) DarkColors else LightColors
   val scheme = if (dark) {
     darkColorScheme(

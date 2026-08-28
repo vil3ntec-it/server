@@ -31,7 +31,11 @@ private val TABS = listOf(
 
 
 @Composable
-fun AppRoot(store: ShopStore) {
+fun AppRoot(
+  store: ShopStore,
+  theme: ir.vil3ntec.tohid.ui.theme.ThemeChoice,
+  onTheme: (ir.vil3ntec.tohid.ui.theme.ThemeChoice) -> Unit,
+) {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val data by store.data.collectAsState()
@@ -95,6 +99,7 @@ fun AppRoot(store: ShopStore) {
         "sales" -> SalesHistoryScreen(store, data, snackbar)
         "reports" -> ReportsScreen(data)
         "audit" -> AuditLogScreen(data)
+        "settings" -> SettingsScreen(store, data, snackbar, theme, onTheme)
         "expenses" -> ExpensesScreen(store, data, snackbar)
         "dashboard" -> DashboardScreen(data)
         "sale" -> SaleScreen(store, cartStore, data, snackbar) { code ->

@@ -20,7 +20,8 @@ import ir.vil3ntec.tohid.ui.theme.Shop
 import kotlinx.coroutines.launch
 
 /**
- *  بیشتر — وضعیت برنامه، به‌روزرسانی، و بخش‌هایی که هنوز در راه‌اند.
+ *  بیشتر — وضعیت برنامه، به‌روزرسانی، و راهِ ورود به بخش‌هایی که در
+ *  نوارِ پایین جا نمی‌شوند.
  */
 @Composable
 fun MoreScreen(store: ShopStore, d: ShopData, onOpen: (String) -> Unit) {
@@ -29,7 +30,6 @@ fun MoreScreen(store: ShopStore, d: ShopData, onOpen: (String) -> Unit) {
   val prefs = remember { context.getSharedPreferences("tohid", android.content.Context.MODE_PRIVATE) }
 
   var repo by remember { mutableStateOf(prefs.getString("update_repo", "vil3ntec-it/server") ?: "") }
-  var storeName by remember { mutableStateOf(prefs.getString("store_name", "") ?: "") }
   var status by remember { mutableStateOf<String?>(null) }
   var found by remember { mutableStateOf<Updater.Release?>(null) }
   var progress by remember { mutableStateOf(-1) }
@@ -74,27 +74,10 @@ fun MoreScreen(store: ShopStore, d: ShopData, onOpen: (String) -> Unit) {
         subtitle = "هر کاری که در برنامه انجام شده",
         onClick = { onOpen("audit") },
       )
-    }
-
-    Spacer(Modifier.height(20.dp))
-    SectionTitle("فروشگاه")
-    Panel {
-      Text(
-        "این نام روی سربرگ فاکتور چاپ می‌شود.",
-        style = MaterialTheme.typography.bodySmall,
-        color = Shop.colors.muted,
-      )
-      Spacer(Modifier.height(12.dp))
-      OutlinedTextField(
-        value = storeName,
-        onValueChange = {
-          storeName = it
-          prefs.edit().putString("store_name", it.trim()).apply()
-        },
-        label = { Text("نام فروشگاه") },
-        singleLine = true,
-        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Done),
-        modifier = Modifier.fillMaxWidth(),
+      MoreCard(
+        title = "تنظیمات",
+        subtitle = "نام فروشگاه، ظاهر، پشتیبان‌گیری و اتصال به سرور",
+        onClick = { onOpen("settings") },
       )
     }
 
@@ -192,20 +175,6 @@ fun MoreScreen(store: ShopStore, d: ShopData, onOpen: (String) -> Unit) {
       }
     }
 
-    Spacer(Modifier.height(20.dp))
-    SectionTitle("در راه")
-    Panel {
-      listOf(
-        "اشتراک و همگام‌سازی با سرور",
-      ).forEach {
-        Text(
-          "• $it",
-          style = MaterialTheme.typography.bodySmall,
-          color = Shop.colors.muted,
-          modifier = Modifier.padding(vertical = 3.dp),
-        )
-      }
-    }
     Spacer(Modifier.height(24.dp))
   }
 }

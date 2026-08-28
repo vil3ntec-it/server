@@ -59,6 +59,28 @@ class ShopStore(private val context: Context) {
 
   fun hasData(): Boolean = file.exists()
 
+  /**
+   * فایلِ پشتیبان.
+   *
+   * همان قالبی که نسخهٔ وب می‌سازد و می‌خواند — به‌علاوهٔ `exportedAt`.
+   * پس پشتیبانی که اینجا گرفته می‌شود در آنجا باز می‌شود و برعکس؛ کسی که
+   * بین دو نسخه جابه‌جا می‌شود دفترش را دوباره نمی‌سازد.
+   */
+  suspend fun exportBackup(storeName: String = ""): String = withContext(Dispatchers.IO) {
+    val tree = json.encodeToJsonElement(ShopData.serializer(), _data.value)
+      .let { it as kotlinx.serialization.json.JsonObject }
+      .toMutableMap()
+    tree["exportedAt"] = kotlinx.serialization.json.JsonPrimitive(
+      java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply {
+        timeZone = java.util.TimeZone.getTimeZone("UTC")
+      }.format(java.util.Date())
+    )
+    tree["settings"] = kotlinx.serialization.json.buildJsonObject {
+      put("storeName", kotlinx.serialization.json.JsonPrimitive(storeName))
+    }
+    kotlinx.serialization.json.JsonObject(tree).toString()
+  }
+
   companion object {
     /* ------------------------- محاسبه‌ها ------------------------- */
 

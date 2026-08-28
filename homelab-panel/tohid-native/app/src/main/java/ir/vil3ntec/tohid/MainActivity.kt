@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.lifecycle.lifecycleScope
 import ir.vil3ntec.tohid.data.ShopStore
 import ir.vil3ntec.tohid.ui.AppRoot
+import ir.vil3ntec.tohid.ui.theme.ThemeChoice
 import ir.vil3ntec.tohid.ui.theme.TohidTheme
 import kotlinx.coroutines.launch
 
@@ -26,10 +27,26 @@ class MainActivity : ComponentActivity() {
     lifecycleScope.launch { store.load() }
 
     setContent {
-      TohidTheme {
+      // انتخابِ ظاهر بین اجراها می‌ماند
+      val prefs = remember { getSharedPreferences("tohid", MODE_PRIVATE) }
+      var theme by remember {
+        mutableStateOf(
+          runCatching { ThemeChoice.valueOf(prefs.getString("theme", "SYSTEM")!!) }
+            .getOrDefault(ThemeChoice.SYSTEM)
+        )
+      }
+
+      TohidTheme(theme) {
         // کلِ برنامه راست‌به‌چپ است
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-          AppRoot(store)
+          AppRoot(
+            store = store,
+            theme = theme,
+            onTheme = {
+              theme = it
+              prefs.edit().putString("theme", it.name).apply()
+            },
+          )
         }
       }
     }
