@@ -15,8 +15,8 @@ android {
     applicationId = "ir.vil3ntec.tohid"
     minSdk = 24
     targetSdk = 35
-    versionCode = 2
-    versionName = "2.0.0"
+    versionCode = 3
+    versionName = "2.1.0"
     resourceConfigurations += listOf("fa", "en")
   }
 
@@ -59,7 +59,16 @@ dependencies {
   implementation("androidx.compose.ui:ui-graphics")
   implementation("androidx.compose.material3:material3")
   implementation("androidx.compose.material:material-icons-extended")
+  implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
   implementation("androidx.webkit:webkit:1.12.1")
+
+  // دوربین و خواندنِ بارکد — مدلِ خواندن داخلِ خودِ برنامه است، پس در
+  // دکانی که اینترنت ندارد هم کار می‌کند
+  implementation("androidx.camera:camera-core:1.4.1")
+  implementation("androidx.camera:camera-camera2:1.4.1")
+  implementation("androidx.camera:camera-lifecycle:1.4.1")
+  implementation("androidx.camera:camera-view:1.4.1")
+  implementation("com.google.mlkit:barcode-scanning:17.3.0")
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
   testImplementation("junit:junit:4.13.2")

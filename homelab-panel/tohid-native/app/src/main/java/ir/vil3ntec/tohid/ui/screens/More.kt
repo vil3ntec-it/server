@@ -27,6 +27,7 @@ fun MoreScreen(store: ShopStore, d: ShopData) {
   val prefs = remember { context.getSharedPreferences("tohid", android.content.Context.MODE_PRIVATE) }
 
   var repo by remember { mutableStateOf(prefs.getString("update_repo", "vil3ntec-it/server") ?: "") }
+  var storeName by remember { mutableStateOf(prefs.getString("store_name", "") ?: "") }
   var status by remember { mutableStateOf<String?>(null) }
   var found by remember { mutableStateOf<Updater.Release?>(null) }
   var progress by remember { mutableStateOf(-1) }
@@ -46,6 +47,28 @@ fun MoreScreen(store: ShopStore, d: ShopData) {
       InfoRow("قرض‌داران", d.debtors.size.fa())
       InfoRow("مصارف", d.expenses.size.fa())
       InfoRow("تأمین‌کننده‌ها", d.suppliers.size.fa())
+    }
+
+    Spacer(Modifier.height(20.dp))
+    SectionTitle("فروشگاه")
+    Panel {
+      Text(
+        "این نام روی سربرگ فاکتور چاپ می‌شود.",
+        style = MaterialTheme.typography.bodySmall,
+        color = Shop.colors.muted,
+      )
+      Spacer(Modifier.height(12.dp))
+      OutlinedTextField(
+        value = storeName,
+        onValueChange = {
+          storeName = it
+          prefs.edit().putString("store_name", it.trim()).apply()
+        },
+        label = { Text("نام فروشگاه") },
+        singleLine = true,
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = ImeAction.Done),
+        modifier = Modifier.fillMaxWidth(),
+      )
     }
 
     Spacer(Modifier.height(20.dp))
@@ -146,8 +169,7 @@ fun MoreScreen(store: ShopStore, d: ShopData) {
     SectionTitle("در راه")
     Panel {
       listOf(
-        "فروش (صندوق) — اسکنر، سبد، فاکتور، چاپ حرارتی",
-        "انبار — موجودی، ورود کالا، حرکات",
+        "انبار — موجودی، ورود کالا، حرکات، ثبت کالای تازه",
         "مصارف و خرید و تأمین‌کننده",
         "گزارش‌ها و دفتر رویدادها",
         "اشتراک و همگام‌سازی با سرور",

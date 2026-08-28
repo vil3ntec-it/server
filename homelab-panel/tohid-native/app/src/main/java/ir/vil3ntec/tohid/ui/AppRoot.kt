@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import ir.vil3ntec.tohid.data.CartStore
 import ir.vil3ntec.tohid.data.ShopStore
 import ir.vil3ntec.tohid.ui.screens.*
 import ir.vil3ntec.tohid.ui.theme.Shop
@@ -31,6 +32,7 @@ fun AppRoot(store: ShopStore) {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val data by store.data.collectAsState()
+  val cartStore = remember { CartStore(context) }
   var tab by rememberSaveable { mutableStateOf("dashboard") }
   var migration by remember { mutableStateOf<String?>(null) }
 
@@ -80,7 +82,7 @@ fun AppRoot(store: ShopStore) {
     ) {
       when (tab) {
         "dashboard" -> DashboardScreen(data)
-        "sale" -> ComingSoon("فروش (صندوق)", "اسکنر، سبد خرید، فاکتور و چاپ حرارتی")
+        "sale" -> SaleScreen(store, cartStore, data, snackbar)
         "debtors" -> DebtorsScreen(data)
         "warehouse" -> ComingSoon("انبار", "موجودی، ورود کالا و حرکات انبار")
         "more" -> MoreScreen(store, data)
