@@ -64,6 +64,16 @@ fun MoreScreen(store: ShopStore, d: ShopData, onOpen: (String) -> Unit) {
         subtitle = "حساب تأمین‌کننده‌ها و بدهی به آن‌ها",
         onClick = { onOpen("purchasing") },
       )
+      MoreCard(
+        title = "گزارشات",
+        subtitle = "سود، فروش و مصارف در بازهٔ دلخواه",
+        onClick = { onOpen("reports") },
+      )
+      MoreCard(
+        title = "سابقه عملیات",
+        subtitle = "هر کاری که در برنامه انجام شده",
+        onClick = { onOpen("audit") },
+      )
     }
 
     Spacer(Modifier.height(20.dp))
@@ -186,7 +196,6 @@ fun MoreScreen(store: ShopStore, d: ShopData, onOpen: (String) -> Unit) {
     SectionTitle("در راه")
     Panel {
       listOf(
-        "گزارش‌ها و دفتر رویدادها",
         "اشتراک و همگام‌سازی با سرور",
       ).forEach {
         Text(

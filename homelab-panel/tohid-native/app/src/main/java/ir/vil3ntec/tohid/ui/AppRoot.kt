@@ -93,6 +93,8 @@ fun AppRoot(store: ShopStore) {
       when (sub ?: tab) {
         "purchasing" -> PurchasingScreen(store, data, snackbar)
         "sales" -> SalesHistoryScreen(store, data, snackbar)
+        "reports" -> ReportsScreen(data)
+        "audit" -> AuditLogScreen(data)
         "expenses" -> ExpensesScreen(store, data, snackbar)
         "dashboard" -> DashboardScreen(data)
         "sale" -> SaleScreen(store, cartStore, data, snackbar) { code ->
