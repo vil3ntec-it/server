@@ -55,6 +55,11 @@ fun MoreScreen(store: ShopStore, d: ShopData, onOpen: (String) -> Unit) {
     SectionTitle("بخش‌های دیگر")
     Panel {
       MoreCard(
+        title = "رسیدها",
+        subtitle = "دریافتی‌های هر قرض‌دار به تفکیک ماه و سال",
+        onClick = { onOpen("receipts") },
+      )
+      MoreCard(
         title = "تاریخچه فروش",
         subtitle = "فاکتورهای ثبت‌شده، مرجوعی و لغو فروش",
         onClick = { onOpen("sales") },

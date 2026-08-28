@@ -98,6 +98,7 @@ fun AppRoot(
         "purchasing" -> PurchasingScreen(store, data, snackbar)
         "sales" -> SalesHistoryScreen(store, data, snackbar)
         "reports" -> ReportsScreen(data)
+        "receipts" -> ReceiptsScreen(data)
         "audit" -> AuditLogScreen(data)
         "settings" -> SettingsScreen(store, data, snackbar, theme, onTheme)
         "expenses" -> ExpensesScreen(store, data, snackbar)
@@ -106,7 +107,7 @@ fun AppRoot(
           pendingBarcode = code
           tab = "warehouse"
         }
-        "debtors" -> DebtorsScreen(data)
+        "debtors" -> DebtorsScreen(store, data, snackbar)
         "warehouse" -> WarehouseScreen(
           store = store,
           d = data,

@@ -373,7 +373,3 @@ private fun monthLabel(month: String): String {
   return "${JALALI_MONTHS[j.month - 1]} ${plain(j.year)}"
 }
 
-private val JALALI_MONTHS = listOf(
-  "حمل", "ثور", "جوزا", "سرطان", "اسد", "سنبله",
-  "میزان", "عقرب", "قوس", "جدی", "دلو", "حوت",
-)
