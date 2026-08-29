@@ -8,7 +8,7 @@
 import express from 'express';
 import {
   createAccount, findAccount, checkPassword, issueTokens, refreshAccess,
-  accountFromToken, publicUser, accountById,
+  accountFromToken, publicUser, accountById, accountForContact,
 } from '../tohid/accounts.js';
 import { licensePublicKey } from '../tohid/keys.js';
 import { issueLicense, LicenseError } from '../tohid/license.js';
@@ -19,6 +19,7 @@ import {
   createShop, createInvite, joinShop, removeMember, shopInfo, pushChanges, pullChanges,
 } from '../tohid/shop.js';
 import { noteActivity } from '../tohid/presence.js';
+import { sendCode, verifyCode } from '../tohid/otp.js';
 import { db } from '../db.js';
 
 const router = express.Router();
@@ -197,6 +198,37 @@ router.get('/shop/sync/pull', guard(async (req, res) => {
     since: req.query.since,
     deviceId: req.query.deviceId,
   }));
+}));
+
+
+/* ─────────────────────── ورود با کد یک‌بارمصرف ───────────────────────
+   همان منطقِ WebSocket، این بار روی HTTP. برنامهٔ اندروید بقیهٔ کارهایش
+   را با HTTP می‌کند؛ یک کانالِ جدا فقط برای ورود، یعنی راهی که ممکن است
+   پشتِ فایروال یا پروکسیِ کسی بسته باشد و کاربر اصلاً نتواند وارد شود. */
+
+router.post('/auth/otp/send', guard(async (req, res) => {
+  const method = req.body?.method === 'phone' ? 'phone' : 'email';
+  try {
+    await sendCode({ method, value: req.body?.value, name: req.body?.name });
+    noteActivity({ kind: 'otp', ip: clientIp(req) });
+    // زمانِ اعتبار برگردانده می‌شود تا برنامه بتواند شمارنده نشان دهد
+    res.json({ ok: true, ttlSeconds: readTohidSettings().otpTtlSeconds });
+  } catch (e) {
+    fail(res, e.code === 'too_soon' ? 429 : 400, e.code || 'send_failed', e.message);
+  }
+}));
+
+router.post('/auth/otp/verify', guard(async (req, res) => {
+  const method = req.body?.method === 'phone' ? 'phone' : 'email';
+  try {
+    const { contact, name } = verifyCode({ method, value: req.body?.value, code: req.body?.code });
+    const account = accountForContact({ method, value: contact, name: req.body?.name || name });
+    const tokens = issueTokens(account);
+    noteActivity({ accountId: account.account_id, kind: 'otp', ip: clientIp(req) });
+    res.json({ ...tokens, user: publicUser(account) });
+  } catch (e) {
+    fail(res, 400, e.code || 'bad_code', e.message);
+  }
 }));
 
 /* ------------------------------ سلامت --------------------------------- */

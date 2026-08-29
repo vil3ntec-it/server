@@ -22,10 +22,29 @@ export type ThSettings = {
   enabled: boolean; serverToken: string; otpTtlSeconds: number;
   resendSeconds: number; maxTries: number; currency: string;
   whatsapp: string; purchaseMessage: string;
+  otpMessage: string;
   mail: {
     host: string; port: number; secure: boolean; user: string;
     from: string; fromName: string; passwordSet?: boolean;
   };
+  sms: {
+    enabled: boolean; url: string; method: string; contentType: string;
+    headers: string; body: string; tokenSet?: boolean;
+  };
+};
+
+export type ThOtpStatus = {
+  channels: {
+    email: { ready: boolean; host: string };
+    sms: { ready: boolean; url: string };
+  };
+  ttlSeconds: number;
+  resendSeconds: number;
+  maxTries: number;
+  pending: {
+    method: string; value: string; name: string; tries: number;
+    createdAt: number; expiresAt: number; expired: boolean;
+  }[];
 };
 
 export type ThAccount = {
@@ -107,5 +126,12 @@ export const th = {
   testMail: (to: string) =>
     api<{ ok: boolean; error?: string; detail?: string }>(`${T}/settings/test-mail`, {
       method: 'POST', body: JSON.stringify({ to }),
+    }),
+
+  otp: () => api<ThOtpStatus>(`${T}/otp`),
+  purgeOtp: () => api<{ ok: boolean; removed: number }>(`${T}/otp/purge`, { method: 'POST' }),
+  testOtp: (method: string, to: string) =>
+    api<{ ok: boolean; error?: string; detail?: string }>(`${T}/otp/test`, {
+      method: 'POST', body: JSON.stringify({ method, to }),
     }),
 };

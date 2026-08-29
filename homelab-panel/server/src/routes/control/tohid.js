@@ -14,8 +14,13 @@ import {
 } from '../../tohid/subscriptions.js';
 import { listDevices, revokeSessions, accountById, createAccount } from '../../tohid/accounts.js';
 import { listPlans, upsertPlan, deletePlan, planByCode } from '../../tohid/plans.js';
-import { publicTohidSettings, writeTohidSettings, setMailPassword, mailSettings, readTohidSettings } from '../../tohid/settings.js';
+import {
+  publicTohidSettings, writeTohidSettings, setMailPassword, mailSettings, readTohidSettings,
+  setSmsToken, mailPassword,
+} from '../../tohid/settings.js';
 import { sendMail } from '../../tohid/smtp.js';
+import { smsReady } from '../../tohid/sms.js';
+import { sendCode } from '../../tohid/otp.js';
 import { onlineNow, connectionStats } from '../../tohid/presence.js';
 import { shopInfo } from '../../tohid/shop.js';
 import { licensePublicKey } from '../../tohid/keys.js';
@@ -289,12 +294,15 @@ router.get('/settings', guard(async (_req, res) => {
 router.put('/settings', requireRole('admin'), guard(async (req, res) => {
   const body = { ...(req.body || {}) };
   const password = body.mailPassword;
+  const token = body.smsToken;
   delete body.mailPassword;
+  delete body.smsToken;
   // رمزِ ماسک‌شده نباید دوباره ذخیره شود
   if (typeof body.serverToken === 'string' && body.serverToken.startsWith('••')) delete body.serverToken;
 
   const saved = writeTohidSettings(body);
   if (password !== undefined) setMailPassword(password, actorOf(req));
+  if (token !== undefined) setSmsToken(token, actorOf(req));
   audit({ actor: actorOf(req), action: 'tohid.settings.save', entity: 'tohid' });
   res.json({ ok: true, settings: publicTohidSettings(), saved });
 }));
@@ -312,6 +320,78 @@ router.post('/settings/test-mail', requireRole('admin'), guard(async (req, res) 
     res.json({ ok: true });
   } catch (e) {
     res.json({ ok: false, error: e.code || 'mail_failed', detail: e.message });
+  }
+}));
+
+/* ──────────────────────────── کد ورود ──────────────────────────── */
+
+/**
+ * وضعیتِ کد ورود و درخواست‌های در جریان.
+ *
+ * خودِ کدها هرگز برنمی‌گردند — فقط hash‌شان در جدول است و همان هم اینجا
+ * خوانده نمی‌شود. مدیر باید ببیند «برای چه کسی کد رفته و کِی تمام می‌شود»،
+ * نه اینکه بتواند کدِ کسی را بخواند و به جای او وارد شود.
+ */
+router.get('/otp', guard(async (_req, res) => {
+  const cfg = readTohidSettings();
+  const now = Date.now();
+  const rows = db.prepare('SELECT method, value, name, tries, created_at, expires_at FROM th_otp ORDER BY created_at DESC LIMIT 50').all();
+
+  res.json({
+    channels: {
+      email: { ready: Boolean(cfg.mail?.host && mailPassword()), host: cfg.mail?.host || '' },
+      sms: { ready: smsReady(), url: cfg.sms?.url || '' },
+    },
+    ttlSeconds: cfg.otpTtlSeconds,
+    resendSeconds: cfg.resendSeconds,
+    maxTries: cfg.maxTries,
+    pending: rows.map((r) => ({
+      method: r.method,
+      // نشانی نیمه‌پوشیده: برای شناختن کافی است، برای سوءاستفاده نه
+      value: mask(r.method, r.value),
+      name: r.name || '',
+      tries: r.tries,
+      createdAt: r.created_at,
+      expiresAt: r.expires_at,
+      expired: r.expires_at <= now,
+    })),
+  });
+}));
+
+function mask(method, value) {
+  const v = String(value || '');
+  if (method === 'email') {
+    const at = v.indexOf('@');
+    if (at < 1) return v;
+    const head = v.slice(0, at);
+    return `${head.slice(0, 2)}${'•'.repeat(Math.max(1, head.length - 2))}${v.slice(at)}`;
+  }
+  return v.length > 4 ? `${'•'.repeat(v.length - 4)}${v.slice(-4)}` : v;
+}
+
+/** پاک کردنِ کدهای منقضی — کاری که خودِ سرور هم می‌کند، اینجا دستی */
+router.post('/otp/purge', requireRole('operator'), guard(async (req, res) => {
+  const info = db.prepare('DELETE FROM th_otp WHERE expires_at <= ?').run(Date.now());
+  audit({ actor: actorOf(req), action: 'tohid.otp.purge', entity: 'tohid' });
+  res.json({ ok: true, removed: info.changes });
+}));
+
+/**
+ * آزمونِ واقعیِ کد ورود — یک کدِ واقعی به گیرنده می‌رود.
+ *
+ * کد در پاسخ برنمی‌گردد. اگر برمی‌گشت، همین مسیر می‌شد راهی برای گرفتنِ
+ * کدِ هر شماره‌ای بدونِ دسترسی به آن شماره.
+ */
+router.post('/otp/test', requireRole('admin'), guard(async (req, res) => {
+  const method = req.body?.method === 'phone' ? 'phone' : 'email';
+  const to = String(req.body?.to || '').trim();
+  if (!to) return fail(res, 400, 'to_required', 'گیرنده را بنویسید');
+  try {
+    await sendCode({ method, value: to, name: '' });
+    audit({ actor: actorOf(req), action: 'tohid.otp.test', entity: 'tohid', detail: method });
+    res.json({ ok: true });
+  } catch (e) {
+    res.json({ ok: false, error: e.code || 'send_failed', detail: e.message });
   }
 }));
 

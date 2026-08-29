@@ -11,6 +11,7 @@ import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { readTohidSettings, mailSettings } from './settings.js';
 import { sendMail } from './smtp.js';
+import { sendSms } from './sms.js';
 
 const hash = (v) => crypto.createHash('sha256').update(String(v)).digest('hex');
 
@@ -56,25 +57,27 @@ export async function sendCode({ method, value, name }) {
     }
   }
 
-  if (method !== 'email') {
-    // پیامک هنوز راه نیفتاده؛ ادعای دروغ نمی‌کنیم
-    throw Object.assign(
-      new Error('فعلاً فقط ورود با ایمیل کار می‌کند. ایمیل خود را وارد کنید.'),
-      { code: 'sms_unavailable' },
-    );
-  }
-
   const code = sixDigits();
-  await sendMail(mailSettings(), {
-    to: contact,
-    subject: 'کد ورود شما',
-    text: [
-      `کد ورود شما: ${code}`,
-      '',
-      `این کد تا ${Math.round(cfg.otpTtlSeconds / 60)} دقیقه معتبر است.`,
-      'اگر شما درخواست نکرده‌اید، این پیام را نادیده بگیرید.',
-    ].join('\n'),
-  });
+  const minutes = Math.round(cfg.otpTtlSeconds / 60);
+
+  if (method === 'email') {
+    await sendMail(mailSettings(), {
+      to: contact,
+      subject: 'کد ورود شما',
+      text: [
+        `کد ورود شما: ${code}`,
+        '',
+        `این کد تا ${minutes} دقیقه معتبر است.`,
+        'اگر شما درخواست نکرده‌اید، این پیام را نادیده بگیرید.',
+      ].join('\n'),
+    });
+  } else {
+    // متنِ پیامک از تنظیمات می‌آید تا هر دکان بتواند نامِ خودش را بگذارد
+    const text = String(cfg.otpMessage || 'کد ورود شما: {code}')
+      .replaceAll('{code}', code)
+      .replaceAll('{minutes}', String(minutes));
+    await sendSms({ to: contact, text });
+  }
 
   db.prepare('DELETE FROM th_otp WHERE method = ? AND value = ?').run(method, contact);
   db.prepare(`

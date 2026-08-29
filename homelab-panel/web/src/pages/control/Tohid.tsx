@@ -13,7 +13,7 @@ import { Badge, Card, CopyButton, Field, Loading, Modal, toast } from '../../com
 import { dateTime, relative } from '../../format';
 import { ActionButton, Cell, KV, Notice, Row, Select, Stat, Table, Tabs } from '../../control/ui';
 import { th } from '../../control/tohid-api';
-import type { ThAccount, ThAddresses, ThOverview, ThPlan, ThOnline, ThRequest, ThSettings } from '../../control/tohid-api';
+import type { ThAccount, ThAddresses, ThOverview, ThPlan, ThOnline, ThOtpStatus, ThRequest, ThSettings } from '../../control/tohid-api';
 
 const UNITS = [
   { value: 'day', key: 'thDay' },
@@ -31,7 +31,7 @@ function duration(ms: number) {
 }
 
 export default function Tohid() {
-  const { t, lang } = useApp();
+  const { t } = useApp();
   const [tab, setTab] = useState('accounts');
   const [overview, setOverview] = useState<ThOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -73,6 +73,7 @@ export default function Tohid() {
           { id: 'online', label: t('thOnline') },
           { id: 'plans', label: t('thPlans') },
           { id: 'requests', label: t('thRequests') },
+          { id: 'otp', label: t('thOtp') },
           { id: 'settings', label: t('thSettings') },
         ]}
       />
@@ -81,571 +82,757 @@ export default function Tohid() {
       {tab === 'online' && <Online />}
       {tab === 'plans' && <Plans paid={overview?.features.paid ?? []} />}
       {tab === 'requests' && <Requests onChanged={load} />}
+      {tab === 'otp' && <Otp settings={overview?.settings} onSaved={load} />}
       {tab === 'settings' && (
         <SettingsTab settings={overview?.settings} addresses={overview?.addresses} keyId={overview?.keyId} onSaved={load} />
       )}
     </div>
   );
+}
 
-  function Accounts({ onChanged, paid }: { onChanged: () => void; paid: string[] }) {
-    const [items, setItems] = useState<ThAccount[] | null>(null);
-    const [q, setQ] = useState('');
-    const [vipFor, setVipFor] = useState<ThAccount | null>(null);
-    const [detailFor, setDetailFor] = useState<string | null>(null);
+/*
+ *  زیربخش‌ها اینجا، بیرونِ Tohid، تعریف شده‌اند — و باید همین‌جا بمانند.
+ *
+ *  وقتی داخلِ Tohid بودند، هر رندرِ آن یک تابعِ تازه می‌ساخت. React نوعِ
+ *  کامپوننت را با «همان تابع بودن» می‌سنجد، پس تابعِ تازه یعنی کامپوننتِ
+ *  دیگری: کلِ زیردرخت پیاده و از نو سوار می‌شد.
+ *
+ *  و رندرِ Tohid مدام پیش می‌آمد: سنجه‌های زندهٔ سرور هر ثانیه از سوکت
+ *  می‌رسند و در همان context‌اند که این صفحه `t` را از آن می‌گیرد. نتیجه
+ *  این بود که هر ثانیه فهرست‌ها دوباره از سرور خوانده می‌شدند، کادرِ
+ *  جستجو وسطِ تایپ خالی می‌شد و پنجره‌ها بسته می‌شدند.
+ */
 
-    const refresh = useCallback(async () => {
-      try { setItems((await th.accounts(q)).items); }
-      catch (e) { toast((e as Error).message, 'bad'); }
-    }, [q]);
+function Accounts({ onChanged, paid }: { onChanged: () => void; paid: string[] }) {
+  const { t } = useApp();
+  const [items, setItems] = useState<ThAccount[] | null>(null);
+  const [q, setQ] = useState('');
+  const [vipFor, setVipFor] = useState<ThAccount | null>(null);
+  const [detailFor, setDetailFor] = useState<string | null>(null);
 
-    useEffect(() => { void refresh(); }, [refresh]);
+  const refresh = useCallback(async () => {
+    try { setItems((await th.accounts(q)).items); }
+    catch (e) { toast((e as Error).message, 'bad'); }
+  }, [q]);
 
-    return (
-      <Card
-        title={t('thAccounts')}
-        action={
-          <div className="flex items-center gap-2">
-            <input className="input w-40" value={q} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQ(e.target.value)} placeholder={t('search')} />
-            <ActionButton className="btn btn-sm" onClick={refresh}>
-              <RefreshCw className="h-4 w-4" />
-            </ActionButton>
-          </div>
-        }
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  return (
+    <Card
+      title={t('thAccounts')}
+      action={
+        <div className="flex items-center gap-2">
+          <input className="input w-40" value={q} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQ(e.target.value)} placeholder={t('search')} />
+          <ActionButton className="btn btn-sm" onClick={refresh}>
+            <RefreshCw className="h-4 w-4" />
+          </ActionButton>
+        </div>
+      }
+    >
+      <Table
+        head={[t('name'), t('thContact'), t('thPlan'), t('thRemaining'), t('thDevices'), t('status'), '']}
+        empty={items?.length === 0}
       >
-        <Table
-          head={[t('name'), t('thContact'), t('thPlan'), t('thRemaining'), t('thDevices'), t('status'), '']}
-          empty={items?.length === 0}
-        >
-          {(items || []).map((a) => (
-            <Row key={a.accountId} onClick={() => setDetailFor(a.accountId)}>
-              <Cell>{a.name || '—'}</Cell>
-              <Cell mono>{a.email || a.phone || '—'}</Cell>
-              <Cell>{a.vip ? a.plan : <span className="text-ink-muted">{t('thFree')}</span>}</Cell>
-              <Cell>{a.vip ? `${a.daysLeft} ${t('thDaysLeft')}` : '—'}</Cell>
-              <Cell>{a.devices}</Cell>
-              <Cell>
-                <Badge tone={a.disabled ? 'bad' : a.vip ? 'good' : 'neutral'}>
-                  {a.disabled ? t('thDisabled') : a.vip ? 'VIP' : t('thFree')}
-                </Badge>
-              </Cell>
-              <Cell>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-primary"
-                  onClick={(e) => { e.stopPropagation(); setVipFor(a); }}
-                >
-                  {t('thGiveVip')}
-                </button>
-              </Cell>
-            </Row>
-          ))}
-        </Table>
+        {(items || []).map((a) => (
+          <Row key={a.accountId} onClick={() => setDetailFor(a.accountId)}>
+            <Cell>{a.name || '—'}</Cell>
+            <Cell mono>{a.email || a.phone || '—'}</Cell>
+            <Cell>{a.vip ? a.plan : <span className="text-ink-muted">{t('thFree')}</span>}</Cell>
+            <Cell>{a.vip ? `${a.daysLeft} ${t('thDaysLeft')}` : '—'}</Cell>
+            <Cell>{a.devices}</Cell>
+            <Cell>
+              <Badge tone={a.disabled ? 'bad' : a.vip ? 'good' : 'neutral'}>
+                {a.disabled ? t('thDisabled') : a.vip ? 'VIP' : t('thFree')}
+              </Badge>
+            </Cell>
+            <Cell>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={(e) => { e.stopPropagation(); setVipFor(a); }}
+              >
+                {t('thGiveVip')}
+              </button>
+            </Cell>
+          </Row>
+        ))}
+      </Table>
 
-        {vipFor && (
-          <VipModal
-            account={vipFor}
-            paid={paid}
-            onClose={() => setVipFor(null)}
-            onDone={() => { setVipFor(null); void refresh(); onChanged(); }}
-          />
-        )}
-        {detailFor && (
-          <DetailModal
-            id={detailFor}
-            onClose={() => setDetailFor(null)}
-            onChanged={() => { void refresh(); onChanged(); }}
-          />
-        )}
-      </Card>
-    );
-  }
+      {vipFor && (
+        <VipModal
+          account={vipFor}
+          paid={paid}
+          onClose={() => setVipFor(null)}
+          onDone={() => { setVipFor(null); void refresh(); onChanged(); }}
+        />
+      )}
+      {detailFor && (
+        <DetailModal
+          id={detailFor}
+          onClose={() => setDetailFor(null)}
+          onChanged={() => { void refresh(); onChanged(); }}
+        />
+      )}
+    </Card>
+  );
+}
 
-  function VipModal({
-    account, paid, onClose, onDone,
-  }: { account: ThAccount; paid: string[]; onClose: () => void; onDone: () => void }) {
-    const [plans, setPlans] = useState<ThPlan[]>([]);
-    const [planCode, setPlanCode] = useState('');
-    const [amount, setAmount] = useState(1);
-    const [unit, setUnit] = useState('month');
-    const [maxDevices, setMaxDevices] = useState(1);
-    const [features, setFeatures] = useState<string[]>(paid);
 
-    useEffect(() => {
-      void th.plans().then((r) => {
-        const active = r.items.filter((p) => p.active);
-        setPlans(active);
-        if (active[0]) {
-          setPlanCode(active[0].code);
-          setAmount(active[0].amount);
-          setUnit(active[0].unit);
-          setMaxDevices(active[0].max_devices);
-          setFeatures(active[0].features);
-        }
-      }).catch(() => {});
-    }, []);
+function VipModal({
+  account, paid, onClose, onDone,
+}: { account: ThAccount; paid: string[]; onClose: () => void; onDone: () => void }) {
+  const { t } = useApp();
+  const [plans, setPlans] = useState<ThPlan[]>([]);
+  const [planCode, setPlanCode] = useState('');
+  const [amount, setAmount] = useState(1);
+  const [unit, setUnit] = useState('month');
+  const [maxDevices, setMaxDevices] = useState(1);
+  const [features, setFeatures] = useState<string[]>(paid);
 
-    return (
-      <Modal open title={`${t('thGiveVip')} — ${account.name || account.email || account.phone}`} onClose={onClose}>
-        <div className="space-y-3">
-          <Field label={t('thPlan')}>
-            <Select
-              value={planCode}
-              onChange={(v) => {
-                setPlanCode(v);
-                const p = plans.find((x) => x.code === v);
-                if (p) { setAmount(p.amount); setUnit(p.unit); setMaxDevices(p.max_devices); setFeatures(p.features); }
-              }}
-              options={[
-                ...plans.map((p) => ({ value: p.code, label: p.title })),
-                { value: 'custom', label: t('thCustom') },
-              ]}
-            />
-          </Field>
+  useEffect(() => {
+    void th.plans().then((r) => {
+      const active = r.items.filter((p) => p.active);
+      setPlans(active);
+      if (active[0]) {
+        setPlanCode(active[0].code);
+        setAmount(active[0].amount);
+        setUnit(active[0].unit);
+        setMaxDevices(active[0].max_devices);
+        setFeatures(active[0].features);
+      }
+    }).catch(() => {});
+  }, []);
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field label={t('thAmount')}>
-              <input className="input" type="number" min={1} value={amount} onChange={(e) => setAmount(Number(e.target.value))} />
-            </Field>
-            <Field label={t('thUnit')}>
-              <Select value={unit} onChange={setUnit} options={UNITS.map((u) => ({ value: u.value, label: t(u.key) }))} />
-            </Field>
-          </div>
-
-          <Field label={t('thMaxDevices')}>
-            <input className="input" type="number" min={1} value={maxDevices} onChange={(e) => setMaxDevices(Number(e.target.value))} />
-          </Field>
-
-          <Field label={t('thFeatures')}>
-            <div className="flex flex-wrap gap-2">
-              {paid.map((f) => (
-                <label key={f} className="flex items-center gap-1.5 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={features.includes(f)}
-                    onChange={(e) => setFeatures(
-                      e.target.checked ? [...features, f] : features.filter((x) => x !== f),
-                    )}
-                  />
-                  {f}
-                </label>
-              ))}
-            </div>
-          </Field>
-
-          <ActionButton
-            className="btn btn-primary w-full"
-            busyLabel={t('thSaving')}
-            onClick={async () => {
-              try {
-                await th.grantVip(account.accountId, {
-                  planCode: planCode === 'custom' ? 'custom' : planCode,
-                  amount, unit, maxDevices, features,
-                });
-                toast(t('saved'), 'good');
-                onDone();
-              } catch (e) { toast((e as Error).message, 'bad'); }
+  return (
+    <Modal open title={`${t('thGiveVip')} — ${account.name || account.email || account.phone}`} onClose={onClose}>
+      <div className="space-y-3">
+        <Field label={t('thPlan')}>
+          <Select
+            value={planCode}
+            onChange={(v) => {
+              setPlanCode(v);
+              const p = plans.find((x) => x.code === v);
+              if (p) { setAmount(p.amount); setUnit(p.unit); setMaxDevices(p.max_devices); setFeatures(p.features); }
             }}
-          >
-            {t('thGiveVip')}
-          </ActionButton>
-        </div>
-      </Modal>
-    );
-  }
+            options={[
+              ...plans.map((p) => ({ value: p.code, label: p.title })),
+              { value: 'custom', label: t('thCustom') },
+            ]}
+          />
+        </Field>
 
-  function DetailModal({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
-    const [data, setData] = useState<Awaited<ReturnType<typeof th.account>> | null>(null);
-
-    const refresh = useCallback(async () => {
-      try { setData(await th.account(id)); }
-      catch (e) { toast((e as Error).message, 'bad'); }
-    }, [id]);
-    useEffect(() => { void refresh(); }, [refresh]);
-
-    if (!data) return <Modal open title="…" onClose={onClose}><Loading /></Modal>;
-    const a = data.account;
-
-    return (
-      <Modal open title={a.name || a.email || a.phone || id} onClose={onClose}>
-        <div className="space-y-4">
-          <div>
-            <KV label={t('thContact')} mono>{a.email || a.phone || '—'}</KV>
-            <KV label={t('thAccountId')} mono>{a.accountId}</KV>
-            <KV label={t('thCreated')}>{dateTime(a.createdAt, lang)}</KV>
-            <KV label={t('thLastSeen')}>{a.lastSeenAt ? relative(a.lastSeenAt, lang) : '—'}</KV>
-            <KV label={t('status')}>
-              {data.entitlement.isPaid
-                ? `${data.entitlement.planTitle} — ${data.entitlement.daysLeft} ${t('thDaysLeft')}`
-                : t('thFree')}
-            </KV>
-            {data.shop.shop && <KV label={t('thShop')}>{data.shop.shop.name} ({data.shop.members.length})</KV>}
-          </div>
-
-          <div>
-            <h4 className="mb-2 text-sm font-medium">{t('thSubscriptions')}</h4>
-            <Table head={[t('thPlan'), t('thFrom'), t('thUntil'), t('status'), '']} empty={!data.subscriptions.length}>
-              {data.subscriptions.map((s) => (
-                <Row key={s.id}>
-                  <Cell>{s.plan_title}</Cell>
-                  <Cell>{dateTime(s.starts_at, lang)}</Cell>
-                  <Cell>{dateTime(s.ends_at, lang)}</Cell>
-                  <Cell><Badge tone={s.status === 'active' ? 'good' : 'bad'}>{s.status}</Badge></Cell>
-                  <Cell>
-                    <div className="flex gap-1">
-                      <ActionButton
-                        className="btn btn-sm"
-                        onClick={async () => {
-                          await th.extend(s.id, { amount: 1, unit: 'month' });
-                          toast(t('saved'), 'good'); await refresh(); onChanged();
-                        }}
-                      >
-                        +۱ {t('thMonth')}
-                      </ActionButton>
-                      <ActionButton
-                        className="btn btn-sm"
-                        onClick={async () => {
-                          await th.setStatus(s.id, s.status === 'active' ? 'suspended' : 'active');
-                          toast(t('saved'), 'good'); await refresh(); onChanged();
-                        }}
-                      >
-                        {s.status === 'active' ? t('thSuspend') : t('thResume')}
-                      </ActionButton>
-                      <ActionButton
-                        className="btn btn-sm btn-danger"
-                        onClick={async () => {
-                          if (!window.confirm(t('thConfirm'))) return;
-                          await th.setStatus(s.id, 'cancelled');
-                          toast(t('saved'), 'good'); await refresh(); onChanged();
-                        }}
-                      >
-                        {t('thCancel')}
-                      </ActionButton>
-                    </div>
-                  </Cell>
-                </Row>
-              ))}
-            </Table>
-          </div>
-
-          <div>
-            <h4 className="mb-2 text-sm font-medium">{t('thDevices')}</h4>
-            <Table head={[t('name'), t('thLastSeen'), t('status'), '']} empty={!data.devices.length}>
-              {data.devices.map((d) => (
-                <Row key={d.id}>
-                  <Cell>{d.name || d.uid}</Cell>
-                  <Cell>{relative(d.last_seen, lang)}</Cell>
-                  <Cell>
-                    <Badge tone={d.revoked ? 'bad' : 'good'}>
-                      {d.revoked ? t('thRevoked') : t('thActive')}
-                    </Badge>
-                  </Cell>
-                  <Cell>
-                    <ActionButton
-                      className="btn btn-sm"
-                      onClick={async () => {
-                        await th.revokeDevice(d.id, !d.revoked);
-                        toast(t('saved'), 'good'); await refresh(); onChanged();
-                      }}
-                    >
-                      {d.revoked ? t('thAllow') : t('thRevoke')}
-                    </ActionButton>
-                  </Cell>
-                </Row>
-              ))}
-            </Table>
-          </div>
-
-          <ActionButton
-            className={`btn w-full ${a.disabled ? '' : 'btn-danger'}`}
-            onClick={async () => {
-              if (!window.confirm(t('thConfirm'))) return;
-              await th.setDisabled(a.accountId, !a.disabled);
-              toast(t('saved'), 'good'); await refresh(); onChanged();
-            }}
-          >
-            {a.disabled ? <><CheckCircle2 className="h-4 w-4" />{t('thEnableAccount')}</>
-              : <><Ban className="h-4 w-4" />{t('thDisableAccount')}</>}
-          </ActionButton>
-        </div>
-      </Modal>
-    );
-  }
-
-  function Online() {
-    const [items, setItems] = useState<ThOnline[] | null>(null);
-
-    const refresh = useCallback(async () => {
-      try { setItems((await th.online()).items); }
-      catch (e) { toast((e as Error).message, 'bad'); }
-    }, []);
-
-    useEffect(() => {
-      void refresh();
-      const timer = setInterval(refresh, 15000);
-      return () => clearInterval(timer);
-    }, [refresh]);
-
-    return (
-      <Card title={t('thOnline')} action={
-        <ActionButton className="btn btn-sm" onClick={refresh}><RefreshCw className="h-4 w-4" /></ActionButton>
-      }>
-        <Notice>{t('thOnlineHint')}</Notice>
-        <Table head={[t('name'), t('thContact'), t('thConnectedFor'), t('thKind'), 'IP']} empty={items?.length === 0}>
-          {(items || []).map((c, i) => (
-            <Row key={`${c.accountId}-${c.deviceUid}-${i}`}>
-              <Cell>{c.name || t('thGuest')}</Cell>
-              <Cell mono>{c.contact || '—'}</Cell>
-              <Cell>{duration(c.connectedMs)}</Cell>
-              <Cell>{c.kind}</Cell>
-              <Cell mono>{c.ip || '—'}</Cell>
-            </Row>
-          ))}
-        </Table>
-      </Card>
-    );
-  }
-
-  function Plans({ paid }: { paid: string[] }) {
-    const [items, setItems] = useState<ThPlan[] | null>(null);
-    const [editing, setEditing] = useState<Partial<ThPlan> | null>(null);
-
-    const refresh = useCallback(async () => {
-      try { setItems((await th.plans()).items); }
-      catch (e) { toast((e as Error).message, 'bad'); }
-    }, []);
-    useEffect(() => { void refresh(); }, [refresh]);
-
-    return (
-      <Card title={t('thPlans')} action={
-        <button type="button" className="btn btn-sm btn-primary"
-          onClick={() => setEditing({ code: '', title: '', amount: 1, unit: 'month', price: 0, max_devices: 1, features: paid })}>
-          <Plus className="h-4 w-4" />{t('add')}
-        </button>
-      }>
-        <Notice>{t('thPlansHint')}</Notice>
-        <Table head={[t('thPlan'), t('thAmount'), t('thPrice'), t('thMaxDevices'), t('status'), '']} empty={items?.length === 0}>
-          {(items || []).map((p) => (
-            <Row key={p.code} onClick={() => setEditing(p)}>
-              <Cell>{p.title} <span className="text-ink-muted">({p.code})</span></Cell>
-              <Cell>{p.amount} {t(UNITS.find((u) => u.value === p.unit)?.key ?? 'thMonth')}</Cell>
-              <Cell>{p.price}</Cell>
-              <Cell>{p.max_devices}</Cell>
-              <Cell><Badge tone={p.active ? 'good' : 'neutral'}>{p.active ? t('thActive') : t('thOff')}</Badge></Cell>
-              <Cell>
-                <ActionButton className="btn btn-sm btn-danger"
-                  onClick={async () => {
-                    if (!window.confirm(t('thConfirm'))) return;
-                    await th.deletePlan(p.code); toast(t('saved'), 'good'); await refresh();
-                  }}>
-                  {t('delete')}
-                </ActionButton>
-              </Cell>
-            </Row>
-          ))}
-        </Table>
-
-        {editing && (
-          <Modal open title={editing.code || t('add')} onClose={() => setEditing(null)}>
-            <div className="space-y-3">
-              <Field label={t('thCode')}>
-                <input className="input" value={editing.code || ''} onChange={(e) => setEditing({ ...editing, code: e.target.value })} />
-              </Field>
-              <Field label={t('name')}>
-                <input className="input" value={editing.title || ''} onChange={(e) => setEditing({ ...editing, title: e.target.value })} />
-              </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label={t('thAmount')}>
-                  <input className="input" type="number" min={1} value={editing.amount ?? 1}
-                    onChange={(e) => setEditing({ ...editing, amount: Number(e.target.value) })} />
-                </Field>
-                <Field label={t('thUnit')}>
-                  <Select value={editing.unit || 'month'} onChange={(v) => setEditing({ ...editing, unit: v })}
-                    options={UNITS.map((u) => ({ value: u.value, label: t(u.key) }))} />
-                </Field>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label={t('thPrice')}>
-                  <input className="input" type="number" value={editing.price ?? 0}
-                    onChange={(e) => setEditing({ ...editing, price: Number(e.target.value) })} />
-                </Field>
-                <Field label={t('thMaxDevices')}>
-                  <input className="input" type="number" min={1} value={editing.max_devices ?? 1}
-                    onChange={(e) => setEditing({ ...editing, max_devices: Number(e.target.value) })} />
-                </Field>
-              </div>
-              <Field label={t('thBadge')}>
-                <input className="input" value={editing.badge || ''} onChange={(e) => setEditing({ ...editing, badge: e.target.value })} />
-              </Field>
-              <ActionButton className="btn btn-primary w-full" busyLabel={t('thSaving')}
-                onClick={async () => {
-                  try {
-                    await th.savePlan({
-                      code: editing.code, title: editing.title, amount: editing.amount,
-                      unit: editing.unit, price: editing.price, badge: editing.badge,
-                      maxDevices: editing.max_devices, features: editing.features ?? paid,
-                      active: editing.active === undefined ? true : Boolean(editing.active),
-                    });
-                    toast(t('saved'), 'good'); setEditing(null); await refresh();
-                  } catch (e) { toast((e as Error).message, 'bad'); }
-                }}>
-                {t('save')}
-              </ActionButton>
-            </div>
-          </Modal>
-        )}
-      </Card>
-    );
-  }
-
-  function Requests({ onChanged }: { onChanged: () => void }) {
-    const [items, setItems] = useState<ThRequest[] | null>(null);
-    const refresh = useCallback(async () => {
-      try { setItems((await th.requests()).items); }
-      catch (e) { toast((e as Error).message, 'bad'); }
-    }, []);
-    useEffect(() => { void refresh(); }, [refresh]);
-
-    return (
-      <Card title={t('thRequests')}>
-        <Table head={[t('thDate'), t('name'), t('thPlan'), t('thContact'), t('status'), '']} empty={items?.length === 0}>
-          {(items || []).map((r) => (
-            <Row key={r.id}>
-              <Cell>{dateTime(r.created_at, lang)}</Cell>
-              <Cell>{r.name || '—'}</Cell>
-              <Cell>{r.plan_code || '—'}</Cell>
-              <Cell mono>{r.contact || r.email || r.phone || '—'}</Cell>
-              <Cell><Badge tone={r.status === 'new' ? 'warn' : 'good'}>{r.status}</Badge></Cell>
-              <Cell>
-                {r.status === 'new' && (
-                  <ActionButton className="btn btn-sm"
-                    onClick={async () => { await th.setRequestStatus(r.id, 'done'); await refresh(); onChanged(); }}>
-                    {t('thMarkDone')}
-                  </ActionButton>
-                )}
-              </Cell>
-            </Row>
-          ))}
-        </Table>
-      </Card>
-    );
-  }
-
-  function SettingsTab({
-    settings, addresses, keyId, onSaved,
-  }: { settings?: ThSettings; addresses?: ThAddresses; keyId?: string | null; onSaved: () => void }) {
-    const [form, setForm] = useState<ThSettings | null>(settings ?? null);
-    const [password, setPassword] = useState('');
-    const [testTo, setTestTo] = useState('');
-
-    useEffect(() => { setForm(settings ?? null); }, [settings]);
-    if (!form) return <Loading />;
-
-    const setMail = (patch: Partial<ThSettings['mail']>) => setForm({ ...form, mail: { ...form.mail, ...patch } });
-
-    return (
-      <div className="space-y-4">
-        <Card title={t('thConnection')} icon={<Settings2 className="h-4 w-4" />}>
-          <Notice>{t('thConnectionHint')}</Notice>
-
-          {/* آدرس‌های واقعیِ همین کامپیوتر — نه نمونه، نه حدس */}
-          {(addresses?.lan.length ? addresses.lan : []).map((a) => (
-            <div key={a.ip} className="mb-2 rounded-xl border border-line/60 p-3">
-              <p className="mb-1.5 text-[11px] text-ink-muted">{t('thFromThisNetwork')} — {a.ip}</p>
-              <KV label={t('thAddrOtp')} mono>
-                <span dir="ltr">{a.otp}</span> <CopyButton value={a.otp} />
-              </KV>
-              <KV label={t('thAddrApi')} mono>
-                <span dir="ltr">{a.api}</span> <CopyButton value={a.api} />
-              </KV>
-            </div>
-          ))}
-          {!addresses?.lan.length && (
-            <KV label={t('thAddrOtp')} mono>
-              <span dir="ltr">{addresses?.local.otp ?? '—'}</span>
-            </KV>
-          )}
-          <label className="mb-3 flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
-            {t('thEnable')}
-          </label>
-          <Field label={t('thServerToken')} hint={t('thServerTokenHint')}>
-            <input className="input" value={form.serverToken} onChange={(e) => setForm({ ...form, serverToken: e.target.value })} dir="ltr" />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label={t('thAmount')}>
+            <input className="input" type="number" min={1} value={amount} onChange={(e) => setAmount(Number(e.target.value))} />
           </Field>
-          <KV label={t('thKeyId')} mono>{keyId || '—'}</KV>
-        </Card>
+          <Field label={t('thUnit')}>
+            <Select value={unit} onChange={setUnit} options={UNITS.map((u) => ({ value: u.value, label: t(u.key) }))} />
+          </Field>
+        </div>
 
-        <Card title={t('thMail')} icon={<Mail className="h-4 w-4" />}>
-          <Notice tone="warn">{t('thGmailHint')}</Notice>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label={t('thMailHost')}>
-              <input className="input" value={form.mail.host} onChange={(e) => setMail({ host: e.target.value })} dir="ltr" placeholder="smtp.gmail.com" />
-            </Field>
-            <Field label={t('thMailPort')}>
-              <input className="input" type="number" value={form.mail.port} onChange={(e) => setMail({ port: Number(e.target.value) })} dir="ltr" />
-            </Field>
-            <Field label={t('thMailUser')}>
-              <input className="input" value={form.mail.user} onChange={(e) => setMail({ user: e.target.value })} dir="ltr" />
-            </Field>
-            <Field label={t('thMailPassword')} hint={form.mail.passwordSet ? t('thMailPasswordSet') : ''}>
-              <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} dir="ltr" placeholder="••••••••" />
-            </Field>
-            <Field label={t('thMailFrom')}>
-              <input className="input" value={form.mail.from} onChange={(e) => setMail({ from: e.target.value })} dir="ltr" />
-            </Field>
-            <Field label={t('thMailFromName')}>
-              <input className="input" value={form.mail.fromName} onChange={(e) => setMail({ fromName: e.target.value })} />
-            </Field>
-          </div>
+        <Field label={t('thMaxDevices')}>
+          <input className="input" type="number" min={1} value={maxDevices} onChange={(e) => setMaxDevices(Number(e.target.value))} />
+        </Field>
 
-          <div className="mt-3 flex flex-wrap items-end gap-2">
-            <Field label={t('thTestMailTo')}>
-              <input className="input" value={testTo} onChange={(e) => setTestTo(e.target.value)} dir="ltr" />
-            </Field>
-            <ActionButton
-              className="btn"
-              busyLabel={t('thSending')}
-              onClick={async () => {
-                const res = await th.testMail(testTo);
-                if (res.ok) toast(t('thMailSent'), 'good');
-                else toast(res.detail || res.error || t('thMailFailed'), 'bad');
-              }}
-            >
-              {t('thSendTest')}
-            </ActionButton>
+        <Field label={t('thFeatures')}>
+          <div className="flex flex-wrap gap-2">
+            {paid.map((f) => (
+              <label key={f} className="flex items-center gap-1.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={features.includes(f)}
+                  onChange={(e) => setFeatures(
+                    e.target.checked ? [...features, f] : features.filter((x) => x !== f),
+                  )}
+                />
+                {f}
+              </label>
+            ))}
           </div>
-        </Card>
-
-        <Card title={t('thPrices')} icon={<Tag className="h-4 w-4" />}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label={t('thCurrency')}>
-              <input className="input" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} />
-            </Field>
-            <Field label={t('thWhatsapp')}>
-              <input className="input" value={form.whatsapp} onChange={(e) => setForm({ ...form, whatsapp: e.target.value })} dir="ltr" />
-            </Field>
-          </div>
-        </Card>
+        </Field>
 
         <ActionButton
           className="btn btn-primary w-full"
           busyLabel={t('thSaving')}
           onClick={async () => {
             try {
-              const body: Record<string, unknown> = {
-                enabled: form.enabled, serverToken: form.serverToken,
-                currency: form.currency, whatsapp: form.whatsapp, mail: form.mail,
-              };
-              if (password) body.mailPassword = password;
-              await th.saveSettings(body);
-              setPassword('');
+              await th.grantVip(account.accountId, {
+                planCode: planCode === 'custom' ? 'custom' : planCode,
+                amount, unit, maxDevices, features,
+              });
               toast(t('saved'), 'good');
-              onSaved();
+              onDone();
             } catch (e) { toast((e as Error).message, 'bad'); }
           }}
         >
-          {t('save')}
+          {t('thGiveVip')}
         </ActionButton>
       </div>
-    );
-  }
+    </Modal>
+  );
+}
+
+
+function DetailModal({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
+  const { t, lang } = useApp();
+  const [data, setData] = useState<Awaited<ReturnType<typeof th.account>> | null>(null);
+
+  const refresh = useCallback(async () => {
+    try { setData(await th.account(id)); }
+    catch (e) { toast((e as Error).message, 'bad'); }
+  }, [id]);
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  if (!data) return <Modal open title="…" onClose={onClose}><Loading /></Modal>;
+  const a = data.account;
+
+  return (
+    <Modal open title={a.name || a.email || a.phone || id} onClose={onClose}>
+      <div className="space-y-4">
+        <div>
+          <KV label={t('thContact')} mono>{a.email || a.phone || '—'}</KV>
+          <KV label={t('thAccountId')} mono>{a.accountId}</KV>
+          <KV label={t('thCreated')}>{dateTime(a.createdAt, lang)}</KV>
+          <KV label={t('thLastSeen')}>{a.lastSeenAt ? relative(a.lastSeenAt, lang) : '—'}</KV>
+          <KV label={t('status')}>
+            {data.entitlement.isPaid
+              ? `${data.entitlement.planTitle} — ${data.entitlement.daysLeft} ${t('thDaysLeft')}`
+              : t('thFree')}
+          </KV>
+          {data.shop.shop && <KV label={t('thShop')}>{data.shop.shop.name} ({data.shop.members.length})</KV>}
+        </div>
+
+        <div>
+          <h4 className="mb-2 text-sm font-medium">{t('thSubscriptions')}</h4>
+          <Table head={[t('thPlan'), t('thFrom'), t('thUntil'), t('status'), '']} empty={!data.subscriptions.length}>
+            {data.subscriptions.map((s) => (
+              <Row key={s.id}>
+                <Cell>{s.plan_title}</Cell>
+                <Cell>{dateTime(s.starts_at, lang)}</Cell>
+                <Cell>{dateTime(s.ends_at, lang)}</Cell>
+                <Cell><Badge tone={s.status === 'active' ? 'good' : 'bad'}>{s.status}</Badge></Cell>
+                <Cell>
+                  <div className="flex gap-1">
+                    <ActionButton
+                      className="btn btn-sm"
+                      onClick={async () => {
+                        await th.extend(s.id, { amount: 1, unit: 'month' });
+                        toast(t('saved'), 'good'); await refresh(); onChanged();
+                      }}
+                    >
+                      +۱ {t('thMonth')}
+                    </ActionButton>
+                    <ActionButton
+                      className="btn btn-sm"
+                      onClick={async () => {
+                        await th.setStatus(s.id, s.status === 'active' ? 'suspended' : 'active');
+                        toast(t('saved'), 'good'); await refresh(); onChanged();
+                      }}
+                    >
+                      {s.status === 'active' ? t('thSuspend') : t('thResume')}
+                    </ActionButton>
+                    <ActionButton
+                      className="btn btn-sm btn-danger"
+                      onClick={async () => {
+                        if (!window.confirm(t('thConfirm'))) return;
+                        await th.setStatus(s.id, 'cancelled');
+                        toast(t('saved'), 'good'); await refresh(); onChanged();
+                      }}
+                    >
+                      {t('thCancel')}
+                    </ActionButton>
+                  </div>
+                </Cell>
+              </Row>
+            ))}
+          </Table>
+        </div>
+
+        <div>
+          <h4 className="mb-2 text-sm font-medium">{t('thDevices')}</h4>
+          <Table head={[t('name'), t('thLastSeen'), t('status'), '']} empty={!data.devices.length}>
+            {data.devices.map((d) => (
+              <Row key={d.id}>
+                <Cell>{d.name || d.uid}</Cell>
+                <Cell>{relative(d.last_seen, lang)}</Cell>
+                <Cell>
+                  <Badge tone={d.revoked ? 'bad' : 'good'}>
+                    {d.revoked ? t('thRevoked') : t('thActive')}
+                  </Badge>
+                </Cell>
+                <Cell>
+                  <ActionButton
+                    className="btn btn-sm"
+                    onClick={async () => {
+                      await th.revokeDevice(d.id, !d.revoked);
+                      toast(t('saved'), 'good'); await refresh(); onChanged();
+                    }}
+                  >
+                    {d.revoked ? t('thAllow') : t('thRevoke')}
+                  </ActionButton>
+                </Cell>
+              </Row>
+            ))}
+          </Table>
+        </div>
+
+        <ActionButton
+          className={`btn w-full ${a.disabled ? '' : 'btn-danger'}`}
+          onClick={async () => {
+            if (!window.confirm(t('thConfirm'))) return;
+            await th.setDisabled(a.accountId, !a.disabled);
+            toast(t('saved'), 'good'); await refresh(); onChanged();
+          }}
+        >
+          {a.disabled ? <><CheckCircle2 className="h-4 w-4" />{t('thEnableAccount')}</>
+            : <><Ban className="h-4 w-4" />{t('thDisableAccount')}</>}
+        </ActionButton>
+      </div>
+    </Modal>
+  );
+}
+
+
+function Online() {
+  const { t } = useApp();
+  const [items, setItems] = useState<ThOnline[] | null>(null);
+
+  const refresh = useCallback(async () => {
+    try { setItems((await th.online()).items); }
+    catch (e) { toast((e as Error).message, 'bad'); }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    const timer = setInterval(refresh, 15000);
+    return () => clearInterval(timer);
+  }, [refresh]);
+
+  return (
+    <Card title={t('thOnline')} action={
+      <ActionButton className="btn btn-sm" onClick={refresh}><RefreshCw className="h-4 w-4" /></ActionButton>
+    }>
+      <Notice>{t('thOnlineHint')}</Notice>
+      <Table head={[t('name'), t('thContact'), t('thConnectedFor'), t('thKind'), 'IP']} empty={items?.length === 0}>
+        {(items || []).map((c, i) => (
+          <Row key={`${c.accountId}-${c.deviceUid}-${i}`}>
+            <Cell>{c.name || t('thGuest')}</Cell>
+            <Cell mono>{c.contact || '—'}</Cell>
+            <Cell>{duration(c.connectedMs)}</Cell>
+            <Cell>{c.kind}</Cell>
+            <Cell mono>{c.ip || '—'}</Cell>
+          </Row>
+        ))}
+      </Table>
+    </Card>
+  );
+}
+
+
+function Plans({ paid }: { paid: string[] }) {
+  const { t } = useApp();
+  const [items, setItems] = useState<ThPlan[] | null>(null);
+  const [editing, setEditing] = useState<Partial<ThPlan> | null>(null);
+
+  const refresh = useCallback(async () => {
+    try { setItems((await th.plans()).items); }
+    catch (e) { toast((e as Error).message, 'bad'); }
+  }, []);
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  return (
+    <Card title={t('thPlans')} action={
+      <button type="button" className="btn btn-sm btn-primary"
+        onClick={() => setEditing({ code: '', title: '', amount: 1, unit: 'month', price: 0, max_devices: 1, features: paid })}>
+        <Plus className="h-4 w-4" />{t('add')}
+      </button>
+    }>
+      <Notice>{t('thPlansHint')}</Notice>
+      <Table head={[t('thPlan'), t('thAmount'), t('thPrice'), t('thMaxDevices'), t('status'), '']} empty={items?.length === 0}>
+        {(items || []).map((p) => (
+          <Row key={p.code} onClick={() => setEditing(p)}>
+            <Cell>{p.title} <span className="text-ink-muted">({p.code})</span></Cell>
+            <Cell>{p.amount} {t(UNITS.find((u) => u.value === p.unit)?.key ?? 'thMonth')}</Cell>
+            <Cell>{p.price}</Cell>
+            <Cell>{p.max_devices}</Cell>
+            <Cell><Badge tone={p.active ? 'good' : 'neutral'}>{p.active ? t('thActive') : t('thOff')}</Badge></Cell>
+            <Cell>
+              <ActionButton className="btn btn-sm btn-danger"
+                onClick={async () => {
+                  if (!window.confirm(t('thConfirm'))) return;
+                  await th.deletePlan(p.code); toast(t('saved'), 'good'); await refresh();
+                }}>
+                {t('delete')}
+              </ActionButton>
+            </Cell>
+          </Row>
+        ))}
+      </Table>
+
+      {editing && (
+        <Modal open title={editing.code || t('add')} onClose={() => setEditing(null)}>
+          <div className="space-y-3">
+            <Field label={t('thCode')}>
+              <input className="input" value={editing.code || ''} onChange={(e) => setEditing({ ...editing, code: e.target.value })} />
+            </Field>
+            <Field label={t('name')}>
+              <input className="input" value={editing.title || ''} onChange={(e) => setEditing({ ...editing, title: e.target.value })} />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label={t('thAmount')}>
+                <input className="input" type="number" min={1} value={editing.amount ?? 1}
+                  onChange={(e) => setEditing({ ...editing, amount: Number(e.target.value) })} />
+              </Field>
+              <Field label={t('thUnit')}>
+                <Select value={editing.unit || 'month'} onChange={(v) => setEditing({ ...editing, unit: v })}
+                  options={UNITS.map((u) => ({ value: u.value, label: t(u.key) }))} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label={t('thPrice')}>
+                <input className="input" type="number" value={editing.price ?? 0}
+                  onChange={(e) => setEditing({ ...editing, price: Number(e.target.value) })} />
+              </Field>
+              <Field label={t('thMaxDevices')}>
+                <input className="input" type="number" min={1} value={editing.max_devices ?? 1}
+                  onChange={(e) => setEditing({ ...editing, max_devices: Number(e.target.value) })} />
+              </Field>
+            </div>
+            <Field label={t('thBadge')}>
+              <input className="input" value={editing.badge || ''} onChange={(e) => setEditing({ ...editing, badge: e.target.value })} />
+            </Field>
+            <ActionButton className="btn btn-primary w-full" busyLabel={t('thSaving')}
+              onClick={async () => {
+                try {
+                  await th.savePlan({
+                    code: editing.code, title: editing.title, amount: editing.amount,
+                    unit: editing.unit, price: editing.price, badge: editing.badge,
+                    maxDevices: editing.max_devices, features: editing.features ?? paid,
+                    active: editing.active === undefined ? true : Boolean(editing.active),
+                  });
+                  toast(t('saved'), 'good'); setEditing(null); await refresh();
+                } catch (e) { toast((e as Error).message, 'bad'); }
+              }}>
+              {t('save')}
+            </ActionButton>
+          </div>
+        </Modal>
+      )}
+    </Card>
+  );
+}
+
+
+function Requests({ onChanged }: { onChanged: () => void }) {
+  const { t, lang } = useApp();
+  const [items, setItems] = useState<ThRequest[] | null>(null);
+  const refresh = useCallback(async () => {
+    try { setItems((await th.requests()).items); }
+    catch (e) { toast((e as Error).message, 'bad'); }
+  }, []);
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  return (
+    <Card title={t('thRequests')}>
+      <Table head={[t('thDate'), t('name'), t('thPlan'), t('thContact'), t('status'), '']} empty={items?.length === 0}>
+        {(items || []).map((r) => (
+          <Row key={r.id}>
+            <Cell>{dateTime(r.created_at, lang)}</Cell>
+            <Cell>{r.name || '—'}</Cell>
+            <Cell>{r.plan_code || '—'}</Cell>
+            <Cell mono>{r.contact || r.email || r.phone || '—'}</Cell>
+            <Cell><Badge tone={r.status === 'new' ? 'warn' : 'good'}>{r.status}</Badge></Cell>
+            <Cell>
+              {r.status === 'new' && (
+                <ActionButton className="btn btn-sm"
+                  onClick={async () => { await th.setRequestStatus(r.id, 'done'); await refresh(); onChanged(); }}>
+                  {t('thMarkDone')}
+                </ActionButton>
+              )}
+            </Cell>
+          </Row>
+        ))}
+      </Table>
+    </Card>
+  );
+}
+
+
+function SettingsTab({
+  settings, addresses, keyId, onSaved,
+}: { settings?: ThSettings; addresses?: ThAddresses; keyId?: string | null; onSaved: () => void }) {
+  const { t } = useApp();
+  const [form, setForm] = useState<ThSettings | null>(settings ?? null);
+  const [password, setPassword] = useState('');
+  const [testTo, setTestTo] = useState('');
+
+  useEffect(() => { setForm(settings ?? null); }, [settings]);
+  if (!form) return <Loading />;
+
+  const setMail = (patch: Partial<ThSettings['mail']>) => setForm({ ...form, mail: { ...form.mail, ...patch } });
+
+  return (
+    <div className="space-y-4">
+      <Card title={t('thConnection')} icon={<Settings2 className="h-4 w-4" />}>
+        <Notice>{t('thConnectionHint')}</Notice>
+
+        {/* آدرس‌های واقعیِ همین کامپیوتر — نه نمونه، نه حدس */}
+        {(addresses?.lan.length ? addresses.lan : []).map((a) => (
+          <div key={a.ip} className="mb-2 rounded-xl border border-line/60 p-3">
+            <p className="mb-1.5 text-[11px] text-ink-muted">{t('thFromThisNetwork')} — {a.ip}</p>
+            <KV label={t('thAddrOtp')} mono>
+              <span dir="ltr">{a.otp}</span> <CopyButton value={a.otp} />
+            </KV>
+            <KV label={t('thAddrApi')} mono>
+              <span dir="ltr">{a.api}</span> <CopyButton value={a.api} />
+            </KV>
+          </div>
+        ))}
+        {!addresses?.lan.length && (
+          <KV label={t('thAddrOtp')} mono>
+            <span dir="ltr">{addresses?.local.otp ?? '—'}</span>
+          </KV>
+        )}
+        <label className="mb-3 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
+          {t('thEnable')}
+        </label>
+        <Field label={t('thServerToken')} hint={t('thServerTokenHint')}>
+          <input className="input" value={form.serverToken} onChange={(e) => setForm({ ...form, serverToken: e.target.value })} dir="ltr" />
+        </Field>
+        <KV label={t('thKeyId')} mono>{keyId || '—'}</KV>
+      </Card>
+
+      <Card title={t('thMail')} icon={<Mail className="h-4 w-4" />}>
+        <Notice tone="warn">{t('thGmailHint')}</Notice>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label={t('thMailHost')}>
+            <input className="input" value={form.mail.host} onChange={(e) => setMail({ host: e.target.value })} dir="ltr" placeholder="smtp.gmail.com" />
+          </Field>
+          <Field label={t('thMailPort')}>
+            <input className="input" type="number" value={form.mail.port} onChange={(e) => setMail({ port: Number(e.target.value) })} dir="ltr" />
+          </Field>
+          <Field label={t('thMailUser')}>
+            <input className="input" value={form.mail.user} onChange={(e) => setMail({ user: e.target.value })} dir="ltr" />
+          </Field>
+          <Field label={t('thMailPassword')} hint={form.mail.passwordSet ? t('thMailPasswordSet') : ''}>
+            <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} dir="ltr" placeholder="••••••••" />
+          </Field>
+          <Field label={t('thMailFrom')}>
+            <input className="input" value={form.mail.from} onChange={(e) => setMail({ from: e.target.value })} dir="ltr" />
+          </Field>
+          <Field label={t('thMailFromName')}>
+            <input className="input" value={form.mail.fromName} onChange={(e) => setMail({ fromName: e.target.value })} />
+          </Field>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <Field label={t('thTestMailTo')}>
+            <input className="input" value={testTo} onChange={(e) => setTestTo(e.target.value)} dir="ltr" />
+          </Field>
+          <ActionButton
+            className="btn"
+            busyLabel={t('thSending')}
+            onClick={async () => {
+              const res = await th.testMail(testTo);
+              if (res.ok) toast(t('thMailSent'), 'good');
+              else toast(res.detail || res.error || t('thMailFailed'), 'bad');
+            }}
+          >
+            {t('thSendTest')}
+          </ActionButton>
+        </div>
+      </Card>
+
+      <Card title={t('thPrices')} icon={<Tag className="h-4 w-4" />}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label={t('thCurrency')}>
+            <input className="input" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} />
+          </Field>
+          <Field label={t('thWhatsapp')}>
+            <input className="input" value={form.whatsapp} onChange={(e) => setForm({ ...form, whatsapp: e.target.value })} dir="ltr" />
+          </Field>
+        </div>
+      </Card>
+
+      <ActionButton
+        className="btn btn-primary w-full"
+        busyLabel={t('thSaving')}
+        onClick={async () => {
+          try {
+            const body: Record<string, unknown> = {
+              enabled: form.enabled, serverToken: form.serverToken,
+              currency: form.currency, whatsapp: form.whatsapp, mail: form.mail,
+            };
+            if (password) body.mailPassword = password;
+            await th.saveSettings(body);
+            setPassword('');
+            toast(t('saved'), 'good');
+            onSaved();
+          } catch (e) { toast((e as Error).message, 'bad'); }
+        }}
+      >
+        {t('save')}
+      </ActionButton>
+    </div>
+  );
+}
+
+/**
+ *  کد ورود.
+ *
+ *  کدها فقط به‌صورت هش در جدول‌اند و همین صفحه هم آن‌ها را نمی‌خواند —
+ *  فهرست فقط می‌گوید «برای چه کسی رفته و کِی تمام می‌شود». اگر مدیر
+ *  می‌توانست کدِ کسی را ببیند، دیگر کدِ دو‌عاملی نبود.
+ */
+function Otp({ settings, onSaved }: { settings?: ThSettings; onSaved: () => void }) {
+  const { t, lang } = useApp();
+  const [status, setStatus] = useState<ThOtpStatus | null>(null);
+  const [form, setForm] = useState<ThSettings['sms'] | null>(settings?.sms ?? null);
+  const [message, setMessage] = useState(settings?.otpMessage ?? '');
+  const [token, setToken] = useState('');
+  const [testMethod, setTestMethod] = useState('email');
+  const [testTo, setTestTo] = useState('');
+
+  const refresh = useCallback(async () => {
+    try { setStatus(await th.otp()); }
+    catch (e) { toast((e as Error).message, 'bad'); }
+  }, []);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    if (settings) { setForm(settings.sms); setMessage(settings.otpMessage); }
+  }, [settings]);
+
+  const set = (patch: Partial<ThSettings['sms']>) =>
+    setForm((f) => (f ? { ...f, ...patch } : f));
+
+  return (
+    <div className="space-y-4">
+      <Card title={t('thOtp')} action={
+        <ActionButton className="btn btn-sm" onClick={refresh}><RefreshCw className="h-4 w-4" /></ActionButton>
+      }>
+        <Notice>{t('thOtpHint')}</Notice>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <KV label={t('thOtpEmail')}>
+            <Badge tone={status?.channels.email.ready ? 'good' : 'warn'}>
+              {status?.channels.email.ready ? t('thOtpReady') : t('thOtpNotReady')}
+            </Badge>
+          </KV>
+          <KV label={t('thOtpSms')}>
+            <Badge tone={status?.channels.sms.ready ? 'good' : 'warn'}>
+              {status?.channels.sms.ready ? t('thOtpReady') : t('thOtpNotReady')}
+            </Badge>
+          </KV>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <Select value={testMethod} onChange={setTestMethod} options={[
+            { value: 'email', label: t('thOtpEmail') },
+            { value: 'phone', label: t('thOtpSms') },
+          ]} />
+          <input
+            className="input w-56"
+            value={testTo}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTestTo(e.target.value)}
+            placeholder={testMethod === 'email' ? 'name@example.com' : '0700000000'}
+          />
+          <ActionButton className="btn btn-sm" onClick={async () => {
+            const r = await th.testOtp(testMethod, testTo.trim());
+            toast(r.ok ? t('saved') : (r.detail || r.error || 'خطا'), r.ok ? 'good' : 'bad');
+            await refresh();
+          }}>{t('thOtpTest')}</ActionButton>
+        </div>
+      </Card>
+
+      <Card title={t('thSmsGateway')}>
+        <Notice>{t('thSmsHint')}</Notice>
+        {form && (
+          <div className="mt-3 space-y-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={form.enabled}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => set({ enabled: e.target.checked })} />
+              {t('thActive')}
+            </label>
+
+            <div className="grid gap-3 sm:grid-cols-4">
+              <div className="sm:col-span-3">
+                <Field label={t('thSmsUrl')}>
+                  <input className="input w-full" value={form.url} dir="ltr"
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => set({ url: e.target.value })} />
+                </Field>
+              </div>
+              <Field label={t('thSmsMethod')}>
+                <Select value={form.method} onChange={(v: string) => set({ method: v })}
+                  options={[{ value: 'POST', label: 'POST' }, { value: 'GET', label: 'GET' }]} />
+              </Field>
+            </div>
+
+            <Field label={t('thSmsHeaders')}>
+              <textarea className="input w-full font-mono text-xs" rows={2} dir="ltr" value={form.headers}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => set({ headers: e.target.value })} />
+            </Field>
+
+            <Field label={t('thSmsBody')}>
+              <textarea className="input w-full font-mono text-xs" rows={2} dir="ltr" value={form.body}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => set({ body: e.target.value })} />
+            </Field>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label={t('thSmsToken')}>
+                <input className="input w-full" type="password" dir="ltr" value={token}
+                  placeholder={form.tokenSet ? '••••••••' : ''}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setToken(e.target.value)} />
+              </Field>
+              <Field label={t('thOtpMessage')}>
+                <input className="input w-full" value={message}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMessage(e.target.value)} />
+              </Field>
+            </div>
+            <p className="text-xs text-muted">{t('thOtpMessageHint')}</p>
+
+            <ActionButton className="btn btn-primary btn-sm" onClick={async () => {
+              await th.saveSettings({
+                sms: form,
+                otpMessage: message,
+                ...(token ? { smsToken: token } : {}),
+              });
+              setToken('');
+              toast(t('saved'), 'good');
+              onSaved();
+              await refresh();
+            }}>{t('save')}</ActionButton>
+          </div>
+        )}
+      </Card>
+
+      <Card title={t('thOtpPending')} action={
+        <ActionButton className="btn btn-sm" onClick={async () => {
+          const r = await th.purgeOtp();
+          toast(`${r.removed}`, 'good');
+          await refresh();
+        }}>{t('thOtpPurge')}</ActionButton>
+      }>
+        {!status?.pending.length ? (
+          <Notice>{t('thOtpNoPending')}</Notice>
+        ) : (
+          <Table head={[t('thOtpEmail'), t('name'), t('thOtpTries'), t('thOtpExpires')]}>
+            {status.pending.map((p) => (
+              <Row key={`${p.method}:${p.value}`}>
+                <Cell><span dir="ltr">{p.value}</span></Cell>
+                <Cell>{p.name || '—'}</Cell>
+                <Cell>{p.tries} / {status.maxTries}</Cell>
+                <Cell>
+                  {p.expired
+                    ? <Badge tone="warn">{t('thOtpExpired')}</Badge>
+                    : relative(p.expiresAt, lang)}
+                </Cell>
+              </Row>
+            ))}
+          </Table>
+        )}
+      </Card>
+    </div>
+  );
 }

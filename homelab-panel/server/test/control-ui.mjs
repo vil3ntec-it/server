@@ -201,6 +201,36 @@ try {
   await page.screenshot({ path: path.join(shots, 'project-detail.png'), fullPage: true });
   check('صفحهٔ اختصاصیِ پروژه از فهرست باز می‌شود', /\/control\/projects\/prj_/.test(page.url()), page.url());
 
+  console.log('\n── صفحهٔ توحید سرِ جایش می‌ماند ──');
+  /*
+   *  یک بار این صفحه هر ثانیه خودش را از نو می‌ساخت: زیربخش‌ها داخلِ
+   *  خودِ کامپوننت تعریف شده بودند، و چون سنجه‌های زندهٔ سرور مدام از
+   *  سوکت می‌رسند و در همان context‌اند، هر رسیدنشان کلِ زیردرخت را
+   *  پیاده و سوار می‌کرد. نشانه‌اش این بود که متنِ داخلِ کادرِ جستجو
+   *  وسطِ تایپ پاک می‌شد.
+   */
+  await page.setViewportSize({ width: 1400, height: 950 });
+  await page.goto(`${BASE}/control/tohid`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1200);
+
+  const calls = [];
+  page.on('request', (r) => { if (r.url().includes('/api/control/tohid/')) calls.push(r.url()); });
+
+  const search = page.locator('input[placeholder]').first();
+  await search.fill('احمد');
+  await page.waitForTimeout(6000);
+
+  check('متنِ جستجو وسطِ کار پاک نمی‌شود', (await search.inputValue()) === 'احمد', await search.inputValue());
+  check('صفحه خودش را مدام از سرور نمی‌خواند', calls.length <= 2, `${calls.length} درخواست در ۶ ثانیه`);
+
+  console.log('\n── بخشِ کد ورود ──');
+  await page.locator('button', { hasText: 'کد ورود' }).first().click();
+  await page.waitForTimeout(700);
+  const otpText = await page.locator('main').innerText();
+  check('بخشِ کد ورود باز می‌شود', otpText.includes('دروازهٔ پیامک'), otpText.slice(0, 160));
+  check('وضعیتِ ایمیل و پیامک دیده می‌شود', otpText.includes('تنظیم نشده') || otpText.includes('آماده'), otpText.slice(0, 160));
+  await page.screenshot({ path: path.join(shots, 'tohid-otp.png'), fullPage: true });
+
   console.log('\n── موبایل ──');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE}/control`, { waitUntil: 'networkidle' });
