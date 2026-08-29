@@ -29,6 +29,23 @@ const mailText = (raw) => {
   return Buffer.from(body.replace(/\s/g, ''), 'base64').toString('utf8');
 };
 
+
+/**
+ * صبر تا وقتی شرط برقرار شود — نه یک خوابِ ثابت.
+ *
+ * خوابِ ثابت روی این رایانه جواب می‌داد و روی رایانهٔ کندترِ CI نه: نامه
+ * هنوز نرسیده بود و آزمون روی «چیزی نیست» می‌شکست. آزمونی که گاهی رد
+ * شود، از نبودنش بدتر است — چون آدم را به شکِ بی‌مورد می‌اندازد.
+ */
+const waitFor = async (label, ready, timeoutMs = 10000) => {
+  const until = Date.now() + timeoutMs;
+  while (Date.now() < until) {
+    if (ready()) return true;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  throw new Error(`زمان تمام شد در انتظارِ: ${label}`);
+};
+
 let pass = 0, fail = 0;
 const check = (name, ok, extra = '') => {
   ok ? pass++ : fail++;
@@ -52,7 +69,9 @@ await new Promise((r) => smsGateway.listen(SMS_PORT, '127.0.0.1', r));
    بدونِ رمزنگاری، خودِ کلاینت درست رفتار می‌کند و رمز را نمی‌فرستد؛
    پس آزمون هم باید سرورِ رمزنگاری‌شده بدهد، نه اینکه آن قاعده را دور بزند. */
 const certDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'otp-cert-'));
-execSync(`openssl req -x509 -newkey rsa:2048 -keyout ${certDir}/k.pem -out ${certDir}/c.pem -days 1 -nodes -subj "/CN=127.0.0.1"`, { stdio: 'ignore' });
+// گواهی باید نامِ 127.0.0.1 را در SAN داشته باشد، وگرنه حتی پس از اعتماد
+// هم نامِ میزبان جور درنمی‌آید
+execSync(`openssl req -x509 -newkey rsa:2048 -keyout ${certDir}/k.pem -out ${certDir}/c.pem -days 1 -nodes -subj "/CN=127.0.0.1" -addext "subjectAltName=IP:127.0.0.1"`, { stdio: 'ignore' });
 const mailInbox = [];
 const smtp = tls.createServer(
   { key: fs.readFileSync(`${certDir}/k.pem`), cert: fs.readFileSync(`${certDir}/c.pem`) },
@@ -88,7 +107,11 @@ await new Promise((r) => smtp.listen(SMTP_PORT, '127.0.0.1', r));
 const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'src/index.js'], {
   env: { ...process.env, HLP_PORT: String(PORT), HLP_HOST: '127.0.0.1',
          HLP_DATA_DIR: path.join(tmp, 'data'), HLP_SITES_ROOT: path.join(tmp, 'sites'),
-         HLP_SITESYNC: '0', HLP_AI_ENABLED: '0', HLP_TUNNEL: '0' },
+         HLP_SITESYNC: '0', HLP_AI_ENABLED: '0', HLP_TUNNEL: '0',
+         // گواهیِ آزمون را به سرور می‌شناسانیم — نه اینکه بررسیِ گواهی را
+         // خاموش کنیم. کلاینت باید همان سخت‌گیریِ همیشگی‌اش را داشته باشد،
+         // وگرنه آزمون چیزی را می‌آزماید که در واقعیت اجرا نمی‌شود.
+         NODE_EXTRA_CA_CERTS: `${certDir}/c.pem` },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let out = '';
@@ -138,15 +161,16 @@ try {
   check('پیامک آماده است', st.data.channels?.sms?.ready === true, JSON.stringify(st.data.channels));
 
   console.log('\n── کدِ ایمیل ──');
-  await api('/api/control/tohid/otp/test', { method: 'POST', token, body: { method: 'email', to: 'shop@example.com' } });
-  await new Promise((r) => setTimeout(r, 400));
+  const firstMail = await api('/api/control/tohid/otp/test', { method: 'POST', token, body: { method: 'email', to: 'shop@example.com' } });
+  check('سرور گفت نامه رفت', firstMail.data.ok === true, JSON.stringify(firstMail.data));
+  await waitFor('رسیدنِ نامه', () => mailInbox.length > 0);
   const mailCode = (mailText(mailInbox[0]).match(/(\d{6})/) || [])[1];
   check('نامه واقعاً فرستاده شد', mailInbox.length > 0);
   check('کدِ شش‌رقمی داخلِ نامه هست', /^\d{6}$/.test(mailCode || ''), mailCode);
 
   console.log('\n── کدِ پیامک ──');
   await api('/api/control/tohid/otp/test', { method: 'POST', token, body: { method: 'phone', to: '0700123456' } });
-  await new Promise((r) => setTimeout(r, 400));
+  await waitFor('صدا زده شدنِ دروازهٔ پیامک', () => smsInbox.length > 0);
   check('دروازهٔ پیامک صدا زده شد', smsInbox.length > 0);
   const sms = smsInbox[0] || {};
   const smsBody = JSON.parse(sms.body || '{}');
@@ -162,7 +186,7 @@ try {
     smsInbox.length = 0;
     // مهلتِ ارسالِ دوباره را رد کنیم: هر بار شمارهٔ دیگری
     await api('/api/control/tohid/otp/test', { method: 'POST', token, body: { method: 'phone', to: `07001234${10 + i}` } });
-    await new Promise((r) => setTimeout(r, 250));
+    await waitFor(`پیامکِ شمارهٔ ${i + 1}`, () => smsInbox.length > 0);
     const b = JSON.parse(smsInbox[0]?.body || '{}');
     const c = (String(b.message || '').match(/(\d{6})/) || [])[1];
     if (c) seen.add(c);
@@ -171,9 +195,12 @@ try {
   check('همه دقیقاً شش رقم‌اند', [...seen].every((c) => /^\d{6}$/.test(c)), [...seen].join(','));
 
   console.log('\n── ورود با همان کد ──');
+  // شمارش پیش از فرستادن، نه پس از آن: وگرنه شرطِ انتظار همان لحظه برقرار
+  // است و آزمون نامهٔ قبلی را می‌خواند
+  const before = mailInbox.length;
   const sent = await api('/api/control/tohid/otp/test', { method: 'POST', token, body: { method: 'email', to: 'login@example.com' } });
   check('کد فرستاده شد', sent.data.ok === true, JSON.stringify(sent.data));
-  await new Promise((r) => setTimeout(r, 400));
+  await waitFor('رسیدنِ نامهٔ ورود', () => mailInbox.length > before);
   const code = (mailText(mailInbox[mailInbox.length - 1]).match(/(\d{6})/) || [])[1];
 
   const bad = await api('/api/v1/auth/otp/verify', { method: 'POST', body: { method: 'email', value: 'login@example.com', code: '000000' } });
@@ -186,8 +213,9 @@ try {
   check('همان کد بارِ دوم کار نمی‌کند', again.status >= 400, JSON.stringify(again.data).slice(0, 100));
 
   console.log('\n── کد در پنل دیده نمی‌شود ──');
+  const had = mailInbox.length;
   await api('/api/control/tohid/otp/test', { method: 'POST', token, body: { method: 'email', to: 'secret@example.com' } });
-  await new Promise((r) => setTimeout(r, 300));
+  await waitFor('رسیدنِ نامهٔ آخر', () => mailInbox.length > had);
   const view = await api('/api/control/tohid/otp', { token });
   const raw = JSON.stringify(view.data);
   const leaked = (mailText(mailInbox[mailInbox.length - 1]).match(/(\d{6})/) || [])[1];

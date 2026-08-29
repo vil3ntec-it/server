@@ -88,6 +88,13 @@ function talk(socket, timeoutMs) {
   return { expect, send: (line) => socket.write(`${line}\r\n`) };
 }
 
+/**
+ * SNI فقط برای نامِ دامنه معنی دارد. اگر میزبان یک IP باشد، فرستادنش به
+ * عنوانِ servername خلافِ RFC 6066 است و Node هم هشدار می‌دهد و در آینده
+ * نادیده‌اش می‌گیرد. پس آنجا نامی نمی‌فرستیم — بررسیِ گواهی سرِ جایش می‌ماند.
+ */
+const isIp = (host) => /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':');
+
 function connect(options, secure, timeoutMs) {
   return new Promise((resolve, reject) => {
     const socket = secure ? tls.connect(options) : net.connect(options);
@@ -130,7 +137,8 @@ export async function sendMail(settings, { to, subject, text }) {
   // می‌شود صریح گفت، برای سرورهایی که روی پورتِ غیرمعمول نشسته‌اند.
   const implicitTls = settings?.secure === undefined ? port === 465 : Boolean(settings.secure);
 
-  let socket = await connect({ host, port, servername: host }, implicitTls, timeoutMs);
+  const sni = isIp(host) ? {} : { servername: host };
+  let socket = await connect({ host, port, ...sni }, implicitTls, timeoutMs);
   let io = talk(socket, timeoutMs);
 
   try {
@@ -149,7 +157,7 @@ export async function sendMail(settings, { to, subject, text }) {
       await io.expect([220]);
 
       socket = await new Promise((resolve, reject) => {
-        const secured = tls.connect({ socket, servername: host }, () => resolve(secured));
+        const secured = tls.connect({ socket, host, ...sni }, () => resolve(secured));
         secured.once('error', reject);
       });
       io = talk(socket, timeoutMs);
