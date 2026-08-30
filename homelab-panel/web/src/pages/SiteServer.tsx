@@ -742,6 +742,33 @@ function InternetAccess({ data, onChanged }: { data: SiteServerInfo; onChanged: 
    با تونل نام‌دار Cloudflare یک زیردامنهٔ خودِ کاربر برای همیشه به این سرور وصل
    می‌شود. آن وقت آدرس یک‌بار در سایت می‌نشیند و دیگر هیچ لینکی لازم نیست.
 --------------------------------------------------------------------------- */
+/**
+ *  «دامنه‌ام برای یک برنامهٔ دیگر است» — پرسشی که هر کسی اینجا می‌پرسد.
+ *
+ *  یک دامنه بی‌نهایت زیردامنه دارد و هرکدام جای خودش می‌رود. چیزی که
+ *  اینجا ساخته می‌شود فقط یک رکورد برای همان زیردامنه‌ای است که خودتان
+ *  می‌نویسید؛ به بقیه دست نمی‌زند. نگفتنش یعنی کسی یا از ترس جلو نمی‌رود،
+ *  یا دامنهٔ اصلی را می‌نویسد و برنامهٔ دیگرش را از کار می‌اندازد.
+ */
+function SubdomainNote() {
+  const { t } = useApp();
+  return (
+    <div
+      className="mb-2 rounded-xl border border-line p-3 text-[11px] leading-relaxed text-ink-soft"
+      style={{ background: 'var(--surface-0)' }}
+    >
+      <p className="mb-1.5 font-medium text-ink">{t('subdomainTitle')}</p>
+      <p className="mb-1.5">{t('subdomainBody')}</p>
+      <pre className="mb-1.5 overflow-x-auto font-mono text-[11px]" dir="ltr">
+{`app.example.com    ← برنامهٔ فعلی شما، دست‌نخورده
+panel.example.com  ← این سرور
+shop.example.com   ← هر چیز دیگری، بعداً`}
+      </pre>
+      <p className="text-[11px]" style={{ color: 'var(--status-warning)' }}>{t('subdomainWarn')}</p>
+    </div>
+  );
+}
+
 function PermanentAddress({ data, onChanged }: { data: SiteServerInfo; onChanged: () => void }) {
   const { t } = useApp();
   const [hostname, setHostname] = useState(data.named.hostname || '');
@@ -1014,6 +1041,12 @@ var SELF_HOST_TOKEN = '${token ?? '…'}';`}
 
             <label className="label mt-4">{t('permanentStep2')}</label>
             <p className="mb-1.5 text-[11px] text-ink-muted">{t('permanentStep2Hint')}</p>
+            {/*
+                بیشترِ کسانی که به اینجا می‌رسند یک دامنه دارند که همین حالا
+                جای دیگری کار می‌کند، و می‌ترسند با این کار خرابش کنند. جواب
+                کوتاه است و باید همین‌جا باشد، نه در جایی که بعداً پیدا شود.
+            */}
+            <SubdomainNote />
             <div className="flex flex-wrap items-center gap-2">
               <input
                 className="input max-w-xs"
@@ -1061,6 +1094,7 @@ var SELF_HOST_TOKEN = '${token ?? '…'}';`}
               onChange={(e) => setCfToken(e.target.value)}
             />
             <label className="label mt-3">{t('permanentStep2')}</label>
+            <SubdomainNote />
             <div className="flex flex-wrap items-center gap-2">
               <input
                 className="input max-w-xs"
