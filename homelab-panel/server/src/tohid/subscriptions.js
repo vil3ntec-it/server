@@ -104,6 +104,36 @@ export function entitlementFor(accountId, now = Date.now()) {
   };
 }
 
+/* ---------------------------- دفترِ تغییرها ---------------------------- */
+
+/**
+ * هر دست‌بردن به اشتراک یک ردیف اینجا می‌گذارد.
+ *
+ * دفترِ رخدادِ عمومی (cc_audit) هم هست، ولی آن برای همهٔ سامانه است و
+ * تاریخِ پایانِ قبلی را نگه نمی‌دارد. اینجا دقیقاً همان چیزی نوشته می‌شود
+ * که موقعِ اختلاف لازم است: از چه تاریخی به چه تاریخی.
+ */
+function logChange({ accountId, subscriptionId = null, action, planCode = null,
+  prevEndsAt = null, newEndsAt = null, status = null, note = null, actor = 'admin' }) {
+  try {
+    db.prepare(`
+      INSERT INTO th_subscription_log
+        (account_id, subscription_id, action, plan_code, prev_ends_at, new_ends_at,
+         status, note, actor, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(accountId, subscriptionId, action, planCode, prevEndsAt, newEndsAt,
+      status, note, actor, Date.now());
+  } catch { /* دفتر نباید کارِ اصلی را بخواباند */ }
+}
+
+/** دفترِ تغییرهای یک حساب — تازه‌ترین اول */
+export function subscriptionChangeLog(accountId, limit = 50) {
+  return db.prepare(`
+    SELECT * FROM th_subscription_log WHERE account_id = ?
+    ORDER BY created_at DESC, id DESC LIMIT ?
+  `).all(accountId, Math.max(1, Math.min(200, Number(limit) || 50)));
+}
+
 /* ---------------------------- کارهای مدیر ----------------------------- */
 
 export function grantSubscription({
@@ -128,7 +158,12 @@ export function grantSubscription({
   audit({ actor, action: 'tohid.subscription.grant', entity: 'tohid_account', entityId: accountId,
     detail: { planCode, amount, unit, features: list } });
 
-  return activeSubscription(accountId);
+  const created = activeSubscription(accountId);
+  logChange({
+    accountId, subscriptionId: created?.id ?? null, action: 'grant', planCode,
+    prevEndsAt: null, newEndsAt: startsAt + span, status: 'active', note, actor,
+  });
+  return created;
 }
 
 export function extendSubscription(id, { amount, unit, actor = 'admin' }) {
@@ -144,6 +179,10 @@ export function extendSubscription(id, { amount, unit, actor = 'admin' }) {
 
   audit({ actor, action: 'tohid.subscription.extend', entity: 'tohid_account',
     entityId: row.account_id, detail: { id, amount, unit } });
+  logChange({
+    accountId: row.account_id, subscriptionId: id, action: 'extend', planCode: row.plan_code,
+    prevEndsAt: row.ends_at, newEndsAt: base + span, status: 'active', actor,
+  });
   return db.prepare('SELECT * FROM th_subscriptions WHERE id = ?').get(id);
 }
 
@@ -156,5 +195,34 @@ export function setSubscriptionStatus(id, status, { actor = 'admin' } = {}) {
     .run(status, Date.now(), id);
   audit({ actor, action: `tohid.subscription.${status}`, entity: 'tohid_account',
     entityId: row.account_id, detail: { id } });
+  logChange({
+    accountId: row.account_id, subscriptionId: id, action: 'status', planCode: row.plan_code,
+    prevEndsAt: row.ends_at, newEndsAt: row.ends_at, status, actor,
+  });
+  return db.prepare('SELECT * FROM th_subscriptions WHERE id = ?').get(id);
+}
+
+/**
+ * نشاندنِ تاریخِ پایان روی یک تاریخِ مشخص.
+ *
+ * با extend فرق دارد: آن اضافه می‌کند، این می‌نشاند — برای وقتی که اشتباهی
+ * شده و باید درست شود. تاریخِ قبلی در دفتر می‌ماند تا معلوم باشد چه بود.
+ */
+export function setSubscriptionEnd(id, endsAt, { actor = 'admin' } = {}) {
+  const row = db.prepare('SELECT * FROM th_subscriptions WHERE id = ?').get(id);
+  if (!row) throw Object.assign(new Error('اشتراک پیدا نشد'), { code: 'not_found' });
+  const when = Number(endsAt);
+  if (!Number.isFinite(when) || when <= row.starts_at) {
+    throw Object.assign(new Error('تاریخ پایان باید بعد از شروع باشد'), { code: 'bad_date' });
+  }
+
+  db.prepare('UPDATE th_subscriptions SET ends_at = ?, updated_at = ? WHERE id = ?')
+    .run(when, Date.now(), id);
+  audit({ actor, action: 'tohid.subscription.set_end', entity: 'tohid_account',
+    entityId: row.account_id, detail: { id, endsAt: when } });
+  logChange({
+    accountId: row.account_id, subscriptionId: id, action: 'set_end', planCode: row.plan_code,
+    prevEndsAt: row.ends_at, newEndsAt: when, status: row.status, actor,
+  });
   return db.prepare('SELECT * FROM th_subscriptions WHERE id = ?').get(id);
 }

@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from 'react';
 import {
-  Store, Users, Crown, Wifi, Settings2, Mail, Tag, RefreshCw, Ban, CheckCircle2, Plus,
+  Store, Users, Crown, Wifi, Settings2, Mail, Tag, RefreshCw, Ban, CheckCircle2, Plus, Smartphone,
 } from 'lucide-react';
 import { useApp } from '../../app-context';
 import { Badge, Card, CopyButton, Field, Loading, Modal, toast } from '../../components/ui';
@@ -601,6 +601,27 @@ function SettingsTab({
           <input className="input" value={form.serverToken} onChange={(e) => setForm({ ...form, serverToken: e.target.value })} dir="ltr" />
         </Field>
         <KV label={t('thKeyId')} mono>{keyId || '—'}</KV>
+      </Card>
+
+      {/* برنامهٔ مدیریت روی گوشی — همان نشانی، بدونِ حسابِ تازه */}
+      <Card title={t('thAdminApp')} icon={<Smartphone className="h-4 w-4" />}>
+        <Notice>{t('thAdminAppHint')}</Notice>
+        {addresses?.remote ? (
+          <div className="mb-2 rounded-xl border border-line/60 p-3">
+            <p className="mb-1.5 text-[11px] text-ink-muted">{t('thAddrAnywhere')}</p>
+            <KV label={t('thAddrApi')} mono>
+              <span dir="ltr">{addresses.remote.api}</span> <CopyButton value={addresses.remote.api} />
+            </KV>
+          </div>
+        ) : (
+          <Notice tone="warn">{t('thAdminAppNoTunnel')}</Notice>
+        )}
+        {(addresses?.lan.length ? addresses.lan : []).map((a) => (
+          <KV key={a.ip} label={`${t('thFromThisNetwork')} — ${a.ip}`} mono>
+            <span dir="ltr">{a.api}</span> <CopyButton value={a.api} />
+          </KV>
+        ))}
+        <Notice tone="warn">{t('thAdminAppLogin')}</Notice>
       </Card>
 
       <Card title={t('thMail')} icon={<Mail className="h-4 w-4" />}>

@@ -60,6 +60,25 @@ CREATE TABLE IF NOT EXISTS th_subscriptions (
 );
 CREATE INDEX IF NOT EXISTS th_subs_account ON th_subscriptions(account_id);
 
+-- ─────────────────── دفترِ تغییرهای اشتراک ───────────────────
+-- جدولِ th_subscriptions فقط «حالا» را نگه می‌دارد. این یکی می‌گوید چه کسی
+-- کِی چه کرد و تاریخِ پایان از چه به چه رسید — تا اگر روزی سرِ یک تمدید
+-- حرف شد، جواب از روی ردیف باشد نه از روی حافظه.
+CREATE TABLE IF NOT EXISTS th_subscription_log (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id      TEXT    NOT NULL,
+  subscription_id INTEGER,
+  action          TEXT    NOT NULL,   -- grant | extend | set_end | status
+  plan_code       TEXT,
+  prev_ends_at    INTEGER,
+  new_ends_at     INTEGER,
+  status          TEXT,
+  note            TEXT,
+  actor           TEXT,
+  created_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS th_sub_log_account ON th_subscription_log(account_id, created_at DESC);
+
 -- ─────────────────────────── پلن‌ها (قیمت‌نامه) ───────────────────────────
 CREATE TABLE IF NOT EXISTS th_plans (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -25,6 +25,7 @@ import { onlineNow, connectionStats } from '../../tohid/presence.js';
 import { shopInfo } from '../../tohid/shop.js';
 import { licensePublicKey } from '../../tohid/keys.js';
 import { readInterfaces } from '../../metrics/network.js';
+import { publicState as tunnelState } from '../../tunnel.js';
 import { config } from '../../config.js';
 
 const router = express.Router();
@@ -57,6 +58,16 @@ function appAddresses() {
   const port = config.port;
   const ips = readInterfaces().map((i) => i.address).filter(Boolean);
   const hosts = [...new Set(ips)];
+
+  // بیرون از خانه، آی‌پیِ خانگی به درد نمی‌خورد. اگر تونل روشن باشد یک
+  // نشانیِ https واقعی هست که به همین کامپیوتر می‌رسد — بدونِ دامنه و
+  // بدونِ اینکه چیزی روی مودم باز شود. اگر روشن نباشد، اینجا هم چیزی
+  // نشان داده نمی‌شود؛ نشانیِ الکی بدتر از نبودنِ نشانی است.
+  const tunnel = tunnelState();
+  const remote = tunnel.status === 'running' && tunnel.url
+    ? { api: tunnel.url, otp: `${tunnel.wss}/tohid` }
+    : null;
+
   return {
     port,
     lan: hosts.map((ip) => ({
@@ -65,6 +76,8 @@ function appAddresses() {
       api: `http://${ip}:${port}`,
     })),
     local: { otp: `ws://127.0.0.1:${port}/tohid`, api: `http://127.0.0.1:${port}` },
+    remote,
+    tunnelStatus: tunnel.status,
   };
 }
 

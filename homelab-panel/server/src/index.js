@@ -49,6 +49,7 @@ import { ensureControlSchema } from './control/schema.js';
 import { ensureTohidSchema } from './tohid/schema.js';
 import tohidPublicRoutes from './routes/tohid.js';
 import tohidAdminRoutes from './routes/control/tohid.js';
+import tohidAdminApiRoutes from './routes/tohid-admin.js';
 import { createTohidWs } from './tohid/ws.js';
 import controlRoutes, { agentRouter, appConfigRouter } from './routes/control/index.js';
 import { ensureLocalServer } from './routes/control/servers.js';
@@ -135,6 +136,9 @@ app.use('/api/ai', aiRoutes);
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
 // Agentها و خودِ برنامه‌ها درِ ورودیِ خودشان را دارند (امضای HMAC / توکنِ پروژه)
 // API برنامهٔ توحید — احرازِ هویتش مالِ خودش است، نه ورودِ پنل
+// برنامهٔ مدیریتِ گوشی. پیش از مسیرهای عمومی می‌نشیند تا هیچ مسیرِ
+// عمومی‌ای نتواند /admin را بدزدد.
+app.use('/api/v1/admin', tohidAdminApiRoutes);
 app.use('/api/v1', tohidPublicRoutes);
 
 app.use('/api/control/agent', agentRouter);

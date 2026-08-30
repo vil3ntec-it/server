@@ -7,6 +7,9 @@ export type ThAddresses = {
   port: number;
   lan: { ip: string; otp: string; api: string }[];
   local: { otp: string; api: string };
+  /** نشانیِ عمومی — فقط وقتی تونل روشن است، وگرنه null */
+  remote: { api: string; otp: string } | null;
+  tunnelStatus: string;
 };
 
 export type ThOverview = {
