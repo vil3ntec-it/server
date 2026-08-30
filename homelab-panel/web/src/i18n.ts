@@ -671,6 +671,8 @@ const fa = {
   ccUpdateIncomplete: 'این بسته بخش‌هایی را که الان نصب است ندارد، پس نصب نشد — وگرنه همه از دست می‌رفت. هیچ فایلی عوض نشد. شاخه یا کانال به‌روزرسانی را درست کنید.',
   ccUpdateNeedsInstaller: 'این نسخه کتابخانه تازه می‌خواهد و از داخل برنامه نصب نمی‌شود. فایل نصبی تازه را از GitHub بگیرید. چیزی عوض نشد.',
   ccUpdateRollback: 'برگشت به نسخه قبل',
+  ccUpdateRollbackWhat: 'این دکمه به‌روزرسانی نیست — برنامه را به نسخه قبلی برمی‌گرداند. فقط وقتی بزنید که نسخه تازه مشکلی درست کرده باشد.',
+  ccUpdateRollbackConfirm: 'برنامه به نسخه قبلی برمی‌گردد و دوباره راه‌اندازی می‌شود. مطمئن هستید؟',
   ccInstalling: 'در حال نصب…',
   ccRestartNotice: 'پنل خودش را دوباره بالا می‌آورد؛ چند لحظه صبر کنید.',
 };
@@ -1335,6 +1337,8 @@ const en: Dict = {
   ccUpdateIncomplete: 'This package is missing parts of what is installed, so it was not applied — it would have wiped them. Nothing was changed. Check the update channel or branch.',
   ccUpdateNeedsInstaller: 'This version needs new libraries and cannot be installed from inside the app. Download a fresh installer from GitHub. Nothing was changed.',
   ccUpdateRollback: 'Roll back',
+  ccUpdateRollbackWhat: 'This is not the update button — it returns the app to the previous version. Use it only if a new version broke something.',
+  ccUpdateRollbackConfirm: 'The app will return to the previous version and restart. Are you sure?',
   ccInstalling: 'Installing…',
   ccRestartNotice: 'The panel is restarting itself; give it a moment.',
 };

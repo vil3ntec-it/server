@@ -164,13 +164,21 @@ export default function Updates() {
           </p>
         )}
 
+        {/*
+            برگشت، همسایهٔ دکمهٔ به‌روزرسانی است و کارش درست عکسِ آن: سرور را
+            به نسخهٔ قبل می‌برد. یک ضربه بدونِ پرسش، یعنی کسی که اشتباهی زدش
+            تازه بعد از راه‌اندازیِ دوباره می‌فهمد چه شد. پس هم می‌گوید چه
+            می‌کند، هم یک بار می‌پرسد.
+        */}
         {status.lastBackup && (
           <div className="mt-4 border-t border-line pt-3">
+            <p className="mb-2 text-[11px] text-ink-muted">{t('ccUpdateRollbackWhat')}</p>
             <p dir="ltr" className="mb-2 break-all font-mono text-[11px] text-ink-muted">{status.lastBackup}</p>
             <ActionButton
-              className="btn btn-sm"
+              className="btn btn-sm btn-danger"
               busyLabel="…"
               onClick={async () => {
+                if (!window.confirm(t('ccUpdateRollbackConfirm'))) return;
                 try {
                   await cc.rollbackUpdate();
                   setRestarting(true);
