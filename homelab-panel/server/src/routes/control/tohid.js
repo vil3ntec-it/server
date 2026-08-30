@@ -65,7 +65,15 @@ function appAddresses() {
   // نشان داده نمی‌شود؛ نشانیِ الکی بدتر از نبودنِ نشانی است.
   const tunnel = tunnelState();
   const remote = tunnel.status === 'running' && tunnel.url
-    ? { api: tunnel.url, otp: `${tunnel.wss}/tohid` }
+    ? {
+      api: tunnel.url,
+      otp: `${tunnel.wss}/tohid`,
+      // تونلِ سریع با هر بار روشن شدنِ سرور نشانیِ تازه می‌گیرد؛ تونلِ
+      // نام‌دار (با دامنهٔ خودتان) همیشه همان می‌ماند. کاربر باید بداند
+      // کدامش را دارد، وگرنه یک روز بیرون از خانه می‌فهمد.
+      permanent: Boolean(tunnel.permanent),
+      hostname: tunnel.hostname || null,
+    }
     : null;
 
   return {

@@ -612,6 +612,11 @@ function SettingsTab({
             <KV label={t('thAddrApi')} mono>
               <span dir="ltr">{addresses.remote.api}</span> <CopyButton value={addresses.remote.api} />
             </KV>
+            {/* ثابت است یا با هر ری‌استارت عوض می‌شود — این را باید همین‌جا
+                بداند، نه روزی که بیرون از خانه وصل نشد */}
+            <Notice tone={addresses.remote.permanent ? undefined : 'warn'}>
+              {t(addresses.remote.permanent ? 'thAddrPermanent' : 'thAddrChanges')}
+            </Notice>
           </div>
         ) : (
           <Notice tone="warn">{t('thAdminAppNoTunnel')}</Notice>
