@@ -99,6 +99,53 @@ try {
   const pkg = JSON.parse(await fsp.readFile(path.join(installRoot, 'homelab-panel', 'server', 'package.json'), 'utf8'));
   check('نسخهٔ package.json به‌روز شد', pkg.version !== '0.0.1', pkg.version);
 
+  /*
+   *  انتخابِ انتشار — همان جایی که به‌روزرسانی، آدم را به عقب می‌برد.
+   *
+   *  در این مخزن جز پنل، برنامهٔ اندروید هم انتشار دارد و برچسبش شمارهٔ
+   *  بزرگ‌تری در نامِ فایلش دارد (۳.۲.۰ در برابرِ ۱.۴.۰). قبلاً «تازه‌ترین
+   *  انتشارِ مخزن» برداشته می‌شد، پس نصبِ به‌روزرسانی کلِ سرور را به کامیتِ
+   *  آن انتشار — که مالِ روزهای قبل بود — برمی‌گرداند.
+   */
+  console.log('\n── انتشارِ درست انتخاب می‌شود ──');
+  const releases = [
+    {
+      tag_name: 'tohid-native', draft: false, prerelease: true,
+      published_at: '2026-09-01T00:00:00Z', target_commitish: 'f'.repeat(40),
+      assets: [{ name: 'Tohid-Native-3.2.126.apk' }],
+    },
+    {
+      tag_name: 'android-preview', draft: false, prerelease: true,
+      published_at: '2026-08-31T00:00:00Z', target_commitish: 'a'.repeat(40),
+      assets: [{ name: 'tohid-1.0.7.apk' }],
+    },
+    {
+      tag_name: 'windows-preview', draft: false, prerelease: true,
+      published_at: '2026-08-30T00:00:00Z', target_commitish: 'b'.repeat(40),
+      assets: [{ name: 'ControlCenter-Setup-1.4.0.exe' }, { name: 'SHA256SUMS.txt' }],
+    },
+  ];
+
+  const picked = updater.pickPanelRelease(releases, 'windows-preview');
+  check('انتشارِ اندروید به‌جای پنل برداشته نمی‌شود', picked?.tag_name === 'windows-preview', picked?.tag_name);
+  check('شماره از نامِ فایلِ نصبی خوانده می‌شود', updater.releaseVersionOf(picked) === '1.4.0', updater.releaseVersionOf(picked));
+  check('شمارهٔ برنامهٔ اندروید با پنل قاطی نمی‌شود',
+    updater.releaseVersionOf(releases[0]) === '3.2.126', updater.releaseVersionOf(releases[0]));
+
+  check('انتشارِ بی‌ربط، حتی وقتی تنهاست، برداشته نمی‌شود',
+    updater.pickPanelRelease([releases[0], releases[1]], 'windows-preview') === null);
+
+  const tagged = [
+    { tag_name: 'v1.3.0', draft: false, published_at: '2026-08-01T00:00:00Z', assets: [] },
+    { tag_name: 'v1.5.0', draft: false, published_at: '2026-07-01T00:00:00Z', assets: [] },
+  ];
+  check('میانِ برچسب‌های شماره‌دار، بالاترین شماره برنده است — نه تازه‌ترین تاریخ',
+    updater.pickPanelRelease(tagged, 'windows-preview')?.tag_name === 'v1.5.0',
+    updater.pickPanelRelease(tagged, 'windows-preview')?.tag_name);
+
+  check('پیش‌نویس نادیده گرفته می‌شود',
+    updater.pickPanelRelease([{ tag_name: 'v9.9.9', draft: true, assets: [] }], 'windows-preview') === null);
+
   console.log('\n── برگشت ──');
   const back = await updater.rollback({ actor: 'test' });
   check('برگشت انجام شد', back.ok === true && back.copied > 0, JSON.stringify(back).slice(0, 200));

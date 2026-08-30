@@ -68,6 +68,18 @@ export function updateBranch() {
   return getSetting('cc_update_branch', 'main');
 }
 
+/**
+ * برچسبِ انتشاری که ساختِ ویندوزِ همین پنل زیرش می‌نشیند.
+ *
+ * چرا لازم است: در همین مخزن انتشارهای دیگری هم هست — برنامهٔ اندروید زیر
+ * برچسب‌های خودش. آن‌ها هم «تازه‌ترین انتشار» حساب می‌شوند و کامیتشان مالِ
+ * روزِ دیگری است. بدونِ این، پنل می‌توانست انتشارِ برنامهٔ اندروید را
+ * «نسخهٔ تازهٔ خودش» بگیرد و با نصبش کلِ سرور را به یک کامیتِ قدیمی برگرداند.
+ */
+export function panelReleaseTag() {
+  return getSetting('cc_update_tag', 'windows-preview');
+}
+
 /** توکنِ GitHub (برای مخزنِ خصوصی یا سقفِ درخواستِ بالاتر) از گاوصندوق می‌آید */
 export const GITHUB_TOKEN_SECRET = 'github:update-token';
 
@@ -123,6 +135,50 @@ function isNewer(remote, local) {
   return false;
 }
 
+const VERSION_TAG = /^v?\d+(?:\.\d+)+$/i;
+const VERSION_IN_NAME = /(\d+(?:\.\d+)+)/;
+
+/**
+ * شمارهٔ نسخهٔ یک انتشار — یا null اگر شماره‌ای در کار نباشد.
+ *
+ * برچسبِ ثابت («windows-preview») شماره نیست؛ شماره داخلِ نامِ فایلِ نصبی
+ * است: ControlCenter-Setup-1.4.0.exe. تا وقتی شماره را نخوانیم نمی‌شود
+ * فهمید نسخهٔ آن‌طرف جلوتر است یا عقب‌تر — و همین بود که اجازه می‌داد
+ * به‌روزرسانی، آدم را به عقب ببرد.
+ */
+export function releaseVersionOf(release) {
+  const tag = String(release?.tag_name || '');
+  if (VERSION_TAG.test(tag)) return normalizeVersion(tag);
+  for (const asset of Array.isArray(release?.assets) ? release.assets : []) {
+    const found = VERSION_IN_NAME.exec(String(asset?.name || ''));
+    if (found) return found[1];
+  }
+  return null;
+}
+
+/**
+ * از میانِ انتشارهای مخزن، آن‌هایی که مالِ خودِ پنل‌اند — و از میانشان
+ * جلوترین. بقیهٔ انتشارها (برنامهٔ اندروید و هرچه فردا اضافه شود) نادیده
+ * گرفته می‌شوند، نه اینکه با تاریخِ انتشار با پنل رقابت کنند.
+ */
+export function pickPanelRelease(releases, tag = 'windows-preview') {
+  const mine = (Array.isArray(releases) ? releases : []).filter(
+    (r) => r && r.tag_name && !r.draft && (r.tag_name === tag || VERSION_TAG.test(String(r.tag_name)))
+  );
+  if (!mine.length) return null;
+
+  return mine.reduce((best, row) => {
+    if (!best) return row;
+    const a = releaseVersionOf(row);
+    const b = releaseVersionOf(best);
+    if (a && b && a !== b) return isNewer(a, b) ? row : best;
+    // شماره‌ها یکی است یا خوانده نشد — تازه‌ترین انتشار
+    const at = Date.parse(row.published_at || row.created_at || 0) || 0;
+    const bt = Date.parse(best.published_at || best.created_at || 0) || 0;
+    return at > bt ? row : best;
+  }, null);
+}
+
 /**
  * آخرین نسخهٔ موجود روی GitHub.
  * @returns {{available:boolean, current:string, latest:string|null, ...}}
@@ -148,33 +204,50 @@ export async function checkForUpdate({ force = false } = {}) {
 
   try {
     if (channel === 'release') {
-      // /releases/latest نسخه‌های پیش‌نمایش را نادیده می‌گیرد. اگر مخزن فقط
-      // پیش‌نمایش داشته باشد، این تابع خالی برمی‌گردد و قبلاً می‌افتادیم روی
-      // شاخهٔ main — که می‌تواند اصلاً برنامهٔ دیگری باشد. پس اگر نسخهٔ نهایی
-      // نبود، تازه‌ترین پیش‌نمایش را برمی‌داریم، نه شاخه را.
-      let release = await ghJson(`/repos/${repo}/releases/latest`);
-      if (!release || !release.tag_name) {
-        const all = await ghJson(`/repos/${repo}/releases?per_page=10`);
-        const usable = (Array.isArray(all) ? all : []).filter((r) => r && r.tag_name && !r.draft);
-        release = usable[0] || null;
-        if (release) out.prerelease = Boolean(release.prerelease);
-      }
+      // /releases/latest نسخه‌های پیش‌نمایش را نادیده می‌گیرد و ساختِ ویندوزِ
+      // این پنل پیش‌نمایش است، پس همیشه خالی برمی‌گردد. فهرست را می‌گیریم و
+      // از میانش انتشارِ خودِ پنل را برمی‌داریم — نه «تازه‌ترین انتشارِ مخزن»،
+      // که می‌تواند مالِ برنامهٔ اندروید و کامیتش مالِ هفتهٔ پیش باشد.
+      const all = await ghJson(`/repos/${repo}/releases?per_page=30`);
+      const release = pickPanelRelease(all, panelReleaseTag())
+        || (await ghJson(`/repos/${repo}/releases/latest`));
+
       if (release && release.tag_name) {
-        out.latest = normalizeVersion(release.tag_name);
+        const version = releaseVersionOf(release);
+        out.prerelease = Boolean(release.prerelease);
+        out.latest = version || normalizeVersion(release.tag_name);
         out.tag = release.tag_name;
         out.publishedAt = release.published_at ? Date.parse(release.published_at) : null;
         out.notes = release.body ? String(release.body).slice(0, 8000) : null;
         out.downloadUrl = release.zipball_url;
 
-        // برچسبِ «پیش‌نمایش» شماره نیست، پس مقایسهٔ نسخه معنی ندارد و همیشه
-        // می‌گفت «به‌روزرسانی هست». برای این‌ها کامیت را می‌سنجیم.
         const sha = /^[0-9a-f]{40}$/i.test(String(release.target_commitish || ''))
           ? release.target_commitish
           : null;
         if (sha) out.commit = sha;
-        out.available = force || (/^\d/.test(out.latest)
-          ? isNewer(out.latest, current)
-          : (sha ? sha !== installedCommit : true));
+
+        /*
+         *  به‌روزرسانی فقط به جلو.
+         *
+         *  تا حالا برای برچسبِ بی‌شماره فقط کامیت سنجیده می‌شد: «کامیتش با
+         *  مالِ ما فرق دارد» یعنی «نسخهٔ تازه هست» — حتی اگر آن کامیت مالِ
+         *  قبل بود. نتیجه‌اش این می‌شد که دکمهٔ به‌روزرسانی آدم را به نسخهٔ
+         *  قدیمی می‌برد. حالا اگر شمارهٔ آن‌طرف عقب‌تر باشد، اصلاً پیشنهاد
+         *  نمی‌شود.
+         */
+        if (version && isNewer(current, version)) {
+          out.available = Boolean(force);
+          out.behind = true;
+        } else if (version && isNewer(version, current)) {
+          out.available = true;
+        } else if (version) {
+          // همان شماره، ساختِ تازه‌تر: فقط اگر واقعاً بعد از نصبِ ما منتشر شده
+          const installedAt = Number(getSetting('cc_update_installed_at', 0)) || 0;
+          out.available = force
+            || Boolean(sha && sha !== installedCommit && (!installedAt || (out.publishedAt || 0) > installedAt));
+        } else {
+          out.available = force || Boolean(sha && sha !== installedCommit);
+        }
 
         setSetting('cc_update_last_check', out.checkedAt);
         return out;
