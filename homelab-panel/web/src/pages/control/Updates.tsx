@@ -3,7 +3,7 @@
 //  پیش از هر نصب، از کلِ برنامه بکاپ گرفته می‌شود و data/ و .env دست نمی‌خورند.
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from 'react';
-import { Download, GitBranch, RefreshCw, RotateCcw, Tag } from 'lucide-react';
+import { Download, GitBranch, RefreshCw, Tag } from 'lucide-react';
 import { useApp } from '../../app-context';
 import { Card, Field, Loading, Modal, toast } from '../../components/ui';
 import { dateTime, relative } from '../../format';
@@ -162,35 +162,6 @@ export default function Updates() {
           <p className="mt-3 text-sm" style={{ color: 'var(--status-critical)' }}>
             {info.error}
           </p>
-        )}
-
-        {/*
-            برگشت، همسایهٔ دکمهٔ به‌روزرسانی است و کارش درست عکسِ آن: سرور را
-            به نسخهٔ قبل می‌برد. یک ضربه بدونِ پرسش، یعنی کسی که اشتباهی زدش
-            تازه بعد از راه‌اندازیِ دوباره می‌فهمد چه شد. پس هم می‌گوید چه
-            می‌کند، هم یک بار می‌پرسد.
-        */}
-        {status.lastBackup && (
-          <div className="mt-4 border-t border-line pt-3">
-            <p className="mb-2 text-[11px] text-ink-muted">{t('ccUpdateRollbackWhat')}</p>
-            <p dir="ltr" className="mb-2 break-all font-mono text-[11px] text-ink-muted">{status.lastBackup}</p>
-            <ActionButton
-              className="btn btn-sm btn-danger"
-              busyLabel="…"
-              onClick={async () => {
-                if (!window.confirm(t('ccUpdateRollbackConfirm'))) return;
-                try {
-                  await cc.rollbackUpdate();
-                  setRestarting(true);
-                } catch (e) {
-                  toast((e as Error).message, 'bad');
-                }
-              }}
-            >
-              <RotateCcw className="h-4 w-4" />
-              {t('ccUpdateRollback')}
-            </ActionButton>
-          </div>
         )}
       </Card>
 
