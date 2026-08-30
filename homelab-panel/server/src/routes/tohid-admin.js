@@ -31,8 +31,24 @@ import { listDevices, revokeSessions, accountById } from '../tohid/accounts.js';
 import { listPlans, planByCode } from '../tohid/plans.js';
 import { readTohidSettings } from '../tohid/settings.js';
 import { rateLimit, clientIp } from './control/_shared.js';
+import { publicState as tunnelState } from '../tunnel.js';
 
 const router = express.Router();
+
+/**
+ * نشانیِ این سرور از بیرونِ خانه — یا null اگر تونل روشن نباشد.
+ *
+ * برنامهٔ گوشی این را نگه می‌دارد. وقتی صاحبش خانه است و با آی‌پیِ داخلی
+ * وصل شده، همین‌جا یاد می‌گیرد که از بیرون باید کجا را بزند؛ بعد وقتی از
+ * خانه بیرون رفت، خودش سراغِ همان می‌رود و کاربر چیزی تایپ نمی‌کند.
+ *
+ * نشانیِ تونلِ سریع با هر بار روشن شدنِ سرور عوض می‌شود، پس هر بار که
+ * برنامه در خانه با سرور حرف می‌زند، تازه‌اش را برمی‌دارد.
+ */
+function remoteUrl() {
+  const tunnel = tunnelState();
+  return tunnel.status === 'running' && tunnel.url ? tunnel.url : null;
+}
 
 const fail = (res, status, code, message) =>
   res.status(status).json({ error: { code, message } });
@@ -80,6 +96,7 @@ router.post('/login', loginLimit, guard(async (req, res) => {
   res.json({
     token: session.token,
     expiresAt: session.expiresAt,
+    remoteUrl: remoteUrl(),
     admin: { id: String(user.id), username: user.username, name: user.username, role },
   });
 }));
@@ -118,6 +135,7 @@ router.post('/logout', guard(async (req, res) => {
 router.get('/me', guard(async (req, res) => {
   res.json({
     admin: { id: String(req.user.id), username: req.user.username, name: req.user.username, role: req.role },
+    remoteUrl: remoteUrl(),
     serverTime: Date.now(),
   });
 }));
@@ -136,6 +154,7 @@ router.get('/stats', guard(async (_req, res) => {
     expiredSubscriptions: n(
       "SELECT COUNT(*) AS n FROM th_subscriptions WHERE status = 'expired' OR (status = 'active' AND ends_at < ?)", now),
     pendingRequests: n("SELECT COUNT(*) AS n FROM th_billing_requests WHERE status = 'new'"),
+    remoteUrl: remoteUrl(),
     serverTime: now,
   });
 }));

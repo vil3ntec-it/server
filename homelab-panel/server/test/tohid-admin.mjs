@@ -101,6 +101,15 @@ try {
   const noToken = await api('/api/v1/admin/stats');
   check('بدونِ توکن هیچ‌چیز', noToken.status === 401, String(noToken.status));
 
+  // نشانیِ بیرون از خانه: برنامه از همین می‌فهمد وقتی از خانه دور شد کجا
+  // را بزند. تونل در این آزمون خاموش است، پس باید null باشد — نه یک
+  // نشانیِ ساختگی که کاربر بعداً رویش بماند.
+  check('نشانیِ بیرون در پاسخِ ورود هست', 'remoteUrl' in admin.data, JSON.stringify(Object.keys(admin.data)));
+  check('تونل خاموش است، پس نشانیِ بیرون خالی است', admin.data.remoteUrl === null, String(admin.data.remoteUrl));
+  const me = await api('/api/v1/admin/me', { token });
+  check('صفحهٔ «من» هم همان را می‌دهد', me.data.remoteUrl === null && me.data.admin?.role === 'admin',
+    JSON.stringify(me.data).slice(0, 140));
+
   /* ───────────────── داشبورد ───────────────── */
 
   console.log('\n── داشبورد ──');
@@ -110,6 +119,7 @@ try {
   check('شمارِ دکان‌ها درست است', s.shops === 1, JSON.stringify(s));
   check('درخواستِ خرید دیده می‌شود', s.pendingRequests === 1, JSON.stringify(s));
   check('ساعتِ سرور می‌آید', typeof s.serverTime === 'number' && s.serverTime > 0, String(s.serverTime));
+  check('نشانیِ بیرون همراهِ آمار هم می‌آید', 'remoteUrl' in s, JSON.stringify(Object.keys(s)));
 
   /* ───────────────── کاربران ───────────────── */
 
