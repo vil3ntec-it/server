@@ -35,8 +35,13 @@ export function verifyPassword(password, stored) {
   }
 }
 
-// راز امضای JWT — یک‌بار ساخته و در دیتابیس نگهداری می‌شود
+// راز امضای JWT.
+//   ۱) اگر HLP_SECRET_KEY در محیط باشد، همان — راز در بکاپِ دیتابیس نمی‌رود و
+//      با بازسازیِ دیتابیس هم نشست‌ها نمی‌پرند.
+//   ۲) وگرنه مثل قبل: یک‌بار ساخته و در دیتابیس نگهداری می‌شود، تا نصبِ
+//      یک‌کلیکی بدونِ هیچ تنظیمی کار کند.
 export function jwtSecret() {
+  if (config.secretKey) return config.secretKey;
   let s = getSetting('jwt_secret');
   if (!s) {
     s = crypto.randomBytes(32).toString('hex');

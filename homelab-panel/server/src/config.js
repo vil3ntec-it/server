@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { buildDomains } from './platform/domain.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const SERVER_ROOT = path.resolve(__dirname, '..');
@@ -66,6 +67,33 @@ export const config = {
   // محدودیت برسد؛ اگر خواستید کم‌ترش کنید HLP_MSG_MAX را بگذارید.
   messengerMaxBytes: num(process.env.HLP_MSG_MAX, 256 * 1024 * 1024),
 
+  // ── زیرساخت: دامنهٔ مرکزی، لبه و امنیت ────────────────────────────────────
+  // دامنه اختیاری است. اگر نباشد، سرور در «حالتِ شبکهٔ خانگی» بالا می‌آید و
+  // دقیقاً مثل قبل کار می‌کند — نصبِ یک‌کلیکی نباید به دامنه گره بخورد.
+  domains: buildDomains(),
+
+  // پشتِ reverse proxy هستیم؟ فقط وقتی روشن شود که واقعاً پراکسی جلو باشد.
+  // اگر بی‌جهت روشن باشد، هر کسی با جعلِ X-Forwarded-For محدودیتِ نرخ را
+  // دور می‌زند و لاگ‌ها IPِ دروغ ثبت می‌کنند.
+  trustProxy: (process.env.HLP_TRUST_PROXY ?? '0') !== '0',
+
+  // مبدأهای اضافیِ مجاز برای CORS (با کاما جدا) — علاوه بر دامنه و شبکهٔ خانگی
+  corsOrigins: String(process.env.HLP_CORS_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+
+  // رازِ امضای JWT. اگر خالی بماند، مثل قبل خودکار ساخته و در دیتابیس نگه
+  // داشته می‌شود. گذاشتنِ آن در محیط یعنی راز در بکاپِ دیتابیس نیست و با
+  // بازسازیِ دیتابیس هم نشست‌ها نمی‌پرند.
+  secretKey: process.env.HLP_SECRET_KEY || '',
+
+  // چند نسخه بکاپ نگه داشته شود
+  backupKeep: num(process.env.HLP_BACKUP_KEEP, 14),
+
+  // بکاپِ خودکارِ روزانه — برای خاموش کردن 0
+  backupSchedule: (process.env.HLP_BACKUP_SCHEDULE ?? '1') !== '0',
+
   // سرورِ سایتِ پمپ یعقوبی (پروتکل realtime) روی همین پورت سوار می‌شود
   siteSync: {
     enabled: (process.env.HLP_SITESYNC ?? '1') !== '0',
@@ -97,10 +125,11 @@ export const paths = {
   db: path.join(config.dataDir, 'panel.db'),
   sitesData: path.join(config.dataDir, 'sites'),   // فضای کاری هر سایت (لاگ/بکاپ/دیتابیس/تنظیمات)
   uploads: path.join(config.dataDir, 'uploads'),   // لوگو و فایل‌های خود پنل
+  backups: path.join(config.dataDir, 'backups'),   // بکاپ‌های دیتابیس پنل
 };
 
 export function ensureDirs() {
-  for (const dir of [config.dataDir, paths.sitesData, paths.uploads, config.siteSync.dataDir]) {
+  for (const dir of [config.dataDir, paths.sitesData, paths.uploads, paths.backups, config.siteSync.dataDir]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
