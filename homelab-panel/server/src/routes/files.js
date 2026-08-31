@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { requireAuth } from '../auth.js';
+import { requireAuth, requireRole } from '../auth.js';
 import { resolveSafe, rootsWithMeta } from '../lib/safe-path.js';
 import { config } from '../config.js';
 import { sitesRoot } from '../sites/root.js';
@@ -12,7 +12,8 @@ import { logEvent } from '../db.js';
 import { invalidateSizeCache } from '../sites/registry.js';
 
 const router = Router();
-router.use(requireAuth);
+// فایل‌منیجر خطرناک‌ترین سطح است: viewer اصلاً واردش نمی‌شود
+router.use(requireAuth, requireRole('operator'));
 
 const TEXT_EXT = new Set([
   '.txt', '.md', '.json', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.css', '.scss', '.html',

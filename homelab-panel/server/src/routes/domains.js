@@ -1,13 +1,13 @@
 // دامنه‌ها: وضعیت DNS، گواهی SSL، تاریخ انقضا، سایت متصل و آنلاین/آفلاین
 import { Router } from 'express';
-import { requireAuth } from '../auth.js';
+import { requireAuth, requireWriteRole } from '../auth.js';
 import { db, logEvent } from '../db.js';
 import { checkDomain } from '../lib/domain-check.js';
 import { normalizeDomain } from '../sites/registry.js';
 import { syncTunnelRoutes } from '../tunnel.js';
 
 const router = Router();
-router.use(requireAuth);
+router.use(requireAuth, requireWriteRole('operator'));
 
 function rowToApi(row) {
   return {

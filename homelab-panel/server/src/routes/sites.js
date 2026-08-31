@@ -1,6 +1,6 @@
 // مدیریت سایت‌ها: فهرست، افزودن با مسیر، کشف خودکار، Start/Stop/Restart، لاگ
 import { Router } from 'express';
-import { requireAuth } from '../auth.js';
+import { requireAuth, requireWriteRole } from '../auth.js';
 import {
   listSites,
   getSite,
@@ -29,7 +29,7 @@ import { config } from '../config.js';
 import { sitesRoot } from '../sites/root.js';
 
 const router = Router();
-router.use(requireAuth);
+router.use(requireAuth, requireWriteRole('operator'));
 
 router.get('/', async (req, res) => {
   res.json({ sites: await listSites(), sitesRoot: sitesRoot() });

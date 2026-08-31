@@ -30,6 +30,7 @@ import { handleValidation } from './platform/validate.js';
 import { siteTunnelEvents, stopAllSiteTunnels } from './site-tunnels.js';
 
 import authRoutes from './routes/auth.js';
+import usersRoutes from './routes/users.js';
 import dashboardRoutes from './routes/dashboard.js';
 import sitesRoutes from './routes/sites.js';
 import domainsRoutes from './routes/domains.js';
@@ -124,6 +125,7 @@ app.use('/api/auth/setup', authLimiter);
 app.use('/api/auth/change-password', authLimiter);
 
 app.use('/api/auth', authRoutes);
+app.use('/api/users', usersRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/sites', sitesRoutes);
 app.use('/api/domains', domainsRoutes);

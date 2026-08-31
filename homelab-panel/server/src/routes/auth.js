@@ -12,7 +12,7 @@ import {
   listSessions,
   changePassword,
 } from '../auth.js';
-import { logEvent } from '../db.js';
+import { db, logEvent } from '../db.js';
 
 const router = Router();
 
@@ -33,7 +33,7 @@ router.post('/setup', (req, res) => {
   const user = createUser(String(username).trim(), String(password));
   const session = createSession(user, req);
   logEvent('info', 'panel', `حساب مدیر «${user.username}» ساخته شد`);
-  res.json({ ok: true, user: { id: user.id, username: user.username }, ...session });
+  res.json({ ok: true, user: { id: user.id, username: user.username, role: user.role }, ...session });
 });
 
 router.post('/login', (req, res) => {
@@ -43,9 +43,14 @@ router.post('/login', (req, res) => {
     logEvent('warn', 'panel', `ورود ناموفق با نام کاربری «${String(username || '').slice(0, 40)}»`);
     return res.status(401).json({ error: 'invalid_credentials' });
   }
+  if (user.disabled) {
+    logEvent('warn', 'panel', `ورودِ حسابِ بسته‌شدهٔ «${user.username}» رد شد`);
+    return res.status(403).json({ error: 'account_disabled' });
+  }
   const session = createSession(user, req);
+  db.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').run(Date.now(), user.id);
   logEvent('info', 'panel', `کاربر «${user.username}» وارد شد`);
-  res.json({ ok: true, user: { id: user.id, username: user.username }, ...session });
+  res.json({ ok: true, user: { id: user.id, username: user.username, role: user.role }, ...session });
 });
 
 router.post('/logout', requireAuth, (req, res) => {
@@ -54,7 +59,10 @@ router.post('/logout', requireAuth, (req, res) => {
 });
 
 router.get('/me', requireAuth, (req, res) => {
-  res.json({ user: { id: req.user.id, username: req.user.username }, sessions: listSessions(req.user.id) });
+  res.json({
+    user: { id: req.user.id, username: req.user.username, role: req.user.role },
+    sessions: listSessions(req.user.id),
+  });
 });
 
 router.post('/change-password', requireAuth, (req, res) => {
