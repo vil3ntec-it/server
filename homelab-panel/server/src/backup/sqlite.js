@@ -15,6 +15,7 @@
 // ---------------------------------------------------------------------------
 import fs from 'node:fs';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 /** نامِ فایلِ بکاپ: مرتب‌شونده بر اساس زمان، بدونِ کاراکترِ ممنوعِ ویندوز */
 export function backupFileName(reason = 'manual', at = new Date()) {
@@ -40,4 +41,46 @@ export function vacuumInto(db, targetPath) {
 
   const sizeBytes = fs.statSync(targetPath).size;
   return { file: path.basename(targetPath), path: targetPath, sizeBytes };
+}
+
+/** آیا این فایل واقعاً یک دیتابیسِ سالمِ پنل است؟ */
+export function verifyBackup(fullPath) {
+  try {
+    const probe = new DatabaseSync(fullPath, { readOnly: true });
+    try {
+      const row = probe.prepare('PRAGMA integrity_check').get();
+      const value = row?.integrity_check ?? Object.values(row || {})[0];
+      if (value !== 'ok') return { ok: false, error: 'integrity_check_failed' };
+      // باید جدول‌های خودمان را داشته باشد، وگرنه دیتابیسِ یک برنامهٔ دیگر است
+      const n = probe
+        .prepare(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name IN ('users','settings')`)
+        .get().n;
+      if (n < 2) return { ok: false, error: 'not_a_panel_database' };
+      return { ok: true };
+    } finally {
+      probe.close();
+    }
+  } catch (e) {
+    return { ok: false, error: e.code || 'unreadable' };
+  }
+}
+
+/**
+ * اگر بازگردانی در انتظار باشد، اعمالش می‌کند.
+ *
+ * این تابع باید **پیش از باز شدنِ دیتابیس** صدا زده شود، برای همین این‌جاست
+ * و نه در backup/index.js: آن فایل خودش db.js را import می‌کند و تا وقتی
+ * بارگذاری شود، دیتابیس از قبل باز شده است.
+ */
+export function applyPendingRestore(dbPath) {
+  const pending = `${dbPath}.restore`;
+  if (!fs.existsSync(pending)) return null;
+  try {
+    // فایل‌های جانبیِ WAL باید بروند، وگرنه با دیتابیسِ تازه ناسازگارند
+    for (const suffix of ['-wal', '-shm']) fs.rmSync(`${dbPath}${suffix}`, { force: true });
+    fs.renameSync(pending, dbPath);
+    return { restored: true };
+  } catch (e) {
+    return { restored: false, error: e.message };
+  }
 }

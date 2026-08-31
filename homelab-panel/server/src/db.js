@@ -6,11 +6,17 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { paths } from './config.js';
 import { runMigrations } from './db/migrate.js';
-import { vacuumInto, backupFileName } from './backup/sqlite.js';
+import { vacuumInto, backupFileName, applyPendingRestore } from './backup/sqlite.js';
 
 // ماژول‌های ESM قبل از کد index اجرا می‌شوند، پس پوشه‌ها را همین‌جا می‌سازیم
 fs.mkdirSync(path.dirname(paths.db), { recursive: true });
 fs.mkdirSync(paths.backups, { recursive: true });
+
+// بازگردانیِ در انتظار باید **پیش از** باز شدنِ دیتابیس اعمال شود؛ فایلِ
+// بازِ در حالِ استفاده را نمی‌شود زیرِ پای خودمان عوض کرد.
+const restored = applyPendingRestore(paths.db);
+if (restored?.restored) console.log('[دیتابیس] بکاپ بازگردانده شد');
+else if (restored?.error) console.error(`[دیتابیس] بازگردانی ناموفق بود: ${restored.error}`);
 
 export const db = new DatabaseSync(paths.db);
 

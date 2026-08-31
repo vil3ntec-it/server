@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import express from 'express';
 
 import { config, ensureDirs, SERVER_ROOT } from './config.js';
-import { db, logEvent, pruneEvents, getSetting } from './db.js';
+import { db, logEvent, pruneEvents, getSetting, setSetting } from './db.js';
 import { pruneSessions } from './auth.js';
 import { setSiteSync, setIo, getIo } from './state.js';
 import { createSiteSync } from './sitesync/index.js';
@@ -29,23 +29,15 @@ import { rateLimit } from './platform/rate-limit.js';
 import { handleValidation } from './platform/validate.js';
 import { siteTunnelEvents, stopAllSiteTunnels } from './site-tunnels.js';
 
-import authRoutes from './routes/auth.js';
-import usersRoutes from './routes/users.js';
-import dashboardRoutes from './routes/dashboard.js';
-import sitesRoutes from './routes/sites.js';
-import domainsRoutes from './routes/domains.js';
-import filesRoutes from './routes/files.js';
-import logsRoutes from './routes/logs.js';
-import networkRoutes from './routes/network.js';
-import settingsRoutes from './routes/settings.js';
-import siteServerRoutes from './routes/site-server.js';
 import messengerRoutes from './routes/messenger.js';
-import notifyRoutes, { adminRouter as notifyAdminRoutes } from './routes/notify.js';
+import notifyRoutes from './routes/notify.js';
+import { createApiV1, deprecatedAlias } from './routes/v1.js';
+import { healthPayload, readyPayload } from './platform/health.js';
+import { createBackup } from './backup/index.js';
 import * as notify from './notify/index.js';
 import * as messenger from './messenger/index.js';
 import { aiProxy, AI_PREFIX } from './ai/proxy.js';
 import { autostartAi, stopAi } from './ai/supervisor.js';
-import aiRoutes from './routes/ai.js';
 
 const PUBLIC_DIR = path.join(SERVER_ROOT, 'public');
 const PID_FILE = path.join(config.dataDir, 'panel.pid');
@@ -96,18 +88,15 @@ app.use((req, res, next) => {
 });
 
 // ------------------------------- سلامت -------------------------------------
-// همان پاسخی که سرور قدیمیِ سایت می‌داد تا تستِ «آیا سرور بالاست؟» کار کند
-app.get('/health', (req, res) => {
-  res.json({
-    ok: true,
-    service: 'pump-yaqobi-server',
-    panel: 'homelab-panel',
-    // با باز کردن همین آدرس معلوم می‌شود کدام نسخه واقعاً بالاست
-    version: versionInfo.version,
-    build: versionInfo.build,
-    root: versionInfo.root,
-    time: new Date().toISOString(),
-  });
+//  /health  «پروسه زنده است؟»       — سبک، بدونِ وابستگی، برای ناظرِ سرویس
+//  /ready   «الان می‌تواند کار کند؟» — دیتابیس و دیسک را واقعاً می‌زند
+//  چرا جدا: اگر /health به دیتابیس دست بزند و دیتابیس کند شود، ناظر پروسهٔ
+//  سالم را می‌کشد. توضیحِ کامل در platform/health.js
+app.get('/health', (req, res) => res.json(healthPayload()));
+
+app.get('/ready', (req, res) => {
+  const payload = readyPayload();
+  res.status(payload.ready ? 200 : 503).json(payload);
 });
 
 // -------------------------------- API --------------------------------------
@@ -120,26 +109,19 @@ const authLimiter = rateLimit({
   windowMs: Number(process.env.HLP_AUTH_RATE_WINDOW ?? 900) * 1000,
   skipSuccess: true,
 });
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/setup', authLimiter);
-app.use('/api/auth/change-password', authLimiter);
+for (const base of ['/api', '/api/v1']) {
+  app.use(`${base}/auth/login`, authLimiter);
+  app.use(`${base}/auth/setup`, authLimiter);
+  app.use(`${base}/auth/change-password`, authLimiter);
+}
 
-app.use('/api/auth', authRoutes);
-app.use('/api/users', usersRoutes);
-app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/sites', sitesRoutes);
-app.use('/api/domains', domainsRoutes);
-app.use('/api/files', filesRoutes);
-app.use('/api/logs', logsRoutes);
-app.use('/api/network', networkRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/site-server', siteServerRoutes);
-app.use('/api/messenger', messengerRoutes);
-app.use('/api/notify', notifyRoutes);
-app.use('/api/notify-admin', notifyAdminRoutes);
-app.use('/api/ai', aiRoutes);
+// قراردادِ رسمی
+app.use('/api/v1', createApiV1());
 
-app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));
+// نامِ مستعارِ قدیمی — رابط کاربریِ ساخته‌شدهٔ فعلی هنوز /api/... را صدا
+// می‌زند. اگر همین امروز برش می‌داشتیم، پنلِ در حالِ اجرا می‌شکست. هدرِ
+// Deprecation می‌گیرد تا روزی که UI مهاجرت کرد، حذفش بی‌خطر باشد.
+app.use('/api', deprecatedAlias, createApiV1());
 
 
 // ---------------------------- رابط کاربری ----------------------------------
@@ -278,6 +260,28 @@ const housekeeping = setInterval(() => {
   pruneEvents();
 }, 15 * 60 * 1000);
 housekeeping.unref?.();
+
+// بکاپِ خودکار.
+//
+// چرا با شمارنده و نه cron: یک سرورِ خانگی مرتب خاموش و روشن می‌شود. یک
+// زمان‌بندیِ ساعتی («هر شب ۳ بامداد») روی کامپیوتری که شب‌ها خاموش است
+// هرگز اجرا نمی‌شود. شمارندهٔ «هر ۲۴ ساعت از آخرین بکاپ» با هر الگوی
+// روشن‌بودنی کار می‌کند.
+const BACKUP_EVERY_MS = 24 * 3600 * 1000;
+if (config.backupSchedule) {
+  const backupTick = setInterval(() => {
+    try {
+      const last = getSetting('last_backup_at', 0);
+      if (Date.now() - last < BACKUP_EVERY_MS) return;
+      const entry = createBackup({ reason: 'scheduled' });
+      setSetting('last_backup_at', Date.now());
+      logEvent('info', 'panel', `بکاپِ خودکار گرفته شد: ${entry.file}`);
+    } catch (e) {
+      logEvent('error', 'panel', `بکاپِ خودکار ناموفق بود: ${e.message}`);
+    }
+  }, 30 * 60 * 1000);
+  backupTick.unref?.();
+}
 
 async function main() {
   if (siteSync) {
