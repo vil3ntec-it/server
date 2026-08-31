@@ -146,6 +146,27 @@ try {
   check('پیش‌نویس نادیده گرفته می‌شود',
     updater.pickPanelRelease([{ tag_name: 'v9.9.9', draft: true, assets: [] }], 'windows-preview') === null);
 
+  /*
+   *  تاریخِ انتشارِ برچسبِ چرخشی.
+   *
+   *  «windows-preview» هر بار دوباره ساخته می‌شود ولی published_at اش سرِ
+   *  روزِ اول می‌ماند. یک بار روی همین موضوع، به‌روزرسانی هیچ نسخهٔ تازه‌ای
+   *  نشان نمی‌داد: قاعدهٔ «همان شماره، ساختِ تازه‌تر» تاریخِ کهنه را
+   *  می‌سنجید و همیشه جواب می‌داد نه.
+   */
+  console.log('\n── تاریخِ انتشار از ساختِ تازه خوانده می‌شود ──');
+  const rolling = {
+    tag_name: 'windows-preview', draft: false, prerelease: true,
+    published_at: '2026-08-27T10:58:19Z',   // سرِ جایش مانده
+    created_at: '2026-09-15T00:00:00Z',     // ساختِ امروز
+    target_commitish: 'c'.repeat(40),
+    assets: [{ name: 'ControlCenter-Setup-1.4.0.exe' }],
+  };
+  check('تازه‌ترین از میانِ دو تاریخ برداشته می‌شود',
+    updater.pickPanelRelease([rolling], 'windows-preview')?.tag_name === 'windows-preview');
+  check('شمارهٔ نسخه از فایلِ نصبی خوانده شد',
+    updater.releaseVersionOf(rolling) === '1.4.0', updater.releaseVersionOf(rolling));
+
   console.log('\n── برگشت ──');
   const back = await updater.rollback({ actor: 'test' });
   check('برگشت انجام شد', back.ok === true && back.copied > 0, JSON.stringify(back).slice(0, 200));

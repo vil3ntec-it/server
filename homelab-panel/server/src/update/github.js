@@ -217,7 +217,16 @@ export async function checkForUpdate({ force = false } = {}) {
         out.prerelease = Boolean(release.prerelease);
         out.latest = version || normalizeVersion(release.tag_name);
         out.tag = release.tag_name;
-        out.publishedAt = release.published_at ? Date.parse(release.published_at) : null;
+        /*
+         *  برچسبِ چرخشی هر بار دوباره ساخته می‌شود ولی published_at اش سرِ
+         *  همان روزِ اول می‌ماند و تکان نمی‌خورد؛ آنچه جلو می‌رود created_at
+         *  است. تازه‌ترشان را برمی‌داریم، وگرنه «تاریخِ انتشار» چیزی را
+         *  می‌گوید که ماه‌ها پیش بوده و هر مقایسه‌ای با آن غلط درمی‌آید.
+         */
+        out.publishedAt = Math.max(
+          release.published_at ? Date.parse(release.published_at) : 0,
+          release.created_at ? Date.parse(release.created_at) : 0,
+        ) || null;
         out.notes = release.body ? String(release.body).slice(0, 8000) : null;
         out.downloadUrl = release.zipball_url;
 
