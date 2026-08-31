@@ -1,6 +1,7 @@
 // مدیریت سایت‌ها: فهرست، افزودن با مسیر، کشف خودکار، Start/Stop/Restart، لاگ
 import { Router } from 'express';
 import { requireLocalOrAuth } from '../local-key.js';
+import { requireWriteRole } from '../auth.js';
 import {
   listSites,
   getSite,
@@ -31,6 +32,10 @@ import { sitesRoot } from '../sites/root.js';
 const router = Router();
 // حسابِ مدیرِ پنل، یا کلیدِ محلیِ برنامهٔ رویِ همین کامپیوتر
 router.use(requireLocalOrAuth);
+// برنامهٔ محلی نقشِ پنل ندارد (کلیدِ همین کامپیوتر خودش مجوز است)؛ برای بقیه،
+// نوشتن دستِ‌کم operator می‌خواهد.
+const writeGuard = requireWriteRole('operator');
+router.use((req, res, next) => (req.user?.local ? next() : writeGuard(req, res, next)));
 
 router.get('/', async (req, res) => {
   res.json({ sites: await listSites(), sitesRoot: sitesRoot() });

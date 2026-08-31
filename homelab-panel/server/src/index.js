@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import express from 'express';
 
 import { config, ensureDirs, SERVER_ROOT } from './config.js';
-import { db, logEvent, pruneEvents, getSetting } from './db.js';
+import { db, logEvent, pruneEvents, getSetting, setSetting } from './db.js';
 import { pruneSessions } from './auth.js';
 import { setSiteSync, setIo, getIo } from './state.js';
 import { createSiteSync } from './sitesync/index.js';
@@ -25,6 +25,10 @@ import { sitesRoot, ensureSitesRoot } from './sites/root.js';
 import { stopAll } from './sites/process.js';
 import { startTunnel, stopTunnel, tunnelEvents, publicState as tunnelState } from './tunnel.js';
 import { versionInfo, versionLine } from './version.js';
+import { corsMiddleware, isAllowedOrigin, secureHeaders } from './platform/security.js';
+import { createApiV1 } from './routes/v1.js';
+import { rateLimit as rateLimitCfg } from './platform/rate-limit.js';
+import { handleValidation } from './platform/validate.js';
 import { siteTunnelEvents, stopAllSiteTunnels } from './site-tunnels.js';
 
 import authRoutes from './routes/auth.js';
@@ -40,6 +44,7 @@ import messengerRoutes from './routes/messenger.js';
 import notifyRoutes, { adminRouter as notifyAdminRoutes } from './routes/notify.js';
 import appRoutes, { adminRouter as appAdminRoutes } from './routes/app.js';
 import storageRoutes from './routes/storage.js';
+import aiRoutes from './routes/ai.js';
 import { pruneAppAuth } from './appauth/index.js';
 import { localKey } from './local-key.js';
 import { runMigrations, dbVersion } from './lib/migrations.js';
@@ -49,11 +54,12 @@ import { pruneAudit as pruneAppAudit } from './lib/audit.js';
 import { pruneTickets } from './lib/ws-ticket.js';
 import { rateLimit, pruneRateLimits } from './lib/rate-limit.js';
 import { otpSettings } from './appauth/settings.js';
+import { readyPayload } from './platform/health.js';
+import { createBackup } from './backup/index.js';
 import * as notify from './notify/index.js';
 import * as messenger from './messenger/index.js';
 import { aiProxy, AI_PREFIX } from './ai/proxy.js';
 import { autostartAi, stopAi } from './ai/supervisor.js';
-import aiRoutes from './routes/ai.js';
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
 import { ensureControlSchema } from './control/schema.js';
@@ -109,6 +115,11 @@ try {
 const app = express();
 app.disable('x-powered-by');
 
+// اگر پشتِ reverse proxy هستیم، Express باید بداند تا req.ip و req.secure درست باشند
+if (config.trustProxy) app.set('trust proxy', true);
+
+app.use(secureHeaders);
+
 /* ── CORS ────────────────────────────────────────────────────────────────────
    پیش از این هر سایتی در دنیا می‌توانست با کوکی و توکنِ کاربر به این سرور
    درخواست بزند. حالا:
@@ -135,14 +146,18 @@ function originAllowed(origin) {
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  const openApi = req.path.startsWith('/api/app/') || req.path === '/health';
+  // فقط مسیرهای «برنامه‌ها» برای همه بازند؛ بقیه — /health هم — از فهرستِ سفید می‌گذرند
+  const openApi = req.path.startsWith('/api/app/');
 
   if (openApi) {
     res.setHeader('Access-Control-Allow-Origin', origin || '*');
     // عمداً بدونِ credentials: توکن با هدر می‌آید، نه با کوکی
-  } else if (originAllowed(origin)) {
+  } else if (!origin || originAllowed(origin) || isAllowedOrigin(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin || '*');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
+  } else if (req.method === 'OPTIONS') {
+    // preflightِ مبدأِ ناشناس: بدونِ هدرِ اجازه، با پاسخِ صریح
+    return res.status(403).end();
   }
   res.setHeader('Vary', 'Origin');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Api-Key, X-Local-Key, X-Read-Key');
@@ -225,7 +240,38 @@ app.use('/api/app-config', appConfigRouter);
 app.use('/api/control/tohid', requireAuth, writeNeedsOperator, tohidAdminRoutes);
 app.use('/api/control', requireAuth, writeNeedsOperator, controlRoutes);
 
+/*
+ *  قراردادِ رسمیِ پنل، نسخه‌دار.
+ *
+ *  عمداً روی /api/v1 ننشسته: آن مسیر مالِ APIِ برنامهٔ توحید است و اپ‌هایی
+ *  که همین حالا بیرون‌اند /api/v1/auth/login را صدا می‌زنند. دو معنیِ
+ *  متفاوت برای یک آدرس یعنی یکی از دو برنامه می‌شکند، پس API پنل پیشوندِ
+ *  خودش را دارد. مسیرهای بی‌پیشوندِ /api هم مثل قبل سرِ جایشان‌اند.
+ */
+// ورود تنها درِ باز است. فقط تلاش‌های **ناموفق** شمرده می‌شوند تا کاربری که
+// رمزش را درست می‌زند قفل نشود.
+const authLimiter = rateLimitCfg({
+  name: 'auth',
+  max: Number(process.env.HLP_AUTH_RATE_LIMIT ?? 10),
+  windowMs: Number(process.env.HLP_AUTH_RATE_WINDOW ?? 900) * 1000,
+  skipSuccess: true,
+});
+for (const base of ['/api', '/api/panel/v1']) {
+  app.use(`${base}/auth/login`, authLimiter);
+  app.use(`${base}/auth/setup`, authLimiter);
+  app.use(`${base}/auth/change-password`, authLimiter);
+}
+
+app.use('/api/panel/v1', createApiV1());
+
 app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));
+
+// «الان می‌تواند کار کند؟» — برخلافِ /health، دیتابیس و دیسک را واقعاً می‌زند،
+// تا ناظرِ سرویس پروسهٔ سالمی را که فقط کند شده نکشد.
+app.get('/ready', (req, res) => {
+  const payload = readyPayload();
+  res.status(payload.ready ? 200 : 503).json(payload);
+});
 
 // صفحهٔ «اتصالِ برنامه‌ها» — آدرسِ سرور، تستِ زندهٔ ورود با کد، و کدِ آمادهٔ
 // اندروید/ویندوز/سایت. همان چیزی که باید به سازندهٔ برنامه بدهید.
@@ -258,6 +304,9 @@ if (fs.existsSync(PUBLIC_DIR)) {
       .send('رابط کاربری هنوز ساخته نشده است. در پوشهٔ web دستور «npm install && npm run build» را اجرا کنید.');
   });
 }
+
+// ورودیِ بد باید ۴۰۰ بدهد نه ۵۰۰ — و ۵۰۰ نباید جزئیاتِ داخلی لو بدهد
+app.use(handleValidation);
 
 app.use((err, req, res, next) => {
   logEvent('error', 'panel', `${req.method} ${req.path} → ${err.message}`);
@@ -362,6 +411,8 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
   // پنل، فایل‌منیجر و کنترل پروسه‌ها هرگز به اینترنت درز نمی‌کنند.
   const publicApp = express();
   publicApp.disable('x-powered-by');
+  if (config.trustProxy) publicApp.set('trust proxy', true);
+  publicApp.use(secureHeaders);
   publicApp.use((req, res, next) => {
     // این پورت عمداً عمومی است (اپ‌ها از اینترنت می‌آیند) ولی بدونِ credentials
     res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
@@ -491,6 +542,28 @@ const housekeeping = setInterval(() => {
   pruneAlerts();
 }, 15 * 60 * 1000);
 housekeeping.unref?.();
+
+// بکاپِ خودکار.
+//
+// چرا با شمارنده و نه cron: یک سرورِ خانگی مرتب خاموش و روشن می‌شود. یک
+// زمان‌بندیِ ساعتی («هر شب ۳ بامداد») روی کامپیوتری که شب‌ها خاموش است
+// هرگز اجرا نمی‌شود. شمارندهٔ «هر ۲۴ ساعت از آخرین بکاپ» با هر الگوی
+// روشن‌بودنی کار می‌کند.
+const BACKUP_EVERY_MS = 24 * 3600 * 1000;
+if (config.backupSchedule) {
+  const backupTick = setInterval(() => {
+    try {
+      const last = getSetting('last_backup_at', 0);
+      if (Date.now() - last < BACKUP_EVERY_MS) return;
+      const entry = createBackup({ reason: 'scheduled' });
+      setSetting('last_backup_at', Date.now());
+      logEvent('info', 'panel', `بکاپِ خودکار گرفته شد: ${entry.file}`);
+    } catch (e) {
+      logEvent('error', 'panel', `بکاپِ خودکار ناموفق بود: ${e.message}`);
+    }
+  }, 30 * 60 * 1000);
+  backupTick.unref?.();
+}
 
 async function main() {
   if (siteSync) {

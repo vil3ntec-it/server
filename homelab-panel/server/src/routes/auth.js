@@ -36,7 +36,7 @@ router.post('/setup', (req, res) => {
   const session = createSession(user, req);
   audit(req, 'panel.setup', { target: user.username });
   logEvent('info', 'panel', `حساب مدیر «${user.username}» ساخته شد`);
-  res.json({ ok: true, user: { id: user.id, username: user.username, role: 'admin' }, ...session });
+  res.json({ ok: true, user: { id: user.id, username: user.username, role: user.role || 'admin' }, ...session });
 });
 
 router.post('/login', (req, res) => {
@@ -51,8 +51,15 @@ router.post('/login', (req, res) => {
     audit(req, 'panel.login', { target: String(username || '').slice(0, 40), ok: false });
     return res.status(401).json({ error: 'invalid_credentials' });
   }
+  if (user.disabled) {
+    logEvent('warn', 'panel', `ورودِ حسابِ بسته‌شدهٔ «${user.username}» رد شد`);
+    return res.status(403).json({ error: 'account_disabled' });
+  }
   const session = createSession(user, req);
-  db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(Date.now(), user.id);
+  // هر دو ستون خوانده می‌شوند (روزنامهٔ نقش‌ها و فهرستِ کاربران)، پس هر دو تازه می‌مانند
+  const now = Date.now();
+  db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(now, user.id);
+  db.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').run(now, user.id);
   logEvent('info', 'panel', `کاربر «${user.username}» وارد شد`);
   audit(req, 'panel.login', { target: user.username });
   res.json({ ok: true, user: { id: user.id, username: user.username, role: user.role || 'admin' }, ...session });

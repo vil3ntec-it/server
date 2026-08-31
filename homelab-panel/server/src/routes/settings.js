@@ -5,7 +5,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { pipeline } from 'node:stream/promises';
-import { requireAuth } from '../auth.js';
+import { requireAuth, requireWriteRole } from '../auth.js';
 import { allSettings, getSetting, setSetting, logEvent } from '../db.js';
 import { config, paths } from '../config.js';
 import { versionInfo } from '../version.js';
@@ -46,7 +46,7 @@ router.get('/public', (req, res) => {
   });
 });
 
-router.use(requireAuth);
+router.use(requireAuth, requireWriteRole('admin'));
 
 router.get('/', (req, res) => {
   const s = allSettings();

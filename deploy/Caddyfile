@@ -1,0 +1,82 @@
+# ---------------------------------------------------------------------------
+#  Caddy — لبهٔ سیستم
+#
+#  چرا Caddy و نه nginx: گواهیِ TLS را خودش از Let's Encrypt می‌گیرد و تمدید
+#  می‌کند، بدونِ certbot و بدونِ cron. برای سروری که قرار است سال‌ها بدونِ
+#  مراقبت کار کند، این تفاوتِ بین «کار می‌کند» و «سه ماهِ دیگر گواهی منقضی
+#  می‌شود و کسی نمی‌فهمد» است.
+#
+#  {$DOMAIN} از محیط می‌آید — همان HLP_DOMAIN. هیچ نامی این‌جا نوشته نشده.
+#
+#  ⚠️ اگر از Cloudflare Tunnel استفاده می‌کنید، به این فایل نیازی نیست؛
+#     تونل خودش همین نقش را دارد. این برای وقتی است که سرور IP عمومی دارد
+#     یا به VPS منتقل شده.
+# ---------------------------------------------------------------------------
+
+{
+	# ایمیل برای هشدارهای Let's Encrypt
+	email {$ACME_EMAIL:admin@localhost}
+}
+
+# --- تنظیماتِ مشترک ---------------------------------------------------------
+(secure_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# نامِ سرور را نگوییم — کمکِ رایگان به اسکنرها نکنیم
+		-Server
+	}
+}
+
+(to_panel) {
+	reverse_proxy panel:4700 {
+		# پنل باید IP واقعیِ کاربر را بداند تا محدودیتِ نرخ و لاگ درست باشد.
+		# در سمتِ پنل هم باید HLP_TRUST_PROXY=1 باشد وگرنه این هدرها را
+		# عمداً نادیده می‌گیرد.
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+
+		# سلامتِ بالادست: اگر پنل آماده نباشد، Caddy ترافیک نمی‌فرستد
+		health_uri /health
+		health_interval 10s
+		health_timeout 3s
+	}
+}
+
+# --- api: تنها آدرسی که کلاینت‌ها می‌شناسند ---------------------------------
+api.{$DOMAIN} {
+	import secure_headers
+	import to_panel
+}
+
+# --- admin: پنلِ مدیریت -----------------------------------------------------
+#
+#  سطحِ اعتمادِ متفاوت، پس نامِ جدا. این‌جا جای سخت‌گیری است.
+#  خطِ remote_ip را از کامنت دربیاورید تا پنل فقط از داخلِ خانه باز شود:
+admin.{$DOMAIN} {
+	import secure_headers
+
+	# @external not remote_ip 192.168.0.0/16 10.0.0.0/8 172.16.0.0/12
+	# respond @external "not available" 403
+
+	import to_panel
+}
+
+# --- files ------------------------------------------------------------------
+files.{$DOMAIN} {
+	import secure_headers
+	import to_panel
+}
+
+# --- سایتِ اصلی و www --------------------------------------------------------
+{$DOMAIN} {
+	import secure_headers
+	import to_panel
+}
+
+www.{$DOMAIN} {
+	# ۳۰۸ نه ۳۰۲: مرورگر و موتورِ جست‌وجو باید بدانند این جابه‌جاییِ دائمی است
+	redir https://{$DOMAIN}{uri} 308
+}

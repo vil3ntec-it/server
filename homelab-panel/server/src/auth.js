@@ -35,8 +35,13 @@ export function verifyPassword(password, stored) {
   }
 }
 
-// راز امضای JWT — یک‌بار ساخته و در دیتابیس نگهداری می‌شود
+// راز امضای JWT.
+//   ۱) اگر HLP_SECRET_KEY در محیط باشد، همان — راز در بکاپِ دیتابیس نمی‌رود و
+//      با بازسازیِ دیتابیس هم نشست‌ها نمی‌پرند.
+//   ۲) وگرنه مثل قبل: یک‌بار ساخته و در دیتابیس نگهداری می‌شود، تا نصبِ
+//      یک‌کلیکی بدونِ هیچ تنظیمی کار کند.
 export function jwtSecret() {
+  if (config.secretKey) return config.secretKey;
   let s = getSetting('jwt_secret');
   if (!s) {
     s = crypto.randomBytes(32).toString('hex');
@@ -45,18 +50,71 @@ export function jwtSecret() {
   return s;
 }
 
+// ---------------------------------------------------------------------------
+//  نقش‌ها
+//
+//  تا امروز هر کسی که وارد می‌شد همه‌کاره بود: می‌توانست فایل پاک کند، پروسه
+//  اجرا کند و تنظیمات را عوض کند. حالا سه سطح داریم — از کم به زیاد:
+//
+//    viewer    فقط دیدن: داشبورد، وضعیت سرویس‌ها، لاگ‌ها
+//    operator  کارِ روزمره: اجرا/توقف/ری‌استارتِ سرویس، فایل، بکاپ گرفتن
+//    admin     همه‌چیز: کاربران، تنظیمات، بازگردانیِ بکاپ، حذفِ سرویس
+//
+//  چرا سلسله‌مراتبی و نه مجوزهای ریز: مجوزِ ریز برای یک تیمِ بزرگ خوب است.
+//  این‌جا یک نفر مدیر است و شاید چند نفر کمک‌دست؛ سه سطح هم بیانگر است هم
+//  قابلِ فهم. سطحِ ریزتر را همیشه می‌شود بعداً روی همین اضافه کرد.
+// ---------------------------------------------------------------------------
+export const ROLES = ['viewer', 'operator', 'admin'];
+const RANK = { viewer: 1, operator: 2, admin: 3 };
+
+export function roleAtLeast(role, needed) {
+  return (RANK[role] || 0) >= (RANK[needed] || 99);
+}
+
+export function isValidRole(role) {
+  return ROLES.includes(role);
+}
+
+/**
+ * میان‌افزارِ نقش. همیشه بعد از requireAuth می‌آید.
+ *
+ * نقش از دیتابیس خوانده می‌شود، نه از توکن: اگر مدیر نقشِ کسی را پایین
+ * بیاورد یا حسابش را ببندد، باید **همان لحظه** اثر کند، نه وقتی توکنِ
+ * ۱۲ ساعته‌اش منقضی شود.
+ */
+export function requireRole(needed) {
+  return function roleGuard(req, res, next) {
+    const row = req.user?.id
+      ? db.prepare('SELECT role, disabled FROM users WHERE id = ?').get(req.user.id)
+      : null;
+    if (!row || row.disabled) return res.status(401).json({ error: 'unauthorized' });
+    if (!roleAtLeast(row.role, needed)) {
+      return res.status(403).json({ error: 'forbidden', needed, role: row.role });
+    }
+    req.user.role = row.role;
+    next();
+  };
+}
+
 export function isInitialized() {
   return db.prepare('SELECT COUNT(*) AS n FROM users').get().n > 0;
 }
 
-export function createUser(username, password) {
+export function createUser(username, password, role = 'admin') {
   const now = Date.now();
-  db.prepare('INSERT INTO users(username, password_hash, created_at) VALUES(?, ?, ?)').run(
-    String(username).trim(),
+  const name = String(username).trim();
+  // اولین کاربرِ سیستم همیشه admin است، وگرنه پنلی می‌ماند که هیچ‌کس
+  // نمی‌تواند مدیریتش کند.
+  const finalRole = isInitialized() && isValidRole(role) ? role : 'admin';
+  db.prepare('INSERT INTO users(username, password_hash, created_at, role) VALUES(?, ?, ?, ?)').run(
+    name,
     hashPassword(password),
-    now
+    now,
+    finalRole
   );
-  return db.prepare('SELECT id, username, created_at FROM users WHERE username = ?').get(String(username).trim());
+  return db
+    .prepare('SELECT id, username, role, created_at FROM users WHERE username = ?')
+    .get(name);
 }
 
 export function findUser(username) {
@@ -98,7 +156,10 @@ export function verifyToken(token) {
     if (payload.typ === 'app') return null;
     const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(payload.sid);
     if (!session || session.expires_at < Date.now()) return null;
-    return { id: payload.uid, username: payload.username, sessionId: payload.sid };
+    // حسابِ بسته‌شده باید همان لحظه بی‌اثر شود، نه وقتی توکنش منقضی شد
+    const user = db.prepare('SELECT role, disabled FROM users WHERE id = ?').get(payload.uid);
+    if (!user || user.disabled) return null;
+    return { id: payload.uid, username: payload.username, sessionId: payload.sid, role: user.role };
   } catch {
     return null;
   }
@@ -119,6 +180,28 @@ export function requireAuth(req, res, next) {
   }
   req.user = user;
   next();
+}
+
+/**
+ * فقط **نوشتن** را به نقشِ داده‌شده محدود می‌کند؛ خواندن برای هر کاربرِ
+ * واردشده باز می‌ماند.
+ *
+ * چرا این شکل: تقریباً همهٔ روترهای پنل الگوی «GET برای دیدن، بقیه برای
+ * تغییر» را دارند. با یک میان‌افزار روی کلِ روتر، هیچ مسیرِ تغییردهنده‌ای
+ * از قلم نمی‌افتد — که همان اشتباهی است که با گذاشتنِ نگهبان روی تک‌تکِ
+ * مسیرها دیر یا زود رخ می‌دهد.
+ */
+export function requireWriteRole(needed = 'operator') {
+  const guard = requireRole(needed);
+  return function writeGuard(req, res, next) {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+    return guard(req, res, next);
+  };
+}
+
+/** نقشِ فعلیِ کاربر از دیتابیس (نه از توکن) */
+export function userRole(userId) {
+  return db.prepare('SELECT role FROM users WHERE id = ?').get(userId)?.role || 'viewer';
 }
 
 export function listSessions(userId) {

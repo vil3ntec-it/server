@@ -1,10 +1,11 @@
 // لاگ‌های سراسری پنل (خطاها، هشدارها، رویدادها)
 import { Router } from 'express';
-import { requireAuth } from '../auth.js';
+import { requireAuth, requireWriteRole } from '../auth.js';
 import { db } from '../db.js';
 
 const router = Router();
-router.use(requireAuth);
+// پاک کردنِ کلِ لاگ‌ها یعنی پاک کردنِ ردِ حادثه — فقط مدیر
+router.use(requireAuth, requireWriteRole('admin'));
 
 router.get('/', (req, res) => {
   const limit = Math.min(1000, Number(req.query.limit) || 200);
