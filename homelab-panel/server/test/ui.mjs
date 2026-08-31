@@ -93,6 +93,16 @@ try {
   await page.waitForSelector('text=داشبورد', { timeout: 15000 });
   check('بعد از ساخت حساب، داشبورد باز شد', true);
 
+  /*
+   *  گروه‌های منو بارِ اول بسته‌اند تا همه‌چیز در قاب جا شود. این آزمون از
+   *  راهِ کلیک روی همان لینک‌ها می‌گردد، پس مثلِ خودِ کاربر یک بار بازشان
+   *  می‌کند. (اینکه کدام گروه باز است، در control-ui.mjs آزموده می‌شود.)
+   */
+  for (const header of await page.locator('aside nav section > button').all()) {
+    if ((await header.getAttribute('aria-expanded')) === 'false') await header.click();
+  }
+  await page.waitForTimeout(300);
+
   console.log('\n── داشبورد ──');
   await page.waitForTimeout(2500); // یک چرخهٔ معیارها
   const cpuText = await page.locator('text=پردازنده').first().isVisible();

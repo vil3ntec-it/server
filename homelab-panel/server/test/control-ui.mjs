@@ -101,9 +101,33 @@ try {
   check('حسابِ مدیر ساخته شد و پنل باز شد', true);
 
   console.log('\n── ناوبریِ مرکز فرمان ──');
-  const navText = await page.locator('aside nav').first().innerText();
-  for (const label of ['مرکز فرمان', 'پروژه‌ها', 'سرورها', 'شبکه', 'انبار', 'گاوصندوق', 'پایش', 'به‌روزرسانی', 'برنامه توحید']) {
-    check(`«${label}» در منو هست`, navText.includes(label), navText.slice(0, 200));
+
+  /*
+   *  کارهای هر روز باید بدونِ باز کردنِ هیچ گروهی دمِ دست باشند — و مهم‌تر،
+   *  بدونِ اسکرول. پیش از این نوزده آیتمِ همیشه‌باز بود و آخری‌ها زیرِ لبهٔ
+   *  صفحه می‌ماندند؛ «آدرس اینترنتی» یکی از همان‌ها بود و صاحبِ سرور فکر
+   *  می‌کرد اصلاً وجود ندارد.
+   */
+  const navBox = page.locator('aside nav').first();
+  const firstText = await navBox.innerText();
+  for (const label of ['مرکز فرمان', 'برنامه توحید', 'سایت‌ها', 'آدرس اینترنتی']) {
+    check(`«${label}» بدونِ باز کردنِ گروه دیده می‌شود`, firstText.includes(label), firstText.slice(0, 200));
+  }
+
+  const fits = await page.evaluate(() => {
+    const box = document.querySelector('aside nav')?.parentElement;
+    return box ? box.scrollHeight <= box.clientHeight : false;
+  });
+  check('کلِ منو در قاب جا می‌شود و اسکرول نمی‌خواهد', fits);
+
+  // بقیه هست، فقط یک کلیک آن‌طرف‌تر
+  for (const group of ['مرکز فرمان', 'زیرساخت', 'عملیات', 'تنظیم و نگهداری']) {
+    await navBox.locator('button', { hasText: group }).first().click();
+  }
+  await page.waitForTimeout(300);
+  const navText = await navBox.innerText();
+  for (const label of ['پروژه‌ها', 'سرورها', 'انبار', 'گاوصندوق', 'پایش', 'به‌روزرسانی', 'تنظیمات']) {
+    check(`«${label}» با باز کردنِ گروه می‌آید`, navText.includes(label), navText.slice(0, 200));
   }
 
   console.log('\n── صفحه‌ها در تمِ تیره ──');

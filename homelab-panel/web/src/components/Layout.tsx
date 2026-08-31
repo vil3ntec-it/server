@@ -32,66 +32,86 @@ import { LANGUAGES, type Dict } from '../i18n';
 import { logoUrl } from '../api';
 
 type NavItem = { to: string; key: keyof Dict; icon: typeof Gauge; end?: boolean; needs?: 'operator' | 'admin' };
-type NavGroup = { id: string; key: keyof Dict; items: NavItem[] };
+type NavGroup = {
+  id: string;
+  key: keyof Dict;
+  items: NavItem[];
+  /** بارِ اول بسته باشد؟ */
+  collapsed?: boolean;
+};
 
-/**
- * ناوبری همان ساختارِ خواسته‌شدهٔ مرکز فرمان است:
- *   مرکز فرمان → زیرساخت → داده → عملیات، و در پایان پنلِ خودِ سرور.
- */
 const NAV_GROUPS: NavGroup[] = [
+  /*
+   *  ترتیب از روی کاری است که آدم واقعاً می‌کند، نه از روی اینکه کد کجا
+   *  نوشته شده. چیزهایی که هر روز لازم می‌شوند بالا هستند و بازند؛ بقیه
+   *  بسته‌اند و با یک کلیک باز می‌شوند.
+   *
+   *  چرا مهم است: پیش از این نوزده آیتم در پنج گروهِ همیشه‌باز بود و روی
+   *  یک نمایشگرِ معمولی، سه تای آخر — از جمله «آدرس اینترنتی» که آدرسِ
+   *  ثابت آنجا ساخته می‌شود — زیرِ لبهٔ صفحه می‌ماند. نتیجه‌اش این بود که
+   *  صاحبِ سرور فکر می‌کرد آن قابلیت اصلاً وجود ندارد.
+   */
   {
-    id: 'command',
-    key: 'ccSection',
+    id: 'daily',
+    key: 'navEveryday',
     items: [
+      // صفحه‌ای که بعد از ورود روی آن می‌نشینید — پس اولین چیزِ منو
+      { to: '/', key: 'dashboard', icon: LayoutDashboard, end: true },
       { to: '/control', key: 'ccCommand', icon: CommandIcon, end: true },
+      { to: '/control/tohid', key: 'thTitle', icon: Store },
+      { to: '/sites', key: 'websites', icon: Server },
+      { to: '/site-server', key: 'siteServer', icon: Globe },
+    ],
+  },
+  {
+    id: 'projects',
+    key: 'ccSection',
+    collapsed: true,
+    items: [
       { to: '/control/projects', key: 'ccProjects', icon: Boxes },
-    ],
-  },
-  {
-    id: 'infra',
-    key: 'ccInfra',
-    items: [
       { to: '/control/servers', key: 'ccServers', icon: Server },
-      { to: '/control/networking', key: 'ccNetworking', icon: Network },
-      { to: '/control/routing', key: 'ccRouting', icon: RouteIcon },
-      { to: '/control/cloudflare', key: 'ccCloudflare', icon: Cloud },
-    ],
-  },
-  {
-    id: 'data',
-    key: 'ccData',
-    items: [
       { to: '/control/storage', key: 'ccStorage', icon: Archive },
       { to: '/control/vault', key: 'ccVault', icon: KeyRound, needs: 'admin' },
     ],
   },
   {
-    id: 'ops',
-    key: 'ccOps',
+    id: 'net',
+    key: 'ccInfra',
+    collapsed: true,
     items: [
-      { to: '/control/monitoring', key: 'ccMonitoring', icon: AlertTriangle },
-      { to: '/control/audit', key: 'ccAudit', icon: ScrollText },
-      { to: '/control/panel-users', key: 'ccPanelUsers', icon: UserCog, needs: 'admin' },
-      { to: '/control/updates', key: 'ccUpdates', icon: Download },
-      { to: '/control/tohid', key: 'thTitle', icon: Store },
+      { to: '/domains', key: 'domains', icon: Globe },
+      { to: '/control/networking', key: 'ccNetworking', icon: Network },
+      { to: '/control/routing', key: 'ccRouting', icon: RouteIcon },
+      { to: '/control/cloudflare', key: 'ccCloudflare', icon: Cloud },
+      { to: '/network', key: 'network', icon: Network },
     ],
   },
   {
-    id: 'panel',
-    key: 'appName',
+    id: 'watch',
+    key: 'ccOps',
+    collapsed: true,
     items: [
-      { to: '/', key: 'dashboard', icon: LayoutDashboard, end: true },
-      { to: '/sites', key: 'websites', icon: Server },
-      { to: '/domains', key: 'domains', icon: Globe },
-      { to: '/files', key: 'files', icon: FolderTree },
+      { to: '/control/monitoring', key: 'ccMonitoring', icon: AlertTriangle },
       { to: '/monitoring', key: 'monitoring', icon: Activity },
-      { to: '/network', key: 'network', icon: Network },
+      { to: '/control/audit', key: 'ccAudit', icon: ScrollText },
       { to: '/logs', key: 'logs', icon: ScrollText },
-      { to: '/site-server', key: 'siteServer', icon: Gauge },
+    ],
+  },
+  {
+    id: 'setup',
+    key: 'navSetup',
+    collapsed: true,
+    items: [
+      { to: '/control/updates', key: 'ccUpdates', icon: Download },
+      { to: '/control/panel-users', key: 'ccPanelUsers', icon: UserCog, needs: 'admin' },
+      { to: '/files', key: 'files', icon: FolderTree },
       { to: '/settings', key: 'settings', icon: SettingsIcon },
     ],
   },
 ];
+
+/** گروه‌هایی که بارِ اول بسته‌اند — تا همه‌چیز یک‌جا در قاب جا شود */
+const DEFAULT_COLLAPSED = NAV_GROUPS.filter((g) => g.collapsed).map((g) => g.id);
 
 const COLLAPSE_KEY = 'hlp.nav.collapsed';
 
@@ -101,9 +121,10 @@ export default function Layout() {
   const [langOpen, setLangOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<string[]>(() => {
     try {
-      return JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '[]');
+      const saved = localStorage.getItem(COLLAPSE_KEY);
+      return saved ? JSON.parse(saved) : DEFAULT_COLLAPSED;
     } catch {
-      return [];
+      return DEFAULT_COLLAPSED;
     }
   });
   const location = useLocation();
