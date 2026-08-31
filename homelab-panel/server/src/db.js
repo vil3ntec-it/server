@@ -5,80 +5,63 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { paths } from './config.js';
+import { runMigrations } from './db/migrate.js';
+import { vacuumInto, backupFileName } from './backup/sqlite.js';
 
-// ماژول‌های ESM قبل از کد index اجرا می‌شوند، پس پوشه را همین‌جا می‌سازیم
+// ماژول‌های ESM قبل از کد index اجرا می‌شوند، پس پوشه‌ها را همین‌جا می‌سازیم
 fs.mkdirSync(path.dirname(paths.db), { recursive: true });
+fs.mkdirSync(paths.backups, { recursive: true });
 
 export const db = new DatabaseSync(paths.db);
 
 db.exec('PRAGMA journal_mode = WAL');
 db.exec('PRAGMA foreign_keys = ON');
 
-db.exec(`
-CREATE TABLE IF NOT EXISTS settings (
-  key   TEXT PRIMARY KEY,
-  value TEXT
-);
+// ---------------------------------------------------------------------------
+//  اسکیما از راهِ مهاجرت‌های شماره‌دار ساخته می‌شود، نه یک بلوکِ ثابت.
+//  دلیلش در src/db/migrate.js نوشته شده. پیش از اولین مهاجرتِ اجرانشده یک
+//  بکاپ گرفته می‌شود — تنها راهِ برگشت اگر مهاجرتی بد از آب درآمد.
+// ---------------------------------------------------------------------------
+/**
+ * آیا این دیتابیس خالیِ خالی است؟
+ *
+ * شمارهٔ اسکیما برای این کار به درد نمی‌خورد: نصب‌های قدیمی هم شمارهٔ ۰
+ * دارند، چون جدولِ schema_migrations تازه اضافه شده. اگر بر اساس شماره
+ * تصمیم می‌گرفتیم، دقیقاً همان دیتابیس‌هایی که داده دارند بی‌بکاپ می‌ماندند.
+ * پس به‌جای شماره، وجودِ جدولِ واقعی را می‌بینیم.
+ */
+function isFreshDatabase(handle) {
+  const n = handle
+    .prepare(
+      `SELECT COUNT(*) AS n FROM sqlite_master
+        WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'schema_migrations'`
+    )
+    .get().n;
+  return n === 0;
+}
 
-CREATE TABLE IF NOT EXISTS users (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  username      TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL,
-  created_at    INTEGER NOT NULL
-);
+export const schemaVersion = (() => {
+  const fresh = isFreshDatabase(db);
 
-CREATE TABLE IF NOT EXISTS sessions (
-  id         TEXT PRIMARY KEY,
-  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  created_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL,
-  user_agent TEXT,
-  ip         TEXT
-);
+  const result = runMigrations(db, {
+    log: (msg) => console.log(`[دیتابیس] ${msg}`),
+    beforeAll: () => {
+      // نصبِ تازه چیزی برای از دست دادن ندارد
+      if (fresh) return;
+      const target = path.join(paths.backups, backupFileName('premigration'));
+      const { sizeBytes } = vacuumInto(db, target);
+      console.log(
+        `[دیتابیس] بکاپِ پیش از مهاجرت: ${path.basename(target)} (${Math.round(sizeBytes / 1024)} کیلوبایت)`
+      );
+    },
+  });
 
-CREATE TABLE IF NOT EXISTS sites (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  slug          TEXT NOT NULL UNIQUE,
-  name          TEXT NOT NULL,
-  root_path     TEXT NOT NULL UNIQUE,
-  domain        TEXT,
-  port          INTEGER,
-  kind          TEXT,               -- node / static / php / next / laravel ...
-  start_command TEXT,               -- دستور اجرا (برای سایت‌های اجرایی)
-  autostart     INTEGER NOT NULL DEFAULT 0,
-  enabled       INTEGER NOT NULL DEFAULT 1,
-  created_at    INTEGER NOT NULL,
-  updated_at    INTEGER NOT NULL
-);
+  if (result.applied.length) {
+    console.log(`[دیتابیس] اسکیما روی نسخهٔ ${result.version} است (${result.applied.length} مهاجرتِ تازه)`);
+  }
+  return result.version;
+})();
 
-CREATE TABLE IF NOT EXISTS domains (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  name       TEXT NOT NULL UNIQUE,
-  site_id    INTEGER REFERENCES sites(id) ON DELETE SET NULL,
-  note       TEXT,
-  created_at INTEGER NOT NULL,
-  -- آخرین نتیجهٔ بررسی واقعی (DNS/SSL/WHOIS) — کش می‌شود تا هر بار شبکه نزنیم
-  checked_at    INTEGER,
-  dns_status    TEXT,
-  dns_records   TEXT,
-  ssl_status    TEXT,
-  ssl_issuer    TEXT,
-  ssl_expires   INTEGER,
-  reg_expires   INTEGER,
-  http_status   INTEGER
-);
-
-CREATE TABLE IF NOT EXISTS events (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  site_id    INTEGER REFERENCES sites(id) ON DELETE CASCADE,
-  level      TEXT NOT NULL,         -- error / warn / info
-  source     TEXT NOT NULL,         -- panel / site / process / network
-  message    TEXT NOT NULL,
-  created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_events_time ON events(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_events_site ON events(site_id, created_at DESC);
-`);
 
 // ---------------------------------------------------------------------------
 // کمکی‌های تنظیمات
