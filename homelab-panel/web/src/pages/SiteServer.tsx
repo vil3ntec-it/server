@@ -681,7 +681,26 @@ function InternetAccess({ data, onChanged }: { data: SiteServerInfo; onChanged: 
                 </a>
               </div>
 
-              <p className="label mt-4">{t('serverAddress')}</p>
+              {/* آدرسِ وب اول می‌آید: همان چیزی که در مرورگر باز می‌شود و در
+                  اپ‌ها وارد می‌شود. آدرسِ wss زیرش می‌ماند، چون فقط یک جا
+                  به‌کار می‌آید — خطِ SELF_HOST_URL داخلِ فایلِ سایت. */}
+              <p className="label mt-4">{t('webAddress')}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <code
+                  className="min-w-0 flex-1 truncate rounded-xl border border-line px-3 py-2 font-mono text-xs"
+                  style={{ background: 'var(--surface-0)' }}
+                  dir="ltr"
+                >
+                  {tunnel.url}
+                </code>
+                <CopyButton value={tunnel.url || ''} />
+                <a className="btn btn-sm" href={tunnel.url || '#'} target="_blank" rel="noreferrer">
+                  {t('open')}
+                </a>
+              </div>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted">{t('webAddressHint')}</p>
+
+              <p className="label mt-4">{t('wsAddress')}</p>
               <div className="flex flex-wrap items-center gap-2">
                 <code
                   className="min-w-0 flex-1 truncate rounded-xl border border-line px-3 py-2 font-mono text-xs"
@@ -692,6 +711,7 @@ function InternetAccess({ data, onChanged }: { data: SiteServerInfo; onChanged: 
                 </code>
                 <CopyButton value={tunnel.wss || ''} />
               </div>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted">{t('wsAddressHint')}</p>
             </div>
           </div>
 
@@ -851,13 +871,32 @@ function PermanentAddress({ data, onChanged }: { data: SiteServerInfo; onChanged
         <>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <Badge tone="good">{t('permanentActive')}</Badge>
-            <code className="font-mono text-sm" dir="ltr">
-              wss://{data.tunnel.hostname}
-            </code>
-            <CopyButton value={`wss://${data.tunnel.hostname}`} />
           </div>
 
+          {/* آدرسِ همیشگی، به همان شکلی که در مرورگر و در برنامه‌ها به‌کار می‌رود */}
+          <p className="label">{t('webAddress')}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <code
+              className="min-w-0 flex-1 truncate rounded-xl border border-line px-3 py-2 font-mono text-xs"
+              style={{ background: 'var(--surface-0)' }}
+              dir="ltr"
+            >
+              {`https://${data.tunnel.hostname}`}
+            </code>
+            <CopyButton value={`https://${data.tunnel.hostname}`} />
+            <a
+              className="btn btn-sm"
+              href={`https://${data.tunnel.hostname}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t('open')}
+            </a>
+          </div>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted">{t('webAddressHint')}</p>
+
           <p className="label mt-4">{t('permanentPutInSite')}</p>
+          <p className="mb-1.5 text-[11px] leading-relaxed text-ink-muted">{t('wsAddressHint')}</p>
           <pre
             className="overflow-x-auto rounded-xl border border-line p-3 font-mono text-[11px] leading-relaxed"
             style={{ background: 'var(--surface-0)' }}

@@ -169,6 +169,12 @@ const fa = {
   siteServerIntro:
     'سرور برنامهٔ پمپ یعقوبی روی همین پنل و همین پورت اجرا می‌شود. آدرس و رمز زیر را در خود سایت وارد کنید.',
   serverAddress: 'آدرس سرور',
+  webAddress: 'آدرس وب (https) — همین را در مرورگر و برنامه‌ها بگذارید',
+  webAddressHint:
+    'این آدرسِ اصلیِ سرور از راهِ اینترنت است: در مرورگر باز می‌شود و همان چیزی است که در اپِ اندروید، برنامهٔ ویندوز یا هر جای دیگری که آدرسِ سرور می‌خواهد وارد می‌کنید.',
+  wsAddress: 'آدرس وب‌سوکت — فقط برای خطِ SELF_HOST_URL داخلِ فایلِ سایت',
+  wsAddressHint:
+    'مرورگر برای WebSocket فقط ws:// یا wss:// می‌پذیرد، پس مقدارِ SELF_HOST_URL همین می‌ماند. برای هر کارِ دیگری آدرسِ https بالا را بردارید.',
   serverToken: 'رمز سرور',
   showToken: 'نمایش رمز',
   hideToken: 'پنهان کردن',
@@ -846,6 +852,12 @@ const en: Dict = {
   siteServerIntro:
     'The Pump Yaqobi app server runs inside this panel on the same port. Enter the address and password below in the site itself.',
   serverAddress: 'Server address',
+  webAddress: 'Web address (https) — use this in the browser and in apps',
+  webAddressHint:
+    'This is the server\u2019s main address over the internet: it opens in a browser, and it is what you enter in the Android app, the Windows app, or anywhere else that asks for the server address.',
+  wsAddress: 'WebSocket address — only for the SELF_HOST_URL line inside the site file',
+  wsAddressHint:
+    'Browsers accept only ws:// or wss:// for WebSockets, so SELF_HOST_URL keeps this value. For everything else, take the https address above.',
   serverToken: 'Server password',
   showToken: 'Show password',
   hideToken: 'Hide',
