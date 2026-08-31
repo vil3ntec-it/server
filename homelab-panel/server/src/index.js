@@ -24,6 +24,9 @@ import { sitesRoot, ensureSitesRoot } from './sites/root.js';
 import { stopAll } from './sites/process.js';
 import { startTunnel, stopTunnel, tunnelEvents } from './tunnel.js';
 import { versionInfo, versionLine } from './version.js';
+import { corsMiddleware, secureHeaders } from './platform/security.js';
+import { rateLimit } from './platform/rate-limit.js';
+import { handleValidation } from './platform/validate.js';
 import { siteTunnelEvents, stopAllSiteTunnels } from './site-tunnels.js';
 
 import authRoutes from './routes/auth.js';
@@ -57,15 +60,27 @@ try {
 const app = express();
 app.disable('x-powered-by');
 
-// در شبکهٔ خانگی، پنل ممکن است از آدرس‌های مختلف باز شود
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  if (req.method === 'OPTIONS') return res.status(204).end();
-  next();
-});
+// ------------------------------ امنیت -------------------------------------
+// اگر پشتِ reverse proxy هستیم، Express باید بداند تا req.ip و req.secure
+// درست باشند. فقط وقتی که خودمان گفته باشیم — وگرنه هدرِ جعلی باور می‌شود.
+if (config.trustProxy) app.set('trust proxy', true);
+
+app.use(secureHeaders);
+
+// CORS با فهرستِ سفید. تا دیروز هر مبدأیی بازتاب می‌شد و کنارش
+// credentials: true هم می‌رفت؛ یعنی هر سایتی در اینترنت می‌توانست از طرفِ
+// کاربرِ واردشده به پنل درخواست بزند. جزئیات در platform/security.js
+app.use(corsMiddleware);
+
+// سقفِ عمومی: جلوی اسکنرها و درخواست‌های سیل‌آسا. سخاوتمند است تا پنلِ
+// واقعی که ده‌ها درخواست در دقیقه می‌زند به آن نخورد.
+app.use(
+  rateLimit({
+    name: 'global',
+    max: Number(process.env.HLP_RATE_LIMIT ?? 600),
+    windowMs: Number(process.env.HLP_RATE_WINDOW ?? 60) * 1000,
+  })
+);
 
 // دستیارِ پشتیبانی — پیش از میان‌افزارِ JSON، به همان دلیلِ بالا
 app.use(AI_PREFIX, aiProxy);
@@ -95,6 +110,19 @@ app.get('/health', (req, res) => {
 });
 
 // -------------------------------- API --------------------------------------
+// ورود تنها درِ باز است: بقیهٔ مسیرها توکن می‌خواهند. پس سقفِ سخت‌گیرانه
+// دقیقاً همین‌جا لازم است. فقط تلاش‌های **ناموفق** شمرده می‌شوند تا کاربری
+// که رمزش را درست می‌زند قفل نشود.
+const authLimiter = rateLimit({
+  name: 'auth',
+  max: Number(process.env.HLP_AUTH_RATE_LIMIT ?? 10),
+  windowMs: Number(process.env.HLP_AUTH_RATE_WINDOW ?? 900) * 1000,
+  skipSuccess: true,
+});
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/setup', authLimiter);
+app.use('/api/auth/change-password', authLimiter);
+
 app.use('/api/auth', authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/sites', sitesRoutes);
@@ -139,6 +167,9 @@ if (fs.existsSync(PUBLIC_DIR)) {
   });
 }
 
+// ورودیِ بد باید ۴۰۰ بدهد نه ۵۰۰ — و ۵۰۰ نباید جزئیاتِ داخلی لو بدهد
+app.use(handleValidation);
+
 app.use((err, req, res, next) => {
   logEvent('error', 'panel', `${req.method} ${req.path} → ${err.message}`);
   if (res.headersSent) return next(err);
@@ -179,13 +210,17 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
   // پنل، فایل‌منیجر و کنترل پروسه‌ها هرگز به اینترنت درز نمی‌کنند.
   const publicApp = express();
   publicApp.disable('x-powered-by');
-  publicApp.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    if (req.method === 'OPTIONS') return res.status(204).end();
-    next();
-  });
+  if (config.trustProxy) publicApp.set('trust proxy', true);
+  publicApp.use(secureHeaders);
+  // این پورت مستقیماً رو به اینترنت است، پس همان فهرستِ سفید این‌جا هم برقرار
+  publicApp.use(corsMiddleware);
+  publicApp.use(
+    rateLimit({
+      name: 'public',
+      max: Number(process.env.HLP_RATE_LIMIT ?? 600),
+      windowMs: Number(process.env.HLP_RATE_WINDOW ?? 60) * 1000,
+    })
+  );
   // ⚠️ پراکسیِ دستیار **پیش از** express.json می‌نشیند: آن میان‌افزار جریانِ
   //    بدنه را می‌خورد و بعدش دیگر چیزی برای لوله کردن نمی‌ماند.
   publicApp.use(AI_PREFIX, aiProxy);
