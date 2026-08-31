@@ -292,10 +292,30 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
   publicApp.use(AI_PREFIX, aiProxy);
   publicApp.use(express.json({ limit: MSG_LIMIT }));
   publicApp.get(['/health', '/'], (req, res) => {
-    res.json({ ok: true, service: 'pump-yaqobi-server', mode: 'sync-only', time: new Date().toISOString() });
+    // نامِ پروژهٔ دیگری اینجا مانده بود؛ این همان چیزی است که کسی با باز
+    // کردنِ آدرسِ عمومی اول از همه می‌بیند.
+    res.json({ ok: true, service: 'control-center', mode: 'sync-only', time: new Date().toISOString() });
   });
   publicApp.use('/api/messenger', messengerRoutes);
   publicApp.use('/api/notify', notifyRoutes);
+
+  /*
+   *  APIِ برنامهٔ توحید — همان چیزی که *باید* از اینترنت در دسترس باشد.
+   *
+   *  تونل عمداً روی این پورت باز می‌شود تا پنل و فایل‌منیجر و ترمینال هرگز
+   *  به اینترنت درز نکنند؛ آن تصمیم درست است و سرِ جایش می‌ماند. ولی تا
+   *  حالا برنامهٔ مشتری و برنامهٔ مدیریت هم با همان دیوار بیرون می‌ماندند:
+   *  از راه تونل، /api/v1/auth/login و /api/v1/admin/login هر دو «not found»
+   *  می‌گرفتند. یعنی آدرسِ ثابتی که با دامنهٔ خودتان ساخته بودید، به هیچ‌کدام
+   *  از دو برنامه جواب نمی‌داد.
+   *
+   *  این‌ها همان‌قدر عمومی‌اند که باید: ثبت‌نام و ورودِ مشتری با رمزِ خودش،
+   *  همگام‌سازی با توکن، و مسیرهای مدیریت پشتِ نام کاربری و رمز و نقشِ پنل
+   *  با شمارشِ تلاش. آنچه عمومی نیست — /api/control، فایل‌ها، پروسه‌ها —
+   *  اینجا سوار نمی‌شود و همان‌طور خصوصی می‌ماند.
+   */
+  publicApp.use('/api/v1/admin', tohidAdminApiRoutes);
+  publicApp.use('/api/v1', tohidPublicRoutes);
   publicApp.use((req, res) => res.status(404).type('text/plain; charset=utf-8').send('not found'));
 
   syncOnlyServer = http.createServer(publicApp);
