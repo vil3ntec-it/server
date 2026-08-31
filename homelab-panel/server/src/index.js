@@ -212,8 +212,15 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
   publicApp.get(['/health', '/'], (req, res) => {
     res.json({ ok: true, service: 'pump-yaqobi-server', mode: 'sync-only', time: new Date().toISOString() });
   });
-  publicApp.use('/api/messenger', messengerRoutes);
-  publicApp.use('/api/notify', notifyRoutes);
+  // این پورت همان چیزی است که کلاینت‌ها از راهِ تونل به آن می‌رسند، پس
+  // نسخهٔ ۱ هم باید این‌جا باشد. مسیرِ قدیمی برای کلاینت‌های موجود می‌ماند.
+  publicApp.get(['/api/v1/health', '/health'], (req, res) => {
+    res.json({ ok: true, service: 'pump-yaqobi-server', mode: 'sync-only', time: new Date().toISOString() });
+  });
+  publicApp.use('/api/v1/messenger', messengerRoutes);
+  publicApp.use('/api/v1/notify', notifyRoutes);
+  publicApp.use('/api/messenger', deprecatedAlias, messengerRoutes);
+  publicApp.use('/api/notify', deprecatedAlias, notifyRoutes);
   publicApp.use((req, res) => res.status(404).type('text/plain; charset=utf-8').send('not found'));
 
   syncOnlyServer = http.createServer(publicApp);
