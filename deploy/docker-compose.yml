@@ -1,0 +1,60 @@
+# ---------------------------------------------------------------------------
+#  استقرارِ کامل: لبه + پنل
+#
+#  راه‌اندازی:
+#      cp .env.example .env      و مقدارها را پر کنید
+#      docker compose up -d
+#
+#  همین فایل روی سرورِ خانگی و روی VPS یکسان کار می‌کند. مهاجرت یعنی:
+#  کپیِ پوشهٔ داده، بالا آوردنِ همین compose، و عوض کردنِ رکوردِ DNS.
+#  هیچ کلاینتی چیزی نمی‌فهمد.
+# ---------------------------------------------------------------------------
+services:
+  panel:
+    build:
+      context: ../homelab-panel/server
+    image: homelab-panel:local
+    restart: unless-stopped
+    environment:
+      HLP_DOMAIN: ${DOMAIN:-}
+      HLP_API_URL: ${API_URL:-}
+      # پشتِ Caddy هستیم، پس هدرهای X-Forwarded-* معتبرند
+      HLP_TRUST_PROXY: "1"
+      HLP_SECRET_KEY: ${SECRET_KEY:?SECRET_KEY لازم است — با openssl rand -hex 32 بسازید}
+      HLP_SITES_ROOT: /sites
+      HLP_BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      # تونلِ cloudflared داخلِ کانتینر لازم نیست؛ Caddy همان نقش را دارد
+      HLP_TUNNEL: "0"
+    volumes:
+      - panel-data:/data
+      - ${SITES_ROOT:-./sites}:/sites
+    expose:
+      - "4700"
+    networks: [edge]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [panel]
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN لازم است}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # گواهی‌ها باید بین ری‌استارت‌ها بمانند، وگرنه هر بار از
+      # Let's Encrypt گواهیِ تازه می‌گیریم و به سقفِ نرخش می‌خوریم
+      - caddy-data:/data
+      - caddy-config:/config
+    networks: [edge]
+
+volumes:
+  panel-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  edge:
