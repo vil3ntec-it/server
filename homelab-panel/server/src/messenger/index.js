@@ -180,30 +180,30 @@ export async function sendMessage({ chatId, senderId, body, kind, fileName, file
 export function readChat(chatId, userId, upToId = null) {
   if (!store.isMember(chatId, userId)) return { ok: false, error: 'not_a_member' };
   const n = store.markRead(chatId, userId, upToId);
-  // به بقیه بگو تیک آبی شد
-  for (const m of store.chatMembers(chatId)) {
-    if (m.id !== Number(userId)) deliverLive(m.id, { op: 'read', chatId: Number(chatId), by: Number(userId), upToId });
+  // به بقیه بگو تیک آبی شد — اینجا فقط شناسه لازم است، نه کلِ پروفایلِ اعضا
+  for (const id of store.chatMemberIds(chatId)) {
+    if (id !== Number(userId)) deliverLive(id, { op: 'read', chatId: Number(chatId), by: Number(userId), upToId });
   }
   return { ok: true, marked: n };
 }
 
 export function typing(chatId, userId, isTyping) {
   if (!store.isMember(chatId, userId)) return;
-  for (const m of store.chatMembers(chatId)) {
-    if (m.id !== Number(userId)) {
-      deliverLive(m.id, { op: 'typing', chatId: Number(chatId), userId: Number(userId), typing: Boolean(isTyping) });
+  for (const id of store.chatMemberIds(chatId)) {
+    if (id !== Number(userId)) {
+      deliverLive(id, { op: 'typing', chatId: Number(chatId), userId: Number(userId), typing: Boolean(isTyping) });
     }
   }
 }
 
 function announcePresence(userId, isOnlineNow) {
-  // فقط به کسانی که با او گفت‌وگو دارند
-  for (const chat of store.listChats(userId)) {
-    for (const m of chat.members) {
-      if (m.id !== Number(userId)) {
-        deliverLive(m.id, { op: 'presence', userId: Number(userId), online: isOnlineNow, at: Date.now() });
-      }
-    }
+  // فقط به کسانی که با او گفت‌وگو دارند.
+  // قبلاً برای همین یک خبرِ کوچک، کلِ فهرستِ گفت‌وگوها (با آخرین پیام و شمارشِ
+  // نخوانده‌ها برای هر گفت‌وگو) ساخته می‌شد — آن هم با هر بار وصل و قطع شدنِ
+  // گوشی، که روی شبکهٔ موبایل مدام اتفاق می‌افتد.
+  const at = Date.now();
+  for (const id of store.peerIds(userId)) {
+    deliverLive(id, { op: 'presence', userId: Number(userId), online: isOnlineNow, at });
   }
 }
 

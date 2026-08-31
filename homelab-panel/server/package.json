@@ -7,8 +7,9 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/index.js",
-    "test": "node test/smoke.mjs && node test/multisite.mjs && node test/protected-domains.mjs && node test/tunnel-recovery.mjs && node test/messenger.mjs && node test/notify.mjs && node test/notify-readkey.mjs && node test/ai-proxy.mjs && node test/control.mjs && node test/agent.mjs && node test/update.mjs && node test/update-packaged.mjs && node test/roles-logs.mjs && node test/tohid.mjs && node test/tohid-otp.mjs && node test/tohid-admin.mjs && node test/public-port.mjs && node test/app-auth.mjs && node test/storage.mjs && node test/security.mjs && node test/platform.mjs",
+    "test": "node test/smoke.mjs && node test/multisite.mjs && node test/sitesync-load.mjs && node test/protected-domains.mjs && node test/tunnel-recovery.mjs && node test/messenger.mjs && node test/notify.mjs && node test/notify-readkey.mjs && node test/ai-proxy.mjs && node test/control.mjs && node test/agent.mjs && node test/update.mjs && node test/update-packaged.mjs && node test/roles-logs.mjs && node test/tohid.mjs && node test/tohid-otp.mjs && node test/tohid-admin.mjs && node test/public-port.mjs && node test/app-auth.mjs && node test/storage.mjs && node test/security.mjs && node test/platform.mjs",
     "test:multisite": "node test/multisite.mjs",
+    "test:sitesync-load": "node test/sitesync-load.mjs",
     "test:ui": "node test/ui.mjs",
     "test:perf": "node test/perf.mjs",
     "test:tunnel": "node test/tunnel.mjs",

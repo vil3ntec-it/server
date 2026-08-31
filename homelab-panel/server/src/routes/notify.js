@@ -106,6 +106,29 @@ router.get('/:topic/stats', (req, res) => {
   res.json({ topic, online: notify.listenerCount(topic), members: notify.deviceCount(topic) });
 });
 
+/* همان آمار، ولی برای چند موضوع با یک درخواست:
+       GET /api/notify/presence?topics=mirza,p-debt-2,p-guest_ab12
+   برنامه برای نقطهٔ سبزِ «آنلاین» کنارِ هر گفت‌وگو لازمش دارد. با مسیرِ تکیِ
+   بالا باید برای هر نفر یک درخواست می‌رفت — روی فهرستِ بلند یعنی ده‌ها درخواست
+   در هر چند ثانیه. موضوع‌هایی که رمزِ خواندنشان با این دستگاه نمی‌خورد، ساده
+   از جواب می‌افتند (نه خطا) تا یک موضوعِ قفل، بقیه را هم خراب نکند. */
+const PRESENCE_MAX_TOPICS = 100;
+router.get('/presence', (req, res) => {
+  const key = readKey(req);
+  const wanted = String(req.query.topics || '')
+    .split(',')
+    .map((t) => notify.cleanTopic(t))
+    .filter(Boolean)
+    .slice(0, PRESENCE_MAX_TOPICS);
+
+  const presence = {};
+  for (const topic of new Set(wanted)) {
+    if (!notify.mayRead(topic, key)) continue;
+    presence[topic] = { online: notify.listenerCount(topic), members: notify.deviceCount(topic) };
+  }
+  res.json({ presence, at: Date.now() });
+});
+
 // ---------------------- ثبت دستگاه برای نوتیفیکیشن -------------------------
 /* ثبتِ دستگاه هم «خواندن» است: هر کس بتواند دستگاهش را روی یک موضوع ثبت کند،
    از آن به بعد همهٔ پیام‌های آن موضوع را به‌صورت نوتیفیکیشن می‌گیرد. پس همان

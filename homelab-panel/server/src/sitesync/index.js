@@ -92,6 +92,7 @@ export function createSiteSync({ dataDir, token = '' }) {
     if (store) {
       await store.flush().catch(() => {});
       store.closeClients();
+      store.stop?.();
       stores.delete(key);
     }
     await fsp.rm(dirFor(key), { recursive: true, force: true });

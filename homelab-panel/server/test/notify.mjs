@@ -147,6 +147,15 @@ async function main() {
   check('یک نفر همین الان آنلاین است', r.json?.online === 1, String(r.json?.online));
   check('هنوز هیچ عضوی ثبت نشده', r.json?.members === 0, String(r.json?.members));
 
+  // برنامه برای نقطهٔ سبزِ «آنلاین» کنارِ هر گفت‌وگو، حالِ چند نفر را با یک
+  // درخواست می‌پرسد — نه یک درخواست به‌ازای هر نفر
+  r = await req('GET', '/api/notify/presence?topics=pump,khali,pump');
+  check('حالِ چند موضوع با یک درخواست می‌آید', r.json?.presence?.pump?.online === 1, JSON.stringify(r.json?.presence));
+  check('موضوعِ بی‌شنونده صفر است', r.json?.presence?.khali?.online === 0, String(r.json?.presence?.khali?.online));
+  check('نامِ تکراری یک بار می‌آید', Object.keys(r.json?.presence || {}).length === 2, String(Object.keys(r.json?.presence || {}).length));
+  r = await req('GET', '/api/notify/presence');
+  check('بدون موضوع، جوابِ خالیِ سالم می‌دهد', r.status === 200 && Object.keys(r.json?.presence || {}).length === 0, String(r.status));
+
   console.log('\n── وقتی برنامه بسته است ──');
   const key = crypto.createECDH('prime256v1');
   key.generateKeys();
