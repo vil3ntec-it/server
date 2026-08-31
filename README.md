@@ -1,6 +1,6 @@
 # سرورِ خانگیِ پمپ یعقوبی
 
-نسخهٔ برنامه: **2.9.316**
+نسخهٔ برنامه: **2.9.316** — نسخهٔ پنل: **1.2.0**
 
 این مخزن دو بخش دارد که باید **کنارِ هم** بمانند؛ پنل، دستیار را از همین‌جا پیدا می‌کند:
 
@@ -39,11 +39,42 @@ cd homelab-panel/server && npm test    # پنل
 cd ai-support && npm test              # دستیار
 ```
 
+## زیرساخت
+
+پنل یک **زیرساختِ مرکزی** است، نه یک بک‌اندِ جدا برای هر برنامه. همهٔ
+کلاینت‌ها (موبایل، دسکتاپ، وب) فقط یک آدرس می‌شناسند:
+
+```
+https://api.YOURDOMAIN.com/api/v1
+```
+
+IP سرور، پورت، و اینکه پشتِ تونل است یا reverse proxy — هیچ‌کدام به کلاینت
+مربوط نیست. مهاجرتِ سرور به VPS یعنی یک تغییرِ DNS، نه انتشارِ دوبارهٔ اپ‌ها.
+
+| | |
+| --- | --- |
+| دامنه | `HLP_DOMAIN` در `.env`؛ زیردامنه‌های `api.` `admin.` `files.` `www.` خودکار |
+| API | `/api/v1/...` — مسیرِ قدیمیِ `/api/...` هنوز کار می‌کند ولی منسوخ است |
+| سلامت | `/health` (پروسه زنده است؟) و `/ready` (می‌تواند کار کند؟) |
+| نقش‌ها | `viewer` / `operator` / `admin` |
+| دیتابیس | SQLite با مهاجرتِ شماره‌دار و بکاپِ خودکار |
+| استقرار | تونل (پیش‌فرض) یا Docker + Caddy در پوشهٔ `deploy/` |
+
+بدونِ `HLP_DOMAIN` هم همه‌چیز مثل قبل در شبکهٔ خانگی کار می‌کند؛ دامنه
+اختیاری است.
+
 ## مستنداتِ بیشتر
 
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — معماری و دلیلِ هر تصمیم
+- [`docs/API.md`](docs/API.md) — مرجعِ API نسخهٔ ۱
+- [`deploy/README-fa.md`](deploy/README-fa.md) — استقرار با Docker و Caddy
 - [`homelab-panel/README-fa.md`](homelab-panel/README-fa.md)
 - [`ai-support/README-fa.md`](ai-support/README-fa.md)
 - [`ai-support/ARCHITECTURE-fa.md`](ai-support/ARCHITECTURE-fa.md)
 
 پیکربندی از راهِ متغیرهای محیطی انجام می‌شود؛ نمونه‌ها در `homelab-panel/server/.env.example`
 و `ai-support/.env.example` هستند. فایلِ `.env` و پوشهٔ `data/` روی گیت نمی‌روند.
+
+هیچ رمز، کلید یا رازی داخلِ کد نیست. رازِ امضای توکن‌ها یا از
+`HLP_SECRET_KEY` می‌آید یا بارِ اول خودکار ساخته و در دیتابیس نگه داشته
+می‌شود.
