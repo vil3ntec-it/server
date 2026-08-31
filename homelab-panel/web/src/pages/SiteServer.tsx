@@ -14,6 +14,7 @@ import {
   PowerOff,
   RefreshCw,
   RotateCw,
+  Smartphone,
   TriangleAlert,
   MessageCircle,
   Wrench,
@@ -78,6 +79,9 @@ export default function SiteServer() {
       {/* آدرس ثابت — تا سایت یک‌بار تنظیم شود و برای همیشه کار کند */}
       <PermanentAddress data={data} onChanged={load} />
 
+      {/* یک سرور، سه جور برنامه — هرکدام آدرسِ خودش را از همین‌جا بردارد */}
+      <AppClients data={data} token={token} />
+
       <Card
         title={t('serverAddress')}
         icon={<Link2 className="h-4 w-4" />}
@@ -92,11 +96,22 @@ export default function SiteServer() {
             >
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] text-ink-muted">{a.label}</p>
-                <p className="truncate font-mono text-sm" dir="ltr">
-                  {a.ws}
-                </p>
+                {/* هر دو شکل کنارِ هم: برنامه‌ها https می‌خواهند، سایت wss */}
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="w-24 shrink-0 text-[10px] text-ink-muted">{t('addressWeb')}</span>
+                  <p className="min-w-0 flex-1 truncate font-mono text-sm" dir="ltr">
+                    {a.http}
+                  </p>
+                  <CopyButton value={a.http} />
+                </div>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="w-24 shrink-0 text-[10px] text-ink-muted">{t('addressWs')}</span>
+                  <p className="min-w-0 flex-1 truncate font-mono text-sm" dir="ltr">
+                    {a.ws}
+                  </p>
+                  <CopyButton value={a.ws} />
+                </div>
               </div>
-              <CopyButton value={a.ws} />
               <a className="btn btn-sm" href={`${a.http}/health`} target="_blank" rel="noreferrer">
                 /health
               </a>
@@ -752,6 +767,85 @@ function InternetAccess({ data, onChanged }: { data: SiteServerInfo; onChanged: 
             {t('save')}
           </button>
         </div>
+      </div>
+    </Card>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+   برنامه‌ها — سایت، اپِ اندروید و برنامهٔ کامپیوتری، همه روی همین یک سرور.
+
+   قبلاً این صفحه فقط آدرسِ سایت را می‌داد و آدرسِ اپ‌ها جای دیگری بود؛ کسی
+   که هر سه را دارد باید حدس می‌زد کدام به کدام می‌خورد. حالا هر سه یک‌جا و
+   از روی یک آدرس ساخته می‌شوند: تا وقتی تونل بالاست آدرسِ اینترنتی، وگرنه
+   آدرسِ شبکهٔ خانگی — تا چیزی که کپی می‌شود همیشه همانی باشد که کار می‌کند.
+--------------------------------------------------------------------------- */
+function AppClients({ data, token }: { data: SiteServerInfo; token: string | null }) {
+  const { t } = useApp();
+
+  const internet = data.tunnel.status === 'running' ? data.tunnel.url : null;
+  const lan = data.addresses.find((a) => a.scope === 'lan') || data.addresses[0];
+  const base = internet || lan?.http || '';
+  const wsBase = internet ? internet.replace(/^https:/, 'wss:') : lan?.ws || '';
+
+  if (!base) return null;
+
+  return (
+    <Card title={t('clientsTitle')} icon={<Smartphone className="h-4 w-4" />}>
+      <p className="mb-4 text-xs leading-relaxed text-ink-soft">{t('clientsIntro')}</p>
+
+      <div className="mb-1.5 flex flex-wrap items-center gap-2">
+        <p className="label mb-0">{t('clientsBase')}</p>
+        <Badge tone={internet ? 'good' : 'info'}>
+          {internet ? t('clientsBaseInternet') : t('clientsBaseLan')}
+        </Badge>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <code
+          className="min-w-0 flex-1 truncate rounded-xl border border-line px-3 py-2 font-mono text-xs"
+          style={{ background: 'var(--surface-0)' }}
+          dir="ltr"
+        >
+          {base}
+        </code>
+        <CopyButton value={base} />
+      </div>
+
+      <p className="label mt-4">{t('clientsSite')}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <code
+          className="min-w-0 flex-1 truncate rounded-xl border border-line px-3 py-2 font-mono text-xs"
+          style={{ background: 'var(--surface-0)' }}
+          dir="ltr"
+        >
+          {wsBase}
+        </code>
+        <CopyButton value={wsBase} />
+      </div>
+
+      {/* دو خطِ آماده برای فایلِ سایت — همان چیزی که کادرِ آدرسِ ثابت هم می‌دهد،
+          ولی این‌جا با هر آدرسی که همین حالا کار می‌کند، نه فقط آدرسِ ثابت. */}
+      <pre
+        className="mt-2 overflow-x-auto rounded-xl border border-line p-3 font-mono text-[11px] leading-relaxed"
+        style={{ background: 'var(--surface-0)' }}
+        dir="ltr"
+      >
+{`var SELF_HOST_URL   = '${wsBase}';
+var SELF_HOST_TOKEN = '${token ?? data.tokenPreview ?? '…'}';`}
+      </pre>
+
+      <div className="mt-4 border-t border-line pt-4">
+        <a className="btn btn-sm btn-primary" href={`${base}/connect`} target="_blank" rel="noreferrer">
+          <Smartphone className="h-3.5 w-3.5" />
+          {t('clientsOpenConnect')}
+        </a>
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">{t('clientsConnectHint')}</p>
+        {internet && (
+          <p className="mt-1.5 flex items-start gap-1.5 text-[11px] leading-relaxed text-ink-muted">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {t('clientsBothHint')}
+          </p>
+        )}
       </div>
     </Card>
   );

@@ -175,6 +175,20 @@ const fa = {
   wsAddress: 'آدرس وب‌سوکت — فقط برای خطِ SELF_HOST_URL داخلِ فایلِ سایت',
   wsAddressHint:
     'مرورگر برای WebSocket فقط ws:// یا wss:// می‌پذیرد، پس مقدارِ SELF_HOST_URL همین می‌ماند. برای هر کارِ دیگری آدرسِ https بالا را بردارید.',
+  clientsTitle: 'برنامه‌ها — همه به همین یک سرور',
+  clientsIntro:
+    'سایت، اپِ اندروید و برنامهٔ کامپیوتری هر سه به همین سرور وصل می‌شوند و همین یک دیتابیس را می‌بینند. فرقشان فقط در شکلِ آدرس است: سایت وب‌سوکت می‌خواهد، دو تای دیگر آدرسِ https.',
+  clientsBase: 'آدرسی که در اپِ اندروید و برنامهٔ کامپیوتری می‌گذارید',
+  clientsBaseInternet: 'آدرسِ اینترنتی — از هر جای دنیا کار می‌کند',
+  clientsBaseLan: 'آدرسِ شبکهٔ خانگی — تونل خاموش است، پس فقط داخلِ خانه کار می‌کند',
+  clientsSite: 'آدرسی که در فایلِ سایت می‌گذارید (SELF_HOST_URL)',
+  clientsOpenConnect: 'صفحهٔ اتصال — تستِ زنده و کدِ آماده',
+  clientsConnectHint:
+    'آن صفحه ورودِ با کدِ شش‌رقمی را همان‌جا تست می‌کند و کدِ آمادهٔ Kotlin، فلاتر، C# و جاوااسکریپت می‌دهد — با همین آدرس داخلش.',
+  clientsBothHint:
+    'اگر برنامه هر دو آدرس را داشته باشد، می‌تواند اول آدرسِ خانگی را بزند و اگر نشد سراغِ آدرسِ اینترنتی برود — کاربر چیزی نمی‌فهمد.',
+  addressWeb: 'آدرسِ https',
+  addressWs: 'آدرسِ وب‌سوکت',
   serverToken: 'رمز سرور',
   showToken: 'نمایش رمز',
   hideToken: 'پنهان کردن',
@@ -858,6 +872,20 @@ const en: Dict = {
   wsAddress: 'WebSocket address — only for the SELF_HOST_URL line inside the site file',
   wsAddressHint:
     'Browsers accept only ws:// or wss:// for WebSockets, so SELF_HOST_URL keeps this value. For everything else, take the https address above.',
+  clientsTitle: 'Apps — all on this one server',
+  clientsIntro:
+    'The site, the Android app and the desktop app all connect to this same server and see the same database. Only the address form differs: the site needs a WebSocket URL, the other two an https address.',
+  clientsBase: 'The address you enter in the Android app and the desktop app',
+  clientsBaseInternet: 'Internet address — works from anywhere',
+  clientsBaseLan: 'Home-network address — the tunnel is off, so this works inside the house only',
+  clientsSite: 'The address you put in the site file (SELF_HOST_URL)',
+  clientsOpenConnect: 'Connection page — live test and ready-made code',
+  clientsConnectHint:
+    'That page tests the six-digit login right there and gives you ready-made Kotlin, Flutter, C# and JavaScript code with this address already in it.',
+  clientsBothHint:
+    'If an app holds both addresses it can try the home one first and fall back to the internet one — the user never notices.',
+  addressWeb: 'https address',
+  addressWs: 'WebSocket address',
   serverToken: 'Server password',
   showToken: 'Show password',
   hideToken: 'Hide',

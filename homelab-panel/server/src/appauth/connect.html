@@ -46,16 +46,30 @@
   <!-- ۱ -->
   <div class="card">
     <h2>۱) آدرسِ سرور — همین را در برنامه بگذارید</h2>
+    <!-- یک سرور، چند راهِ رسیدن. هر برنامه‌ای هر کدام که برایش راحت‌تر است
+         را بردارد؛ پشتِ هر دو، همین یک سرور و همین یک دیتابیس است. -->
+    <div class="tabs" id="whereTabs" style="margin-bottom:10px"></div>
     <div class="addr" id="base">…</div>
     <div class="row" style="margin-top:10px">
       <button class="ghost" id="copyBase">کپیِ آدرس</button>
       <span id="health" class="pill wait">در حالِ بررسی…</span>
       <span id="ver" style="color:var(--muted)"></span>
     </div>
-    <p style="color:var(--muted);margin:12px 0 0">
+    <p style="color:var(--muted);margin:12px 0 0" id="whereHint">
       اگر برنامه روی گوشیِ دیگری است، باید همین آدرس از آن گوشی باز شود. داخلِ خانه آدرسِ
       <code>http://IP:4700</code> کار می‌کند؛ از بیرونِ خانه آدرسِ تونل (<code>https://…</code>) لازم است.
     </p>
+
+    <!-- همین سرور، برای سایت -->
+    <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+      <p style="margin:0 0 8px"><b>و همین سرور، برای سایت:</b> سایت به‌جای REST از وب‌سوکت وصل می‌شود،
+      پس آدرسش همان آدرسِ بالاست با <code>wss</code> — مرورگر برای WebSocket چیزِ دیگری قبول نمی‌کند.</p>
+      <div class="addr" id="wsBase">…</div>
+      <div class="row" style="margin-top:10px">
+        <button class="ghost" id="copyWs">کپیِ آدرسِ وب‌سوکت</button>
+        <span style="color:var(--muted)">در فایلِ سایت: <code>SELF_HOST_URL</code></span>
+      </div>
+    </div>
   </div>
 
   <!-- ۲ -->
@@ -117,15 +131,49 @@ OTP_SMS_SENDER=شمارهٔ خطِ شما</pre>
 </div>
 
 <script>
-const BASE = location.origin;
 const $ = (id) => document.getElementById(id);
-$('base').textContent = BASE;
+
+/* آدرسی که همین حالا این صفحه از آن باز شده — همیشه یکی از راه‌ها هست.
+   اگر تونل بالا باشد، آدرسِ اینترنتی هم اضافه می‌شود و می‌شود انتخاب کرد
+   کدام در نمونه‌کدها بنشیند. هر دو به همین یک سرور می‌رسند. */
+const WAYS = [{ key: 'here', label: 'همین آدرس', url: location.origin }];
+let BASE = location.origin;
+
+const wsOf = (u) => u.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+
+function paintWays() {
+  $('base').textContent = BASE;
+  $('wsBase').textContent = wsOf(BASE);
+  const tabs = $('whereTabs');
+  tabs.innerHTML = '';
+  if (WAYS.length < 2) return;   // یک راه بیشتر نیست، انتخاب معنا ندارد
+  for (const w of WAYS) {
+    const b = document.createElement('button');
+    b.textContent = w.label;
+    if (w.url === BASE) b.className = 'on';
+    b.onclick = () => { BASE = w.url; paintWays(); paint(); };
+    tabs.appendChild(b);
+  }
+}
+paintWays();
 
 $('copyBase').onclick = () => navigator.clipboard?.writeText(BASE);
+$('copyWs').onclick = () => navigator.clipboard?.writeText(wsOf(BASE));
 
 let cfg = null;
-fetch(BASE + '/api/app/config').then(r => r.json()).then(c => {
+fetch(location.origin + '/api/app/config').then(r => r.json()).then(c => {
   cfg = c;
+  // آدرسِ اینترنتی را خودِ سرور می‌گوید (تونل). اگر همان آدرسی باشد که
+  // صفحه از آن باز شده، دوباره اضافه نمی‌شود.
+  const net = c.server && c.server.internet;
+  if (net && net !== location.origin) {
+    WAYS.push({ key: 'internet', label: 'آدرسِ اینترنتی (از بیرونِ خانه)', url: net });
+    $('whereHint').innerHTML =
+      'هر دو راه به همین یک سرور می‌رسند. داخلِ خانه آدرسِ محلی سریع‌تر است؛ ' +
+      'برنامه‌ای که از بیرونِ خانه وصل می‌شود باید آدرسِ اینترنتی را داشته باشد. ' +
+      'اگر برنامه هر دو را داشته باشد، می‌تواند اول محلی را بزند و نشد سراغِ اینترنتی برود.';
+    paintWays();
+  }
   $('health').className = 'pill ok';
   $('health').textContent = 'سرور در دسترس است';
   $('ver').textContent = c.version ? 'نسخهٔ ' + c.version : '';
@@ -144,6 +192,7 @@ const show = (label, data) => {
 };
 
 async function post(path, body) {
+  // عمداً به آدرسِ انتخاب‌شده می‌زند: تستِ «آیا از این راه هم کار می‌کند؟»
   const r = await fetch(BASE + path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
