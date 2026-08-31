@@ -23,7 +23,7 @@ import { readInterfaces } from './metrics/network.js';
 import { autostartAll, ensureAllSiteWorkspaces, ensureMainSite } from './sites/registry.js';
 import { sitesRoot, ensureSitesRoot } from './sites/root.js';
 import { stopAll } from './sites/process.js';
-import { startTunnel, stopTunnel, tunnelEvents } from './tunnel.js';
+import { startTunnel, stopTunnel, tunnelEvents, publicState as tunnelState } from './tunnel.js';
 import { versionInfo, versionLine } from './version.js';
 import { siteTunnelEvents, stopAllSiteTunnels } from './site-tunnels.js';
 
@@ -38,6 +38,17 @@ import settingsRoutes from './routes/settings.js';
 import siteServerRoutes from './routes/site-server.js';
 import messengerRoutes from './routes/messenger.js';
 import notifyRoutes, { adminRouter as notifyAdminRoutes } from './routes/notify.js';
+import appRoutes, { adminRouter as appAdminRoutes } from './routes/app.js';
+import storageRoutes from './routes/storage.js';
+import { pruneAppAuth } from './appauth/index.js';
+import { localKey } from './local-key.js';
+import { runMigrations, dbVersion } from './lib/migrations.js';
+import { startDiscovery, stopDiscovery, serverCard, DISCOVERY_PORT } from './discovery.js';
+import { startBackupSchedule, stopBackupSchedule } from './storage/backup.js';
+import { pruneAudit as pruneAppAudit } from './lib/audit.js';
+import { pruneTickets } from './lib/ws-ticket.js';
+import { rateLimit, pruneRateLimits } from './lib/rate-limit.js';
+import { otpSettings } from './appauth/settings.js';
 import * as notify from './notify/index.js';
 import * as messenger from './messenger/index.js';
 import { aiProxy, AI_PREFIX } from './ai/proxy.js';
@@ -54,7 +65,7 @@ import { createTohidWs } from './tohid/ws.js';
 import controlRoutes, { agentRouter, appConfigRouter } from './routes/control/index.js';
 import { ensureLocalServer } from './routes/control/servers.js';
 import { startMonitor, stopMonitor, syncMonitors } from './control/monitor.js';
-import { pruneAudit } from './control/audit.js';
+import { pruneAudit as pruneControlAudit } from './control/audit.js';
 import { pruneAlerts, alertEvents } from './control/alerts.js';
 import { monitorEvents } from './control/monitor.js';
 import { startUpdateWatcher, stopUpdateWatcher } from './update/github.js';
@@ -63,12 +74,31 @@ import { writeNeedsOperator } from './control/roles.js';
 
 const PUBLIC_DIR = path.join(SERVER_ROOT, 'public');
 const PID_FILE = path.join(config.dataDir, 'panel.pid');
+const CONNECT_PAGE = path.join(SERVER_ROOT, 'src', 'appauth', 'connect.html');
+
+/** صفحهٔ راهنمای اتصال — روی هر دو پورت (پنل و پورتِ عمومی) سرو می‌شود */
+function serveConnectPage(req, res) {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(CONNECT_PAGE);
+}
 
 ensureDirs();
+
+// نسخهٔ دیتابیس اول بالا می‌آید — پیش از هر چیزی که به جدول‌ها دست بزند
+const migration = runMigrations();
+if (migration.ran.length) {
+  console.log(`[دیتابیس] ${migration.ran.length} تغییر اعمال شد → نسخهٔ ${migration.to}`);
+}
+if (migration.failed) {
+  console.error(`❌ تغییرِ دیتابیس شمارهٔ ${migration.failed.id} انجام نشد: ${migration.failed.error}`);
+}
 
 // جدول‌های مرکز فرمان پیش از هر پرس‌وجویی ساخته/به‌روز می‌شوند
 ensureControlSchema();
 ensureTohidSchema();
+// کلیدِ محلی همین اول ساخته می‌شود تا «برنامهٔ سرور خانگی» روی همین کامپیوتر
+// بتواند بدونِ ورودِ دستی، برنامه‌ها و تنظیمات را اداره کند.
+localKey();
 
 // شمارهٔ پروسه روی دیسک می‌ماند تا اسکریپت‌های سرویس (وقتی پنجره‌ای باز نیست)
 // بتوانند همین سرور را پیدا و متوقف کنند.
@@ -79,15 +109,56 @@ try {
 const app = express();
 app.disable('x-powered-by');
 
-// در شبکهٔ خانگی، پنل ممکن است از آدرس‌های مختلف باز شود
+/* ── CORS ────────────────────────────────────────────────────────────────────
+   پیش از این هر سایتی در دنیا می‌توانست با کوکی و توکنِ کاربر به این سرور
+   درخواست بزند. حالا:
+
+     • مسیرهای «برنامه‌ها» (/api/app) عمداً برای همه باز است — اپِ اندروید و
+       سایتِ روی هاست باید بتوانند صدا بزنند — ولی چون با هدرِ Authorization
+       کار می‌کند نه کوکی، credentials را نمی‌دهیم؛ پس مرورگرِ قربانی
+       نمی‌تواند نشستِ او را سوءاستفاده کند.
+     • بقیهٔ مسیرها فقط از خودِ همین کامپیوتر، شبکهٔ خانگی، یا آدرسِ تونل.
+     • هر مبدأ دیگری: بدونِ هدرِ CORS، یعنی مرورگر خودش جلویش را می‌گیرد.
+   ── */
+const PRIVATE_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|10\.[\d.]+|192\.168\.[\d.]+|172\.(1[6-9]|2\d|3[01])\.[\d.]+)(:\d+)?$/i;
+
+function originAllowed(origin) {
+  if (!origin) return true;                       // curl و اپِ موبایل اصلاً Origin ندارند
+  if (PRIVATE_ORIGIN.test(origin)) return true;   // خودِ کامپیوتر و شبکهٔ خانگی
+  try {
+    const tunnel = tunnelState().url;
+    if (tunnel && origin === tunnel) return true; // آدرسِ اینترنتیِ خودمان
+  } catch { /* تونل هنوز بالا نیامده */ }
+  const extra = getSetting('allowed_origins', []) || [];
+  return Array.isArray(extra) && extra.includes(origin);
+}
+
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  const origin = req.headers.origin;
+  const openApi = req.path.startsWith('/api/app/') || req.path === '/health';
+
+  if (openApi) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+    // عمداً بدونِ credentials: توکن با هدر می‌آید، نه با کوکی
+  } else if (originAllowed(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Api-Key, X-Local-Key, X-Read-Key');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   if (req.method === 'OPTIONS') return res.status(204).end();
   next();
 });
+
+/* ── محدودیتِ نرخ ────────────────────────────────────────────────────────────
+   ورود و کدِ یک‌بارمصرف سخت‌گیرانه‌تر است، چون هدفِ حدس‌زدن‌اند. */
+app.use('/api/auth/login', rateLimit('login', 10, 5 * 60 * 1000));
+app.use('/api/auth/setup', rateLimit('setup', 5, 60 * 60 * 1000));
+app.use('/api/app/auth', rateLimit('app-auth', 60, 10 * 60 * 1000));
+app.use('/api/notify', rateLimit('notify', 240, 60 * 1000));
+app.use('/api/messenger', rateLimit('messenger', 600, 60 * 1000));
+app.use('/api', rateLimit('api', 1200, 60 * 1000));
 
 // دستیارِ پشتیبانی — پیش از میان‌افزارِ JSON، به همان دلیلِ بالا
 app.use(AI_PREFIX, aiProxy);
@@ -114,6 +185,7 @@ app.get('/health', (req, res) => {
     version: versionInfo.version,
     build: versionInfo.build,
     root: versionInfo.root,
+    db: dbVersion(),
     time: new Date().toISOString(),
   });
 });
@@ -131,6 +203,11 @@ app.use('/api/site-server', siteServerRoutes);
 app.use('/api/messenger', messengerRoutes);
 app.use('/api/notify', notifyRoutes);
 app.use('/api/notify-admin', notifyAdminRoutes);
+// ورودِ کاربرانِ برنامه‌ها (اپِ اندروید، برنامهٔ ویندوز، سایت‌ها) با کدِ شش‌رقمی
+app.use('/api/app', appRoutes);
+app.use('/api/app-admin', appAdminRoutes);
+// کتابخانه: یک جای مرتب برای سایت‌ها، برنامه‌ها، پشتیبان‌ها و فایل‌های موقت
+app.use('/api/storage', storageRoutes);
 app.use('/api/ai', aiRoutes);
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
@@ -149,6 +226,10 @@ app.use('/api/control/tohid', requireAuth, writeNeedsOperator, tohidAdminRoutes)
 app.use('/api/control', requireAuth, writeNeedsOperator, controlRoutes);
 
 app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));
+
+// صفحهٔ «اتصالِ برنامه‌ها» — آدرسِ سرور، تستِ زندهٔ ورود با کد، و کدِ آمادهٔ
+// اندروید/ویندوز/سایت. همان چیزی که باید به سازندهٔ برنامه بدهید.
+app.get(['/connect', '/اتصال'], serveConnectPage);
 
 
 // ---------------------------- رابط کاربری ----------------------------------
@@ -228,6 +309,7 @@ if (panelSecure && config.tls.redirectHttp) {
   });
   redirectServer.listen(redirectPort, config.host);
 }
+export const scheme = panelSecure ? 'https' : 'http';
 
 // ۱) Socket.IO (روی مسیر /socket.io/)
 const io = attachRealtime(httpServer);
@@ -281,12 +363,17 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
   const publicApp = express();
   publicApp.disable('x-powered-by');
   publicApp.use((req, res, next) => {
+    // این پورت عمداً عمومی است (اپ‌ها از اینترنت می‌آیند) ولی بدونِ credentials
     res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Api-Key, X-Read-Key');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     if (req.method === 'OPTIONS') return res.status(204).end();
     next();
   });
+  publicApp.use('/api/app/auth', rateLimit('pub-app-auth', 60, 10 * 60 * 1000));
+  publicApp.use('/api/notify', rateLimit('pub-notify', 240, 60 * 1000));
+  publicApp.use('/api', rateLimit('pub-api', 1200, 60 * 1000));
   // ⚠️ پراکسیِ دستیار **پیش از** express.json می‌نشیند: آن میان‌افزار جریانِ
   //    بدنه را می‌خورد و بعدش دیگر چیزی برای لوله کردن نمی‌ماند.
   publicApp.use(AI_PREFIX, aiProxy);
@@ -316,6 +403,10 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
    */
   publicApp.use('/api/v1/admin', tohidAdminApiRoutes);
   publicApp.use('/api/v1', tohidPublicRoutes);
+  // برنامه‌ها از اینترنت هم باید بتوانند وارد شوند — پس ورودِ کاربران این‌جا هم هست.
+  // (پنل و فایل‌منیجر هرگز روی این پورت نمی‌آیند.)
+  publicApp.use('/api/app', appRoutes);
+  publicApp.get(['/connect', '/اتصال'], serveConnectPage);
   publicApp.use((req, res) => res.status(404).type('text/plain; charset=utf-8').send('not found'));
 
   syncOnlyServer = http.createServer(publicApp);
@@ -375,6 +466,11 @@ monitorEvents.on('result', ({ monitor, result }) => {
     });
   } catch { /* هنوز کسی وصل نیست */ }
 });
+// ۲.۹) کشفِ خودکار — تا اپ‌ها بدونِ دانستنِ IP سرور را پیدا کنند
+if ((process.env.HLP_DISCOVERY ?? '1') !== '0') startDiscovery();
+
+// ۲.۹۵) پشتیبانِ زمان‌بندی‌شده — اگر کاربر روشنش کرده باشد
+startBackupSchedule();
 
 // ۳) معیارهای زنده
 // روی ویندوز یک پروسهٔ PowerShell دائمی به‌جای ده‌ها بار باز و بسته کردن آن
@@ -386,8 +482,12 @@ startCollector((snapshot) => {
 // نگهداری دوره‌ای
 const housekeeping = setInterval(() => {
   pruneSessions();
+  pruneAppAuth();
+  pruneRateLimits();
+  pruneTickets();
+  pruneAppAudit();
   pruneEvents();
-  pruneAudit();
+  pruneControlAudit();
   pruneAlerts();
 }, 15 * 60 * 1000);
 housekeeping.unref?.();
@@ -445,7 +545,6 @@ async function main() {
     console.log('  ✅ پنل مدیریت سرور خانگی بالا آمد' + (name ? ` — ${name}` : ''));
     console.log(`  ${versionLine()}`);
     console.log('==============================================================');
-    const scheme = panelSecure ? 'https' : 'http';
     console.log(`  پنل روی این کامپیوتر:   ${scheme}://localhost:${config.port}`);
     for (const ip of ips) console.log(`  از شبکهٔ خانگی:          ${scheme}://${ip}:${config.port}`);
     if (panelSecure) console.log('  🔒 با گواهیِ خودتان، مستقیم روی https');
@@ -464,6 +563,22 @@ async function main() {
       console.log('     مرورگر جلویش را می‌گیرد. آنجا باید wss:// داشته باشید (تونل).');
       console.log('');
     }
+    // ---- ورودِ برنامه‌ها: همان چیزی که باید در اپِ اندروید/ویندوز/سایت بگذارید ----
+    const otp = otpSettings();
+    const smsOn = otp.sms.provider !== 'none';
+    const mailOn = otp.email.provider !== 'none' && Boolean(otp.email.host);
+    console.log('  📱 ورودِ برنامه‌ها با شماره یا ایمیل (کدِ شش‌رقمی):');
+    console.log(`     آدرسی که در برنامه می‌گذارید:  http://${ips[0] || 'localhost'}:${config.port}`);
+    console.log(`     راهنما و تستِ زنده:            http://${ips[0] || 'localhost'}:${config.port}/connect`);
+    console.log(`     فرستادنِ کد:  POST /api/app/auth/request-code   {"phone":"09121234567"}`);
+    console.log(`     تأییدِ کد:     POST /api/app/auth/verify-code    {"phone":"...","code":"123456"}`);
+    console.log(`     پیامک: ${smsOn ? `روشن (${otp.sms.provider})` : 'خاموش'}   ·   ایمیل: ${mailOn ? `روشن (${otp.email.host})` : 'خاموش'}`);
+    console.log('     برنامهٔ ویندوزیِ همین کارها:  homelab-panel\\desktop\\برنامه-سرور.bat');
+    if (!smsOn && !mailOn) {
+      console.log('     ⚠️  تا وقتی پیامک/ایمیل تنظیم نشده، کد در همین پنجره و در «لاگ‌ها» نوشته می‌شود.');
+      console.log('        روشن کردنش: صفحهٔ /connect را باز کنید، بخشِ ۴.');
+    }
+    console.log('');
     console.log(`  پوشهٔ داده:  ${config.dataDir}`);
     console.log(`  ریشهٔ سایت‌ها: ${sitesRoot()}`);
     console.log('==============================================================');
@@ -503,6 +618,8 @@ async function shutdown(signal) {
   try {
     stopTunnel();
     stopAllSiteTunnels();
+    stopDiscovery();
+    stopBackupSchedule();
   } catch { /* بسته شده */ }
   try {
     stopMonitor();

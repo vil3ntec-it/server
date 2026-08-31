@@ -5,7 +5,8 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { requireAuth } from '../auth.js';
-import { resolveSafe, rootsWithMeta } from '../lib/safe-path.js';
+import { resolveSafe, rootsWithMeta, safeName } from '../lib/safe-path.js';
+import { audit } from '../lib/audit.js';
 import { config } from '../config.js';
 import { sitesRoot } from '../sites/root.js';
 import { logEvent } from '../db.js';
@@ -152,13 +153,14 @@ router.post('/mkdir', async (req, res) => {
 router.post('/rename', async (req, res) => {
   const safe = resolveSafe(req.body?.path);
   if (!safe.ok) return fail(res, 403, safe.error);
-  const name = path.basename(String(req.body?.newName || '').trim());
-  if (!name || name === '.' || name === '..') return fail(res, 400, 'bad_name');
+  const name = safeName(req.body?.newName);
+  if (!name) return fail(res, 400, 'bad_name');
   const target = path.join(path.dirname(safe.path), name);
   if (!resolveSafe(target).ok) return fail(res, 403, 'path_not_allowed');
   try {
     await fsp.rename(safe.path, target);
     invalidateSizeCache();
+    audit(req, 'file.rename', { target: `${safe.path} → ${target}` });
     res.json({ ok: true, path: target });
   } catch (e) {
     fail(res, 400, e.code || 'rename_failed');
@@ -218,8 +220,10 @@ router.delete('/', async (req, res) => {
     await fsp.rm(safe.path, { recursive: true, force: false });
     invalidateSizeCache();
     logEvent('warn', 'panel', `حذف شد: ${safe.path}`);
+    audit(req, 'file.delete', { target: safe.path });
     res.json({ ok: true });
   } catch (e) {
+    audit(req, 'file.delete', { target: safe.path, ok: false, detail: e.code });
     fail(res, 400, e.code || 'delete_failed');
   }
 });

@@ -1,0 +1,686 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="سرور خانگی" Height="820" Width="1280" MinHeight="620" MinWidth="1024"
+        WindowStartupLocation="CenterScreen" FlowDirection="RightToLeft"
+        Background="#0E1220" TextOptions.TextFormattingMode="Ideal"
+        UseLayoutRounding="True" SnapsToDevicePixels="True">
+
+  <Window.Resources>
+    <!-- ═══════════════ رنگ‌ها ═══════════════ -->
+    <SolidColorBrush x:Key="Bg"        Color="#0E1220"/>
+    <SolidColorBrush x:Key="Panel"     Color="#161C30"/>
+    <SolidColorBrush x:Key="Card"      Color="#1B2238"/>
+    <SolidColorBrush x:Key="CardHover" Color="#222A44"/>
+    <SolidColorBrush x:Key="Line"      Color="#2A3355"/>
+    <SolidColorBrush x:Key="Ink"       Color="#EEF2FF"/>
+    <SolidColorBrush x:Key="Muted"     Color="#8E9AC4"/>
+    <SolidColorBrush x:Key="Brand"     Color="#4C7DFF"/>
+    <SolidColorBrush x:Key="BrandSoft" Color="#22305C"/>
+    <SolidColorBrush x:Key="Good"      Color="#3DD68C"/>
+    <SolidColorBrush x:Key="Warn"      Color="#F5B14C"/>
+    <SolidColorBrush x:Key="Bad"       Color="#FF6B6B"/>
+
+    <!-- ═══════════════ دکمه‌ها ═══════════════ -->
+    <Style x:Key="Btn" TargetType="Button">
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="Background" Value="{StaticResource Card}"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="18,10"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="b" Background="{TemplateBinding Background}" CornerRadius="10"
+                    Padding="{TemplateBinding Padding}">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="b" Property="Background" Value="{StaticResource CardHover}"/>
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="b" Property="Opacity" Value="0.45"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="BtnPrimary" TargetType="Button" BasedOn="{StaticResource Btn}">
+      <Setter Property="Background" Value="{StaticResource Brand}"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+    </Style>
+
+    <Style x:Key="BtnGhost" TargetType="Button" BasedOn="{StaticResource Btn}">
+      <Setter Property="Background" Value="{StaticResource BrandSoft}"/>
+      <Setter Property="Foreground" Value="#BFD0FF"/>
+    </Style>
+
+    <!-- ═══════════════ دکمه‌های منوی کنار ═══════════════ -->
+    <Style x:Key="NavBtn" TargetType="RadioButton">
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="FontSize" Value="15"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Margin" Value="10,3"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="b" Background="Transparent" CornerRadius="12" Padding="16,12">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="30"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="ico" Text="{TemplateBinding Tag}" FontSize="17"
+                           VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                <ContentPresenter Grid.Column="1" VerticalAlignment="Center" Margin="6,0,0,0"/>
+              </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="b" Property="Background" Value="#1C2440"/>
+                <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="b" Property="Background" Value="{StaticResource Brand}"/>
+                <Setter Property="Foreground" Value="White"/>
+                <Setter Property="FontWeight" Value="Bold"/>
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- ═══════════════ کادرها ═══════════════ -->
+    <Style x:Key="CardBox" TargetType="Border">
+      <Setter Property="Background" Value="{StaticResource Card}"/>
+      <Setter Property="CornerRadius" Value="16"/>
+      <Setter Property="Padding" Value="22"/>
+      <Setter Property="Margin" Value="0,0,0,16"/>
+    </Style>
+
+    <Style x:Key="H1" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="FontSize" Value="24"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Margin" Value="0,0,0,4"/>
+    </Style>
+    <Style x:Key="H2" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="FontSize" Value="17"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Margin" Value="0,0,0,12"/>
+    </Style>
+    <Style x:Key="Sub" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style x:Key="Field" TargetType="TextBox">
+      <Setter Property="Background" Value="#121829"/>
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="CaretBrush" Value="{StaticResource Ink}"/>
+      <Setter Property="BorderBrush" Value="{StaticResource Line}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="10,8"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10">
+              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="Mono" TargetType="TextBox" BasedOn="{StaticResource Field}">
+      <Setter Property="FontFamily" Value="Consolas"/>
+      <Setter Property="FlowDirection" Value="LeftToRight"/>
+      <Setter Property="IsReadOnly" Value="True"/>
+    </Style>
+    <Style TargetType="CheckBox">
+      <Setter Property="Foreground" Value="{StaticResource Ink}"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="Margin" Value="0,6"/>
+    </Style>
+    <Style TargetType="ComboBox">
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="Padding" Value="8,6"/>
+    </Style>
+  </Window.Resources>
+
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="248"/>
+      <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+
+    <!-- ═══════════════ منوی کنار ═══════════════ -->
+    <Border Background="{StaticResource Panel}">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Margin="20,26,20,18">
+          <TextBlock Text="سرور خانگی" Foreground="{StaticResource Ink}" FontSize="21" FontWeight="Bold"/>
+          <TextBlock x:Name="LblVersion" Text="نسخهٔ …" Style="{StaticResource Sub}" Margin="0,2,0,0"/>
+        </StackPanel>
+
+        <Border DockPanel.Dock="Bottom" Margin="14,10,14,16" CornerRadius="14" Background="#121829" Padding="14">
+          <StackPanel>
+            <TextBlock x:Name="LblServerState" Text="…" Foreground="{StaticResource Muted}" FontSize="13"/>
+            <Grid Margin="0,10,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Button x:Name="BtnStart" Content="روشن کن" Style="{StaticResource BtnPrimary}" Padding="0,9" FontSize="13"/>
+              <Button x:Name="BtnStop" Grid.Column="2" Content="خاموش" Style="{StaticResource Btn}" Padding="0,9" FontSize="13"/>
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <StackPanel Margin="0,6,0,0">
+          <RadioButton x:Name="NavHome"     Style="{StaticResource NavBtn}" Tag="🏠" Content="خانه" IsChecked="True"/>
+          <RadioButton x:Name="NavApps"     Style="{StaticResource NavBtn}" Tag="📱" Content="برنامه‌ها و سایت‌ها"/>
+          <RadioButton x:Name="NavOtp"      Style="{StaticResource NavBtn}" Tag="🔑" Content="ورود با کد (OTP)"/>
+          <RadioButton x:Name="NavSites"    Style="{StaticResource NavBtn}" Tag="🌐" Content="سایت‌های روی سرور"/>
+          <RadioButton x:Name="NavLibrary"  Style="{StaticResource NavBtn}" Tag="📚" Content="کتابخانه (فایل‌ها)"/>
+          <RadioButton x:Name="NavBackup"   Style="{StaticResource NavBtn}" Tag="🛡" Content="پشتیبان"/>
+          <RadioButton x:Name="NavSettings" Style="{StaticResource NavBtn}" Tag="⚙" Content="تنظیمات"/>
+          <RadioButton x:Name="NavTerminal" Style="{StaticResource NavBtn}" Tag="🖥" Content="ترمینال سرور"/>
+          <RadioButton x:Name="NavUpdate"   Style="{StaticResource NavBtn}" Tag="⬆" Content="به‌روزرسانی"/>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <!-- ═══════════════ محتوا ═══════════════ -->
+    <Grid Grid.Column="1">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+      </Grid.RowDefinitions>
+
+      <Border Background="{StaticResource Bg}" Padding="30,22,30,10">
+        <Grid>
+          <StackPanel>
+            <TextBlock x:Name="LblTitle" Text="خانه" Style="{StaticResource H1}"/>
+            <TextBlock x:Name="LblSubtitle" Text="" Style="{StaticResource Sub}"/>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top">
+            <TextBox x:Name="TxtSearch" Style="{StaticResource Field}" Width="230" Padding="10,7"
+                     FontSize="13" ToolTip="دنبالِ چه می‌گردید؟"/>
+            <Button x:Name="BtnRefresh" Content="⟳  تازه کردن" Style="{StaticResource BtnGhost}"
+                    FontSize="13" Padding="14,8" Margin="10,0,0,0"/>
+            <CheckBox x:Name="ChkAdvanced" Content="حالتِ پیشرفته" VerticalAlignment="Center"
+                      Margin="14,0,0,0" FontSize="13"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="30,6,30,26">
+        <Grid x:Name="Pages">
+
+          <!-- ─────────── خانه ─────────── -->
+          <StackPanel x:Name="PageHome">
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="آدرسِ سرور — همین را به برنامه‌هایتان بدهید" Style="{StaticResource H2}"/>
+                <TextBox x:Name="TxtMainAddress" Style="{StaticResource Mono}" FontSize="17" Padding="14,12"/>
+                <TextBlock x:Name="LblAddressHint" Style="{StaticResource Sub}" Margin="0,10,0,0"/>
+                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                  <Button x:Name="BtnCopyMain" Content="کپیِ آدرس" Style="{StaticResource BtnPrimary}"/>
+                  <Button x:Name="BtnCopyLan" Content="آدرسِ خانگی" Style="{StaticResource BtnGhost}" Margin="10,0,0,0"/>
+                  <Button x:Name="BtnCopyNet" Content="آدرسِ اینترنتی" Style="{StaticResource BtnGhost}" Margin="10,0,0,0"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <TextBlock Text="برنامه‌های شما" Style="{StaticResource H2}" Margin="4,6,0,12"/>
+            <UniformGrid Rows="1" Columns="3" x:Name="KindCards">
+              <Border x:Name="CardAndroid" Style="{StaticResource CardBox}" Margin="0,0,8,16" Cursor="Hand">
+                <StackPanel>
+                  <TextBlock Text="📱" FontSize="30"/>
+                  <TextBlock Text="برنامه‌های اندروید" Style="{StaticResource H2}" Margin="0,10,0,4"/>
+                  <TextBlock x:Name="LblAndroidCount" Text="…" Foreground="{StaticResource Brand}" FontSize="30" FontWeight="Bold"/>
+                  <TextBlock x:Name="LblAndroidInfo" Style="{StaticResource Sub}"/>
+                </StackPanel>
+              </Border>
+              <Border x:Name="CardWeb" Style="{StaticResource CardBox}" Margin="8,0,8,16" Cursor="Hand">
+                <StackPanel>
+                  <TextBlock Text="🌐" FontSize="30"/>
+                  <TextBlock Text="سایت‌ها" Style="{StaticResource H2}" Margin="0,10,0,4"/>
+                  <TextBlock x:Name="LblWebCount" Text="…" Foreground="{StaticResource Good}" FontSize="30" FontWeight="Bold"/>
+                  <TextBlock x:Name="LblWebInfo" Style="{StaticResource Sub}"/>
+                </StackPanel>
+              </Border>
+              <Border x:Name="CardDesktop" Style="{StaticResource CardBox}" Margin="8,0,0,16" Cursor="Hand">
+                <StackPanel>
+                  <TextBlock Text="💻" FontSize="30"/>
+                  <TextBlock Text="برنامه‌های کامپیوتری" Style="{StaticResource H2}" Margin="0,10,0,4"/>
+                  <TextBlock x:Name="LblDesktopCount" Text="…" Foreground="{StaticResource Warn}" FontSize="30" FontWeight="Bold"/>
+                  <TextBlock x:Name="LblDesktopInfo" Style="{StaticResource Sub}"/>
+                </StackPanel>
+              </Border>
+            </UniformGrid>
+
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="این کامپیوتر" Style="{StaticResource H2}"/>
+                <UniformGrid Rows="1" Columns="4">
+                  <StackPanel Margin="0,0,10,0">
+                    <TextBlock Text="پردازنده" Style="{StaticResource Sub}"/>
+                    <TextBlock x:Name="LblCpu" Text="…" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                  </StackPanel>
+                  <StackPanel Margin="0,0,10,0">
+                    <TextBlock Text="حافظه" Style="{StaticResource Sub}"/>
+                    <TextBlock x:Name="LblRam" Text="…" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                  </StackPanel>
+                  <StackPanel Margin="0,0,10,0">
+                    <TextBlock Text="دیسکِ کتابخانه" Style="{StaticResource Sub}"/>
+                    <TextBlock x:Name="LblDisk" Text="…" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                  </StackPanel>
+                  <StackPanel>
+                    <TextBlock Text="آخرین پشتیبان" Style="{StaticResource Sub}"/>
+                    <TextBlock x:Name="LblLastBackup" Text="…" FontSize="15" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                  </StackPanel>
+                </UniformGrid>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="وضعیتِ سرویس‌ها" Style="{StaticResource H2}"/>
+                <UniformGrid Rows="1" Columns="4">
+                  <StackPanel Margin="0,0,10,0">
+                    <TextBlock Text="پیامک" Style="{StaticResource Sub}"/>
+                    <TextBlock x:Name="LblSms" Text="…" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                  </StackPanel>
+                  <StackPanel Margin="0,0,10,0">
+                    <TextBlock Text="ایمیل" Style="{StaticResource Sub}"/>
+                    <TextBlock x:Name="LblMail" Text="…" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                  </StackPanel>
+                  <StackPanel Margin="0,0,10,0">
+                    <TextBlock Text="اینترنت (تونل)" Style="{StaticResource Sub}"/>
+                    <TextBlock x:Name="LblTunnel" Text="…" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                  </StackPanel>
+                  <StackPanel>
+                    <TextBlock Text="دستیارِ هوشمند" Style="{StaticResource Sub}"/>
+                    <TextBlock x:Name="LblAi" Text="…" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                  </StackPanel>
+                </UniformGrid>
+                <UniformGrid Rows="1" Columns="4" Margin="0,18,0,0">
+                  <StackPanel Margin="0,0,10,0">
+                    <TextBlock Text="کاربران" Style="{StaticResource Sub}"/>
+                    <TextBlock x:Name="LblUsers" Text="…" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                  </StackPanel>
+                  <StackPanel Margin="0,0,10,0">
+                    <TextBlock Text="آنلاین" Style="{StaticResource Sub}"/>
+                    <TextBlock x:Name="LblOnline" Text="…" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Good}"/>
+                  </StackPanel>
+                  <StackPanel Margin="0,0,10,0">
+                    <TextBlock Text="کدِ امروز" Style="{StaticResource Sub}"/>
+                    <TextBlock x:Name="LblCodes" Text="…" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                  </StackPanel>
+                  <StackPanel>
+                    <TextBlock Text="ورودِ امروز" Style="{StaticResource Sub}"/>
+                    <TextBlock x:Name="LblLogins" Text="…" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Ink}"/>
+                  </StackPanel>
+                </UniformGrid>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <!-- ─────────── برنامه‌ها ─────────── -->
+          <Grid x:Name="PageApps" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="330"/>
+              <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Style="{StaticResource CardBox}" Margin="0,0,16,16">
+              <DockPanel>
+                <StackPanel DockPanel.Dock="Top">
+                  <ComboBox x:Name="CmbKindFilter" Margin="0,0,0,12"/>
+                  <Button x:Name="BtnNewApp" Content="+  برنامهٔ تازه" Style="{StaticResource BtnPrimary}" Margin="0,0,0,12"/>
+                </StackPanel>
+                <ListBox x:Name="LstApps" Background="Transparent" BorderThickness="0" MinHeight="360"
+                         Foreground="{StaticResource Ink}" FontSize="14"/>
+              </DockPanel>
+            </Border>
+
+            <StackPanel Grid.Column="1">
+              <Border Style="{StaticResource CardBox}">
+                <StackPanel>
+                  <TextBlock x:Name="LblAppTitle" Text="یک برنامه را انتخاب کنید" Style="{StaticResource H2}"/>
+                  <Grid Margin="0,4,0,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="14"/>
+                      <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                      <TextBlock Text="نام" Style="{StaticResource Sub}"/>
+                      <TextBox x:Name="TxtAppName" Style="{StaticResource Field}" Margin="0,4,0,10"/>
+                      <TextBlock Text="نوع" Style="{StaticResource Sub}"/>
+                      <ComboBox x:Name="CmbAppKind" Margin="0,4,0,10"/>
+                      <TextBlock Text="متنِ پیامکِ این برنامه" Style="{StaticResource Sub}"/>
+                      <TextBox x:Name="TxtAppSms" Style="{StaticResource Field}" Margin="0,4,0,10"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                      <TextBlock Text="کلیدِ برنامه" Style="{StaticResource Sub}"/>
+                      <TextBox x:Name="TxtAppKey" Style="{StaticResource Mono}" Margin="0,4,0,10"/>
+                      <TextBlock Text="طولِ کد" Style="{StaticResource Sub}"/>
+                      <TextBox x:Name="TxtAppLen" Style="{StaticResource Field}" Margin="0,4,0,10"/>
+                      <CheckBox x:Name="ChkAppKeyReq" Content="بدونِ کلید کار نکند"/>
+                      <CheckBox x:Name="ChkAppEnabled" Content="روشن باشد"/>
+                    </StackPanel>
+                  </Grid>
+                  <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                    <Button x:Name="BtnSaveApp" Content="ذخیره" Style="{StaticResource BtnPrimary}"/>
+                    <Button x:Name="BtnNewKey" Content="کلیدِ تازه" Style="{StaticResource BtnGhost}" Margin="10,0,0,0"/>
+                    <Button x:Name="BtnDelApp" Content="حذف" Style="{StaticResource Btn}" Margin="10,0,0,0"/>
+                    <Button x:Name="BtnCopyApi" Content="کپیِ آدرس‌های API" Style="{StaticResource BtnGhost}" Margin="10,0,0,0"/>
+                  </StackPanel>
+                </StackPanel>
+              </Border>
+
+              <Border Style="{StaticResource CardBox}">
+                <StackPanel>
+                  <TextBlock Text="آدرس‌هایی که به سازندهٔ این برنامه می‌دهید" Style="{StaticResource H2}"/>
+                  <TextBox x:Name="TxtApiCard" Style="{StaticResource Mono}" Height="300"
+                           VerticalScrollBarVisibility="Auto" AcceptsReturn="True" FontSize="12"/>
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </Grid>
+
+          <!-- ─────────── OTP ─────────── -->
+          <StackPanel x:Name="PageOtp" Visibility="Collapsed">
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="آزمونِ ورود با کدِ یک‌بارمصرف" Style="{StaticResource H2}"/>
+                <TextBlock Text="شماره یا ایمیل را بنویسید، کد بگیرید، و همان‌جا تأییدش کنید — دقیقاً همان مسیری که کاربرِ برنامهٔ شما طی می‌کند." Style="{StaticResource Sub}" Margin="0,0,0,14"/>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="200"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBox x:Name="TxtOtpTarget" Style="{StaticResource Field}"/>
+                  <ComboBox x:Name="CmbOtpApp" Grid.Column="2"/>
+                  <Button x:Name="BtnSendCode" Grid.Column="4" Content="فرستادنِ کد" Style="{StaticResource BtnPrimary}"/>
+                </Grid>
+                <Grid Margin="0,12,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="200"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBox x:Name="TxtOtpCode" Style="{StaticResource Mono}" IsReadOnly="False" FontSize="18" Padding="12,10"/>
+                  <Button x:Name="BtnVerifyCode" Grid.Column="2" Content="تأییدِ کد" Style="{StaticResource BtnGhost}"/>
+                  <TextBlock x:Name="LblOtpState" Grid.Column="3" Style="{StaticResource Sub}" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                </Grid>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="نتیجه" Style="{StaticResource H2}"/>
+                <TextBox x:Name="TxtOtpOut" Style="{StaticResource Mono}" Height="260"
+                         VerticalScrollBarVisibility="Auto" AcceptsReturn="True" FontSize="12"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <!-- ─────────── سایت‌های روی سرور ─────────── -->
+          <StackPanel x:Name="PageSites" Visibility="Collapsed">
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="سایت‌هایی که روی این سرور اجرا می‌شوند" Style="{StaticResource H2}"/>
+                <TextBlock Text="همان چیزی که در پنلِ مدیریت می‌دیدید — بدونِ باز کردنِ مرورگر." Style="{StaticResource Sub}" Margin="0,0,0,14"/>
+                <ListBox x:Name="LstSites" Background="Transparent" BorderThickness="0" MinHeight="380"
+                         Foreground="{StaticResource Ink}" FontSize="14"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+
+          <!-- ─────────── نتیجهٔ جست‌وجو ─────────── -->
+          <StackPanel x:Name="PageSearch" Visibility="Collapsed">
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock x:Name="LblSearchTitle" Text="نتیجهٔ جست‌وجو" Style="{StaticResource H2}"/>
+                <ListBox x:Name="LstSearch" Background="Transparent" BorderThickness="0" MinHeight="420"
+                         Foreground="{StaticResource Ink}" FontSize="14"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <!-- ─────────── پشتیبان ─────────── -->
+          <StackPanel x:Name="PageBackup" Visibility="Collapsed">
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="پشتیبان‌گیری" Style="{StaticResource H2}"/>
+                <TextBlock Text="دیتابیس، کاربران، تنظیمات، دادهٔ سایت‌ها و رمزهای پیامک و ایمیل — همه در یک پوشهٔ تاریخ‌دار داخلِ کتابخانه." Style="{StaticResource Sub}" Margin="0,0,0,14"/>
+                <StackPanel Orientation="Horizontal">
+                  <Button x:Name="BtnBackupNow" Content="همین حالا پشتیبان بگیر" Style="{StaticResource BtnPrimary}"/>
+                  <Button x:Name="BtnBackupOpen" Content="بازکردنِ پوشه" Style="{StaticResource BtnGhost}" Margin="10,0,0,0"/>
+                  <Button x:Name="BtnBackupPrune" Content="پاک‌کردنِ قدیمی‌ها" Style="{StaticResource Btn}" Margin="10,0,0,0"/>
+                  <TextBlock x:Name="LblBackupState" Style="{StaticResource Sub}" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                  <CheckBox x:Name="ChkBackupDaily" Content="هر روز خودکار" Margin="0,0,20,0"/>
+                  <CheckBox x:Name="ChkBackupWeekly" Content="هر هفته خودکار"/>
+                  <TextBlock Text="ساعتِ:" Style="{StaticResource Sub}" VerticalAlignment="Center" Margin="20,0,6,0"/>
+                  <TextBox x:Name="TxtBackupHour" Style="{StaticResource Field}" Width="60" Padding="8,6"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="پشتیبان‌های موجود" Style="{StaticResource H2}"/>
+                <TextBlock Text="برای بازگرداندن، یکی را انتخاب کنید. پیش از بازگرداندن، خودش از وضعِ فعلی پشتیبان می‌گیرد." Style="{StaticResource Sub}" Margin="0,0,0,12"/>
+                <ListBox x:Name="LstBackups" Background="Transparent" BorderThickness="0" MinHeight="240"
+                         Foreground="{StaticResource Ink}" FontSize="13"/>
+                <Button x:Name="BtnRestore" Content="بازگرداندنِ انتخاب‌شده" Style="{StaticResource Btn}"
+                        HorizontalAlignment="Right" Margin="0,12,0,0" IsEnabled="False"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <!-- ─────────── کتابخانه ─────────── -->
+          <StackPanel x:Name="PageLibrary" Visibility="Collapsed">
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="محلِ ذخیره‌سازی" Style="{StaticResource H2}"/>
+                <TextBlock Text="همهٔ سایت‌ها، برنامه‌ها، پشتیبان‌ها و فایل‌های موقت زیرِ همین یک پوشه می‌نشینند — هر پروژه در پوشهٔ مستقلِ خودش." Style="{StaticResource Sub}" Margin="0,0,0,12"/>
+                <TextBox x:Name="TxtLibRoot" Style="{StaticResource Mono}" FontSize="15" Padding="12,10"/>
+                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                  <Button x:Name="BtnLibChange" Content="انتخاب / تغییرِ محل" Style="{StaticResource BtnPrimary}"/>
+                  <Button x:Name="BtnLibOpen" Content="بازکردنِ پوشه" Style="{StaticResource BtnGhost}" Margin="10,0,0,0"/>
+                  <Button x:Name="BtnLibRepair" Content="ترمیمِ ساختار" Style="{StaticResource Btn}" Margin="10,0,0,0"/>
+                  <Button x:Name="BtnLibClean" Content="پاک‌کردنِ فایل‌های موقت" Style="{StaticResource Btn}" Margin="10,0,0,0"/>
+                </StackPanel>
+                <TextBlock x:Name="LblLibState" Style="{StaticResource Sub}" Margin="0,12,0,0"/>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="فضای دیسک" Style="{StaticResource H2}"/>
+                <TextBlock x:Name="LblLibDisk" Text="…" FontSize="16" Foreground="{StaticResource Ink}"/>
+                <Border Background="#121829" CornerRadius="8" Height="14" Margin="0,10,0,0">
+                  <Border x:Name="BarLibDisk" Background="{StaticResource Brand}" CornerRadius="8"
+                          HorizontalAlignment="Right" Width="0"/>
+                </Border>
+                <TextBlock x:Name="LblLibWarn" Style="{StaticResource Sub}" Margin="0,10,0,0"/>
+              </StackPanel>
+            </Border>
+
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="16"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border Style="{StaticResource CardBox}">
+                <StackPanel>
+                  <TextBlock Text="سایت‌ها" Style="{StaticResource H2}"/>
+                  <ListBox x:Name="LstLibSites" Background="Transparent" BorderThickness="0" MinHeight="200"
+                           Foreground="{StaticResource Ink}" FontSize="13"/>
+                </StackPanel>
+              </Border>
+              <Border Grid.Column="2" Style="{StaticResource CardBox}">
+                <StackPanel>
+                  <TextBlock Text="برنامه‌ها" Style="{StaticResource H2}"/>
+                  <ListBox x:Name="LstLibApps" Background="Transparent" BorderThickness="0" MinHeight="200"
+                           Foreground="{StaticResource Ink}" FontSize="13"/>
+                </StackPanel>
+              </Border>
+            </Grid>
+
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="پوشه‌های پراکنده" Style="{StaticResource H2}"/>
+                <TextBlock Text="پوشه‌هایی که بیرونِ کتابخانه مانده‌اند. هیچ‌چیز خودکار جابه‌جا یا پاک نمی‌شود؛ اول فهرست را ببینید." Style="{StaticResource Sub}" Margin="0,0,0,12"/>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                  <Button x:Name="BtnLibScan" Content="گشتن" Style="{StaticResource BtnGhost}"/>
+                  <Button x:Name="BtnLibOrganize" Content="مرتب کردنِ همه" Style="{StaticResource BtnPrimary}" Margin="10,0,0,0" IsEnabled="False"/>
+                  <TextBlock x:Name="LblLibScan" Style="{StaticResource Sub}" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                </StackPanel>
+                <ListBox x:Name="LstLibStray" Background="Transparent" BorderThickness="0" MinHeight="140"
+                         Foreground="{StaticResource Ink}" FontSize="13"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <!-- ─────────── تنظیمات ─────────── -->
+          <StackPanel x:Name="PageSettings" Visibility="Collapsed">
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="ایمیل (جی‌میل یا هر SMTP)" Style="{StaticResource H2}"/>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="14"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <StackPanel>
+                    <TextBlock Text="سرورِ ایمیل" Style="{StaticResource Sub}"/>
+                    <TextBox x:Name="TxtMailHost" Style="{StaticResource Field}" Margin="0,4,0,10"/>
+                    <TextBlock Text="آدرسِ ایمیل" Style="{StaticResource Sub}"/>
+                    <TextBox x:Name="TxtMailUser" Style="{StaticResource Mono}" IsReadOnly="False" Margin="0,4,0,10"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="2">
+                    <TextBlock Text="پورت (۴۶۵ یا ۵۸۷)" Style="{StaticResource Sub}"/>
+                    <TextBox x:Name="TxtMailPort" Style="{StaticResource Field}" Margin="0,4,0,10"/>
+                    <TextBlock Text="رمز (جی‌میل: App Password)" Style="{StaticResource Sub}"/>
+                    <PasswordBox x:Name="TxtMailPass" Margin="0,4,0,10" Padding="10,8" FontSize="14"/>
+                  </StackPanel>
+                </Grid>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="پیامک" Style="{StaticResource H2}"/>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="14"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <StackPanel>
+                    <TextBlock Text="سرویس" Style="{StaticResource Sub}"/>
+                    <ComboBox x:Name="CmbSmsProvider" Margin="0,4,0,10"/>
+                    <TextBlock Text="شمارهٔ خط" Style="{StaticResource Sub}"/>
+                    <TextBox x:Name="TxtSmsSender" Style="{StaticResource Field}" Margin="0,4,0,10"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="2">
+                    <TextBlock Text="کلید (API Key)" Style="{StaticResource Sub}"/>
+                    <PasswordBox x:Name="TxtSmsKey" Margin="0,4,0,10" Padding="10,8" FontSize="14"/>
+                    <TextBlock Text="قالبِ تأیید (اختیاری)" Style="{StaticResource Sub}"/>
+                    <TextBox x:Name="TxtSmsTemplate" Style="{StaticResource Field}" Margin="0,4,0,10"/>
+                  </StackPanel>
+                </Grid>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="بالا آمدن با ویندوز" Style="{StaticResource H2}"/>
+                <CheckBox x:Name="ChkAutoStart" Content="سرور با روشن شدنِ ویندوز خودش بالا بیاید"/>
+                <TextBlock x:Name="LblAutoStart" Style="{StaticResource Sub}" Margin="0,6,0,0"/>
+                <TextBlock Text="با این کار، بستنِ همین پنجره سرور را خاموش نمی‌کند — سایت‌ها و اپ‌ها همچنان کار می‌کنند." Style="{StaticResource Sub}" Margin="0,6,0,0"/>
+              </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock Text="دستیارِ هوش مصنوعی" Style="{StaticResource H2}"/>
+                <CheckBox x:Name="ChkAi" Content="دستیار با سرور بالا بیاید"/>
+                <TextBlock x:Name="LblAiNote" Style="{StaticResource Sub}" Margin="0,6,0,0"/>
+              </StackPanel>
+            </Border>
+
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+              <Button x:Name="BtnSaveSettings" Content="ذخیره و راه‌اندازیِ دوباره" Style="{StaticResource BtnPrimary}"/>
+              <Button x:Name="BtnOpenEnv" Content="بازکردنِ فایل .env" Style="{StaticResource Btn}" Margin="10,0,0,0"/>
+              <TextBlock x:Name="LblSettingsState" Style="{StaticResource Sub}" VerticalAlignment="Center" Margin="16,0,0,0"/>
+            </StackPanel>
+          </StackPanel>
+
+          <!-- ─────────── ترمینال ─────────── -->
+          <StackPanel x:Name="PageTerminal" Visibility="Collapsed">
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                  <Button x:Name="BtnLogRefresh" Content="تازه کردن" Style="{StaticResource BtnGhost}"/>
+                  <Button x:Name="BtnLogClear" Content="پاک کردن" Style="{StaticResource Btn}" Margin="10,0,0,0"/>
+                  <Button x:Name="BtnLogCopy" Content="کپی" Style="{StaticResource Btn}" Margin="10,0,0,0"/>
+                  <CheckBox x:Name="ChkLogAuto" Content="دنبال کردنِ زنده" IsChecked="True" Margin="16,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+                <Border Background="#080B15" CornerRadius="12" Padding="4">
+                  <TextBox x:Name="TxtLog" Background="Transparent" Foreground="#B8F5CE" BorderThickness="0"
+                           FontFamily="Consolas" FontSize="12" Height="480" IsReadOnly="True"
+                           FlowDirection="LeftToRight" VerticalScrollBarVisibility="Auto"
+                           HorizontalScrollBarVisibility="Auto" AcceptsReturn="True"/>
+                </Border>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <!-- ─────────── به‌روزرسانی ─────────── -->
+          <StackPanel x:Name="PageUpdate" Visibility="Collapsed">
+            <Border Style="{StaticResource CardBox}">
+              <StackPanel>
+                <TextBlock x:Name="LblUpdateVersion" Text="…" Style="{StaticResource H2}"/>
+                <TextBlock Text="شاخهٔ به‌روزرسانی" Style="{StaticResource Sub}"/>
+                <TextBox x:Name="TxtBranch" Style="{StaticResource Mono}" IsReadOnly="False" Margin="0,4,0,12"/>
+                <CheckBox x:Name="ChkAutoCheck" Content="هر بار که برنامه باز می‌شود، خودش بررسی کند"/>
+                <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                  <Button x:Name="BtnCheckUpdate" Content="بررسیِ نسخهٔ تازه" Style="{StaticResource BtnGhost}"/>
+                  <Button x:Name="BtnDoUpdate" Content="به‌روزرسانی کن" Style="{StaticResource BtnPrimary}" Margin="10,0,0,0" IsEnabled="False"/>
+                  <Button x:Name="BtnShortcut" Content="میان‌بر روی دسکتاپ" Style="{StaticResource Btn}" Margin="10,0,0,0"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource CardBox}">
+              <TextBox x:Name="TxtUpdateOut" Style="{StaticResource Mono}" Height="320" FlowDirection="RightToLeft"
+                       FontFamily="Tahoma" VerticalScrollBarVisibility="Auto" AcceptsReturn="True"/>
+            </Border>
+          </StackPanel>
+
+        </Grid>
+      </ScrollViewer>
+    </Grid>
+  </Grid>
+</Window>

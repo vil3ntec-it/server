@@ -10,6 +10,7 @@
 // ---------------------------------------------------------------------------
 import crypto from 'node:crypto';
 import { WebSocketServer } from 'ws';
+import { attachHeartbeat } from '../lib/ws-heartbeat.js';
 import { config } from '../config.js';
 import { logEvent, getSetting, setSetting } from '../db.js';
 import * as store from './store.js';
@@ -209,6 +210,7 @@ function announcePresence(userId, isOnlineNow) {
 // -------------------------------- WebSocket --------------------------------
 // سقف را از تنظیمات می‌گیرد تا پیام‌های بلند و پیوست‌ها بدون محدودیت برسند
 const wss = new WebSocketServer({ noServer: true, maxPayload: config.messengerMaxBytes });
+attachHeartbeat(wss);
 
 export function handleUpgrade(req, socket, head) {
   wss.handleUpgrade(req, socket, head, (ws) => {

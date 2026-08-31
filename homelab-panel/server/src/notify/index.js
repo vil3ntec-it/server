@@ -17,6 +17,7 @@
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { WebSocketServer } from 'ws';
+import { attachHeartbeat } from '../lib/ws-heartbeat.js';
 import { db, logEvent, getSetting, setSetting } from '../db.js';
 import { pushToDevices, vapidPublicKey } from '../messenger/push.js';
 
@@ -312,6 +313,7 @@ export function unsubscribeDevice(name, endpoint) {
 
 // -------------------------------- WebSocket --------------------------------
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
+attachHeartbeat(wss);
 
 export function handleUpgrade(req, socket, head) {
   wss.handleUpgrade(req, socket, head, (ws) => {

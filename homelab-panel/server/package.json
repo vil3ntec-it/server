@@ -1,13 +1,13 @@
 {
   "name": "homelab-panel-server",
-  "version": "1.5.0",
+  "version": "1.7.0",
   "private": true,
   "description": "Backend of the home server management panel (Express + Socket.IO + SQLite)",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/index.js",
-    "test": "node test/smoke.mjs && node test/multisite.mjs && node test/protected-domains.mjs && node test/tunnel-recovery.mjs && node test/messenger.mjs && node test/notify.mjs && node test/notify-readkey.mjs && node test/ai-proxy.mjs && node test/control.mjs && node test/agent.mjs && node test/update.mjs && node test/update-packaged.mjs && node test/roles-logs.mjs && node test/tohid.mjs && node test/tohid-otp.mjs && node test/tohid-admin.mjs && node test/public-port.mjs",
+    "test": "node test/smoke.mjs && node test/multisite.mjs && node test/protected-domains.mjs && node test/tunnel-recovery.mjs && node test/messenger.mjs && node test/notify.mjs && node test/notify-readkey.mjs && node test/ai-proxy.mjs && node test/control.mjs && node test/agent.mjs && node test/update.mjs && node test/update-packaged.mjs && node test/roles-logs.mjs && node test/tohid.mjs && node test/tohid-otp.mjs && node test/tohid-admin.mjs && node test/public-port.mjs && node test/app-auth.mjs && node test/storage.mjs && node test/security.mjs",
     "test:multisite": "node test/multisite.mjs",
     "test:ui": "node test/ui.mjs",
     "test:perf": "node test/perf.mjs",
@@ -28,7 +28,11 @@
     "doctor": "node --disable-warning=ExperimentalWarning scripts/doctor.mjs",
     "test:roles": "node test/roles-logs.mjs",
     "test:tohid": "node test/tohid.mjs",
-    "test:tohid-otp": "node test/tohid-otp.mjs"
+    "test:tohid-otp": "node test/tohid-otp.mjs",
+    "test:app-auth": "node test/app-auth.mjs",
+    "test:storage": "node test/storage.mjs && node test/security.mjs",
+    "test:desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File ../desktop/test/lib.tests.ps1",
+    "test:pump-notify": "node test/pump-notify.mjs"
   },
   "dependencies": {
     "express": "^4.21.2",

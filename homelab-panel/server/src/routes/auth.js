@@ -14,6 +14,7 @@ import {
 } from '../auth.js';
 import { db, logEvent } from '../db.js';
 import { roleOf, listPanelUsers, setRole, setDisabled, deletePanelUser, ROLES, ROLE_ABILITIES, requireRole } from '../control/roles.js';
+import { audit } from '../lib/audit.js';
 
 const router = Router();
 
@@ -33,6 +34,7 @@ router.post('/setup', (req, res) => {
   }
   const user = createUser(String(username).trim(), String(password));
   const session = createSession(user, req);
+  audit(req, 'panel.setup', { target: user.username });
   logEvent('info', 'panel', `حساب مدیر «${user.username}» ساخته شد`);
   res.json({ ok: true, user: { id: user.id, username: user.username, role: 'admin' }, ...session });
 });
@@ -46,11 +48,13 @@ router.post('/login', (req, res) => {
   }
   if (!user || !verifyPassword(String(password || ''), user.password_hash)) {
     logEvent('warn', 'panel', `ورود ناموفق با نام کاربری «${String(username || '').slice(0, 40)}»`);
+    audit(req, 'panel.login', { target: String(username || '').slice(0, 40), ok: false });
     return res.status(401).json({ error: 'invalid_credentials' });
   }
   const session = createSession(user, req);
   db.prepare('UPDATE users SET last_login = ? WHERE id = ?').run(Date.now(), user.id);
   logEvent('info', 'panel', `کاربر «${user.username}» وارد شد`);
+  audit(req, 'panel.login', { target: user.username });
   res.json({ ok: true, user: { id: user.id, username: user.username, role: user.role || 'admin' }, ...session });
 });
 

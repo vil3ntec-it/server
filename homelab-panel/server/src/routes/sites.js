@@ -1,6 +1,6 @@
 // مدیریت سایت‌ها: فهرست، افزودن با مسیر، کشف خودکار، Start/Stop/Restart، لاگ
 import { Router } from 'express';
-import { requireAuth } from '../auth.js';
+import { requireLocalOrAuth } from '../local-key.js';
 import {
   listSites,
   getSite,
@@ -29,7 +29,8 @@ import { config } from '../config.js';
 import { sitesRoot } from '../sites/root.js';
 
 const router = Router();
-router.use(requireAuth);
+// حسابِ مدیرِ پنل، یا کلیدِ محلیِ برنامهٔ رویِ همین کامپیوتر
+router.use(requireLocalOrAuth);
 
 router.get('/', async (req, res) => {
   res.json({ sites: await listSites(), sitesRoot: sitesRoot() });
