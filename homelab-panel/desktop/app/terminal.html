@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <title>ترمینال — مرکز فرمان</title>
+  <link rel="stylesheet" href="shell.css" />
+</head>
+<body class="term-window">
+  <header class="bar">
+    <span class="brand">
+      <span class="dot" id="dot"></span>
+      ترمینال
+    </span>
+    <span class="status" id="statusText">…</span>
+    <span class="spacer"></span>
+    <label class="follow"><input type="checkbox" id="follow" checked /> دنبال کردن</label>
+    <button class="btn" id="btnCopy">کپی</button>
+    <button class="btn" id="btnClear">پاک کردن</button>
+    <button class="btn" id="btnFull" title="تمام‌صفحه (F11)">تمام‌صفحه</button>
+    <button class="btn primary" id="btnBack" title="بستنِ این پنجره و برگرداندن ترمینال به برنامه">برگشت به برنامه</button>
+  </header>
+
+  <div class="term-body full" id="termBody" dir="ltr"></div>
+
+  <script src="terminal.js"></script>
+</body>
+</html>

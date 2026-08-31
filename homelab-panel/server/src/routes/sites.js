@@ -1,6 +1,7 @@
 // مدیریت سایت‌ها: فهرست، افزودن با مسیر، کشف خودکار، Start/Stop/Restart، لاگ
 import { Router } from 'express';
-import { requireAuth } from '../auth.js';
+import { requireLocalOrAuth } from '../local-key.js';
+import { requireWriteRole } from '../auth.js';
 import {
   listSites,
   getSite,
@@ -24,12 +25,17 @@ import { startSiteTunnel, stopSiteTunnel, restartSiteTunnel, siteTunnelState } f
 import { syncTunnelRoutes } from '../tunnel.js';
 import { getSiteSync } from '../state.js';
 import { readInterfaces } from '../metrics/network.js';
-import { db, logEvent } from '../db.js';
+import { q, db, logEvent } from '../db.js';
 import { config } from '../config.js';
 import { sitesRoot } from '../sites/root.js';
 
 const router = Router();
-router.use(requireAuth);
+// حسابِ مدیرِ پنل، یا کلیدِ محلیِ برنامهٔ رویِ همین کامپیوتر
+router.use(requireLocalOrAuth);
+// برنامهٔ محلی نقشِ پنل ندارد (کلیدِ همین کامپیوتر خودش مجوز است)؛ برای بقیه،
+// نوشتن دستِ‌کم operator می‌خواهد.
+const writeGuard = requireWriteRole('operator');
+router.use((req, res, next) => (req.user?.local ? next() : writeGuard(req, res, next)));
 
 router.get('/', async (req, res) => {
   res.json({ sites: await listSites(), sitesRoot: sitesRoot() });
@@ -120,8 +126,7 @@ router.get('/:id/logs', (req, res) => {
     const [at, level, ...rest] = line.split('\t');
     return { at, level: level || 'info', text: rest.join('\t') || line };
   });
-  const events = db
-    .prepare('SELECT * FROM events WHERE site_id = ? ORDER BY id DESC LIMIT 200')
+  const events = q('SELECT * FROM events WHERE site_id = ? ORDER BY id DESC LIMIT 200')
     .all(site.id);
   res.json({ lines, events });
 });
@@ -130,7 +135,7 @@ router.delete('/:id/logs', (req, res) => {
   const site = getSite(req.params.id);
   if (!site) return res.status(404).json({ error: 'not_found' });
   clearLog(site.slug);
-  db.prepare('DELETE FROM events WHERE site_id = ?').run(site.id);
+  q('DELETE FROM events WHERE site_id = ?').run(site.id);
   res.json({ ok: true });
 });
 

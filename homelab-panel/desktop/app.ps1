@@ -1,0 +1,1284 @@
+﻿# ---------------------------------------------------------------------------
+#  برنامهٔ سرور خانگی — پنجرهٔ اصلی (WPF)
+#
+#  چرا WPF و نه WinForms: WinForms قیافهٔ ویندوزِ قدیم را دارد و نمی‌شود
+#  خوشگلش کرد. WPF بومیِ ویندوز است (نه مرورگر و نه WebView) ولی رنگ، گوشهٔ
+#  گرد، سایه، انیمیشن و خطِ دلخواه (وزیرمتن) را می‌پذیرد.
+#
+#  ظاهر در ui.xaml است و رفتار این‌جا. مغزِ کار (API، .env، به‌روزرسانی)
+#  در lib.ps1 است تا بشود بدونِ پنجره آزمودش.
+# ---------------------------------------------------------------------------
+
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName PresentationCore
+Add-Type -AssemblyName WindowsBase
+Add-Type -AssemblyName System.Windows.Forms   # فقط برای پیام‌های ساده و کلیپ‌بورد
+
+try {
+  . (Join-Path $PSScriptRoot 'lib.ps1')
+} catch {
+  [System.Windows.MessageBox]::Show("فایلِ lib.ps1 بالا نیامد:`r`n`r`n$($_.Exception.Message)", 'سرور خانگی')
+  exit 1
+}
+
+$script:DesktopDir  = $PSScriptRoot
+$script:ServerDir   = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\server'))
+$script:ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+$script:EnvPath     = Join-Path $script:ServerDir '.env'
+$script:Version     = Get-LocalVersion -ServerDir $script:ServerDir
+$script:Clients     = @()
+$script:Sites       = @()
+$script:Overview    = $null
+$script:BaseUrl     = ''
+$script:LanUrl      = ''
+$script:NetUrl      = ''
+$script:UpdateReady = ''
+
+function Get-PanelPort {
+  $values = Read-EnvFile -Path $script:EnvPath
+  if ($values.ContainsKey('HLP_PORT') -and $values['HLP_PORT'] -match '^\d+$') { return [int]$values['HLP_PORT'] }
+  return 4700
+}
+$script:Port = Get-PanelPort
+
+# ---------------------------------------------------------------------------
+#  ساختنِ پنجره از روی XAML
+# ---------------------------------------------------------------------------
+$xamlPath = Join-Path $PSScriptRoot 'ui.xaml'
+try {
+  $xamlText = [System.IO.File]::ReadAllText($xamlPath, [System.Text.Encoding]::UTF8)
+  $reader = New-Object System.Xml.XmlNodeReader ([xml]$xamlText)
+  $script:Window = [Windows.Markup.XamlReader]::Load($reader)
+} catch {
+  $logPath = Write-AppError -ErrorRecord $_ -Where 'ساختنِ پنجره' -ServerDir $script:ServerDir
+  [System.Windows.MessageBox]::Show("ظاهرِ برنامه بالا نیامد:`r`n`r`n$($_.Exception.Message)`r`n`r`nگزارش: $logPath", 'سرور خانگی')
+  exit 1
+}
+
+<# هر عنصرِ نام‌دارِ XAML را با همان نام صدا می‌زنیم: $ui.BtnStart #>
+$script:ui = @{}
+foreach ($name in @(
+    'LblVersion','LblServerState','BtnStart','BtnStop','LblTitle','LblSubtitle','BtnRefresh',
+    'NavHome','NavApps','NavOtp','NavSites','NavSettings','NavTerminal','NavUpdate',
+    'PageHome','PageApps','PageOtp','PageSites','PageSettings','PageTerminal','PageUpdate',
+    'TxtMainAddress','LblAddressHint','BtnCopyMain','BtnCopyLan','BtnCopyNet',
+    'CardAndroid','CardWeb','CardDesktop','LblAndroidCount','LblAndroidInfo',
+    'LblWebCount','LblWebInfo','LblDesktopCount','LblDesktopInfo',
+    'LblSms','LblMail','LblTunnel','LblAi','LblUsers','LblOnline','LblCodes','LblLogins',
+    'CmbKindFilter','BtnNewApp','LstApps','LblAppTitle','TxtAppName','CmbAppKind','TxtAppSms',
+    'TxtAppKey','TxtAppLen','ChkAppKeyReq','ChkAppEnabled','BtnSaveApp','BtnNewKey','BtnDelApp',
+    'BtnCopyApi','TxtApiCard',
+    'TxtOtpTarget','CmbOtpApp','BtnSendCode','TxtOtpCode','BtnVerifyCode','LblOtpState','TxtOtpOut',
+    'LstSites',
+    'NavLibrary','PageLibrary','TxtLibRoot','BtnLibChange','BtnLibOpen','BtnLibRepair','BtnLibClean',
+    'LblLibState','LblLibDisk','BarLibDisk','LblLibWarn','LstLibSites','LstLibApps',
+    'BtnLibScan','BtnLibOrganize','LblLibScan','LstLibStray',
+    'TxtSearch','ChkAdvanced','PageSearch','LblSearchTitle','LstSearch',
+    'NavBackup','PageBackup','BtnBackupNow','BtnBackupOpen','BtnBackupPrune','LblBackupState',
+    'ChkBackupDaily','ChkBackupWeekly','TxtBackupHour','LstBackups','BtnRestore',
+    'LblCpu','LblRam','LblDisk','LblLastBackup',
+    'ChkAutoStart','LblAutoStart',
+    'TxtMailHost','TxtMailUser','TxtMailPort','TxtMailPass','CmbSmsProvider','TxtSmsSender',
+    'TxtSmsKey','TxtSmsTemplate','ChkAi','LblAiNote','BtnSaveSettings','BtnOpenEnv','LblSettingsState',
+    'BtnLogRefresh','BtnLogClear','BtnLogCopy','ChkLogAuto','TxtLog',
+    'LblUpdateVersion','TxtBranch','ChkAutoCheck','BtnCheckUpdate','BtnDoUpdate','BtnShortcut','TxtUpdateOut'
+  )) {
+  $script:ui[$name] = $script:Window.FindName($name)
+}
+$ui = $script:ui
+
+# ------------------------------ خطِ وزیر ------------------------------------
+try {
+  $fontDir = Join-Path $PSScriptRoot 'fonts'
+  if (Test-Path -LiteralPath $fontDir) {
+    $uri = 'file:///' + ($fontDir -replace '\\', '/') + '/#Vazirmatn'
+    $script:Window.FontFamily = New-Object System.Windows.Media.FontFamily($uri)
+  }
+} catch { }   # اگر نشد، خطِ پیش‌فرضِ ویندوز
+$script:Window.FontSize = 14
+
+# آیکونِ برنامه روی نوارِ وظیفه و گوشهٔ پنجره
+try {
+  $iconPath = Join-Path $PSScriptRoot 'server.ico'
+  if (Test-Path -LiteralPath $iconPath) {
+    $script:Window.Icon = New-Object System.Windows.Media.Imaging.BitmapImage (New-Object Uri $iconPath)
+  }
+} catch { }
+
+# ---------------------------------------------------------------------------
+#  کمکی‌های کوچک
+# ---------------------------------------------------------------------------
+$script:Brushes = @{
+  Ink   = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(238, 242, 255))
+  Muted = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(142, 154, 196))
+  Good  = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(61, 214, 140))
+  Warn  = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(245, 177, 76))
+  Bad   = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(255, 107, 107))
+  Brand = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.Color]::FromRgb(76, 125, 255))
+}
+
+function Set-Text {
+  param($Element, [string]$Text, $Brush = $null)
+  if (-not $Element) { return }
+  $Element.Text = $Text
+  if ($Brush) { $Element.Foreground = $Brush }
+}
+
+function Copy-Clip {
+  param([string]$Text)
+  if (-not $Text) { return }
+  try { [System.Windows.Clipboard]::SetText($Text) } catch { }
+}
+
+function Say {
+  param([string]$Message)
+  # صاحبِ پنجره را می‌دهیم تا پیام پشتِ پنجرهٔ تمام‌صفحه گم نشود
+  try {
+    [System.Windows.MessageBox]::Show($script:Window, $Message, 'سرور خانگی') | Out-Null
+  } catch {
+    [System.Windows.MessageBox]::Show($Message, 'سرور خانگی') | Out-Null
+  }
+}
+
+function Ask {
+  param([string]$Message)
+  $answer = try {
+    [System.Windows.MessageBox]::Show($script:Window, $Message, 'سرور خانگی', [System.Windows.MessageBoxButton]::YesNo)
+  } catch {
+    [System.Windows.MessageBox]::Show($Message, 'سرور خانگی', [System.Windows.MessageBoxButton]::YesNo)
+  }
+  return ($answer -eq [System.Windows.MessageBoxResult]::Yes)
+}
+
+function Pump {
+  # تا پنجره وسطِ کارهای طولانی یخ نزند
+  try {
+    $frame = New-Object System.Windows.Threading.DispatcherFrame
+    [System.Windows.Threading.Dispatcher]::CurrentDispatcher.BeginInvoke(
+      [System.Windows.Threading.DispatcherPriority]::Background,
+      [action] { $frame.Continue = $false }) | Out-Null
+    [System.Windows.Threading.Dispatcher]::PushFrame($frame)
+  } catch { }
+}
+
+function Admin {
+  param([string]$Path, [string]$Method = 'GET', $Body = $null)
+  return Invoke-AdminJson -ServerDir $script:ServerDir -Path $Path -Method $Method -Body $Body -Port $script:Port
+}
+
+# ---------------------------------------------------------------------------
+#  رفت‌وآمد بینِ صفحه‌ها
+# ---------------------------------------------------------------------------
+$script:PageMap = @{
+  NavHome     = @{ Page = 'PageHome';     Title = 'خانه';                    Sub = 'یک نگاه به همه‌چیز' }
+  NavApps     = @{ Page = 'PageApps';     Title = 'برنامه‌ها و سایت‌ها';      Sub = 'هر کدام آدرس و کلیدِ خودش' }
+  NavOtp      = @{ Page = 'PageOtp';      Title = 'ورود با کدِ یک‌بارمصرف';   Sub = 'همان مسیری که کاربرِ شما طی می‌کند' }
+  NavSites    = @{ Page = 'PageSites';    Title = 'سایت‌های روی سرور';        Sub = 'بدونِ باز کردنِ مرورگر' }
+  NavLibrary  = @{ Page = 'PageLibrary';  Title = 'کتابخانه';                 Sub = 'یک جای مرتب برای همهٔ فایل‌ها' }
+  NavBackup   = @{ Page = 'PageBackup';   Title = 'پشتیبان';                  Sub = 'گرفتن، زمان‌بندی، و بازگرداندن' }
+  NavSettings = @{ Page = 'PageSettings'; Title = 'تنظیمات';                  Sub = 'پیامک، ایمیل، و دستیارِ هوشمند' }
+  NavTerminal = @{ Page = 'PageTerminal'; Title = 'ترمینالِ سرور';            Sub = 'خروجیِ زنده — بدونِ پنجرهٔ سیاه' }
+  NavUpdate   = @{ Page = 'PageUpdate';   Title = 'به‌روزرسانی';              Sub = 'نسخهٔ تازه را از GitHub می‌گیرد' }
+}
+
+function Show-Page {
+  param([string]$NavName)
+
+  $info = $script:PageMap[$NavName]
+  if (-not $info) { return }
+
+  foreach ($entry in $script:PageMap.GetEnumerator()) {
+    $page = $ui[$entry.Value.Page]
+    if ($page) { $page.Visibility = [System.Windows.Visibility]::Collapsed }
+  }
+  $ui.PageSearch.Visibility = [System.Windows.Visibility]::Collapsed
+  $current = $ui[$info.Page]
+  if ($current) {
+    $current.Visibility = [System.Windows.Visibility]::Visible
+    # ورودِ نرمِ صفحه
+    try {
+      $fade = New-Object System.Windows.Media.Animation.DoubleAnimation(0.0, 1.0, (New-Object System.Windows.Duration ([TimeSpan]::FromMilliseconds(180))))
+      $current.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
+    } catch { }
+  }
+  Set-Text $ui.LblTitle $info.Title
+  Set-Text $ui.LblSubtitle $info.Sub
+  $script:CurrentNav = $NavName
+
+  switch ($NavName) {
+    'NavApps'     { Update-Clients }
+    'NavSites'    { Update-Sites }
+    'NavLibrary'  { Update-Library }
+    'NavBackup'   { Update-Backups }
+    'NavTerminal' { Update-Terminal -Force $true }
+    'NavSettings' { Update-SettingsForm }
+  }
+}
+
+# ---------------------------------------------------------------------------
+#  خواندنِ وضعیت از سرور
+# ---------------------------------------------------------------------------
+function Update-Status {
+  $health = Get-ServerHealth -Port $script:Port
+  if ($health) {
+    Set-Text $ui.LblServerState "● سرور روشن است" $script:Brushes.Good
+    $ui.BtnStart.IsEnabled = $false
+    $ui.BtnStop.IsEnabled = $true
+  } else {
+    Set-Text $ui.LblServerState "● سرور خاموش است" $script:Brushes.Bad
+    $ui.BtnStart.IsEnabled = $true
+    $ui.BtnStop.IsEnabled = $false
+  }
+  return $health
+}
+
+function Update-Addresses {
+  $lan = @(Get-LanAddresses)
+  $script:LanUrl = if ($lan.Count -gt 0) { "http://$($lan[0]):$($script:Port)" } else { "http://localhost:$($script:Port)" }
+
+  $script:NetUrl = ''
+  if ($script:Overview -and $script:Overview.tunnel -and $script:Overview.tunnel.url) {
+    $script:NetUrl = [string]$script:Overview.tunnel.url
+  }
+
+  $script:BaseUrl = if ($script:NetUrl) { $script:NetUrl } else { $script:LanUrl }
+  Set-Text $ui.TxtMainAddress $script:BaseUrl
+
+  if ($script:NetUrl) {
+    Set-Text $ui.LblAddressHint 'این آدرسِ اینترنتی است: از هر جای دنیا کار می‌کند. هر کاربری که با شماره یا ایمیلِ خودش وارد شود، روی هر دستگاهی همان اطلاعاتِ حسابِ خودش را می‌بیند.'
+  } else {
+    Set-Text $ui.LblAddressHint 'این آدرسِ شبکهٔ خانگی است (فقط روی همین وای‌فای کار می‌کند). برای دسترسی از بیرونِ خانه، تونل را روشن کنید تا آدرسِ https داشته باشید.'
+  }
+}
+
+function Update-Overview {
+  $result = Admin '/api/app-admin/overview'
+  if (-not $result.ok) {
+    $script:Overview = $null
+    Set-Text $ui.LblSms '—' $script:Brushes.Muted
+    Set-Text $ui.LblMail '—' $script:Brushes.Muted
+    Set-Text $ui.LblTunnel '—' $script:Brushes.Muted
+    Set-Text $ui.LblAi '—' $script:Brushes.Muted
+    foreach ($name in @('LblAndroidCount','LblWebCount','LblDesktopCount')) { Set-Text $ui[$name] '—' }
+    foreach ($name in @('LblAndroidInfo','LblWebInfo','LblDesktopInfo')) { Set-Text $ui[$name] 'سرور خاموش است' }
+    foreach ($name in @('LblUsers','LblOnline','LblCodes','LblLogins')) { Set-Text $ui[$name] '—' }
+    Update-Addresses
+    return
+  }
+
+  $data = $result.data
+  $script:Overview = $data
+  Set-Text $ui.LblVersion "نسخهٔ $($script:Version)"
+
+  $delivery = $data.delivery
+  if ($delivery.smsReady) { Set-Text $ui.LblSms "روشن ($($delivery.smsProvider))" $script:Brushes.Good }
+  else { Set-Text $ui.LblSms 'تنظیم نشده' $script:Brushes.Warn }
+
+  if ($delivery.emailReady) { Set-Text $ui.LblMail 'روشن' $script:Brushes.Good }
+  else { Set-Text $ui.LblMail 'تنظیم نشده' $script:Brushes.Warn }
+
+  if ($data.tunnel -and $data.tunnel.url) { Set-Text $ui.LblTunnel 'وصل' $script:Brushes.Good }
+  elseif ($data.tunnel) { Set-Text $ui.LblTunnel ([string]$data.tunnel.status) $script:Brushes.Warn }
+  else { Set-Text $ui.LblTunnel 'خاموش' $script:Brushes.Muted }
+
+  if ($data.ai.enabled) { Set-Text $ui.LblAi 'روشن' $script:Brushes.Good }
+  else { Set-Text $ui.LblAi 'خاموش' $script:Brushes.Muted }
+
+  foreach ($row in @($data.kinds)) {
+    $count = [string]$row.count
+    $info = "$($row.users) کاربر · $($row.online) آنلاین · $($row.codesToday) کدِ امروز"
+    switch ($row.kind) {
+      'android' { Set-Text $ui.LblAndroidCount $count; Set-Text $ui.LblAndroidInfo $info }
+      'web'     { Set-Text $ui.LblWebCount $count;     Set-Text $ui.LblWebInfo $info }
+      'desktop' { Set-Text $ui.LblDesktopCount $count; Set-Text $ui.LblDesktopInfo $info }
+    }
+  }
+
+  # این کامپیوتر
+  if ($data.system) {
+    Set-Text $ui.LblCpu ("$([Math]::Round([double]$data.system.cpu))٪")
+    Set-Text $ui.LblRam ("$([Math]::Round([double]$data.system.memory))٪")
+  } else {
+    Set-Text $ui.LblCpu '—'
+    Set-Text $ui.LblRam '—'
+  }
+  if ($data.storage -and $data.storage.disk -and $data.storage.disk.ok) {
+    Set-Text $ui.LblDisk ("$(Format-Bytes $data.storage.disk.free) آزاد")
+  } else {
+    Set-Text $ui.LblDisk '—'
+  }
+  if ($data.lastBackup -and $data.lastBackup.at) {
+    $when = (Get-Date '1970-01-01').AddMilliseconds([double]$data.lastBackup.at).ToLocalTime()
+    $days = [Math]::Floor(((Get-Date) - $when).TotalDays)
+    $text = if ($days -le 0) { 'امروز' } elseif ($days -eq 1) { 'دیروز' } else { "$days روز پیش" }
+    Set-Text $ui.LblLastBackup $text $(if ($days -gt 7) { $script:Brushes.Warn } else { $script:Brushes.Good })
+  } else {
+    Set-Text $ui.LblLastBackup 'هرگز' $script:Brushes.Warn
+  }
+
+  Set-Text $ui.LblUsers  ([string]$data.stats.users)
+  Set-Text $ui.LblOnline ([string]$data.stats.activeSessions)
+  Set-Text $ui.LblCodes  ([string]$data.stats.codesLastHour)
+  Set-Text $ui.LblLogins ([string]$data.stats.loginsToday)
+
+  Update-Addresses
+}
+
+# ---------------------------------------------------------------------------
+#  برنامه‌ها و سایت‌ها
+# ---------------------------------------------------------------------------
+$script:KindNames = @{ android = 'برنامهٔ اندروید'; web = 'سایت'; desktop = 'برنامهٔ کامپیوتری' }
+$script:KindOrder = @('android', 'web', 'desktop')
+
+function Selected-Kind {
+  $index = $ui.CmbKindFilter.SelectedIndex
+  if ($index -le 0) { return '' }
+  return $script:KindOrder[$index - 1]
+}
+
+function Update-Clients {
+  param([string]$Select = '')
+
+  $result = Admin '/api/app-admin/clients'
+  $ui.LstApps.Items.Clear()
+  if (-not $result.ok) {
+    $script:Clients = @()
+    Set-Text $ui.LblAppTitle 'برای دیدنِ برنامه‌ها، اول سرور را روشن کنید'
+    Set-Text $ui.TxtApiCard ''
+    return
+  }
+
+  $all = @($result.data.clients)
+  $kind = Selected-Kind
+  if ($kind) { $all = @($all | Where-Object { $_.kind -eq $kind }) }
+  $script:Clients = $all
+
+  foreach ($client in $all) {
+    $mark = if ($client.enabled) { '●' } else { '○' }
+    $lock = if ($client.requireKey) { ' 🔑' } else { '' }
+    [void]$ui.LstApps.Items.Add("$mark  $($client.name)   —   $($client.kindLabel)   ·   $($client.users) کاربر$lock")
+  }
+
+  if ($all.Count -gt 0) {
+    $index = 0
+    if ($Select) {
+      for ($i = 0; $i -lt $all.Count; $i++) { if ($all[$i].slug -eq $Select) { $index = $i; break } }
+    }
+    $ui.LstApps.SelectedIndex = $index
+  } else {
+    Set-Text $ui.LblAppTitle 'هنوز برنامه‌ای از این نوع نیست'
+    Set-Text $ui.TxtApiCard ''
+  }
+
+  # فهرستِ برنامه‌ها برای صفحهٔ OTP هم به‌روز شود
+  $selectedApp = [string]$ui.CmbOtpApp.SelectedItem
+  $ui.CmbOtpApp.Items.Clear()
+  foreach ($client in @($result.data.clients)) { [void]$ui.CmbOtpApp.Items.Add($client.slug) }
+  if ($ui.CmbOtpApp.Items.Count -gt 0) {
+    $ui.CmbOtpApp.SelectedIndex = 0
+    if ($selectedApp) {
+      for ($i = 0; $i -lt $ui.CmbOtpApp.Items.Count; $i++) {
+        if ([string]$ui.CmbOtpApp.Items[$i] -eq $selectedApp) { $ui.CmbOtpApp.SelectedIndex = $i; break }
+      }
+    }
+  }
+}
+
+function Get-SelectedClient {
+  $index = $ui.LstApps.SelectedIndex
+  if ($index -lt 0 -or $index -ge $script:Clients.Count) { return $null }
+  return $script:Clients[$index]
+}
+
+function Show-ClientDetails {
+  $client = Get-SelectedClient
+  if (-not $client) { return }
+
+  Set-Text $ui.LblAppTitle "$($client.name)   ·   شناسه: $($client.slug)"
+  $ui.TxtAppName.Text = [string]$client.name
+  $ui.TxtAppKey.Text = [string]$client.apiKey
+  $ui.TxtAppSms.Text = [string]$client.smsText
+  $ui.TxtAppLen.Text = if ($client.codeLength) { [string]$client.codeLength } else { '' }
+  $ui.ChkAppKeyReq.IsChecked = [bool]$client.requireKey
+  $ui.ChkAppEnabled.IsChecked = [bool]$client.enabled
+
+  for ($i = 0; $i -lt $script:KindOrder.Count; $i++) {
+    if ($script:KindOrder[$i] -eq $client.kind) { $ui.CmbAppKind.SelectedIndex = $i; break }
+  }
+
+  $length = if ($client.codeLength) { [int]$client.codeLength } else { 6 }
+  $card = Get-ApiCard -Slug $client.slug -BaseUrl $script:BaseUrl -ApiKey ([string]$client.apiKey) `
+    -KeyRequired ([bool]$client.requireKey) -CodeLength $length
+  Set-Text $ui.TxtApiCard $card
+}
+
+function Update-Sites {
+  $result = Admin '/api/sites'
+  $ui.LstSites.Items.Clear()
+  if (-not $result.ok -or -not $result.data) {
+    [void]$ui.LstSites.Items.Add('برای دیدنِ سایت‌ها، اول سرور را روشن کنید.')
+    return
+  }
+  $rows = @($result.data.sites)
+  if ($rows.Count -eq 0) {
+    [void]$ui.LstSites.Items.Add('هنوز سایتی روی این سرور ثبت نشده است.')
+    return
+  }
+  foreach ($site in $rows) {
+    $state = if ($site.online) { '● آنلاین' } else { '○ خاموش' }
+    $bits = @()
+    if ($site.kind) { $bits += [string]$site.kind }
+    if ($site.port) { $bits += "پورت $($site.port)" }
+    $address = ''
+    if ($site.publicUrls -and @($site.publicUrls).Count -gt 0) { $address = [string]@($site.publicUrls)[0] }
+    elseif ($site.domain) { $address = [string]$site.domain }
+    if ($address) { $bits += $address }
+    if ($site.liveConnections) { $bits += "$($site.liveConnections) دستگاهِ وصل" }
+    [void]$ui.LstSites.Items.Add("$state   $($site.name)   —   " + ($bits -join '  ·  '))
+  }
+}
+
+# ---------------------------------------------------------------------------
+#  ترمینال
+# ---------------------------------------------------------------------------
+function Update-Terminal {
+  param([bool]$Force = $false)
+  $text = Get-PanelLog -ServerDir $script:ServerDir -Lines 400
+  if (-not $Force -and $text -eq $ui.TxtLog.Text) { return }
+  $ui.TxtLog.Text = $text
+  $ui.TxtLog.ScrollToEnd()
+}
+
+# ---------------------------------------------------------------------------
+#  تنظیمات
+# ---------------------------------------------------------------------------
+function Update-SettingsForm {
+  $values = Read-EnvFile -Path $script:EnvPath
+  $get = {
+    param($key, $fallback)
+    if ($values.ContainsKey($key) -and $values[$key]) { return [string]$values[$key] }
+    return $fallback
+  }
+
+  $ui.TxtMailHost.Text = & $get 'OTP_EMAIL_HOST' 'smtp.gmail.com'
+  $ui.TxtMailPort.Text = & $get 'OTP_EMAIL_PORT' '465'
+  $ui.TxtMailUser.Text = & $get 'OTP_EMAIL_USER' ''
+  $ui.TxtMailPass.Password = & $get 'OTP_EMAIL_PASS' ''
+  $ui.TxtSmsKey.Password = & $get 'OTP_SMS_KEY' ''
+  $ui.TxtSmsSender.Text = & $get 'OTP_SMS_SENDER' ''
+  $ui.TxtSmsTemplate.Text = & $get 'OTP_SMS_TEMPLATE' ''
+
+  $provider = & $get 'OTP_SMS_PROVIDER' 'none'
+  for ($i = 0; $i -lt $ui.CmbSmsProvider.Items.Count; $i++) {
+    if ([string]$ui.CmbSmsProvider.Items[$i] -eq $provider) { $ui.CmbSmsProvider.SelectedIndex = $i; break }
+  }
+
+  # بالا آمدن با ویندوز — وضعیتِ واقعی را از خودِ ویندوز می‌پرسیم
+  $script:AutoStartLoading = $true
+  $auto = Get-AutoStartState -ServerDir $script:ServerDir
+  $ui.ChkAutoStart.IsChecked = [bool]$auto.installed
+  $ui.ChkAutoStart.IsEnabled = [bool]$auto.supported
+  Set-Text $ui.LblAutoStart ([string]$auto.detail) $(if ($auto.installed) { $script:Brushes.Good } else { $script:Brushes.Muted })
+  $script:AutoStartLoading = $false
+
+  $aiOn = ((& $get 'HLP_AI_ENABLED' '1') -ne '0')
+  $ui.ChkAi.IsChecked = $aiOn
+  Set-Text $ui.LblAiNote $(if ($aiOn) {
+    'روشن است: با سرور بالا می‌آید و سایت از راهِ /ai/support به آن می‌رسد.'
+  } else {
+    'خاموش است: هیچ پروسه‌ای برای دستیار اجرا نمی‌شود و رَم آزاد می‌ماند.'
+  })
+}
+
+# ---------------------------------------------------------------------------
+#  کتابخانه
+# ---------------------------------------------------------------------------
+$script:Stray = @()
+
+<# بایت را به شکلی می‌نویسد که آدم بفهمد #>
+function Format-Bytes {
+  param($Bytes)
+  if ($null -eq $Bytes) { return '—' }
+  $value = [double]$Bytes
+  foreach ($unit in @('بایت', 'کیلوبایت', 'مگابایت', 'گیگابایت', 'ترابایت')) {
+    if ($value -lt 1024 -or $unit -eq 'ترابایت') {
+      if ($unit -eq 'بایت') { return "$([Math]::Round($value)) $unit" }
+      return "$([Math]::Round($value, 1)) $unit"
+    }
+    $value = $value / 1024
+  }
+  return "$value"
+}
+
+function Update-Library {
+  $result = Admin '/api/storage'
+  if (-not $result.ok) {
+    Set-Text $ui.TxtLibRoot ''
+    Set-Text $ui.LblLibState 'برای دیدنِ کتابخانه، اول سرور را روشن کنید.' $script:Brushes.Warn
+    return
+  }
+
+  $data = $result.data
+  Set-Text $ui.TxtLibRoot ([string]$data.root)
+
+  if (-not $data.configured) {
+    Set-Text $ui.LblLibState 'هنوز محلی انتخاب نشده. دکمهٔ «انتخاب / تغییرِ محل» را بزنید — پیشنهادِ ما همین مسیرِ بالاست.' $script:Brushes.Warn
+  } elseif (-not $data.healthy) {
+    Set-Text $ui.LblLibState 'ساختارِ کتابخانه ناقص است. «ترمیمِ ساختار» را بزنید.' $script:Brushes.Warn
+  } else {
+    $counts = @()
+    foreach ($name in @('Sites', 'Apps', 'Backups')) {
+      $branch = $data.branches.$name
+      if ($branch) { $counts += "$name : $($branch.count)" }
+    }
+    Set-Text $ui.LblLibState ('ساختار سالم است  ·  ' + ($counts -join '   ·   ')) $script:Brushes.Good
+  }
+
+  # فضای دیسک
+  if ($data.disk -and $data.disk.ok) {
+    $usedPercent = 0
+    if ($data.disk.total -gt 0) { $usedPercent = [Math]::Round(($data.disk.used / $data.disk.total) * 100) }
+    Set-Text $ui.LblLibDisk ("$(Format-Bytes $data.disk.free) آزاد از $(Format-Bytes $data.disk.total)   ·   $usedPercent٪ پر")
+    try {
+      $track = $ui.BarLibDisk.Parent
+      $full = if ($track -and $track.ActualWidth -gt 0) { $track.ActualWidth } else { 600 }
+      $ui.BarLibDisk.Width = [Math]::Max(4, ($full * $usedPercent / 100))
+    } catch { }
+  } else {
+    Set-Text $ui.LblLibDisk 'فضای دیسک خوانده نشد'
+  }
+
+  if ($data.warning) {
+    $brush = if ($data.warning.level -eq 'critical') { $script:Brushes.Bad } else { $script:Brushes.Warn }
+    Set-Text $ui.LblLibWarn ([string]$data.warning.message) $brush
+  } else {
+    Set-Text $ui.LblLibWarn 'فضای کافی هست.' $script:Brushes.Muted
+  }
+
+  # پروژه‌ها
+  $ui.LstLibSites.Items.Clear()
+  foreach ($row in @($data.sites)) {
+    [void]$ui.LstLibSites.Items.Add("$($row.name)   —   $(Format-Bytes $row.bytes)   ·   $($row.files) فایل")
+  }
+  if ($ui.LstLibSites.Items.Count -eq 0) { [void]$ui.LstLibSites.Items.Add('هنوز سایتی نیست') }
+
+  $ui.LstLibApps.Items.Clear()
+  foreach ($row in @($data.apps)) {
+    [void]$ui.LstLibApps.Items.Add("$($row.name)   —   $(Format-Bytes $row.bytes)   ·   $($row.files) فایل")
+  }
+  if ($ui.LstLibApps.Items.Count -eq 0) { [void]$ui.LstLibApps.Items.Add('هنوز برنامه‌ای نیست') }
+}
+
+$ui.BtnLibChange.Add_Click({
+  $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+  $dialog.Description = 'پوشه‌ای که همهٔ دادهٔ سرور در آن بنشیند'
+  $dialog.ShowNewFolderButton = $true
+  try {
+    $dialog.RootFolder = [System.Environment+SpecialFolder]::MyComputer
+    $current = $ui.TxtLibRoot.Text.Trim()
+    if ($current -and (Test-Path -LiteralPath $current)) { $dialog.SelectedPath = $current }
+  } catch { }
+  if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) { return }
+
+  $chosen = $dialog.SelectedPath
+  # اگر ریشهٔ درایو را داد، یک پوشهٔ اختصاصی داخلش می‌سازیم
+  if ($chosen -match '^[A-Za-z]:\\?$') { $chosen = Join-Path $chosen 'HomeServer' }
+
+  $check = Admin '/api/storage/check' 'POST' @{ root = $chosen }
+  if (-not ($check.ok -and $check.data.ok)) {
+    $message = if ($check.data -and $check.data.message) { $check.data.message } else { $check.error }
+    Say "این محل قابلِ استفاده نیست:`r`n`r`n$message"
+    return
+  }
+
+  if (-not (Ask "کتابخانه این‌جا ساخته شود؟`r`n`r`n$chosen`r`n`r`nدادهٔ فعلی جابه‌جا نمی‌شود؛ فقط ساختار ساخته می‌شود و از این به بعد پروژه‌های تازه این‌جا می‌نشینند.")) { return }
+
+  Set-Text $ui.LblLibState '… در حالِ ساختن' $script:Brushes.Muted
+  Pump
+  $made = Admin '/api/storage/setup' 'POST' @{ root = $chosen }
+  if (-not $made.ok) {
+    $message = if ($made.data -and $made.data.message) { $made.data.message } else { $made.error }
+    Say "ساخته نشد: $message"
+  }
+  Update-Library
+})
+
+$ui.BtnLibOpen.Add_Click({
+  $root = $ui.TxtLibRoot.Text.Trim()
+  if ($root -and (Test-Path -LiteralPath $root)) { Start-Process 'explorer.exe' -ArgumentList $root }
+  else { Say 'این پوشه هنوز ساخته نشده.' }
+})
+
+$ui.BtnLibRepair.Add_Click({
+  $result = Admin '/api/storage/repair' 'POST'
+  if ($result.ok) { Set-Text $ui.LblLibState 'ساختار ترمیم شد.' $script:Brushes.Good }
+  Update-Library
+})
+
+$ui.BtnLibClean.Add_Click({
+  $result = Admin '/api/storage/clean-temp' 'POST' @{ olderThanHours = 24 }
+  if ($result.ok) { Set-Text $ui.LblLibState "$($result.data.removed) موردِ موقت پاک شد." $script:Brushes.Good }
+})
+
+$ui.BtnLibScan.Add_Click({
+  Set-Text $ui.LblLibScan '… در حالِ گشتن' $script:Brushes.Muted
+  $ui.LstLibStray.Items.Clear()
+  Pump
+
+  $result = Admin '/api/storage/scan'
+  if (-not $result.ok) { Set-Text $ui.LblLibScan 'گشتن نشد — سرور روشن است؟' $script:Brushes.Warn; return }
+
+  $script:Stray = @($result.data.found)
+  foreach ($row in $script:Stray) {
+    [void]$ui.LstLibStray.Items.Add("$($row.name)   →   $($row.suggestedBranch)   ·   $(Format-Bytes $row.bytes)   ·   $($row.path)")
+  }
+  if ($script:Stray.Count -eq 0) {
+    [void]$ui.LstLibStray.Items.Add('چیزی بیرونِ کتابخانه نمانده — همه‌چیز مرتب است.')
+    Set-Text $ui.LblLibScan 'همه‌چیز مرتب است' $script:Brushes.Good
+    $ui.BtnLibOrganize.IsEnabled = $false
+  } else {
+    Set-Text $ui.LblLibScan "$($script:Stray.Count) پوشه بیرونِ کتابخانه است" $script:Brushes.Warn
+    $ui.BtnLibOrganize.IsEnabled = $true
+  }
+})
+
+$ui.BtnLibOrganize.Add_Click({
+  if ($script:Stray.Count -eq 0) { return }
+  if (-not (Ask "$($script:Stray.Count) پوشه به کتابخانه کپی شود؟`r`n`r`nپوشه‌های اصلی سرِ جایشان می‌مانند و چیزی پاک نمی‌شود — بعد از اطمینان، خودتان می‌توانید پاکشان کنید.")) { return }
+
+  $items = @()
+  foreach ($row in $script:Stray) {
+    $items += @{ path = $row.path; name = $row.name; branch = $row.suggestedBranch }
+  }
+
+  Set-Text $ui.LblLibScan '… در حالِ کپی' $script:Brushes.Muted
+  Pump
+  $result = Admin '/api/storage/organize/apply' 'POST' @{ items = $items }
+  if (-not $result.ok) { Set-Text $ui.LblLibScan "نشد: $($result.error)" $script:Brushes.Bad; return }
+
+  $moved = @($result.data.done | Where-Object { $_.moved })
+  Set-Text $ui.LblLibScan "$($moved.Count) پوشه به کتابخانه آمد (اصلی‌ها دست‌نخورده‌اند)" $script:Brushes.Good
+  $ui.BtnLibOrganize.IsEnabled = $false
+  Update-Library
+})
+
+# ---------------------------------------------------------------------------
+#  پشتیبان
+# ---------------------------------------------------------------------------
+$script:Backups = @()
+
+function Update-Backups {
+  $result = Admin '/api/storage/backups'
+  $ui.LstBackups.Items.Clear()
+  if (-not $result.ok) {
+    $script:Backups = @()
+    Set-Text $ui.LblBackupState 'برای دیدنِ پشتیبان‌ها، اول سرور را روشن کنید.' $script:Brushes.Warn
+    return
+  }
+
+  $script:Backups = @($result.data.backups)
+  foreach ($row in $script:Backups) {
+    $when = if ($row.createdAt) { (Get-Date '1970-01-01').AddMilliseconds([double]$row.createdAt).ToLocalTime().ToString('yyyy/MM/dd  HH:mm') } else { '—' }
+    $mark = if ($row.healthy) { '●' } else { '○' }
+    [void]$ui.LstBackups.Items.Add("$mark  $when   —   $($row.kind)   ·   $(Format-Bytes $row.bytes)")
+  }
+  if ($script:Backups.Count -eq 0) { [void]$ui.LstBackups.Items.Add('هنوز پشتیبانی گرفته نشده') }
+  $ui.BtnRestore.IsEnabled = ($script:Backups.Count -gt 0)
+
+  $plan = $result.data.schedule
+  if ($plan) {
+    $ui.ChkBackupDaily.IsChecked = [bool]$plan.daily
+    $ui.ChkBackupWeekly.IsChecked = [bool]$plan.weekly
+    $ui.TxtBackupHour.Text = [string]$plan.hour
+  }
+  Set-Text $ui.LblBackupState "$($script:Backups.Count) پشتیبان" $script:Brushes.Muted
+}
+
+function Save-BackupSchedule {
+  $hour = 3
+  [void][int]::TryParse($ui.TxtBackupHour.Text.Trim(), [ref]$hour)
+  Admin '/api/storage/backups/schedule' 'PUT' @{
+    daily = [bool]$ui.ChkBackupDaily.IsChecked
+    weekly = [bool]$ui.ChkBackupWeekly.IsChecked
+    hour = $hour
+  } | Out-Null
+}
+
+$ui.BtnBackupNow.Add_Click({
+  Set-Text $ui.LblBackupState '… در حالِ گرفتن' $script:Brushes.Muted
+  $ui.BtnBackupNow.IsEnabled = $false
+  Pump
+  $result = Admin '/api/storage/backups' 'POST' @{ note = 'دستی' }
+  $ui.BtnBackupNow.IsEnabled = $true
+  if ($result.ok -and $result.data.ok) {
+    Set-Text $ui.LblBackupState "گرفته شد: $($result.data.folder)" $script:Brushes.Good
+  } else {
+    $message = if ($result.data -and $result.data.message) { $result.data.message } else { $result.error }
+    Set-Text $ui.LblBackupState "نشد: $message" $script:Brushes.Bad
+  }
+  Update-Backups
+})
+
+$ui.BtnBackupOpen.Add_Click({
+  $root = $ui.TxtLibRoot.Text.Trim()
+  $folder = if ($root) { Join-Path $root 'Backups' } else { '' }
+  if ($folder -and (Test-Path -LiteralPath $folder)) { Start-Process 'explorer.exe' -ArgumentList $folder }
+  else { Say 'هنوز پشتیبانی گرفته نشده.' }
+})
+
+$ui.BtnBackupPrune.Add_Click({
+  $result = Admin '/api/storage/backups/prune' 'POST' @{}
+  if ($result.ok) { Set-Text $ui.LblBackupState "$(@($result.data.removed).Count) پشتیبانِ قدیمی پاک شد" $script:Brushes.Good }
+  Update-Backups
+})
+
+$ui.ChkBackupDaily.Add_Click({ Save-BackupSchedule })
+$ui.ChkBackupWeekly.Add_Click({ Save-BackupSchedule })
+$ui.TxtBackupHour.Add_LostFocus({ Save-BackupSchedule })
+
+$ui.BtnRestore.Add_Click({
+  $index = $ui.LstBackups.SelectedIndex
+  if ($index -lt 0 -or $index -ge $script:Backups.Count) { Say 'اول یک پشتیبان را از فهرست انتخاب کنید.'; return }
+  $row = $script:Backups[$index]
+  if (-not (Ask "از این پشتیبان برگردانده شود؟`r`n`r`n$($row.name)`r`n`r`nپیش از هر کاری، از وضعِ فعلی هم پشتیبان گرفته می‌شود.")) { return }
+
+  Set-Text $ui.LblBackupState '… در حالِ بازگرداندن' $script:Brushes.Muted
+  Pump
+  $result = Admin '/api/storage/backups/restore' 'POST' @{ path = $row.path }
+  if ($result.ok -and $result.data.ok) {
+    Set-Text $ui.LblBackupState 'برگردانده شد — سرور دوباره بالا می‌آید' $script:Brushes.Good
+    Pump
+    Restart-Server
+  } else {
+    $message = if ($result.data -and $result.data.message) { $result.data.message } else { $result.error }
+    Set-Text $ui.LblBackupState "نشد: $message" $script:Brushes.Bad
+  }
+  Update-Backups
+})
+
+# ---------------------------------------------------------------------------
+#  جست‌وجوی سراسری
+# ---------------------------------------------------------------------------
+$script:SearchIndex = @(
+  @{ Nav = 'NavHome';     Words = 'خانه آدرس سرور وضعیت داشبورد کپی وصل ip' ; Label = 'خانه — آدرسِ سرور و وضعیت' }
+  @{ Nav = 'NavApps';     Words = 'برنامه سایت اپ اندروید کلید api شناسه کاربر client' ; Label = 'برنامه‌ها و سایت‌ها — کلید و آدرسِ API' }
+  @{ Nav = 'NavOtp';      Words = 'کد ورود otp پیامک تایید شش رقمی login' ; Label = 'ورود با کد — فرستادن و تأیید' }
+  @{ Nav = 'NavSites';    Words = 'سایت روی سرور پنل آنلاین پورت دامنه' ; Label = 'سایت‌های روی سرور' }
+  @{ Nav = 'NavLibrary';  Words = 'کتابخانه فایل پوشه دیسک فضا ذخیره مرتب storage درایو' ; Label = 'کتابخانه — محلِ ذخیره‌سازی و فضای دیسک' }
+  @{ Nav = 'NavBackup';   Words = 'پشتیبان بکاپ backup بازگرداندن restore زمان‌بندی' ; Label = 'پشتیبان — گرفتن و بازگرداندن' }
+  @{ Nav = 'NavSettings'; Words = 'تنظیمات ایمیل جیمیل smtp پیامک sms کاوه نگار دستیار هوش ویندوز خودکار' ; Label = 'تنظیمات — پیامک، ایمیل، دستیار، بالا آمدن با ویندوز' }
+  @{ Nav = 'NavTerminal'; Words = 'ترمینال لاگ خروجی خطا log' ; Label = 'ترمینالِ سرور — خروجیِ زنده' }
+  @{ Nav = 'NavUpdate';   Words = 'به‌روزرسانی اپدیت نسخه update میان‌بر' ; Label = 'به‌روزرسانی' }
+)
+
+function Update-Search {
+  $query = $ui.TxtSearch.Text.Trim()
+  if ($query.Length -lt 2) {
+    if ($script:CurrentNav) { Show-Page $script:CurrentNav }
+    return
+  }
+
+  foreach ($entry in $script:PageMap.GetEnumerator()) {
+    $page = $ui[$entry.Value.Page]
+    if ($page) { $page.Visibility = [System.Windows.Visibility]::Collapsed }
+  }
+  $ui.PageSearch.Visibility = [System.Windows.Visibility]::Visible
+  Set-Text $ui.LblTitle 'جست‌وجو'
+  Set-Text $ui.LblSubtitle "دنبالِ «$query»"
+
+  $ui.LstSearch.Items.Clear()
+  $script:SearchHits = @()
+  foreach ($row in $script:SearchIndex) {
+    if (($row.Words -like "*$query*") -or ($row.Label -like "*$query*")) {
+      $script:SearchHits += $row.Nav
+      [void]$ui.LstSearch.Items.Add($row.Label)
+    }
+  }
+  # نامِ برنامه‌ها هم جست‌وجو شود
+  foreach ($client in @($script:Clients)) {
+    if ("$($client.name) $($client.slug)" -like "*$query*") {
+      $script:SearchHits += 'NavApps'
+      [void]$ui.LstSearch.Items.Add("برنامه: $($client.name)  ·  $($client.slug)")
+    }
+  }
+  if ($ui.LstSearch.Items.Count -eq 0) {
+    [void]$ui.LstSearch.Items.Add('چیزی پیدا نشد')
+  }
+  Set-Text $ui.LblSearchTitle "$($ui.LstSearch.Items.Count) نتیجه"
+}
+
+$ui.TxtSearch.Add_TextChanged({ if ($script:Ready) { Update-Search } })
+$ui.LstSearch.Add_MouseDoubleClick({
+  $index = $ui.LstSearch.SelectedIndex
+  if ($index -lt 0 -or $index -ge $script:SearchHits.Count) { return }
+  $ui.TxtSearch.Text = ''
+  $ui[$script:SearchHits[$index]].IsChecked = $true
+})
+
+# ---------------------------------------------------------------------------
+#  حالتِ ساده و پیشرفته
+# ---------------------------------------------------------------------------
+$script:AdvancedOnly = @('NavTerminal', 'NavSites')
+
+function Apply-Mode {
+  $advanced = [bool]$ui.ChkAdvanced.IsChecked
+  foreach ($name in $script:AdvancedOnly) {
+    $button = $ui[$name]
+    if (-not $button) { continue }
+    $button.Visibility = if ($advanced) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+  }
+  # اگر در صفحه‌ای بودیم که تازه پنهان شد، برگرد خانه
+  if (-not $advanced -and $script:AdvancedOnly -contains $script:CurrentNav) {
+    $ui.NavHome.IsChecked = $true
+  }
+  if ($script:Ready) {
+    $saved = Get-DesktopSettings -ServerDir $script:ServerDir
+    Save-DesktopSettings -ServerDir $script:ServerDir -Settings @{
+      branch = $saved.branch; autoCheck = $saved.autoCheck; advanced = $advanced
+    } | Out-Null
+  }
+}
+
+$ui.ChkAdvanced.Add_Click({ Apply-Mode })
+
+# ---------------------------------------------------------------------------
+#  دکمه‌ها
+# ---------------------------------------------------------------------------
+function Restart-Server {
+  Set-Text $ui.LblServerState '… در حالِ راه‌اندازیِ دوباره' $script:Brushes.Muted
+  Pump
+  Stop-PanelServer -ServerDir $script:ServerDir | Out-Null
+  Start-Sleep -Seconds 2
+  Start-PanelServer -ServerDir $script:ServerDir | Out-Null
+  for ($i = 0; $i -lt 80; $i++) {
+    Start-Sleep -Milliseconds 500
+    Pump
+    if (Get-ServerHealth -Port $script:Port) { break }
+  }
+  Refresh-All
+}
+
+function Refresh-All {
+  Update-Status | Out-Null
+  Update-Overview
+  if ($script:CurrentNav -eq 'NavApps') { Update-Clients }
+  if ($script:CurrentNav -eq 'NavSites') { Update-Sites }
+  if ($script:CurrentNav -eq 'NavLibrary') { Update-Library }
+}
+
+$ui.BtnStart.Add_Click({
+  if (-not (Find-NodeExe)) {
+    Say "Node.js روی این کامپیوتر پیدا نشد.`r`n`r`nاول از nodejs.org نصبش کنید (نسخهٔ ۲۲ به بالا)."
+    Start-Process 'https://nodejs.org/fa/download'
+    return
+  }
+  Set-Text $ui.LblServerState '… در حالِ روشن شدن' $script:Brushes.Muted
+  $ui.BtnStart.IsEnabled = $false
+  Pump
+  Start-PanelServer -ServerDir $script:ServerDir | Out-Null
+  for ($i = 0; $i -lt 120; $i++) {
+    Start-Sleep -Milliseconds 500
+    Pump
+    if (Get-ServerHealth -Port $script:Port) { break }
+  }
+  Refresh-All
+})
+
+$ui.BtnStop.Add_Click({
+  Set-Text $ui.LblServerState '… در حالِ خاموش شدن' $script:Brushes.Muted
+  Pump
+  if (-not (Stop-PanelServer -ServerDir $script:ServerDir)) {
+    Say 'سرور پیدا نشد. شاید از راهِ دیگری اجرا شده باشد.'
+  }
+  Start-Sleep -Seconds 1
+  Refresh-All
+})
+
+$ui.BtnRefresh.Add_Click({ Refresh-All })
+
+$ui.BtnCopyMain.Add_Click({ Copy-Clip $script:BaseUrl })
+$ui.BtnCopyLan.Add_Click({ Copy-Clip $script:LanUrl })
+$ui.BtnCopyNet.Add_Click({
+  if ($script:NetUrl) { Copy-Clip $script:NetUrl }
+  else { Say 'آدرسِ اینترنتی هنوز آماده نیست. سرور را روشن کنید و چند لحظه صبر کنید.' }
+})
+
+# سه کادرِ صفحهٔ نخست → صفحهٔ همان نوع
+function Open-Kind {
+  param([string]$Kind)
+  $ui.NavApps.IsChecked = $true
+  for ($i = 0; $i -lt $script:KindOrder.Count; $i++) {
+    if ($script:KindOrder[$i] -eq $Kind) { $ui.CmbKindFilter.SelectedIndex = $i + 1; break }
+  }
+  Show-Page 'NavApps'
+}
+$ui.CardAndroid.Add_MouseLeftButtonUp({ Open-Kind 'android' })
+$ui.CardWeb.Add_MouseLeftButtonUp({ Open-Kind 'web' })
+$ui.CardDesktop.Add_MouseLeftButtonUp({ Open-Kind 'desktop' })
+
+foreach ($navName in @('NavHome','NavApps','NavOtp','NavSites','NavLibrary','NavBackup','NavSettings','NavTerminal','NavUpdate')) {
+  $button = $ui[$navName]
+  if (-not $button) { continue }
+  $button.Add_Checked({
+    param($sender, $eventArgs)
+    Show-Page $sender.Name
+  })
+}
+
+$ui.CmbKindFilter.Add_SelectionChanged({ if ($script:Ready) { Update-Clients } })
+$ui.LstApps.Add_SelectionChanged({ Show-ClientDetails })
+
+$ui.BtnNewApp.Add_Click({
+  $name = Show-InputDialog -Title 'برنامهٔ تازه' -Message "نامِ برنامه یا سایت را بنویسید:`r`n(مثلاً: فروشگاه یعقوبی)"
+  if (-not $name -or -not $name.Trim()) { return }
+  $kind = Selected-Kind
+  if (-not $kind) { $kind = 'web' }
+  $result = Admin '/api/app-admin/clients' 'POST' @{ name = $name.Trim(); slug = $name.Trim(); kind = $kind }
+  if (-not $result.ok) {
+    $message = if ($result.data -and $result.data.message) { $result.data.message } else { $result.error }
+    Say "ساخته نشد: $message"
+    return
+  }
+  Update-Clients -Select $result.data.client.slug
+  Update-Overview
+})
+
+$ui.BtnSaveApp.Add_Click({
+  $client = Get-SelectedClient
+  if (-not $client) { return }
+  $kindIndex = $ui.CmbAppKind.SelectedIndex
+  $kind = if ($kindIndex -ge 0) { $script:KindOrder[$kindIndex] } else { $client.kind }
+
+  $result = Admin "/api/app-admin/clients/$($client.slug)" 'PUT' @{
+    name       = $ui.TxtAppName.Text.Trim()
+    kind       = $kind
+    requireKey = [bool]$ui.ChkAppKeyReq.IsChecked
+    enabled    = [bool]$ui.ChkAppEnabled.IsChecked
+    smsText    = $ui.TxtAppSms.Text.Trim()
+    codeLength = $ui.TxtAppLen.Text.Trim()
+  }
+  if (-not $result.ok) { Say "ذخیره نشد: $($result.error)"; return }
+  Update-Clients -Select $client.slug
+  Update-Overview
+})
+
+$ui.BtnNewKey.Add_Click({
+  $client = Get-SelectedClient
+  if (-not $client) { return }
+  if (-not (Ask "کلیدِ تازه ساخته شود؟`r`n`r`nبرنامه‌هایی که کلیدِ قدیمی را دارند تا کلیدِ تازه را نگذارید وصل نمی‌شوند.")) { return }
+  $result = Admin "/api/app-admin/clients/$($client.slug)/key" 'POST'
+  if ($result.ok) { Update-Clients -Select $client.slug }
+})
+
+$ui.BtnDelApp.Add_Click({
+  $client = Get-SelectedClient
+  if (-not $client) { return }
+  if (-not (Ask "برنامهٔ «$($client.name)» حذف شود؟`r`n`r`nکاربرانش می‌مانند؛ فقط تنظیمات و کلیدش پاک می‌شود.")) { return }
+  $result = Admin "/api/app-admin/clients/$($client.slug)" 'DELETE'
+  if ($result.ok) { Update-Clients; Update-Overview }
+})
+
+$ui.BtnCopyApi.Add_Click({ Copy-Clip $ui.TxtApiCard.Text })
+
+# ------------------------------- OTP ---------------------------------------
+function Format-Result {
+  param($Result, [string]$Title)
+  if (-not $Result.ok -and $Result.status -eq 0) {
+    return "$Title`r`n`r`nسرور جواب نداد. آیا روشن است؟`r`n$($Result.error)"
+  }
+  $body = ''
+  if ($Result.data) {
+    try { $body = ($Result.data | ConvertTo-Json -Depth 6) } catch { $body = [string]$Result.data }
+  }
+  $hint = ''
+  if ($Result.data -and $Result.data.message) { $hint = "`r`n$($Result.data.message)`r`n" }
+  return "$Title — پاسخِ سرور: $($Result.status)$hint`r`n$body"
+}
+
+$ui.BtnSendCode.Add_Click({
+  $target = $ui.TxtOtpTarget.Text.Trim()
+  if (-not $target) { Set-Text $ui.LblOtpState 'اول شماره یا ایمیل را بنویسید' $script:Brushes.Warn; return }
+  $app = [string]$ui.CmbOtpApp.SelectedItem
+  if (-not $app) { $app = 'main' }
+
+  Set-Text $ui.LblOtpState '… در حالِ فرستادن' $script:Brushes.Muted
+  Pump
+  $result = Invoke-Json -Url "http://127.0.0.1:$($script:Port)/api/app/auth/request-code" -Method 'POST' -Body @{ to = $target; app = $app }
+  Set-Text $ui.TxtOtpOut (Format-Result -Result $result -Title 'درخواستِ کد')
+
+  if ($result.ok -and $result.data.sent) {
+    Set-Text $ui.LblOtpState "رفت — $($result.data.tookMs) میلی‌ثانیه" $script:Brushes.Good
+  } elseif ($result.ok -and $result.data.needsSetup) {
+    Set-Text $ui.LblOtpState 'پیامک/ایمیل تنظیم نشده — کد در ترمینال نوشته شد' $script:Brushes.Warn
+  } else {
+    Set-Text $ui.LblOtpState 'نرفت — نتیجه را بخوانید' $script:Brushes.Bad
+  }
+})
+
+$ui.BtnVerifyCode.Add_Click({
+  $target = $ui.TxtOtpTarget.Text.Trim()
+  $code = $ui.TxtOtpCode.Text.Trim()
+  if (-not $target -or -not $code) { Set-Text $ui.LblOtpState 'شماره و کد را بنویسید' $script:Brushes.Warn; return }
+  $app = [string]$ui.CmbOtpApp.SelectedItem
+  if (-not $app) { $app = 'main' }
+
+  $result = Invoke-Json -Url "http://127.0.0.1:$($script:Port)/api/app/auth/verify-code" -Method 'POST' -Body @{ to = $target; code = $code; app = $app }
+  Set-Text $ui.TxtOtpOut (Format-Result -Result $result -Title 'بررسیِ کد')
+  if ($result.ok -and $result.data.ok) {
+    Set-Text $ui.LblOtpState 'وارد شد ✔' $script:Brushes.Good
+  } else {
+    Set-Text $ui.LblOtpState 'کد قبول نشد' $script:Brushes.Bad
+  }
+})
+
+# ----------------------------- تنظیمات -------------------------------------
+$ui.BtnSaveSettings.Add_Click({
+  $port = $ui.TxtMailPort.Text.Trim()
+  if (-not $port) { $port = '465' }
+  $mailPass = $ui.TxtMailPass.Password
+  if ($mailPass -match '^\w{4}\s+\w{4}\s+\w{4}\s+\w{4}$') {
+    $mailPass = ($mailPass -replace '\s', '')
+    $ui.TxtMailPass.Password = $mailPass
+  }
+
+  $values = @{
+    'OTP_EMAIL_HOST'   = $ui.TxtMailHost.Text.Trim()
+    'OTP_EMAIL_PORT'   = $port
+    'OTP_EMAIL_SECURE' = $(if ($port -eq '465') { '1' } else { '0' })
+    'OTP_EMAIL_USER'   = $ui.TxtMailUser.Text.Trim()
+    'OTP_EMAIL_PASS'   = $mailPass
+    'OTP_EMAIL_FROM'   = $ui.TxtMailUser.Text.Trim()
+    'OTP_SMS_PROVIDER' = [string]$ui.CmbSmsProvider.SelectedItem
+    'OTP_SMS_KEY'      = $ui.TxtSmsKey.Password.Trim()
+    'OTP_SMS_SENDER'   = $ui.TxtSmsSender.Text.Trim()
+    'OTP_SMS_TEMPLATE' = $ui.TxtSmsTemplate.Text.Trim()
+    'HLP_AI_ENABLED'   = $(if ($ui.ChkAi.IsChecked) { '1' } else { '0' })
+  }
+  if (-not $values['OTP_EMAIL_USER']) {
+    $values['OTP_EMAIL_HOST'] = ''
+    $values['OTP_EMAIL_PASS'] = ''
+    $values['OTP_EMAIL_FROM'] = ''
+  }
+
+  Set-EnvValues -Path $script:EnvPath -Values $values | Out-Null
+  Set-Text $ui.LblSettingsState 'ذخیره شد — سرور دوباره بالا می‌آید…' $script:Brushes.Muted
+  Pump
+  Restart-Server
+  Set-Text $ui.LblSettingsState 'ذخیره شد و سرور دوباره بالا آمد ✔' $script:Brushes.Good
+})
+
+$ui.ChkAutoStart.Add_Click({
+  if ($script:AutoStartLoading) { return }
+  $result = if ($ui.ChkAutoStart.IsChecked) {
+    Enable-AutoStart -ServerDir $script:ServerDir
+  } else {
+    Disable-AutoStart
+  }
+  Set-Text $ui.LblAutoStart ([string]$result.message) $(if ($result.ok) { $script:Brushes.Good } else { $script:Brushes.Bad })
+  if (-not $result.ok) {
+    # اگر نشد، تیک را به حالتِ واقعی برگردان
+    $script:AutoStartLoading = $true
+    $ui.ChkAutoStart.IsChecked = (Get-AutoStartState -ServerDir $script:ServerDir).installed
+    $script:AutoStartLoading = $false
+  }
+})
+
+$ui.BtnOpenEnv.Add_Click({
+  if (-not (Test-Path -LiteralPath $script:EnvPath)) { Set-EnvValues -Path $script:EnvPath -Values @{} | Out-Null }
+  Start-Process 'notepad.exe' -ArgumentList """$($script:EnvPath)"""
+})
+
+# ----------------------------- ترمینال -------------------------------------
+$ui.BtnLogRefresh.Add_Click({ Update-Terminal -Force $true })
+$ui.BtnLogCopy.Add_Click({ Copy-Clip $ui.TxtLog.Text })
+$ui.BtnLogClear.Add_Click({
+  Clear-PanelLog -ServerDir $script:ServerDir | Out-Null
+  Update-Terminal -Force $true
+})
+
+# --------------------------- به‌روزرسانی ------------------------------------
+function Test-Update {
+  param([bool]$Quiet = $false)
+
+  $branch = $ui.TxtBranch.Text.Trim()
+  if (-not $branch) { $branch = $script:DefaultBranch }
+  Save-DesktopSettings -ServerDir $script:ServerDir -Settings @{ branch = $branch; autoCheck = [bool]$ui.ChkAutoCheck.IsChecked } | Out-Null
+
+  if (-not $Quiet) {
+    Set-Text $ui.TxtUpdateOut "در حالِ پرسیدن از GitHub (شاخهٔ $branch)…"
+    Pump
+  }
+
+  $remote = Get-RemoteVersion -Branch $branch
+  if (-not $remote) {
+    if (-not $Quiet) { Set-Text $ui.TxtUpdateOut "نسخهٔ تازه خوانده نشد.`r`n`r`nیا اینترنت وصل نیست، یا نامِ شاخه ($branch) اشتباه است." }
+    $ui.BtnDoUpdate.IsEnabled = $false
+    return $false
+  }
+
+  if ((Compare-AppVersion -Left $remote -Right $script:Version) -eq 1) {
+    Set-Text $ui.TxtUpdateOut "نسخهٔ تازه هست!`r`n`r`n  نسخهٔ شما:  $($script:Version)`r`n  روی GitHub: $remote`r`n`r`nدکمهٔ «به‌روزرسانی کن» را بزنید."
+    $ui.BtnDoUpdate.IsEnabled = $true
+    $script:UpdateReady = $remote
+    return $true
+  }
+
+  $ui.BtnDoUpdate.IsEnabled = $false
+  if (-not $Quiet) { Set-Text $ui.TxtUpdateOut "شما آخرین نسخه را دارید ($($script:Version))." }
+  return $false
+}
+
+$ui.BtnCheckUpdate.Add_Click({ Test-Update | Out-Null })
+
+$ui.BtnDoUpdate.Add_Click({
+  if (-not (Ask 'سرور چند لحظه خاموش می‌شود و بعد خودش برمی‌گردد. ادامه بدهم؟')) { return }
+  $branch = $ui.TxtBranch.Text.Trim()
+  if (-not $branch) { $branch = $script:DefaultBranch }
+  $ui.BtnDoUpdate.IsEnabled = $false
+  Set-Text $ui.TxtUpdateOut ''
+
+  $report = Install-Update -Branch $branch -ProjectRoot $script:ProjectRoot -ServerDir $script:ServerDir -OnStep {
+    param($message)
+    $ui.TxtUpdateOut.AppendText("$message`r`n")
+    $ui.TxtUpdateOut.ScrollToEnd()
+    Pump
+  }
+
+  if ($report.ok) {
+    $ui.TxtUpdateOut.AppendText("`r`nتمام شد. نسخهٔ تازه: $($report.version)`r`nبرای اینکه خودِ پنجره هم تازه شود، یک‌بار ببندید و باز کنید.`r`n")
+  } else {
+    $ui.TxtUpdateOut.AppendText("`r`nبه‌روزرسانی نشد: $($report.error)`r`nدادهٔ شما دست‌نخورده است.`r`n")
+  }
+  Refresh-All
+})
+
+$ui.BtnShortcut.Add_Click({
+  $linkPath = Join-Path ([Environment]::GetFolderPath('Desktop')) (Get-ShortcutName)
+  $link = New-ProgramShortcut -InstallRoot $script:ProjectRoot -LinkPath $linkPath
+  if ($link) { Say "میان‌بر ساخته شد:`r`n$link" } else { Say 'میان‌بر ساخته نشد.' }
+})
+
+# ---------------------------------------------------------------------------
+#  راه‌اندازی
+# ---------------------------------------------------------------------------
+$script:Ready = $false
+$script:StartupErrors = @()
+
+function Invoke-Safely {
+  param([string]$Name, [scriptblock]$Work)
+  try { & $Work } catch {
+    $script:StartupErrors += $Name
+    Write-AppError -ErrorRecord $_ -Where $Name -ServerDir $script:ServerDir | Out-Null
+  }
+}
+
+# پر کردنِ فهرست‌های آماده
+[void]$ui.CmbKindFilter.Items.Add('همه')
+foreach ($kind in $script:KindOrder) {
+  [void]$ui.CmbKindFilter.Items.Add($script:KindNames[$kind])
+  [void]$ui.CmbAppKind.Items.Add($script:KindNames[$kind])
+}
+$ui.CmbKindFilter.SelectedIndex = 0
+$ui.CmbAppKind.SelectedIndex = 1
+foreach ($provider in @('none', 'kavenegar', 'smsir', 'melipayamak', 'ghasedak', 'webhook')) {
+  [void]$ui.CmbSmsProvider.Items.Add($provider)
+}
+$ui.CmbSmsProvider.SelectedIndex = 0
+
+Set-Text $ui.LblVersion "نسخهٔ $($script:Version)"
+Set-Text $ui.LblUpdateVersion "نسخهٔ نصب‌شده: $($script:Version)"
+$ui.TxtOtpTarget.Text = ''
+$ui.TxtBranch.Text = $script:DefaultBranch
+
+$script:Timer = New-Object System.Windows.Threading.DispatcherTimer
+$script:Timer.Interval = [TimeSpan]::FromMilliseconds(2000)
+$script:Ticks = 0
+$script:Timer.Add_Tick({
+  $script:Ticks++
+  Invoke-Safely 'وضعیت' { Update-Status | Out-Null }
+  if ($script:Ticks % 5 -eq 0) { Invoke-Safely 'خلاصه' { Update-Overview } }
+  if ($script:CurrentNav -eq 'NavTerminal' -and $ui.ChkLogAuto.IsChecked) {
+    Invoke-Safely 'ترمینال' { Update-Terminal }
+  }
+})
+
+$script:Window.Add_ContentRendered({
+  Hide-OwnConsole
+  Show-WindowForReal -Form $script:Window
+})
+
+$script:Window.Add_Loaded({
+  Invoke-Safely 'وضعیت' { Update-Status | Out-Null }
+  Invoke-Safely 'خلاصه' { Update-Overview }
+  Invoke-Safely 'تنظیمات' { Update-SettingsForm }
+  Invoke-Safely 'ترمینال' { Update-Terminal -Force $true }
+  Invoke-Safely 'به‌روزرسانی' {
+    $saved = Get-DesktopSettings -ServerDir $script:ServerDir
+    $ui.TxtBranch.Text = $saved.branch
+    $ui.ChkAutoCheck.IsChecked = [bool]$saved.autoCheck
+    $ui.ChkAdvanced.IsChecked = [bool]$saved.advanced
+  }
+  Invoke-Safely 'حالتِ ساده' { Apply-Mode }
+
+  # اگر میان‌برِ دسکتاپ نبود (نصب نساخته بود، یا کسی پاکش کرده) همین‌جا ساخته
+  # می‌شود — تا دفعهٔ بعد کاربر دنبالِ راهِ باز کردنِ برنامه نگردد.
+  Invoke-Safely 'میان‌بر' {
+    $made = Repair-DesktopShortcut -InstallRoot $script:ProjectRoot
+    if ($made) { Set-Text $ui.LblSubtitle 'میان‌برِ برنامه روی دسکتاپ ساخته شد.' $script:Brushes.Good }
+  }
+
+  $script:Ready = $true
+  Show-Page 'NavHome'
+  $script:Timer.Start()
+
+  if ($script:StartupErrors.Count -gt 0) {
+    Set-Text $ui.LblSubtitle "چند بخش بالا نیامد: $($script:StartupErrors -join '، ')" $script:Brushes.Warn
+  }
+
+  if ($ui.ChkAutoCheck.IsChecked) {
+    # ⚠️ این تایمر باید در سطحِ اسکریپت بماند: اگر متغیرِ محلی باشد، وقتی
+    #    تیکش می‌زند دیگر پیدا نمی‌شود و $null.Stop() کلِ پنجره را می‌بندد.
+    $script:StartupCheck = New-Object System.Windows.Threading.DispatcherTimer
+    $script:StartupCheck.Interval = [TimeSpan]::FromMilliseconds(2500)
+    $script:StartupCheck.Add_Tick({
+      try { $script:StartupCheck.Stop() } catch { }
+      Invoke-Safely 'بررسیِ نسخه' {
+        if (Test-Update -Quiet $true) {
+          $ui.NavUpdate.Content = 'به‌روزرسانی  ●'
+        }
+      }
+    })
+    $script:StartupCheck.Start()
+  }
+})
+
+$script:Window.Add_Closed({
+  try { $script:Timer.Stop() } catch { }
+  try { if ($script:StartupCheck) { $script:StartupCheck.Stop() } } catch { }
+})
+
+<#
+  تورِ ایمنی: اگر خطایی در هر دکمه یا تایمری رخ دهد، ویندوز آن را به بیرون
+  پرتاب می‌کند و پنجره بسته می‌شود. این‌جا می‌گیریمش، در گزارش می‌نویسیم و
+  بالای پنجره خبر می‌دهیم — ولی برنامه باز می‌ماند.
+#>
+try {
+  $script:Window.Dispatcher.Add_UnhandledException({
+    param($sender, $eventArgs)
+    try {
+      $logPath = Write-AppError -ErrorRecord $eventArgs.Exception -Where 'یکی از دکمه‌ها' -ServerDir $script:ServerDir
+      Set-Text $ui.LblSubtitle "یک خطا رخ داد ولی برنامه باز ماند — گزارش: $logPath" $script:Brushes.Warn
+    } catch { }
+    $eventArgs.Handled = $true
+  })
+} catch { }
+
+# پنجره تمام‌صفحه باز می‌شود — همان چیزی که خواسته شده
+$script:Window.WindowState = [System.Windows.WindowState]::Maximized
+
+try {
+  $null = $script:Window.ShowDialog()
+} catch {
+  $logPath = Write-AppError -ErrorRecord $_ -Where 'اجرای پنجره' -ServerDir $script:ServerDir
+  [System.Windows.MessageBox]::Show("برنامه بسته شد:`r`n`r`n$($_.Exception.Message)`r`n`r`nگزارش: $logPath", 'سرور خانگی') | Out-Null
+}

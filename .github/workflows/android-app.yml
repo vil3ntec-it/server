@@ -1,0 +1,128 @@
+name: برنامه اندروید
+
+on:
+  push:
+    branches: ['claude/**', main]
+    paths:
+      - 'homelab-panel/android/**'
+      - '.github/workflows/android-app.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ساخت فایل نصبی اندروید
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: آماده‌سازی Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # فایل برنامه باید دقیقاً همان چیزی باشد که کاربر داده — نه یک بایت کم و زیاد
+      - name: بررسی دست‌نخورده بودن برنامه
+        working-directory: homelab-panel/android
+        run: |
+          size=$(stat -c%s app/src/main/assets/index.html)
+          echo "حجم فایل برنامه: $size بایت"
+          if [ "$size" -lt 1000000 ]; then
+            echo "::error::فایل برنامه ناقص است"
+            exit 1
+          fi
+          grep -q "توحید | مدیریت فروشگاه" app/src/main/assets/index.html \
+            || { echo "::error::این فایل، برنامهٔ توحید نیست"; exit 1; }
+
+      - name: ساخت APK
+        working-directory: homelab-panel/android
+        run: gradle --no-daemon assembleRelease
+
+      - name: نام‌گذاری و جمع کنترلی
+        working-directory: homelab-panel/android
+        run: |
+          mkdir -p out
+          version=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          cp app/build/outputs/apk/release/app-release.apk "out/Tohid-$version.apk"
+          cd out
+          sha256sum "Tohid-$version.apk" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          echo "APK_NAME=Tohid-$version.apk" >> "$GITHUB_ENV"
+          echo "APK_MB=$(du -m "Tohid-$version.apk" | cut -f1)" >> "$GITHUB_ENV"
+
+      - name: بارگذاری خروجی
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tohid-Android
+          path: homelab-panel/android/out/*
+          if-no-files-found: error
+          retention-days: 30
+
+      # برچسب پیش‌نمایش باید روی همین ساخت بنشیند، وگرنه فایل منتشرشده
+      # مالِ یک کامیت قدیمی می‌ماند.
+      - name: جابه‌جا کردن برچسب
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh api -X PATCH "repos/${{ github.repository }}/git/refs/tags/android-preview" \
+                 -f sha='${{ github.sha }}' -F force=true >/dev/null 2>&1; then
+            gh api -X POST "repos/${{ github.repository }}/git/refs" \
+              -f ref='refs/tags/android-preview' -f sha='${{ github.sha }}' >/dev/null
+          fi
+          echo "برچسب روی این ساخت نشست."
+
+      - name: انتشار
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-preview
+          name: توحید — برنامهٔ اندروید
+          prerelease: true
+          target_commitish: ${{ github.sha }}
+          overwrite_files: true
+          files: |
+            homelab-panel/android/out/*.apk
+            homelab-panel/android/out/SHA256SUMS.txt
+          body: |
+            ## توحید — برنامهٔ اندروید
+
+            خودِ برنامهٔ توحید، بدونِ یک بایت تغییر، داخلِ یک برنامهٔ واقعیِ اندروید.
+            آیکن روی صفحهٔ گوشی، تمام‌صفحه، بدون نوار آدرس و بدون هیچ نشانی از مرورگر.
+
+            **دانلود:** `${{ env.APK_NAME }}` (حدود ${{ env.APK_MB }} مگابایت)
+
+            ### نصب
+            فایل را روی گوشی باز کن. اندروید می‌پرسد «نصب از منابع ناشناس» —
+            اجازه بده و نصب کن.
+
+            ### همه چیز کار می‌کند
+            فروش، انبار، قرض‌داران، مصارف، خرید، گزارش‌ها، اسکنر بارکد (دوربین)،
+            عکس جنس، پشتیبان‌گیری و بازگردانی، خروجی اکسل، چاپ فاکتور،
+            و همهٔ تم‌ها و انیمیشن‌ها — چون همان برنامه است.
+
+            ---
+            <sub>ساخته‌شده از `${{ github.sha }}`</sub>
+
+      - name: پاک کردن نسخه‌های قبلی
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          release=$(gh api "repos/${{ github.repository }}/releases/tags/android-preview")
+          echo "$release" | jq -r '.assets[] | "\(.id) \(.name)"' | while read -r id name; do
+            if [ "$name" != "${{ env.APK_NAME }}" ] && [ "$name" != "SHA256SUMS.txt" ]; then
+              echo "پاک کردن $name"
+              gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$id"
+            fi
+          done

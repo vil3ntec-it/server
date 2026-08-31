@@ -1,0 +1,91 @@
+{
+  "name": "control-center-desktop",
+  "productName": "Control Center",
+  "version": "1.5.0",
+  "private": true,
+  "description": "Control Center — Windows desktop app for the home server panel",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win --publish never",
+    "build:dir": "electron-builder --dir --publish never",
+    "test": "node test/app.mjs && node test/overlay.mjs"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^25.1.8",
+    "playwright-core": "^1.49.1"
+  },
+  "build": {
+    "appId": "ir.vil3ntec.controlcenter",
+    "productName": "Control Center",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.js",
+      "app/**/*",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../server",
+        "to": "server",
+        "filter": [
+          "**/*",
+          "!data",
+          "!data/**/*",
+          "!.env",
+          "!*.log",
+          "!test/**/*",
+          "!node_modules/.package-lock.json",
+          "!node_modules/**/{test,tests,__tests__,example,examples,doc,docs}/**/*",
+          "!node_modules/**/*.{md,map,ts}"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "ControlCenter-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Control Center",
+      "deleteAppDataOnUninstall": false,
+      "installerLanguages": [
+        "en_US"
+      ],
+      "language": "1033",
+      "differentialPackage": false
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development"
+    },
+    "compression": "maximum"
+  },
+  "author": {
+    "name": "vil3ntec-it"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vil3ntec-it/server.git"
+  }
+}

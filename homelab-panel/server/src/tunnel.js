@@ -371,7 +371,7 @@ export async function repairTunnel() {
   const uuid = readTunnelIdFromConfig();
   if (!uuid) return { ok: false, error: 'no_permanent_tunnel' };
 
-  const cred = await ensureCredFile(uuid, getSetting('tunnel_name', 'pump'));
+  const cred = await ensureCredFile(uuid, getSetting('tunnel_name', DEFAULT_TUNNEL_NAME));
   if (!cred) {
     return {
       ok: false,
@@ -455,7 +455,17 @@ export function namedLoginDone() {
 }
 
 /** گام ۲: ساخت تونل و وصل کردن زیردامنه — بعد از آن آدرس برای همیشه ثابت است */
-export async function namedSetup({ hostname, name = 'pump-yaqobi' }) {
+/** نامِ پیش‌فرضِ تونل در حسابِ Cloudflare — نامِ همین برنامه، نه پروژهٔ دیگری */
+export const DEFAULT_TUNNEL_NAME = 'control-center';
+
+/**
+ * ساختِ تونلِ نام‌دار.
+ *
+ * `name` همان اسمی است که در حسابِ Cloudflare دیده می‌شود. اگر از قبل تونلی
+ * برای برنامهٔ دیگرتان دارید، این یکی کنارش ساخته می‌شود و کاری به آن ندارد؛
+ * فقط نامش نباید همان باشد.
+ */
+export async function namedSetup({ hostname, name = DEFAULT_TUNNEL_NAME }) {
   const host = String(hostname || '').trim().toLowerCase();
   if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) return { ok: false, error: 'invalid_hostname' };
   if (isProtectedHost(host)) {
@@ -648,7 +658,7 @@ export async function syncTunnelRoutes({ restart = true } = {}) {
     return { ok: true, applied: false, hostnames: routedHostnames() };
   }
 
-  const name = getSetting('tunnel_name', 'pump');
+  const name = getSetting('tunnel_name', DEFAULT_TUNNEL_NAME);
   const alreadyRouted = new Set(getSetting('tunnel_routed_dns', []) || []);
   const failures = [];
 
@@ -732,7 +742,7 @@ export async function addHostname({ hostname, port }) {
   }
   const targetPort = Number(port) || config.port;
 
-  const name = getSetting('tunnel_name', 'pump');
+  const name = getSetting('tunnel_name', DEFAULT_TUNNEL_NAME);
   const uuid = readTunnelIdFromConfig();
   const credFile = readCredFromConfig();
   if (!uuid || !credFile) return { ok: false, error: 'no_permanent_tunnel' };

@@ -14,6 +14,7 @@ import {
   PowerOff,
   RefreshCw,
   RotateCw,
+  Smartphone,
   TriangleAlert,
   MessageCircle,
   Wrench,
@@ -78,6 +79,9 @@ export default function SiteServer() {
       {/* آدرس ثابت — تا سایت یک‌بار تنظیم شود و برای همیشه کار کند */}
       <PermanentAddress data={data} onChanged={load} />
 
+      {/* یک سرور، سه جور برنامه — هرکدام آدرسِ خودش را از همین‌جا بردارد */}
+      <AppClients data={data} token={token} />
+
       <Card
         title={t('serverAddress')}
         icon={<Link2 className="h-4 w-4" />}
@@ -92,11 +96,22 @@ export default function SiteServer() {
             >
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] text-ink-muted">{a.label}</p>
-                <p className="truncate font-mono text-sm" dir="ltr">
-                  {a.ws}
-                </p>
+                {/* هر دو شکل کنارِ هم: برنامه‌ها https می‌خواهند، سایت wss */}
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="w-24 shrink-0 text-[10px] text-ink-muted">{t('addressWeb')}</span>
+                  <p className="min-w-0 flex-1 truncate font-mono text-sm" dir="ltr">
+                    {a.http}
+                  </p>
+                  <CopyButton value={a.http} />
+                </div>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="w-24 shrink-0 text-[10px] text-ink-muted">{t('addressWs')}</span>
+                  <p className="min-w-0 flex-1 truncate font-mono text-sm" dir="ltr">
+                    {a.ws}
+                  </p>
+                  <CopyButton value={a.ws} />
+                </div>
               </div>
-              <CopyButton value={a.ws} />
               <a className="btn btn-sm" href={`${a.http}/health`} target="_blank" rel="noreferrer">
                 /health
               </a>
@@ -681,7 +696,26 @@ function InternetAccess({ data, onChanged }: { data: SiteServerInfo; onChanged: 
                 </a>
               </div>
 
-              <p className="label mt-4">{t('serverAddress')}</p>
+              {/* آدرسِ وب اول می‌آید: همان چیزی که در مرورگر باز می‌شود و در
+                  اپ‌ها وارد می‌شود. آدرسِ wss زیرش می‌ماند، چون فقط یک جا
+                  به‌کار می‌آید — خطِ SELF_HOST_URL داخلِ فایلِ سایت. */}
+              <p className="label mt-4">{t('webAddress')}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <code
+                  className="min-w-0 flex-1 truncate rounded-xl border border-line px-3 py-2 font-mono text-xs"
+                  style={{ background: 'var(--surface-0)' }}
+                  dir="ltr"
+                >
+                  {tunnel.url}
+                </code>
+                <CopyButton value={tunnel.url || ''} />
+                <a className="btn btn-sm" href={tunnel.url || '#'} target="_blank" rel="noreferrer">
+                  {t('open')}
+                </a>
+              </div>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted">{t('webAddressHint')}</p>
+
+              <p className="label mt-4">{t('wsAddress')}</p>
               <div className="flex flex-wrap items-center gap-2">
                 <code
                   className="min-w-0 flex-1 truncate rounded-xl border border-line px-3 py-2 font-mono text-xs"
@@ -692,6 +726,7 @@ function InternetAccess({ data, onChanged }: { data: SiteServerInfo; onChanged: 
                 </code>
                 <CopyButton value={tunnel.wss || ''} />
               </div>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted">{t('wsAddressHint')}</p>
             </div>
           </div>
 
@@ -738,10 +773,116 @@ function InternetAccess({ data, onChanged }: { data: SiteServerInfo; onChanged: 
 }
 
 /* ---------------------------------------------------------------------------
+   برنامه‌ها — سایت، اپِ اندروید و برنامهٔ کامپیوتری، همه روی همین یک سرور.
+
+   قبلاً این صفحه فقط آدرسِ سایت را می‌داد و آدرسِ اپ‌ها جای دیگری بود؛ کسی
+   که هر سه را دارد باید حدس می‌زد کدام به کدام می‌خورد. حالا هر سه یک‌جا و
+   از روی یک آدرس ساخته می‌شوند: تا وقتی تونل بالاست آدرسِ اینترنتی، وگرنه
+   آدرسِ شبکهٔ خانگی — تا چیزی که کپی می‌شود همیشه همانی باشد که کار می‌کند.
+--------------------------------------------------------------------------- */
+function AppClients({ data, token }: { data: SiteServerInfo; token: string | null }) {
+  const { t } = useApp();
+
+  const internet = data.tunnel.status === 'running' ? data.tunnel.url : null;
+  const lan = data.addresses.find((a) => a.scope === 'lan') || data.addresses[0];
+  const base = internet || lan?.http || '';
+  const wsBase = internet ? internet.replace(/^https:/, 'wss:') : lan?.ws || '';
+
+  if (!base) return null;
+
+  return (
+    <Card title={t('clientsTitle')} icon={<Smartphone className="h-4 w-4" />}>
+      <p className="mb-4 text-xs leading-relaxed text-ink-soft">{t('clientsIntro')}</p>
+
+      <div className="mb-1.5 flex flex-wrap items-center gap-2">
+        <p className="label mb-0">{t('clientsBase')}</p>
+        <Badge tone={internet ? 'good' : 'info'}>
+          {internet ? t('clientsBaseInternet') : t('clientsBaseLan')}
+        </Badge>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <code
+          className="min-w-0 flex-1 truncate rounded-xl border border-line px-3 py-2 font-mono text-xs"
+          style={{ background: 'var(--surface-0)' }}
+          dir="ltr"
+        >
+          {base}
+        </code>
+        <CopyButton value={base} />
+      </div>
+
+      <p className="label mt-4">{t('clientsSite')}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <code
+          className="min-w-0 flex-1 truncate rounded-xl border border-line px-3 py-2 font-mono text-xs"
+          style={{ background: 'var(--surface-0)' }}
+          dir="ltr"
+        >
+          {wsBase}
+        </code>
+        <CopyButton value={wsBase} />
+      </div>
+
+      {/* دو خطِ آماده برای فایلِ سایت — همان چیزی که کادرِ آدرسِ ثابت هم می‌دهد،
+          ولی این‌جا با هر آدرسی که همین حالا کار می‌کند، نه فقط آدرسِ ثابت. */}
+      <pre
+        className="mt-2 overflow-x-auto rounded-xl border border-line p-3 font-mono text-[11px] leading-relaxed"
+        style={{ background: 'var(--surface-0)' }}
+        dir="ltr"
+      >
+{`var SELF_HOST_URL   = '${wsBase}';
+var SELF_HOST_TOKEN = '${token ?? data.tokenPreview ?? '…'}';`}
+      </pre>
+
+      <div className="mt-4 border-t border-line pt-4">
+        <a className="btn btn-sm btn-primary" href={`${base}/connect`} target="_blank" rel="noreferrer">
+          <Smartphone className="h-3.5 w-3.5" />
+          {t('clientsOpenConnect')}
+        </a>
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">{t('clientsConnectHint')}</p>
+        {internet && (
+          <p className="mt-1.5 flex items-start gap-1.5 text-[11px] leading-relaxed text-ink-muted">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {t('clientsBothHint')}
+          </p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+/* ---------------------------------------------------------------------------
    آدرس ثابت — مدل فایربیس
    با تونل نام‌دار Cloudflare یک زیردامنهٔ خودِ کاربر برای همیشه به این سرور وصل
    می‌شود. آن وقت آدرس یک‌بار در سایت می‌نشیند و دیگر هیچ لینکی لازم نیست.
 --------------------------------------------------------------------------- */
+/**
+ *  «دامنه‌ام برای یک برنامهٔ دیگر است» — پرسشی که هر کسی اینجا می‌پرسد.
+ *
+ *  یک دامنه بی‌نهایت زیردامنه دارد و هرکدام جای خودش می‌رود. چیزی که
+ *  اینجا ساخته می‌شود فقط یک رکورد برای همان زیردامنه‌ای است که خودتان
+ *  می‌نویسید؛ به بقیه دست نمی‌زند. نگفتنش یعنی کسی یا از ترس جلو نمی‌رود،
+ *  یا دامنهٔ اصلی را می‌نویسد و برنامهٔ دیگرش را از کار می‌اندازد.
+ */
+function SubdomainNote() {
+  const { t } = useApp();
+  return (
+    <div
+      className="mb-2 rounded-xl border border-line p-3 text-[11px] leading-relaxed text-ink-soft"
+      style={{ background: 'var(--surface-0)' }}
+    >
+      <p className="mb-1.5 font-medium text-ink">{t('subdomainTitle')}</p>
+      <p className="mb-1.5">{t('subdomainBody')}</p>
+      <pre className="mb-1.5 overflow-x-auto font-mono text-[11px]" dir="ltr">
+{`app.example.com    ← برنامهٔ فعلی شما، دست‌نخورده
+panel.example.com  ← این سرور
+shop.example.com   ← هر چیز دیگری، بعداً`}
+      </pre>
+      <p className="text-[11px]" style={{ color: 'var(--status-warning)' }}>{t('subdomainWarn')}</p>
+    </div>
+  );
+}
+
 function PermanentAddress({ data, onChanged }: { data: SiteServerInfo; onChanged: () => void }) {
   const { t } = useApp();
   const [hostname, setHostname] = useState(data.named.hostname || '');
@@ -824,13 +965,32 @@ function PermanentAddress({ data, onChanged }: { data: SiteServerInfo; onChanged
         <>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <Badge tone="good">{t('permanentActive')}</Badge>
-            <code className="font-mono text-sm" dir="ltr">
-              wss://{data.tunnel.hostname}
-            </code>
-            <CopyButton value={`wss://${data.tunnel.hostname}`} />
           </div>
 
+          {/* آدرسِ همیشگی، به همان شکلی که در مرورگر و در برنامه‌ها به‌کار می‌رود */}
+          <p className="label">{t('webAddress')}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <code
+              className="min-w-0 flex-1 truncate rounded-xl border border-line px-3 py-2 font-mono text-xs"
+              style={{ background: 'var(--surface-0)' }}
+              dir="ltr"
+            >
+              {`https://${data.tunnel.hostname}`}
+            </code>
+            <CopyButton value={`https://${data.tunnel.hostname}`} />
+            <a
+              className="btn btn-sm"
+              href={`https://${data.tunnel.hostname}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t('open')}
+            </a>
+          </div>
+          <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted">{t('webAddressHint')}</p>
+
           <p className="label mt-4">{t('permanentPutInSite')}</p>
+          <p className="mb-1.5 text-[11px] leading-relaxed text-ink-muted">{t('wsAddressHint')}</p>
           <pre
             className="overflow-x-auto rounded-xl border border-line p-3 font-mono text-[11px] leading-relaxed"
             style={{ background: 'var(--surface-0)' }}
@@ -1014,6 +1174,12 @@ var SELF_HOST_TOKEN = '${token ?? '…'}';`}
 
             <label className="label mt-4">{t('permanentStep2')}</label>
             <p className="mb-1.5 text-[11px] text-ink-muted">{t('permanentStep2Hint')}</p>
+            {/*
+                بیشترِ کسانی که به اینجا می‌رسند یک دامنه دارند که همین حالا
+                جای دیگری کار می‌کند، و می‌ترسند با این کار خرابش کنند. جواب
+                کوتاه است و باید همین‌جا باشد، نه در جایی که بعداً پیدا شود.
+            */}
+            <SubdomainNote />
             <div className="flex flex-wrap items-center gap-2">
               <input
                 className="input max-w-xs"
@@ -1061,6 +1227,7 @@ var SELF_HOST_TOKEN = '${token ?? '…'}';`}
               onChange={(e) => setCfToken(e.target.value)}
             />
             <label className="label mt-3">{t('permanentStep2')}</label>
+            <SubdomainNote />
             <div className="flex flex-wrap items-center gap-2">
               <input
                 className="input max-w-xs"

@@ -1,10 +1,11 @@
 // لاگ‌های سراسری پنل (خطاها، هشدارها، رویدادها)
 import { Router } from 'express';
-import { requireAuth } from '../auth.js';
-import { db } from '../db.js';
+import { requireAuth, requireWriteRole } from '../auth.js';
+import { q, db } from '../db.js';
 
 const router = Router();
-router.use(requireAuth);
+// پاک کردنِ کلِ لاگ‌ها یعنی پاک کردنِ ردِ حادثه — فقط مدیر
+router.use(requireAuth, requireWriteRole('admin'));
 
 router.get('/', (req, res) => {
   const limit = Math.min(1000, Number(req.query.limit) || 200);
@@ -28,9 +29,8 @@ router.get('/', (req, res) => {
     ORDER BY e.id DESC LIMIT ?`;
   params.push(limit);
 
-  const rows = db.prepare(sql).all(...params);
-  const counts = db
-    .prepare('SELECT level, COUNT(*) AS n FROM events GROUP BY level')
+  const rows = q(sql).all(...params);
+  const counts = q('SELECT level, COUNT(*) AS n FROM events GROUP BY level')
     .all()
     .reduce((acc, r) => ({ ...acc, [r.level]: r.n }), {});
 

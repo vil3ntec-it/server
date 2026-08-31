@@ -3,7 +3,11 @@ node_modules/
 server/data/
 server/.env
 web/dist/
+web/tsconfig.tsbuildinfo
 *.log
+
+# تنظیماتِ محلیِ Agent روی هر سرور (کلید داخلش است)
+agent/agent.env
 
 # خروجی build رابط کاربری (server/public) عمداً روی گیت هست
 # تا روی سرور خانگی نیازی به نصب ابزار build نباشد.

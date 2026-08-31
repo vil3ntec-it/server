@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <title>مرکز فرمان</title>
+  <link rel="stylesheet" href="shell.css" />
+</head>
+<body>
+  <!-- ───────────────── نوار بالا ───────────────── -->
+  <header class="bar">
+    <span class="brand">
+      <span class="dot" id="dot"></span>
+      مرکز فرمان
+    </span>
+    <span class="status" id="statusText">در حال آماده‌سازی…</span>
+    <span class="spacer"></span>
+    <button class="btn" id="btnTerminal" title="نمایش یا بستن ترمینال">ترمینال</button>
+    <button class="btn" id="btnData" title="پوشه‌ای که اطلاعات آنجا ذخیره می‌شود">پوشهٔ اطلاعات</button>
+    <button class="btn" id="btnBrowser" title="باز کردن در مرورگر">مرورگر</button>
+    <button class="btn" id="btnRestart" title="راه‌اندازی دوباره سرور">راه‌اندازی دوباره</button>
+  </header>
+
+  <!-- ───────────────── بار اول: انتخاب پوشه ───────────────── -->
+  <section class="setup" id="setup" hidden>
+    <div class="card">
+      <h1>اطلاعات کجا ذخیره شود؟</h1>
+      <p class="hint">
+        همهٔ پروژه‌ها، بکاپ‌ها، لاگ‌ها و دیتابیسِ پنل داخلِ این پوشه می‌مانند.
+        جایی را انتخاب کنید که خودتان پیدایش کنید و فضای کافی داشته باشد.
+      </p>
+
+      <label class="label" for="dataPath">مسیر پوشه</label>
+      <div class="row">
+        <input id="dataPath" class="input" dir="ltr" spellcheck="false" />
+        <button class="btn" id="btnBrowse">انتخاب…</button>
+      </div>
+
+      <p class="tree" id="tree"></p>
+      <p class="error" id="setupError" hidden></p>
+
+      <button class="btn primary wide" id="btnSaveSetup">شروع</button>
+      <p class="hint small">بعداً هم می‌توانید این پوشه را از دکمهٔ «پوشهٔ اطلاعات» ببینید.</p>
+    </div>
+  </section>
+
+  <!-- ───────────────── پنل ───────────────── -->
+  <!-- ───────────────── به‌روزرسانی نشست ───────────────── -->
+  <div class="updated" id="updated" hidden>
+    <span id="updatedText">به‌روزرسانی نصب شد.</span>
+    <span class="spacer"></span>
+    <button class="btn primary" id="btnRelaunch">باز کردن دوبارهٔ برنامه</button>
+    <button class="btn tiny close" id="btnUpdatedClose" title="بعداً" aria-label="بعداً">✕</button>
+  </div>
+
+  <main class="stage" id="stage" hidden>
+    <div class="panel" id="panelHost">
+      <div class="placeholder" id="placeholder">
+        <div class="spinner"></div>
+        <p id="placeholderText">در حال بالا آوردن سرور…</p>
+        <p class="hint small" id="placeholderHint"></p>
+      </div>
+      <webview id="view" hidden></webview>
+    </div>
+
+    <!-- ───────────────── ترمینال ───────────────── -->
+    <section class="term" id="term" hidden>
+      <!-- دستگیره: با کشیدنِ آن بلندیِ ترمینال کم و زیاد می‌شود -->
+      <div class="term-grip" id="termGrip" title="برای تغییر بلندی بکشید"></div>
+      <div class="term-bar">
+        <span class="term-title">ترمینال — خروجی واقعی سرور</span>
+        <span class="spacer"></span>
+        <label class="follow"><input type="checkbox" id="follow" checked /> دنبال کردن</label>
+        <button class="btn tiny" id="btnCopy">کپی</button>
+        <button class="btn tiny" id="btnClear">پاک کردن</button>
+        <button class="btn tiny" id="btnPopout" title="بردن ترمینال به پنجرهٔ جداگانه و تمام‌صفحه">پنجرهٔ جدا ⧉</button>
+        <button class="btn tiny close" id="btnTermClose" title="بستن ترمینال" aria-label="بستن ترمینال">✕</button>
+      </div>
+      <div class="term-body" id="termBody" dir="ltr"></div>
+    </section>
+
+    <!-- وقتی ترمینال در پنجرهٔ خودش است، اینجا فقط یک نوار نازک می‌ماند -->
+    <div class="term-away" id="termAway" hidden>
+      <span>ترمینال در پنجرهٔ جداگانه باز است.</span>
+      <span class="spacer"></span>
+      <button class="btn tiny" id="btnTermFocus">نمایشِ آن پنجره</button>
+      <button class="btn tiny" id="btnTermBack">برگرداندن به این صفحه</button>
+    </div>
+  </main>
+
+  <script src="shell.js"></script>
+</body>
+</html>

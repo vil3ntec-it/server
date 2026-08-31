@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name">توحید</string>
+  <string name="shortcut_server">آدرس سرور</string>
+  <string name="shortcut_printer">چاپگر حرارتی</string>
+</resources>

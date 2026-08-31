@@ -289,8 +289,10 @@ async function main() {
   check('آدرس‌های اتصال ساخته شده', r.json?.addresses?.some((a) => a.ws.startsWith('ws://')));
   check('رمز به‌صورت پنهان نمایش داده می‌شود', typeof r.json?.tokenPreview === 'string' && r.json.tokenPreview.includes('•'));
 
-  // آدرس سایت — قابل تغییر، چون ممکن است دامنه عوض شود
-  check('آدرس سایت برگردانده می‌شود', /^https?:\/\//i.test(r.json?.siteUrl || ''));
+  // آدرس سایت — قابل تغییر، چون ممکن است دامنه عوض شود.
+  // تا وقتی کسی چیزی نگذاشته خالی است: نشانیِ سایتِ پروژه‌ای دیگر، حدسِ
+  // درستی برای هیچ‌کس نیست و فقط آدم را گمراه می‌کند.
+  check('تا تنظیم نشده، آدرس سایت خالی است', (r.json?.siteUrl || '') === '', r.json?.siteUrl);
   const oldSiteUrl = r.json.siteUrl;
   r = await api('PUT', '/api/site-server/site-url', { siteUrl: 'https://dolatipump.top/' });
   check('آدرس سایت عوض می‌شود', r.status === 200 && r.json?.siteUrl === 'https://dolatipump.top');

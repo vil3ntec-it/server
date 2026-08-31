@@ -2,63 +2,185 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   Activity,
+  AlertTriangle,
+  Archive,
+  Boxes,
+  ChevronDown,
+  Cloud,
+  Command as CommandIcon,
+  Download, Store,
   FolderTree,
   Gauge,
   Globe,
+  KeyRound,
   LayoutDashboard,
   Languages,
   LogOut,
   Menu,
   Moon,
   Network,
+  Route as RouteIcon,
   ScrollText,
   Server,
   Settings as SettingsIcon,
   Sun,
+  UserCog,
   X,
 } from 'lucide-react';
 import { useApp } from '../app-context';
 import { LANGUAGES, type Dict } from '../i18n';
 import { logoUrl } from '../api';
 
-const NAV: { to: string; key: keyof Dict; icon: typeof Gauge }[] = [
-  { to: '/', key: 'dashboard', icon: LayoutDashboard },
-  { to: '/sites', key: 'websites', icon: Server },
-  { to: '/domains', key: 'domains', icon: Globe },
-  { to: '/files', key: 'files', icon: FolderTree },
-  { to: '/monitoring', key: 'monitoring', icon: Activity },
-  { to: '/network', key: 'network', icon: Network },
-  { to: '/logs', key: 'logs', icon: ScrollText },
-  { to: '/site-server', key: 'siteServer', icon: Gauge },
-  { to: '/settings', key: 'settings', icon: SettingsIcon },
+type NavItem = { to: string; key: keyof Dict; icon: typeof Gauge; end?: boolean; needs?: 'operator' | 'admin' };
+type NavGroup = {
+  id: string;
+  key: keyof Dict;
+  items: NavItem[];
+  /** بارِ اول بسته باشد؟ */
+  collapsed?: boolean;
+};
+
+const NAV_GROUPS: NavGroup[] = [
+  /*
+   *  ترتیب از روی کاری است که آدم واقعاً می‌کند، نه از روی اینکه کد کجا
+   *  نوشته شده. چیزهایی که هر روز لازم می‌شوند بالا هستند و بازند؛ بقیه
+   *  بسته‌اند و با یک کلیک باز می‌شوند.
+   *
+   *  چرا مهم است: پیش از این نوزده آیتم در پنج گروهِ همیشه‌باز بود و روی
+   *  یک نمایشگرِ معمولی، سه تای آخر — از جمله «آدرس اینترنتی» که آدرسِ
+   *  ثابت آنجا ساخته می‌شود — زیرِ لبهٔ صفحه می‌ماند. نتیجه‌اش این بود که
+   *  صاحبِ سرور فکر می‌کرد آن قابلیت اصلاً وجود ندارد.
+   */
+  {
+    id: 'daily',
+    key: 'navEveryday',
+    items: [
+      // صفحه‌ای که بعد از ورود روی آن می‌نشینید — پس اولین چیزِ منو
+      { to: '/', key: 'dashboard', icon: LayoutDashboard, end: true },
+      { to: '/control', key: 'ccCommand', icon: CommandIcon, end: true },
+      { to: '/control/tohid', key: 'thTitle', icon: Store },
+      { to: '/sites', key: 'websites', icon: Server },
+      { to: '/site-server', key: 'siteServer', icon: Globe },
+    ],
+  },
+  {
+    id: 'projects',
+    key: 'ccSection',
+    collapsed: true,
+    items: [
+      { to: '/control/projects', key: 'ccProjects', icon: Boxes },
+      { to: '/control/servers', key: 'ccServers', icon: Server },
+      { to: '/control/storage', key: 'ccStorage', icon: Archive },
+      { to: '/control/vault', key: 'ccVault', icon: KeyRound, needs: 'admin' },
+    ],
+  },
+  {
+    id: 'net',
+    key: 'ccInfra',
+    collapsed: true,
+    items: [
+      { to: '/domains', key: 'domains', icon: Globe },
+      { to: '/control/networking', key: 'ccNetworking', icon: Network },
+      { to: '/control/routing', key: 'ccRouting', icon: RouteIcon },
+      { to: '/control/cloudflare', key: 'ccCloudflare', icon: Cloud },
+      { to: '/network', key: 'network', icon: Network },
+    ],
+  },
+  {
+    id: 'watch',
+    key: 'ccOps',
+    collapsed: true,
+    items: [
+      { to: '/control/monitoring', key: 'ccMonitoring', icon: AlertTriangle },
+      { to: '/monitoring', key: 'monitoring', icon: Activity },
+      { to: '/control/audit', key: 'ccAudit', icon: ScrollText },
+      { to: '/logs', key: 'logs', icon: ScrollText },
+    ],
+  },
+  {
+    id: 'setup',
+    key: 'navSetup',
+    collapsed: true,
+    items: [
+      { to: '/control/updates', key: 'ccUpdates', icon: Download },
+      { to: '/control/panel-users', key: 'ccPanelUsers', icon: UserCog, needs: 'admin' },
+      { to: '/files', key: 'files', icon: FolderTree },
+      { to: '/settings', key: 'settings', icon: SettingsIcon },
+    ],
+  },
 ];
 
+/** گروه‌هایی که بارِ اول بسته‌اند — تا همه‌چیز یک‌جا در قاب جا شود */
+const DEFAULT_COLLAPSED = NAV_GROUPS.filter((g) => g.collapsed).map((g) => g.id);
+
+const COLLAPSE_KEY = 'hlp.nav.collapsed';
+
 export default function Layout() {
-  const { t, serverName, hasLogo, resolvedTheme, setTheme, lang, setLang, logout, connected, username } = useApp();
+  const { t, serverName, hasLogo, resolvedTheme, setTheme, lang, setLang, logout, connected, username, role, can } = useApp();
   const [open, setOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(COLLAPSE_KEY);
+      return saved ? JSON.parse(saved) : DEFAULT_COLLAPSED;
+    } catch {
+      return DEFAULT_COLLAPSED;
+    }
+  });
   const location = useLocation();
 
   useEffect(() => setOpen(false), [location.pathname]);
 
+  const toggleGroup = (id: string) => {
+    setCollapsed((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      try {
+        localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next));
+      } catch { /* حالتِ خصوصیِ مرورگر */ }
+      return next;
+    });
+  };
+
   const nav = (
-    <nav className="flex flex-col gap-0.5 p-3">
-      {NAV.map(({ to, key, icon: Icon }) => (
-        <NavLink
-          key={to}
-          to={to}
-          end={to === '/'}
-          className={({ isActive }) =>
-            `flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-colors ${
-              isActive ? 'font-semibold text-white' : 'text-ink-soft hover:bg-surface-raised hover:text-ink'
-            }`
-          }
-          style={({ isActive }) => (isActive ? { background: 'var(--series-1)' } : undefined)}
-        >
-          <Icon className="h-[18px] w-[18px] shrink-0" />
-          {t(key)}
-        </NavLink>
-      ))}
+    <nav className="flex flex-col gap-1 p-3">
+      {NAV_GROUPS.map((group) => {
+        const isCollapsed = collapsed.includes(group.id);
+        // چیزی که نقشِ کاربر به آن دسترسی ندارد، اصلاً نشان داده نمی‌شود
+        const items = group.items.filter((item) => !item.needs || can(item.needs));
+        if (items.length === 0) return null;
+        return (
+          <section key={group.id} className="mb-1">
+            <button
+              className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-ink-muted hover:text-ink-soft"
+              onClick={() => toggleGroup(group.id)}
+              aria-expanded={!isCollapsed}
+            >
+              <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${isCollapsed ? 'ltr:-rotate-90 rtl:rotate-90' : ''}`} />
+              <span className="truncate">{t(group.key)}</span>
+            </button>
+            {!isCollapsed && (
+              <div className="flex flex-col gap-0.5">
+                {items.map(({ to, key, icon: Icon, end }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={end}
+                    className={({ isActive }) =>
+                      `flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors ${
+                        isActive ? 'font-semibold text-white' : 'text-ink-soft hover:bg-surface-raised hover:text-ink'
+                      }`
+                    }
+                    style={({ isActive }) => (isActive ? { background: 'var(--series-1)' } : undefined)}
+                  >
+                    <Icon className="h-[18px] w-[18px] shrink-0" />
+                    <span className="truncate">{t(key)}</span>
+                  </NavLink>
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      })}
     </nav>
   );
 
@@ -69,7 +191,20 @@ export default function Layout() {
         <Brand serverName={serverName} hasLogo={hasLogo} subtitle={t('appName')} />
         <div className="flex-1 overflow-y-auto">{nav}</div>
         <footer className="border-t border-line p-3 text-[11px] text-ink-muted">
-          {username && <p className="truncate">{username}</p>}
+          {username && (
+            <p className="flex items-center gap-1.5">
+              <span className="truncate">{username}</span>
+              <span
+                className="chip shrink-0"
+                style={{
+                  background: `color-mix(in srgb, ${role === 'admin' ? 'var(--series-2)' : role === 'operator' ? 'var(--series-1)' : 'var(--text-muted)'} 16%, transparent)`,
+                  color: role === 'admin' ? 'var(--series-2)' : role === 'operator' ? 'var(--series-1)' : 'var(--text-secondary)',
+                }}
+              >
+                {role === 'admin' ? t('ccRoleAdmin') : role === 'operator' ? t('ccRoleOperator') : t('ccRoleViewer')}
+              </span>
+            </p>
+          )}
         </footer>
       </aside>
 

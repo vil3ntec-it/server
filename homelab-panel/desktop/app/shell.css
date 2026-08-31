@@ -1,0 +1,303 @@
+/* ---------------------------------------------------------------------------
+   پوستهٔ برنامهٔ ویندوز — همان زبانِ رنگیِ خودِ پنل، تمِ تیره
+   --------------------------------------------------------------------------- */
+:root {
+  --surface-0: #101010;
+  --surface-1: #1a1a19;
+  --surface-2: #232322;
+  --text: #ffffff;
+  --text-soft: #c3c2b7;
+  --text-muted: #8d8c83;
+  --border: #32322f;
+  --brand: #3987e5;
+  --good: #22a06b;
+  --warn: #c98500;
+  --bad: #e66767;
+}
+
+* { box-sizing: border-box; }
+
+/* صفتِ hidden باید بر display صریحِ پایین برنده باشد — وگرنه صفحهٔ بارِ اول
+   و صفحهٔ اصلی با هم دیده می‌شوند. */
+[hidden] { display: none !important; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--surface-0);
+  color: var(--text);
+  font-family: Vazirmatn, 'Segoe UI', Tahoma, system-ui, sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+  user-select: none;
+}
+
+body { display: flex; flex-direction: column; }
+
+/* ───────────────────────────── نوار بالا ───────────────────────────── */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+.bar button, .bar input, .bar label { -webkit-app-region: no-drag; }
+
+.brand { display: flex; align-items: center; gap: 7px; font-weight: 600; }
+
+.dot {
+  width: 8px; height: 8px; border-radius: 999px;
+  background: var(--text-muted);
+  transition: background .2s;
+}
+.dot.running { background: var(--good); box-shadow: 0 0 8px color-mix(in srgb, var(--good) 60%, transparent); }
+.dot.starting { background: var(--warn); animation: pulse 1.1s ease-in-out infinite; }
+.dot.error { background: var(--bad); }
+
+@keyframes pulse { 50% { opacity: .35; } }
+
+/*
+ * نوارِ بالا نباید بلندتر و کوتاه‌تر شود.
+ *
+ * وضعیت گاهی کوتاه است («در حال اجرا») و گاهی بلند (نشانیِ کامل یا متنِ
+ * خطا). بدونِ این، متنِ بلند به سطر دوم می‌رفت، نوار یک سطر بلندتر
+ * می‌شد و هرچه زیرش بود — از جمله دستگیرهٔ ترمینال — چند پیکسل پایین
+ * می‌پرید. برای کسی که همان لحظه دستگیره را گرفته، یعنی از دستش در رفت.
+ */
+.status {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.spacer { flex: 1; }
+
+.btn {
+  background: var(--surface-2);
+  color: var(--text-soft);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 6px 11px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  white-space: nowrap;
+}
+.btn:hover { background: #2c2c2a; color: var(--text); }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--brand); border-color: transparent; color: #fff; font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.tiny { padding: 3px 8px; font-size: 11px; }
+.btn.wide { width: 100%; padding: 10px; margin-top: 14px; font-size: 13px; }
+.btn.on { background: var(--brand); border-color: transparent; color: #fff; }
+
+/* ───────────────────────────── بار اول ───────────────────────────── */
+.setup {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: auto;
+}
+.card {
+  width: 100%;
+  max-width: 560px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 26px;
+}
+.card h1 { margin: 0 0 8px; font-size: 17px; }
+.hint { color: var(--text-muted); line-height: 1.9; margin: 0 0 18px; }
+.hint.small { font-size: 11px; margin: 10px 0 0; }
+.label { display: block; font-size: 11px; color: var(--text-soft); margin-bottom: 6px; }
+.row { display: flex; gap: 8px; }
+.input {
+  flex: 1;
+  background: var(--surface-0);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  padding: 9px 11px;
+  font: inherit;
+  font-size: 12px;
+  font-family: ui-monospace, Consolas, monospace;
+  user-select: text;
+}
+.input:focus { outline: none; border-color: var(--brand); }
+
+.tree {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  background: var(--surface-0);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text-muted);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.8;
+  white-space: pre;
+  direction: ltr;
+  text-align: left;
+  overflow-x: auto;
+}
+.error {
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bad) 14%, transparent);
+  color: var(--bad);
+  font-size: 12px;
+}
+
+/* ───────────────────────────── صحنه ───────────────────────────── */
+.stage { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+.panel { flex: 1; position: relative; min-height: 0; background: var(--surface-0); }
+webview { width: 100%; height: 100%; border: 0; display: flex; }
+
+.placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 24px;
+}
+.spinner {
+  width: 26px; height: 26px;
+  border: 2px solid var(--border);
+  border-top-color: var(--brand);
+  border-radius: 999px;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ───────────────────────────── ترمینال ─────────────────────────────
+   کادرِ خودش را دارد: بلندی‌اش با دستگیره تغییر می‌کند، با ✕ بسته می‌شود،
+   و با «پنجرهٔ جدا» تمام‌صفحه به پنجرهٔ خودش می‌رود. با صفحه کاری ندارد. */
+.term {
+  /* بلندی از shell.js می‌آید؛ این فقط مقدارِ شروع است */
+  height: var(--term-height, 240px);
+  min-height: 108px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  background: #0b0b0b;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+/*
+ * دستگیرهٔ تغییرِ بلندی.
+ *
+ * نوارِ هفت پیکسلی برای گرفتن باریک بود — با ماوس هم به‌سختی و با انگشت
+ * تقریباً نه. خطِ دیده‌شده همان‌قدر باریک مانده، ولی ناحیه‌ای که رویداد
+ * را می‌گیرد پهن‌تر است.
+ */
+.term-grip {
+  height: 12px;
+  flex-shrink: 0;
+  cursor: ns-resize;
+  background: var(--surface-1);
+  position: relative;
+}
+.term-grip::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 46px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--border);
+}
+.term-grip:hover::after, body.resizing .term-grip::after { background: var(--brand); }
+body.resizing { cursor: ns-resize; }
+/* هنگام کشیدن، webview نباید رویدادِ ماوس را بدزدد */
+body.resizing webview { pointer-events: none; }
+
+.term-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.term-title { font-size: 11px; color: var(--text-muted); }
+.follow { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; cursor: pointer; }
+
+.btn.tiny.close { padding: 3px 9px; line-height: 1; font-size: 12px; }
+.btn.tiny.close:hover { background: var(--bad); border-color: transparent; color: #fff; }
+
+/* نوارِ نازکِ جای ترمینال، وقتی در پنجرهٔ خودش باز است */
+.term-away {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.term-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 10px;
+  font-family: ui-monospace, Consolas, 'Courier New', monospace;
+  font-size: 11.5px;
+  line-height: 1.65;
+  user-select: text;
+  cursor: text;
+}
+/* سطرها چپ‌به‌راست می‌مانند تا مسیرها و آدرس‌ها دست‌نخورده و قابلِ کپی بمانند */
+.term-body .line { white-space: pre-wrap; word-break: break-word; color: var(--text-soft); }
+.term-body .line.err { color: var(--bad); }
+.term-body .line .ts { color: #4a4a46; margin-inline-end: 8px; }
+.term-body .empty { color: var(--text-muted); font-style: italic; }
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ─────────────── ترمینال وقتی پنجرهٔ خودش را دارد ─────────────── */
+body.term-window { background: #0b0b0b; }
+body.term-window .bar { background: var(--surface-1); }
+.term-body.full {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px;
+  font-size: 12.5px;
+}
+
+/* ─────────────── نوارِ «به‌روزرسانی نشست» ─────────────── */
+.updated {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--good) 18%, var(--surface-1));
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  flex-shrink: 0;
+}

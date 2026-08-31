@@ -14,11 +14,16 @@ import type { HistoryPoint, MetricsSnapshot, Site } from './types';
 
 type Theme = 'dark' | 'light' | 'system';
 
+export type PanelRole = 'viewer' | 'operator' | 'admin';
+
 type AppState = {
   ready: boolean;
   initialized: boolean;
   authed: boolean;
   username: string | null;
+  role: PanelRole;
+  /** آیا نقشِ فعلی دستِ‌کم این اندازه دسترسی دارد؟ */
+  can: (needed: PanelRole) => boolean;
   serverName: string;
   hasLogo: boolean;
   lang: Lang;
@@ -49,6 +54,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [initialized, setInitialized] = useState(true);
   const [authed, setAuthed] = useState(Boolean(getToken()));
   const [username, setUsername] = useState<string | null>(null);
+  const [role, setRole] = useState<PanelRole>('viewer');
   const [serverName, setServerName] = useState('');
   const [hasLogo, setHasLogo] = useState(false);
   const [lang, setLangState] = useState<Lang>(() => (localStorage.getItem('hlp.lang') as Lang) || 'fa');
@@ -84,6 +90,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [lang]
   );
 
+  const RANK: Record<PanelRole, number> = { viewer: 0, operator: 1, admin: 2 };
+  const can = useCallback((needed: PanelRole) => RANK[role] >= RANK[needed], [role]);
+
   const refreshPublic = useCallback(async () => {
     try {
       const [status, pub] = await Promise.all([
@@ -105,6 +114,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setUnauthorizedHandler(() => {
       setAuthed(false);
       setUsername(null);
+      setRole('viewer');
     });
   }, []);
 
@@ -113,8 +123,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await refreshPublic();
       if (getToken()) {
         try {
-          const me = await api<{ user: { username: string } }>('/api/auth/me');
+          const me = await api<{ user: { username: string; role: PanelRole } }>('/api/auth/me');
           setUsername(me.user.username);
+          setRole(me.user.role || 'viewer');
           setAuthed(true);
         } catch {
           setAuthed(false);
@@ -180,20 +191,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (u: string, p: string) => {
-    const res = await api<{ token: string; user: { username: string } }>('/api/auth/login', {
+    const res = await api<{ token: string; user: { username: string; role: PanelRole } }>('/api/auth/login', {
       body: { username: u, password: p },
     });
     setToken(res.token);
     setUsername(res.user.username);
+    setRole(res.user.role || 'viewer');
     setAuthed(true);
   }, []);
 
   const setup = useCallback(async (u: string, p: string) => {
-    const res = await api<{ token: string; user: { username: string } }>('/api/auth/setup', {
+    const res = await api<{ token: string; user: { username: string; role: PanelRole } }>('/api/auth/setup', {
       body: { username: u, password: p },
     });
     setToken(res.token);
     setUsername(res.user.username);
+    setRole(res.user.role || 'admin');
     setInitialized(true);
     setAuthed(true);
   }, []);
@@ -207,6 +220,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setAuthed(false);
     setUsername(null);
+    setRole('viewer');
     setMetrics(null);
     setHistory([]);
   }, []);
@@ -217,6 +231,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       initialized,
       authed,
       username,
+      role,
+      can,
       serverName,
       hasLogo,
       lang,
@@ -237,7 +253,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshPublic,
     }),
     [
-      ready, initialized, authed, username, serverName, hasLogo, lang, dir, theme, resolvedTheme,
+      ready, initialized, authed, username, role, can, serverName, hasLogo, lang, dir, theme, resolvedTheme,
       metrics, history, sites, connected, socket, t, setLang, setTheme, login, setup, logout, refreshPublic,
     ]
   );

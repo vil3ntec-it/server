@@ -18,22 +18,23 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { WebSocketServer } from 'ws';
+import { attachHeartbeat } from '../lib/ws-heartbeat.js';
 import { createStore } from './store.js';
 
 export const MAIN_KEY = 'main';
 
-/* ── رمزِ داخلیِ خودِ برنامهٔ پمپ ─────────────────────────────────────────────
-   دقیقاً همان مقداری که در `index.html` زیر نامِ BUILTIN_TOKEN نشسته است. اگر
-   این دو با هم فرق کنند، هیچ دستگاهی نمی‌تواند وصل شود.
+/* ── رمزِ سازگاریِ نسخه‌های قدیمی ─────────────────────────────────────────────
+   تا پیش از این، یک رمزِ ثابت داخلِ کد بود که در index.htmlِ عمومی هم می‌نشست —
+   یعنی هر کسی که سایت را می‌دید رمز را داشت. حالا:
 
-   چرا دفترِ اصلی این را هم می‌پذیرد: این رمز از روزِ اول داخلِ index.html است و
-   index.html روی GitHub Pages برای همه باز است — پس چیزی که تا حالا محرمانه بوده
-   با این کار محرمانه‌تر یا آشکارتر نمی‌شود. در عوض، عوض شدنِ رمزِ سرور (نصبِ
-   دوباره، جابه‌جا شدنِ پوشهٔ داده، چرخاندنِ رمز از پنل) دیگر همهٔ دستگاه‌ها را
-   بیرون نمی‌اندازد. اگر این را نمی‌خواهید: HLP_SITESYNC_STRICT=1 بگذارید.
-   دفترِ سایت‌های دیگر هرگز این رمز را نمی‌پذیرد. ── */
-export const APP_BUILTIN_TOKEN = '3f25db6ea9ff8ea4e8089a66cc7492f5f017';
-const STRICT = String(process.env.HLP_SITESYNC_STRICT || '') === '1';
+     • هر نصب رازِ خودش را دارد (data/panel.db) و دو سرور هرگز یکی نیستند
+     • رمزِ قدیمی فقط اگر HLP_LEGACY_TOKEN را خودتان بگذارید پذیرفته می‌شود،
+       تا دستگاه‌های قدیمی وقتِ به‌روزرسانی داشته باشند
+     • دفترِ سایت‌های دیگر هرگز رمزِ سازگاری را نمی‌پذیرد
+   ── */
+const LEGACY_TOKEN = process.env.HLP_LEGACY_TOKEN || '';
+const STRICT_DEFAULT = LEGACY_TOKEN ? '0' : '1';
+const STRICT = String(process.env.HLP_SITESYNC_STRICT || STRICT_DEFAULT) === '1';
 
 /** نامِ پوشه‌ای امن از روی slug — تا هیچ‌کس از پوشهٔ خودش بیرون نزند */
 export function safeKey(value) {
@@ -56,8 +57,8 @@ export function createSiteSync({ dataDir, token = '' }) {
     label: 'سرور اصلی',
     dataDir,
     token,
-    seedToken: STRICT ? '' : APP_BUILTIN_TOKEN,
-    alsoAccept: STRICT ? [] : [APP_BUILTIN_TOKEN],
+    seedToken: '',
+    alsoAccept: STRICT || !LEGACY_TOKEN ? [] : [LEGACY_TOKEN],
   });
   stores.set(MAIN_KEY, main);
 
@@ -91,6 +92,7 @@ export function createSiteSync({ dataDir, token = '' }) {
     if (store) {
       await store.flush().catch(() => {});
       store.closeClients();
+      store.stop?.();
       stores.delete(key);
     }
     await fsp.rm(dirFor(key), { recursive: true, force: true });
@@ -116,6 +118,7 @@ export function createSiteSync({ dataDir, token = '' }) {
 
   // ------------------------------ اتصال‌ها ---------------------------------
   const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 * 1024 });
+  attachHeartbeat(wss);
 
   /** تصمیم می‌گیرد این اتصال به کدام دفتر تعلق دارد */
   function route(req) {

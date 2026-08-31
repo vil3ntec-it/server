@@ -1,0 +1,254 @@
+name: برنامه ویندوز
+
+on:
+  push:
+    tags: ['v*']
+    # تا پیش از merge، فهرستِ Actions این گردشِ کار را نشان نمی‌دهد (چون فایلش
+    # روی شاخهٔ اصلی نیست). پس روی شاخه‌های کاری هم — وقتی خودِ برنامهٔ ویندوز
+    # عوض شد — ساخته می‌شود.
+    branches: ['claude/**']
+    paths:
+      - 'homelab-panel/desktop/**'
+      - 'homelab-panel/server/**'
+      - 'homelab-panel/web/**'
+      - '.github/workflows/windows-app.yml'
+  workflow_dispatch:
+    inputs:
+      release:
+        description: انتشار به‌عنوان Release
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ساخت فایل نصبی ویندوز
+    runs-on: windows-latest
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # وابستگی‌های سرور داخل برنامه بسته‌بندی می‌شوند، پس بدون dev نصب می‌شوند
+      - name: وابستگی‌های سرور
+        working-directory: homelab-panel/server
+        run: npm ci --omit=dev
+
+      - name: ساخت رابط کاربری
+        working-directory: homelab-panel/web
+        run: |
+          npm ci
+          npm run build
+
+      - name: وابستگی‌های برنامهٔ ویندوز
+        working-directory: homelab-panel/desktop
+        run: npm ci
+
+      - name: ساخت فایل نصبی
+        working-directory: homelab-panel/desktop
+        run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── تکه‌تکه کردن ────────────────────────────────────────────────────
+      # دانلودِ یک فایلِ ۹۰ مگابایتی روی اینترنتِ ناپایدار وسطِ کار می‌ایستد.
+      # تکه‌های ۲۰ مگابایتی را می‌شود جدا گرفت و بعد به هم چسباند.
+      - name: تکه‌های کوچک و جمعِ کنترلی
+        shell: pwsh
+        working-directory: homelab-panel/desktop/dist
+        run: |
+          $exe = Get-ChildItem -Filter '*.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'فایل نصبی ساخته نشد' }
+          Write-Host "فایل: $($exe.Name) — $([math]::Round($exe.Length/1MB,1)) MB"
+
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($exe.Name)" | Set-Content -Path 'SHA256SUMS.txt' -Encoding ascii
+          "SHA256=$hash" >> $env:GITHUB_ENV
+          "EXE_NAME=$($exe.Name)" >> $env:GITHUB_ENV
+          "EXE_MB=$([math]::Round($exe.Length/1MB,1))" >> $env:GITHUB_ENV
+
+          New-Item -ItemType Directory -Force -Path 'parts' | Out-Null
+          $chunk  = 20MB
+          $stream = [System.IO.File]::OpenRead($exe.FullName)
+          $buffer = New-Object byte[] (1MB)
+          $names  = @()
+          $index  = 1
+          try {
+            while ($stream.Position -lt $stream.Length) {
+              $name = '{0}.part{1:d2}' -f $exe.Name, $index
+              $names += $name
+              $out = [System.IO.File]::Create((Join-Path 'parts' $name))
+              try {
+                $written = 0
+                while ($written -lt $chunk -and $stream.Position -lt $stream.Length) {
+                  $want = [Math]::Min($buffer.Length, $chunk - $written)
+                  $read = $stream.Read($buffer, 0, $want)
+                  if ($read -le 0) { break }
+                  $out.Write($buffer, 0, $read)
+                  $written += $read
+                }
+              } finally { $out.Dispose() }
+              $index++
+            }
+          } finally { $stream.Dispose() }
+          Write-Host "$($names.Count) تکه ساخته شد"
+
+          # چسباننده — ASCII و CRLF، چون cmd.exe فایلِ غیرِ این را درست نمی‌خواند
+          $joiner = @()
+          $joiner += '@echo off'
+          $joiner += 'setlocal'
+          $joiner += 'REM  Joins the downloaded parts back into one installer.'
+          $joiner += 'REM  Put this file in the same folder as all the .partNN files.'
+          $joiner += 'cd /d "%~dp0"'
+          $joiner += 'echo.'
+          $joiner += 'echo Joining parts...'
+          $joiner += ('copy /b ' + (($names | ForEach-Object { '"' + $_ + '"' }) -join ' + ') + ' "' + $exe.Name + '" >nul')
+          $joiner += 'if errorlevel 1 goto failed'
+          $joiner += 'echo.'
+          $joiner += ('echo Done: ' + $exe.Name)
+          $joiner += 'echo.'
+          $joiner += 'echo Verify the checksum (compare with SHA256SUMS.txt):'
+          $joiner += ('certutil -hashfile "' + $exe.Name + '" SHA256')
+          $joiner += 'echo.'
+          $joiner += 'pause'
+          $joiner += 'exit /b 0'
+          $joiner += ':failed'
+          $joiner += 'echo.'
+          $joiner += 'echo Joining failed. Make sure every .partNN file is here.'
+          $joiner += 'pause'
+          $joiner += 'exit /b 1'
+          [System.IO.File]::WriteAllText(
+            (Join-Path 'parts' 'JOIN-PARTS.bat'),
+            (($joiner -join "`r`n") + "`r`n"),
+            [System.Text.Encoding]::ASCII)
+          Copy-Item 'SHA256SUMS.txt' 'parts/SHA256SUMS.txt'
+
+      - name: بارگذاری خروجی
+        uses: actions/upload-artifact@v4
+        with:
+          name: ControlCenter-Setup
+          path: |
+            homelab-panel/desktop/dist/*.exe
+            homelab-panel/desktop/dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: بارگذاری تکه‌ها
+        uses: actions/upload-artifact@v4
+        with:
+          name: ControlCenter-Setup-parts
+          path: homelab-panel/desktop/dist/parts/*
+          if-no-files-found: error
+          retention-days: 30
+
+      # ── انتشار ─────────────────────────────────────────────────────────
+      # فایلِ Release روی CDN می‌نشیند: بدونِ لاگین، و اگر قطع شد ادامه می‌گیرد.
+      # روی شاخه‌های کاری هم یک نسخهٔ «پیش‌نمایش» منتشر می‌شود که با هر ساخت
+      # به‌روز می‌شود — وگرنه تا merge نشدن، فایل فقط از راهِ artifact در دسترس
+      # بود و آن یکی وسطِ دانلود می‌ایستد.
+      # برچسبِ «پیش‌نمایش» باید روی همین ساخت بنشیند. action-gh-release فقط
+      # target_commitish را عوض می‌کند و اگر برچسب از قبل باشد جابه‌جایش
+      # نمی‌کند — نتیجه‌اش این بود که فایلِ zip منتشرشده مالِ یک کامیتِ قدیمی
+      # می‌ماند و به‌روزرسانیِ داخلِ برنامه نسخهٔ کهنه می‌گرفت.
+      - name: جابه‌جا کردن برچسب پیش‌نمایش
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $body = @{ sha = '${{ github.sha }}'; force = $true } | ConvertTo-Json -Compress
+          try {
+            $body | gh api -X PATCH "repos/${{ github.repository }}/git/refs/tags/windows-preview" --input -
+            Write-Host 'برچسب جابه‌جا شد.'
+          } catch {
+            $create = @{ ref = 'refs/tags/windows-preview'; sha = '${{ github.sha }}' } | ConvertTo-Json -Compress
+            $create | gh api -X POST "repos/${{ github.repository }}/git/refs" --input -
+            Write-Host 'برچسب ساخته شد.'
+          }
+
+      - name: انتشار
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'windows-preview' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'مرکز فرمان — پیش‌نمایش ویندوز' }}
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') || contains(github.ref_name, '-') }}
+          target_commitish: ${{ github.sha }}
+          # parts/* عمداً باز نشده: SHA256SUMS.txt هم آنجا کپی می‌شود و هم
+          # اینجا هست. با نامِ تکراری، دو بارگذاریِ هم‌زمان به هم می‌خورند —
+          # یکی همان چیزی را پاک می‌کند که دیگری دارد می‌نویسد، و فایل اصلاً
+          # منتشر نمی‌شود.
+          files: |
+            homelab-panel/desktop/dist/*.exe
+            homelab-panel/desktop/dist/SHA256SUMS.txt
+            homelab-panel/desktop/dist/parts/*.part*
+            homelab-panel/desktop/dist/parts/JOIN-PARTS.bat
+          body: |
+            ## مرکز فرمان — برنامهٔ ویندوز
+
+            پنل و ترمینال در یک پنجره، با آیکن روی دسکتاپ.
+            **به نصبِ Node.js نیاز ندارد** — همه‌چیز داخلِ خودِ فایل است.
+
+            ### دانلود
+
+            **راهِ اول — یک فایل** (`${{ env.EXE_NAME }}`، حدود ${{ env.EXE_MB }} مگابایت)
+
+            این فایل روی CDN است، پس اگر وسطِ کار قطع شد، دانلود **ادامه می‌گیرد**
+            و از اول شروع نمی‌شود. با یک دانلود‌منیجر (مثل IDM یا FDM) مطمئن‌تر است.
+
+            **راهِ دوم — تکه‌های ۲۰ مگابایتی**
+
+            اگر باز هم گیر کرد، فایل‌های `.part01` تا آخر را جدا‌جدا بگیر، همه را
+            کنارِ هم در یک پوشه بگذار و روی **`JOIN-PARTS.bat`** دوبار کلیک کن.
+            خودش به هم می‌چسباندشان و جمعِ کنترلی را هم نشان می‌دهد.
+
+            ### درستیِ فایل
+
+            ```
+            SHA256: ${{ env.SHA256 }}
+            ```
+
+            در PowerShell:
+            ```powershell
+            Get-FileHash .\${{ env.EXE_NAME }} -Algorithm SHA256
+            ```
+
+            ### نصب
+
+            فایل را اجرا کن. می‌پرسد **کجا نصب شود**، و بارِ اولِ اجرا می‌پرسد
+            **اطلاعات کجا ذخیره شود**.
+
+            > ویندوز چون فایل امضای دیجیتال ندارد اخطارِ «Unknown publisher» می‌دهد.
+            > **More info → Run anyway** را بزن.
+
+            ---
+            <sub>ساخته‌شده از `${{ github.sha }}` روی شاخهٔ `${{ github.ref_name }}`</sub>
+
+      # نسخهٔ «پیش‌نمایش» یکی است و با هر ساخت به‌روز می‌شود، پس فایل‌های
+      # نسخه‌های قبلی باید بروند — وگرنه کاربر با چند فایلِ .exe روبه‌رو می‌شود
+      # و نمی‌داند کدام تازه است. بعد از بارگذاری اجرا می‌شود تا هیچ لحظه‌ای
+      # نسخهٔ منتشرشده بدونِ فایل نماند.
+      - name: پاک کردن فایل‌های نسخه‌های قبلی
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $keep = @($env:EXE_NAME, 'SHA256SUMS.txt', 'JOIN-PARTS.bat')
+          $release = gh api "repos/${{ github.repository }}/releases/tags/windows-preview" | ConvertFrom-Json
+          foreach ($asset in $release.assets) {
+            $mine = ($keep -contains $asset.name) -or $asset.name.StartsWith("$($env:EXE_NAME).part")
+            if ($mine) { continue }
+            Write-Host "پاک کردن $($asset.name)"
+            gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$($asset.id)"
+          }
+          Write-Host 'فقط فایل‌های همین ساخت ماندند.'

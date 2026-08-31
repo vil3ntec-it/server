@@ -17,7 +17,8 @@
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { WebSocketServer } from 'ws';
-import { db, logEvent, getSetting, setSetting } from '../db.js';
+import { attachHeartbeat } from '../lib/ws-heartbeat.js';
+import { db, q, logEvent, getSetting, setSetting } from '../db.js';
 import { pushToDevices, vapidPublicKey } from '../messenger/push.js';
 
 export const notifyEvents = new EventEmitter();
@@ -62,7 +63,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_ntf_devices ON ntf_devices(topic, push_end
    قبل باز است (پس هیچ دستگاهی با این تغییر اعلانش را از دست نمی‌دهد) و هر
    وقت صاحبِ سرور از پنل رمز بگذارد، از همان لحظه قفل می‌شود. */
 try {
-  const cols = db.prepare('PRAGMA table_info(ntf_topics)').all().map((c) => c.name);
+  const cols = q('PRAGMA table_info(ntf_topics)').all().map((c) => c.name);
   if (!cols.includes('read_token')) db.exec('ALTER TABLE ntf_topics ADD COLUMN read_token TEXT');
 } catch { /* ستون از قبل هست */ }
 
@@ -80,20 +81,19 @@ export function cleanTopic(value) {
 export function ensureTopic(name, { title = null } = {}) {
   const topic = cleanTopic(name);
   if (!topic) return null;
-  const found = db.prepare('SELECT * FROM ntf_topics WHERE name = ?').get(topic);
+  const found = q('SELECT * FROM ntf_topics WHERE name = ?').get(topic);
   if (found) return found;
-  db.prepare('INSERT INTO ntf_topics(name, title, created_at) VALUES(?, ?, ?)').run(topic, title, Date.now());
-  return db.prepare('SELECT * FROM ntf_topics WHERE name = ?').get(topic);
+  q('INSERT INTO ntf_topics(name, title, created_at) VALUES(?, ?, ?)').run(topic, title, Date.now());
+  return q('SELECT * FROM ntf_topics WHERE name = ?').get(topic);
 }
 
 export function getTopic(name) {
   const topic = cleanTopic(name);
-  return topic ? db.prepare('SELECT * FROM ntf_topics WHERE name = ?').get(topic) : null;
+  return topic ? q('SELECT * FROM ntf_topics WHERE name = ?').get(topic) : null;
 }
 
 export function listTopics() {
-  return db
-    .prepare(
+  return q(
       `SELECT t.*,
               (SELECT COUNT(*) FROM ntf_messages m WHERE m.topic = t.name) AS messages,
               (SELECT COUNT(*) FROM ntf_devices d WHERE d.topic = t.name)  AS devices
@@ -117,7 +117,7 @@ export function setWriteToken(name, token) {
   const topic = ensureTopic(name);
   if (!topic) return { ok: false, error: 'invalid_topic' };
   const value = token === null || token === '' ? null : String(token);
-  db.prepare('UPDATE ntf_topics SET write_token = ? WHERE name = ?').run(value, topic.name);
+  q('UPDATE ntf_topics SET write_token = ? WHERE name = ?').run(value, topic.name);
   return { ok: true, hasToken: Boolean(value) };
 }
 
@@ -168,7 +168,7 @@ export function setReadToken(name, token) {
   const topic = ensureTopic(name);
   if (!topic) return { ok: false, error: 'invalid_topic' };
   const value = token === null || token === '' ? null : String(token);
-  db.prepare('UPDATE ntf_topics SET read_token = ? WHERE name = ?').run(value, topic.name);
+  q('UPDATE ntf_topics SET read_token = ? WHERE name = ?').run(value, topic.name);
   return { ok: true, hasReadToken: Boolean(value) };
 }
 
@@ -205,12 +205,16 @@ export const listenerCount = (topic) => listeners.get(cleanTopic(topic))?.size ?
 export function deviceCount(name) {
   const topic = cleanTopic(name);
   if (!topic) return 0;
-  const row = db.prepare('SELECT COUNT(*) AS n FROM ntf_devices WHERE topic = ?').get(topic);
+  const row = q('SELECT COUNT(*) AS n FROM ntf_devices WHERE topic = ?').get(topic);
   return row ? row.n : 0;
 }
 
 // -------------------------------- انتشار ----------------------------------
 const RETAIN_DEFAULT = 500;
+// چند پیامِ اضافه‌تر از سقف تحمل می‌کنیم تا پاک‌سازی هر بار اجرا نشود
+const RETAIN_SLACK = 50;
+/** موضوع → تعدادِ پیامی که همین حالا دارد (تخمینِ به‌روز، نه شمارشِ هر بار) */
+const retained = new Map();
 
 /**
  * یک اعلان می‌فرستد: ذخیره، پخشِ زنده، و نوتیفیکیشن برای دستگاه‌های ثبت‌شده.
@@ -228,26 +232,34 @@ export async function publish(name, { title, body, priority, tags, click, token 
   const prio = Math.min(5, Math.max(1, Number(priority) || 3));
   const tagList = Array.isArray(tags) ? tags.join(',') : tags ? String(tags) : null;
 
-  db.prepare(
+  q(
     'INSERT INTO ntf_messages(topic, title, body, priority, tags, click, created_at) VALUES(?, ?, ?, ?, ?, ?, ?)'
   ).run(topicRow.name, title ? String(title).slice(0, 120) : null, text, prio, tagList, click || null, now);
-  const row = db.prepare('SELECT * FROM ntf_messages WHERE id = last_insert_rowid()').get();
-  db.prepare('UPDATE ntf_topics SET last_at = ? WHERE name = ?').run(now, topicRow.name);
+  const row = q('SELECT * FROM ntf_messages WHERE id = last_insert_rowid()').get();
+  q('UPDATE ntf_topics SET last_at = ? WHERE name = ?').run(now, topicRow.name);
 
-  // پیام‌های خیلی قدیمی پاک می‌شوند تا دیسک پر نشود
+  // پیام‌های خیلی قدیمی پاک می‌شوند تا دیسک پر نشود.
+  // این پاک‌سازی با *هر* اعلان اجرا می‌شد؛ یعنی برای هر خبرِ کوچک، یک‌بار
+  // شمردن و مرتب کردنِ کلِ پیام‌های آن موضوع. حالا فقط وقتی واقعاً از سقف
+  // گذشته‌ایم اجرا می‌شود — نتیجه یکی است، کارِ بی‌جهت نه.
   const keep = Number(getSetting('notify_retain', RETAIN_DEFAULT)) || RETAIN_DEFAULT;
-  db.prepare(
-    `DELETE FROM ntf_messages WHERE topic = ? AND id NOT IN
-       (SELECT id FROM ntf_messages WHERE topic = ? ORDER BY id DESC LIMIT ?)`
-  ).run(topicRow.name, topicRow.name, keep);
+  const kept = (retained.get(topicRow.name) ?? Infinity) + 1;
+  if (kept > keep + RETAIN_SLACK) {
+    q(
+      `DELETE FROM ntf_messages WHERE topic = ? AND id NOT IN
+         (SELECT id FROM ntf_messages WHERE topic = ? ORDER BY id DESC LIMIT ?)`
+    ).run(topicRow.name, topicRow.name, keep);
+    retained.set(topicRow.name, q('SELECT COUNT(*) AS n FROM ntf_messages WHERE topic = ?').get(topicRow.name).n);
+  } else {
+    retained.set(topicRow.name, kept);
+  }
 
   const message = publicMessage(row);
   const live = fanout(topicRow.name, { op: 'message', ...message });
   notifyEvents.emit('message', message);
 
   // دستگاه‌هایی که برنامه‌شان بسته است — نوتیفیکیشن
-  const devices = db
-    .prepare('SELECT * FROM ntf_devices WHERE topic = ?')
+  const devices = q('SELECT * FROM ntf_devices WHERE topic = ?')
     .all(topicRow.name)
     .map((d) => ({ push_endpoint: d.push_endpoint, push_p256dh: d.push_p256dh, push_auth: d.push_auth }));
 
@@ -281,11 +293,9 @@ export function history(name, { since = null, limit = 100 } = {}) {
   const topic = cleanTopic(name);
   if (!topic) return [];
   const rows = since
-    ? db
-      .prepare('SELECT * FROM ntf_messages WHERE topic = ? AND id > ? ORDER BY id DESC LIMIT ?')
+    ? q('SELECT * FROM ntf_messages WHERE topic = ? AND id > ? ORDER BY id DESC LIMIT ?')
       .all(topic, Number(since), Math.min(500, Number(limit) || 100))
-    : db
-      .prepare('SELECT * FROM ntf_messages WHERE topic = ? ORDER BY id DESC LIMIT ?')
+    : q('SELECT * FROM ntf_messages WHERE topic = ? ORDER BY id DESC LIMIT ?')
       .all(topic, Math.min(500, Number(limit) || 100));
   return rows.reverse().map(publicMessage);
 }
@@ -294,7 +304,7 @@ export function history(name, { since = null, limit = 100 } = {}) {
 export function subscribeDevice(name, { label, endpoint, p256dh, auth }) {
   const topicRow = ensureTopic(name);
   if (!topicRow || !endpoint) return { ok: false, error: 'invalid' };
-  db.prepare(
+  q(
     `INSERT INTO ntf_devices(topic, label, push_endpoint, push_p256dh, push_auth, created_at)
      VALUES(?, ?, ?, ?, ?, ?)
      ON CONFLICT(topic, push_endpoint) DO UPDATE SET
@@ -306,12 +316,13 @@ export function subscribeDevice(name, { label, endpoint, p256dh, auth }) {
 export function unsubscribeDevice(name, endpoint) {
   const topic = cleanTopic(name);
   if (!topic || !endpoint) return { ok: false };
-  db.prepare('DELETE FROM ntf_devices WHERE topic = ? AND push_endpoint = ?').run(topic, String(endpoint));
+  q('DELETE FROM ntf_devices WHERE topic = ? AND push_endpoint = ?').run(topic, String(endpoint));
   return { ok: true };
 }
 
 // -------------------------------- WebSocket --------------------------------
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
+attachHeartbeat(wss);
 
 export function handleUpgrade(req, socket, head) {
   wss.handleUpgrade(req, socket, head, (ws) => {

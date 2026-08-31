@@ -1,0 +1,28 @@
+# ---------------------------------------------------------------------------
+#  سرویسِ systemd برای Agent
+#
+#      sudo cp control-center-agent.service /etc/systemd/system/
+#      sudo systemctl daemon-reload
+#      sudo systemctl enable --now control-center-agent
+#
+#  مسیرها و کاربر را مطابق سرورِ خودتان تغییر بدهید.
+# ---------------------------------------------------------------------------
+[Unit]
+Description=Control Center Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/control-center-agent
+EnvironmentFile=/opt/control-center-agent/agent.env
+ExecStart=/usr/bin/env node /opt/control-center-agent/agent.mjs
+Restart=always
+RestartSec=10
+# Agent هیچ درگاهی باز نمی‌کند و هیچ دستوری از بیرون نمی‌پذیرد
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

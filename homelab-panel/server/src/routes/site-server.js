@@ -28,12 +28,14 @@ import {
   routedHostnames,
   tunnelDiagnosis,
   repairTunnel,
+  DEFAULT_TUNNEL_NAME,
 } from '../tunnel.js';
 
 const router = Router();
 router.use(requireAuth);
 
-const DEFAULT_SITE_URL = 'https://yaqobipump.top';
+// بدونِ پیش‌فرض: نشانیِ سایتِ کسِ دیگری، حدسِ درستی برای هیچ‌کس نیست
+const DEFAULT_SITE_URL = '';
 
 function siteUrl() {
   return String(getSetting('site_url', DEFAULT_SITE_URL) || DEFAULT_SITE_URL).replace(/\/+$/, '');
@@ -182,12 +184,13 @@ router.get('/tunnel/named', (req, res) => {
 router.get('/tunnel/named/commands', (req, res) => {
   const bin = publicState().binary || 'cloudflared';
   const host = getSetting('tunnel_hostname', null) || 'sync.example.com';
+  const tunnelName = getSetting('tunnel_name', DEFAULT_TUNNEL_NAME);
   res.json({
     binary: bin,
     commands: [
       `"${bin}" tunnel login`,
-      `"${bin}" tunnel create pump`,
-      `"${bin}" tunnel route dns pump ${host}`,
+      `"${bin}" tunnel create ${tunnelName}`,
+      `"${bin}" tunnel route dns ${tunnelName} ${host}`,
     ],
   });
 });
@@ -209,8 +212,12 @@ router.get('/tunnel/named/login-status', (req, res) => {
 // گام ۲: ساخت تونل و وصل کردن زیردامنه — بعد از این، آدرس برای همیشه ثابت است
 router.post('/tunnel/named/setup', async (req, res) => {
   const hostname = String(req.body?.hostname || '').trim();
+  // نامِ تونل در حسابِ Cloudflare — اگر تونلِ دیگری دارید، این کنارش
+  // ساخته می‌شود و کاری به آن ندارد
+  const name = String(req.body?.name || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '-')
+    || DEFAULT_TUNNEL_NAME;
   try {
-    const result = await namedSetup({ hostname });
+    const result = await namedSetup({ hostname, name });
     if (!result.ok) return res.status(400).json(result);
     logEvent('info', 'panel', `آدرس ثابت سرور: ${result.hostname}`);
     // زیردامنهٔ تونل هم خودکار در بخش دامنه‌ها ثبت می‌شود

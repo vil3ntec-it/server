@@ -116,6 +116,8 @@
   جست‌وجو ضعیف است             | داخل ai-support:  node bin/build-index.mjs
 
   راهنمای کامل:
+    اتصال-برنامه-ها.txt              وصل کردنِ اپِ اندروید/ویندوز/سایت‌ها
+    homelab-panel/desktop/           برنامهٔ ویندوزیِ سرور (بدونِ مرورگر)
     ai-support/README-fa.md          دستیار
     ai-support/ARCHITECTURE-fa.md    معماری و مرزِ امنیتی
     homelab-panel/README-fa.md       پنل

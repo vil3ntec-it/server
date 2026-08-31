@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>اتصال برنامه به سرور</title>
+<style>
+  :root { --bg:#f3f5fa; --card:#fff; --ink:#12172b; --muted:#6b7390; --line:#e3e7f2; --brand:#2b57d6; --ok:#0f9d58; --bad:#d93025; }
+  * { box-sizing:border-box }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.9 Tahoma,"Segoe UI",sans-serif }
+  .wrap { max-width:880px; margin:0 auto; padding:20px 16px 60px }
+  h1 { font-size:22px; margin:18px 0 4px }
+  h2 { font-size:17px; margin:0 0 12px }
+  p.lead { color:var(--muted); margin:0 0 20px }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px; margin-bottom:16px }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center }
+  input, select, button { font:inherit; border-radius:10px; border:1px solid var(--line); padding:10px 12px }
+  input, select { flex:1; min-width:180px; background:#fbfcff }
+  button { background:var(--brand); color:#fff; border:none; cursor:pointer; padding:10px 18px }
+  button.ghost { background:#eef2fd; color:var(--brand) }
+  button:disabled { opacity:.55; cursor:default }
+  code, pre { direction:ltr; text-align:left; font-family:Consolas,Menlo,monospace }
+  pre { background:#0f1424; color:#e6ebff; padding:14px; border-radius:12px; overflow:auto; font-size:13px; line-height:1.7 }
+  .addr { direction:ltr; text-align:left; background:#f1f5ff; color:#1a3fb0; border-radius:10px; padding:10px 12px; font-family:Consolas,monospace; word-break:break-all }
+  .pill { display:inline-block; border-radius:999px; padding:2px 12px; font-size:13px }
+  .pill.ok { background:#e6f5ec; color:var(--ok) }
+  .pill.bad { background:#fdecea; color:var(--bad) }
+  .pill.wait { background:#fff4e5; color:#b06000 }
+  .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px }
+  .tabs button { background:#eef2fd; color:#33406b; padding:7px 14px; font-size:14px }
+  .tabs button.on { background:var(--brand); color:#fff }
+  .note { background:#fff8e6; border:1px solid #f2e2b8; border-radius:10px; padding:10px 12px; color:#6b5518; font-size:14px }
+  .steps { margin:0; padding-inline-start:20px; color:var(--muted) }
+  .steps li { margin-bottom:6px }
+  .out { white-space:pre-wrap; direction:ltr; text-align:left; background:#0f1424; color:#c8f7d4; border-radius:12px; padding:12px; font-size:13px; min-height:44px; overflow:auto }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>اتصال برنامه‌ها به این سرور</h1>
+  <p class="lead">این صفحه سه کار می‌کند: آدرسِ سرور را می‌دهد، همین‌جا ورود با کد را تست می‌کند، و کدِ آمادهٔ اندروید/ویندوز/سایت را به شما می‌دهد.</p>
+  <p class="note" style="margin:0 0 20px">💡 روی ویندوز، همهٔ این‌ها یک <b>برنامهٔ کامپیوتری</b> هم دارد که لازم نیست مرورگر باز کنید — و از داخلِ خودش به‌روز می‌شود:
+  <code>homelab-panel\desktop\برنامه-سرور.bat</code></p>
+
+  <!-- ۱ -->
+  <div class="card">
+    <h2>۱) آدرسِ سرور — همین را در برنامه بگذارید</h2>
+    <!-- یک سرور، چند راهِ رسیدن. هر برنامه‌ای هر کدام که برایش راحت‌تر است
+         را بردارد؛ پشتِ هر دو، همین یک سرور و همین یک دیتابیس است. -->
+    <div class="tabs" id="whereTabs" style="margin-bottom:10px"></div>
+    <div class="addr" id="base">…</div>
+    <div class="row" style="margin-top:10px">
+      <button class="ghost" id="copyBase">کپیِ آدرس</button>
+      <span id="health" class="pill wait">در حالِ بررسی…</span>
+      <span id="ver" style="color:var(--muted)"></span>
+    </div>
+    <p style="color:var(--muted);margin:12px 0 0" id="whereHint">
+      اگر برنامه روی گوشیِ دیگری است، باید همین آدرس از آن گوشی باز شود. داخلِ خانه آدرسِ
+      <code>http://IP:4700</code> کار می‌کند؛ از بیرونِ خانه آدرسِ تونل (<code>https://…</code>) لازم است.
+    </p>
+
+    <!-- همین سرور، برای سایت -->
+    <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">
+      <p style="margin:0 0 8px"><b>و همین سرور، برای سایت:</b> سایت به‌جای REST از وب‌سوکت وصل می‌شود،
+      پس آدرسش همان آدرسِ بالاست با <code>wss</code> — مرورگر برای WebSocket چیزِ دیگری قبول نمی‌کند.</p>
+      <div class="addr" id="wsBase">…</div>
+      <div class="row" style="margin-top:10px">
+        <button class="ghost" id="copyWs">کپیِ آدرسِ وب‌سوکت</button>
+        <span style="color:var(--muted)">در فایلِ سایت: <code>SELF_HOST_URL</code></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ۲ -->
+  <div class="card">
+    <h2>۲) تستِ ورود با کدِ شش‌رقمی</h2>
+    <div class="row">
+      <input id="target" placeholder="۰۹۱۲۱۲۳۴۵۶۷  یا  name@gmail.com">
+      <input id="appName" placeholder="نام برنامه (اختیاری)" style="max-width:200px">
+      <button id="send">فرستادنِ کد</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <input id="code" placeholder="کد شش‌رقمی" inputmode="numeric" style="max-width:200px">
+      <button id="verify" class="ghost">تأییدِ کد</button>
+      <span id="smsState" class="pill wait">…</span>
+    </div>
+    <div class="out" id="out" style="margin-top:12px">نتیجه این‌جا نشان داده می‌شود.</div>
+    <p class="note" style="margin-top:12px">
+      اگر پیامک/ایمیل هنوز تنظیم نشده باشد، سرور کد را در <b>پنل ← لاگ‌ها</b> می‌نویسد تا خودتان ببینید.
+      برای فرستادنِ واقعی، در فایل <code>.env</code> سرویسِ پیامک یا جی‌میل را بگذارید (پایینِ همین صفحه).
+    </p>
+  </div>
+
+  <!-- ۳ -->
+  <div class="card">
+    <h2>۳) کدِ آماده برای برنامهٔ شما</h2>
+    <div class="tabs" id="tabs">
+      <button data-k="web" class="on">سایت / جاوااسکریپت</button>
+      <button data-k="android">اندروید (Kotlin)</button>
+      <button data-k="flutter">فلاتر</button>
+      <button data-k="csharp">ویندوز (C#)</button>
+      <button data-k="curl">تستِ سریع (curl)</button>
+    </div>
+    <pre id="snippet">…</pre>
+  </div>
+
+  <!-- ۴ -->
+  <div class="card">
+    <h2>۴) روشن کردنِ پیامک و ایمیل</h2>
+    <p style="margin:0 0 10px;color:var(--muted)">فایل <code>homelab-panel/server/.env</code> را باز کنید، این خط‌ها را بگذارید و سرور را یک‌بار ببندید و باز کنید.</p>
+    <pre>« جی‌میل — رمزِ عادیِ گوگل کار نمی‌کند، باید App Password بسازید »
+OTP_EMAIL_HOST=smtp.gmail.com
+OTP_EMAIL_PORT=465
+OTP_EMAIL_USER=you@gmail.com
+OTP_EMAIL_PASS=xxxxxxxxxxxxxxxx
+OTP_EMAIL_FROM=you@gmail.com
+
+« پیامک — یکی از این‌ها »
+OTP_SMS_PROVIDER=kavenegar     # یا smsir / melipayamak / ghasedak / webhook
+OTP_SMS_KEY=کلیدِ پنلِ پیامک
+OTP_SMS_TEMPLATE=نامِ قالبِ تأیید   # اگر قالب ندارید، خالی بگذارید
+OTP_SMS_SENDER=شمارهٔ خطِ شما</pre>
+    <ol class="steps" style="margin-top:12px">
+      <li>سرور را ببندید و دوباره باز کنید.</li>
+      <li>همین صفحه را باز کنید و شمارهٔ خودتان را بزنید.</li>
+      <li>اگر نرفت، متنِ خطا همین‌جا در کادرِ نتیجه نوشته می‌شود.</li>
+    </ol>
+  </div>
+
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+/* آدرسی که همین حالا این صفحه از آن باز شده — همیشه یکی از راه‌ها هست.
+   اگر تونل بالا باشد، آدرسِ اینترنتی هم اضافه می‌شود و می‌شود انتخاب کرد
+   کدام در نمونه‌کدها بنشیند. هر دو به همین یک سرور می‌رسند. */
+const WAYS = [{ key: 'here', label: 'همین آدرس', url: location.origin }];
+let BASE = location.origin;
+
+const wsOf = (u) => u.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+
+function paintWays() {
+  $('base').textContent = BASE;
+  $('wsBase').textContent = wsOf(BASE);
+  const tabs = $('whereTabs');
+  tabs.innerHTML = '';
+  if (WAYS.length < 2) return;   // یک راه بیشتر نیست، انتخاب معنا ندارد
+  for (const w of WAYS) {
+    const b = document.createElement('button');
+    b.textContent = w.label;
+    if (w.url === BASE) b.className = 'on';
+    b.onclick = () => { BASE = w.url; paintWays(); paint(); };
+    tabs.appendChild(b);
+  }
+}
+paintWays();
+
+$('copyBase').onclick = () => navigator.clipboard?.writeText(BASE);
+$('copyWs').onclick = () => navigator.clipboard?.writeText(wsOf(BASE));
+
+let cfg = null;
+fetch(location.origin + '/api/app/config').then(r => r.json()).then(c => {
+  cfg = c;
+  // آدرسِ اینترنتی را خودِ سرور می‌گوید (تونل). اگر همان آدرسی باشد که
+  // صفحه از آن باز شده، دوباره اضافه نمی‌شود.
+  const net = c.server && c.server.internet;
+  if (net && net !== location.origin) {
+    WAYS.push({ key: 'internet', label: 'آدرسِ اینترنتی (از بیرونِ خانه)', url: net });
+    $('whereHint').innerHTML =
+      'هر دو راه به همین یک سرور می‌رسند. داخلِ خانه آدرسِ محلی سریع‌تر است؛ ' +
+      'برنامه‌ای که از بیرونِ خانه وصل می‌شود باید آدرسِ اینترنتی را داشته باشد. ' +
+      'اگر برنامه هر دو را داشته باشد، می‌تواند اول محلی را بزند و نشد سراغِ اینترنتی برود.';
+    paintWays();
+  }
+  $('health').className = 'pill ok';
+  $('health').textContent = 'سرور در دسترس است';
+  $('ver').textContent = c.version ? 'نسخهٔ ' + c.version : '';
+  const s = c.login || {};
+  const ready = [s.smsReady ? 'پیامک ✅' : 'پیامک ❌', s.emailReady ? 'ایمیل ✅' : 'ایمیل ❌'].join(' · ');
+  $('smsState').className = 'pill ' + (s.smsReady || s.emailReady ? 'ok' : 'wait');
+  $('smsState').textContent = ready;
+  paint();
+}).catch(e => {
+  $('health').className = 'pill bad';
+  $('health').textContent = 'سرور جواب نداد: ' + e.message;
+});
+
+const show = (label, data) => {
+  $('out').textContent = label + '\n' + JSON.stringify(data, null, 2);
+};
+
+async function post(path, body) {
+  // عمداً به آدرسِ انتخاب‌شده می‌زند: تستِ «آیا از این راه هم کار می‌کند؟»
+  const r = await fetch(BASE + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return { status: r.status, body: await r.json().catch(() => ({})) };
+}
+
+const targetValue = () => $('target').value.trim();
+const appValue = () => $('appName').value.trim() || 'main';
+
+$('send').onclick = async () => {
+  if (!targetValue()) return show('⚠️', { message: 'شماره یا ایمیل را بنویسید' });
+  $('send').disabled = true;
+  try {
+    const r = await post('/api/app/auth/request-code', { to: targetValue(), app: appValue() });
+    show(r.status === 200 ? '📤 درخواستِ کد' : '❌ نشد', r.body);
+  } catch (e) {
+    show('❌ نشد', { message: e.message });
+  }
+  $('send').disabled = false;
+};
+
+$('verify').onclick = async () => {
+  $('verify').disabled = true;
+  try {
+    const r = await post('/api/app/auth/verify-code', { to: targetValue(), code: $('code').value.trim(), app: appValue() });
+    show(r.status === 200 ? '✅ وارد شدید' : '❌ نشد', r.body);
+  } catch (e) {
+    show('❌ نشد', { message: e.message });
+  }
+  $('verify').disabled = false;
+};
+
+// ---------------------------- نمونه‌کدها ----------------------------------
+const SNIPPETS = {
+  web: (b) => `// ۱) فرستادن کد
+await fetch("${b}/api/app/auth/request-code", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ phone: "09121234567" })   // یا { email: "a@gmail.com" }
+});
+
+// ۲) تایید کد و گرفتن توکن
+const res = await fetch("${b}/api/app/auth/verify-code", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ phone: "09121234567", code: "123456" })
+});
+const data = await res.json();      // { ok:true, token:"...", user:{...} }
+localStorage.setItem("token", data.token);
+
+// ۳) هر درخواست بعدی
+await fetch("${b}/api/app/me", {
+  headers: { Authorization: "Bearer " + localStorage.getItem("token") }
+});`,
+
+  android: (b) => `// build.gradle:  implementation("com.squareup.okhttp3:okhttp:4.12.0")
+// AndroidManifest.xml:  <uses-permission android:name="android.permission.INTERNET"/>
+// اگر آدرس http (بدون s) است، در manifest هم بگذارید:
+//   android:usesCleartextTraffic="true"
+
+const val BASE = "${b}"
+val http = OkHttpClient()
+val JSON = "application/json".toMediaType()
+
+fun requestCode(phone: String) {
+    val body = """{"phone":"$phone"}""".toRequestBody(JSON)
+    val req = Request.Builder().url("$BASE/api/app/auth/request-code").post(body).build()
+    http.newCall(req).execute().use { println(it.body?.string()) }
+}
+
+fun verifyCode(phone: String, code: String): String? {
+    val body = """{"phone":"$phone","code":"$code"}""".toRequestBody(JSON)
+    val req = Request.Builder().url("$BASE/api/app/auth/verify-code").post(body).build()
+    http.newCall(req).execute().use { res ->
+        val json = JSONObject(res.body!!.string())
+        return if (json.optBoolean("ok")) json.getString("token") else null
+    }
+}`,
+
+  flutter: (b) => `// pubspec.yaml:  http: ^1.2.0
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+const base = "${b}";
+
+Future<void> requestCode(String phone) async {
+  await http.post(Uri.parse("\$base/api/app/auth/request-code"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({"phone": phone}));
+}
+
+Future<String?> verifyCode(String phone, String code) async {
+  final r = await http.post(Uri.parse("\$base/api/app/auth/verify-code"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({"phone": phone, "code": code}));
+  final data = jsonDecode(r.body);
+  return data["ok"] == true ? data["token"] as String : null;
+}`,
+
+  csharp: (b) => `// برنامهٔ ویندوز (.NET) — بدون کتابخانهٔ اضافه
+using System.Net.Http;
+using System.Net.Http.Json;
+
+const string Base = "${b}";
+var http = new HttpClient();
+
+// ۱) فرستادن کد
+await http.PostAsJsonAsync($"{Base}/api/app/auth/request-code", new { phone = "09121234567" });
+
+// ۲) تایید کد
+var res = await http.PostAsJsonAsync($"{Base}/api/app/auth/verify-code",
+        new { phone = "09121234567", code = "123456" });
+var data = await res.Content.ReadFromJsonAsync<Dictionary<string, object>>();
+var token = data["token"].ToString();
+
+// ۳) درخواست‌های بعدی
+http.DefaultRequestHeaders.Authorization = new("Bearer", token);
+var me = await http.GetStringAsync($"{Base}/api/app/me");`,
+
+  curl: (b) => `curl -X POST ${b}/api/app/auth/request-code \\
+  -H "Content-Type: application/json" \\
+  -d '{"phone":"09121234567"}'
+
+curl -X POST ${b}/api/app/auth/verify-code \\
+  -H "Content-Type: application/json" \\
+  -d '{"phone":"09121234567","code":"123456"}'
+
+curl ${b}/api/app/me -H "Authorization: Bearer <توکن>"`,
+};
+
+let current = 'web';
+function paint() { $('snippet').textContent = SNIPPETS[current](BASE); }
+document.querySelectorAll('#tabs button').forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll('#tabs button').forEach((x) => x.classList.remove('on'));
+    b.classList.add('on');
+    current = b.dataset.k;
+    paint();
+  };
+});
+paint();
+</script>
+</body>
+</html>
