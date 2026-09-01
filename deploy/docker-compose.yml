@@ -15,6 +15,11 @@ services:
       context: ../homelab-panel/server
     image: homelab-panel:local
     restart: unless-stopped
+    # کلِ .env به کانتینر می‌رسد — وگرنه تنظیماتِ «ورود با کدِ شش‌رقمی»
+    # (OTP_SMS_* و OTP_EMAIL_*) هیچ‌وقت به پنل نمی‌رسید و اپِ اندروید کدی
+    # دریافت نمی‌کرد. مقدارهای environment زیر بر این فایل اولویت دارند.
+    env_file:
+      - .env
     environment:
       HLP_DOMAIN: ${DOMAIN:-}
       HLP_API_URL: ${API_URL:-}
@@ -25,6 +30,9 @@ services:
       HLP_BACKUP_KEEP: ${BACKUP_KEEP:-14}
       # تونلِ cloudflared داخلِ کانتینر لازم نیست؛ Caddy همان نقش را دارد
       HLP_TUNNEL: "0"
+      # پوشهٔ ai-support در ایمیج نیست (context فقط homelab-panel/server است)،
+      # پس دستیار خاموش می‌ماند تا سوپروایزر بیهوده تلاش و لاگ تولید نکند.
+      HLP_AI_ENABLED: ${AI_ENABLED:-0}
       # پورتِ دوم — فقط APIِ عمومی. api.<دامنه> به همین می‌رود تا پنل و
       # فایل‌منیجر از اینترنت دیده نشوند.
       HLP_SITESYNC: "1"
