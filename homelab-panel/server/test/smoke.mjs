@@ -289,6 +289,33 @@ async function main() {
   check('آدرس‌های اتصال ساخته شده', r.json?.addresses?.some((a) => a.ws.startsWith('ws://')));
   check('رمز به‌صورت پنهان نمایش داده می‌شود', typeof r.json?.tokenPreview === 'string' && r.json.tokenPreview.includes('•'));
 
+  /*
+   *  آدرسِ اینترنتی — همان چیزی که کاربر در این صفحه دنبالش است.
+   *
+   *  این صفحه اسمش «آدرس اینترنتی» است ولی فقط localhost و آی‌پیِ شبکهٔ
+   *  خانگی را نشان می‌داد؛ کسی که دامنه‌اش را اضافه کرده بود هیچ‌جا
+   *  https://api.<دامنه> را نمی‌دید و فکر می‌کرد ساخته نشده.
+   */
+  await api('POST', '/api/domains', { name: 'yaqobipump.top' });
+  r = await api('GET', '/api/site-server');
+  const publics = r.json.addresses.filter((a) => a.scope === 'public');
+  const pub = publics.find((a) => a.host === 'api.yaqobipump.top');
+  check('با افزودن دامنه، آدرسِ اینترنتی ساخته می‌شود', Boolean(pub),
+    JSON.stringify(r.json.addresses.map((a) => a.http)));
+  check('و همان api.<دامنه> است', pub?.http === 'https://api.yaqobipump.top', pub?.http);
+  check('آدرسِ پایهٔ API را هم می‌دهد', pub?.api === 'https://api.yaqobipump.top/api/v1', pub?.api);
+  // دامنهٔ دیگری که بالاتر اضافه شده هم آدرسِ خودش را دارد
+  check('هر دامنه آدرسِ خودش را می‌گیرد',
+    publics.some((a) => a.host === 'api.example.com'), JSON.stringify(publics.map((a) => a.host)));
+  check('و اولِ فهرست است — نه گم‌شده لای آدرس‌های خانگی',
+    r.json.addresses[0]?.scope === 'public', JSON.stringify(r.json.addresses.map((a) => a.scope)));
+  /*
+   *  تونل در این آزمون خاموش است، پس آدرس ساخته شده ولی هنوز به سرور
+   *  نمی‌رسد. پنل باید همین را بگوید — «وصل» نشان دادنِ آدرسی که به
+   *  هیچ‌جا نمی‌رسد، بدتر از نشان ندادنش است.
+   */
+  check('و راست می‌گوید که هنوز وصل نیست', pub?.routed === false, String(pub?.routed));
+
   // آدرس سایت — قابل تغییر، چون ممکن است دامنه عوض شود.
   // تا وقتی کسی چیزی نگذاشته خالی است: نشانیِ سایتِ پروژه‌ای دیگر، حدسِ
   // درستی برای هیچ‌کس نیست و فقط آدم را گمراه می‌کند.

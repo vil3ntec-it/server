@@ -215,7 +215,13 @@ export type DashboardData = {
 export type SiteServerInfo = {
   enabled: boolean;
   port: number;
-  addresses: { label: string; host: string; ws: string; http: string; scope?: string }[];
+  addresses: {
+    label: string; host: string; ws: string; http: string; scope?: string;
+    /** آدرسِ پایهٔ API — فقط روی آدرس‌های اینترنتی */
+    api?: string;
+    /** آیا این نام واقعاً در مسیرهای تونل نشسته؟ */
+    routed?: boolean;
+  }[];
   dedicatedPort: number | null;
   tunnel: {
     status: 'stopped' | 'installing' | 'starting' | 'running' | 'error';

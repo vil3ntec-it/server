@@ -95,7 +95,32 @@ export default function SiteServer() {
               style={{ background: 'var(--surface-0)' }}
             >
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] text-ink-muted">{a.label}</p>
+                <p className="text-[11px] text-ink-muted">
+                  {a.label}
+                  {a.scope === 'public' && (
+                    <Badge tone={a.routed === false ? 'bad' : 'good'}>
+                      {a.routed === false ? t('addressNotRouted') : t('addressInternet')}
+                    </Badge>
+                  )}
+                </p>
+                {/*
+                  آدرسِ API جداگانه نشان داده می‌شود: چیزی که در برنامهٔ
+                  موبایل گذاشته می‌شود همین است، نه ریشهٔ دامنه.
+                */}
+                {a.api && (
+                  <div className="mt-1 flex items-center gap-2">
+                    <span className="w-24 shrink-0 text-[10px] text-ink-muted">{t('addressApi')}</span>
+                    <p className="min-w-0 flex-1 truncate font-mono text-sm font-medium" dir="ltr">
+                      {a.api}
+                    </p>
+                    <CopyButton value={a.api} />
+                  </div>
+                )}
+                {a.routed === false && (
+                  <p className="mt-1 text-[11px]" style={{ color: 'var(--status-critical)' }}>
+                    {t('addressNotRoutedHow')}
+                  </p>
+                )}
                 {/* هر دو شکل کنارِ هم: برنامه‌ها https می‌خواهند، سایت wss */}
                 <div className="mt-1 flex items-center gap-2">
                   <span className="w-24 shrink-0 text-[10px] text-ink-muted">{t('addressWeb')}</span>

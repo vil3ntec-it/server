@@ -26,6 +26,7 @@ import {
   addHostname,
   removeHostname,
   routedHostnames,
+  apiHostnames,
   tunnelDiagnosis,
   repairTunnel,
   DEFAULT_TUNNEL_NAME,
@@ -44,6 +45,57 @@ function siteUrl() {
 function addresses(req) {
   const port = config.siteSync.port || config.port;
   const list = [];
+
+  /*
+   *  آدرس‌های اینترنتی، اولِ فهرست.
+   *
+   *  این صفحه اسمش «آدرس اینترنتی» است ولی تا امروز فقط localhost و
+   *  آی‌پیِ شبکهٔ خانگی را نشان می‌داد — یعنی دقیقاً آن چیزی که از
+   *  اینترنت کار نمی‌کند. کسی که دامنه‌اش را اضافه کرده بود، هیچ‌جا
+   *  آدرسِ https://api.<دامنه> را نمی‌دید و فکر می‌کرد ساخته نشده.
+   *
+   *  (کارتِ اعلان‌ها هم دنبالِ scope === 'public' می‌گشت و چون هیچ‌وقت
+   *  چنین چیزی در فهرست نبود، به localhost برمی‌گشت.)
+   */
+  /*
+   *  «routed» یعنی این نام واقعاً به سرور می‌رسد — و فقط بودنش در فهرستِ
+   *  مسیرها کافی نیست: رکوردِ DNS و ingress تنها در حالتِ «دامنهٔ خودم»
+   *  (named) ساخته می‌شوند. در حالتِ تونلِ سریع، همان فهرست پر است ولی
+   *  هیچ‌کدام اعمال نشده. اگر این را نمی‌سنجیدیم، پنل آدرسی را «وصل»
+   *  نشان می‌داد که به هیچ‌جا نمی‌رسد.
+   *
+   *  به وضعیتِ لحظه‌ایِ تونل کار نداریم: رکوردِ DNS با یک ری‌استارت پاک
+   *  نمی‌شود، پس «وصل است» جوابِ درستی می‌ماند حتی وقتی تونل دارد بالا
+   *  می‌آید.
+   */
+  const namedMode = publicState().mode === 'named';
+  const routed = new Set(routedHostnames().map((r) => r.hostname));
+  for (const host of apiHostnames()) {
+    list.push({
+      label: 'آدرسِ برنامه‌ها — همین را در برنامهٔ موبایل بگذارید',
+      host,
+      ws: `wss://${host}`,
+      http: `https://${host}`,
+      scope: 'public',
+      api: `https://${host}/api/v1`,
+      routed: namedMode && routed.has(host),
+    });
+  }
+
+  // آدرسِ موقتِ تونل (حالتِ سریع) — تا وقتی دامنه نیست، همین کار را می‌کند
+  const tunnelUrl = publicState().url;
+  if (tunnelUrl && !list.some((a) => a.http === tunnelUrl)) {
+    list.push({
+      label: 'آدرسِ تونل',
+      host: tunnelUrl.replace(/^https?:\/\//, ''),
+      ws: tunnelUrl.replace(/^https:/, 'wss:'),
+      http: tunnelUrl,
+      scope: 'public',
+      api: `${tunnelUrl}/api/v1`,
+      routed: true,
+    });
+  }
+
   list.push({
     label: 'همین کامپیوتر',
     host: 'localhost',
@@ -70,7 +122,9 @@ function addresses(req) {
       scope: 'lan',
     });
   }
-  return list;
+  //  هدرِ Host بالاتر unshift می‌شود و می‌توانست جلوی آدرسِ اینترنتی
+  //  بیفتد. چیزی که کاربر دنبالش است باید اولِ فهرست باشد.
+  return [...list.filter((a) => a.scope === 'public'), ...list.filter((a) => a.scope !== 'public')];
 }
 
 /** لینکی که هر دستگاهی باز کند، سایت خودش را به این سرور وصل می‌کند */
