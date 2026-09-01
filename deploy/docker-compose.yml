@@ -25,11 +25,16 @@ services:
       HLP_BACKUP_KEEP: ${BACKUP_KEEP:-14}
       # تونلِ cloudflared داخلِ کانتینر لازم نیست؛ Caddy همان نقش را دارد
       HLP_TUNNEL: "0"
+      # پورتِ دوم — فقط APIِ عمومی. api.<دامنه> به همین می‌رود تا پنل و
+      # فایل‌منیجر از اینترنت دیده نشوند.
+      HLP_SITESYNC: "1"
+      HLP_SITESYNC_PORT: "4701"
     volumes:
       - panel-data:/data
       - ${SITES_ROOT:-./sites}:/sites
     expose:
-      - "4700"
+      - "4700"   # پنل — فقط admin.<دامنه> و files.<دامنه>
+      - "4701"   # APIِ عمومی — api.<دامنه>
     networks: [edge]
 
   caddy:

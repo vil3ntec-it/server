@@ -45,10 +45,30 @@
 	}
 }
 
+#  پورتِ دوم: فقط APIِ عمومی (src/api/public.js). نه فایل‌منیجر، نه ترمینال،
+#  نه /api/control — همان مرزی که مسیرِ تونل هم دارد.
+(to_api) {
+	reverse_proxy panel:4701 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+
+		health_uri /health
+		health_interval 10s
+		health_timeout 3s
+	}
+}
+
 # --- api: تنها آدرسی که کلاینت‌ها می‌شناسند ---------------------------------
+#
+#  به پورتِ ۴۷۰۱ می‌رود، نه ۴۷۰۰.
+#
+#  چرا: ۴۷۰۰ خودِ پنل است — فایل‌منیجر، ترمینال و /api/control. ۴۷۰۱ فقط
+#  APIِ عمومی را سرو می‌کند (src/api/public.js). تا امروز این نام هم به ۴۷۰۰
+#  می‌رفت، یعنی api.<دامنه> کلِ پنل را به اینترنت می‌داد. مسیرِ تونل از اول
+#  همین مرز را داشت؛ حالا مسیرِ Caddy هم همان است.
 api.{$DOMAIN} {
 	import secure_headers
-	import to_panel
+	import to_api
 }
 
 # --- admin: پنلِ مدیریت -----------------------------------------------------

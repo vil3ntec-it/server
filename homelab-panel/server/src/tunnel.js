@@ -18,6 +18,7 @@ import os from 'node:os';
 import { config } from './config.js';
 import { db, logEvent, getSetting, setSetting } from './db.js';
 import { isProtectedHost } from './protected-hosts.js';
+import { apiHostFor } from './platform/domain.js';
 
 export const tunnelEvents = new EventEmitter();
 
@@ -590,6 +591,45 @@ function domainRoutes() {
   }
 }
 
+/**
+ * پورتی که APIِ عمومی رویش نشسته.
+ *
+ * همان پورتِ دومِ سرورِ سایت است، نه پورتِ پنل: پنل و فایل‌منیجر و ترمینال
+ * نباید از اینترنت دیده شوند. اگر پورتِ دوم نباشد، چیزی جز پورتِ پنل
+ * نمی‌ماند و همان استفاده می‌شود — همان قاعده‌ای که میزبانِ اصلیِ تونل هم
+ * از آن پیروی می‌کند.
+ */
+function publicApiPort() {
+  return config.siteSync.port || config.port;
+}
+
+/**
+ * آدرسِ APIِ هر دامنه: `api.<دامنه>`.
+ *
+ *      📱 برنامه → https://api.yaqobipump.top → ☁️ Cloudflare → 🏠 سرور
+ *
+ *  کاربر فقط دامنه‌اش را در بخشِ «دامنه‌ها» می‌نویسد؛ آدرسِ API خودش ساخته
+ *  می‌شود و به پورتِ عمومی وصل می‌شود. رکوردِ DNS‌اش هم مثلِ بقیهٔ مسیرها
+ *  در syncTunnelRoutes ساخته می‌شود، چون این‌ها هم main نیستند.
+ *
+ *  ریشه‌ها از سه جا می‌آیند: جدولِ دامنه‌ها، میزبانِ اصلیِ تونل، و
+ *  HLP_DOMAIN. هرکدام که باشد کافی است؛ تکراری‌ها یک‌بار حساب می‌شوند.
+ */
+export function apiHostnames() {
+  const roots = [];
+  try {
+    for (const row of db.prepare('SELECT name FROM domains').all()) roots.push(row.name);
+  } catch { /* جدول هنوز ساخته نشده */ }
+  roots.push(getSetting('tunnel_hostname', null), config.domains?.root);
+
+  const hosts = new Set();
+  for (const root of roots) {
+    const host = apiHostFor(root);
+    if (host) hosts.add(host);
+  }
+  return [...hosts].sort();
+}
+
 /** همهٔ نامزدهای مسیر — پیش از کنار گذاشتنِ دامنه‌های قُرق */
 function candidateHostnames() {
   const main = getSetting('tunnel_hostname', null);
@@ -615,6 +655,13 @@ function candidateHostnames() {
       site: row.siteName,
       slug: row.slug,
     });
+  }
+
+  // آدرسِ APIِ هر دامنه — خودکار، به پورتِ عمومی
+  for (const host of apiHostnames()) {
+    if (seen.has(host)) continue;
+    seen.add(host);
+    list.push({ hostname: host, port: publicApiPort(), main: false, source: 'api' });
   }
 
   // زیردامنه‌هایی که دستی اضافه شده‌اند

@@ -5,14 +5,19 @@ import { q, db, logEvent } from '../db.js';
 import { checkDomain } from '../lib/domain-check.js';
 import { normalizeDomain } from '../sites/registry.js';
 import { syncTunnelRoutes } from '../tunnel.js';
+import { apiHostFor } from '../platform/domain.js';
 
 const router = Router();
 router.use(requireAuth, requireWriteRole('operator'));
 
 function rowToApi(row) {
+  // آدرسی که برنامه‌ها صدا می‌زنند — خودکار از همین دامنه ساخته می‌شود
+  const apiHost = apiHostFor(row.name);
   return {
     id: row.id,
     name: row.name,
+    apiHost,
+    apiUrl: apiHost ? `https://${apiHost}` : null,
     siteId: row.site_id,
     siteName: row.site_name || null,
     sitePort: row.site_port || null,
@@ -80,7 +85,12 @@ router.post('/', (req, res) => {
     Date.now()
   );
   refreshPrimaryDomain(siteId);
-  logEvent('info', 'panel', `دامنهٔ ${name} اضافه شد`);
+  const apiHost = apiHostFor(name);
+  logEvent(
+    'info',
+    'panel',
+    apiHost ? `دامنهٔ ${name} اضافه شد — آدرسِ API: https://${apiHost}` : `دامنهٔ ${name} اضافه شد`
+  );
   syncTunnelRoutes().catch(() => {});
   res.json({ ok: true, domain: rowToApi(q(oneQuery).get(name)) });
 });

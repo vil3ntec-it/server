@@ -27,6 +27,7 @@ import { startTunnel, stopTunnel, tunnelEvents, publicState as tunnelState } fro
 import { versionInfo, versionLine } from './version.js';
 import { corsMiddleware, isAllowedOrigin, secureHeaders } from './platform/security.js';
 import { createApiV1 } from './routes/v1.js';
+import { createPublicApi, apiIndex, publicHealth } from './api/public.js';
 import { rateLimit as rateLimitCfg } from './platform/rate-limit.js';
 import { handleValidation } from './platform/validate.js';
 import { siteTunnelEvents, stopAllSiteTunnels } from './site-tunnels.js';
@@ -429,34 +430,24 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
   //    بدنه را می‌خورد و بعدش دیگر چیزی برای لوله کردن نمی‌ماند.
   publicApp.use(AI_PREFIX, aiProxy);
   publicApp.use(express.json({ limit: MSG_LIMIT }));
-  publicApp.get(['/health', '/'], (req, res) => {
-    // نامِ پروژهٔ دیگری اینجا مانده بود؛ این همان چیزی است که کسی با باز
-    // کردنِ آدرسِ عمومی اول از همه می‌بیند.
-    res.json({ ok: true, service: 'control-center', mode: 'sync-only', time: new Date().toISOString() });
-  });
-  publicApp.use('/api/messenger', messengerRoutes);
-  publicApp.use('/api/notify', notifyRoutes);
+  publicApp.get('/health', (req, res) => res.json(publicHealth()));
+  // ریشه: همان فهرستی که /api می‌دهد — کسی که آدرسِ عمومی را باز می‌کند،
+  // اول از همه باید ببیند این سرور چیست و از کجا شروع کند.
+  publicApp.get('/', (req, res) => res.json(apiIndex(req)));
 
   /*
-   *  APIِ برنامهٔ توحید — همان چیزی که *باید* از اینترنت در دسترس باشد.
+   *  APIِ عمومی — یک‌جا، در src/api/public.js.
    *
    *  تونل عمداً روی این پورت باز می‌شود تا پنل و فایل‌منیجر و ترمینال هرگز
    *  به اینترنت درز نکنند؛ آن تصمیم درست است و سرِ جایش می‌ماند. ولی تا
-   *  حالا برنامهٔ مشتری و برنامهٔ مدیریت هم با همان دیوار بیرون می‌ماندند:
-   *  از راه تونل، /api/v1/auth/login و /api/v1/admin/login هر دو «not found»
-   *  می‌گرفتند. یعنی آدرسِ ثابتی که با دامنهٔ خودتان ساخته بودید، به هیچ‌کدام
-   *  از دو برنامه جواب نمی‌داد.
+   *  حالا هر مسیرِ عمومی جداگانه این‌جا سوار می‌شد و هیچ فهرستِ واحدی از
+   *  «چه چیزی عمومی است» وجود نداشت — یک بار همین باعث شد برنامهٔ مشتری و
+   *  مدیریت هر دو از راهِ تونل «not found» بگیرند.
    *
-   *  این‌ها همان‌قدر عمومی‌اند که باید: ثبت‌نام و ورودِ مشتری با رمزِ خودش،
-   *  همگام‌سازی با توکن، و مسیرهای مدیریت پشتِ نام کاربری و رمز و نقشِ پنل
-   *  با شمارشِ تلاش. آنچه عمومی نیست — /api/control، فایل‌ها، پروسه‌ها —
-   *  اینجا سوار نمی‌شود و همان‌طور خصوصی می‌ماند.
+   *  حالا هرچه عمومی است داخلِ همان ماژول است و هرچه آن‌جا نیست عمومی
+   *  نمی‌شود: /api/control، فایل‌ها و پروسه‌ها همان‌طور خصوصی می‌مانند.
    */
-  publicApp.use('/api/v1/admin', tohidAdminApiRoutes);
-  publicApp.use('/api/v1', tohidPublicRoutes);
-  // برنامه‌ها از اینترنت هم باید بتوانند وارد شوند — پس ورودِ کاربران این‌جا هم هست.
-  // (پنل و فایل‌منیجر هرگز روی این پورت نمی‌آیند.)
-  publicApp.use('/api/app', appRoutes);
+  publicApp.use('/api', createPublicApi());
   publicApp.get(['/connect', '/اتصال'], serveConnectPage);
   publicApp.use((req, res) => res.status(404).type('text/plain; charset=utf-8').send('not found'));
 

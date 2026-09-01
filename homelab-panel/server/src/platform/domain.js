@@ -79,3 +79,59 @@ export function buildDomains(env = process.env) {
 }
 
 export const domains = buildDomains();
+
+/* ------------------------- زیردامنهٔ API از یک دامنه ---------------------- */
+
+/*
+ *  از دامنه‌ای که کاربر می‌نویسد، آدرسِ API ساخته می‌شود:
+ *      yaqobipump.top  →  api.yaqobipump.top
+ *
+ *  فقط روی دامنهٔ ریشه. اگر کاربر «shop.yaqobipump.top» را وارد کند،
+ *  «api.shop.yaqobipump.top» ساخته نمی‌شود — آدرسِ کلاینت‌ها باید یکی باشد،
+ *  نه یکی به‌ازای هر زیردامنه.
+ */
+
+/**
+ * پسوندهایی که خودشان دو تکه‌اند. بدونِ این فهرست، «example.co.uk» یک
+ * زیردامنه به نظر می‌رسید و آدرسِ API برایش ساخته نمی‌شد.
+ * فهرست کامل نیست و لازم هم نیست باشد: هرچه این‌جا نباشد فقط یعنی کاربر
+ * باید api.<دامنه> را دستی اضافه کند، نه اینکه چیزی خراب شود.
+ */
+const TWO_PART_SUFFIXES = new Set([
+  'co.uk', 'org.uk', 'me.uk', 'ac.uk', 'gov.uk',
+  'com.au', 'net.au', 'org.au', 'edu.au',
+  'co.nz', 'co.za', 'co.jp', 'or.jp', 'ne.jp',
+  'com.br', 'com.mx', 'com.ar', 'com.tr', 'com.cn', 'com.hk', 'com.sg',
+  'co.ir', 'ac.ir', 'org.ir', 'net.ir', 'gov.ir', 'id.ir',
+  'co.in', 'net.in', 'org.in',
+]);
+
+/** نقش‌هایی که خودشان زیردامنه‌اند — روی این‌ها دوباره api. نمی‌نشیند */
+const ROLE_PREFIXES = new Set([...ROLES, 'www']);
+
+/**
+ * ریشهٔ قابلِ ثبتِ یک دامنه — «www.» و پسوندهای دوتکه‌ای را می‌فهمد.
+ * @returns {string|null} مثلاً yaqobipump.top، یا null اگر زیردامنه باشد
+ */
+export function registrableRoot(raw) {
+  const clean = cleanDomain(raw);
+  if (!clean) return null;
+  const labels = clean.replace(/^www\./, '').split('.');
+  const suffixLabels = TWO_PART_SUFFIXES.has(labels.slice(-2).join('.')) ? 2 : 1;
+  return labels.length === suffixLabels + 1 ? labels.join('.') : null;
+}
+
+/**
+ * آدرسِ APIِ یک دامنه.
+ * @returns {string|null} api.<ریشه>، یا null اگر دامنه ریشه نباشد یا خودش
+ *   یکی از زیردامنه‌های نقش‌دار (api/admin/files) باشد.
+ */
+export function apiHostFor(raw) {
+  const clean = cleanDomain(raw);
+  if (!clean) return null;
+  const first = clean.split('.')[0];
+  // api.foo.com که دوباره api.api.foo.com نشود
+  if (ROLE_PREFIXES.has(first) && first !== 'www') return null;
+  const root = registrableRoot(clean);
+  return root ? `api.${root}` : null;
+}

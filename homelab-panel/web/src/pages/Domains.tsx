@@ -116,6 +116,16 @@ export default function Domains() {
                       >
                         {d.name}
                       </a>
+                      {/*
+                        آدرسی که در برنامهٔ موبایل گذاشته می‌شود. همین‌جا
+                        نشان داده می‌شود تا کسی دنبالش نگردد — خودکار از
+                        همین دامنه ساخته شده.
+                      */}
+                      {d.apiUrl && (
+                        <div className="mt-0.5 text-[11px] text-ink-muted" dir="ltr">
+                          <span className="font-mono">{d.apiUrl}</span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2.5">
                       <StatusDot online={d.online} label={d.online ? t('online') : t('offline')} />

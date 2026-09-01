@@ -136,6 +136,9 @@ export type SiteServerBox = {
 export type Domain = {
   id: number;
   name: string;
+  /** آدرسی که برنامه‌ها صدا می‌زنند — خودکار از همین دامنه ساخته می‌شود */
+  apiHost: string | null;
+  apiUrl: string | null;
   siteId: number | null;
   siteName: string | null;
   sitePort: number | null;

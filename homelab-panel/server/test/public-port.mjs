@@ -88,6 +88,49 @@ try {
   });
   check('مشتری از راهِ تونل ثبت‌نام می‌کند', register.status === 200, register.text.slice(0, 120));
 
+  console.log('\n── یک آدرس، یک فهرست ──');
+
+  /*
+   *  صفحهٔ اولِ API. تا امروز آدرسِ عمومی هیچ نمی‌گفت چه چیزی رویش هست؛
+   *  سازندهٔ برنامه باید از کد حدس می‌زد. حالا خودِ سرور می‌گوید.
+   */
+  const index = await hit(PUBLIC, '/api');
+  const idx = JSON.parse(index.text || '{}');
+  check('فهرستِ API روی /api هست', index.status === 200 && idx.version === 'v1', index.text.slice(0, 120));
+  check('آدرسِ پایه را می‌گوید', Boolean(idx.baseUrl), JSON.stringify(idx.baseUrl));
+  check('مسیرها را فهرست می‌کند', Array.isArray(idx.endpoints) && idx.endpoints.length >= 5,
+    JSON.stringify(idx.endpoints || []).slice(0, 120));
+  check('همان فهرست روی /api/v1 هم هست',
+    JSON.parse((await hit(PUBLIC, '/api/v1')).text || '{}').version === 'v1');
+
+  const pubHealth = await hit(PUBLIC, '/api/v1/health');
+  const ph = JSON.parse(pubHealth.text || '{}');
+  check('سلامت زیرِ API هم هست', pubHealth.status === 200 && ph.ok === true, pubHealth.text.slice(0, 100));
+  // /health داخلی مسیرِ نصب را هم می‌گوید؛ آن سرنخ نباید به اینترنت برسد
+  check('سلامتِ عمومی مسیرِ نصب را لو نمی‌دهد', !('root' in ph), pubHealth.text.slice(0, 140));
+  check('سلامتِ ریشه هم همان است',
+    !('root' in JSON.parse((await hit(PUBLIC, '/health')).text || '{}')));
+
+  const ready = await hit(PUBLIC, '/api/v1/ready');
+  check('آمادگی زیرِ API هست', ready.status === 200 || ready.status === 503, `${ready.status}`);
+
+  // مسیرهایی که تا حالا فقط بی‌نسخه بودند، حالا زیرِ v1 هم هستند —
+  // بدونِ اینکه نامِ قدیمی‌شان بشکند.
+  for (const [label, versioned, legacy, method] of [
+    ['ورودِ برنامه‌ها', '/api/v1/app/ping', '/api/app/ping', 'GET'],
+    ['کارتِ سرور برای برنامه‌ها', '/api/v1/app/config', '/api/app/config', 'GET'],
+    ['اعلان‌ها', '/api/v1/notify/subscribe', '/api/notify/subscribe', 'POST'],
+  ]) {
+    const a = await hit(PUBLIC, versioned, { method, body: method === 'POST' ? {} : undefined });
+    const b = await hit(PUBLIC, legacy, { method, body: method === 'POST' ? {} : undefined });
+    check(`«${label}» زیرِ v1 هست`, a.status !== 404, `${a.status} ${a.text.slice(0, 60)}`);
+    check(`«${label}» با نامِ قدیمی هم هست`, b.status !== 404, `${b.status} ${b.text.slice(0, 60)}`);
+  }
+
+  const unknown = await hit(PUBLIC, '/api/v1/چنین-چیزی-نیست');
+  check('مسیرِ ناشناخته زیرِ API، JSONِ ۴۰۴ می‌دهد',
+    unknown.status === 404, `${unknown.status} ${unknown.text.slice(0, 60)}`);
+
   console.log('\n── ولی پنل از اینترنت دیده نمی‌شود ──');
   for (const [label, p] of [
     ['مرکز فرمان', '/api/control/tohid/overview'],
