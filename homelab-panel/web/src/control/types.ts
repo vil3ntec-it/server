@@ -376,6 +376,9 @@ export type UpdateInfo = {
   current: string;
   latest: string | null;
   available: boolean;
+  /** انتشارِ گیت‌هاب از نصبِ فعلی عقب‌تر است — «به‌روز بودن» نیست */
+  behind?: boolean;
+  prerelease?: boolean;
   publishedAt: number | null;
   notes: string | null;
   tag?: string;

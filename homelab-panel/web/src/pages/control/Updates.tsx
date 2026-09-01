@@ -56,6 +56,21 @@ export default function Updates() {
     return () => clearInterval(timer);
   }, [restarting]);
 
+  /* نصب — با force، حتی وقتی انتشار از نصبِ فعلی عقب‌تر است */
+  const install = async (force = false) => {
+    try {
+      const res = await cc.installUpdate(force);
+      if (!res.ok) {
+        toast(res.reason || 'error', 'bad');
+        return;
+      }
+      setSteps((res.steps as Step[]) || []);
+      if (res.restart) setRestarting(true);
+    } catch (e) {
+      toast((e as Error).message, 'bad');
+    }
+  };
+
   if (loading || !status) return <Loading />;
 
   return (
@@ -133,19 +148,7 @@ export default function Updates() {
             <ActionButton
               className="btn btn-sm btn-primary"
               busyLabel={t('ccInstalling')}
-              onClick={async () => {
-                try {
-                  const res = await cc.installUpdate();
-                  if (!res.ok) {
-                    toast(res.reason || 'error', 'bad');
-                    return;
-                  }
-                  setSteps((res.steps as Step[]) || []);
-                  if (res.restart) setRestarting(true);
-                } catch (e) {
-                  toast((e as Error).message, 'bad');
-                }
-              }}
+              onClick={() => install()}
             >
               <Download className="h-4 w-4" />
               {t('ccInstallUpdate')}
@@ -153,7 +156,27 @@ export default function Updates() {
           </div>
         )}
 
-        {info && !info.available && !info.error && (
+        {/*
+          *  «انتشارِ آن‌طرف از نصبِ فعلی عقب‌تر است» با «به‌روز هستی» یکی
+          *  نیست. تا وقتی هر دو پیامِ سبزِ یکسان می‌گرفتند، یک ناهماهنگیِ
+          *  شمارهٔ نسخه شبیهِ «همه‌چیز مرتب است» دیده می‌شد.
+          */}
+        {info && !info.available && info.behind && !info.error && (
+          <div className="mt-4 rounded-xl border p-3" style={{ borderColor: 'color-mix(in srgb, var(--status-warning) 45%, transparent)' }}>
+            <p className="mb-2 text-sm font-medium" style={{ color: 'var(--status-warning)' }}>
+              {t('ccUpdateBehind')}
+            </p>
+            <p className="mb-3 text-[11px] text-ink-muted">
+              {t('ccUpdateBehindHow')} <span className="tnum" dir="ltr">{info.latest}</span> · <span className="tnum" dir="ltr">{info.current}</span>
+            </p>
+            <ActionButton className="btn btn-sm" busyLabel={t('ccInstalling')} onClick={() => install(true)}>
+              <Download className="h-4 w-4" />
+              {t('ccInstallAnyway')}
+            </ActionButton>
+          </div>
+        )}
+
+        {info && !info.available && !info.behind && !info.error && (
           <p className="mt-3 text-sm" style={{ color: 'var(--status-good)' }}>
             {t('ccUpToDate')}
           </p>

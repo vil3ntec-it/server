@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 let pass = 0;
 let fail = 0;
@@ -26,6 +27,28 @@ const check = (name, ok, extra = '') => {
     console.log(`  ❌ ${name}${extra ? ' — ' + String(extra).slice(0, 300) : ''}`);
   }
 };
+
+/*
+ *  شمارهٔ نسخهٔ سرور و برنامهٔ ویندوز باید یکی باشد.
+ *
+ *  برچسبِ «windows-preview» شماره ندارد، پس پنل شمارهٔ نسخهٔ آن‌طرف را از
+ *  نامِ فایلِ نصبی درمی‌آورد — و آن نام از package.json برنامهٔ ویندوز
+ *  ساخته می‌شود، نه از سرور. وقتی این دو از هم جدا افتادند (سرور ۱.۷.۰ و
+ *  برنامه ۱.۵.۰)، پنل نتیجه گرفت انتشارِ گیت‌هاب از خودش عقب‌تر است و
+ *  «به‌روز است» نشان داد — با اینکه همان انتشار تازه‌ترین ساخت بود.
+ *  پس این دو باید قدم‌به‌قدم با هم جلو بروند.
+ */
+console.log('\n── شمارهٔ نسخه‌ها هم‌قدم‌اند ──');
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const versionOf = (...parts) =>
+  JSON.parse(fs.readFileSync(path.join(repoRoot, ...parts, 'package.json'), 'utf8')).version;
+const serverVersion = versionOf('homelab-panel', 'server');
+const desktopVersion = versionOf('homelab-panel', 'desktop');
+check(
+  'نسخهٔ برنامهٔ ویندوز با نسخهٔ سرور یکی است',
+  serverVersion === desktopVersion,
+  `سرور ${serverVersion} در برابرِ برنامه ${desktopVersion}`,
+);
 
 const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'cc-update-'));
 const installRoot = path.join(tmp, 'install');
@@ -62,7 +85,9 @@ try {
   if (info.error) {
     console.log(`\n⏭️  از GitHub خبری نشد (${info.error}) — این آزمون به اینترنت نیاز دارد.`);
     await fsp.rm(tmp, { recursive: true, force: true });
-    process.exit(0);
+    // بخشِ آفلاینِ آزمون (هم‌قدم بودنِ شماره‌ها) قبلاً اجرا شده — اگر آنجا
+    // چیزی افتاده بود، نبودِ اینترنت نباید پنهانش کند.
+    process.exit(fail ? 1 : 0);
   }
   check('نسخه‌ای از GitHub خوانده شد', Boolean(info.latest), JSON.stringify(info).slice(0, 200));
   check('آدرسِ دانلود پیدا شد', Boolean(info.downloadUrl), info.downloadUrl || '');
