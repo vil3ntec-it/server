@@ -126,14 +126,31 @@ try {
    * قبلاً اگر فشار به دستگیره نمی‌خورد، آزمون فقط می‌گفت «۲۴۰ → ۲۴۰» و
    * معلوم نبود کشیدن خراب است یا فشار اصلاً به هدف نخورده. حالا اگر
    * نخورد، همان لحظه معلوم می‌شود.
+   *
+   * چرا دو بار تلاش کافی نبود: بالای ترمینال یک <webview> است و آن یک
+   * فریمِ جدا با پروسهٔ خودش است. تا لحظه‌ای پیش، همین نقطه‌ای که حالا
+   * دستگیره است متعلق به webview بود؛ نقشه‌ای که کروم برای فرستادنِ
+   * ماوس به فریمِ درست دارد چند لحظه بعد از عوض شدنِ چیدمان به‌روز
+   * می‌شود. در آن فاصله فشار به webview می‌رود و به دستگیره نمی‌رسد —
+   * روی رانرِ CI که کندتر است، همین باعثِ افتادنِ آزمون شد. پس هم به
+   * چیدمان فرصتِ نشستن می‌دهیم و هم چند بار، با فاصله، دوباره امتحان
+   * می‌کنیم.
    */
+  await win.waitForTimeout(300);
   let started = false;
-  for (let attempt = 0; attempt < 2 && !started; attempt++) {
+  for (let attempt = 0; attempt < 5 && !started; attempt++) {
     const grip = await win.locator('#termGrip').boundingBox();
     await win.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
     await win.mouse.down();
-    started = await win.evaluate(() => document.body.classList.contains('resizing'));
-    if (!started) await win.mouse.up();
+    // رویداد از پروسهٔ مرورگر رد می‌شود؛ همان لحظه رسیده نیست
+    for (let wait = 0; wait < 10 && !started; wait++) {
+      started = await win.evaluate(() => document.body.classList.contains('resizing'));
+      if (!started) await win.waitForTimeout(50);
+    }
+    if (!started) {
+      await win.mouse.up();
+      await win.waitForTimeout(200);
+    }
   }
   check('فشار روی دستگیره گرفته می‌شود', started);
 
