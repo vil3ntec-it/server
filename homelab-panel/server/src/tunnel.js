@@ -466,8 +466,28 @@ export const DEFAULT_TUNNEL_NAME = 'control-center';
  * برای برنامهٔ دیگرتان دارید، این یکی کنارش ساخته می‌شود و کاری به آن ندارد؛
  * فقط نامش نباید همان باشد.
  */
+/**
+ * نامی که آدم می‌نویسد را به نامِ خالصِ میزبان تبدیل می‌کند.
+ *
+ * ⚠️ چرا لازم شد: قاعدهٔ سنجش فقط حرف و رقم و خط‌تیره را می‌پذیرد، پس
+ * «https://api.example.com/» — همان چیزی که آدم از نوارِ مرورگر کپی می‌کند —
+ * رد می‌شد و تنها چیزی که می‌دید «invalid_hostname» بود. حالا پیشوندِ نشانی،
+ * مسیر، پورت، فاصله و نقطهٔ پایانی برداشته می‌شود و اگر چیزِ سالمی ماند،
+ * همان به کار می‌رود.
+ */
+export function normalizeHostname(value) {
+  return String(value ?? '')
+    .trim()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')  // https:// و مانندش
+    .replace(/[/?#].*$/, '')                  // مسیر و پرس‌وجو
+    .replace(/:\d+$/, '')                     // پورت
+    .replace(/\.+$/, '')                      // نقطهٔ آخرِ نامِ مطلق
+    .trim()
+    .toLowerCase();
+}
+
 export async function namedSetup({ hostname, name = DEFAULT_TUNNEL_NAME }) {
-  const host = String(hostname || '').trim().toLowerCase();
+  const host = normalizeHostname(hostname);
   if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) return { ok: false, error: 'invalid_hostname' };
   if (isProtectedHost(host)) {
     logEvent('warn', 'panel', `دامنهٔ ${host} قُرق است و به تونل وصل نشد (رکورد DNS سایت عمومی دست‌نخورده ماند)`);
@@ -550,7 +570,7 @@ export async function namedSetup({ hostname, name = DEFAULT_TUNNEL_NAME }) {
  */
 export async function tokenSetup({ token, hostname }) {
   const clean = String(token || '').trim();
-  const host = String(hostname || '').trim().toLowerCase();
+  const host = normalizeHostname(hostname);
   // توکن تونل یک رشتهٔ base64 بلند است
   if (clean.length < 40 || /\s/.test(clean)) return { ok: false, error: 'invalid_token' };
   if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) return { ok: false, error: 'invalid_hostname' };
@@ -781,7 +801,7 @@ function readCredFromConfig() {
  * نه دانلود دوباره، نه ورود دوباره؛ فقط یک رکورد DNS و یک خط در config.
  */
 export async function addHostname({ hostname, port }) {
-  const host = String(hostname || '').trim().toLowerCase();
+  const host = normalizeHostname(hostname);
   if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) return { ok: false, error: 'invalid_hostname' };
   if (isProtectedHost(host)) {
     logEvent('warn', 'panel', `دامنهٔ ${host} قُرق است و به تونل وصل نشد (رکورد DNS سایت عمومی دست‌نخورده ماند)`);
@@ -815,7 +835,7 @@ export async function addHostname({ hostname, port }) {
 }
 
 export async function removeHostname(hostname) {
-  const host = String(hostname || '').trim().toLowerCase();
+  const host = normalizeHostname(hostname);
   const extra = (getSetting('tunnel_hostnames', []) || []).filter((x) => x?.hostname !== host);
   setSetting('tunnel_hostnames', extra);
   const uuid = readTunnelIdFromConfig();
@@ -846,7 +866,7 @@ export async function removeHostname(hostname) {
  * اضافه است که به همین تونل می‌رسد.
  */
 export async function setMainHostname({ hostname }) {
-  const host = String(hostname || '').trim().toLowerCase();
+  const host = normalizeHostname(hostname);
   if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) return { ok: false, error: 'invalid_hostname' };
   if (isProtectedHost(host)) return { ok: false, error: 'protected_hostname' };
 

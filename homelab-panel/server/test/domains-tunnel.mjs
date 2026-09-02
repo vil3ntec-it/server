@@ -142,6 +142,27 @@ async function main() {
   r = await api('POST', '/api/site-server/tunnel/named/main', { hostname: 'a b.com' });
   check('نامِ دارای فاصله رد می‌شود', r.status === 400 && r.json?.error === 'invalid_hostname', r.text);
 
+  console.log('\n── نامی که آدم واقعاً می‌نویسد ──');
+  // کسی که آدرس را از نوارِ مرورگر کپی می‌کند، «https://…/» می‌آورد. تا امروز
+  // فقط invalid_hostname می‌گرفت و دلیلش را نمی‌دید.
+  const { normalizeHostname } = await import('../src/tunnel.js');
+  check('پیشوندِ https برداشته می‌شود', normalizeHostname('https://api.vill3n.top') === 'api.vill3n.top');
+  check('اسلشِ آخر برداشته می‌شود', normalizeHostname('https://api.vill3n.top/') === 'api.vill3n.top');
+  check('مسیر برداشته می‌شود', normalizeHostname('http://api.vill3n.top/panel?x=1') === 'api.vill3n.top');
+  check('پورت برداشته می‌شود', normalizeHostname('api.vill3n.top:8443') === 'api.vill3n.top');
+  check('فاصله و حروفِ بزرگ', normalizeHostname('  API.Vill3n.TOP  ') === 'api.vill3n.top');
+  check('نقطهٔ پایانی برداشته می‌شود', normalizeHostname('api.vill3n.top.') === 'api.vill3n.top');
+  check('نامِ سالم دست‌نخورده می‌ماند', normalizeHostname('api.vill3n.top') === 'api.vill3n.top');
+  check('خالی، خالی می‌ماند', normalizeHostname('') === '' && normalizeHostname(null) === '');
+
+  // و همان نام باید از مسیرِ واقعی هم رد شود
+  r = await api('POST', '/api/site-server/tunnel/named/main', { hostname: 'https://vill3n.top/' });
+  check(
+    'آدرسِ کپی‌شده از مرورگر دیگر invalid_hostname نمی‌گیرد',
+    r.json?.error !== 'invalid_hostname',
+    `${r.status} ${r.text}`
+  );
+
   console.log('\n── مرزِ نقش‌ها ──');
   r = await api('POST', '/api/auth/users', { username: 'oper', password: 'NoDomain!2026', role: 'operator' });
   const made = r.status === 200 || r.status === 201;

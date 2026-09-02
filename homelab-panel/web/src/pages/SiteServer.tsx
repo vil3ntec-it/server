@@ -908,6 +908,50 @@ shop.example.com   ← هر چیز دیگری، بعداً`}
   );
 }
 
+/**
+ * همان کاری که سرور با نامِ میزبان می‌کند — این‌جا هم انجام می‌شود تا کاربر
+ * پیش از فشردنِ دکمه ببیند چه چیزی واقعاً ثبت خواهد شد. کسی که آدرس را از
+ * نوارِ مرورگر کپی می‌کند «https://api.example.com/» می‌آورد؛ تا امروز فقط
+ * رد می‌شد و دلیلش را هم نمی‌دید.
+ */
+function cleanHost(value: string) {
+  return value
+    .trim()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
+    .replace(/[/?#].*$/, '')
+    .replace(/:\d+$/, '')
+    .replace(/\.+$/, '')
+    .trim()
+    .toLowerCase();
+}
+
+const HOST_RE = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+
+type Translate = ReturnType<typeof useApp>['t'];
+
+/**
+ * کدی که سرور برای ساختِ آدرسِ ثابت برمی‌گرداند، به جمله‌ای که کاربر بتواند
+ * کاری با آن بکند. نشان دادنِ خودِ کد («credentials_not_found») او را جایی
+ * نمی‌برد.
+ */
+function setupError(e: unknown, t: Translate): string {
+  const code = e instanceof ApiError ? e.code : '';
+  switch (code) {
+    case 'invalid_hostname': return t('errInvalidHostname');
+    case 'protected_hostname': return t('errProtectedHostname');
+    case 'not_logged_in': return t('errNotLoggedIn');
+    case 'not_named_mode': return t('errNotNamedMode');
+    case 'create_failed': return t('errCreateFailed');
+    case 'dns_failed': return t('errDnsFailed');
+    case 'tunnel_id_not_found':
+    case 'credentials_not_found': return t('errCredentials');
+    default:
+      // سرور گاهی خودش توضیح داده — آن بهتر از کدِ خام است
+      if (e instanceof ApiError && e.message && e.message !== e.code) return e.message;
+      return code || t('error');
+  }
+}
+
 function PermanentAddress({ data, onChanged }: { data: SiteServerInfo; onChanged: () => void }) {
   const { t } = useApp();
   const [hostname, setHostname] = useState(data.named.hostname || '');
@@ -923,6 +967,11 @@ function PermanentAddress({ data, onChanged }: { data: SiteServerInfo; onChanged
 
   const active = data.tunnel.permanent && Boolean(data.tunnel.hostname);
 
+  // آن‌چه واقعاً فرستاده می‌شود — و اینکه آیا اصلاً پذیرفته می‌شود
+  const host = cleanHost(hostname);
+  const hostOk = HOST_RE.test(host);
+  const hostChanged = Boolean(host) && host !== hostname.trim();
+
   // دستورهای دستی را از سرور می‌گیریم (مسیر دقیق cloudflared در همان کامپیوتر)
   useEffect(() => {
     api<{ commands: string[] }>('/api/site-server/tunnel/named/commands')
@@ -930,10 +979,18 @@ function PermanentAddress({ data, onChanged }: { data: SiteServerInfo; onChanged
       .catch(() => setCommands([]));
   }, [data.tunnel.installed, data.named.hostname]);
 
-  // بعد از باز کردن لینک ورود، منتظر می‌مانیم تا Cloudflare اجازه را ثبت کند
+  /*
+   *  منتظرِ ثبتِ ورود می‌مانیم.
+   *
+   *  ⚠️ تا امروز این فقط وقتی کار می‌کرد که لینکِ ورود روی صفحه بود. ولی
+   *  خودِ همین کارت به آدم می‌گوید «اگر دکمه کار نکرد، cloudflared tunnel
+   *  login را در ترمینال بزن» — و در آن راه هیچ لینکی روی صفحه نمی‌آمد، پس
+   *  پنل هرگز نمی‌فهمید که ورود انجام شده و دکمهٔ ساخت تا ابد خاکستری
+   *  می‌ماند. حالا تا وقتی وارد نشده‌ایم، هر چهار ثانیه پرسیده می‌شود.
+   */
   useEffect(() => {
-    if (!loginUrl || loggedIn) return;
-    const timer = setInterval(async () => {
+    if (loggedIn || active) return;
+    const ask = async () => {
       try {
         const res = await api<{ loggedIn: boolean }>('/api/site-server/tunnel/named/login-status');
         if (res.loggedIn) {
@@ -941,9 +998,24 @@ function PermanentAddress({ data, onChanged }: { data: SiteServerInfo; onChanged
           setLoginUrl(null);
         }
       } catch { /* هنوز */ }
-    }, 3000);
+    };
+    const timer = setInterval(ask, 4000);
     return () => clearInterval(timer);
-  }, [loginUrl, loggedIn]);
+  }, [loggedIn, active]);
+
+  async function recheckLogin() {
+    setBusy(true);
+    try {
+      const res = await api<{ loggedIn: boolean }>('/api/site-server/tunnel/named/login-status');
+      setLoggedIn(res.loggedIn);
+      if (!res.loggedIn) setError(t('errNotLoggedIn'));
+      else setError(null);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.code : t('error'));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function startLogin() {
     setBusy(true);
@@ -967,16 +1039,14 @@ function PermanentAddress({ data, onChanged }: { data: SiteServerInfo; onChanged
     setBusy(true);
     setError(null);
     try {
-      await api('/api/site-server/tunnel/named/setup', { body: { hostname: hostname.trim() } });
+      await api('/api/site-server/tunnel/named/setup', { body: { hostname: host } });
       const tk = await api<{ token: string }>('/api/site-server/token');
       setToken(tk.token);
       toast(t('permanentDone'));
       onChanged();
     } catch (e) {
-      // اگر سرور توضیح داده، همان را نشان بده — نه تکرارِ کد
-      setError(
-        e instanceof ApiError ? (e.message && e.message !== e.code ? e.message : e.code) : t('error')
-      );
+      // کدهای شناخته‌شده متنِ خودشان را دارند؛ بقیه هرچه سرور گفته
+      setError(setupError(e, t));
     } finally {
       setBusy(false);
     }
@@ -1154,10 +1224,16 @@ var SELF_HOST_TOKEN = '${token ?? '…'}';`}
             {loggedIn ? (
               <Badge tone="good">{t('permanentLoggedIn')}</Badge>
             ) : (
-              <button className="btn btn-primary btn-sm" disabled={busy} onClick={startLogin}>
-                {busy && <Spinner />}
-                {t('permanentLogin')}
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button className="btn btn-primary btn-sm" disabled={busy} onClick={startLogin}>
+                  {busy && <Spinner />}
+                  {t('permanentLogin')}
+                </button>
+                {/* اگر ورود در ترمینال انجام شده، این دکمه بدونِ بارگذاریِ صفحه می‌فهمدش */}
+                <button className="btn btn-sm" disabled={busy} onClick={() => void recheckLogin()}>
+                  {t('recheckLogin')}
+                </button>
+              </div>
             )}
 
             {loginUrl && (
@@ -1212,16 +1288,38 @@ var SELF_HOST_TOKEN = '${token ?? '…'}';`}
                 placeholder="sync.example.com"
                 value={hostname}
                 onChange={(e) => setHostname(e.target.value)}
+                onBlur={() => setHostname(cleanHost(hostname))}
               />
               <button
                 className="btn btn-primary"
-                disabled={busy || !loggedIn || !hostname.trim()}
+                disabled={busy || !loggedIn || !hostOk}
                 onClick={createPermanent}
               >
                 {busy && <Spinner />}
                 {t('permanentCreate')}
               </button>
             </div>
+
+            {/*
+                دکمهٔ خاکستری بدونِ دلیل، بدترین حالت است: آدم می‌زند، هیچ
+                اتفاقی نمی‌افتد، و نتیجه می‌گیرد برنامه خراب است. این سه خط
+                همیشه می‌گویند چه چیزی مانده.
+            */}
+            {!loggedIn && (
+              <p className="mt-2 text-[11px]" style={{ color: 'var(--status-warning)' }}>
+                {t('needLoginFirst')}
+              </p>
+            )}
+            {loggedIn && Boolean(hostname.trim()) && !hostOk && (
+              <p className="mt-2 text-[11px]" style={{ color: 'var(--status-warning)' }}>
+                {t('errInvalidHostname')}
+              </p>
+            )}
+            {loggedIn && hostOk && hostChanged && (
+              <p className="mt-2 text-[11px] text-ink-muted">
+                {t('hostWillBe')} <span className="ltr font-mono">{host}</span>
+              </p>
+            )}
           </div>
 
           {/* راه دوم: توکن از داشبورد (کارت بانکی می‌خواهد) */}
