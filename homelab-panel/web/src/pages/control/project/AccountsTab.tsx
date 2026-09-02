@@ -127,8 +127,8 @@ export default function AccountsTab({ projectId }: { projectId: string }) {
                   <span
                     className="chip"
                     style={{
-                      background: `color-mix(in srgb, ${u.role === 'owner' ? 'var(--series-2)' : u.role === 'manager' ? 'var(--series-1)' : 'var(--text-muted)'} 15%, transparent)`,
-                      color: u.role === 'owner' ? 'var(--series-2)' : u.role === 'manager' ? 'var(--series-1)' : 'var(--text-secondary)',
+                      background: `color-mix(in srgb, ${u.role === 'owner' ? 'var(--status-warning)' : u.role === 'manager' ? 'var(--accent)' : 'var(--text-muted)'} 15%, transparent)`,
+                      color: u.role === 'owner' ? 'var(--status-warning)' : u.role === 'manager' ? 'var(--accent)' : 'var(--text-secondary)',
                     }}
                   >
                     {u.role}

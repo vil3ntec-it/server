@@ -17,7 +17,7 @@ type LogRow = { at: string | null; level: string; category?: string; message: st
 const LEVEL_COLOR: Record<string, string> = {
   error: 'var(--status-critical)',
   warn: 'var(--status-warning)',
-  info: 'var(--series-1)',
+  info: 'var(--accent)',
   debug: 'var(--text-muted)',
 };
 

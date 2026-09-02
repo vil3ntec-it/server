@@ -131,7 +131,7 @@ export default function ProjectDetail() {
               <ul className="space-y-2">
                 {data.endpoints.map((e) => (
                   <li key={e.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-line px-3 py-2">
-                    <span className="chip" style={{ background: 'color-mix(in srgb, var(--series-1) 14%, transparent)', color: 'var(--series-1)' }}>
+                    <span className="chip" style={{ background: 'color-mix(in srgb, var(--accent) 14%, transparent)', color: 'var(--accent)' }}>
                       {e.environment}
                     </span>
                     <Url value={e.url} />

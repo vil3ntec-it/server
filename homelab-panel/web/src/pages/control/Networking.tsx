@@ -88,7 +88,7 @@ export default function Networking() {
                   <Link className="hover:underline" to={`/control/projects/${e.project_public_id}`}>{e.project_name}</Link>
                 </Cell>
                 <Cell>
-                  <span className="chip" style={{ background: 'color-mix(in srgb, var(--series-1) 14%, transparent)', color: 'var(--series-1)' }}>{e.environment}</span>
+                  <span className="chip" style={{ background: 'color-mix(in srgb, var(--accent) 14%, transparent)', color: 'var(--accent)' }}>{e.environment}</span>
                 </Cell>
                 <Cell><Url value={e.url} /></Cell>
                 <Cell className="text-xs">{e.server_name || '—'}</Cell>

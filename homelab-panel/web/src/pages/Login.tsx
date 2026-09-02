@@ -40,8 +40,8 @@ export default function Login() {
             <img src={logoUrl()} alt="" className="h-14 w-14 rounded-2xl object-cover" />
           ) : (
             <span
-              className="flex h-14 w-14 items-center justify-center rounded-2xl text-white"
-              style={{ background: 'var(--series-1)' }}
+              className="flex h-14 w-14 items-center justify-center rounded-2xl"
+              style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
             >
               <Server className="h-7 w-7" />
             </span>

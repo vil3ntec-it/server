@@ -47,6 +47,7 @@ import appRoutes, { adminRouter as appAdminRoutes } from './routes/app.js';
 import storageRoutes from './routes/storage.js';
 import aiRoutes from './routes/ai.js';
 import dockerRoutes from './routes/docker.js';
+import processRoutes from './routes/processes.js';
 import { pruneAppAuth } from './appauth/index.js';
 import { localKey } from './local-key.js';
 import { runMigrations, dbVersion } from './lib/migrations.js';
@@ -228,6 +229,8 @@ app.use('/api/storage', storageRoutes);
 app.use('/api/ai', aiRoutes);
 // مدیریتِ Docker — خواندن برای همه، کارها برای operator، حذف فقط admin
 app.use('/api/docker', dockerRoutes);
+// فهرستِ پروسه‌ها — دیدن برای همه، فرستادنِ سیگنال فقط admin
+app.use('/api/processes', processRoutes);
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
 // Agentها و خودِ برنامه‌ها درِ ورودیِ خودشان را دارند (امضای HMAC / توکنِ پروژه)
@@ -290,6 +293,10 @@ if (fs.existsSync(PUBLIC_DIR)) {
       setHeaders(res, filePath) {
         if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
         else if (/\.[0-9a-f]{8}\.(js|css)$/.test(filePath)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (filePath.endsWith('.woff2')) {
+          // فونت‌ها نامِ ثابت دارند ولی هرگز عوض نمی‌شوند؛ بدونِ این هدر،
+          // مرورگر هر بار یک درخواستِ ۳۰۴ می‌زند و بارِ اولِ هر صفحه کند می‌شود
           res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         }
       },

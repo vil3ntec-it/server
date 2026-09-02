@@ -78,7 +78,7 @@ export default function Command() {
 
       {data.update.pending && (
         <Link to="/control/updates" className="card flex items-center gap-3 p-3.5 text-sm hover:brightness-105">
-          <Download className="h-4 w-4 shrink-0" style={{ color: 'var(--series-1)' }} />
+          <Download className="h-4 w-4 shrink-0" style={{ color: 'var(--accent)' }} />
           <span className="min-w-0 flex-1">
             {t('ccUpdateAvailable')} — <b className="tnum">{data.update.pending.latest}</b>
           </span>
@@ -149,7 +149,7 @@ export default function Command() {
                   <div className="flex items-start gap-2">
                     <span
                       className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{ background: a.severity === 'critical' ? 'var(--status-critical)' : a.severity === 'warn' ? 'var(--status-warning)' : 'var(--series-1)' }}
+                      style={{ background: a.severity === 'critical' ? 'var(--status-critical)' : a.severity === 'warn' ? 'var(--status-warning)' : 'var(--accent)' }}
                     />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-xs font-medium">{a.title}</p>

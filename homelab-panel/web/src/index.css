@@ -3,44 +3,126 @@
 @tailwind utilities;
 
 /* ---------------------------------------------------------------------------
-   نقش‌های رنگی — تم روشن و تیره هر دو انتخاب‌شده‌اند (نه معکوسِ خودکار).
-   رنگ سری‌ها با اعتبارسنجی کوررنگی انتخاب شده است.
+   فونت
+   ---------------------------------------------------------------------------
+   وزیرمتن از خودِ برنامه سرو می‌شود، نه از اینترنت. دلیلش ساده است: این پنل
+   روی سرورِ خانگی و گاهی بدونِ اینترنت بالا می‌آید؛ فونتی که از CDN بیاید
+   همان‌جا نمی‌آید و کلِ رابط به تاهوما می‌افتد.
+
+   ⚠️ تا امروز اسمِ فونت در CSS بود ولی هیچ‌جا بارگذاری نمی‌شد — یعنی کلِ پنل
+   با فونتِ پیش‌فرضِ سیستم دیده می‌شد. مهم‌ترین دلیلِ «ظاهرِ نامرتب» همین بود.
+
+   swap: متن با فونتِ سیستم دیده می‌شود و وقتی وزیرمتن رسید عوض می‌شود، به‌جای
+   اینکه صفحه چند صد میلی‌ثانیه خالی بماند.
+--------------------------------------------------------------------------- */
+@font-face {
+  font-family: Vazirmatn;
+  src: url('/fonts/Vazirmatn-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: Vazirmatn;
+  src: url('/fonts/Vazirmatn-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: Vazirmatn;
+  src: url('/fonts/Vazirmatn-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: Vazirmatn;
+  src: url('/fonts/Vazirmatn-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---------------------------------------------------------------------------
+   نقش‌های رنگی
+   ---------------------------------------------------------------------------
+   دو تغییرِ اصلی نسبت به قبل:
+
+   ۱) رنگِ برند از رنگِ نمودار جدا شد. پیش از این دکمهٔ اصلی همان --series-1
+      (رنگِ نمودارِ CPU) بود؛ یعنی رنگِ هویتِ پنل، یک رنگِ دادهٔ اتفاقی بود.
+      حالا --accent مالِ خودِ رابط است و سری‌ها فقط در نمودارها.
+
+   ۲) خنثی‌ها ته‌رنگِ سرد گرفتند (نه خاکستریِ زردِ قبلی) و سطوح از هم فاصلهٔ
+      واقعی دارند. سه سطحِ قبلی — f4f4f2 / fcfcfb / ffffff — عملاً یک رنگ
+      بودند، پس کارت از زمینه جدا نمی‌شد و همه‌چیز تخت به نظر می‌رسید.
 --------------------------------------------------------------------------- */
 :root,
 :root[data-theme='light'] {
   color-scheme: light;
-  --surface-0: #f4f4f2;
-  --surface-1: #fcfcfb;
-  --surface-2: #ffffff;
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted: #86857f;
-  --border: #e3e2dd;
+
+  --surface-0: #eef1f4; /* زمینهٔ صفحه */
+  --surface-1: #ffffff; /* کارت */
+  --surface-2: #f5f7f9; /* داخلِ کارت، ردیفِ هاور */
+  --surface-nav: #ffffff;
+
+  --text-primary: #101720;
+  --text-secondary: #46535f;
+  --text-muted: #74828d;
+
+  --border: #dbe1e7;
+  --border-strong: #c3ccd4;
+
+  /* هویتِ رابط — جدا از رنگِ داده */
+  --accent: #0f6f83;
+  --accent-ink: #ffffff;
+  --accent-soft: #e2eff2;
+
+  /* سری‌های نمودار — با اعتبارسنجیِ کوررنگی */
   --series-1: #2a78d6; /* CPU */
   --series-2: #eb6834; /* RAM */
   --series-3: #1baf7a; /* دیسک */
-  --status-good: #008300;
-  --status-warning: #eda100;
-  --status-critical: #e34948;
-  --shadow: 0 1px 2px rgb(11 11 11 / 6%), 0 8px 24px rgb(11 11 11 / 4%);
+
+  --status-good: #157347;
+  --status-warning: #a86b00;
+  --status-critical: #c9372c;
+
+  /* سایه‌ها پله‌ای‌اند تا ارتفاع معنا داشته باشد، نه یک سایه روی همه‌چیز */
+  --shadow-sm: 0 1px 2px rgb(16 23 32 / 5%);
+  --shadow-md: 0 1px 2px rgb(16 23 32 / 5%), 0 6px 16px -6px rgb(16 23 32 / 10%);
+  --shadow-lg: 0 12px 32px -8px rgb(16 23 32 / 18%);
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --surface-0: #101010;
-  --surface-1: #1a1a19;
-  --surface-2: #232322;
-  --text-primary: #ffffff;
-  --text-secondary: #c3c2b7;
-  --text-muted: #8d8c83;
-  --border: #32322f;
-  --series-1: #3987e5;
-  --series-2: #d95926;
-  --series-3: #199e70;
-  --status-good: #22a06b;
-  --status-warning: #c98500;
-  --status-critical: #e66767;
-  --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 8px 24px rgb(0 0 0 / 24%);
+
+  --surface-0: #0d1116;
+  --surface-1: #161c23;
+  --surface-2: #1d252d;
+  --surface-nav: #11161c;
+
+  --text-primary: #e8edf2;   /* نه سفیدِ خالص — روی زمینهٔ تیره چشم را می‌زند */
+  --text-secondary: #b3c0cb;
+  --text-muted: #7d8b97;
+
+  --border: #262f38;
+  --border-strong: #37424d;
+
+  --accent: #3ba9be;
+  --accent-ink: #06222a;
+  --accent-soft: #12303a;
+
+  --series-1: #4d94ea;
+  --series-2: #e8763f;
+  --series-3: #2bb98a;
+
+  --status-good: #38b876;
+  --status-warning: #d99a2b;
+  --status-critical: #e8695c;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
+  --shadow-md: 0 1px 2px rgb(0 0 0 / 30%), 0 6px 16px -6px rgb(0 0 0 / 45%);
+  --shadow-lg: 0 12px 32px -8px rgb(0 0 0 / 60%);
 }
 
 html,
@@ -54,14 +136,35 @@ body {
   background: var(--surface-0);
   color: var(--text-primary);
   font-family: Vazirmatn, 'Segoe UI', Tahoma, system-ui, sans-serif;
+  font-size: 14px;
+  /* فارسی به فضای عمودیِ بیشتری نیاز دارد؛ ۱.۴ برای این خط‌ها تنگ است */
+  line-height: 1.7;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-/* اعداد در همهٔ زبان‌ها لاتین بمانند تا جدول‌ها هم‌تراز شوند */
+/* اعداد در همهٔ زبان‌ها لاتین بمانند تا ستون‌های جدول هم‌تراز شوند */
 .tnum {
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum';
+}
+
+/* مسیرها، شناسه‌ها و دستورها همیشه چپ‌به‌راست‌اند حتی وسطِ متنِ فارسی */
+.ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: left;
+}
+
+/* ---------------------------------------------------------------------------
+   دسترسی با صفحه‌کلید
+   یک حلقهٔ فوکوسِ واحد برای همهٔ عناصرِ تعاملی. قبلاً فقط input داشت، یعنی
+   با Tab معلوم نبود روی کدام دکمه‌اید.
+--------------------------------------------------------------------------- */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 ::-webkit-scrollbar {
@@ -72,58 +175,197 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--border-strong);
   border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+  background-clip: padding-box;
 }
 
 @layer components {
+  /* ------------------------------ کارت ---------------------------------- */
+  /*
+   *  شعاعِ ۱۲ پیکسل به‌جای ۱۸: شعاعِ بزرگ روی کارتی که جدول دارد، ردیف‌های
+   *  گوشه را از لبه دور می‌کند و فضای مرده می‌سازد. پنل‌های مدیریتی جعبه‌اند،
+   *  نه حباب.
+   */
   .card {
-    @apply rounded-2xl border border-line bg-surface;
-    box-shadow: var(--shadow);
+    @apply rounded-xl border border-line bg-surface;
+    box-shadow: var(--shadow-sm);
   }
+  /* کارتی که واقعاً باید جلو بیاید — نه همهٔ کارت‌ها */
+  .card-raised {
+    box-shadow: var(--shadow-md);
+  }
+
+  /* ----------------------------- دکمه‌ها --------------------------------- */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-xl border border-line px-3 py-2
-           text-sm font-medium text-ink transition-colors select-none
-           hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex select-none items-center justify-center gap-1.5 rounded-lg
+           border border-line bg-surface px-3 py-1.5 text-[13px] font-medium text-ink
+           transition-[background-color,border-color,box-shadow] duration-150
+           disabled:cursor-not-allowed disabled:opacity-45;
+    min-height: 34px;
   }
+  .btn:hover:not(:disabled) {
+    background: var(--surface-2);
+    border-color: var(--border-strong);
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(0.5px);
+  }
+
   .btn-primary {
-    @apply border-transparent text-white;
-    background: var(--series-1);
+    border-color: transparent;
+    background: var(--accent);
+    color: var(--accent-ink);
   }
-  .btn-primary:hover {
-    filter: brightness(1.08);
+  .btn-primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 88%, black);
+    border-color: transparent;
   }
+
   .btn-danger {
-    @apply border-transparent text-white;
+    border-color: transparent;
     background: var(--status-critical);
+    color: #fff;
   }
+  .btn-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--status-critical) 88%, black);
+    border-color: transparent;
+  }
+
+  /* دکمهٔ آیکنیِ داخلِ ردیف — نباید مثل دکمهٔ اصلی جلب توجه کند */
+  .btn-ghost {
+    @apply border-transparent bg-transparent text-ink-soft;
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--surface-2);
+    border-color: var(--border);
+    color: var(--text-primary);
+  }
+
   .btn-sm {
-    @apply px-2.5 py-1.5 text-xs;
+    @apply px-2 py-1 text-xs;
+    min-height: 28px;
   }
+
+  /* ------------------------------ ورودی --------------------------------- */
   .input {
-    @apply w-full rounded-xl border border-line bg-surface-sunken px-3 py-2 text-sm text-ink
-           outline-none transition placeholder:text-ink-muted;
+    @apply w-full rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-ink
+           outline-none transition-[border-color,box-shadow] duration-150
+           placeholder:text-ink-muted;
+    min-height: 34px;
+  }
+  .input:hover:not(:focus):not(:disabled) {
+    border-color: var(--border-strong);
   }
   .input:focus {
-    border-color: var(--series-1);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--series-1) 22%, transparent);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+    outline: none;
   }
+  .input:disabled {
+    background: var(--surface-2);
+    color: var(--text-muted);
+  }
+
   .label {
-    @apply mb-1.5 block text-xs font-medium text-ink-soft;
+    @apply mb-1 block text-[11px] font-medium text-ink-soft;
+    letter-spacing: 0.01em;
   }
+
+  /* ------------------------------ نشان ---------------------------------- */
   .chip {
-    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium;
+    @apply inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium;
+    line-height: 1.6;
+  }
+
+  /* --------------------------- عنوانِ صفحه ------------------------------ */
+  .page-title {
+    @apply flex items-center gap-2 text-[17px] font-bold text-ink;
+    letter-spacing: -0.01em;
+  }
+  .page-sub {
+    @apply text-xs text-ink-muted;
+  }
+
+  /* ------------------------- ناوبریِ کناری ------------------------------ */
+  /*
+   *  آیتمِ فعال با یک نوارِ نازک در لبهٔ شروع مشخص می‌شود، نه با یک بلوکِ
+   *  رنگیِ پُر. در فهرستی با نوزده آیتم، بلوکِ پُر کلِ ستون را شلوغ می‌کند.
+   */
+  .nav-item {
+    @apply relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px]
+           text-ink-soft transition-colors duration-150;
+  }
+  .nav-item:hover {
+    background: var(--surface-2);
+    color: var(--text-primary);
+  }
+  .nav-item.is-active {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .nav-item.is-active::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: 0;
+    top: 20%;
+    bottom: 20%;
+    width: 3px;
+    border-radius: 999px;
+    background: var(--accent);
+  }
+
+  .nav-group-title {
+    @apply px-2.5 pb-1 pt-3 text-[10px] font-semibold uppercase text-ink-muted;
+    letter-spacing: 0.08em;
+  }
+
+  /* ----------------------------- جدول ----------------------------------- */
+  .tbl-head {
+    @apply text-[11px] font-semibold text-ink-muted;
+    letter-spacing: 0.02em;
+  }
+  .tbl-row {
+    @apply border-b border-line/70 transition-colors duration-100 last:border-0;
+  }
+  .tbl-row:hover {
+    background: var(--surface-2);
+  }
+
+  /* --------------------------- اسکلتِ بارگذاری -------------------------- */
+  .skeleton {
+    @apply rounded-md;
+    background: linear-gradient(
+      90deg,
+      var(--surface-2) 25%,
+      color-mix(in srgb, var(--border) 55%, var(--surface-2)) 37%,
+      var(--surface-2) 63%
+    );
+    background-size: 400% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
   }
 }
 
-/* انیمیشن ورود کارت‌ها */
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+/* انیمیشنِ ورودِ کارت — کوتاه و کم‌جابه‌جایی، تا حسِ «کند» ندهد */
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -131,11 +373,15 @@ body {
   }
 }
 .rise {
-  animation: rise 0.28s ease-out both;
+  animation: rise 0.18s ease-out both;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rise {
+  .rise,
+  .skeleton {
     animation: none;
+  }
+  * {
+    transition-duration: 0.01ms !important;
   }
 }

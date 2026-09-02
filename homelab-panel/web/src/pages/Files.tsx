@@ -190,7 +190,7 @@ export default function Files() {
             {items.map((item) => (
               <li key={item.path} className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-raised">
                 {item.isDir ? (
-                  <Folder className="h-4 w-4 shrink-0" style={{ color: 'var(--series-1)' }} />
+                  <Folder className="h-4 w-4 shrink-0" style={{ color: 'var(--accent)' }} />
                 ) : (
                   <FileIcon className="h-4 w-4 shrink-0 text-ink-muted" />
                 )}

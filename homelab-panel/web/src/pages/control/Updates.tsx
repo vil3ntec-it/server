@@ -135,7 +135,7 @@ export default function Updates() {
         )}
 
         {(info?.available || pending) && (
-          <div className="mt-4 rounded-xl border p-3" style={{ borderColor: 'color-mix(in srgb, var(--series-1) 35%, transparent)' }}>
+          <div className="mt-4 rounded-xl border p-3" style={{ borderColor: 'color-mix(in srgb, var(--accent) 35%, transparent)' }}>
             <p className="mb-2 text-sm font-medium">
               {t('ccUpdateAvailable')} — <span className="tnum">{info?.latest || pending?.latest}</span>
             </p>

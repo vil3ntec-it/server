@@ -10,14 +10,24 @@ export default {
           DEFAULT: 'var(--surface-1)',
           sunken: 'var(--surface-0)',
           raised: 'var(--surface-2)',
+          nav: 'var(--surface-nav)',
         },
         ink: {
           DEFAULT: 'var(--text-primary)',
           soft: 'var(--text-secondary)',
           muted: 'var(--text-muted)',
         },
-        line: 'var(--border)',
-        brand: 'var(--series-1)',
+        line: {
+          DEFAULT: 'var(--border)',
+          strong: 'var(--border-strong)',
+        },
+        // هویتِ رابط — عمداً جدا از رنگِ نمودارها
+        accent: {
+          DEFAULT: 'var(--accent)',
+          ink: 'var(--accent-ink)',
+          soft: 'var(--accent-soft)',
+        },
+        brand: 'var(--accent)',
         series: {
           1: 'var(--series-1)',
           2: 'var(--series-2)',
@@ -34,8 +44,14 @@ export default {
         mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
       },
       borderRadius: {
-        xl: '0.875rem',
-        '2xl': '1.125rem',
+        lg: '0.5rem',
+        xl: '0.75rem',
+        '2xl': '1rem',
+      },
+      boxShadow: {
+        sm: 'var(--shadow-sm)',
+        md: 'var(--shadow-md)',
+        lg: 'var(--shadow-lg)',
       },
     },
   },

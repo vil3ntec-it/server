@@ -48,7 +48,7 @@ export default function NetworkTab({
           {bundle.endpoints.map((e) => (
             <Row key={e.id}>
               <Cell>
-                <span className="chip" style={{ background: 'color-mix(in srgb, var(--series-1) 14%, transparent)', color: 'var(--series-1)' }}>
+                <span className="chip" style={{ background: 'color-mix(in srgb, var(--accent) 14%, transparent)', color: 'var(--accent)' }}>
                   {e.environment}
                 </span>
               </Cell>

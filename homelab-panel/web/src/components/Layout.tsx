@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Cloud,
   Container,
+  Cpu,
   Command as CommandIcon,
   Download, Store,
   FolderTree,
@@ -95,6 +96,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/control/monitoring', key: 'ccMonitoring', icon: AlertTriangle },
       { to: '/monitoring', key: 'monitoring', icon: Activity },
+      { to: '/processes', key: 'processes', icon: Cpu },
       { to: '/control/audit', key: 'ccAudit', icon: ScrollText },
       { to: '/logs', key: 'logs', icon: ScrollText },
     ],
@@ -153,7 +155,7 @@ export default function Layout() {
         return (
           <section key={group.id} className="mb-1">
             <button
-              className="flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-ink-muted hover:text-ink-soft"
+              className="nav-group-title flex w-full items-center gap-1.5 hover:text-ink-soft"
               onClick={() => toggleGroup(group.id)}
               aria-expanded={!isCollapsed}
             >
@@ -167,14 +169,9 @@ export default function Layout() {
                     key={to}
                     to={to}
                     end={end}
-                    className={({ isActive }) =>
-                      `flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors ${
-                        isActive ? 'font-semibold text-white' : 'text-ink-soft hover:bg-surface-raised hover:text-ink'
-                      }`
-                    }
-                    style={({ isActive }) => (isActive ? { background: 'var(--series-1)' } : undefined)}
+                    className={({ isActive }) => `nav-item ${isActive ? 'is-active' : ''}`}
                   >
-                    <Icon className="h-[18px] w-[18px] shrink-0" />
+                    <Icon className="h-4 w-4 shrink-0" />
                     <span className="truncate">{t(key)}</span>
                   </NavLink>
                 ))}
@@ -189,7 +186,7 @@ export default function Layout() {
   return (
     <div className="flex h-full">
       {/* نوار کناری — دسکتاپ */}
-      <aside className="hidden w-60 shrink-0 flex-col border-e border-line bg-surface lg:flex">
+      <aside className="hidden w-[15rem] shrink-0 flex-col border-e border-line bg-surface-nav lg:flex">
         <Brand serverName={serverName} hasLogo={hasLogo} subtitle={t('appName')} />
         <div className="flex-1 overflow-y-auto">{nav}</div>
         <footer className="border-t border-line p-3 text-[11px] text-ink-muted">
@@ -199,8 +196,8 @@ export default function Layout() {
               <span
                 className="chip shrink-0"
                 style={{
-                  background: `color-mix(in srgb, ${role === 'admin' ? 'var(--series-2)' : role === 'operator' ? 'var(--series-1)' : 'var(--text-muted)'} 16%, transparent)`,
-                  color: role === 'admin' ? 'var(--series-2)' : role === 'operator' ? 'var(--series-1)' : 'var(--text-secondary)',
+                  background: `color-mix(in srgb, ${role === 'admin' ? 'var(--status-warning)' : role === 'operator' ? 'var(--accent)' : 'var(--text-muted)'} 15%, transparent)`,
+                  color: role === 'admin' ? 'var(--status-warning)' : role === 'operator' ? 'var(--accent)' : 'var(--text-secondary)',
                 }}
               >
                 {role === 'admin' ? t('ccRoleAdmin') : role === 'operator' ? t('ccRoleOperator') : t('ccRoleViewer')}
@@ -214,7 +211,7 @@ export default function Layout() {
       {open && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 start-0 flex w-64 flex-col border-e border-line bg-surface">
+          <aside className="absolute inset-y-0 start-0 flex w-64 flex-col border-e border-line bg-surface-nav">
             <div className="flex items-center justify-between">
               <Brand serverName={serverName} hasLogo={hasLogo} subtitle={t('appName')} />
               <button className="me-3 rounded-lg p-1.5 text-ink-soft hover:bg-surface-raised" onClick={() => setOpen(false)}>
@@ -314,8 +311,8 @@ function Brand({ serverName, hasLogo, subtitle }: { serverName: string; hasLogo:
         <img src={logoUrl()} alt="" className="h-8 w-8 rounded-lg object-cover" />
       ) : (
         <span
-          className="flex h-8 w-8 items-center justify-center rounded-lg text-white"
-          style={{ background: 'var(--series-1)' }}
+          className="flex h-8 w-8 items-center justify-center rounded-lg"
+          style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
         >
           <Server className="h-4 w-4" />
         </span>

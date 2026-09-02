@@ -537,7 +537,7 @@ function DiscoverModal({ open, onClose, onDone }: { open: boolean; onClose: () =
             >
               <input
                 type="checkbox"
-                className="h-4 w-4 accent-[var(--series-1)]"
+                className="h-4 w-4 accent-[var(--accent)]"
                 disabled={item.alreadyAdded}
                 checked={selected.has(item.path)}
                 onChange={(e) => {
@@ -755,7 +755,7 @@ function SiteSettingsModal({
       <label className="flex items-center gap-2 text-sm">
         <input
           type="checkbox"
-          className="h-4 w-4 accent-[var(--series-1)]"
+          className="h-4 w-4 accent-[var(--accent)]"
           checked={autostart}
           onChange={(e) => setAutostart(e.target.checked)}
         />

@@ -200,7 +200,7 @@ export default function Settings() {
           <label className="flex items-start gap-2 text-sm">
             <input
               type="checkbox"
-              className="mt-0.5 h-4 w-4 accent-[var(--series-1)]"
+              className="mt-0.5 h-4 w-4 accent-[var(--accent)]"
               checked={autoSetup}
               onChange={(e) => setAutoSetup(e.target.checked)}
             />

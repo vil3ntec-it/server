@@ -90,7 +90,7 @@ export function Badge({
         : tone === 'bad'
           ? 'var(--status-critical)'
           : tone === 'info'
-            ? 'var(--series-1)'
+            ? 'var(--accent)'
             : 'var(--text-secondary)';
   return (
     <span

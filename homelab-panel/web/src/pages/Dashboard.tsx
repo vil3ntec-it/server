@@ -70,8 +70,8 @@ export default function Dashboard() {
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <span
-              className="flex h-11 w-11 items-center justify-center rounded-xl text-white"
-              style={{ background: 'var(--series-1)' }}
+              className="flex h-11 w-11 items-center justify-center rounded-xl"
+              style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
             >
               <Server className="h-5 w-5" />
             </span>

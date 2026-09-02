@@ -86,7 +86,7 @@ export function Stat({
     tone === 'good' ? 'var(--status-good)'
     : tone === 'warn' ? 'var(--status-warning)'
     : tone === 'bad' ? 'var(--status-critical)'
-    : tone === 'info' ? 'var(--series-1)'
+    : tone === 'info' ? 'var(--accent)'
     : 'var(--text-primary)';
   return (
     <div
@@ -185,9 +185,9 @@ export function Tabs({
           key={tab.id}
           onClick={() => onChange(tab.id)}
           className={`flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-sm transition-colors ${
-            active === tab.id ? 'font-semibold text-white' : 'text-ink-soft hover:bg-surface-raised'
+            active === tab.id ? 'font-semibold' : 'text-ink-soft hover:bg-surface-raised'
           }`}
-          style={active === tab.id ? { background: 'var(--series-1)' } : undefined}
+          style={active === tab.id ? { background: 'var(--accent)', color: 'var(--accent-ink)' } : undefined}
         >
           {tab.label}
           {tab.badge != null && tab.badge > 0 && (
@@ -253,7 +253,7 @@ export function Notice({ tone = 'info', children }: { tone?: 'info' | 'warn' | '
     tone === 'warn' ? 'var(--status-warning)'
     : tone === 'bad' ? 'var(--status-critical)'
     : tone === 'good' ? 'var(--status-good)'
-    : 'var(--series-1)';
+    : 'var(--accent)';
   return (
     <div
       className="mb-4 flex items-start gap-2 rounded-xl border p-3 text-xs leading-relaxed"

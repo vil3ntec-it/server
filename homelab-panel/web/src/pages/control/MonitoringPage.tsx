@@ -153,7 +153,7 @@ export default function MonitoringPage() {
           ) : (
             <ul className="space-y-2">
               {alerts.map((a) => {
-                const color = a.severity === 'critical' ? 'var(--status-critical)' : a.severity === 'warn' ? 'var(--status-warning)' : 'var(--series-1)';
+                const color = a.severity === 'critical' ? 'var(--status-critical)' : a.severity === 'warn' ? 'var(--status-warning)' : 'var(--accent)';
                 return (
                   <li key={a.id} className="rounded-xl border p-3" style={{ borderColor: `color-mix(in srgb, ${color} 30%, transparent)` }}>
                     <div className="flex flex-wrap items-start gap-2">
