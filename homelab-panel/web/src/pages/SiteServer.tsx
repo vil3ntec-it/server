@@ -964,6 +964,8 @@ function PermanentAddress({ data, onChanged }: { data: SiteServerInfo; onChanged
   const [newHost, setNewHost] = useState('');
   const [newPort, setNewPort] = useState('');
   const [commands, setCommands] = useState<string[]>([]);
+  const [rootDomain, setRootDomain] = useState('');
+  const [savingDomain, setSavingDomain] = useState(false);
 
   const active = data.tunnel.permanent && Boolean(data.tunnel.hostname);
 
@@ -1002,6 +1004,35 @@ function PermanentAddress({ data, onChanged }: { data: SiteServerInfo; onChanged
     const timer = setInterval(ask, 4000);
     return () => clearInterval(timer);
   }, [loggedIn, active]);
+
+  /*
+   *  دامنهٔ خودِ سرور.
+   *
+   *  ⚠️ چرا این‌جا آمد: کارت مستقیم می‌پرید سرِ «زیردامنه» و برچسبش هم «گام ۲»
+   *  بود، بی‌آنکه گامِ یکی جایی باشد. کسی که تازه دامنه خریده، دنبالِ جایی
+   *  می‌گشت که اول خودِ دامنه را ثبت کند و چون پیدایش نمی‌کرد نتیجه می‌گرفت
+   *  این بخش اصلاً نیست. صفحهٔ «دامنه‌ها» هم هست، ولی در گروهِ بستهٔ منو.
+   */
+  async function saveDomain() {
+    const root = cleanHost(rootDomain);
+    if (!HOST_RE.test(root)) return;
+    setSavingDomain(true);
+    setError(null);
+    try {
+      // در فهرستِ دامنه‌ها ثبت شود؛ اگر از قبل هست، همان بس است
+      try {
+        await api('/api/domains', { body: { name: root } });
+      } catch (e) {
+        if (!(e instanceof ApiError) || e.code !== 'already_exists') throw e;
+      }
+      setHostname(`api.${root}`);
+      toast(t('saved'));
+    } catch (e) {
+      setError(setupError(e, t));
+    } finally {
+      setSavingDomain(false);
+    }
+  }
 
   async function recheckLogin() {
     setBusy(true);
@@ -1216,10 +1247,41 @@ var SELF_HOST_TOKEN = '${token ?? '…'}';`}
         </>
       ) : (
         <>
+          {/* گام ۱ — خودِ دامنه */}
+          <div className="mb-5 rounded-xl border border-line p-3.5" style={{ background: 'var(--surface-0)' }}>
+            <p className="mb-1 text-sm font-semibold">{t('permStepDomain')}</p>
+            <p className="mb-3 text-[11px] leading-relaxed text-ink-soft">{t('permStepDomainHint')}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                className="input max-w-xs"
+                dir="ltr"
+                placeholder="example.com"
+                value={rootDomain}
+                onChange={(e) => setRootDomain(e.target.value)}
+                onBlur={() => setRootDomain(cleanHost(rootDomain))}
+              />
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={savingDomain || !HOST_RE.test(cleanHost(rootDomain))}
+                onClick={() => void saveDomain()}
+              >
+                {savingDomain && <Spinner />}
+                {t('save')}
+              </button>
+            </div>
+            {HOST_RE.test(cleanHost(rootDomain)) && (
+              <p className="mt-2 text-[11px] text-ink-muted">
+                {t('permStepDomainWillMake')}{' '}
+                <span className="ltr font-mono">api.{cleanHost(rootDomain)}</span>
+              </p>
+            )}
+          </div>
+
           {/* راه رایگان — بدون کارت بانکی */}
           <div className="mb-5 rounded-xl border border-line p-3.5" style={{ background: 'var(--surface-0)' }}>
             <p className="mb-1 text-sm font-semibold">{t('freeWayTitle')}</p>
             <p className="mb-3 text-[11px] leading-relaxed text-ink-soft">{t('freeWayIntro')}</p>
+            <p className="label mb-2">{t('permStepLogin')}</p>
 
             {loggedIn ? (
               <Badge tone="good">{t('permanentLoggedIn')}</Badge>
@@ -1273,7 +1335,7 @@ var SELF_HOST_TOKEN = '${token ?? '…'}';`}
               </div>
             )}
 
-            <label className="label mt-4">{t('permanentStep2')}</label>
+            <label className="label mt-4">{t('permStepSub')}</label>
             <p className="mb-1.5 text-[11px] text-ink-muted">{t('permanentStep2Hint')}</p>
             {/*
                 بیشترِ کسانی که به اینجا می‌رسند یک دامنه دارند که همین حالا
