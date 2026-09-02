@@ -33,6 +33,7 @@ import ProcessesPage from './pages/Processes';
 import DatabasesPage from './pages/Databases';
 import RuntimesPage from './pages/Runtimes';
 import TerminalPage from './pages/Terminal';
+import CronPage from './pages/Cron';
 
 function Shell() {
   const { ready, authed } = useApp();
@@ -51,6 +52,7 @@ function Shell() {
         <Route path="/databases" element={<DatabasesPage />} />
         <Route path="/runtimes" element={<RuntimesPage />} />
         <Route path="/terminal" element={<TerminalPage />} />
+        <Route path="/cron" element={<CronPage />} />
         <Route path="/monitoring" element={<Monitoring />} />
         <Route path="/network" element={<NetworkPage />} />
         <Route path="/logs" element={<Logs />} />

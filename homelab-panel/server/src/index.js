@@ -50,6 +50,8 @@ import dockerRoutes from './routes/docker.js';
 import processRoutes from './routes/processes.js';
 import databaseRoutes from './routes/databases.js';
 import runtimeRoutes from './routes/runtimes.js';
+import cronRoutes from './routes/cron.js';
+import { tick as cronTickOnce, reschedule as cronReschedule } from './system/cron.js';
 import { pruneAppAuth } from './appauth/index.js';
 import { localKey } from './local-key.js';
 import { runMigrations, dbVersion } from './lib/migrations.js';
@@ -237,6 +239,8 @@ app.use('/api/processes', processRoutes);
 app.use('/api/databases', databaseRoutes);
 // نسخه‌های Node و Python
 app.use('/api/runtimes', runtimeRoutes);
+// کارهای زمان‌بندی‌شده — زمان‌بندِ خودِ پنل، نه crontab سیستم
+app.use('/api/cron', cronRoutes);
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
 // Agentها و خودِ برنامه‌ها درِ ورودیِ خودشان را دارند (امضای HMAC / توکنِ پروژه)
@@ -571,6 +575,19 @@ if (config.backupSchedule) {
   }, 30 * 60 * 1000);
   backupTick.unref?.();
 }
+
+/*
+ *  زمان‌بندِ کارها.
+ *
+ *  هر دقیقه، چون کوچک‌ترین واحدِ cron دقیقه است. ملاکِ اجرا next_run_at
+ *  ذخیره‌شده است، نه تطبیقِ دوبارهٔ الگو — پس اگر پنل چند دقیقه خواب بوده
+ *  یا تازه بالا آمده، کارِ عقب‌افتاده همان بارِ اول اجرا می‌شود.
+ */
+cronReschedule();
+const cronTick = setInterval(() => {
+  cronTickOnce().catch((e) => logEvent('error', 'cron', `تیکِ زمان‌بند ناموفق بود: ${e.message}`));
+}, 60 * 1000);
+cronTick.unref?.();
 
 async function main() {
   if (siteSync) {

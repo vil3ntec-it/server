@@ -12,9 +12,11 @@
 import { up as up001 } from './001_initial.js';
 import { up as up002 } from './002_user_roles.js';
 import { up as up003 } from './003_backups.js';
+import { up as up004 } from './004_cron.js';
 
 export const migrations = [
   { version: 1, name: 'initial', up: up001 },
   { version: 2, name: 'user_roles', up: up002 },
   { version: 3, name: 'backups', up: up003 },
+  { version: 4, name: 'cron', up: up004 },
 ];
