@@ -28,6 +28,7 @@ import Audit from './pages/control/Audit';
 import Updates from './pages/control/Updates';
 import Tohid from './pages/control/Tohid';
 import PanelUsers from './pages/control/PanelUsers';
+import DockerPage from './pages/Docker';
 
 function Shell() {
   const { ready, authed } = useApp();
@@ -41,6 +42,7 @@ function Shell() {
         <Route path="/sites" element={<Sites />} />
         <Route path="/domains" element={<Domains />} />
         <Route path="/files" element={<Files />} />
+        <Route path="/docker" element={<DockerPage />} />
         <Route path="/monitoring" element={<Monitoring />} />
         <Route path="/network" element={<NetworkPage />} />
         <Route path="/logs" element={<Logs />} />

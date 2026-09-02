@@ -7,7 +7,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/index.js",
-    "test": "node test/smoke.mjs && node test/multisite.mjs && node test/sitesync-load.mjs && node test/protected-domains.mjs && node test/tunnel-recovery.mjs && node test/messenger.mjs && node test/notify.mjs && node test/notify-readkey.mjs && node test/ai-proxy.mjs && node test/control.mjs && node test/agent.mjs && node test/update.mjs && node test/update-packaged.mjs && node test/api-domain.mjs && node test/roles-logs.mjs && node test/tohid.mjs && node test/tohid-otp.mjs && node test/tohid-admin.mjs && node test/public-port.mjs && node test/clients.mjs && node test/app-auth.mjs && node test/storage.mjs && node test/security.mjs && node test/platform.mjs",
+    "test": "node test/smoke.mjs && node test/multisite.mjs && node test/sitesync-load.mjs && node test/protected-domains.mjs && node test/tunnel-recovery.mjs && node test/messenger.mjs && node test/notify.mjs && node test/notify-readkey.mjs && node test/ai-proxy.mjs && node test/control.mjs && node test/agent.mjs && node test/update.mjs && node test/update-packaged.mjs && node test/api-domain.mjs && node test/roles-logs.mjs && node test/tohid.mjs && node test/tohid-otp.mjs && node test/tohid-admin.mjs && node test/public-port.mjs && node test/clients.mjs && node test/app-auth.mjs && node test/storage.mjs && node test/security.mjs && node test/platform.mjs && node test/docker.mjs",
     "test:multisite": "node test/multisite.mjs",
     "test:sitesync-load": "node test/sitesync-load.mjs",
     "test:ui": "node test/ui.mjs",
@@ -35,7 +35,8 @@
     "test:storage": "node test/storage.mjs && node test/security.mjs",
     "test:desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File ../desktop/test/lib.tests.ps1",
     "test:pump-notify": "node test/pump-notify.mjs",
-    "test:platform": "node test/platform.mjs"
+    "test:platform": "node test/platform.mjs",
+    "test:docker": "node test/docker.mjs"
   },
   "dependencies": {
     "express": "^4.21.2",

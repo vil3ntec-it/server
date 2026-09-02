@@ -7,6 +7,7 @@ import {
   Boxes,
   ChevronDown,
   Cloud,
+  Container,
   Command as CommandIcon,
   Download, Store,
   FolderTree,
@@ -70,6 +71,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/control/projects', key: 'ccProjects', icon: Boxes },
       { to: '/control/servers', key: 'ccServers', icon: Server },
+      { to: '/docker', key: 'docker', icon: Container },
       { to: '/control/storage', key: 'ccStorage', icon: Archive },
       { to: '/control/vault', key: 'ccVault', icon: KeyRound, needs: 'admin' },
     ],
