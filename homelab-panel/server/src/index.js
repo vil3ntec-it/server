@@ -48,6 +48,8 @@ import storageRoutes from './routes/storage.js';
 import aiRoutes from './routes/ai.js';
 import dockerRoutes from './routes/docker.js';
 import processRoutes from './routes/processes.js';
+import databaseRoutes from './routes/databases.js';
+import runtimeRoutes from './routes/runtimes.js';
 import { pruneAppAuth } from './appauth/index.js';
 import { localKey } from './local-key.js';
 import { runMigrations, dbVersion } from './lib/migrations.js';
@@ -231,6 +233,10 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/docker', dockerRoutes);
 // فهرستِ پروسه‌ها — دیدن برای همه، فرستادنِ سیگنال فقط admin
 app.use('/api/processes', processRoutes);
+// دیتابیس‌های کاربر (MySQL/MariaDB و PostgreSQL) — رمز در گاوصندوق می‌ماند
+app.use('/api/databases', databaseRoutes);
+// نسخه‌های Node و Python
+app.use('/api/runtimes', runtimeRoutes);
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
 // Agentها و خودِ برنامه‌ها درِ ورودیِ خودشان را دارند (امضای HMAC / توکنِ پروژه)

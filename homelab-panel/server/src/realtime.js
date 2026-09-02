@@ -7,6 +7,9 @@ import { processEvents } from './sites/process.js';
 import { getHistory, setViewers } from './metrics/index.js';
 import { listSites } from './sites/registry.js';
 import { getSiteSync } from './state.js';
+import { userRole } from './auth.js';
+import { audit } from './lib/audit.js';
+import * as terminal from './system/terminal.js';
 
 // تبی که پشت پنجره رفته «بیننده» حساب نمی‌شود؛ سرور برای آن کاری انجام نمی‌دهد
 function countViewers(io) {
@@ -54,6 +57,60 @@ export function attachRealtime(httpServer) {
 
     socket.on('unwatch:site', (slug) => {
       if (typeof slug === 'string') socket.leave(`site:${slug}`);
+    });
+
+    /* ------------------------------ ترمینال ------------------------------
+     *
+     *  اجرای فرمانِ دلخواه فقط برای admin. نقش از دیتابیس خوانده می‌شود، نه
+     *  از توکن: اگر نقشِ کسی همین حالا پایین آورده شده باشد، نشستِ بازِ او
+     *  هم باید فوراً بی‌اثر شود — نه بعد از انقضای توکن.
+     */
+    const isAdmin = () => userRole(socket.data.user?.id) === 'admin';
+
+    socket.on('term:open', (_payload, ack) => {
+      if (!isAdmin()) return ack?.({ ok: false, error: 'forbidden' });
+      const res = terminal.create({
+        userId: socket.data.user?.id,
+        username: socket.data.user?.username,
+      });
+      if (res.ok) socket.data.termId = res.id;
+      ack?.(res);
+    });
+
+    socket.on('term:run', async (payload, ack) => {
+      if (!isAdmin()) return ack?.({ ok: false, error: 'forbidden' });
+      const id = socket.data.termId;
+      const command = String(payload?.command ?? '');
+      if (!id) return ack?.({ ok: false, error: 'no_session' });
+
+      // هر فرمان ثبت می‌شود — این تنها ردی است که بعداً می‌شود دنبالش کرد
+      audit(
+        { user: socket.data.user, ip: socket.handshake.address },
+        'terminal.run',
+        { target: command.slice(0, 400) }
+      );
+
+      const result = await terminal.run(id, command, {
+        onData: (chunk) => socket.emit('term:data', { chunk }),
+      });
+      ack?.(result);
+    });
+
+    socket.on('term:interrupt', (_payload, ack) => {
+      if (!isAdmin()) return ack?.({ ok: false, error: 'forbidden' });
+      ack?.(terminal.interrupt(socket.data.termId));
+    });
+
+    socket.on('term:close', (_payload, ack) => {
+      if (socket.data.termId) terminal.close(socket.data.termId);
+      socket.data.termId = null;
+      ack?.({ ok: true });
+    });
+
+    // قطعِ اتصال یعنی نشستِ پوسته هم باید برود؛ وگرنه تا مهلتِ بی‌کاری
+    // یک پوستهٔ بی‌صاحب روی سرور می‌ماند
+    socket.on('disconnect', () => {
+      if (socket.data.termId) terminal.close(socket.data.termId);
     });
   });
 
