@@ -246,11 +246,23 @@ function findCert() {
 }
 
 function runCf(args, { timeout = 120000, onLine } = {}) {
+  /*
+   *  ⚠️ گواهی همان‌جایی که واقعاً هست.
+   *
+   *  findCert() اگر گواهی را در ~/.cloudflared پیدا کند، اول سعی می‌کند در
+   *  پوشهٔ پنل کپی بگیرد — ولی اگر آن پوشه نوشتنی نباشد (روی ویندوز، وقتی
+   *  برنامه جایی نصب شده که دسترسی می‌خواهد) کپی نمی‌شود و همان مسیرِ خانه را
+   *  برمی‌گرداند. تا امروز این‌جا بی‌قید CERT_FILE گذاشته می‌شد، یعنی مسیری
+   *  که فایلی در آن نبود. نتیجه‌اش این بود که پنل «وارد شده‌اید ✓» نشان
+   *  می‌داد ولی هر دستورِ cloudflared با «Cannot determine default origin
+   *  certificate path» می‌افتاد و ساختِ آدرسِ ثابت هیچ‌وقت جلو نمی‌رفت.
+   */
+  const cert = findCert() || CERT_FILE;
   return new Promise((resolve) => {
     const proc = spawn(state.binary, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
-      env: { ...process.env, TUNNEL_ORIGIN_CERT: CERT_FILE },
+      env: { ...process.env, TUNNEL_ORIGIN_CERT: cert },
     });
     let output = '';
     const onData = (chunk) => {
@@ -493,7 +505,14 @@ export async function namedSetup({ hostname, name = DEFAULT_TUNNEL_NAME }) {
     logEvent('warn', 'panel', `دامنهٔ ${host} قُرق است و به تونل وصل نشد (رکورد DNS سایت عمومی دست‌نخورده ماند)`);
     return { ok: false, error: 'protected_hostname' };
   }
-  if (!findCert()) return { ok: false, error: 'not_logged_in' };
+  const cert = findCert();
+  if (!cert) {
+    return {
+      ok: false,
+      error: 'not_logged_in',
+      detail: `گواهی ورود پیدا نشد. جاهایی که نگاه شد:\n  ${CERT_FILE}\n  ${HOME_CERT}`,
+    };
+  }
 
   await ensureBinary();
 
@@ -501,7 +520,12 @@ export async function namedSetup({ hostname, name = DEFAULT_TUNNEL_NAME }) {
   const created = await runCf(['tunnel', 'create', name]);
   const already = /already exists/i.test(created.output);
   if (!created.ok && !already) {
-    return { ok: false, error: 'create_failed', detail: created.output.slice(-400) };
+    // مسیرِ گواهی هم بیاید: بیشترِ شکست‌های این مرحله از همین‌جاست
+    return {
+      ok: false,
+      error: 'create_failed',
+      detail: `${created.output.slice(-400)}\n\n(گواهی: ${cert})`,
+    };
   }
 
   const listed = await runCf(['tunnel', 'list', '--output', 'json']);
@@ -1002,7 +1026,8 @@ export async function startTunnel({ port } = {}) {
   child = spawn(command, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
-    env: { ...process.env, TUNNEL_ORIGIN_CERT: CERT_FILE },
+    // مثلِ runCf: گواهی همان‌جایی که واقعاً هست، نه جایی که آرزو داریم باشد
+    env: { ...process.env, TUNNEL_ORIGIN_CERT: findCert() || CERT_FILE },
   });
   const myChild = child;
 

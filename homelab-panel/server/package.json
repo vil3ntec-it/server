@@ -1,6 +1,6 @@
 {
   "name": "homelab-panel-server",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "private": true,
   "description": "Backend of the home server management panel (Express + Socket.IO + SQLite)",
   "type": "module",

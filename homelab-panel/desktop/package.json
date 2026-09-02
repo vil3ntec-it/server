@@ -1,7 +1,7 @@
 {
   "name": "control-center-desktop",
   "productName": "Control Center",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "private": true,
   "description": "Control Center — Windows desktop app for the home server panel",
   "type": "module",

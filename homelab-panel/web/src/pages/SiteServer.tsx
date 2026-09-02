@@ -934,22 +934,33 @@ type Translate = ReturnType<typeof useApp>['t'];
  * کاری با آن بکند. نشان دادنِ خودِ کد («credentials_not_found») او را جایی
  * نمی‌برد.
  */
+const SETUP_MESSAGE: Record<string, Parameters<Translate>[0]> = {
+  invalid_hostname: 'errInvalidHostname',
+  protected_hostname: 'errProtectedHostname',
+  not_logged_in: 'errNotLoggedIn',
+  not_named_mode: 'errNotNamedMode',
+  create_failed: 'errCreateFailed',
+  dns_failed: 'errDnsFailed',
+  tunnel_id_not_found: 'errCredentials',
+  credentials_not_found: 'errCredentials',
+};
+
+/*
+ *  جملهٔ راهنما و متنِ خامِ cloudflared، هر دو.
+ *
+ *  ⚠️ اولین نسخهٔ این تابع فقط جملهٔ فارسی را برمی‌گرداند و detail — که همان
+ *  چیزی است که خودِ cloudflared چاپ کرده — دور ریخته می‌شد. یعنی دقیقاً همان
+ *  خطی که می‌گوید چرا نشد، به کاربر نمی‌رسید. جملهٔ راهنما جایگزینِ آن متن
+ *  نیست، رویش است.
+ */
 function setupError(e: unknown, t: Translate): string {
-  const code = e instanceof ApiError ? e.code : '';
-  switch (code) {
-    case 'invalid_hostname': return t('errInvalidHostname');
-    case 'protected_hostname': return t('errProtectedHostname');
-    case 'not_logged_in': return t('errNotLoggedIn');
-    case 'not_named_mode': return t('errNotNamedMode');
-    case 'create_failed': return t('errCreateFailed');
-    case 'dns_failed': return t('errDnsFailed');
-    case 'tunnel_id_not_found':
-    case 'credentials_not_found': return t('errCredentials');
-    default:
-      // سرور گاهی خودش توضیح داده — آن بهتر از کدِ خام است
-      if (e instanceof ApiError && e.message && e.message !== e.code) return e.message;
-      return code || t('error');
-  }
+  if (!(e instanceof ApiError)) return t('error');
+  const key = SETUP_MESSAGE[e.code];
+  const friendly = key ? t(key) : '';
+  // detail از سرور می‌آید و در message می‌نشیند
+  const raw = e.message && e.message !== e.code ? e.message : '';
+  if (friendly && raw) return `${friendly}\n\n${raw}`;
+  return friendly || raw || e.code || t('error');
 }
 
 function PermanentAddress({ data, onChanged }: { data: SiteServerInfo; onChanged: () => void }) {
@@ -1451,16 +1462,26 @@ var SELF_HOST_TOKEN = '${token ?? '…'}';`}
           </div>
 
 
+          {/*
+              متنِ خطا باید هم خوانده شود و هم بتوان فرستادش. با whitespace
+              خطوطِ خودِ cloudflared حفظ می‌شود و دکمهٔ کپی کارِ «عکس بگیر و
+              بفرست» را راحت می‌کند.
+          */}
           {error && (
-            <p
+            <div
               className="mt-3 rounded-xl px-3 py-2 text-xs"
               style={{
                 background: 'color-mix(in srgb, var(--status-critical) 12%, transparent)',
                 color: 'var(--status-critical)',
               }}
             >
-              {error}
-            </p>
+              <p className="max-h-48 overflow-auto whitespace-pre-wrap break-words leading-relaxed">
+                {error}
+              </p>
+              <div className="mt-2">
+                <CopyButton value={error} />
+              </div>
+            </div>
           )}
         </>
       )}
