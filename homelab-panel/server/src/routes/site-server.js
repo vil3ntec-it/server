@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------------------
 import { Router } from 'express';
 import QRCode from 'qrcode';
-import { requireAuth } from '../auth.js';
+import { requireAuth, requireWriteRole } from '../auth.js';
 import { getSiteSync } from '../state.js';
 import { config } from '../config.js';
 import { readInterfaces, readPublicIp } from '../metrics/network.js';
@@ -23,6 +23,8 @@ import {
   namedSetup,
   namedReset,
   tokenSetup,
+  setMainHostname,
+  domainOverview,
   addHostname,
   removeHostname,
   routedHostnames,
@@ -293,6 +295,31 @@ router.post('/tunnel/token', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+/**
+ * عوض کردنِ آدرسِ اصلی، بدونِ بازنشانی.
+ *
+ * پیش از این تنها راه، دکمهٔ «بازنشانی» بود که کاربر را به نقطهٔ صفر
+ * برمی‌گرداند: ورود دوبارهٔ Cloudflare، ساختِ دوبارهٔ تونل، و از دست رفتنِ
+ * زیردامنه‌های دیگر. یک اشتباهِ تایپی نباید این‌قدر گران باشد.
+ */
+router.post('/tunnel/named/main', requireWriteRole('admin'), async (req, res) => {
+  const hostname = String(req.body?.hostname || '').trim();
+  try {
+    const result = await setMainHostname({ hostname });
+    if (!result.ok) return res.status(400).json(result);
+    logEvent('info', 'panel', `آدرسِ اصلیِ سرور: ${result.hostname}`);
+    await ensureMainSite({ tunnelHostname: result.hostname }).catch(() => {});
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ ok: false, error: 'change_failed', detail: e.message });
+  }
+});
+
+/** همهٔ دامنه‌ها با همان جزئیاتی که تا امروز فقط دامنهٔ اصلی داشت */
+router.get('/domains', (req, res) => {
+  res.json(domainOverview());
 });
 
 // افزودن زیردامنهٔ تازه به همان تونل — برای سایت‌های بعدی

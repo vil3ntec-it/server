@@ -828,6 +828,97 @@ export async function removeHostname(hostname) {
   return { ok: true, hostnames: routedHostnames() };
 }
 
+/**
+ * عوض کردنِ آدرسِ اصلیِ سرور — بدونِ بازنشانیِ همه‌چیز.
+ *
+ * ⚠️ چرا این تابع لازم شد: تا امروز تنها راهِ عوض کردنِ دامنهٔ اصلی،
+ * «بازنشانی» بود؛ یعنی tunnel_mode به quick برمی‌گشت، فایلِ پیکربندی پاک
+ * می‌شد و کاربر باید کلِ مراحلِ ورود به Cloudflare و ساختِ تونل را از نو
+ * می‌رفت. کسی که فقط یک حرف را اشتباه تایپ کرده بود، همه‌چیز را از دست
+ * می‌داد.
+ *
+ * حالا تونل، حسابِ Cloudflare و بقیهٔ زیردامنه‌ها سرِ جای‌شان می‌مانند و فقط
+ * نامِ اصلی عوض می‌شود.
+ *
+ * نکته‌ای که به کاربر هم گفته می‌شود: رکوردِ DNS دامنهٔ قبلی در Cloudflare
+ * باقی می‌ماند. cloudflared دستوری برای حذفِ رکورد ندارد؛ اگر لازم است،
+ * باید از داشبوردِ Cloudflare پاک شود. ماندنش ضرری ندارد — فقط یک نامِ
+ * اضافه است که به همین تونل می‌رسد.
+ */
+export async function setMainHostname({ hostname }) {
+  const host = String(hostname || '').trim().toLowerCase();
+  if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) return { ok: false, error: 'invalid_hostname' };
+  if (isProtectedHost(host)) return { ok: false, error: 'protected_hostname' };
+
+  const mode = getSetting('tunnel_mode', 'quick');
+  if (mode !== 'named') return { ok: false, error: 'not_named_mode' };
+
+  const previous = getSetting('tunnel_hostname', null);
+  if (previous === host) return { ok: true, hostname: host, unchanged: true };
+
+  if (!findCert()) return { ok: false, error: 'not_logged_in' };
+
+  const name = getSetting('tunnel_name', DEFAULT_TUNNEL_NAME);
+  await ensureBinary();
+
+  // رکوردِ DNS نامِ تازه باید همین‌جا ساخته شود: syncTunnelRoutes عمداً از
+  // روی دامنهٔ اصلی رد می‌شود (route.main) چون فرض می‌کند namedSetup آن را
+  // ساخته است.
+  const routed = await runCf(['tunnel', 'route', 'dns', '--overwrite-dns', name, host]);
+  if (!routed.ok && !/already exists|record with the same/i.test(routed.output)) {
+    return { ok: false, error: 'dns_failed', detail: routed.output.slice(-400) };
+  }
+
+  setSetting('tunnel_hostname', host);
+
+  const known = new Set(getSetting('tunnel_routed_dns', []) || []);
+  known.add(host);
+  setSetting('tunnel_routed_dns', [...known]);
+
+  logEvent('info', 'panel', `آدرسِ اصلیِ سرور از ${previous || '—'} به ${host} عوض شد`);
+
+  // مسیرها و فایلِ ingress دوباره نوشته و تونل تازه می‌شود
+  const synced = await syncTunnelRoutes({ restart: true });
+
+  return { ok: true, hostname: host, previous, hostnames: synced.hostnames };
+}
+
+/**
+ * نمای هر دامنه، یک‌جا.
+ *
+ * تا امروز صفحهٔ «آدرس اینترنتی» فقط دامنهٔ اصلی را کامل نشان می‌داد و بقیه
+ * یک سطرِ ساده در گوشهٔ همان کارت بودند — بدونِ اینکه معلوم باشد رکوردِ DNS
+ * ساخته شده یا نه، به کدام پورت می‌رود، و از کجا آمده. این تابع همان
+ * چیزهایی را که برای دامنهٔ اصلی نشان داده می‌شد، برای همهٔ دامنه‌ها می‌دهد.
+ */
+export function domainOverview() {
+  const mode = getSetting('tunnel_mode', 'quick');
+  const main = getSetting('tunnel_hostname', null);
+  const routedDns = new Set(getSetting('tunnel_routed_dns', []) || []);
+  const protectedHosts = new Set(skippedProtectedHostnames());
+
+  const items = candidateHostnames().map((row) => {
+    const isProtected = protectedHosts.has(row.hostname);
+    return {
+      ...row,
+      url: `https://${row.hostname}`,
+      // دامنهٔ اصلی را namedSetup مسیریابی کرده، پس همیشه ثبت‌شده است
+      dnsRouted: row.main ? Boolean(main) : routedDns.has(row.hostname),
+      protected: isProtected,
+      // در حالتِ سریع هیچ دامنه‌ای واقعاً از راهِ تونل سرو نمی‌شود
+      servedByTunnel: mode === 'named' && !isProtected,
+    };
+  });
+
+  return {
+    ok: true,
+    mode,
+    main,
+    tunnelName: getSetting('tunnel_name', DEFAULT_TUNNEL_NAME),
+    items,
+  };
+}
+
 export async function namedReset() {
   setSetting('tunnel_hostnames', []);
   setSetting('tunnel_token', null);

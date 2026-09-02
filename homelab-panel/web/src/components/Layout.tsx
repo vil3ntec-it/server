@@ -88,6 +88,7 @@ const NAV_GROUPS: NavGroup[] = [
     key: 'ccInfra',
     collapsed: true,
     items: [
+      { to: '/tunnel-domains', key: 'domainsTunnel', icon: Globe },
       { to: '/domains', key: 'domains', icon: Globe },
       { to: '/control/networking', key: 'ccNetworking', icon: Network },
       { to: '/control/routing', key: 'ccRouting', icon: RouteIcon },

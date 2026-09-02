@@ -34,6 +34,7 @@ import DatabasesPage from './pages/Databases';
 import RuntimesPage from './pages/Runtimes';
 import TerminalPage from './pages/Terminal';
 import CronPage from './pages/Cron';
+import TunnelDomainsPage from './pages/TunnelDomains';
 
 function Shell() {
   const { ready, authed } = useApp();
@@ -53,6 +54,7 @@ function Shell() {
         <Route path="/runtimes" element={<RuntimesPage />} />
         <Route path="/terminal" element={<TerminalPage />} />
         <Route path="/cron" element={<CronPage />} />
+        <Route path="/tunnel-domains" element={<TunnelDomainsPage />} />
         <Route path="/monitoring" element={<Monitoring />} />
         <Route path="/network" element={<NetworkPage />} />
         <Route path="/logs" element={<Logs />} />
