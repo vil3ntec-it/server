@@ -195,6 +195,42 @@ async function main() {
     ) === ID
   );
 
+  console.log('\n── رکوردی که جای غلط ساخته می‌شود ──');
+  /*
+   *  خرابیِ بی‌صدا: گواهیِ ورود مالِ یک دامنه است. نامی بیرون از آن بدهی،
+   *  cloudflared اعتراض نمی‌کند — نامِ دامنهٔ مجاز را به دُم می‌چسباند و با
+   *  کدِ صفر برمی‌گردد. پنل «انجام شد» می‌گفت و مرورگر NXDOMAIN.
+   */
+  const { misroutedHost } = await import('../src/tunnel.js');
+  const REAL =
+    '2026-09-03T01:59:37Z INF api.vill3n.top.yaqobipump.top is already configured '
+    + 'to route to your tunnel tunnelID=aa3c0363-464c-4102-8da6-34cde69f3f3b';
+
+  check(
+    'پسوندِ چسبیده گرفته می‌شود',
+    misroutedHost(REAL, 'api.vill3n.top') === 'api.vill3n.top.yaqobipump.top',
+    misroutedHost(REAL, 'api.vill3n.top')
+  );
+  check(
+    'خروجیِ سالم، هشدارِ الکی نمی‌دهد',
+    misroutedHost('Added CNAME api.vill3n.top which will route to this tunnel', 'api.vill3n.top') === null
+  );
+  check(
+    'همان نام، بدونِ پسوند',
+    misroutedHost('api.vill3n.top is already configured to route to your tunnel', 'api.vill3n.top') === null
+  );
+  check(
+    'دو تکه پسوند',
+    misroutedHost('api.srv.top.example.co.uk created', 'api.srv.top') === 'api.srv.top.example.co.uk'
+  );
+  check('خروجیِ خالی', misroutedHost('', 'api.vill3n.top') === null);
+  check('نامِ خالی', misroutedHost(REAL, '') === null);
+  // نقطه در نامِ میزبان نباید در الگو نقشِ «هر نویسه» بازی کند
+  check(
+    'نقطه‌ها واقعاً نقطه‌اند',
+    misroutedHost('apiXvill3nXtop.example.com', 'api.vill3n.top') === null
+  );
+
   console.log('\n── مرزِ نقش‌ها ──');
   r = await api('POST', '/api/auth/users', { username: 'oper', password: 'NoDomain!2026', role: 'operator' });
   const made = r.status === 200 || r.status === 201;

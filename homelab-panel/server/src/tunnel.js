@@ -18,7 +18,7 @@ import os from 'node:os';
 import { config } from './config.js';
 import { db, logEvent, getSetting, setSetting } from './db.js';
 import { isProtectedHost } from './protected-hosts.js';
-import { apiHostFor } from './platform/domain.js';
+import { apiHostFor, registrableRoot } from './platform/domain.js';
 
 export const tunnelEvents = new EventEmitter();
 
@@ -468,6 +468,30 @@ export async function namedLoginStart() {
   });
 }
 
+/**
+ * گواهیِ ورود را کنار می‌گذارد تا بشود دوباره — و این بار با دامنهٔ درست —
+ * وارد شد. گواهی پاک نمی‌شود، فقط کنار می‌رود: اگر معلوم شد همان درست بوده،
+ * برگرداندنش یک تغییرِ نام است.
+ */
+export function namedLogout() {
+  const moved = [];
+  const stamp = Date.now();
+  for (const file of [CERT_FILE, HOME_CERT]) {
+    if (!fs.existsSync(file)) continue;
+    try {
+      fs.renameSync(file, `${file}.${stamp}.bak`);
+      moved.push(file);
+    } catch {
+      try {
+        fs.unlinkSync(file);
+        moved.push(file);
+      } catch { /* دستمان نرسید */ }
+    }
+  }
+  if (moved.length) logEvent('info', 'panel', 'گواهیِ ورودِ Cloudflare کنار گذاشته شد تا دوباره وارد شوید');
+  return { ok: true, moved };
+}
+
 export function namedLoginDone() {
   return Boolean(findCert());
 }
@@ -545,6 +569,31 @@ export function tunnelIdFrom(output, name) {
   return null;
 }
 
+/**
+ * آیا cloudflared نام را داخلِ دامنهٔ دیگری گذاشت؟
+ *
+ * ⚠️ این سکوت‌کننده‌ترین خرابیِ کلِ این مسیر است. گواهیِ ورود (cert.pem) مالِ
+ * یک دامنهٔ مشخص است — همانی که موقعِ «tunnel login» در مرورگر تأیید شده. اگر
+ * نامی بدهی که در آن دامنه نیست، cloudflared اعتراض نمی‌کند: نامِ دامنهٔ
+ * مجاز را به دُمِ آن می‌چسباند، رکورد را می‌سازد، و با کدِ صفر برمی‌گردد.
+ *
+ *     خواستی:  api.vill3n.top
+ *     ساخت:    api.vill3n.top.yaqobipump.top
+ *
+ * پنل «انجام شد» می‌گفت و مرورگر روی api.vill3n.top می‌گفت NXDOMAIN، و هیچ‌جا
+ * معلوم نبود چرا. حالا از خودِ خروجی خوانده می‌شود: اگر بعد از نامِ ما نقطه و
+ * حرف آمده باشد، یعنی پسوند چسبانده شده.
+ *
+ * @returns نامی که واقعاً ساخته شد، یا null اگر همان چیزی بود که خواستیم
+ */
+export function misroutedHost(output, host) {
+  const text = String(output || '');
+  if (!host) return null;
+  const escaped = host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const found = new RegExp(`${escaped}((?:\\.[a-z0-9-]+)+)`, 'i').exec(text);
+  return found ? host + found[1] : null;
+}
+
 export async function namedSetup({ hostname, name = DEFAULT_TUNNEL_NAME }) {
   const host = normalizeHostname(hostname);
   if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) return { ok: false, error: 'invalid_hostname' };
@@ -593,6 +642,25 @@ export async function namedSetup({ hostname, name = DEFAULT_TUNNEL_NAME }) {
   const routed = await runCf(['tunnel', 'route', 'dns', '--overwrite-dns', name, host]);
   if (!routed.ok && !/already exists|record with the same/i.test(routed.output)) {
     return { ok: false, error: 'dns_failed', detail: routed.output.slice(-400) };
+  }
+
+  /*
+   *  cloudflared با کدِ صفر برگشت — ولی روی کدام نام؟ اگر گواهیِ ورود مالِ
+   *  دامنهٔ دیگری باشد، نامِ آن دامنه به دُمِ نامِ ما چسبانده می‌شود و رکورد
+   *  جای غلط ساخته می‌شود، بی‌آنکه خطایی بدهد. این را باید همین‌جا گرفت،
+   *  وگرنه پنل «انجام شد» می‌گوید و مرورگر NXDOMAIN.
+   */
+  const wrong = misroutedHost(routed.output, host);
+  if (wrong) {
+    logEvent('warn', 'panel', `رکورد جای غلط ساخته شد: ${wrong} به‌جای ${host}`);
+    return {
+      ok: false,
+      error: 'wrong_zone',
+      detail:
+        `cloudflared به‌جای «${host}» رکورد را روی «${wrong}» ساخت.\n\n` +
+        'یعنی موقعِ ورود به Cloudflare، دامنهٔ دیگری را تأیید کرده‌اید. ' +
+        `باید دوباره وارد شوید و این بار «${registrableRoot(host)}» را انتخاب کنید.`,
+    };
   }
 
   // فایلِ اعتبارِ تونل — اگر پیدا نشود، cloudflared بی‌صدا با کد ۱ می‌میرد

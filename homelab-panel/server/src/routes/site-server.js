@@ -20,6 +20,7 @@ import {
   namedConfig,
   namedLoginStart,
   namedLoginDone,
+  namedLogout,
   namedSetup,
   namedReset,
   tokenSetup,
@@ -263,6 +264,13 @@ router.post('/tunnel/named/login', async (req, res) => {
 
 router.get('/tunnel/named/login-status', (req, res) => {
   res.json({ loggedIn: namedLoginDone() });
+});
+
+// خروج از حساب Cloudflare — برای وقتی که دامنهٔ اشتباهی تأیید شده باشد
+router.post('/tunnel/named/logout', requireWriteRole('admin'), (req, res) => {
+  const result = namedLogout();
+  logEvent('info', 'panel', 'ورودِ Cloudflare بازنشانی شد');
+  res.json(result);
 });
 
 // گام ۲: ساخت تونل و وصل کردن زیردامنه — بعد از این، آدرس برای همیشه ثابت است

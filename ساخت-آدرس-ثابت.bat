@@ -101,9 +101,22 @@ echo   [2/3] Creating tunnel "%TUNNEL%" ...
 echo.
 
 REM ---- step 3: route the subdomain ------------------------------------------
+REM  The output is captured, not just printed. cloudflared does NOT fail when
+REM  the name is outside the zone your cert.pem was issued for - it silently
+REM  appends that zone and still returns 0:
+REM      asked for   api.vill3n.top
+REM      created     api.vill3n.top.yaqobipump.top
+REM  So exit code 0 is not proof. The output has to be read.
+:do_route
 echo   [3/3] Pointing %HOST% at the tunnel ...
-"%CF%" tunnel route dns --overwrite-dns %TUNNEL% %HOST%
-if errorlevel 1 goto route_failed
+set "LOG=%TEMP%\cf-route-%RANDOM%.txt"
+"%CF%" tunnel route dns --overwrite-dns %TUNNEL% %HOST% > "%LOG%" 2>&1
+set "RC=%ERRORLEVEL%"
+type "%LOG%"
+findstr /r /c:"%HOST%\.[a-zA-Z]" "%LOG%" >nul 2>&1
+if not errorlevel 1 goto wrong_zone
+del "%LOG%" >nul 2>&1
+if not "%RC%"=="0" goto route_failed
 
 echo.
 echo   ==========================================================
@@ -136,6 +149,40 @@ exit /b 1
 :login_failed
 echo.
 echo   Sign-in did not complete. Run this file again.
+echo.
+pause
+exit /b 1
+
+:wrong_zone
+del "%LOG%" >nul 2>&1
+echo.
+echo   ==========================================================
+echo     WRONG DOMAIN.
+echo.
+echo     cloudflared did not create %HOST%.
+echo     It stuck your other domain onto the end of the name,
+echo     because that is the domain you approved when signing in.
+echo.
+echo     Fix: sign in again and approve the RIGHT domain this time.
+echo   ==========================================================
+echo.
+set "ANS="
+set /p "ANS=Sign in again now? type  y  and press Enter: "
+if /i not "%ANS%"=="y" goto give_up
+
+REM  The certificate is what pins the wrong domain. Move it aside, not delete.
+if exist "%USERPROFILE%\.cloudflared\cert.pem" move /y "%USERPROFILE%\.cloudflared\cert.pem" "%USERPROFILE%\.cloudflared\cert.old.pem" >nul
+echo.
+echo   A browser will open. Pick the domain that %HOST% belongs to.
+echo.
+"%CF%" tunnel login
+if not exist "%USERPROFILE%\.cloudflared\cert.pem" goto login_failed
+echo.
+goto do_route
+
+:give_up
+echo.
+echo   Nothing was changed. Run this file again when ready.
 echo.
 pause
 exit /b 1

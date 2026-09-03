@@ -943,6 +943,7 @@ const SETUP_MESSAGE: Record<string, Parameters<Translate>[0]> = {
   dns_failed: 'errDnsFailed',
   tunnel_id_not_found: 'errCredentials',
   credentials_not_found: 'errCredentials',
+  wrong_zone: 'errWrongZone',
 };
 
 /*
@@ -1042,6 +1043,26 @@ function PermanentAddress({ data, onChanged }: { data: SiteServerInfo; onChanged
       setError(setupError(e, t));
     } finally {
       setSavingDomain(false);
+    }
+  }
+
+  /*
+   *  ورودِ دوباره — برای وقتی که دامنهٔ اشتباهی تأیید شده باشد.
+   *
+   *  ⚠️ بدونِ این، هیچ راهی در پنل نبود: گواهی هست، پس «وارد شده‌اید ✓»
+   *  نشان داده می‌شد، و هر بار رکورد داخلِ همان دامنهٔ اشتباه ساخته می‌شد.
+   */
+  async function relogin() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api('/api/site-server/tunnel/named/logout', { method: 'POST' });
+      setLoggedIn(false);
+      toast(t('reloginReady'));
+    } catch (e) {
+      setError(setupError(e, t));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -1295,7 +1316,13 @@ var SELF_HOST_TOKEN = '${token ?? '…'}';`}
             <p className="label mb-2">{t('permStepLogin')}</p>
 
             {loggedIn ? (
-              <Badge tone="good">{t('permanentLoggedIn')}</Badge>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone="good">{t('permanentLoggedIn')}</Badge>
+                {/* دامنهٔ اشتباهی تأیید شده؟ تنها راهِ برگشت همین است */}
+                <button className="btn btn-sm" disabled={busy} onClick={() => void relogin()}>
+                  {t('reloginOther')}
+                </button>
+              </div>
             ) : (
               <div className="flex flex-wrap items-center gap-2">
                 <button className="btn btn-primary btn-sm" disabled={busy} onClick={startLogin}>
