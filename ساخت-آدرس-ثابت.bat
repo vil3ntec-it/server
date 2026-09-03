@@ -1,113 +1,113 @@
 @echo off
-REM ---------------------------------------------------------------------------
-REM   ساختِ آدرسِ ثابت — همین فایل را دوبار کلیک کنید.
+REM ===========================================================================
+REM   Create the permanent address for the home server.
 REM
-REM   همان سه کاری را می‌کند که دکمهٔ «ساخت آدرس ثابت» در پنل می‌کند، ولی
-REM   بدونِ گشتن در صفحه‌ها:
-REM       ۱) ورود به حساب Cloudflare (فقط اگر قبلاً وارد نشده باشید)
-REM       ۲) ساختِ تونل
-REM       ۳) وصل کردنِ زیردامنه
-REM
-REM   زیردامنه را می‌شود جلوی همین فایل نوشت:
-REM       ساخت-آدرس-ثابت.bat sync.vill3n.top
-REM   ننویسید، همان api.vill3n.top گرفته می‌شود.
-REM ---------------------------------------------------------------------------
-chcp 65001 >nul 2>nul
-setlocal EnableDelayedExpansion
+REM   NOTE FOR MAINTAINERS: this file is deliberately ASCII-only.
+REM   cmd.exe parses a .bat in the machine's ANSI codepage, not UTF-8, so any
+REM   Persian text here comes back as garbage AND cmd then tries to run that
+REM   garbage as a command. The first version of this file did exactly that.
+REM   Parenthesised if-blocks are avoided too: the install path contains
+REM   "New folder (2)" and an unescaped ")" inside a block closes it early.
+REM   Keep it ASCII, keep it flat with goto labels.
+REM ===========================================================================
+setlocal
 cd /d "%~dp0"
 
 set "HOST=%~1"
 if "%HOST%"=="" set "HOST=api.vill3n.top"
 set "TUNNEL=control-center"
-
-echo.
-echo   ==========================================================
-echo     ساختِ آدرسِ ثابت برای:  %HOST%
-echo   ==========================================================
-echo.
-
-REM ---- پیدا کردنِ cloudflared -------------------------------------------------
-REM  اول کنارِ خودِ برنامه، بعد جاهای همیشگی، آخر هم PATH.
 set "CF="
-for %%P in (
-  "%~dp0homelab-panel\server\data\bin\cloudflared.exe"
-  "%~dp0data\bin\cloudflared.exe"
-  "%~dp0bin\cloudflared.exe"
-  "%LOCALAPPDATA%\ControlCenter\bin\cloudflared.exe"
-  "%ProgramData%\ControlCenter\bin\cloudflared.exe"
-) do if not defined CF if exist %%P set "CF=%%~P"
 
-if not defined CF (
-  for /f "delims=" %%W in ('where cloudflared 2^>nul') do if not defined CF set "CF=%%W"
-)
+echo.
+echo   ==========================================================
+echo     Creating permanent address for:  %HOST%
+echo   ==========================================================
+echo.
 
-if not defined CF (
-  echo   cloudflared.exe پیدا نشد.
-  echo.
-  echo   مسیرش را می‌دانید؟ فایلِ cloudflared.exe را با ماوس بگیرید و
-  echo   روی همین فایل رها کنید — یا مسیرش را این‌جا بنویسید و Enter بزنید.
-  echo   (مثال:  D:\server\New folder ^(2^)\bin\cloudflared.exe )
-  echo.
-  set /p "CF=مسیر: "
-)
+REM ---- find cloudflared.exe -------------------------------------------------
+if exist "%~dp0bin\cloudflared.exe" set "CF=%~dp0bin\cloudflared.exe"
+if not defined CF if exist "%~dp0data\bin\cloudflared.exe" set "CF=%~dp0data\bin\cloudflared.exe"
+if not defined CF if exist "%~dp0homelab-panel\server\data\bin\cloudflared.exe" set "CF=%~dp0homelab-panel\server\data\bin\cloudflared.exe"
+if not defined CF if exist "%LOCALAPPDATA%\ControlCenter\bin\cloudflared.exe" set "CF=%LOCALAPPDATA%\ControlCenter\bin\cloudflared.exe"
+if not defined CF if exist "%ProgramData%\ControlCenter\bin\cloudflared.exe" set "CF=%ProgramData%\ControlCenter\bin\cloudflared.exe"
+if defined CF goto have_cf
 
-if not exist "%CF%" (
-  echo.
-  echo   پیدا نشد: %CF%
-  echo   یک‌بار پنل را باز کنید و صفحهٔ «آدرس اینترنتی» را ببینید —
-  echo   خودش cloudflared را دانلود می‌کند. بعد دوباره این فایل را بزنید.
-  echo.
-  pause
-  exit /b 1
-)
+for /f "delims=" %%W in ('where cloudflared 2^>nul') do set "CF=%%W"
+if defined CF goto have_cf
+
+echo   cloudflared.exe not found next to this file.
+echo.
+echo   Drag cloudflared.exe into this window and press Enter,
+echo   or type its full path.
+echo.
+set /p "CF=path: "
+set "CF=%CF:"=%"
+
+:have_cf
+if not exist "%CF%" goto no_cf
 echo   cloudflared:  %CF%
 echo.
 
-REM ---- گام ۱: ورود ------------------------------------------------------------
-if exist "%USERPROFILE%\.cloudflared\cert.pem" (
-  echo   [۱/۳] از قبل وارد شده‌اید.
-) else (
-  echo   [۱/۳] مرورگر باز می‌شود. وارد حساب Cloudflare شوید و دامنه را تایید کنید.
-  echo.
-  "%CF%" tunnel login
-  if not exist "%USERPROFILE%\.cloudflared\cert.pem" (
-    echo.
-    echo   ورود کامل نشد. دوباره این فایل را بزنید.
-    echo.
-    pause
-    exit /b 1
-  )
-)
+REM ---- step 1: login --------------------------------------------------------
+if exist "%USERPROFILE%\.cloudflared\cert.pem" goto logged_in
+echo   [1/3] A browser will open. Sign in to Cloudflare and approve the domain.
+echo.
+"%CF%" tunnel login
+if not exist "%USERPROFILE%\.cloudflared\cert.pem" goto login_failed
+goto login_done
+
+:logged_in
+echo   [1/3] Already signed in.
+
+:login_done
 echo.
 
-REM ---- گام ۲: ساختِ تونل ------------------------------------------------------
-REM  اگر از قبل هست، خطایش را نادیده می‌گیریم — تونل که هست، همان کافی است.
-REM  خروجیِ ناموفق این‌جا مشکلی نیست: «already exists» یعنی تونل هست و
-REM  همان به کار می‌آید. فقط گام سه باید موفق شود.
-echo   [۲/۳] ساختِ تونل «%TUNNEL%»...
+REM ---- step 2: create tunnel ------------------------------------------------
+REM  A failure here is fine: "already exists" means the tunnel is there and
+REM  that is all we need. Only step 3 has to succeed.
+echo   [2/3] Creating tunnel "%TUNNEL%" ...
 "%CF%" tunnel create %TUNNEL%
 echo.
 
-REM ---- گام ۳: وصل کردنِ زیردامنه ----------------------------------------------
-echo   [۳/۳] وصل کردنِ %HOST% به تونل...
+REM ---- step 3: route the subdomain ------------------------------------------
+echo   [3/3] Pointing %HOST% at the tunnel ...
 "%CF%" tunnel route dns --overwrite-dns %TUNNEL% %HOST%
-if errorlevel 1 (
-  echo.
-  echo   وصل نشد. معمولاً یعنی این دامنه در همان حسابی نیست که با آن وارد شدید.
-  echo   متنِ بالا را برای مهندس بفرستید.
-  echo.
-  pause
-  exit /b 1
-)
+if errorlevel 1 goto route_failed
 
 echo.
 echo   ==========================================================
-echo     تمام شد.
+echo     DONE.
 echo.
-echo     آدرسِ سرور:   https://%HOST%
+echo     Server address:   https://%HOST%
 echo.
-echo     حالا پنل را باز کنید:  آدرس اینترنتی  ^<  آدرس ثابت
-echo     و دکمهٔ «ساخت آدرس ثابت» را بزنید تا پنل بقیه‌اش را تمام کند.
+echo     Now open the panel, go to the internet-address page,
+echo     and press the "create permanent address" button once.
 echo   ==========================================================
 echo.
 pause
+exit /b 0
+
+:no_cf
+echo.
+echo   Not found: %CF%
+echo   Open the panel once and visit the internet-address page -
+echo   it downloads cloudflared by itself. Then run this file again.
+echo.
+pause
+exit /b 1
+
+:login_failed
+echo.
+echo   Sign-in did not complete. Run this file again.
+echo.
+pause
+exit /b 1
+
+:route_failed
+echo.
+echo   Could not create the DNS record.
+echo   Usually this means the domain is not in the Cloudflare account
+echo   you signed in with. Send the text above to the engineer.
+echo.
+pause
+exit /b 1
