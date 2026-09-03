@@ -67,9 +67,19 @@ echo   ---- new config.yml ----
 type "%CFG%"
 echo.
 echo   ==========================================================
-echo     FIXED.
+echo     Config file fixed.
 echo.
-echo     Now CLOSE the panel completely and start it again.
+echo     IMPORTANT - one more thing:
+echo     The panel only reads this file when its own setting says
+echo     "named". This file cannot change that setting.
+echo.
+echo     So after restarting the panel, go to:
+echo       Internet address  ^>  Permanent address
+echo     and press the "create permanent address" button ONCE.
+echo.
+echo     Panel version 1.8.6 and newer does that by itself on
+echo     startup - then no button is needed.
+echo.
 echo     Then open:  https://api.vill3n.top/health
 echo   ==========================================================
 echo.

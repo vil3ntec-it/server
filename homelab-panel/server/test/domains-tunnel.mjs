@@ -241,6 +241,59 @@ async function main() {
   const rec = await reconcileNamedTunnel();
   check('در حالتِ غیرِ نام‌دار، دست به چیزی نمی‌زند', rec.ok && rec.skipped === 'not_named', JSON.stringify(rec));
 
+  console.log('\n── پیکربندیِ آدرسِ ثابت روی دیسک، ولی حالت «سریع» ──');
+  /*
+   *  ⚠️ باگی که یک شب دیگر برد: startTunnel وقتی سراغِ config.yml می‌رود که
+   *  tunnel_mode برابرِ «named» باشد. تعمیرِ دستیِ فایل، این تنظیم را عوض
+   *  نمی‌کرد — پس پنل تونلِ سریع بالا می‌آورد، config.yml نادیده می‌ماند، و
+   *  api.<دامنه> برای همیشه Error 1033 می‌داد. هر بار هم فایل «درست» بود.
+   */
+  const fsm = await import('node:fs');
+  const pathm = await import('node:path');
+  /*
+   *  ⚠️ این تکه در‌جا اجرا می‌شود، نه در سرورِ فرزند. پس باید در پوشهٔ دادهٔ
+   *  همین پروسه نوشته شود — نه آنِ فرزند — وگرنه tunnel.js فایلی را می‌بیند
+   *  که آن‌جا نیست و آزمون بی‌دلیل قرمز می‌شود.
+   */
+  const { config: cfgm } = await import('../src/config.js');
+  const cfDir = pathm.join(cfgm.dataDir, 'cloudflared');
+  const uuid = '99999999-8888-7777-6666-555555555555';
+  fsm.mkdirSync(cfDir, { recursive: true });
+  fsm.writeFileSync(pathm.join(cfDir, `${uuid}.json`), JSON.stringify({ TunnelID: uuid }));
+  fsm.writeFileSync(
+    pathm.join(cfDir, 'config.yml'),
+    [
+      `tunnel: ${uuid}`,
+      `credentials-file: ${pathm.join(cfDir, `${uuid}.json`).replaceAll('\\', '/')}`,
+      'ingress:',
+      '  - hostname: api.vill3n.top',
+      '    service: http://127.0.0.1:4701',
+      '  - service: http_status:404',
+    ].join('\n'),
+  );
+
+  const { reconcileNamedTunnel: reconcile2 } = await import('../src/tunnel.js');
+  const { getSetting: get2 } = await import('../src/db.js');
+  check('پیش از تعمیر، حالت سریع است', get2('tunnel_mode', 'quick') !== 'named');
+
+  await reconcile2().catch(() => null);
+  check('حالت به «آدرسِ ثابت» برگشت', get2('tunnel_mode', 'quick') === 'named', get2('tunnel_mode', 'quick'));
+  check('زیردامنه از فایل خوانده شد', get2('tunnel_hostname', null) === 'api.vill3n.top', get2('tunnel_hostname', null));
+
+  // فایلِ نیمه‌کاره نباید تونلِ سریعِ سالم را از کار بیندازد
+  const { setSetting: set2 } = await import('../src/db.js');
+  set2('tunnel_mode', 'quick');
+  set2('tunnel_hostname', null);
+  fsm.writeFileSync(pathm.join(cfDir, 'config.yml'), 'ingress:\n  - service: http_status:404\n');
+  await reconcile2().catch(() => null);
+  check('فایلِ نیمه‌کاره پذیرفته نمی‌شود', get2('tunnel_mode', 'quick') === 'quick', get2('tunnel_mode', 'quick'));
+
+  // این تکه در پوشهٔ دادهٔ واقعیِ همین پروسه نوشت — جمعش می‌کنیم
+  fsm.rmSync(pathm.join(cfDir, 'config.yml'), { force: true });
+  fsm.rmSync(pathm.join(cfDir, `${uuid}.json`), { force: true });
+  set2('tunnel_mode', 'quick');
+  set2('tunnel_hostname', null);
+
   console.log('\n── مرزِ نقش‌ها ──');
   r = await api('POST', '/api/auth/users', { username: 'oper', password: 'NoDomain!2026', role: 'operator' });
   const made = r.status === 200 || r.status === 201;

@@ -940,8 +940,49 @@ async function writeIngress(uuid, credFile) {
  * حالا پیش از راه‌اندازی، نام در حساب جست‌وجو می‌شود و اگر شناسه فرق داشت،
  * config.yml با شناسه و فایلِ اعتبارِ درست بازنویسی می‌شود.
  */
+/**
+ * اگر config.yml یک تونلِ کامل را توصیف می‌کند، همان را به‌عنوان «آدرسِ ثابت»
+ * می‌پذیرد و تنظیمِ حالت را درست می‌کند.
+ *
+ * سه شرط با هم: شناسهٔ تونل، فایلِ اعتبارِ موجود، و دست‌کم یک hostname. هر سه
+ * لازم است — یک فایلِ نیمه‌کاره نباید تونلِ سریعِ سالم را از کار بیندازد.
+ *
+ * @returns آیا حالت عوض شد
+ */
+function adoptConfigAsNamed() {
+  if (!fs.existsSync(CONFIG_FILE)) return false;
+  const uuid = readTunnelIdFromConfig();
+  const cred = readCredFromConfig();
+  const host = readHostFromConfig();
+  if (!uuid || !host) return false;
+  if (!cred || !fs.existsSync(cred)) return false;
+
+  setSetting('tunnel_mode', 'named');
+  if (!getSetting('tunnel_hostname', null)) setSetting('tunnel_hostname', host);
+  logEvent(
+    'warn',
+    'panel',
+    `پیکربندیِ آدرسِ ثابت روی دیسک بود ولی پنل در حالتِ سریع مانده بود — حالت به «${host}» برگشت`
+  );
+  return true;
+}
+
 export async function reconcileNamedTunnel() {
-  if (getSetting('tunnel_mode', 'quick') !== 'named') return { ok: true, skipped: 'not_named' };
+  /*
+   *  ⚠️ اول حالت، بعد شناسه.
+   *
+   *  startTunnel وقتی سراغِ config.yml می‌رود که tunnel_mode برابرِ «named»
+   *  باشد. اگر این تنظیم روی «quick» مانده باشد، هرچقدر هم config.yml درست
+   *  باشد نادیده گرفته می‌شود و تونلِ سریع بالا می‌آید — یعنی رکوردِ DNS به
+   *  تونلی اشاره می‌کند که هیچ‌کس پشتش نیست: Error 1033، برای همیشه.
+   *
+   *  فایلی که تونل و فایلِ اعتبار و ingress دارد، خودش سندِ کافی است که
+   *  صاحبِ سرور آدرسِ ثابت می‌خواهد. پس همین‌جا حالت را هم درست می‌کنیم.
+   */
+  if (getSetting('tunnel_mode', 'quick') !== 'named') {
+    const adopted = adoptConfigAsNamed();
+    if (!adopted) return { ok: true, skipped: 'not_named' };
+  }
   const name = getSetting('tunnel_name', DEFAULT_TUNNEL_NAME);
   const inConfig = readTunnelIdFromConfig();
   if (!findCert()) return { ok: true, skipped: 'not_logged_in' };
@@ -975,6 +1016,16 @@ export async function reconcileNamedTunnel() {
 function readTunnelIdFromConfig() {
   try {
     const m = fs.readFileSync(CONFIG_FILE, 'utf8').match(/^tunnel:\s*(\S+)/m);
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+/** اولین hostname در ingress — همان آدرسِ اصلیِ سرور */
+function readHostFromConfig() {
+  try {
+    const m = fs.readFileSync(CONFIG_FILE, 'utf8').match(/^\s*-\s*hostname:\s*(\S+)/m);
     return m ? m[1] : null;
   } catch {
     return null;
