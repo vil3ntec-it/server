@@ -17,10 +17,12 @@ import { plansPayload } from '../tohid/plans.js';
 import { readTohidSettings } from '../tohid/settings.js';
 import {
   createShop, createInvite, joinShop, removeMember, shopInfo, pushChanges, pullChanges,
+  listInvites, revokeInvite, SHOP_FEATURES,
 } from '../tohid/shop.js';
 import { noteActivity } from '../tohid/presence.js';
 import { sendCode, verifyCode } from '../tohid/otp.js';
 import { db } from '../db.js';
+import { versionInfo } from '../version.js';
 
 const router = express.Router();
 
@@ -161,10 +163,44 @@ router.post('/shop/create', guard(async (req, res) => {
   res.json(shopInfo(account.account_id));
 }));
 
+/*
+ *  کدِ پیوستن.
+ *
+ *  کلِ بدنه رد می‌شود، نه فقط role — نسخه‌های تازهٔ برنامه نقش و تعدادِ
+ *  استفاده و مدتِ اعتبار را با هم می‌فرستند و خودِ createInvite نام‌های
+ *  مختلفِ این فیلدها را می‌شناسد.
+ */
 router.post('/shop/invite', guard(async (req, res) => {
   const account = requireAccount(req, res);
   if (!account) return;
-  res.json(createInvite(account.account_id, req.body?.role));
+  res.json(createInvite(account.account_id, req.body || {}));
+}));
+
+// نامِ دیگری که بعضی نسخه‌ها می‌زنند — همان کار
+router.post('/shop/invites', guard(async (req, res) => {
+  const account = requireAccount(req, res);
+  if (!account) return;
+  res.json(createInvite(account.account_id, req.body || {}));
+}));
+
+router.get('/shop/invites', guard(async (req, res) => {
+  const account = requireAccount(req, res);
+  if (!account) return;
+  res.json({ invites: listInvites(account.account_id) });
+}));
+
+router.post('/shop/invites/:code/revoke', guard(async (req, res) => {
+  const account = requireAccount(req, res);
+  if (!account) return;
+  revokeInvite(account.account_id, req.params.code);
+  res.json(shopInfo(account.account_id));
+}));
+
+router.delete('/shop/invites/:code', guard(async (req, res) => {
+  const account = requireAccount(req, res);
+  if (!account) return;
+  revokeInvite(account.account_id, req.params.code);
+  res.json(shopInfo(account.account_id));
 }));
 
 router.post('/shop/join', guard(async (req, res) => {
@@ -233,9 +269,22 @@ router.post('/auth/otp/verify', guard(async (req, res) => {
 
 /* ------------------------------ سلامت --------------------------------- */
 
+/*
+ *  سلامتِ سرورِ برنامه.
+ *
+ *  فهرستِ قابلیت‌ها این‌جا هم می‌آید: برنامه پیش از هر کاری همین را می‌زند و
+ *  با آن می‌فهمد سرورِ روبه‌رو چه چیزی بلد است. بدونِ این، تنها راهِ فهمیدن،
+ *  خوردنِ ۴۰۴ وسطِ کار بود.
+ */
 router.get('/health', (_req, res) => {
   const cfg = readTohidSettings();
-  res.json({ ok: true, serverTime: Date.now(), otpReady: Boolean(cfg.mail?.host) });
+  res.json({
+    ok: true,
+    serverTime: Date.now(),
+    otpReady: Boolean(cfg.mail?.host),
+    version: versionInfo.version,
+    features: SHOP_FEATURES,
+  });
 });
 
 export default router;

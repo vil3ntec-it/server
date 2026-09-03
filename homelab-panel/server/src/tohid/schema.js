@@ -189,7 +189,28 @@ CREATE TABLE IF NOT EXISTS th_connections (
 CREATE INDEX IF NOT EXISTS th_conn_seen ON th_connections(last_seen);
   `);
 
+  addMissingColumns();
   seedPlans();
+}
+
+/**
+ * ستون‌هایی که بعداً اضافه شده‌اند.
+ *
+ * ⚠️ CREATE TABLE IF NOT EXISTS روی دیتابیسی که از قبل هست هیچ کاری نمی‌کند،
+ * پس ستونِ تازه به جدولِ قدیمی اضافه نمی‌شود. برای همین این‌جا جدا انجام
+ * می‌شود — و چون ALTER TABLE برای ستونِ تکراری خطا می‌دهد، اول پرسیده می‌شود.
+ */
+function addMissingColumns() {
+  const add = (table, column, definition) => {
+    const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+    if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  };
+  // کدِ پیوستن: چند بار قابل استفاده باشد (۰ = بی‌شمار) و تا حالا چند بار
+  // استفاده شده. کدهای قدیمی یک‌بارمصرف بودند، پس پیش‌فرض ۱ است.
+  add('th_shop_invites', 'max_uses', 'INTEGER NOT NULL DEFAULT 1');
+  add('th_shop_invites', 'used_count', 'INTEGER NOT NULL DEFAULT 0');
+  add('th_shop_invites', 'revoked', 'INTEGER NOT NULL DEFAULT 0');
+  add('th_shop_invites', 'created_by', 'TEXT');
 }
 
 /** قیمت‌نامهٔ اولیه — همان چیزی که خودِ برنامه به‌عنوان پیش‌فرض دارد */
