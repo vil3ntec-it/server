@@ -27,7 +27,9 @@ function shortText({ code, minutes, appName }) {
  * @returns {{code, minutes, to, subject, body, mailto, gmail, whatsapp}}
  */
 export async function makeManualCode({ method, value, name }) {
-  const made = await sendCode({ method, value, name, deliver: false });
+  // force: مدیرِ سرور خودش تصمیم می‌گیرد؛ «۶۰ ثانیه صبر کن» این‌جا فقط
+  // مزاحم است و باعث می‌شود کدِ تازه ساخته نشود
+  const made = await sendCode({ method, value, name, deliver: false, force: true });
   const appName = mailSettings().fromName || 'توحید';
   const { subject, text } = otpEmail({ code: made.code, minutes: made.minutes, appName });
 

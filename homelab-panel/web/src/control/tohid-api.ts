@@ -155,6 +155,15 @@ export const th = {
       method: 'POST', body: { method, to },
     }),
 
+  /** دکانِ یک حساب و کدهای پیوستنش */
+  shop: (id: string) => api<ThShopView>(`${T}/accounts/${id}/shop`),
+  shopInvite: (id: string, body: { role: string; uses: number; days: number }) =>
+    api<ThShopView & { ok: boolean; code: string; role: string; uses: number; expiresAt: number | null }>(
+      `${T}/accounts/${id}/shop-invite`, { method: 'POST', body },
+    ),
+  revokeShopInvite: (id: string, code: string) =>
+    api<ThShopView>(`${T}/accounts/${id}/shop-invite/${code}/revoke`, { method: 'POST' }),
+
   vault: () => api<ThVault>(`${T}/vault`),
   saveVault: (dir: string) =>
     api<ThVault>(`${T}/vault`, { method: 'POST', body: { dir } }),
@@ -182,4 +191,22 @@ export type ThVault = {
   writable: boolean;
   folders: number;
   error?: string | null;
+};
+
+export type ThShopInvite = {
+  code: string;
+  role: string;
+  uses: number;
+  maxUses: number;
+  usedCount: number;
+  createdAt: number;
+  expiresAt: number | null;
+  revoked: boolean;
+  active: boolean;
+};
+
+export type ThShopView = {
+  shop: { id: string; name: string; ownerId: string; maxMembers: number; rev: number } | null;
+  members: { userId: string; name: string; email: string; phone: string; role: string }[];
+  invites: ThShopInvite[];
 };

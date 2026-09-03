@@ -29,6 +29,7 @@ import { publicState as tunnelState } from '../../tunnel.js';
 import { config } from '../../config.js';
 import { makeManualCode } from '../../tohid/manual-code.js';
 import { vaultStatus, setAccountsRoot, saveAccountFile } from '../../tohid/vault-files.js';
+import { createInviteForAccount, shopForAccount, revokeInviteForAccount } from '../../tohid/shop.js';
 
 const router = express.Router();
 
@@ -415,6 +416,50 @@ router.post('/otp/test', requireRole('admin'), guard(async (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     res.json({ ok: false, error: e.code || 'send_failed', detail: e.message });
+  }
+}));
+
+// ── دکان و شاگردها، از خودِ پنل ───────────────────────────────────────────
+router.get('/accounts/:id/shop', guard(async (req, res) => {
+  const account = accountById(req.params.id);
+  if (!account) return fail(res, 404, 'not_found');
+  res.json(shopForAccount(account.account_id));
+}));
+
+/*
+ *  ساختِ کدِ شاگرد از پنل.
+ *
+ *  تا امروز کد فقط داخلِ خودِ برنامه ساخته می‌شد؛ اگر صاحبِ دکان بلد نبود یا
+ *  گوشی‌اش دستش نبود، هیچ راهی نداشت. حالا از این‌جا هم می‌شود — با همان
+ *  نقش و تعداد و مدت.
+ */
+router.post('/accounts/:id/shop-invite', requireRole('operator'), guard(async (req, res) => {
+  const account = accountById(req.params.id);
+  if (!account) return fail(res, 404, 'not_found');
+  try {
+    const made = createInviteForAccount(account.account_id, req.body || {});
+    audit({
+      actor: actorOf(req), action: 'tohid.shop.invite',
+      entity: 'tohid_account', entityId: account.account_id, detail: made.role,
+    });
+    res.json({ ok: true, ...made, ...shopForAccount(account.account_id) });
+  } catch (e) {
+    return fail(res, 400, e.code || 'failed', e.message);
+  }
+}));
+
+router.post('/accounts/:id/shop-invite/:code/revoke', requireRole('operator'), guard(async (req, res) => {
+  const account = accountById(req.params.id);
+  if (!account) return fail(res, 404, 'not_found');
+  try {
+    revokeInviteForAccount(account.account_id, req.params.code);
+    audit({
+      actor: actorOf(req), action: 'tohid.shop.invite.revoke',
+      entity: 'tohid_account', entityId: account.account_id,
+    });
+    res.json({ ok: true, ...shopForAccount(account.account_id) });
+  } catch (e) {
+    return fail(res, 400, e.code || 'failed', e.message);
   }
 }));
 

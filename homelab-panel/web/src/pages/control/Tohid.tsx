@@ -15,7 +15,7 @@ import { ActionButton, Cell, KV, Notice, Row, Select, Stat, Table, Tabs } from '
 import { th } from '../../control/tohid-api';
 import type {
   ThAccount, ThAddresses, ThOverview, ThPlan, ThOnline, ThOtpStatus, ThRequest, ThSettings,
-  ThManualCode, ThVault,
+  ThManualCode, ThVault, ThShopView, ThShopInvite,
 } from '../../control/tohid-api';
 
 const UNITS = [
@@ -276,13 +276,28 @@ function VipModal({
 }
 
 
+/** نقشِ سرور → کلیدِ ترجمه. رشته‌سازیِ کلید تایپ را از دست می‌دهد. */
+const ROLE_KEY: Record<string, 'thRoleOwner' | 'thRoleManager' | 'thRoleStaff'> = {
+  owner: 'thRoleOwner',
+  manager: 'thRoleManager',
+  staff: 'thRoleStaff',
+};
+
 function DetailModal({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
   const { t, lang } = useApp();
   const [data, setData] = useState<Awaited<ReturnType<typeof th.account>> | null>(null);
 
+  const [shop, setShop] = useState<ThShopView | null>(null);
+  const [role, setRole] = useState('staff');
+  const [uses, setUses] = useState('1');
+  const [days, setDays] = useState('7');
+  const [madeCode, setMadeCode] = useState('');
+
   const refresh = useCallback(async () => {
     try { setData(await th.account(id)); }
     catch (e) { toast((e as Error).message, 'bad'); }
+    try { setShop(await th.shop(id)); }
+    catch { /* دکان نداشتن خطا نیست */ }
   }, [id]);
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -349,6 +364,94 @@ function DetailModal({ id, onClose, onChanged }: { id: string; onClose: () => vo
               </Row>
             ))}
           </Table>
+        </div>
+
+        {/*
+            کدِ شاگرد از خودِ پنل — تا امروز فقط داخلِ برنامه ساخته می‌شد و
+            اگر صاحبِ دکان بلد نبود یا گوشی‌اش دستش نبود، هیچ راهی نداشت.
+        */}
+        <div>
+          <h4 className="mb-2 text-sm font-medium">{t('thStaff')}</h4>
+          {!shop?.shop ? (
+            <Notice tone="warn">{t('thStaffNoShop')}</Notice>
+          ) : (
+            <>
+              <p className="mb-2 text-[11px] text-ink-muted">
+                {shop.shop.name} — {shop.members.length} / {shop.shop.maxMembers}
+              </p>
+
+              <Table head={[t('name'), t('thContact'), t('thRole')]} empty={!shop.members.length}>
+                {shop.members.map((m: ThShopView['members'][number]) => (
+                  <Row key={m.userId}>
+                    <Cell>{m.name || '—'}</Cell>
+                    <Cell mono>{m.email || m.phone || '—'}</Cell>
+                    <Cell><Badge tone={m.role === 'owner' ? 'good' : 'neutral'}>{t(ROLE_KEY[m.role] ?? 'thRoleStaff')}</Badge></Cell>
+                  </Row>
+                ))}
+              </Table>
+
+              <div className="mt-3 flex flex-wrap items-end gap-2">
+                <Field label={t('thRole')}>
+                  <Select value={role} onChange={setRole} options={[
+                    { value: 'staff', label: t('thRoleStaff') },
+                    { value: 'manager', label: t('thRoleManager') },
+                  ]} />
+                </Field>
+                <Field label={t('thInviteUses')}>
+                  <input className="input w-24 tnum" inputMode="numeric" value={uses}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUses(e.target.value)} />
+                </Field>
+                <Field label={t('thInviteDays')}>
+                  <input className="input w-24 tnum" inputMode="numeric" value={days}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDays(e.target.value)} />
+                </Field>
+                <ActionButton className="btn btn-sm btn-primary" onClick={async () => {
+                  const r = await th.shopInvite(id, { role, uses: Number(uses) || 0, days: Number(days) || 0 });
+                  setMadeCode(r.code);
+                  setShop(r);
+                  toast(t('saved'), 'good');
+                }}>{t('thMakeInvite')}</ActionButton>
+              </div>
+              <p className="mt-1 text-[11px] text-ink-muted">{t('thInviteZeroHint')}</p>
+
+              {madeCode && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-line p-3"
+                     style={{ background: 'var(--surface-sunken)' }}>
+                  <code className="ltr font-mono text-xl font-bold tracking-[0.3em]" style={{ color: 'var(--accent)' }}>
+                    {madeCode}
+                  </code>
+                  <CopyButton value={madeCode} />
+                  <span className="text-[11px] text-ink-muted">{t('thInviteGiveHint')}</span>
+                </div>
+              )}
+
+              {shop.invites.length > 0 && (
+                <div className="mt-3">
+                <Table head={[t('thCode'), t('thRole'), t('thInviteUsed'), t('status'), '']}>
+                  {shop.invites.map((i: ThShopInvite) => (
+                    <Row key={i.code}>
+                      <Cell mono>{i.code}</Cell>
+                      <Cell>{t(ROLE_KEY[i.role] ?? 'thRoleStaff')}</Cell>
+                      <Cell className="tnum">{i.usedCount} / {i.maxUses === 0 ? '∞' : i.maxUses}</Cell>
+                      <Cell>
+                        <Badge tone={i.active ? 'good' : 'neutral'}>
+                          {i.active ? t('thActive') : i.revoked ? t('thRevoked') : t('thExpired')}
+                        </Badge>
+                      </Cell>
+                      <Cell>
+                        {i.active && (
+                          <ActionButton className="btn btn-sm" onClick={async () => {
+                            setShop(await th.revokeShopInvite(id, i.code));
+                          }}>{t('thRevoke')}</ActionButton>
+                        )}
+                      </Cell>
+                    </Row>
+                  ))}
+                </Table>
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <div>

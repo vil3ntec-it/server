@@ -151,6 +151,53 @@ export function createInvite(accountId, options = {}) {
   return { code, role, uses, days, expiresAt: expiresAt || null, createdAt: now };
 }
 
+/**
+ * ساختِ کد از پنل — بدونِ اینکه مدیرِ سرور عضوِ دکان باشد.
+ *
+ * ⚠️ چرا جدا: createInvite می‌پرسد «تو در این دکان چه‌کاره‌ای؟» و مدیرِ سرور
+ * اصلاً عضوِ هیچ دکانی نیست، پس همیشه not_allowed می‌گرفت. صاحبِ سرور از
+ * صاحبِ دکان هم بالاتر است؛ این مسیر برای اوست و در روت با requireRole
+ * محافظت می‌شود.
+ *
+ * @param accountId حسابی که دکانش را می‌خواهیم — صاحب یا هر عضوی
+ */
+export function createInviteForAccount(accountId, options = {}) {
+  const shop = shopOf(accountId);
+  if (!shop) {
+    throw Object.assign(
+      new Error('این حساب هنوز دکانی نساخته — اول در خودِ برنامه «دکان» بسازد'),
+      { code: 'no_shop' },
+    );
+  }
+  // به‌جای این حساب، از طرفِ صاحبِ دکان ساخته می‌شود تا مدیر هم بتواند
+  // ساخته شود (مدیر، مدیرِ دیگر نمی‌سازد ولی صاحب می‌سازد)
+  return createInvite(shop.owner_id, options);
+}
+
+/** نمای دکانِ یک حساب برای پنل — اعضا و کدها */
+export function shopForAccount(accountId) {
+  const shop = shopOf(accountId);
+  if (!shop) return { shop: null, members: [], invites: [] };
+  return {
+    shop: {
+      id: shop.shop_id,
+      name: shop.name,
+      ownerId: shop.owner_id,
+      maxMembers: shop.max_members,
+      rev: shop.rev,
+    },
+    members: membersOf(shop.shop_id),
+    invites: listInvites(shop.owner_id),
+  };
+}
+
+/** باطل کردنِ کد از پنل */
+export function revokeInviteForAccount(accountId, code) {
+  const shop = shopOf(accountId);
+  if (!shop) throw Object.assign(new Error('این حساب دکانی ندارد'), { code: 'no_shop' });
+  return revokeInvite(shop.owner_id, code);
+}
+
 /** یک کد، به شکلی که برنامه نشان می‌دهد */
 function inviteRow(row) {
   const now = Date.now();

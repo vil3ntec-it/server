@@ -138,6 +138,93 @@ async function main() {
     check('operator مسیرِ پوشه را عوض نمی‌کند', r.status === 403, `${r.status} ${r.text}`);
   }
 
+  console.log('\n── کدهای پشتِ سرِ هم ──');
+  /*
+   *  ⚠️ باگی که این‌جا قفل می‌شود: بررسیِ فاصله بالا بود و ذخیره پایین، با
+   *  فرستادنِ ایمیل (یک await) در میانه. دو درخواستِ پشتِ هم هر دو رد
+   *  می‌شدند، هر دو ایمیل می‌رفت، ولی جدول UNIQUE است پس فقط آخری می‌ماند —
+   *  کاربر دو ایمیل می‌گرفت و کدِ اولی کار نمی‌کرد.
+   *
+   *  قاعده: برای هر نشانی همیشه دقیقاً یک کدِ زنده. کدِ تازه جای قبلی را
+   *  می‌گیرد و قبلی همان لحظه می‌میرد. نه صف، نه دو کدِ هم‌زمان.
+   */
+  const first = (await api('POST', '/api/control/tohid/otp/manual', { method: 'email', to: 'queue@shop.test' })).json;
+  check('کدِ اول ساخته شد', /^\d{6}$/.test(String(first?.code || '')), JSON.stringify(first));
+
+  const second = (await api('POST', '/api/control/tohid/otp/manual', { method: 'email', to: 'queue@shop.test' })).json;
+  check('کدِ دوم بی‌درنگ ساخته می‌شود', /^\d{6}$/.test(String(second?.code || '')), JSON.stringify(second));
+  check('کدِ دوم با اولی فرق دارد', first.code !== second.code, `${first.code} / ${second.code}`);
+
+  r = await api('POST', '/api/v1/auth/otp/verify', { method: 'email', value: 'queue@shop.test', code: first.code }, { token: null });
+  check('کدِ قدیمی دیگر کار نمی‌کند', r.status >= 400, `${r.status} ${r.text}`);
+
+  r = await api('POST', '/api/v1/auth/otp/verify', { method: 'email', value: 'queue@shop.test', code: second.code }, { token: null });
+  check('کدِ تازه کار می‌کند', r.status === 200 && r.json?.ok !== false, r.text);
+
+  // ده درخواستِ هم‌زمان — نباید بشکند و نباید بیش از یک کدِ زنده بماند
+  const burst = await Promise.all(
+    Array.from({ length: 10 }, () =>
+      api('POST', '/api/control/tohid/otp/manual', { method: 'email', to: 'burst@shop.test' }))
+  );
+  check('ده درخواستِ هم‌زمان همه جواب گرفتند', burst.every((x) => x.status === 200), JSON.stringify(burst.map((x) => x.status)));
+  const codes = burst.map((x) => x.json?.code).filter(Boolean);
+  check('همه کد گرفتند', codes.length === 10, String(codes.length));
+
+  /*
+   *  فقط آخرین کد باید بپذیرد.
+   *
+   *  ⚠️ ترتیب مهم است: اول یکی از کدهای قبلی امتحان می‌شود و بعد آخری. اگر
+   *  همهٔ نه کدِ قبلی پشتِ هم زده شوند، محافظِ «تعدادِ تلاش» ردیف را پاک
+   *  می‌کند و آخری هم رد می‌شود — که رفتارِ درستِ سرور است، نه باگ.
+   */
+  let v = await api('POST', '/api/v1/auth/otp/verify', { method: 'email', value: 'burst@shop.test', code: codes[0] }, { token: null });
+  check('کدِ قدیمیِ همان دسته کار نمی‌کند', v.status >= 400, `${v.status} ${v.text}`);
+
+  v = await api('POST', '/api/v1/auth/otp/verify', { method: 'email', value: 'burst@shop.test', code: codes[codes.length - 1] }, { token: null });
+  check('فقط آخرین کد زنده است', v.status === 200 && v.json?.ok !== false, v.text);
+
+  console.log('\n── کدِ شاگرد از پنل ──');
+  // صاحبِ دکان در برنامه دکان می‌سازد؛ پنل باید بتواند برایش کد بسازد
+  const ownerLogin = (await api('POST', '/api/v1/auth/login', { identifier: 'ahmad@gmail.com', password: 'Passw0rd!' }, { token: null })).json;
+  const ownerTok = ownerLogin?.tokens?.access || ownerLogin?.accessToken || ownerLogin?.token;
+  check('صاحبِ دکان وارد شد', Boolean(ownerTok), JSON.stringify(ownerLogin).slice(0, 200));
+  await fetch(`${BASE}/api/v1/shop/create`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${ownerTok}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'دکان احمد', maxMembers: 5 }),
+  });
+
+  const acct = (await api('GET', '/api/control/tohid/accounts')).json?.items
+    ?.find((a) => a.email === 'ahmad@gmail.com');
+  check('حسابِ صاحبِ دکان پیدا شد', Boolean(acct?.accountId));
+
+  r = await api('GET', `/api/control/tohid/accounts/${acct.accountId}/shop`);
+  check('پنل دکان را می‌بیند', Boolean(r.json?.shop?.name), r.text);
+
+  r = await api('POST', `/api/control/tohid/accounts/${acct.accountId}/shop-invite`, { role: 'staff', uses: 1, days: 7 });
+  const staffCode = r.json?.code;
+  check('پنل کدِ شاگرد می‌سازد', r.status === 200 && /^[0-9A-F]{8}$/.test(staffCode || ''), r.text);
+  check('نقشش شاگرد است', r.json?.role === 'staff', r.text);
+  check('کد در فهرستِ دکان می‌آید', (r.json?.invites || []).some((i) => i.code === staffCode), r.text);
+
+  // و همان کد باید در خودِ برنامه کار کند — وگرنه ساختنش بی‌فایده است
+  await api('POST', '/api/v1/auth/register', { name: 'شاگرد', email: 'shagerd@shop.test', password: 'Passw0rd!' }, { token: null });
+  const stLogin = (await api('POST', '/api/v1/auth/login', { identifier: 'shagerd@shop.test', password: 'Passw0rd!' }, { token: null })).json;
+  const stTok = stLogin?.tokens?.access || stLogin?.accessToken || stLogin?.token;
+  const joined = await fetch(`${BASE}/api/v1/shop/join`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${stTok}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: staffCode }),
+  });
+  check('شاگرد با کدِ پنل وارد دکان شد', joined.status === 200, String(joined.status));
+
+  r = await api('POST', `/api/control/tohid/accounts/${acct.accountId}/shop-invite`, { role: 'manager', uses: 0, days: 0 });
+  check('پنل کدِ مدیر هم می‌سازد', r.json?.role === 'manager', r.text);
+  check('بی‌شمار و همیشگی', r.json?.uses === 0 && r.json?.expiresAt === null, r.text);
+
+  r = await api('POST', `/api/control/tohid/accounts/${acct.accountId}/shop-invite/${r.json.code}/revoke`);
+  check('پنل کد را باطل می‌کند', r.status === 200, r.text);
+
   console.log('\n── بدنهٔ درخواست دوبار کدگذاری نشود ──');
   /*
    *  باگِ واقعی: کلاینتِ پنل body را JSON.stringify می‌کرد و api() هم دوباره
