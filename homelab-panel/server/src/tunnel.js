@@ -959,6 +959,20 @@ function adoptConfigAsNamed() {
 
   setSetting('tunnel_mode', 'named');
   if (!getSetting('tunnel_hostname', null)) setSetting('tunnel_hostname', host);
+
+  /*
+   *  ⚠️ زیردامنه‌های اضافی هم باید وارد تنظیمات شوند.
+   *
+   *  writeIngress فایل را از روی دیتابیس می‌سازد، نه از روی خودِ فایل. اگر
+   *  نامی فقط در فایل باشد و در دیتابیس نه، اولین بازنویسی آن را می‌اندازد —
+   *  و کاربر می‌بیند چیزی که یک ساعت پیش کار می‌کرد، حالا نمی‌کند.
+   */
+  const known = new Set([host, ...(getSetting('tunnel_hostnames', []) || []).map((x) => x?.hostname)]);
+  const extra = readIngressFromConfig().filter((r) => !known.has(r.hostname));
+  if (extra.length) {
+    setSetting('tunnel_hostnames', [...(getSetting('tunnel_hostnames', []) || []), ...extra]);
+    logEvent('info', 'panel', `زیردامنه‌های داخلِ پیکربندی هم ثبت شدند: ${extra.map((x) => x.hostname).join('، ')}`);
+  }
   logEvent(
     'warn',
     'panel',
@@ -998,6 +1012,20 @@ export async function reconcileNamedTunnel() {
   if (!live) return { ok: true, skipped: 'not_listed' };
   if (live === inConfig) return { ok: true, id: live };
 
+  /*
+   *  ⚠️ شناسه‌ای که در فایل است، اگر هنوز در حساب وجود دارد، دست نمی‌خورد.
+   *
+   *  دو تونلِ هم‌نام در دو حساب چیزِ عجیبی نیست — همین‌جا پیش آمد. اگر کورکورانه
+   *  به «تونلی که این نام را دارد» سوئیچ کنیم، ممکن است رکوردِ DNS به تونلِ
+   *  قبلی اشاره کند و ما به تونلِ دیگری وصل شویم: دوباره همان Error 1033، این
+   *  بار خودمان ساخته‌ایمش.
+   *
+   *  پس فقط وقتی عوض می‌کنیم که تونلِ داخلِ فایل دیگر اصلاً وجود نداشته باشد.
+   */
+  if (inConfig && new RegExp(inConfig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(listed.output)) {
+    return { ok: true, id: inConfig, kept: true };
+  }
+
   const credFile = await ensureCredFile(live, name);
   if (!credFile) {
     logEvent('warn', 'panel', `تونلِ «${name}» حالا ${live} است ولی فایلِ اعتبارش پیدا نشد`);
@@ -1019,6 +1047,19 @@ function readTunnelIdFromConfig() {
     return m ? m[1] : null;
   } catch {
     return null;
+  }
+}
+
+/** همهٔ زیردامنه‌های داخلِ ingress، با پورتشان */
+function readIngressFromConfig() {
+  try {
+    const text = fs.readFileSync(CONFIG_FILE, 'utf8');
+    const out = [];
+    const re = /^\s*-\s*hostname:\s*(\S+)\s*\n\s*service:\s*https?:\/\/[^:\s]+:(\d+)/gm;
+    for (const m of text.matchAll(re)) out.push({ hostname: m[1], port: Number(m[2]) });
+    return out;
+  } catch {
+    return [];
   }
 }
 
