@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { db, getSetting, setSetting } from '../db.js';
 import { hashPassword, verifyPassword } from '../auth.js';
+import { saveAccountFile } from './vault-files.js';
 
 const ACCESS_TTL_MS = 60 * 60 * 1000;             // یک ساعت
 const REFRESH_TTL_MS = 60 * 24 * 60 * 60 * 1000;  // شصت روز
@@ -59,7 +60,17 @@ export function createAccount({ name, email, phone, password }) {
     INSERT INTO th_accounts (account_id, name, email, phone, password_hash, created_at)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(accountId, clean(name), mail, tel, password ? hashPassword(password) : null, Date.now());
-  return accountById(accountId);
+  const account = accountById(accountId);
+
+  /*
+   *  پوشهٔ حساب روی درایوِ خودِ کاربر — همان لحظهٔ ثبت‌نام ساخته می‌شود.
+   *
+   *  عمداً await نمی‌شود: نوشتن روی درایو ممکن است کند باشد یا درایو اصلاً
+   *  جدا شده باشد، و هیچ‌کدام نباید ثبت‌نام را نگه دارد یا بشکند.
+   *  saveAccountFile خودش خطا را می‌بلعد و در لاگ می‌نویسد.
+   */
+  saveAccountFile(account).catch(() => {});
+  return account;
 }
 
 /** حسابِ موجود برای این نشانی، وگرنه یک حسابِ تازه — مسیرِ ورود با کد */

@@ -1,3 +1,14 @@
+// ---------------------------------------------------------------------------
+//  ⚠️ body را رشته نکنید.
+//
+//  api() در src/api.ts خودش JSON.stringify می‌کند. اگر این‌جا هم رشته بدهیم،
+//  دوبار کدگذاری می‌شود و سرور می‌گیرد:
+//
+//      Unexpected token '"', ""{\"method"... is not valid JSON
+//
+//  همهٔ نوشتن‌های این فایل — از جمله «دادن اشتراک» — با همین باگ ۵۰۰ می‌دادند
+//  و در رابط کاربری فقط «انجام نشد» دیده می‌شد.
+// ---------------------------------------------------------------------------
 // لایهٔ نازکی روی api() برای بخشِ برنامهٔ توحید
 import { api } from '../api';
 
@@ -101,40 +112,74 @@ export const th = {
     shop: { shop: { name: string; rev: number } | null; members: { userId: string; name: string }[] };
   }>(`${T}/accounts/${id}`),
   createAccount: (body: { name?: string; email?: string; phone?: string; password?: string }) =>
-    api(`${T}/accounts`, { method: 'POST', body: JSON.stringify(body) }),
+    api(`${T}/accounts`, { method: 'POST', body }),
   setDisabled: (id: string, disabled: boolean) =>
-    api(`${T}/accounts/${id}/disable`, { method: 'POST', body: JSON.stringify({ disabled }) }),
+    api(`${T}/accounts/${id}/disable`, { method: 'POST', body: { disabled } }),
   deleteAccount: (id: string) => api(`${T}/accounts/${id}`, { method: 'DELETE' }),
 
   grantVip: (id: string, body: Record<string, unknown>) =>
-    api(`${T}/accounts/${id}/vip`, { method: 'POST', body: JSON.stringify(body) }),
+    api(`${T}/accounts/${id}/vip`, { method: 'POST', body }),
   extend: (subId: number, body: { amount: number; unit: string }) =>
-    api(`${T}/subscriptions/${subId}/extend`, { method: 'POST', body: JSON.stringify(body) }),
+    api(`${T}/subscriptions/${subId}/extend`, { method: 'POST', body }),
   setStatus: (subId: number, status: string) =>
-    api(`${T}/subscriptions/${subId}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+    api(`${T}/subscriptions/${subId}/status`, { method: 'POST', body: { status } }),
   revokeDevice: (deviceId: number, revoked: boolean) =>
-    api(`${T}/devices/${deviceId}/revoke`, { method: 'POST', body: JSON.stringify({ revoked }) }),
+    api(`${T}/devices/${deviceId}/revoke`, { method: 'POST', body: { revoked } }),
 
   plans: () => api<{ items: ThPlan[] }>(`${T}/plans`),
-  savePlan: (plan: Record<string, unknown>) => api(`${T}/plans`, { method: 'PUT', body: JSON.stringify(plan) }),
+  savePlan: (plan: Record<string, unknown>) => api(`${T}/plans`, { method: 'PUT', body: plan }),
   deletePlan: (code: string) => api(`${T}/plans/${encodeURIComponent(code)}`, { method: 'DELETE' }),
 
   requests: () => api<{ items: ThRequest[] }>(`${T}/requests`),
   setRequestStatus: (id: number, status: string) =>
-    api(`${T}/requests/${id}/status`, { method: 'POST', body: JSON.stringify({ status }) }),
+    api(`${T}/requests/${id}/status`, { method: 'POST', body: { status } }),
 
   settings: () => api<{ settings: ThSettings; addresses: ThAddresses; keyId: string | null }>(`${T}/settings`),
   saveSettings: (body: Record<string, unknown>) =>
-    api<{ settings: ThSettings }>(`${T}/settings`, { method: 'PUT', body: JSON.stringify(body) }),
+    api<{ settings: ThSettings }>(`${T}/settings`, { method: 'PUT', body }),
   testMail: (to: string) =>
     api<{ ok: boolean; error?: string; detail?: string }>(`${T}/settings/test-mail`, {
-      method: 'POST', body: JSON.stringify({ to }),
+      method: 'POST', body: { to },
     }),
 
   otp: () => api<ThOtpStatus>(`${T}/otp`),
   purgeOtp: () => api<{ ok: boolean; removed: number }>(`${T}/otp/purge`, { method: 'POST' }),
   testOtp: (method: string, to: string) =>
     api<{ ok: boolean; error?: string; detail?: string }>(`${T}/otp/test`, {
-      method: 'POST', body: JSON.stringify({ method, to }),
+      method: 'POST', body: { method, to },
     }),
+
+  /** کد را می‌سازد ولی نمی‌فرستد — برای وقتی که ایمیل تنظیم نشده */
+  manualOtp: (method: string, to: string) =>
+    api<ThManualCode>(`${T}/otp/manual`, {
+      method: 'POST', body: { method, to },
+    }),
+
+  vault: () => api<ThVault>(`${T}/vault`),
+  saveVault: (dir: string) =>
+    api<ThVault>(`${T}/vault`, { method: 'POST', body: { dir } }),
+  rebuildVault: () =>
+    api<ThVault & { total: number; saved: number }>(`${T}/vault/rebuild`, { method: 'POST' }),
+};
+
+export type ThManualCode = {
+  ok: boolean;
+  code?: string;
+  minutes?: number;
+  to?: string;
+  subject?: string;
+  body?: string;
+  mailto?: string;
+  gmail?: string;
+  whatsapp?: string | null;
+  error?: string;
+  detail?: string;
+};
+
+export type ThVault = {
+  enabled: boolean;
+  root: string;
+  writable: boolean;
+  folders: number;
+  error?: string | null;
 };

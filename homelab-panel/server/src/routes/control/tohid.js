@@ -27,6 +27,8 @@ import { licensePublicKey } from '../../tohid/keys.js';
 import { readInterfaces } from '../../metrics/network.js';
 import { publicState as tunnelState } from '../../tunnel.js';
 import { config } from '../../config.js';
+import { makeManualCode } from '../../tohid/manual-code.js';
+import { vaultStatus, setAccountsRoot, saveAccountFile } from '../../tohid/vault-files.js';
 
 const router = express.Router();
 
@@ -414,6 +416,54 @@ router.post('/otp/test', requireRole('admin'), guard(async (req, res) => {
   } catch (e) {
     res.json({ ok: false, error: e.code || 'send_failed', detail: e.message });
   }
+}));
+
+/*
+ *  کدِ ورودِ دستی.
+ *
+ *  فقط admin. کد در پاسخ برمی‌گردد تا مدیر بتواند همان لحظه برای مشتری
+ *  بفرستد — پس در audit فقط «برای چه کسی» ثبت می‌شود، نه خودِ کد.
+ */
+router.post('/otp/manual', requireRole('admin'), guard(async (req, res) => {
+  const method = req.body?.method === 'phone' ? 'phone' : 'email';
+  const to = String(req.body?.to || '').trim();
+  if (!to) return fail(res, 400, 'to_required', 'گیرنده را بنویسید');
+  try {
+    const made = await makeManualCode({ method, value: to, name: req.body?.name });
+    audit({ actor: actorOf(req), action: 'tohid.otp.manual', entity: 'tohid', detail: method });
+    res.json({ ok: true, ...made });
+  } catch (e) {
+    res.json({ ok: false, error: e.code || 'failed', detail: e.message });
+  }
+}));
+
+// ── پوشهٔ اطلاعاتِ حساب‌ها ────────────────────────────────────────────────
+router.get('/vault', guard(async (_req, res) => {
+  res.json(vaultStatus());
+}));
+
+router.post('/vault', requireRole('admin'), guard(async (req, res) => {
+  const dir = String(req.body?.dir ?? '').trim();
+  try {
+    const out = setAccountsRoot(dir);
+    audit({ actor: actorOf(req), action: 'tohid.vault.set', entity: 'tohid', detail: out.root });
+    res.json({ ...out, ...vaultStatus() });
+  } catch (e) {
+    // مسیرِ نادرست یا درایوی که نیست — کاربر باید دلیل را ببیند
+    return fail(res, 400, 'bad_dir', e.message);
+  }
+}));
+
+/** همهٔ حساب‌ها را دوباره روی درایو می‌نویسد — بعد از عوض کردنِ مسیر */
+router.post('/vault/rebuild', requireRole('admin'), guard(async (req, res) => {
+  const rows = db.prepare('SELECT * FROM th_accounts').all();
+  let saved = 0;
+  for (const row of rows) {
+    const out = await saveAccountFile(row);
+    if (out.saved) saved++;
+  }
+  audit({ actor: actorOf(req), action: 'tohid.vault.rebuild', entity: 'tohid', detail: String(saved) });
+  res.json({ ok: true, total: rows.length, saved, ...vaultStatus() });
 }));
 
 export default router;

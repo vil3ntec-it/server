@@ -13,7 +13,10 @@ import { Badge, Card, CopyButton, Field, Loading, Modal, toast } from '../../com
 import { dateTime, relative } from '../../format';
 import { ActionButton, Cell, KV, Notice, Row, Select, Stat, Table, Tabs } from '../../control/ui';
 import { th } from '../../control/tohid-api';
-import type { ThAccount, ThAddresses, ThOverview, ThPlan, ThOnline, ThOtpStatus, ThRequest, ThSettings } from '../../control/tohid-api';
+import type {
+  ThAccount, ThAddresses, ThOverview, ThPlan, ThOnline, ThOtpStatus, ThRequest, ThSettings,
+  ThManualCode, ThVault,
+} from '../../control/tohid-api';
 
 const UNITS = [
   { value: 'day', key: 'thDay' },
@@ -566,13 +569,74 @@ function SettingsTab({
   const [password, setPassword] = useState('');
   const [testTo, setTestTo] = useState('');
 
+  // پوشهٔ اطلاعات روی درایوِ خودِ کاربر
+  const [vault, setVault] = useState<ThVault | null>(null);
+  const [vaultDir, setVaultDir] = useState('');
+
   useEffect(() => { setForm(settings ?? null); }, [settings]);
+  useEffect(() => {
+    void th.vault().then((v) => { setVault(v); setVaultDir(v.root); }).catch(() => {});
+  }, []);
+
   if (!form) return <Loading />;
 
   const setMail = (patch: Partial<ThSettings['mail']>) => setForm({ ...form, mail: { ...form.mail, ...patch } });
 
   return (
     <div className="space-y-4">
+      {/*
+          ⚠️ دیتابیس داخلِ پوشهٔ نصبِ برنامه است. کامپیوتر که عوض شود آن پوشه
+          می‌رود. این‌جا مسیری روی درایوِ خودِ کاربر گرفته می‌شود تا اطلاعاتِ
+          هر حساب بیرونِ برنامه هم بنشیند.
+      */}
+      <Card title={t('thVault')} icon={<Settings2 className="h-4 w-4" />}>
+        <Notice>{t('thVaultHint')}</Notice>
+
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <Field label={t('thVaultPath')}>
+            <input
+              className="input w-80 ltr"
+              dir="ltr"
+              placeholder="D:\ServerData"
+              value={vaultDir}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVaultDir(e.target.value)}
+            />
+          </Field>
+          <ActionButton className="btn btn-sm btn-primary" onClick={async () => {
+            try {
+              const v = await th.saveVault(vaultDir.trim());
+              setVault(v);
+              setVaultDir(v.root);
+              toast(t('saved'), 'good');
+            } catch (e) {
+              toast((e as Error).message, 'bad');
+            }
+          }}>{t('save')}</ActionButton>
+          {vault?.enabled && (
+            <ActionButton className="btn btn-sm" onClick={async () => {
+              const v = await th.rebuildVault();
+              setVault(v);
+              toast(`${v.saved} / ${v.total}`, 'good');
+            }}>{t('thVaultRebuild')}</ActionButton>
+          )}
+        </div>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <KV label={t('status')}>
+            {!vault?.enabled ? (
+              <span className="text-xs text-ink-muted">{t('thVaultOff')}</span>
+            ) : vault.writable ? (
+              <Badge tone="good">{vault.root}</Badge>
+            ) : (
+              <Badge tone="bad">{t('thVaultNotWritable')}</Badge>
+            )}
+          </KV>
+          {vault?.enabled && vault.writable && (
+            <KV label={t('thVaultFolders')}>{vault.folders}</KV>
+          )}
+        </div>
+      </Card>
+
       <Card title={t('thConnection')} icon={<Settings2 className="h-4 w-4" />}>
         <Notice>{t('thConnectionHint')}</Notice>
 
@@ -719,6 +783,7 @@ function Otp({ settings, onSaved }: { settings?: ThSettings; onSaved: () => void
   const [token, setToken] = useState('');
   const [testMethod, setTestMethod] = useState('email');
   const [testTo, setTestTo] = useState('');
+  const [manual, setManual] = useState<ThManualCode | null>(null);
 
   const refresh = useCallback(async () => {
     try { setStatus(await th.otp()); }
@@ -769,7 +834,59 @@ function Otp({ settings, onSaved }: { settings?: ThSettings; onSaved: () => void
             toast(r.ok ? t('saved') : (r.detail || r.error || 'خطا'), r.ok ? 'good' : 'bad');
             await refresh();
           }}>{t('thOtpTest')}</ActionButton>
+
+          {/*
+              راهِ دستی — برای وقتی که سرویسِ ایمیل هنوز تنظیم نشده و مشتری
+              پشتِ صفحهٔ ورود مانده. کد ساخته می‌شود ولی فرستاده نمی‌شود؛
+              خودتان با یک کلیک می‌فرستید.
+          */}
+          <ActionButton className="btn btn-sm btn-primary" onClick={async () => {
+            const r = await th.manualOtp(testMethod, testTo.trim());
+            if (!r.ok) {
+              toast(r.detail || r.error || 'خطا', 'bad');
+              return;
+            }
+            setManual(r);
+          }}>{t('thOtpManual')}</ActionButton>
         </div>
+
+        {manual?.code && (
+          <div className="mt-4 rounded-xl border border-line p-4" style={{ background: 'var(--surface-sunken)' }}>
+            <p className="mb-1 text-sm font-semibold">{t('thOtpManualTitle')}</p>
+            <p className="mb-3 text-[11px] leading-relaxed text-ink-muted">
+              {t('thOtpManualHint', { minutes: manual.minutes ?? 5 })}
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <code
+                className="ltr rounded-lg border border-line px-4 py-2 font-mono text-2xl font-bold tracking-[0.4em]"
+                style={{ background: 'var(--surface-0)', color: 'var(--accent)' }}
+              >
+                {manual.code}
+              </code>
+              <CopyButton value={manual.code} />
+              <span className="text-xs text-ink-muted">{manual.to}</span>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              {/* جیمیل در مرورگر — برای کسی که برنامهٔ ایمیل نصب ندارد */}
+              {manual.gmail && (
+                <a className="btn btn-sm btn-primary" href={manual.gmail} target="_blank" rel="noreferrer">
+                  {t('thOtpSendGmail')}
+                </a>
+              )}
+              {manual.mailto && (
+                <a className="btn btn-sm" href={manual.mailto}>{t('thOtpSendMail')}</a>
+              )}
+              {manual.whatsapp && (
+                <a className="btn btn-sm" href={manual.whatsapp} target="_blank" rel="noreferrer">
+                  {t('thOtpSendWhatsapp')}
+                </a>
+              )}
+              <button className="btn btn-sm" onClick={() => setManual(null)}>{t('close')}</button>
+            </div>
+          </div>
+        )}
       </Card>
 
       <Card title={t('thSmsGateway')}>

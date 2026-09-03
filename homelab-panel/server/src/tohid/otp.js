@@ -42,7 +42,7 @@ export function normalizeContact(method, value) {
  * اگر فرستادن شکست بخورد، کد ذخیره نمی‌ماند — وگرنه کاربر پشتِ کدی می‌ماند
  * که هرگز به دستش نرسیده.
  */
-export async function sendCode({ method, value, name }) {
+export async function sendCode({ method, value, name, deliver = true }) {
   const cfg = readTohidSettings();
   const contact = normalizeContact(method, value);
   const now = Date.now();
@@ -61,7 +61,17 @@ export async function sendCode({ method, value, name }) {
   const code = sixDigits();
   const minutes = Math.round(cfg.otpTtlSeconds / 60);
 
-  if (method === 'email') {
+  /*
+   *  deliver = false یعنی «فقط بساز، نفرست».
+   *
+   *  ⚠️ برای وقتی است که سرویسِ ایمیل هنوز تنظیم نشده. صاحبِ سرور کد را در
+   *  پنل می‌بیند و خودش برای مشتری می‌فرستد — به‌جای اینکه کاربر پشتِ کدی
+   *  بماند که هیچ‌وقت نمی‌رسد. کد فقط در همان پاسخِ API برمی‌گردد و هیچ‌جا
+   *  لاگ نمی‌شود.
+   */
+  if (!deliver) {
+    // پایین‌تر ذخیره می‌شود؛ این‌جا فقط از فرستادن رد می‌شویم
+  } else if (method === 'email') {
     // نامِ فرستنده همان نامی است که در هدرِ ایمیل هم می‌نشیند، پس کاربر یک
     // نام می‌بیند نه دو تا
     const mail = mailSettings();
@@ -85,7 +95,8 @@ export async function sendCode({ method, value, name }) {
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(method, contact, hash(code), String(name || '').trim() || null, now, now + cfg.otpTtlSeconds * 1000);
 
-  return { ok: true };
+  // کد فقط وقتی برمی‌گردد که خودمان نفرستاده باشیم — و آن مسیر فقط admin است
+  return deliver ? { ok: true } : { ok: true, code, minutes, contact };
 }
 
 /** بررسیِ کد. کدِ درست همان لحظه مصرف و پاک می‌شود. */

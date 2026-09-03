@@ -8,6 +8,7 @@
 import crypto from 'node:crypto';
 import { db } from '../db.js';
 import { accountById } from './accounts.js';
+import { saveAccountData } from './vault-files.js';
 
 const PAGE = 200;
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -314,6 +315,24 @@ export function pushChanges(accountId, { deviceId, changes, settings }) {
   }
 
   db.prepare('UPDATE th_accounts SET last_seen_at = ? WHERE account_id = ?').run(now, accountId);
+
+  /*
+   *  یک نسخه روی درایوِ خودِ صاحبِ سرور.
+   *
+   *  عمداً await نمی‌شود: نوشتنِ فایل نباید همگام‌سازیِ برنامه را کند کند، و
+   *  اگر درایو جدا باشد نباید کارِ کاربر بخوابد. saveAccountData خودش خطا را
+   *  می‌بلعد و در لاگ می‌نویسد.
+   */
+  const account = accountById(accountId);
+  if (account) {
+    saveAccountData(account, {
+      shop: { id: shop.shop_id, name: shop.name, rev },
+      members: membersOf(shop.shop_id),
+      settings: settings ?? null,
+      savedAt: new Date(now).toISOString(),
+    }).catch(() => {});
+  }
+
   return { rev, accepted: list.length };
 }
 
