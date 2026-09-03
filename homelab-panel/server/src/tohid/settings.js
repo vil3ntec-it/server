@@ -88,9 +88,51 @@ export function mailPassword() {
 }
 
 /** تنظیماتِ کاملِ ایمیل، همراه با رمز — فقط برای فرستادن */
+/**
+ * تنظیماتِ ایمیل از متغیرهای محیطی — فقط آن‌هایی که واقعاً گذاشته شده‌اند.
+ *
+ * ⚠️ اولویت با پنل است، نه با .env. کسی که در پنل ایمیل را تنظیم کرده،
+ * انتظار ندارد یک متغیرِ فراموش‌شده در .env بی‌صدا جایش را بگیرد. پس این‌ها
+ * فقط جای خالی را پر می‌کنند — برای نصبِ خودکار (Docker و مانندش) که پنلی
+ * باز نمی‌شود تا کسی چیزی در آن بنویسد.
+ */
+function mailFromEnv() {
+  const e = process.env;
+  const out = {};
+  const put = (key, value) => {
+    const v = String(value ?? '').trim();
+    if (v) out[key] = v;
+  };
+  put('host', e.MAIL_HOST);
+  put('user', e.MAIL_USER);
+  put('from', e.MAIL_FROM_ADDRESS);
+  put('fromName', e.MAIL_FROM_NAME);
+  if (String(e.MAIL_PORT ?? '').trim()) out.port = Number(e.MAIL_PORT) || 465;
+  if (String(e.MAIL_SECURE ?? '').trim()) out.secure = !['0', 'false', 'no'].includes(String(e.MAIL_SECURE).toLowerCase());
+  return out;
+}
+
+/**
+ * تنظیماتِ کاملِ ایمیل برای فرستادن.
+ *
+ * ترتیب: آن‌چه در پنل نوشته شده ← اگر خالی بود، .env ← اگر باز هم خالی بود،
+ * پیش‌فرض. رمز هم همین‌طور: اول گاوصندوق، بعد MAIL_PASS.
+ */
 export function mailSettings() {
   const s = readTohidSettings();
-  return { ...s.mail, pass: mailPassword() || '' };
+  const env = mailFromEnv();
+  const merged = { ...s.mail };
+  for (const [key, value] of Object.entries(env)) {
+    const current = merged[key];
+    if (current === undefined || current === null || current === '') merged[key] = value;
+  }
+  return { ...merged, pass: mailPassword() || String(process.env.MAIL_PASS || '') };
+}
+
+/** آیا اصلاً می‌شود ایمیل فرستاد؟ بدونِ میزبان و فرستنده، نه. */
+export function mailConfigured() {
+  const m = mailSettings();
+  return Boolean(String(m.host || '').trim() && String(m.from || m.user || '').trim());
 }
 
 /**

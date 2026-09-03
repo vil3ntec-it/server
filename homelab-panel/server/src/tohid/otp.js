@@ -12,6 +12,7 @@ import { db } from '../db.js';
 import { readTohidSettings, mailSettings } from './settings.js';
 import { sendMail } from './smtp.js';
 import { sendSms } from './sms.js';
+import { otpEmail } from '../emails/otp.js';
 
 const hash = (v) => crypto.createHash('sha256').update(String(v)).digest('hex');
 
@@ -61,16 +62,15 @@ export async function sendCode({ method, value, name }) {
   const minutes = Math.round(cfg.otpTtlSeconds / 60);
 
   if (method === 'email') {
-    await sendMail(mailSettings(), {
-      to: contact,
-      subject: 'کد ورود شما',
-      text: [
-        `کد ورود شما: ${code}`,
-        '',
-        `این کد تا ${minutes} دقیقه معتبر است.`,
-        'اگر شما درخواست نکرده‌اید، این پیام را نادیده بگیرید.',
-      ].join('\n'),
+    // نامِ فرستنده همان نامی است که در هدرِ ایمیل هم می‌نشیند، پس کاربر یک
+    // نام می‌بیند نه دو تا
+    const mail = mailSettings();
+    const { subject, html, text } = otpEmail({
+      code,
+      minutes,
+      appName: mail.fromName || 'توحید',
     });
+    await sendMail(mail, { to: contact, subject, html, text });
   } else {
     // متنِ پیامک از تنظیمات می‌آید تا هر دکان بتواند نامِ خودش را بگذارد
     const text = String(cfg.otpMessage || 'کد ورود شما: {code}')

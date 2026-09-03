@@ -14,6 +14,7 @@ import { spawn } from 'node:child_process';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { mailText } from './lib-mail.mjs';
 
 const PORT = Number(process.env.TEST_PORT || 4831);
 const SMS_PORT = PORT + 1;
@@ -23,11 +24,6 @@ const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'th-otp-'));
 
 
 /** متنِ نامه base64 است؛ برای دیدنِ کد باید رمزگشایی شود */
-const mailText = (raw) => {
-  const at = String(raw || '').indexOf('\n\n');
-  const body = at < 0 ? raw : raw.slice(at + 2);
-  return Buffer.from(body.replace(/\s/g, ''), 'base64').toString('utf8');
-};
 
 
 /**

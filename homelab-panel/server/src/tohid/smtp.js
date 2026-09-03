@@ -10,6 +10,7 @@
 //      پورت ۵۸۷ — ساده شروع می‌شود و با STARTTLS رمزنگاری می‌شود
 //  رمز هیچ‌وقت روی اتصالِ رمزنگاری‌نشده فرستاده نمی‌شود.
 // ---------------------------------------------------------------------------
+import crypto from 'node:crypto';
 import tls from 'node:tls';
 import net from 'node:net';
 
@@ -118,11 +119,54 @@ function encodeHeader(text) {
     : `=?UTF-8?B?${Buffer.from(text, 'utf8').toString('base64')}?=`;
 }
 
+/** بدنه را به تکه‌های ۷۶ نویسه‌ای می‌شکند — قاعدهٔ base64 در ایمیل */
+const b64 = (s) => Buffer.from(s, 'utf8').toString('base64').replace(/(.{76})/g, '$1\r\n');
+
+/**
+ * بدنهٔ پیام.
+ *
+ * اگر نسخهٔ HTML هم داده شده باشد، پیام multipart/alternative می‌شود: هر دو
+ * نسخه فرستاده می‌شوند و کلاینت خودش انتخاب می‌کند. ترتیب مهم است — طبق
+ * RFC 2046 نسخهٔ ساده باید اول بیاید و نسخهٔ غنی آخر، چون کلاینت آخرین
+ * تکه‌ای را که می‌فهمد نشان می‌دهد.
+ *
+ * نسخهٔ متنی هیچ‌وقت حذف نمی‌شود: بعضی کلاینت‌ها HTML را نشان نمی‌دهند، و
+ * فیلترهای هرزنامه به پیامی که فقط HTML دارد بدبین‌اند.
+ */
+function buildBody({ text, html }) {
+  if (!html) {
+    return {
+      headers: ['Content-Type: text/plain; charset=UTF-8', 'Content-Transfer-Encoding: base64'],
+      body: b64(text || ''),
+    };
+  }
+  const boundary = `----hlp-${crypto.randomBytes(16).toString('hex')}`;
+  return {
+    headers: [`Content-Type: multipart/alternative; boundary="${boundary}"`],
+    body: [
+      `--${boundary}`,
+      'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      b64(text || ''),
+      '',
+      `--${boundary}`,
+      'Content-Type: text/html; charset=UTF-8',
+      'Content-Transfer-Encoding: base64',
+      '',
+      b64(html),
+      '',
+      `--${boundary}--`,
+    ].join('\r\n'),
+  };
+}
+
 /**
  * فرستادنِ یک ایمیل.
  * @param settings { host, port, user, pass, from, fromName, timeoutMs }
+ * @param message  { to, subject, text, html? } — html اختیاری است
  */
-export async function sendMail(settings, { to, subject, text }) {
+export async function sendMail(settings, { to, subject, text, html }) {
   const host = String(settings?.host || '').trim();
   const port = Number(settings?.port) || 465;
   const user = String(settings?.user || '').trim();
@@ -182,16 +226,16 @@ export async function sendMail(settings, { to, subject, text }) {
     await io.expect([354]);
 
     const fromHeader = settings.fromName ? `${encodeHeader(settings.fromName)} <${from}>` : from;
+    const part = buildBody({ text, html });
     const message = [
       `From: ${fromHeader}`,
       `To: <${to}>`,
       `Subject: ${encodeHeader(subject)}`,
       'MIME-Version: 1.0',
-      'Content-Type: text/plain; charset=UTF-8',
-      'Content-Transfer-Encoding: base64',
+      ...part.headers,
       `Date: ${new Date().toUTCString()}`,
       '',
-      Buffer.from(text, 'utf8').toString('base64').replace(/(.{76})/g, '$1\r\n'),
+      part.body,
       '.',
     ].join('\r\n');
     socket.write(`${message}\r\n`);

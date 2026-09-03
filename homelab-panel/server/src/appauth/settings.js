@@ -41,18 +41,31 @@ function fromEnv() {
     },
 
     // ── ایمیل (SMTP — جی‌میل هم همین است) ──────────────────────────────────
+    //  نام‌های کوتاهِ MAIL_* هم پذیرفته می‌شوند، ولی OTP_EMAIL_* جلوتر است:
+    //  کسی که نامِ دقیق‌تر را نوشته، منظورش همان بوده.
     email: {
-      provider: (process.env.OTP_EMAIL_PROVIDER || (process.env.OTP_EMAIL_HOST ? 'smtp' : 'none'))
+      provider: (
+        process.env.OTP_EMAIL_PROVIDER
+        || ((process.env.OTP_EMAIL_HOST || process.env.MAIL_HOST) ? 'smtp' : 'none')
+      )
         .trim()
         .toLowerCase(),
-      host: process.env.OTP_EMAIL_HOST || '',
-      port: num(process.env.OTP_EMAIL_PORT, 465),
+      host: process.env.OTP_EMAIL_HOST || process.env.MAIL_HOST || '',
+      port: num(process.env.OTP_EMAIL_PORT ?? process.env.MAIL_PORT, 465),
       // 465 رمزنگاری‌شده از ابتدا، 587 با STARTTLS
-      secure: bool(process.env.OTP_EMAIL_SECURE, num(process.env.OTP_EMAIL_PORT, 465) === 465),
-      username: process.env.OTP_EMAIL_USER || '',
-      password: process.env.OTP_EMAIL_PASS || '',
-      from: process.env.OTP_EMAIL_FROM || process.env.OTP_EMAIL_USER || '',
-      fromName: process.env.OTP_EMAIL_FROM_NAME || '',
+      secure: bool(
+        process.env.OTP_EMAIL_SECURE ?? process.env.MAIL_SECURE,
+        num(process.env.OTP_EMAIL_PORT ?? process.env.MAIL_PORT, 465) === 465
+      ),
+      username: process.env.OTP_EMAIL_USER || process.env.MAIL_USER || '',
+      password: process.env.OTP_EMAIL_PASS || process.env.MAIL_PASS || '',
+      from:
+        process.env.OTP_EMAIL_FROM
+        || process.env.MAIL_FROM_ADDRESS
+        || process.env.OTP_EMAIL_USER
+        || process.env.MAIL_USER
+        || '',
+      fromName: process.env.OTP_EMAIL_FROM_NAME || process.env.MAIL_FROM_NAME || '',
       rejectUnauthorized: bool(process.env.OTP_EMAIL_TLS_STRICT, true),
     },
 

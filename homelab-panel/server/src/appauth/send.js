@@ -10,6 +10,7 @@
 // ---------------------------------------------------------------------------
 import { logEvent } from '../db.js';
 import { sendMail } from './smtp.js';
+import { otpEmail } from '../emails/otp.js';
 
 /** {code} و {app} و {to} را در متن جای‌گذاری می‌کند */
 export function fill(template, values) {
@@ -156,18 +157,8 @@ const SMS_PROVIDERS = {
 export const smsProviders = Object.keys(SMS_PROVIDERS);
 
 // -------------------------------- ایمیل ------------------------------------
-function emailBody({ code, appName, minutes }) {
-  const title = appName ? `ورود به ${appName}` : 'کد ورود';
-  const text = `${title}\n\nکد ورود شما: ${code}\n\nاین کد ${minutes} دقیقه اعتبار دارد.\nاگر شما درخواست نکرده‌اید، این ایمیل را نادیده بگیرید.`;
-  const html = `<!doctype html><html lang="fa" dir="rtl"><body style="margin:0;background:#f4f6fb;font-family:Tahoma,Segoe UI,sans-serif">
-  <div style="max-width:460px;margin:32px auto;background:#fff;border-radius:16px;padding:28px;text-align:center">
-    <h2 style="margin:0 0 8px;color:#111">${title}</h2>
-    <p style="margin:0 0 20px;color:#555">کد ورود شما این است:</p>
-    <div style="font-size:34px;font-weight:700;letter-spacing:10px;direction:ltr;background:#f1f5ff;color:#1a44b8;border-radius:12px;padding:16px">${code}</div>
-    <p style="margin:20px 0 0;color:#777;font-size:13px">این کد ${minutes} دقیقه اعتبار دارد. اگر شما درخواست نکرده‌اید، نادیده بگیرید.</p>
-  </div></body></html>`;
-  return { text, html };
-}
+//  قالب در src/emails/otp.js است — همان قالبی که بخشِ فروشگاه هم می‌فرستد،
+//  تا کاربر از هر دو راه یک ایمیلِ یکسان ببیند و اصلاح در یک جا کافی باشد.
 
 // ------------------------------ نقطهٔ ورود ---------------------------------
 /**
@@ -200,7 +191,7 @@ export async function deliverCode({ channel, to, code, settings }) {
       return fallback('email', to, code, provider === 'none' ? null : 'آدرسِ سرورِ ایمیل خالی است');
     }
     try {
-      const { text: body, html } = emailBody({ code, appName, minutes });
+      const mail = otpEmail({ code, minutes, appName: appName || 'کد ورود' });
       await sendMail({
         host: settings.email.host,
         port: Number(settings.email.port) || 465,
@@ -211,9 +202,12 @@ export async function deliverCode({ channel, to, code, settings }) {
         fromName: settings.email.fromName || appName,
         rejectUnauthorized: settings.email.rejectUnauthorized !== false,
         to,
-        subject: fill(settings.emailSubject, { code, app: appName }),
-        text: body,
-        html,
+        // اگر کاربر عنوانِ خودش را نوشته، همان؛ وگرنه عنوانِ خودِ قالب
+        subject: settings.emailSubject
+          ? fill(settings.emailSubject, { code, app: appName })
+          : mail.subject,
+        text: mail.text,
+        html: mail.html,
       });
       logEvent('info', 'panel', `کد ورود با ایمیل به ${mask(to)} رفت`);
       return { sent: true, via: 'smtp', channel: 'email' };

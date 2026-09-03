@@ -15,6 +15,7 @@ import net from 'node:net';
 import tls from 'node:tls';
 import { execSync } from 'node:child_process';
 import { WebSocket } from 'ws';
+import { mailText } from './lib-mail.mjs';
 
 let pass = 0, fail = 0;
 const check = (name, ok, extra = '') => {
@@ -290,11 +291,10 @@ try {
   check('کد فرستاده شد', sent.data?.ok === true, JSON.stringify(sent));
   check('ایمیل واقعاً رفت', inbox.length === 1, `${inbox.length} نامه`);
 
-  const mailText = Buffer.from(
-    inbox[0].split('\n').slice(inbox[0].split('\n').indexOf('') + 1).join(''), 'base64',
-  ).toString('utf8');
-  const code = (mailText.match(/\d{6}/) || [])[0];
-  check('کدِ شش‌رقمی داخلِ نامه است', Boolean(code), mailText.slice(0, 80));
+  // نامه چندتکه است (متن + HTML)، پس با خوانندهٔ مشترک باز می‌شود
+  const body = mailText(inbox[0]);
+  const code = (body.match(/\d{6}/) || [])[0];
+  check('کدِ شش‌رقمی داخلِ نامه است', Boolean(code), body.slice(0, 80));
   check('کد در لاگِ سرور نیست', !serverLog.join('').includes(code), 'کد نباید در لاگ بنشیند');
 
   const tooSoon = await wsOnce(`${WS}?token=${encodeURIComponent('رمزِ-سرور')}`,
