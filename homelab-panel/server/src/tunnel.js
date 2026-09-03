@@ -265,15 +265,20 @@ function runCf(args, { timeout = 120000, onLine } = {}) {
       env: { ...process.env, TUNNEL_ORIGIN_CERT: cert },
     });
     let output = '';
-    const onData = (chunk) => {
+    let stdout = '';
+    const onData = (chunk, isOut) => {
       const text = chunk.toString();
       output += text;
+      if (isOut) stdout += text;
       for (const line of text.split(/\r?\n/)) {
         if (line.trim()) onLine?.(line.trim());
       }
     };
-    proc.stdout.on('data', onData);
-    proc.stderr.on('data', onData);
+    // ⚠️ جدا نگه داشتنِ stdout لازم است: cloudflared لاگش را روی stderr
+    // می‌ریزد و آن لاگ‌ها کروشه دارند. خواندنِ JSON از مخلوطِ این دو، همان
+    // چیزی بود که «tunnel list» را از کار می‌انداخت.
+    proc.stdout.on('data', (c) => onData(c, true));
+    proc.stderr.on('data', (c) => onData(c, false));
     const timer = setTimeout(() => {
       try {
         proc.kill();
@@ -281,11 +286,11 @@ function runCf(args, { timeout = 120000, onLine } = {}) {
     }, timeout);
     proc.on('exit', (code) => {
       clearTimeout(timer);
-      resolve({ ok: code === 0, code, output });
+      resolve({ ok: code === 0, code, output, stdout });
     });
     proc.on('error', (e) => {
       clearTimeout(timer);
-      resolve({ ok: false, code: -1, output: output + e.message });
+      resolve({ ok: false, code: -1, output: output + e.message, stdout });
     });
   });
 }
@@ -498,6 +503,48 @@ export function normalizeHostname(value) {
     .toLowerCase();
 }
 
+/**
+ * شناسهٔ تونل را از خروجیِ «tunnel list» بیرون می‌کشد.
+ *
+ * ⚠️ این تابع از یک باگِ واقعی زاده شد. کدِ قبلی این بود:
+ *
+ *     JSON.parse(out.slice(out.indexOf('[')))
+ *
+ * روی خروجیِ مخلوطِ stdout و stderr. cloudflared لاگش را روی stderr می‌ریزد و
+ * آن لاگ‌ها کروشه دارند («Using [default] config from …»). پس indexOf از
+ * وسطِ یک خطِ لاگ شروع می‌کرد، JSON.parse می‌افتاد، و چون تونل از قبل ساخته
+ * شده بود خروجیِ «tunnel create» هم شناسه‌ای نداشت — نتیجه: tunnel_id_not_found
+ * و آدرسِ ثابت هیچ‌وقت ساخته نمی‌شد. کسی که یک‌بار دکمه را زده بود، دفعهٔ بعد
+ * برای همیشه در همین دام می‌ماند.
+ *
+ * حالا: اول از stdout، از هر کروشه‌ای که هست امتحان می‌شود؛ اگر باز هم نشد،
+ * از متنِ ساده هم شناسه خوانده می‌شود.
+ */
+export function tunnelIdFrom(output, name) {
+  const text = String(output || '');
+
+  // ۱) JSON — از هر «[» که هست، تا یکی درست از آب دربیاید
+  for (let at = text.indexOf('['); at !== -1; at = text.indexOf('[', at + 1)) {
+    let rows;
+    try {
+      rows = JSON.parse(text.slice(at));
+    } catch {
+      continue;  // این کروشه مالِ یک خطِ لاگ بود
+    }
+    if (!Array.isArray(rows)) continue;
+    const row = rows.find((t) => t && t.name === name) || null;
+    if (row?.id) return row.id;
+  }
+
+  // ۲) جدولِ متنی — هر خطی که هم شناسه دارد و هم همین نام
+  for (const line of text.split(/\r?\n/)) {
+    if (name && !line.includes(name)) continue;
+    const m = line.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    if (m) return m[0];
+  }
+  return null;
+}
+
 export async function namedSetup({ hostname, name = DEFAULT_TUNNEL_NAME }) {
   const host = normalizeHostname(hostname);
   if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) return { ok: false, error: 'invalid_hostname' };
@@ -529,15 +576,19 @@ export async function namedSetup({ hostname, name = DEFAULT_TUNNEL_NAME }) {
   }
 
   const listed = await runCf(['tunnel', 'list', '--output', 'json']);
-  let uuid = null;
-  try {
-    uuid = (JSON.parse(listed.output.slice(listed.output.indexOf('[')))?.find((t) => t.name === name) || {}).id;
-  } catch { /* از خروجی ساخت می‌خوانیم */ }
+  // اول stdoutِ خالص، بعد همهٔ خروجی، بعد آن‌چه خودِ «create» چاپ کرده
+  let uuid =
+    tunnelIdFrom(listed.stdout, name) ||
+    tunnelIdFrom(listed.output, name) ||
+    created.output.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0] ||
+    null;
   if (!uuid) {
-    const m = created.output.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-    uuid = m ? m[0] : null;
+    return {
+      ok: false,
+      error: 'tunnel_id_not_found',
+      detail: `create: ${created.output.slice(-300)}\n\nlist: ${listed.output.slice(-300)}`,
+    };
   }
-  if (!uuid) return { ok: false, error: 'tunnel_id_not_found', detail: created.output.slice(-400) };
 
   const routed = await runCf(['tunnel', 'route', 'dns', '--overwrite-dns', name, host]);
   if (!routed.ok && !/already exists|record with the same/i.test(routed.output)) {

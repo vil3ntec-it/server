@@ -163,6 +163,38 @@ async function main() {
     `${r.status} ${r.text}`
   );
 
+  console.log('\n── شناسهٔ تونل از خروجیِ cloudflared ──');
+  /*
+   *  باگِ واقعی: کدِ قبلی JSON را از out.slice(out.indexOf('[')) می‌خواند،
+   *  روی خروجیِ مخلوطِ stdout و stderr. cloudflared لاگش را روی stderr
+   *  می‌ریزد و آن لاگ‌ها کروشه دارند، پس پارس می‌افتاد؛ و چون تونل از قبل
+   *  ساخته شده بود، «create» هم شناسه نمی‌داد. نتیجه tunnel_id_not_found
+   *  بود و آدرسِ ثابت هرگز ساخته نمی‌شد.
+   */
+  const { tunnelIdFrom } = await import('../src/tunnel.js');
+  const ID = '11111111-2222-3333-4444-555555555555';
+  const JSON_OUT = `[{"id":"${ID}","name":"control-center"}]`;
+  const NOISE = 'Using [default] config from D:\\server\\New folder (2)\\config.yml';
+
+  check('JSONِ تمیز', tunnelIdFrom(JSON_OUT, 'control-center') === ID);
+  check('لاگِ کروشه‌دار پیش از JSON', tunnelIdFrom(`${NOISE}\n${JSON_OUT}`, 'control-center') === ID);
+  check('چند لاگِ کروشه‌دار', tunnelIdFrom(`[a] [b]\n${NOISE}\n${JSON_OUT}`, 'control-center') === ID);
+  check('لاگ بعد از JSON هم', tunnelIdFrom(`${JSON_OUT}\n${NOISE}`, 'control-center') === ID);
+  check(
+    'جدولِ متنی وقتی JSON نیست',
+    tunnelIdFrom(`NAME              ID\ncontrol-center    ${ID}`, 'control-center') === ID
+  );
+  check('نامِ دیگری بود، شناسه نده', tunnelIdFrom(JSON_OUT, 'other-tunnel') === null);
+  check('خروجیِ خالی', tunnelIdFrom('', 'control-center') === null);
+  check('خروجیِ بی‌ربط', tunnelIdFrom('login required\n[error]', 'control-center') === null);
+  check(
+    'میانِ چند تونل، همان که خواستیم',
+    tunnelIdFrom(
+      `[{"id":"99999999-9999-9999-9999-999999999999","name":"other"},{"id":"${ID}","name":"control-center"}]`,
+      'control-center'
+    ) === ID
+  );
+
   console.log('\n── مرزِ نقش‌ها ──');
   r = await api('POST', '/api/auth/users', { username: 'oper', password: 'NoDomain!2026', role: 'operator' });
   const made = r.status === 200 || r.status === 201;
