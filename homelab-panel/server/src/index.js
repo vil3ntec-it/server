@@ -23,7 +23,9 @@ import { readInterfaces } from './metrics/network.js';
 import { autostartAll, ensureAllSiteWorkspaces, ensureMainSite } from './sites/registry.js';
 import { sitesRoot, ensureSitesRoot } from './sites/root.js';
 import { stopAll } from './sites/process.js';
-import { startTunnel, stopTunnel, tunnelEvents, publicState as tunnelState } from './tunnel.js';
+import {
+  startTunnel, stopTunnel, tunnelEvents, publicState as tunnelState, reconcileNamedTunnel,
+} from './tunnel.js';
 import { versionInfo, versionLine } from './version.js';
 import { corsMiddleware, isAllowedOrigin, secureHeaders } from './platform/security.js';
 import { createApiV1 } from './routes/v1.js';
@@ -687,11 +689,21 @@ async function main() {
     const tunnelWanted =
       (process.env.HLP_TUNNEL ?? '1') !== '0' && getSetting('tunnel_autostart', true) !== false;
     if (siteSync && tunnelWanted) {
-      startTunnel({}).then((st) => {
-        if (st.status === 'error') {
-          console.log(`  ⚠️  تونل اینترنتی بالا نیامد: ${st.error}`);
-        }
-      });
+      /*
+       *  پیش از راه‌اندازی، شناسهٔ تونلِ داخلِ config.yml با حسابِ Cloudflare
+       *  هم‌خط می‌شود. اگر شناسه کهنه باشد، پنل تونلی را اجرا می‌کند که هیچ
+       *  رکوردی به آن اشاره نمی‌کند و کاربر فقط Error 1033 می‌بیند — بی‌آنکه
+       *  جایی خطایی چاپ شود.
+       */
+      reconcileNamedTunnel()
+        .catch(() => null)
+        .then(() =>
+          startTunnel({}).then((st) => {
+            if (st.status === 'error') {
+              console.log(`  ⚠️  تونل اینترنتی بالا نیامد: ${st.error}`);
+            }
+          })
+        );
     }
   });
 

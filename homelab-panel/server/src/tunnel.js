@@ -921,6 +921,57 @@ async function writeIngress(uuid, credFile) {
   await fsp.writeFile(CONFIG_FILE, lines.join('\n'), 'utf8');
 }
 
+/**
+ * شناسهٔ تونلِ داخلِ config.yml را با واقعیتِ حسابِ Cloudflare هم‌خط می‌کند.
+ *
+ * ⚠️ چرا لازم شد — خطای ۱۰۳۳ که یک شب طول کشید:
+ *
+ *   رکوردِ DNS به شناسهٔ تونل اشاره می‌کند، نه به نامش. اگر تونلی با همین نام
+ *   در حسابِ دیگری ساخته شده باشد (یا حساب/دامنه عوض شود)، شناسه فرق می‌کند.
+ *   ولی config.yml همان شناسهٔ قدیمی را نگه داشته بود و readTunnelIdFromConfig
+ *   هم آن را می‌خواند — پس پنل تا ابد تونلِ اشتباه را اجرا می‌کرد:
+ *
+ *       DNS  api.vill3n.top  →  eeb76414…   (تونلِ درست)
+ *       پنل  اجرا می‌کرد     →  aa3c0363…   (تونلِ قدیمی)
+ *
+ *   Cloudflare مسیری داشت که پشتش هیچ‌کس وصل نبود ⇒ Error 1033. و چون هیچ
+ *   دستوری خطا نمی‌داد، هیچ‌جا معلوم نبود.
+ *
+ * حالا پیش از راه‌اندازی، نام در حساب جست‌وجو می‌شود و اگر شناسه فرق داشت،
+ * config.yml با شناسه و فایلِ اعتبارِ درست بازنویسی می‌شود.
+ */
+export async function reconcileNamedTunnel() {
+  if (getSetting('tunnel_mode', 'quick') !== 'named') return { ok: true, skipped: 'not_named' };
+  const name = getSetting('tunnel_name', DEFAULT_TUNNEL_NAME);
+  const inConfig = readTunnelIdFromConfig();
+  if (!findCert()) return { ok: true, skipped: 'not_logged_in' };
+
+  try {
+    await ensureBinary();
+  } catch {
+    return { ok: true, skipped: 'no_binary' };
+  }
+
+  const listed = await runCf(['tunnel', 'list', '--output', 'json'], { timeout: 45000 });
+  const live = tunnelIdFrom(listed.stdout, name) || tunnelIdFrom(listed.output, name);
+  if (!live) return { ok: true, skipped: 'not_listed' };
+  if (live === inConfig) return { ok: true, id: live };
+
+  const credFile = await ensureCredFile(live, name);
+  if (!credFile) {
+    logEvent('warn', 'panel', `تونلِ «${name}» حالا ${live} است ولی فایلِ اعتبارش پیدا نشد`);
+    return { ok: false, error: 'credentials_not_found', id: live };
+  }
+
+  await writeIngress(live, credFile);
+  logEvent(
+    'warn',
+    'panel',
+    `شناسهٔ تونل عوض شده بود (${inConfig || 'ندارد'} ← ${live}) — پیکربندی هم‌خط شد`
+  );
+  return { ok: true, id: live, previous: inConfig, changed: true };
+}
+
 function readTunnelIdFromConfig() {
   try {
     const m = fs.readFileSync(CONFIG_FILE, 'utf8').match(/^tunnel:\s*(\S+)/m);

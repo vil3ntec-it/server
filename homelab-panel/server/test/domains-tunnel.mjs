@@ -231,6 +231,16 @@ async function main() {
     misroutedHost('apiXvill3nXtop.example.com', 'api.vill3n.top') === null
   );
 
+  console.log('\n── شناسهٔ کهنهٔ تونل ──');
+  /*
+   *  رکوردِ DNS به شناسه اشاره می‌کند نه به نام. اگر تونلِ هم‌نام در حسابِ
+   *  دیگری ساخته شود، شناسه فرق می‌کند ولی config.yml کهنه می‌ماند و پنل تا
+   *  ابد تونلِ اشتباه را اجرا می‌کند ⇒ Error 1033 بی‌هیچ پیامی.
+   */
+  const { reconcileNamedTunnel } = await import('../src/tunnel.js');
+  const rec = await reconcileNamedTunnel();
+  check('در حالتِ غیرِ نام‌دار، دست به چیزی نمی‌زند', rec.ok && rec.skipped === 'not_named', JSON.stringify(rec));
+
   console.log('\n── مرزِ نقش‌ها ──');
   r = await api('POST', '/api/auth/users', { username: 'oper', password: 'NoDomain!2026', role: 'operator' });
   const made = r.status === 200 || r.status === 201;
