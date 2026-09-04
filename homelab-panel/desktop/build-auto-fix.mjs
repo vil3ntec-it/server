@@ -41,6 +41,7 @@ const header = [
   '@echo off',
   'setlocal',
   'title Automatic repair - server address',
+  'set "AUTOFIX_HERE=%~dp0"',
   'powershell -NoProfile -ExecutionPolicy Bypass -Command "$c=[IO.File]::ReadAllText(\'%~f0\');$i=$c.LastIndexOf(\'#PSCODE#\');Invoke-Expression $c.Substring($i+8)"',
   'exit /b %ERRORLEVEL%',
   MARKER,

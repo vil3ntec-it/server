@@ -33,6 +33,11 @@ Write-Host ''
 #  کامپیوتر نباشد، خطای «A drive with the name F does not exist» می‌دهد و
 #  چون خطای خاتمه‌دهنده است، کلِ جست‌وجو همان‌جا می‌ایستد. Combine فقط رشته را
 #  می‌چسباند و هیچ‌وقت خطا نمی‌دهد.
+function Test-ServerDir {
+  param([string]$Dir)
+  try { return ($Dir -and (Test-Path -LiteralPath ([IO.Path]::Combine($Dir, 'src\index.js')))) } catch { return $false }
+}
+
 function Find-ServerDir {
   $tries = @()
   foreach ($root in @($env:USERPROFILE, "$env:USERPROFILE\Desktop", "$env:USERPROFILE\Documents",
@@ -42,8 +47,53 @@ function Find-ServerDir {
     $tries += [IO.Path]::Combine($root, 'homelab-panel\server')
   }
   if ($PSScriptRoot) { $tries += [IO.Path]::Combine((Split-Path -Parent $PSScriptRoot), 'server') }
-  foreach ($dir in $tries) {
-    try { if (Test-Path -LiteralPath ([IO.Path]::Combine($dir, 'src\index.js'))) { return $dir } } catch { }
+
+  # پوشه‌ای که خودِ این فایل در آن است — اگر کاربر آن را کنارِ نصب گذاشته باشد
+  $here = $env:AUTOFIX_HERE
+  if ($here) {
+    $here = $here.TrimEnd('\')
+    $tries += [IO.Path]::Combine($here, 'homelab-panel\server')
+    $tries += [IO.Path]::Combine($here, 'PumpServer\homelab-panel\server')
+    $tries += [IO.Path]::Combine($here, 'server')
+    $tries += [IO.Path]::Combine((Split-Path -Parent $here), 'server')
+  }
+  foreach ($dir in $tries) { if (Test-ServerDir $dir) { return $dir } }
+
+  # ── ۲) میان‌برِ خودِ برنامه ────────────────────────────────────────────────
+  #  نصب‌کننده می‌تواند هرجایی نصب کند («D:\New folder (2)\...» هم دیده شده)،
+  #  پس حدس زدنِ مسیر جواب نمی‌دهد. ولی میان‌برِ دسکتاپ پوشهٔ کاری‌اش را دارد و
+  #  آن دقیقاً همان جایی است که برنامه نصب شده.
+  try {
+    $ws = New-Object -ComObject WScript.Shell
+    foreach ($folder in @([Environment]::GetFolderPath('Desktop'),
+                          [Environment]::GetFolderPath('Programs'),
+                          [Environment]::GetFolderPath('CommonPrograms'))) {
+      if (-not $folder) { continue }
+      foreach ($lnk in (Get-ChildItem -LiteralPath $folder -Filter '*.lnk' -Recurse -ErrorAction SilentlyContinue)) {
+        $work = ''
+        try { $work = [string]$ws.CreateShortcut($lnk.FullName).WorkingDirectory } catch { continue }
+        if (-not $work) { continue }
+        # پوشهٔ کاریِ میان‌بر ...\homelab-panel\desktop است
+        $guess = [IO.Path]::Combine((Split-Path -Parent $work), 'server')
+        if (Test-ServerDir $guess) { return $guess }
+      }
+    }
+  } catch { }
+
+  # ── ۳) گشتنِ درایوها ─────────────────────────────────────────────────────
+  #  آخرین راه و کندترین‌شان، پس آخر می‌آید و عمقش محدود است.
+  Write-Host '  Searching the drives for the install folder ...'
+  foreach ($drive in [IO.DriveInfo]::GetDrives()) {
+    try {
+      if (-not $drive.IsReady) { continue }
+      if ($drive.DriveType -ne 'Fixed' -and $drive.DriveType -ne 'Removable') { continue }
+      $found = Get-ChildItem -LiteralPath $drive.RootDirectory.FullName -Filter 'homelab-panel' `
+        -Directory -Recurse -Depth 4 -ErrorAction SilentlyContinue
+      foreach ($hit in $found) {
+        $guess = [IO.Path]::Combine($hit.FullName, 'server')
+        if (Test-ServerDir $guess) { return $guess }
+      }
+    } catch { }
   }
   return ''
 }
@@ -71,8 +121,9 @@ function Find-NodeExe {
 
 $server = Find-ServerDir
 if (-not $server) {
-  Write-Host '  Could not find the server folder (PumpServer).'
-  Write-Host '  Install the panel first, then run this again.'
+  Write-Host '  Could not find the installed panel on this computer.'
+  Write-Host '  Looked in: the usual folders, the desktop shortcut, and every drive.'
+  Write-Host '  If the panel is on another drive, put this file next to it and run it there.'
   Write-Host ''
   Read-Host '  Press Enter to close' | Out-Null
   exit 1
