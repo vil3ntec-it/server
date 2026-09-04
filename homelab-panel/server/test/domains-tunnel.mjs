@@ -396,6 +396,53 @@ async function main() {
   check('و پنل می‌داند کدام نام‌ها را دوباره وصل کرده',
     (recStale?.rerouted || []).includes('api.vill3n.top'), JSON.stringify(recStale?.rerouted));
 
+  /*
+   *  ── فایلِ اعتبارِ گم‌شده باید بازیابی شود، نه اینکه تسلیم شویم ─────────
+   *
+   *  این همان چیزی است که سرورِ واقعی را بعد از ۱.۸.۵ خواباند. فایلِ اعتبار
+   *  به‌سادگی گم می‌شود (نصبِ دوباره، جابه‌جاییِ پوشه، پاک شدنِ داده). اگر
+   *  توکنی هم از تنظیمِ قدیمی ذخیره مانده باشد، پنل بدونِ هیچ تلاشی نتیجه
+   *  می‌گرفت که «آدرسِ ثابت شدنی نیست» و به تونلِ توکنیِ کهنه برمی‌گشت:
+   *
+   *      DNS  →  تونلِ نام‌دار      (همانی که کاربر ساخته)
+   *      پنل  →  تونلِ توکنیِ قدیمی (مرده)   ⇒ Error 1033، برای همیشه
+   *
+   *  و چون از آن به بعد حالت «token» بود، هیچ راه‌اندازیِ دوباره‌ای هم
+   *  درستش نمی‌کرد. حالا اول بازیابی، بعد تسلیم.
+   */
+  console.log('\n── فایلِ اعتبارِ گم‌شده، با توکنِ کهنه در تنظیمات ──');
+  fsm.writeFileSync(
+    pathm.join(cfDir, 'config.yml'),
+    [
+      `tunnel: ${NEW_ID}`,
+      `credentials-file: ${pathm.join(cfDir, `${NEW_ID}.json`).replaceAll('\\', '/')}`,
+      'ingress:',
+      '  - hostname: api.vill3n.top',
+      '    service: http://127.0.0.1:4701',
+      '  - service: http_status:404',
+    ].join('\n'),
+  );
+  fsm.rmSync(pathm.join(cfDir, `${NEW_ID}.json`), { force: true }); // فایلِ اعتبار گم شد
+  set2('tunnel_mode', 'named');
+  set2('tunnel_token', 'a-stale-token');
+  set2('tunnel_name', 'control-center');
+
+  const recLost = await reconcile2().catch((e) => ({ error: e.message }));
+  check('فایلِ اعتبار دوباره ساخته می‌شود',
+    fsm.existsSync(pathm.join(cfDir, `${NEW_ID}.json`)), JSON.stringify(recLost));
+  check('و حالت روی «آدرسِ ثابت» می‌ماند',
+    get2('tunnel_mode', 'quick') === 'named', get2('tunnel_mode', 'quick'));
+  check('به تونلِ توکنیِ کهنه برنمی‌گردد', recLost?.restored !== 'token', JSON.stringify(recLost));
+  //  و بازیابی نباید ingress را قربانی کند: مشکل «مسیرِ فایلِ اعتبار» بود، نه
+  //  زیردامنه‌ها. بازنویسیِ کلِ فایل از روی دیتابیس، نامی را که فقط در فایل
+  //  هست می‌انداخت — همان «کار می‌کرد، حالا نمی‌کند».
+  const cfgAfterLost = fsm.readFileSync(pathm.join(cfDir, 'config.yml'), 'utf8');
+  check('زیردامنه‌های داخلِ پیکربندی سرِ جایشان می‌مانند',
+    cfgAfterLost.includes('hostname: api.vill3n.top'), cfgAfterLost.replaceAll('\n', ' | ').slice(0, 200));
+  check('و شناسهٔ تونل عوض نمی‌شود',
+    cfgAfterLost.includes(`tunnel: ${NEW_ID}`), cfgAfterLost.split('\n')[0]);
+  set2('tunnel_token', null);
+
   fsm.rmSync(stateFile, { force: true });
   fsm.rmSync(fakeBin, { force: true });
   fsm.rmSync(pathm.join(cfDir, 'cert.pem'), { force: true });

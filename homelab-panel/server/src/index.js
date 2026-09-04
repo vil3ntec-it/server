@@ -452,7 +452,15 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
   //    بدنه را می‌خورد و بعدش دیگر چیزی برای لوله کردن نمی‌ماند.
   publicApp.use(AI_PREFIX, aiProxy);
   publicApp.use(express.json({ limit: MSG_LIMIT }));
-  publicApp.get('/health', (req, res) => res.json(publicHealth()));
+  /*
+   *  «mode» می‌گوید این جواب از کدام پورت آمده.
+   *
+   *  از بیرون هر دو پورت /health دارند و جوابشان شبیهِ هم است، پس وقتی تونل
+   *  به پورتِ اشتباه (پورتِ پنل) وصل شده باشد هیچ راهی نبود که از خودِ جواب
+   *  بفهمیم — و همین یک بار وقتِ زیادی برد. حالا پورتِ عمومی خودش را معرفی
+   *  می‌کند و آزمونِ تونل هم همین را می‌سنجد.
+   */
+  publicApp.get('/health', (req, res) => res.json({ ...publicHealth(), mode: 'sync-only' }));
   // ریشه: همان فهرستی که /api می‌دهد — کسی که آدرسِ عمومی را باز می‌کند،
   // اول از همه باید ببیند این سرور چیست و از کجا شروع کند.
   publicApp.get('/', (req, res) => res.json(apiIndex(req)));

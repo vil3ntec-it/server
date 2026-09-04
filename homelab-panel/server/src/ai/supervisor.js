@@ -91,6 +91,51 @@ export function aiStatus() {
   };
 }
 
+/**
+ * پوشهٔ دادهٔ دستیار.
+ *
+ *  ⚠️ زیرِ پوشهٔ پنل نگذارش — سرویس بالا نمی‌آید.
+ *
+ *  تا امروز این‌جا `<dataDir>/ai-support` پاس داده می‌شد، یعنی مسیری داخلِ خودِ
+ *  homelab-panel. ولی مرزِ امنیتیِ سرویس (ai-support/src/security/guard.js) کلِ
+ *  درختِ پنل را جزوِ مسیرهای ممنوع می‌داند و اگر AI_DATA_DIR آن‌جا باشد
+ *  **عمداً بالا نمی‌آید**:
+ *
+ *      ❌ AI_DATA_DIR روی مسیرِ ممنوع تنظیم شده: …/server/data/ai-support
+ *
+ *  AI_ALLOW_EXTERNAL_DATA_DIR فقط قاعدهٔ «بیرونِ سرویس است» را برمی‌دارد، نه
+ *  قاعدهٔ «مسیرِ ممنوع». پس سرویس در هر راه‌اندازی با کد ۱ می‌مرد، ناظر با
+ *  تأخیرِ فزاینده دوباره اجرایش می‌کرد، و پنل تا ابد یک پروسهٔ فرزند را باز و
+ *  بسته می‌کرد — بی‌آنکه دستیار هیچ‌وقت بالا بیاید.
+ *
+ *  پیش‌فرض حالا پوشهٔ خودِ سرویس است — همان جایی که گاردش می‌پذیرد. اگر کسی
+ *  عمداً جای دیگری می‌خواهد، HLP_AI_DATA_DIR را بگذارد؛ آن وقت «بیرونِ سرویس
+ *  بودن» هم عمدی حساب می‌شود.
+ */
+export function aiDataDir(dir = resolveAiDir()) {
+  if (config.aiDataDir) return path.resolve(config.aiDataDir);
+  return dir ? path.join(dir, 'data') : '';
+}
+
+/**
+ * متغیرهای محیطیِ سرویس. عمداً محدود: هیچ‌کدام از رمزهای پنل پاس داده نمی‌شود.
+ * از startAi جدا نگه داشته شده تا آزمون بتواند دقیقاً همین را بسنجد.
+ */
+export function aiChildEnv(dir = resolveAiDir()) {
+  const env = {
+    AI_PORT: String(config.aiPort),
+    // فقط روی خودِ دستگاه گوش می‌دهد؛ راهِ رسیدنِ دنیای بیرون، پراکسیِ همین پنل است
+    AI_HOST: '127.0.0.1',
+    AI_DATA_DIR: aiDataDir(dir),
+  };
+  // «بیرونِ سرویس بودن» فقط وقتی عمدی است که خودِ صاحبِ سرور مسیر داده باشد
+  if (config.aiDataDir) env.AI_ALLOW_EXTERNAL_DATA_DIR = '1';
+  if (config.aiAdminToken) env.AI_ADMIN_TOKEN = config.aiAdminToken;
+  if (config.aiModel) env.AI_LLM_MODEL = config.aiModel;
+  if (config.aiOllamaUrl) env.AI_OLLAMA_URL = config.aiOllamaUrl;
+  return env;
+}
+
 export function aiLogs(limit = 100) {
   return ring.slice(-Math.max(1, Math.min(RING, limit)));
 }
@@ -113,22 +158,7 @@ export function startAi() {
   stopping = false;
   const entry = path.join(dir, 'src', 'index.js');
 
-  // متغیرهای محیطیِ سرویس. عمداً محدود: هیچ‌کدام از رمزهای پنل پاس داده نمی‌شود.
-  const env = {
-    ...process.env,
-    AI_PORT: String(config.aiPort),
-    // فقط روی خودِ دستگاه گوش می‌دهد؛ راهِ رسیدنِ دنیای بیرون، پراکسیِ همین پنل است
-    AI_HOST: '127.0.0.1',
-    AI_DATA_DIR: path.join(config.dataDir, 'ai-support'),
-    // گاردِ خودِ سرویس، پوشهٔ دادهٔ بیرون از خودش را رد می‌کند — و درست هم
-    // می‌کند. این‌جا عمدی است: پنل همهٔ دادهٔ سرویس‌هایش را زیرِ یک پوشه جمع
-    // می‌کند تا پشتیبان‌گیری و پاک‌سازی یک‌جا باشد. مسیرِ داده‌شده هم زیرِ
-    // پوشهٔ دادهٔ خودِ پنل است، نه جای حساسی.
-    AI_ALLOW_EXTERNAL_DATA_DIR: '1',
-  };
-  if (config.aiAdminToken) env.AI_ADMIN_TOKEN = config.aiAdminToken;
-  if (config.aiModel) env.AI_LLM_MODEL = config.aiModel;
-  if (config.aiOllamaUrl) env.AI_OLLAMA_URL = config.aiOllamaUrl;
+  const env = { ...process.env, ...aiChildEnv(dir) };
 
   try {
     child = spawn(process.execPath, [entry], {

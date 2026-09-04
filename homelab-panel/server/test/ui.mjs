@@ -192,8 +192,11 @@ try {
   check('آدرس ws:// نمایش داده می‌شود', (await page.locator('text=ws://').count()) > 0);
   await page.click('button:has-text("نمایش رمز")');
   await page.waitForTimeout(600);
-  const tokenShown = await page.locator('code').first().innerText();
-  check('رمز کامل نمایش داده شد', /^[0-9a-f]{30,}$/.test(tokenShown.trim()), tokenShown.slice(0, 12));
+  //  ⚠️ `code` اولِ صفحه، آدرسِ ws:// است نه رمز. دنبالِ خودِ رمز بگرد، وگرنه
+  //  آزمون به‌خاطرِ جابه‌جا شدنِ یک بلوک در صفحه قرمز می‌شود، نه به‌خاطرِ خرابی.
+  const codes = await page.locator('code').allInnerTexts();
+  const tokenShown = codes.map((t) => t.trim()).find((t) => /^[0-9a-f]{30,}$/.test(t)) || '';
+  check('رمز کامل نمایش داده شد', Boolean(tokenShown), codes.join(' | ').slice(0, 120));
 
   console.log('\n── اعلان‌ها (سرویسِ اعلانِ سرور خانگی) ──');
   check('کارت اعلان‌ها در صفحهٔ سرور سایت هست', (await page.locator('h2:has-text("اعلان‌ها")').count()) > 0);
