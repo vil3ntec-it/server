@@ -1028,13 +1028,64 @@ export async function reconcileNamedTunnel() {
    */
   if (currentMode === 'named' && getSetting('tunnel_token', null)) {
     const credPath = readCredFromConfig();
-    const namedBroken = !fs.existsSync(CONFIG_FILE) || !credPath || !fs.existsSync(credPath);
+    const hasConfig = fs.existsSync(CONFIG_FILE);
+    let namedBroken = !hasConfig || !credPath || !fs.existsSync(credPath);
+
+    /*
+     *  ⚠️ «فایلِ اعتبار نیست» یعنی «هنوز ساخته نشده»، نه «شدنی نیست».
+     *
+     *  این‌جا یک بار سرورِ سالم را خواباند. فایلِ اعتبارِ تونل به‌سادگی گم
+     *  می‌شود: پنل جابه‌جا یا دوباره نصب می‌شود، پوشهٔ داده پاک می‌شود، یا
+     *  cloudflared آن را جای دیگری گذاشته. تا ۱.۸.۵ همین حالت با
+     *  ensureCredFile درست می‌شد — فایل دوباره از خودِ Cloudflare گرفته
+     *  می‌شد و آدرسِ ثابت برمی‌گشت. ولی این شرط بدونِ هیچ تلاشی نتیجه
+     *  می‌گرفت که «named شدنی نیست» و کلِ پنل را به تونلِ توکنیِ کهنه
+     *  برمی‌گرداند:
+     *
+     *      DNS  →  تونلِ نام‌دار (همانی که کاربر ساخته)
+     *      پنل  →  tunnel run --token …  (تونلِ قدیمی، مرده)
+     *
+     *  یعنی دقیقاً همان Error 1033 — و چون از آن به بعد حالت «token» است،
+     *  همین تابع در هر راه‌اندازی زودتر برمی‌گردد و هیچ‌وقت خودش را درست
+     *  نمی‌کند. تنها راهِ خروجش نصبِ دوباره بود.
+     *
+     *  پس اول بازیابی، بعد تسلیم: اگر پیکربندی و گواهی هست، همان کاری را
+     *  می‌کنیم که تعمیرِ خودکار می‌کند و فقط اگر آن هم جواب نداد به توکن
+     *  برمی‌گردیم.
+     */
+    if (namedBroken && hasConfig) {
+      const uuid = readTunnelIdFromConfig();
+      if (uuid && findCert()) {
+        try {
+          await ensureBinary();
+          const rebuilt = await ensureCredFile(uuid, getSetting('tunnel_name', DEFAULT_TUNNEL_NAME));
+          if (rebuilt) {
+            /*
+             *  فقط همان یک خط عوض می‌شود، نه کلِ فایل.
+             *
+             *  writeIngress فایل را از روی دیتابیس بازمی‌سازد؛ اگر زیردامنه‌ای
+             *  فقط در فایل باشد و در دیتابیس نه، همین‌جا می‌افتاد و کاربر
+             *  می‌دید چیزی که کار می‌کرد دیگر کار نمی‌کند. مشکل هم فقط
+             *  «مسیرِ فایلِ اعتبار» بود، نه ingress.
+             */
+            if (rebuilt !== credPath) await setCredLineInConfig(rebuilt);
+            namedBroken = false;
+            logEvent(
+              'info',
+              'panel',
+              'فایلِ اعتبارِ آدرسِ ثابت نبود و دوباره ساخته شد — حالت روی «آدرسِ ثابت» ماند'
+            );
+          }
+        } catch { /* بازیابی نشد — پایین‌تر به توکن برمی‌گردیم */ }
+      }
+    }
+
     if (namedBroken) {
       setSetting('tunnel_mode', 'token');
       logEvent(
         'warn',
         'panel',
-        'حالتِ آدرسِ ثابت روی این سرور شدنی نبود (پیکربندی یا فایلِ اعتبار نبود) — به تونلِ توکنی برگشت'
+        'حالتِ آدرسِ ثابت روی این سرور شدنی نبود (پیکربندی یا فایلِ اعتبار بازیابی نشد) — به تونلِ توکنی برگشت'
       );
       return { ok: true, restored: 'token' };
     }
@@ -1137,6 +1188,23 @@ function readHostFromConfig() {
   } catch {
     return null;
   }
+}
+
+/**
+ * فقط خطِ `credentials-file:` را در config.yml جابه‌جا می‌کند و به بقیهٔ فایل
+ * — مهم‌تر از همه، به ingress — دست نمی‌زند.
+ */
+async function setCredLineInConfig(credFile) {
+  const value = credFile.replaceAll('\\', '/');
+  let text = await fsp.readFile(CONFIG_FILE, 'utf8');
+  if (/^credentials-file:.*$/m.test(text)) {
+    text = text.replace(/^credentials-file:.*$/m, `credentials-file: ${value}`);
+  } else if (/^tunnel:.*$/m.test(text)) {
+    text = text.replace(/^(tunnel:.*)$/m, `$1\ncredentials-file: ${value}`);
+  } else {
+    text = `credentials-file: ${value}\n${text}`;
+  }
+  await fsp.writeFile(CONFIG_FILE, text, 'utf8');
 }
 
 function readCredFromConfig() {
@@ -1420,15 +1488,44 @@ export async function startTunnel({ port } = {}) {
     });
     logEvent('warn', 'panel', `تونل بسته شد (کد ${code})${reason ? ` — ${reason}` : ''}`);
 
+    const retryLater = () => {
+      if (stopping || child) return; // یا خاموش شده، یا از قبل دوباره بالا آمده
+      clearTimeout(restartTimer);
+      restartTimer = setTimeout(() => startTunnel({ port: targetPort }), 10000);
+      restartTimer.unref?.();
+    };
+
     // خرابیِ رایج: فایل اعتبار جابه‌جا شده — یک‌بار خودکار درستش می‌کنیم
     if (diag.problems.some((p) => p.fixable) && !state.repairTried) {
       state.repairTried = true;
       logEvent('info', 'panel', 'تلاش خودکار برای بازسازی پیکربندی تونل');
-      repairTunnel().catch(() => {});
+      /*
+       *  ⚠️ اگر تعمیر جواب ندهد، تونل باید باز هم دوباره تلاش کند.
+       *
+       *  تا امروز این‌جا بعد از صدا زدنِ repairTunnel یک `return` بود و بس.
+       *  ولی repairTunnel وقتی فایلِ اعتبار را پیدا نکند خطا **پرتاب
+       *  نمی‌کند** — با {ok:false} برمی‌گردد. یعنی نه پروسه‌ای مانده بود، نه
+       *  تایمرِ تلاشِ دوباره‌ای گذاشته می‌شد: تونل تا راه‌اندازیِ بعدیِ کلِ
+       *  پنل مرده می‌ماند، بی‌آنکه چیزی در حالِ تلاش باشد. از بیرون همان
+       *  «سرور بالاست ولی به تونل نمی‌رسد» دیده می‌شد.
+       *
+       *  حالا نتیجهٔ تعمیر خوانده می‌شود و اگر تونل برنگشته بود، همان حلقهٔ
+       *  ۱۰ ثانیه‌ای ادامه پیدا می‌کند.
+       */
+      repairTunnel()
+        .catch((e) => ({ ok: false, error: e?.message || 'failed' }))
+        .then((res) => {
+          if (stopping || child) return; // تعمیر خودش تونل را برگرداند
+          logEvent(
+            'warn',
+            'panel',
+            `بازسازیِ خودکار تونل را برنگرداند${res?.error ? ` (${res.error})` : ''} — ۱۰ ثانیهٔ دیگر دوباره تلاش می‌شود`
+          );
+          retryLater();
+        });
       return;
     }
-    restartTimer = setTimeout(() => startTunnel({ port: targetPort }), 10000);
-    restartTimer.unref?.();
+    retryLater();
   });
 
   return publicState();

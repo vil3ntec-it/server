@@ -128,6 +128,10 @@ export const config = {
   aiEnabled: (process.env.HLP_AI_ENABLED ?? '1') !== '0',
   aiPort: num(process.env.HLP_AI_PORT, 8788),
   aiDir: process.env.HLP_AI_DIR || '',
+  // پوشهٔ دادهٔ دستیار. پیش‌فرض: پوشهٔ خودِ سرویس (ai-support/data) — همان
+  // جایی که مرزِ امنیتیِ آن سرویس اجازه‌اش را می‌دهد. اگر جای دیگری
+  // می‌خواهید، باید بیرونِ درختِ پنل باشد وگرنه سرویس بالا نمی‌آید.
+  aiDataDir: process.env.HLP_AI_DATA_DIR || '',
   // اگر بگذارید، دستیار می‌تواند نشستِ سطحِ مدیر بدهد (جست‌وجوی سراسری و مصارف)
   aiAdminToken: process.env.HLP_AI_ADMIN_TOKEN || '',
   aiModel: process.env.HLP_AI_MODEL || '',

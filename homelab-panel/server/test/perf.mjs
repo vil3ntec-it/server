@@ -53,13 +53,13 @@ function cpuSeconds() {
   }
 }
 
-function childProcessCount() {
+function childProcessPids() {
   try {
     return fs
       .readFileSync(`/proc/${server.pid}/task/${server.pid}/children`, 'utf8')
       .trim()
       .split(/\s+/)
-      .filter(Boolean).length;
+      .filter(Boolean);
   } catch {
     return null;
   }
@@ -122,12 +122,36 @@ try {
   check('با برگشتن به تب، دوباره زنده می‌شود', ticks >= 2, `${ticks} بروزرسانی در ۴ ثانیه`);
 
   console.log('\n── پروسه‌های جانبی ──');
-  const children = childProcessCount();
+  /*
+   *  ⚠️ سنجه «هیچ فرزندی نباشد» نیست، «فرزندی مدام عوض نشود» است.
+   *
+   *  دستیارِ پشتیبانی یک پروسهٔ فرزندِ ماندگار و کاملاً عادی است. چیزی که
+   *  واقعاً خرابی است، فرزندی است که می‌میرد و دوباره ساخته می‌شود — یک بار
+   *  همین اتفاق افتاد (پوشهٔ دادهٔ دستیار روی مسیرِ ممنوع بود، سرویس در هر
+   *  اجرا با کد ۱ می‌مرد و ناظر بی‌پایان دوباره اجرایش می‌کرد) و شمردنِ ساده
+   *  نمی‌توانست فرقِ این دو را بگذارد. پس شناسه‌ها دو بار خوانده می‌شوند و
+   *  باید همان‌ها باشند.
+   */
+  const pidsBefore = childProcessPids();
+  await sleep(5000);
+  const pidsAfter = childProcessPids();
+  const churned =
+    pidsBefore === null || pidsAfter === null
+      ? false
+      : pidsBefore.join(',') !== pidsAfter.join(',');
   check(
     'در حالت عادی هیچ پروسهٔ جانبی مدام باز و بسته نمی‌شود',
-    children === 0 || children === null,
-    children === null ? 'قابل اندازه‌گیری نبود' : `${children} پروسهٔ فرزند`
+    !churned,
+    pidsBefore === null ? 'قابل اندازه‌گیری نبود' : `${pidsBefore.join(',') || '—'} → ${pidsAfter.join(',') || '—'}`
   );
+
+  const ai = await fetch(`${BASE}/api/ai/status`, {
+    headers: { Authorization: `Bearer ${setup.token}` },
+  }).then((r) => r.json()).catch(() => null);
+  if (ai?.enabled && ai?.installed) {
+    check('دستیار بالا آمده و نیفتاده', ai.running && ai.restarts === 0,
+      `running=${ai.running} restarts=${ai.restarts} lastError=${ai.lastError || '—'}`);
+  }
 
   console.log('\n── حافظه ──');
   const rssMb = Number(fs.readFileSync(`/proc/${server.pid}/status`, 'utf8').match(/VmRSS:\s+(\d+)/)[1]) / 1024;
