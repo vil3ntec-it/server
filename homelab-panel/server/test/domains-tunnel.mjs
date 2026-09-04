@@ -443,6 +443,74 @@ async function main() {
     cfgAfterLost.includes(`tunnel: ${NEW_ID}`), cfgAfterLost.split('\n')[0]);
   set2('tunnel_token', null);
 
+  /*
+   *  ── زیردامنه‌هایی که فقط در فایل هستند نباید بیفتند ──────────────────
+   *
+   *  این همان چیزی است که همهٔ برنامه‌ها را یک‌جا خواباند. writeIngress فایل
+   *  را از روی دیتابیس بازمی‌سازد؛ اگر پنل دوباره نصب شود یا panel.db از
+   *  بکاپِ قدیمی برگردد و config.yml سرِ جایش بماند، دیتابیس هیچ زیردامنه‌ای
+   *  نمی‌شناسد و اولین بازنویسی — که در هر بار بالا آمدنِ پنل رخ می‌دهد —
+   *  فایل را به «فقط http_status:404» تبدیل می‌کرد.
+   *
+   *  دو علامت با هم، از یک ریشه:
+   *      ingress خالی           ⇒ هر درخواستی ۴۰۴
+   *      هیچ رکوردی دوباره وصل نشد ⇒ DNS روی تونلِ مرده می‌ماند ⇒ ۱۰۳۳
+   */
+  console.log('\n── پنل زیردامنه‌ها را نمی‌شناسد ولی فایل می‌شناسد ──');
+  fsm.writeFileSync(
+    pathm.join(cfDir, 'config.yml'),
+    [
+      `tunnel: ${OLD_ID}`,
+      `credentials-file: ${pathm.join(cfDir, `${OLD_ID}.json`).replaceAll('\\', '/')}`,
+      'ingress:',
+      '  - hostname: api.vill3n.top',
+      '    service: http://127.0.0.1:4701',
+      '  - hostname: shop.vill3n.top',
+      '    service: http://127.0.0.1:4702',
+      '  - service: http_status:404',
+    ].join('\n'),
+  );
+  fsm.writeFileSync(pathm.join(cfDir, `${OLD_ID}.json`), JSON.stringify({ TunnelID: OLD_ID }));
+  fsm.writeFileSync(pathm.join(cfDir, `${NEW_ID}.json`), JSON.stringify({ TunnelID: NEW_ID }));
+  set2('tunnel_mode', 'named');
+  set2('tunnel_name', 'control-center');
+  set2('tunnel_token', null);
+  set2('tunnel_hostname', null);      // دیتابیس هیچ‌چیز نمی‌داند
+  set2('tunnel_hostnames', []);
+  set2('tunnel_routed_dns', []);
+  fsm.writeFileSync(stateFile, JSON.stringify({
+    tunnels: [
+      { uuid: OLD_ID, name: 'old-one' },
+      { uuid: NEW_ID, name: 'control-center' },
+    ],
+    dns: [],
+  }));
+
+  const recKeep = await reconcile2().catch((e) => ({ error: e.message }));
+  const keptCfg = fsm.readFileSync(pathm.join(cfDir, 'config.yml'), 'utf8');
+  check('زیردامنهٔ اصلی نمی‌افتد', keptCfg.includes('hostname: api.vill3n.top'), keptCfg.replaceAll('\n', ' | ').slice(0, 200));
+  check('زیردامنهٔ دوم هم نمی‌افتد', keptCfg.includes('hostname: shop.vill3n.top'), keptCfg.replaceAll('\n', ' | ').slice(0, 200));
+  check('و پنل از این به بعد می‌شناسدشان',
+    get2('tunnel_hostname', null) === 'api.vill3n.top', get2('tunnel_hostname', null));
+  //  و چون دیگر می‌شناسدشان، رکوردهای DNS هم به تونلِ تازه برمی‌گردند —
+  //  همان چیزی که نبودنش ۱۰۳۳ می‌ساخت.
+  check('رکوردهای DNS هم به تونلِ زنده برمی‌گردند',
+    (recKeep?.rerouted || []).includes('api.vill3n.top')
+      && (recKeep?.rerouted || []).includes('shop.vill3n.top'),
+    JSON.stringify(recKeep?.rerouted));
+
+  //  ⚠️ محافظ: این ثبتِ خودکار نباید «حذفِ زیردامنه» را از کار بیندازد.
+  //  اگر داخلِ writeIngress می‌نشست، هر حذفی بلافاصله از روی فایل برمی‌گشت.
+  const { removeHostname } = await import('../src/tunnel.js');
+  await removeHostname('shop.vill3n.top').catch(() => null);
+  const afterRemove = fsm.readFileSync(pathm.join(cfDir, 'config.yml'), 'utf8');
+  check('حذفِ زیردامنه هنوز واقعاً حذف می‌کند',
+    !afterRemove.includes('shop.vill3n.top'), afterRemove.replaceAll('\n', ' | ').slice(0, 200));
+  check('و بقیه سرِ جایشان می‌مانند',
+    afterRemove.includes('api.vill3n.top'), afterRemove.replaceAll('\n', ' | ').slice(0, 200));
+  const { stopTunnel: stopT } = await import('../src/tunnel.js');
+  stopT();
+
   fsm.rmSync(stateFile, { force: true });
   fsm.rmSync(fakeBin, { force: true });
   fsm.rmSync(pathm.join(cfDir, 'cert.pem'), { force: true });
