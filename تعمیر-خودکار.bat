@@ -56,6 +56,7 @@ $EmbeddedBrain = @'
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import net from 'node:net';
 import { spawnSync } from 'node:child_process';
 
 const WIN = process.platform === 'win32';
@@ -250,6 +251,53 @@ function ensureCred(bin, cfDir, uuid, name, cert) {
 }
 
 /**
+ * آیا کسی روی این پورت گوش می‌دهد؟
+ *
+ * ⚠️ اگر تونل بالا باشد ولی پشتش هیچ‌کس نباشد، Cloudflare خطای ۵۰۲ می‌دهد و
+ * کاربر همان «کار نمی‌کند» را می‌بیند. تفاوتش با ۱۰۳۳ از بیرون معلوم نیست،
+ * پس این‌جا از خودِ کامپیوتر پرسیده می‌شود.
+ */
+function portOpen(port, timeout = 1500) {
+  return new Promise((resolve) => {
+    const sock = net.connect({ host: '127.0.0.1', port });
+    const done = (ok) => { sock.destroy(); resolve(ok); };
+    sock.setTimeout(timeout);
+    sock.on('connect', () => done(true));
+    sock.on('timeout', () => done(false));
+    sock.on('error', () => done(false));
+  });
+}
+
+/**
+ * تونل را خودمان چند ثانیه اجرا می‌کنیم و حرفِ خودش را می‌شنویم.
+ *
+ * ⚠️ چرا این مهم‌ترین بخش است: تا امروز وقتی آدرس بالا نمی‌آمد، هیچ‌جا معلوم
+ * نبود چرا. پنل فقط می‌گفت «بالا نیامد» و Cloudflare فقط می‌گفت ۱۰۳۳. خودِ
+ * cloudflared دلیلش را می‌گوید — ولی حرفش داخلِ لاگِ پنل گم می‌شد.
+ *
+ * @returns {{connected:boolean, lines:string[]}}
+ */
+function probeTunnel(bin, configFile, cert, seconds = 25) {
+  if (!bin || !fs.existsSync(configFile)) return { connected: false, lines: [] };
+  const env = { ...process.env };
+  if (cert) env.TUNNEL_ORIGIN_CERT = cert;
+  const out = spawnSync(bin, ['tunnel', '--no-autoupdate', '--config', configFile, 'run'], {
+    encoding: 'utf8',
+    timeout: seconds * 1000,
+    env,
+  });
+  const text = `${out.stdout || ''}\n${out.stderr || ''}`;
+  const connected = /Registered tunnel connection|Connection [0-9a-f-]+ registered/i.test(text);
+  // فقط خط‌هایی که به درد می‌خورند — لاگِ کامل چند صد خط است
+  const lines = text
+    .split(/\r?\n/)
+    .filter((l) => /ERR|error|failed|unable|cannot|Registered tunnel connection|Starting tunnel/i.test(l))
+    .map((l) => l.trim().slice(0, 220))
+    .slice(-6);
+  return { connected, lines };
+}
+
+/**
  * همهٔ کار: می‌بیند، تصمیم می‌گیرد، درست می‌کند.
  *
  * @param {{serverDir?:string, dry?:boolean}} options
@@ -342,6 +390,57 @@ export async function autoFix({ serverDir = '', dry = false } = {}) {
       steps.push(`زیردامنه‌ها به تنظیمات اضافه شدند: ${missing.map((x) => x.hostname).join('، ')}`);
     }
 
+    /*
+     *  ── خرابیِ ۶: تونل عمداً خاموش شده ─────────────────────────────────
+     *
+     *  ⚠️ ساکت‌ترین خرابیِ همهٔ این‌ها. دکمهٔ «خاموش کردنِ تونل» در پنل فقط
+     *  tunnel_autostart را false می‌کند. بعد از آن، هرچه config.yml و شناسه و
+     *  رکوردِ DNS درست باشد فرقی نمی‌کند: پنل موقعِ راه‌اندازی اصلاً سراغِ تونل
+     *  نمی‌رود. از بیرون دقیقاً شکلِ ۱۰۳۳ است و هیچ‌جا هم نوشته نمی‌شود.
+     *  «دیروز کار می‌کرد، امروز نه» بیشتر وقت‌ها همین است.
+     */
+    if (settings.get('tunnel_autostart', true) === false) {
+      if (!dry) settings.set('tunnel_autostart', true);
+      steps.push('تونل در پنل خاموش شده بود (دکمهٔ خاموش/روشن) — دوباره روشن شد');
+    }
+
+    /*
+     *  همان چیز، این بار از راهِ فایلِ .env. اگر HLP_TUNNEL=0 باشد، تنظیمِ
+     *  دیتابیس هم کاری از پیش نمی‌برد — متغیرِ محیطی زورش بیشتر است.
+     */
+    const envFile = path.join(server, '.env');
+    if (fs.existsSync(envFile)) {
+      let envText = fs.readFileSync(envFile, 'utf8');
+      let touched = false;
+      for (const key of ['HLP_TUNNEL', 'HLP_SITESYNC']) {
+        const re = new RegExp(`^\\s*${key}\\s*=\\s*0\\s*# ---------------------------------------------------------------------------
+#  «تعمیرِ خودکار» — پوستهٔ ویندوزیِ auto-fix.mjs
+#
+#  هیچ پرسشی ندارد: نه نشانیِ پنل، نه نامِ کاربری، نه رمز، نه آدرسِ مقصد. همه را
+#  از روی خودِ نصب پیدا می‌کند. کارش سه بخش است:
+#
+#     ۱) auto-fix.mjs را با Nodeِ خودِ سرور اجرا می‌کند (تشخیص و تعمیر)
+#     ۲) سرور را خاموش و دوباره روشن می‌کند تا تنظیماتِ تازه سوار شود
+#     ۳) خودش آدرس را از اینترنت صدا می‌زند و می‌بیند بالا آمده یا نه
+#
+#  در آخر یک گزارشِ فارسی روی دسکتاپ می‌سازد و در مرورگر باز می‌کند — چون
+#  پنجرهٔ cmd فارسی را درست نشان نمی‌دهد و متنِ انگلیسی هم به کارِ کسی نمی‌آید.
+#
+#  این فایل خواندنی است؛ همین کد داخلِ «تعمیر-خودکار.bat» هم هست. اگر این‌جا را
+#  عوض کردید، دوباره بسازیدش:
+#
+#      node homelab-panel/desktop/build-auto-fix.mjs
+# ---------------------------------------------------------------------------
+$ErrorActionPreference = 'Continue'
+, 'm');
+        if (!re.test(envText)) continue;
+        envText = envText.replace(re, `# $EmbeddedBrain = ''   # BUILD: اینجا با متنِ auto-fix.mjs پر می‌شود   ← این خط تونل را خاموش می‌کرد`);
+        touched = true;
+        steps.push(`در فایلِ .env خطِ ${key}=0 تونل را خاموش می‌کرد — غیرفعال شد`);
+      }
+      if (touched && !dry) fs.writeFileSync(envFile, envText, 'utf8');
+    }
+
     // ── خرابیِ ۱: حالتِ تونل ───────────────────────────────────────────
     if (mode !== 'named') {
       if (!dry) {
@@ -379,7 +478,27 @@ export async function autoFix({ serverDir = '', dry = false } = {}) {
       }
     }
 
-    return finish({ found: true, server, dataDir, hostname, tunnelId: uuid, mode });
+    /*
+     *  ── شواهد ──────────────────────────────────────────────────────────
+     *  تا این‌جا تنظیمات درست شد. حالا به‌جای اینکه بگوییم «امیدواریم کار کند»،
+     *  دو چیز واقعاً امتحان می‌شود: کسی پشتِ پورت هست؟ و خودِ تونل بالا می‌آید؟
+     */
+    const mainPort = cfg.hosts.find((r) => r.hostname === hostname)?.port || cfg.hosts[0]?.port || 4701;
+    if (!(await portOpen(mainPort))) {
+      notes.push(`هیچ‌کس روی پورتِ ${mainPort} گوش نمی‌دهد — سرور خاموش است یا پورتش فرق دارد.`);
+    } else {
+      notes.push(`پورتِ ${mainPort} باز است.`);
+    }
+
+    let probe = { connected: false, lines: [] };
+    if (!dry && bin && cred) {
+      say('probing the tunnel (about 25 seconds) ...');
+      probe = probeTunnel(bin, configFile, cert);
+      if (probe.connected) notes.push('تونل با همین تنظیمات به Cloudflare وصل شد ✅');
+      else if (probe.lines.length) blockers.push(`تونل وصل نشد. حرفِ خودِ cloudflared: ${probe.lines.join(' | ')}`);
+    }
+
+    return finish({ found: true, server, dataDir, hostname, tunnelId: uuid, mode, port: mainPort, probe });
   } finally {
     settings.close();
   }
@@ -636,6 +755,14 @@ foreach ($b in $result.blockers) { $rows += "<li class='stop'>$(Esc $b)</li>" }
 foreach ($n in $result.notes)    { $rows += "<li class='note'>$(Esc $n)</li>" }
 if (-not $rows) { $rows = "<li class='note'>چیزی برای تعمیر پیدا نشد.</li>" }
 
+# حرفِ خودِ cloudflared — همان چیزی که تا امروز هیچ‌جا دیده نمی‌شد
+$cfLog = ''
+if ($result.probe -and $result.probe.lines -and $result.probe.lines.Count) {
+  $rowsLog = ''
+  foreach ($l in $result.probe.lines) { $rowsLog += "$(Esc $l)`n" }
+  $cfLog = "<p class='dim'>حرفِ خودِ cloudflared:</p><pre class='log'>$rowsLog</pre>"
+}
+
 $verdict = if ($liveOk) { 'آدرس بالا آمد ✅' }
            elseif ($result.blockers.Count) { 'یک کارِ دستی مانده ⛔' }
            else { 'تعمیر انجام شد، ولی آدرس هنوز جواب نداد ⏳' }
@@ -669,6 +796,9 @@ $html = @"
  .addr{font-family:Consolas,monospace;direction:ltr;text-align:left;background:#101A2B;color:#8FD3FF;
        padding:12px 14px;border-radius:10px;font-size:15px}
  .dim{color:#7A8699;font-size:12px}
+ .log{direction:ltr;text-align:left;background:#101A2B;color:#C8D6E5;padding:12px 14px;
+      border-radius:10px;font-family:Consolas,monospace;font-size:12px;white-space:pre-wrap;
+      word-break:break-all;overflow-x:auto}
  .meta{color:#7A8699;font-size:12px;margin-top:22px;border-top:1px solid #E4E9F2;padding-top:14px}
 </style>
 <div class="card">
@@ -677,7 +807,8 @@ $html = @"
   <div class="verdict $verdictClass">$verdict</div>
   <ul>$rows</ul>
   $tail
-  <div class="meta">پوشهٔ سرور: $(Esc $result.server)<br>تونل: $(Esc $result.tunnelId)</div>
+  $cfLog
+  <div class="meta">پوشهٔ سرور: $(Esc $result.server)<br>تونل: $(Esc $result.tunnelId)<br>پورت: $(Esc $result.port)</div>
 </div></html>
 "@
 

@@ -241,6 +241,14 @@ foreach ($b in $result.blockers) { $rows += "<li class='stop'>$(Esc $b)</li>" }
 foreach ($n in $result.notes)    { $rows += "<li class='note'>$(Esc $n)</li>" }
 if (-not $rows) { $rows = "<li class='note'>چیزی برای تعمیر پیدا نشد.</li>" }
 
+# حرفِ خودِ cloudflared — همان چیزی که تا امروز هیچ‌جا دیده نمی‌شد
+$cfLog = ''
+if ($result.probe -and $result.probe.lines -and $result.probe.lines.Count) {
+  $rowsLog = ''
+  foreach ($l in $result.probe.lines) { $rowsLog += "$(Esc $l)`n" }
+  $cfLog = "<p class='dim'>حرفِ خودِ cloudflared:</p><pre class='log'>$rowsLog</pre>"
+}
+
 $verdict = if ($liveOk) { 'آدرس بالا آمد ✅' }
            elseif ($result.blockers.Count) { 'یک کارِ دستی مانده ⛔' }
            else { 'تعمیر انجام شد، ولی آدرس هنوز جواب نداد ⏳' }
@@ -274,6 +282,9 @@ $html = @"
  .addr{font-family:Consolas,monospace;direction:ltr;text-align:left;background:#101A2B;color:#8FD3FF;
        padding:12px 14px;border-radius:10px;font-size:15px}
  .dim{color:#7A8699;font-size:12px}
+ .log{direction:ltr;text-align:left;background:#101A2B;color:#C8D6E5;padding:12px 14px;
+      border-radius:10px;font-family:Consolas,monospace;font-size:12px;white-space:pre-wrap;
+      word-break:break-all;overflow-x:auto}
  .meta{color:#7A8699;font-size:12px;margin-top:22px;border-top:1px solid #E4E9F2;padding-top:14px}
 </style>
 <div class="card">
@@ -282,7 +293,8 @@ $html = @"
   <div class="verdict $verdictClass">$verdict</div>
   <ul>$rows</ul>
   $tail
-  <div class="meta">پوشهٔ سرور: $(Esc $result.server)<br>تونل: $(Esc $result.tunnelId)</div>
+  $cfLog
+  <div class="meta">پوشهٔ سرور: $(Esc $result.server)<br>تونل: $(Esc $result.tunnelId)<br>پورت: $(Esc $result.port)</div>
 </div></html>
 "@
 

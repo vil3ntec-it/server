@@ -25,7 +25,8 @@ const DEAD = 'aa3c0363-9999-8888-7777-666655554444';
  * یک نصبِ کاملِ ساختگی می‌سازد: پوشهٔ server، دیتابیس، config.yml، فایلِ
  * اعتبار، و یک cloudflaredِ قلابی که همان چیزی را چاپ می‌کند که خواسته‌ایم.
  */
-function makeInstall({ mode = 'quick', tunnelId = LIVE, cred = true, hosts = null, listed = [LIVE] } = {}) {
+function makeInstall({ mode = 'quick', tunnelId = LIVE, cred = true, hosts = null, listed = [LIVE],
+                      autostart = null, env = '' } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autofix-'));
   const server = path.join(root, 'homelab-panel', 'server');
   const data = path.join(server, 'data');
@@ -57,7 +58,9 @@ function makeInstall({ mode = 'quick', tunnelId = LIVE, cred = true, hosts = nul
   put('tunnel_mode', mode);
   put('tunnel_name', 'control-center');
   if (mode === 'named') put('tunnel_hostname', 'api.vill3n.top');
+  if (autostart !== null) put('tunnel_autostart', autostart);
   db.close();
+  if (env) fs.writeFileSync(path.join(server, '.env'), env, 'utf8');
 
   // cloudflaredِ قلابی: خروجیِ «tunnel list» را با خط‌های لاگ قاطی می‌کند،
   // چون واقعی‌اش هم همین کار را می‌کند و همان چیزی بود که parser را شکست
@@ -185,6 +188,32 @@ console.log('\n🔧 تعمیرِ خودکارِ آدرسِ ثابت\n');
     mod.tunnelIdFrom(`ID NAME\n${LIVE} control-center`, 'control-center') === LIVE);
   const cfg = mod.parseConfig(`tunnel: ${LIVE}\ncredentials-file: /a/b.json\ningress:\n  - hostname: x.ir\n    service: http://127.0.0.1:9\n`);
   check('پیکربندی درست خوانده می‌شود', cfg.id === LIVE && cfg.hosts[0].hostname === 'x.ir' && cfg.hosts[0].port === 9);
+}
+
+// ── ۹: تونل در پنل خاموش شده بود ────────────────────────────────────────
+//  ساکت‌ترین خرابی: همه‌چیز درست است ولی پنل اصلاً سراغِ تونل نمی‌رود.
+{
+  const inst = makeInstall({ mode: 'named', autostart: false });
+  const r = await run(inst);
+  check('تونلِ خاموش‌شده دوباره روشن می‌شود', settingsOf(inst.dbFile).tunnel_autostart === true);
+  check('و می‌گوید چرا', /خاموش شده بود/.test(r.steps.join(' ')), r.steps.join(' | '));
+}
+
+// ── ۱۰: HLP_TUNNEL=0 در فایلِ .env ──────────────────────────────────────
+{
+  const inst = makeInstall({ mode: 'named', env: 'HLP_PORT=4700\nHLP_TUNNEL=0\n' });
+  await run(inst);
+  const envText = fs.readFileSync(path.join(inst.server, '.env'), 'utf8');
+  check('خطِ HLP_TUNNEL=0 غیرفعال می‌شود', /^#\s*HLP_TUNNEL=0/m.test(envText), envText);
+  check('بقیهٔ .env دست نمی‌خورد', /^HLP_PORT=4700$/m.test(envText), envText);
+}
+
+// ── ۱۱: خطِ سالمِ .env نباید دست بخورد ───────────────────────────────────
+{
+  const inst = makeInstall({ mode: 'named', env: 'HLP_TUNNEL=1\n' });
+  await run(inst);
+  check('HLP_TUNNEL=1 دست‌نخورده می‌ماند',
+    fs.readFileSync(path.join(inst.server, '.env'), 'utf8').trim() === 'HLP_TUNNEL=1');
 }
 
 console.log(`\n  ${fail ? '❌' : '✅'} ${pass} تایید، ${fail} خطا\n`);
