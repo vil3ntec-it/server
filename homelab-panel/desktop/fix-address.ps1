@@ -40,10 +40,19 @@ try {
 $target = Read-Host '  Address to create [api.vill3n.top]'
 if ([string]::IsNullOrWhiteSpace($target)) { $target = 'api.vill3n.top' }
 
-$user = Read-Host '  Panel username'
-$sec = Read-Host '  Panel password' -AsSecureString
-$pass = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-  [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+# Empty input here comes back from the server as a bare 401, which reads like
+# "wrong password" and sends people hunting for the wrong thing. Ask again.
+do {
+  $user = Read-Host '  Panel username (the one you use in the browser)'
+  if ([string]::IsNullOrWhiteSpace($user)) { Write-Host '    -- type it, this one cannot be empty' }
+} while ([string]::IsNullOrWhiteSpace($user))
+
+do {
+  $sec = Read-Host '  Panel password (nothing shows while you type)' -AsSecureString
+  $pass = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+    [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
+  if ([string]::IsNullOrWhiteSpace($pass)) { Write-Host '    -- type it, this one cannot be empty' }
+} while ([string]::IsNullOrWhiteSpace($pass))
 
 function Show-Body($err) {
   # The useful part of a failure is the server's body, not the status line
@@ -63,6 +72,10 @@ try {
     -Body (@{ username = $user; password = $pass } | ConvertTo-Json)
 } catch {
   Write-Host "  Sign-in failed: $($_.Exception.Message)"
+  if ("$($_.Exception.Message)" -match '401') {
+    Write-Host '  401 means the username or password is wrong.'
+    Write-Host '  Use exactly what you type on the panel login page.'
+  }
   Show-Body $_
   Write-Host ''
   Read-Host '  Press Enter to close' | Out-Null
