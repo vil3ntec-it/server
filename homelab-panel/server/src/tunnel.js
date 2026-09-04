@@ -950,6 +950,8 @@ async function writeIngress(uuid, credFile) {
  * @returns آیا حالت عوض شد
  */
 function adoptConfigAsNamed() {
+  // سدِ دوم: حالتِ توکنی عمدی است و config.yml نباید رویش را بگیرد
+  if (getSetting('tunnel_mode', 'quick') === 'token') return false;
   if (!fs.existsSync(CONFIG_FILE)) return false;
   const uuid = readTunnelIdFromConfig();
   const cred = readCredFromConfig();
@@ -993,7 +995,52 @@ export async function reconcileNamedTunnel() {
    *  فایلی که تونل و فایلِ اعتبار و ingress دارد، خودش سندِ کافی است که
    *  صاحبِ سرور آدرسِ ثابت می‌خواهد. پس همین‌جا حالت را هم درست می‌کنیم.
    */
-  if (getSetting('tunnel_mode', 'quick') !== 'named') {
+  const currentMode = getSetting('tunnel_mode', 'quick');
+
+  /*
+   *  ⚠️ حالتِ توکنی هرگز نباید عوض شود — و این‌جا یک بار عوض شد.
+   *
+   *  «tunnel_mode !== 'named'» علاوه بر «quick»، «token» را هم می‌گرفت. تونلِ
+   *  توکنی یک تنظیمِ عمدی و کاملاً سالم است: توکن از داشبوردِ Cloudflare
+   *  گرفته می‌شود و پنل با «tunnel run --token …» اجرایش می‌کند و اصلاً کاری
+   *  به config.yml ندارد. ولی اگر از تلاشِ قبلیِ «آدرسِ ثابت» یک config.yml
+   *  کهنه روی دیسک مانده بود، همین‌جا حالت بی‌صدا به «named» برمی‌گشت و پنل
+   *  از راه‌اندازیِ بعدی، به‌جای تونلِ توکنیِ سالم، تونلِ کهنهٔ داخلِ آن فایل
+   *  را اجرا می‌کرد:
+   *
+   *      تا دیروز:  tunnel run --token …        ← کار می‌کرد
+   *      بعد از آن: tunnel --config config.yml  ← تونلِ مرده ⇒ Error 1033
+   *
+   *  و چون هیچ خطایی چاپ نمی‌شد، از بیرون فقط «دیروز کار می‌کرد، امروز نه»
+   *  دیده می‌شد. پذیرشِ config.yml فقط از حالتِ «quick» معنی دارد.
+   */
+  if (currentMode === 'token') return { ok: true, skipped: 'token_mode' };
+
+  /*
+   *  و برگرداندنِ آن‌هایی که پیش از این فیکس ربوده شده‌اند.
+   *
+   *  اگر توکنی ذخیره است، یعنی صاحبِ سرور یک بار راه‌اندازیِ توکنی را کامل
+   *  کرده — و آن کار همیشه حالت را «token» می‌گذارد. پس «named» به‌همراهِ یک
+   *  توکنِ ذخیره‌شده یا کارِ همان اشکال است، یا کاربر بعداً عمداً آدرسِ ثابت
+   *  ساخته. برای اینکه اشتباهی سراغِ دومی نرویم، فقط وقتی برمی‌گردانیم که
+   *  حالتِ «named» ثابت شود اصلاً نمی‌تواند کار کند: یا فایلِ پیکربندی نیست،
+   *  یا فایلِ اعتبارش نیست. آن وقت انتخاب بینِ «تونلِ خراب» و «تونلِ سالم» است.
+   */
+  if (currentMode === 'named' && getSetting('tunnel_token', null)) {
+    const credPath = readCredFromConfig();
+    const namedBroken = !fs.existsSync(CONFIG_FILE) || !credPath || !fs.existsSync(credPath);
+    if (namedBroken) {
+      setSetting('tunnel_mode', 'token');
+      logEvent(
+        'warn',
+        'panel',
+        'حالتِ آدرسِ ثابت روی این سرور شدنی نبود (پیکربندی یا فایلِ اعتبار نبود) — به تونلِ توکنی برگشت'
+      );
+      return { ok: true, restored: 'token' };
+    }
+  }
+
+  if (currentMode !== 'named') {
     const adopted = adoptConfigAsNamed();
     if (!adopted) return { ok: true, skipped: 'not_named' };
   }

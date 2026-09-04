@@ -288,6 +288,50 @@ async function main() {
   await reconcile2().catch(() => null);
   check('فایلِ نیمه‌کاره پذیرفته نمی‌شود', get2('tunnel_mode', 'quick') === 'quick', get2('tunnel_mode', 'quick'));
 
+  /*
+   *  ── تونلِ توکنی نباید ربوده شود ─────────────────────────────────────
+   *
+   *  این همان خطایی است که سرورِ واقعی را خواباند: شرطِ «حالت ≠ named»
+   *  حالتِ «token» را هم می‌گرفت. تونلِ توکنی سالم بود و اصلاً کاری به
+   *  config.yml نداشت، ولی یک config.yml کهنه روی دیسک باعث می‌شد حالت
+   *  بی‌صدا به «named» برگردد و از راه‌اندازیِ بعدی تونلِ مرده اجرا شود
+   *  — Error 1033، بدونِ آنکه جایی خطایی چاپ شود.
+   */
+  fsm.writeFileSync(pathm.join(cfDir, `${uuid}.json`), JSON.stringify({ TunnelID: uuid }));
+  fsm.writeFileSync(
+    pathm.join(cfDir, 'config.yml'),
+    [
+      `tunnel: ${uuid}`,
+      `credentials-file: ${pathm.join(cfDir, `${uuid}.json`).replaceAll('\\', '/')}`,
+      'ingress:',
+      '  - hostname: api.vill3n.top',
+      '    service: http://127.0.0.1:4701',
+      '  - service: http_status:404',
+    ].join('\n'),
+  );
+  set2('tunnel_mode', 'token');
+  set2('tunnel_token', 'a-real-token');
+  set2('tunnel_hostname', 'api.vill3n.top');
+  const recToken = await reconcile2().catch(() => null);
+  check('حالتِ توکنی دست‌نخورده می‌ماند', get2('tunnel_mode', 'quick') === 'token', get2('tunnel_mode', 'quick'));
+  check('و می‌گوید چرا کاری نکرد', recToken?.skipped === 'token_mode', JSON.stringify(recToken));
+  check('توکن پاک نمی‌شود', get2('tunnel_token', null) === 'a-real-token');
+
+  //  و نصب‌هایی که پیش از این فیکس ربوده شده‌اند باید برگردند — ولی فقط وقتی
+  //  «named» ثابتاً شدنی نیست، وگرنه آدرسِ ثابتِ عمدیِ کاربر را خراب می‌کنیم.
+  set2('tunnel_mode', 'named');
+  fsm.rmSync(pathm.join(cfDir, `${uuid}.json`), { force: true });   // فایلِ اعتبار نیست
+  const recBack = await reconcile2().catch(() => null);
+  check('نصبِ ربوده‌شده به حالتِ توکنی برمی‌گردد', get2('tunnel_mode', 'quick') === 'token', get2('tunnel_mode', 'quick'));
+  check('و دلیلش را می‌گوید', recBack?.restored === 'token', JSON.stringify(recBack));
+
+  //  ولی آدرسِ ثابتِ سالم نباید دست بخورد، حتی اگر توکنی هم ذخیره باشد
+  fsm.writeFileSync(pathm.join(cfDir, `${uuid}.json`), JSON.stringify({ TunnelID: uuid }));
+  set2('tunnel_mode', 'named');
+  await reconcile2().catch(() => null);
+  check('آدرسِ ثابتِ سالم دست‌نخورده می‌ماند', get2('tunnel_mode', 'quick') === 'named', get2('tunnel_mode', 'quick'));
+  set2('tunnel_token', null);
+
   // این تکه در پوشهٔ دادهٔ واقعیِ همین پروسه نوشت — جمعش می‌کنیم
   fsm.rmSync(pathm.join(cfDir, 'config.yml'), { force: true });
   fsm.rmSync(pathm.join(cfDir, `${uuid}.json`), { force: true });
