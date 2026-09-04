@@ -1060,19 +1060,24 @@ export async function reconcileNamedTunnel() {
   if (live === inConfig) return { ok: true, id: live };
 
   /*
-   *  ⚠️ شناسه‌ای که در فایل است، اگر هنوز در حساب وجود دارد، دست نمی‌خورد.
+   *  ⚠️ این‌جا یک بار اشتباه بسته شد و سرور را چند ساعت خواباند.
    *
-   *  دو تونلِ هم‌نام در دو حساب چیزِ عجیبی نیست — همین‌جا پیش آمد. اگر کورکورانه
-   *  به «تونلی که این نام را دارد» سوئیچ کنیم، ممکن است رکوردِ DNS به تونلِ
-   *  قبلی اشاره کند و ما به تونلِ دیگری وصل شویم: دوباره همان Error 1033، این
-   *  بار خودمان ساخته‌ایمش.
+   *  نسخهٔ ۱.۸.۷ این شرط را گذاشت: «اگر شناسهٔ داخلِ فایل هنوز در حساب هست،
+   *  دست نزن». نیتش درست بود (نترسیم که به تونلِ دیگری سوئیچ کنیم) ولی
+   *  حالتِ رایج‌تر را قفل کرد:
    *
-   *  پس فقط وقتی عوض می‌کنیم که تونلِ داخلِ فایل دیگر اصلاً وجود نداشته باشد.
+   *      حساب دارد:   aa3c0363 (تونلِ قدیمی، هنوز پاک نشده)
+   *                   eeb76414 (control-center — همانی که DNS به آن اشاره دارد)
+   *      config.yml:  aa3c0363
+   *
+   *  هر دو در حساب هستند، پس شرط می‌گفت «دست نزن» و پنل تا ابد تونلِ قدیمی
+   *  را اجرا می‌کرد: Error 1033 که با هیچ راه‌اندازیِ دوباره‌ای درست نمی‌شد.
+   *  پیش از ۱.۸.۷ همین‌جا به تونلِ هم‌نام سوئیچ می‌شد و کار می‌کرد.
+   *
+   *  پس به همان رفتار برمی‌گردیم — ولی این بار ترسِ آن نسخه را هم واقعاً
+   *  برطرف می‌کنیم: بعد از سوئیچ، رکوردهای DNS هم به همین تونل برمی‌گردند.
+   *  آن‌وقت DNS و تونل هر دو یک چیز می‌گویند و ۱۰۳۳ ممکن نیست.
    */
-  if (inConfig && new RegExp(inConfig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(listed.output)) {
-    return { ok: true, id: inConfig, kept: true };
-  }
-
   const credFile = await ensureCredFile(live, name);
   if (!credFile) {
     logEvent('warn', 'panel', `تونلِ «${name}» حالا ${live} است ولی فایلِ اعتبارش پیدا نشد`);
@@ -1080,12 +1085,26 @@ export async function reconcileNamedTunnel() {
   }
 
   await writeIngress(live, credFile);
+
+  /*
+   *  رکوردِ DNS به شناسهٔ تونل اشاره می‌کند، نه به نامش. تونل که عوض شد،
+   *  رکورد هم باید عوض شود — وگرنه دقیقاً همان ۱۰۳۳ی می‌شود که از آن
+   *  می‌ترسیدیم. tunnel_routed_dns هم پاک می‌شود تا syncTunnelRoutes بعدی
+   *  «قبلاً ساخته شده» حساب نکند و از رویشان رد نشود.
+   */
+  const rerouted = [];
+  for (const route of routedHostnames()) {
+    const done = await runCf(['tunnel', 'route', 'dns', '--overwrite-dns', live, route.hostname]);
+    if (done.ok || /already exists|record with the same/i.test(done.output)) rerouted.push(route.hostname);
+  }
+  setSetting('tunnel_routed_dns', rerouted);
+
   logEvent(
     'warn',
     'panel',
-    `شناسهٔ تونل عوض شده بود (${inConfig || 'ندارد'} ← ${live}) — پیکربندی هم‌خط شد`
+    `شناسهٔ تونل عوض شده بود (${inConfig || 'ندارد'} ← ${live}) — پیکربندی و رکوردهای DNS هم‌خط شدند`
   );
-  return { ok: true, id: live, previous: inConfig, changed: true };
+  return { ok: true, id: live, previous: inConfig, changed: true, rerouted };
 }
 
 function readTunnelIdFromConfig() {

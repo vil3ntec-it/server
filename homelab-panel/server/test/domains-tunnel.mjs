@@ -332,6 +332,80 @@ async function main() {
   check('آدرسِ ثابتِ سالم دست‌نخورده می‌ماند', get2('tunnel_mode', 'quick') === 'named', get2('tunnel_mode', 'quick'));
   set2('tunnel_token', null);
 
+  /*
+   *  ── تونلِ کهنه‌ای که هنوز در حساب هست ─────────────────────────────────
+   *
+   *  همان چیزی که سرورِ واقعی را قفل کرد. حساب دو تونل دارد: یکی قدیمی که
+   *  هنوز پاک نشده و config.yml به آن اشاره می‌کند، و control-center که
+   *  رکوردِ DNS به آن اشاره دارد. نسخهٔ ۱.۸.۷ می‌گفت «هر دو هستند، دست نزن»
+   *  و پنل تا ابد تونلِ قدیمی را اجرا می‌کرد — Error 1033 برای همیشه.
+   */
+  const OLD_ID = 'aa3c0363-1111-2222-3333-444444444444';
+  const NEW_ID = 'eeb76414-5555-6666-7777-888888888888';
+  const stateFile = pathm.join(cfgm.dataDir, 'fake-cf-state.json');
+  fsm.writeFileSync(stateFile, JSON.stringify({
+    tunnels: [
+      { uuid: OLD_ID, name: 'old-one', created: new Date().toISOString() },
+      { uuid: NEW_ID, name: 'control-center', created: new Date().toISOString() },
+    ],
+    dns: [],
+  }));
+  process.env.FAKE_CF_STATE = stateFile;
+
+  // cloudflaredِ ساختگی همان‌جایی که پنل دنبالش می‌گردد
+  const binDir = pathm.join(cfgm.dataDir, 'bin');
+  fsm.mkdirSync(binDir, { recursive: true });
+  const fakeBin = pathm.join(binDir, process.platform === 'win32' ? 'cloudflared.exe' : 'cloudflared');
+  fsm.writeFileSync(
+    fakeBin,
+    `#!/bin/sh\nexec "${process.execPath}" "${pathm.join(import.meta.dirname, 'fake-cloudflared.mjs')}" "$@"\n`,
+    'utf8'
+  );
+  fsm.chmodSync(fakeBin, 0o755);
+  fsm.writeFileSync(pathm.join(cfDir, 'cert.pem'), 'fake-origin-cert');
+  fsm.writeFileSync(pathm.join(cfDir, `${NEW_ID}.json`), JSON.stringify({ TunnelID: NEW_ID }));
+  fsm.writeFileSync(pathm.join(cfDir, `${OLD_ID}.json`), JSON.stringify({ TunnelID: OLD_ID }));
+  fsm.writeFileSync(
+    pathm.join(cfDir, 'config.yml'),
+    [
+      `tunnel: ${OLD_ID}`,
+      `credentials-file: ${pathm.join(cfDir, `${OLD_ID}.json`).replaceAll('\\', '/')}`,
+      'ingress:',
+      '  - hostname: api.vill3n.top',
+      '    service: http://127.0.0.1:4701',
+      '  - service: http_status:404',
+    ].join('\n'),
+  );
+  set2('tunnel_mode', 'named');
+  set2('tunnel_hostname', 'api.vill3n.top');
+  set2('tunnel_name', 'control-center');
+  set2('tunnel_token', null);
+  set2('tunnel_routed_dns', []);
+
+  const recStale = await reconcile2().catch((e) => ({ error: e.message }));
+  const afterCfg = fsm.readFileSync(pathm.join(cfDir, 'config.yml'), 'utf8');
+  check('به تونلی که DNS به آن اشاره دارد سوئیچ می‌کند', afterCfg.includes(`tunnel: ${NEW_ID}`), afterCfg.split('\n')[0]);
+  check('تونلِ کهنه رها می‌شود', !afterCfg.includes(OLD_ID), afterCfg.split('\n').slice(0, 2).join(' / '));
+  check('و گزارش می‌دهد که عوض شد', recStale?.changed === true, JSON.stringify(recStale));
+
+  //  و رکوردهای DNS هم باید به همان تونلِ تازه برگردند، وگرنه همان ۱۰۳۳
+  //  می‌شود که از آن می‌ترسیدیم — فقط این بار خودمان ساخته‌ایمش.
+  const cfState = JSON.parse(fsm.readFileSync(stateFile, 'utf8'));
+  const dnsNames = (cfState.dns || []).map((d) => (typeof d === 'string' ? d : d.hostname));
+  check('رکوردِ DNS هم دوباره ساخته می‌شود', dnsNames.includes('api.vill3n.top'), JSON.stringify(cfState.dns));
+  check('و پنل می‌داند کدام نام‌ها را دوباره وصل کرده',
+    (recStale?.rerouted || []).includes('api.vill3n.top'), JSON.stringify(recStale?.rerouted));
+
+  fsm.rmSync(stateFile, { force: true });
+  fsm.rmSync(fakeBin, { force: true });
+  fsm.rmSync(pathm.join(cfDir, 'cert.pem'), { force: true });
+  fsm.rmSync(pathm.join(cfDir, `${NEW_ID}.json`), { force: true });
+  fsm.rmSync(pathm.join(cfDir, `${OLD_ID}.json`), { force: true });
+  delete process.env.FAKE_CF_STATE;
+  set2('tunnel_routed_dns', []);
+  set2('tunnel_hostname', null);
+  set2('tunnel_mode', 'quick');
+
   // این تکه در پوشهٔ دادهٔ واقعیِ همین پروسه نوشت — جمعش می‌کنیم
   fsm.rmSync(pathm.join(cfDir, 'config.yml'), { force: true });
   fsm.rmSync(pathm.join(cfDir, `${uuid}.json`), { force: true });
