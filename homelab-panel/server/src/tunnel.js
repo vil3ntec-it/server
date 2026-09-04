@@ -398,6 +398,7 @@ export async function repairTunnel() {
     };
   }
 
+  absorbConfigHostnames();
   await writeIngress(uuid, cred);
   logEvent('info', 'panel', 'پیکربندی تونل بازسازی شد');
   stopTunnel();
@@ -868,6 +869,8 @@ export async function syncTunnelRoutes({ restart = true } = {}) {
     return { ok: true, applied: false, hostnames: routedHostnames() };
   }
 
+  absorbConfigHostnames();
+
   const name = getSetting('tunnel_name', DEFAULT_TUNNEL_NAME);
   const alreadyRouted = new Set(getSetting('tunnel_routed_dns', []) || []);
   const failures = [];
@@ -908,6 +911,63 @@ export async function syncTunnelRoutes({ restart = true } = {}) {
     await startTunnel({});
   }
   return { ok: !failures.length, applied: true, failures, skippedProtected: skipped, hostnames: routedHostnames() };
+}
+
+/**
+ *  هرچه در config.yml هست ولی پنل نمی‌شناسد را وارد تنظیمات می‌کند.
+ *
+ *  ⚠️ این یکی همهٔ برنامه‌ها را یک‌جا خواباند.
+ *
+ *  writeIngress فایل را از روی **دیتابیس** بازمی‌سازد، نه از روی خودِ فایل.
+ *  تا وقتی دیتابیس همه‌چیز را می‌داند مشکلی نیست؛ ولی اگر پنل دوباره نصب
+ *  شود، پوشهٔ داده پاک شود، یا panel.db از بکاپِ قدیمی برگردد و config.yml
+ *  سرِ جایش بماند، دیتابیس دیگر هیچ زیردامنه‌ای نمی‌شناسد. آن‌وقت اولین
+ *  بازنویسی — که در هر بار بالا آمدنِ پنل اتفاق می‌افتد — فایل را به این
+ *  تبدیل می‌کرد:
+ *
+ *      ingress:
+ *        - service: http_status:404
+ *
+ *  تونل سالم وصل می‌شد (پس حتی Error 1033 هم دیده نمی‌شد) ولی هر درخواستی
+ *  ۴۰۴ می‌گرفت: هر سه زیردامنه با هم می‌افتادند و هیچ‌جا خطایی چاپ نمی‌شد.
+ *
+ *  adoptConfigAsNamed همین کار را می‌کرد ولی فقط وقتی حالت «named» نبود —
+ *  یعنی دقیقاً در حالتِ سالم و رایج، این محافظ اجرا نمی‌شد.
+ *
+ *  @returns نام‌هایی که تازه ثبت شدند
+ */
+function absorbConfigHostnames() {
+  const found = readIngressFromConfig();
+  if (!found.length) return [];
+
+  const known = new Set(candidateHostnames().map((r) => r.hostname));
+  const extra = [...(getSetting('tunnel_hostnames', []) || [])];
+  const added = [];
+  let main = getSetting('tunnel_hostname', null);
+
+  for (const row of found) {
+    const host = String(row.hostname || '').toLowerCase();
+    if (!host || known.has(host)) continue;
+    known.add(host);
+    added.push(host);
+    if (!main) {
+      // اولین نامِ داخلِ فایل، همان آدرسِ اصلیِ سرور است
+      main = host;
+      setSetting('tunnel_hostname', host);
+      continue;
+    }
+    extra.push({ hostname: host, port: row.port || config.port });
+  }
+
+  if (added.length) {
+    setSetting('tunnel_hostnames', extra);
+    logEvent(
+      'warn',
+      'panel',
+      `این زیردامنه‌ها در پیکربندی بودند ولی پنل نمی‌شناختشان و ثبت شدند تا نیفتند: ${added.join('، ')}`
+    );
+  }
+  return added;
 }
 
 /** فایل config.yml را با همهٔ زیردامنه‌ها بازنویسی می‌کند */
@@ -1095,6 +1155,10 @@ export async function reconcileNamedTunnel() {
     const adopted = adoptConfigAsNamed();
     if (!adopted) return { ok: true, skipped: 'not_named' };
   }
+  //  پیش از هر بازنویسی، آنچه فقط در فایل هست را ثبت کن — وگرنه همین
+  //  راه‌اندازی، زیردامنه‌هایی را می‌اندازد که تا یک لحظه پیش کار می‌کردند.
+  absorbConfigHostnames();
+
   const name = getSetting('tunnel_name', DEFAULT_TUNNEL_NAME);
   const inConfig = readTunnelIdFromConfig();
   if (!findCert()) return { ok: true, skipped: 'not_logged_in' };
