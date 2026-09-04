@@ -33,9 +33,15 @@ Write-Host ''
 #  کامپیوتر نباشد، خطای «A drive with the name F does not exist» می‌دهد و
 #  چون خطای خاتمه‌دهنده است، کلِ جست‌وجو همان‌جا می‌ایستد. Combine فقط رشته را
 #  می‌چسباند و هیچ‌وقت خطا نمی‌دهد.
+#  یک پوشه وقتی «پوشهٔ سرور» است که یا کدش آن‌جا باشد یا دیتابیسش — نصبِ
+#  دستی و نصبِ از zip هر دو دیده شده‌اند و شکلشان یکی نیست.
 function Test-ServerDir {
   param([string]$Dir)
-  try { return ($Dir -and (Test-Path -LiteralPath ([IO.Path]::Combine($Dir, 'src\index.js')))) } catch { return $false }
+  try {
+    if (-not $Dir) { return $false }
+    if (Test-Path -LiteralPath ([IO.Path]::Combine($Dir, 'src\index.js'))) { return $true }
+    return (Test-Path -LiteralPath ([IO.Path]::Combine($Dir, 'data\panel.db')))
+  } catch { return $false }
 }
 
 function Find-ServerDir {
@@ -81,20 +87,54 @@ function Find-ServerDir {
   } catch { }
 
   # ── ۳) گشتنِ درایوها ─────────────────────────────────────────────────────
-  #  آخرین راه و کندترین‌شان، پس آخر می‌آید و عمقش محدود است.
-  Write-Host '  Searching the drives for the install folder ...'
+  #
+  #  ⚠️ اولین نسخه دنبالِ پوشه‌ای به نامِ «homelab-panel» می‌گشت و روی کامپیوترِ
+  #  واقعی هیچ‌چیز پیدا نکرد. اسمِ پوشه قابلِ اتکا نیست: نصب دستی، از zip، با
+  #  نامِ عوض‌شده، یا چند لایه عمیق‌تر از آن‌که گشته می‌شد.
+  #
+  #  چیزی که همیشه هست و اسمش هیچ‌وقت عوض نمی‌شود، خودِ دیتابیسِ پنل است:
+  #  panel.db. پس دنبالِ همان می‌گردیم و از رویش به پوشهٔ سرور می‌رسیم:
+  #      ...\server\data\panel.db   ⇒   ...\server
+  Write-Host '  Searching the drives (this can take a minute) ...'
+  $script:Seen = @()
   foreach ($drive in [IO.DriveInfo]::GetDrives()) {
     try {
       if (-not $drive.IsReady) { continue }
       if ($drive.DriveType -ne 'Fixed' -and $drive.DriveType -ne 'Removable') { continue }
-      $found = Get-ChildItem -LiteralPath $drive.RootDirectory.FullName -Filter 'homelab-panel' `
-        -Directory -Recurse -Depth 4 -ErrorAction SilentlyContinue
-      foreach ($hit in $found) {
-        $guess = [IO.Path]::Combine($hit.FullName, 'server')
+      $root = $drive.RootDirectory.FullName
+      Write-Host "      looking in $root"
+      foreach ($hit in (Get-ChildItem -LiteralPath $root -Filter 'panel.db' -File -Recurse -Depth 7 `
+                        -Force -ErrorAction SilentlyContinue)) {
+        # panel.db داخلِ پوشهٔ data است و پوشهٔ بالاترش همان server
+        $guess = Split-Path -Parent (Split-Path -Parent $hit.FullName)
+        $script:Seen += $hit.FullName
         if (Test-ServerDir $guess) { return $guess }
       }
     } catch { }
   }
+
+  # ── ۴) اگر باز هم نشد، بگو چه دیدی ───────────────────────────────────────
+  #  خالی برگشتن بدونِ توضیح یعنی یک رفت‌وبرگشتِ دیگر. این‌جا هرچه پیدا شده و
+  #  فهرستِ پوشه‌های سرِ هر درایو چاپ می‌شود تا از روی همین صفحه معلوم شود
+  #  برنامه کجاست.
+  Write-Host ''
+  if ($script:Seen.Count) {
+    Write-Host '  Found these panel.db files, but none had server\src\index.js next to them:'
+    foreach ($f in $script:Seen) { Write-Host "      $f" }
+  } else {
+    Write-Host '  No panel.db anywhere. Top-level folders on each drive:'
+    foreach ($drive in [IO.DriveInfo]::GetDrives()) {
+      try {
+        if (-not $drive.IsReady) { continue }
+        if ($drive.DriveType -ne 'Fixed' -and $drive.DriveType -ne 'Removable') { continue }
+        $root = $drive.RootDirectory.FullName
+        $names = (Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction SilentlyContinue |
+                  Select-Object -First 30 -ExpandProperty Name) -join ', '
+        Write-Host "      $root  ->  $names"
+      } catch { }
+    }
+  }
+  Write-Host ''
   return ''
 }
 
