@@ -26,9 +26,26 @@ import { audit } from '../control/audit.js';
 import {
   entitlementFor, subscriptionsFor, activeSubscription, grantSubscription, extendSubscription,
   setSubscriptionStatus, setSubscriptionEnd, subscriptionChangeLog, STATUSES,
+  daysToMs, expiringSoon, notifyExpiring,
 } from '../tohid/subscriptions.js';
+import {
+  createVipCode, mailVipCode, listVipCodes, revokeVipCode, activeVipCount,
+} from '../tohid/vip-codes.js';
+import {
+  listThreads, messagesOf, postMessage, markRead, setThreadStatus, unreadForAdmin,
+  shapeThread, systemMessage, MAX_BODY,
+} from '../tohid/support.js';
+import { listVisitors, visitorSummary } from '../tohid/visitors.js';
+import {
+  listApps, createApp, updateApp, archiveApp, rotateAppKey, checkAppHealth,
+} from '../tohid/managed-apps.js';
+import {
+  mailSettings, mailConfigured, writeTohidSettings, setMailPassword, mailPassword,
+} from '../tohid/settings.js';
+import { sendMail } from '../tohid/smtp.js';
+import { db as rawDb } from '../db.js';
 import { listDevices, revokeSessions, accountById } from '../tohid/accounts.js';
-import { listPlans, planByCode } from '../tohid/plans.js';
+import { listPlans, planByCode, upsertPlan, discountOf, setDiscount, clearDiscount } from '../tohid/plans.js';
 import { readTohidSettings } from '../tohid/settings.js';
 import { rateLimit, clientIp } from './control/_shared.js';
 import { publicState as tunnelState } from '../tunnel.js';
@@ -455,19 +472,78 @@ router.post('/subscriptions/:id/status', needs('operator'), guard(async (req, re
 
 router.get('/plans', guard(async (_req, res) => {
   const settings = readTohidSettings();
+  const at = Date.now();
   res.json({
-    plans: listPlans().map((p) => ({
-      code: p.code,
-      title: p.title,
-      amount: p.amount,
-      unit: p.unit,
-      price: p.price,
-      badge: p.badge || '',
-      active: Boolean(p.active),
-      max_devices: p.max_devices,
-    })),
+    //  `price` آنچه باید پرداخت شود و `fullPrice` قیمتِ پیش از تخفیف.
+    //  برنامهٔ مدیریت هر دو را نشان می‌دهد: تازه، و قبلی خط‌خورده.
+    plans: listPlans({ includeInactive: true }).map((p) => {
+      const d = discountOf(p, at);
+      return {
+        code: p.code,
+        title: p.title,
+        amount: p.amount,
+        unit: p.unit,
+        price: d.finalPrice,
+        fullPrice: d.price,
+        discount: d.discounted
+          ? { percent: d.percent, savings: d.savings, label: d.label, until: d.until }
+          : null,
+        days: Math.round(daysToMs(p.amount, p.unit) / 86400000),
+        badge: p.badge || '',
+        active: Boolean(p.active),
+        max_devices: p.max_devices,
+        maxDevices: p.max_devices,
+      };
+    }),
     config: { currency: settings.currency, whatsapp: settings.whatsapp },
   });
+}));
+
+/* ----------------------------- تخفیف ------------------------------- */
+
+/**
+ *  گذاشتنِ تخفیف روی یک پلن.
+ *
+ *  قیمتِ اصلی دست نمی‌خورد؛ تخفیف کنارش می‌نشیند. پس وقتی مهلتش تمام شد،
+ *  قیمتِ خودش برمی‌گردد و کسی لازم نیست عددِ قبلی را به یاد داشته باشد.
+ */
+router.put('/plans/:code/discount', needs('operator'), guard(async (req, res) => {
+  const { percent, price, label, until } = req.body || {};
+  const plan = setDiscount(req.params.code, { percent, price, label, until });
+  audit({ actor: actorOf(req), action: 'tohid.plan.discount', entity: 'tohid_plan',
+    entityId: req.params.code, detail: { percent, price, until } });
+  const d = discountOf(plan);
+  res.json({ plan: { code: plan.code, title: plan.title, price: d.finalPrice, fullPrice: d.price,
+    discount: d.discounted ? { percent: d.percent, savings: d.savings, label: d.label, until: d.until } : null } });
+}));
+
+router.delete('/plans/:code/discount', needs('operator'), guard(async (req, res) => {
+  const plan = clearDiscount(req.params.code);
+  if (!plan) return fail(res, 404, 'not_found', 'پلن پیدا نشد');
+  audit({ actor: actorOf(req), action: 'tohid.plan.discount_cleared', entity: 'tohid_plan', entityId: req.params.code });
+  res.json({ plan: { code: plan.code, title: plan.title, price: plan.price, fullPrice: plan.price, discount: null } });
+}));
+
+/** عوض کردنِ خودِ نرخ — عنوان، قیمت، مدت، نشان */
+router.patch('/plans/:code', needs('operator'), guard(async (req, res) => {
+  const current = planByCode(req.params.code);
+  if (!current) return fail(res, 404, 'not_found', 'پلن پیدا نشد');
+  const b = req.body || {};
+  const saved = upsertPlan({
+    code: current.code,
+    title: b.title === undefined ? current.title : String(b.title),
+    amount: b.amount === undefined ? current.amount : Number(b.amount),
+    unit: b.unit === undefined ? current.unit : String(b.unit),
+    price: b.price === undefined ? current.price : Number(b.price),
+    negotiable: b.negotiable === undefined ? current.negotiable : Boolean(b.negotiable),
+    badge: b.badge === undefined ? current.badge : String(b.badge || ''),
+    features: current.features,
+    max_devices: b.maxDevices === undefined ? current.max_devices : Number(b.maxDevices),
+    sort: current.sort,
+    active: b.active === undefined ? current.active : (b.active ? 1 : 0),
+  });
+  audit({ actor: actorOf(req), action: 'tohid.plan.save', entity: 'tohid_plan', entityId: current.code });
+  res.json({ plan: saved || planByCode(current.code) });
 }));
 
 /* --------------------------- درخواستِ خرید ---------------------------- */
@@ -568,6 +644,376 @@ router.get('/audit', guard(async (req, res) => {
       result: r.result,
       created_at: r.at,
     })),
+  });
+}));
+
+
+/* ==========================================================
+   بخش‌های تازه — کد اشتراک، پشتیبانی، بازدیدکننده‌ها،
+   اشتراک‌های رو به پایان، برنامه‌های دیگر، ایمیل و پوش.
+   ----------------------------------------------------------
+   همه زیرِ همان توکنِ بالا هستند، پس قاعدهٔ دسترسی همان یکی است.
+   ========================================================== */
+
+/* --------------------------- کد اشتراک --------------------------- */
+
+router.get('/vip-codes', guard(async (req, res) => {
+  res.json({
+    codes: listVipCodes({
+      status: String(req.query.status || ''),
+      limit: limitOf(req.query.limit),
+    }),
+  });
+}));
+
+/**
+ *  ساختِ کد و — اگر ایمیل داده شده باشد — فرستادنش.
+ *
+ *  کدِ خام فقط در همین یک پاسخ می‌آید. بعد از آن حتی سرور هم نمی‌تواند
+ *  نشانش بدهد، پس مدیر یا همان لحظه برش می‌دارد یا می‌گذارد ایمیل کارش
+ *  را بکند.
+ */
+router.post('/vip-codes', needs('operator'), guard(async (req, res) => {
+  const b = req.body || {};
+  const email = String(b.email || '').trim();
+  if (email && !email.includes('@')) return fail(res, 400, 'bad_email', 'نشانی ایمیل درست نیست');
+
+  const { code, row } = createVipCode({
+    plan: String(b.plan || 'custom'),
+    days: b.days,
+    note: String(b.note || ''),
+    email,
+    accountId: b.shopId || b.accountId || null,
+    expiresInDays: b.expiresInDays === undefined ? 30 : Number(b.expiresInDays),
+    createdBy: actorOf(req),
+  });
+
+  //  ایمیل همین‌جا و همین حالا. نتیجه‌اش — رفت یا نرفت و چرا — در همان
+  //  ردیف می‌نشیند، پس مدیر «ساخته شد» نمی‌بیند در حالی که چیزی بیرون
+  //  نرفته.
+  const finalRow = email ? await mailVipCode(row.id, code) : row;
+
+  audit({ actor: actorOf(req), action: 'tohid.vip_code.create', entity: 'tohid_vip_code',
+    entityId: row.id, detail: { plan: row.plan, days: row.days, email: email ? 'yes' : 'no' } });
+
+  res.json({
+    code,                       // فقط همین یک بار
+    vipCode: finalRow,
+    emailStatus: finalRow.emailStatus,
+    emailError: finalRow.emailError,
+  });
+}));
+
+router.post('/vip-codes/:id/revoke', needs('operator'), guard(async (req, res) => {
+  const row = revokeVipCode(req.params.id);
+  audit({ actor: actorOf(req), action: 'tohid.vip_code.revoke', entity: 'tohid_vip_code', entityId: req.params.id });
+  res.json({ vipCode: row });
+}));
+
+/* ------------------------- بازدیدکننده‌ها ------------------------- */
+
+router.get('/visitors', guard(async (req, res) => {
+  const app = String(req.query.app || '');
+  res.json({
+    visitors: listVisitors({
+      app,
+      onlyGuests: String(req.query.guests || '') === '1' || req.query.guests === 'true',
+      q: String(req.query.q || ''),
+      limit: limitOf(req.query.limit, 200),
+    }),
+    summary: visitorSummary({ app }),
+  });
+}));
+
+/* ---------------------------- پشتیبانی ---------------------------- */
+
+router.get('/support/threads', guard(async (req, res) => {
+  res.json({
+    threads: listThreads({
+      status: String(req.query.status || ''),
+      q: String(req.query.q || ''),
+      limit: limitOf(req.query.limit),
+    }),
+    unread: unreadForAdmin(),
+  });
+}));
+
+router.get('/support/threads/:id', guard(async (req, res) => {
+  const row = rawDb.prepare('SELECT * FROM th_support_threads WHERE thread_id = ?').get(req.params.id);
+  if (!row) return fail(res, 404, 'not_found', 'این گفت‌وگو پیدا نشد');
+  const after = Number(req.query.after || 0) || 0;
+  //  باز کردنِ گفت‌وگو یعنی مدیر دیدش
+  if (!after) markRead(req.params.id, 'admin');
+  res.json({
+    thread: shapeThread(row),
+    messages: messagesOf(req.params.id, { after }),
+    serverTime: Date.now(),
+  });
+}));
+
+router.post('/support/threads/:id/messages', needs('operator'), guard(async (req, res) => {
+  const body = String((req.body || {}).body ?? (req.body || {}).text ?? '');
+  const message = postMessage(req.params.id, {
+    sender: 'admin', senderName: actorOf(req), body,
+  });
+  markRead(req.params.id, 'admin');
+  res.json({ message });
+}));
+
+router.post('/support/threads/:id/status', needs('operator'), guard(async (req, res) => {
+  const status = String((req.body || {}).status || '');
+  if (!['open', 'closed'].includes(status)) return fail(res, 400, 'bad_status', 'وضعیت معتبر نیست');
+  res.json({ thread: setThreadStatus(req.params.id, status) });
+}));
+
+/**
+ *  پیام همگانی.
+ *
+ *  «همه» سقف دارد تا یک اشتباهِ کوچک هزار پیام نفرستد.
+ */
+router.post('/support/broadcast', needs('operator'), guard(async (req, res) => {
+  const b = req.body || {};
+  const body = String(b.body || '').trim();
+  if (!body) return fail(res, 400, 'empty_message', 'پیام خالی است');
+  if (body.length > MAX_BODY) return fail(res, 400, 'message_too_long', 'پیام خیلی بلند است');
+
+  const target = ['expiring', 'active', 'all'].includes(b.target) ? b.target : 'expiring';
+  const limit = Math.min(500, Math.max(1, Number(b.limit) || 200));
+
+  let owners = [];
+  if (target === 'expiring') {
+    owners = expiringSoon({ withinDays: 7, includeExpired: 3, limit })
+      .map((r) => ({ accountId: r.accountId, name: r.ownerName }));
+  } else if (target === 'active') {
+    owners = rawDb.prepare(`
+      SELECT DISTINCT a.account_id, a.name FROM th_accounts a
+       JOIN th_subscriptions s ON s.account_id = a.account_id AND s.status = 'active'
+       WHERE a.disabled = 0 LIMIT ?
+    `).all(limit).map((r) => ({ accountId: r.account_id, name: r.name }));
+  } else {
+    owners = rawDb.prepare(`
+      SELECT account_id, name FROM th_accounts WHERE disabled = 0
+       ORDER BY created_at DESC LIMIT ?
+    `).all(limit).map((r) => ({ accountId: r.account_id, name: r.name }));
+  }
+
+  let sent = 0;
+  for (const o of owners) {
+    try { systemMessage({ accountId: o.accountId, who: o.name || '', body }); sent++; }
+    catch (e) { console.error('[توحید] پیام همگانی:', e.message); }
+  }
+  audit({ actor: actorOf(req), action: 'tohid.broadcast', detail: { target, sent } });
+  res.json({ sent, targets: owners.length });
+}));
+
+/* --------------------- اشتراک‌های رو به پایان --------------------- */
+
+router.get('/subscriptions/expiring', guard(async (req, res) => {
+  res.json({
+    expiring: expiringSoon({
+      withinDays: Math.min(90, Math.max(1, Number(req.query.days) || 7)),
+      includeExpired: Math.min(90, Math.max(0, Number(req.query.expired ?? 3))),
+      limit: limitOf(req.query.limit),
+    }),
+    serverTime: Date.now(),
+  });
+}));
+
+router.post('/subscriptions/notify-expiring', needs('operator'), guard(async (req, res) => {
+  const out = await notifyExpiring();
+  audit({ actor: actorOf(req), action: 'tohid.expiry_notified', detail: out });
+  res.json(out);
+}));
+
+/* ------------------------ برنامه‌های دیگر ------------------------ */
+
+router.get('/apps', guard(async (req, res) => {
+  res.json({ apps: listApps({ includeArchived: String(req.query.archived || '') === '1' }) });
+}));
+
+router.post('/apps', needs('operator'), guard(async (req, res) => {
+  const app = createApp(req.body || {});
+  audit({ actor: actorOf(req), action: 'tohid.app.create', entity: 'tohid_app', entityId: app.slug });
+  res.json({ app });
+}));
+
+router.put('/apps/:id', needs('operator'), guard(async (req, res) => {
+  res.json({ app: updateApp(req.params.id, req.body || {}) });
+}));
+
+router.delete('/apps/:id', needs('operator'), guard(async (req, res) => {
+  res.json({ app: archiveApp(req.params.id) });
+}));
+
+/** کلیدِ تازه. خام فقط همین یک بار برمی‌گردد. */
+router.post('/apps/:id/key', needs('admin'), guard(async (req, res) => {
+  const out = rotateAppKey(req.params.id);
+  audit({ actor: actorOf(req), action: 'tohid.app.key', entity: 'tohid_app', entityId: req.params.id });
+  res.json(out);
+}));
+
+/** سنجیدنِ سلامتِ همه — از سرور، نه از گوشیِ مدیر که ممکن است پشتِ فیلتر باشد */
+router.post('/apps/health', guard(async (_req, res) => {
+  const checked = await checkAppHealth();
+  res.json({ checked, apps: listApps() });
+}));
+
+/* ---------------------------- ایمیل ---------------------------- */
+
+/**
+ *  چه چیزی کم است تا ایمیل واقعاً **برود**.
+ *
+ *  سرورِ بدونِ SMTP «آماده» شمرده نمی‌شود: اگر می‌شد، صفحهٔ خانهٔ برنامهٔ
+ *  مدیریت هیچ هشداری نمی‌داد و صاحب سامانه تا وقتی کاربری شکایت نکند
+ *  نمی‌فهمید هیچ کدِ ثبت‌نامی بیرون نمی‌رود.
+ */
+function emailPayload() {
+  const m = mailSettings();
+  const missing = [];
+  if (!String(m.host || '').trim()) missing.push('نشانی سرور SMTP');
+  if (!String(m.user || '').trim()) missing.push('نام کاربری');
+  if (!mailPassword()) missing.push('رمز');
+  if (!String(m.from || m.user || '').trim()) missing.push('ایمیل فرستنده');
+
+  return {
+    provider: String(m.host || '').trim() ? 'smtp' : 'log',
+    host: m.host || '',
+    port: String(m.port || 465),
+    //  برنامهٔ مدیریت با این دو کلمه کار می‌کند، نه با یک بولین
+    secure: m.secure ? 'ssl' : 'starttls',
+    user: m.user || '',
+    from: m.from || '',
+    fromName: m.fromName || '',
+    url: '',
+    otpSubject: '',
+    otpTemplate: '',
+    passSet: Boolean(mailPassword()),
+    passHint: mailPassword() ? '••••••••' : '',
+    keySet: false,
+    keyHint: '',
+    ready: missing.length === 0,
+    missing,
+  };
+}
+
+router.get('/email', guard(async (_req, res) => {
+  res.json({ email: emailPayload() });
+}));
+
+/**
+ *  ذخیرهٔ تنظیمات.
+ *
+ *  رمز فقط وقتی عوض می‌شود که مدیر واقعاً چیزی نوشته باشد — چون آن را
+ *  نمی‌بیند، پس نباید بتواند ندانسته پاکش کند.
+ */
+router.put('/email', needs('admin'), guard(async (req, res) => {
+  const b = req.body || {};
+  const cur = mailSettings();
+  const patch = {
+    host: b.host === undefined ? cur.host : String(b.host).trim(),
+    port: b.port === undefined ? cur.port : Number(b.port) || 465,
+    //  `ssl` یعنی از همان اول رمزنگاری‌شده (۴۶۵)؛ `starttls` یعنی ۵۸۷
+    secure: b.secure === undefined ? cur.secure : String(b.secure) === 'ssl',
+    user: b.user === undefined ? cur.user : String(b.user).trim(),
+    from: b.from === undefined ? cur.from : String(b.from).trim(),
+    fromName: b.fromName === undefined ? cur.fromName : String(b.fromName),
+  };
+  writeTohidSettings({ mail: patch });
+
+  if (b.clearPass === true) setMailPassword('', actorOf(req));
+  else if (typeof b.pass === 'string' && b.pass.trim()) setMailPassword(b.pass.trim(), actorOf(req));
+
+  audit({ actor: actorOf(req), action: 'tohid.email.settings',
+    detail: { host: patch.host, passChanged: b.pass !== undefined || b.clearPass === true } });
+  res.json({ email: emailPayload() });
+}));
+
+/**
+ *  آزمایشِ واقعی — یک ایمیل به نشانیِ خودِ مدیر.
+ *
+ *  خطای سرویس، خطای سرورِ ما نیست: ۲۰۰ با `ok:false` برمی‌گردد تا برنامهٔ
+ *  مدیریت بتواند متنِ خودِ سرورِ ایمیل را نشان بدهد — همان که می‌گوید
+ *  دقیقاً چه چیزی غلط است.
+ */
+router.post('/email/test', needs('operator'), guard(async (req, res) => {
+  const to = String((req.body || {}).to || '').trim();
+  if (!to.includes('@')) return fail(res, 400, 'bad_email', 'نشانی ایمیل درست نیست');
+  if (!mailConfigured()) return res.json({ ok: false, error: 'ایمیل سرور تنظیم نشده است' });
+
+  try {
+    await sendMail(mailSettings(), {
+      to,
+      subject: 'آزمایش ایمیل توحید',
+      text: 'اگر این را می‌بینید، ایمیل سرور درست کار می‌کند.',
+      html: '<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;font-size:15px;line-height:2">'
+        + '<b>ایمیل کار می‌کند.</b><br>حالا کد ثبت‌نام و کد اشتراک هم به همین شکل برای کاربران می‌رود.</div>',
+    });
+    audit({ actor: actorOf(req), action: 'tohid.email.test', detail: { to } });
+    res.json({ ok: true, via: 'smtp' });
+  } catch (e) {
+    res.json({ ok: false, error: String(e.message || e).slice(0, 400) });
+  }
+}));
+
+/* ----------------------------- پوش ----------------------------- */
+
+/**
+ *  پوش هنوز روی این سرور راه نیفتاده.
+ *
+ *  عمداً ۴۰۴ نمی‌دهد: برنامهٔ مدیریت آن‌وقت «سرور قدیمی است» می‌گفت.
+ *  جواب روشن است — تنظیم نشده — و توکن‌ها از همین حالا ثبت می‌شوند تا
+ *  روزی که راه افتاد، دستگاه‌ها از قبل شناخته باشند.
+ *
+ *  تا آن روز پیام گم نمی‌شود؛ فقط زنگ نمی‌زند و دفعهٔ بعد که برنامه باز
+ *  شد دیده می‌شود.
+ */
+router.get('/push', guard(async (_req, res) => {
+  const devices = rawDb.prepare(`SELECT COUNT(*) AS n FROM th_push_tokens WHERE status='active'`).get().n;
+  res.json({ push: { enabled: false, configured: false, project: '', account: '', devices } });
+}));
+
+router.put('/push', needs('admin'), guard(async (_req, res) => {
+  res.json({ push: { enabled: false, configured: false, project: '', account: '', devices: 0 } });
+}));
+
+router.post('/push/register', guard(async (req, res) => {
+  const token = String((req.body || {}).token || '').trim();
+  if (!token || token.length > 500) return fail(res, 400, 'bad_token', 'توکن پوش درست نیست');
+  const now = Date.now();
+  rawDb.prepare(`
+    INSERT INTO th_push_tokens (app, token, admin_user, device_uid, platform, status, created_at, updated_at)
+    VALUES ('admin', ?, ?, ?, ?, 'active', ?, ?)
+    ON CONFLICT(app, token) DO UPDATE SET admin_user = excluded.admin_user,
+      device_uid = excluded.device_uid, platform = excluded.platform,
+      status = 'active', updated_at = excluded.updated_at
+  `).run(token, actorOf(req), String((req.body || {}).deviceUid || ''),
+    String((req.body || {}).platform || ''), now, now);
+  res.json({ ok: true });
+}));
+
+/* --------------------------- خلاصهٔ خانه --------------------------- */
+
+/**
+ *  یک درخواست به‌جای هفت‌تا.
+ *
+ *  صفحهٔ خانهٔ برنامهٔ مدیریت روی نتِ ضعیف هفت بار منتظر می‌ماند؛
+ *  این‌طور یک بار.
+ */
+router.get('/overview', guard(async (_req, res) => {
+  const expiring = expiringSoon({ withinDays: 7, includeExpired: 3, limit: 50 });
+  const email = emailPayload();
+  const devices = rawDb.prepare(`SELECT COUNT(*) AS n FROM th_push_tokens WHERE status='active'`).get().n;
+
+  res.json({
+    expiring,
+    expiringCount: expiring.filter((e) => e.daysLeft >= 0).length,
+    supportUnread: unreadForAdmin(),
+    visitors: visitorSummary({}),
+    apps: listApps(),
+    email: { ready: email.ready, provider: email.provider, missing: email.missing },
+    push: { enabled: false, configured: false, devices },
+    vipCodesActive: activeVipCount(),
+    serverTime: Date.now(),
   });
 }));
 

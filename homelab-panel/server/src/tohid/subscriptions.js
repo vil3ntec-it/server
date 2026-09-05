@@ -226,3 +226,95 @@ export function setSubscriptionEnd(id, endsAt, { actor = 'admin' } = {}) {
   });
   return db.prepare('SELECT * FROM th_subscriptions WHERE id = ?').get(id);
 }
+
+/**
+ * اشتراک‌هایی که دارند تمام می‌شوند.
+ *
+ * ── چرا این لازم شد ────────────────────────────────────────────────
+ * پنل می‌گفت کدام اشتراک فعال است و کدام تمام شده، ولی نمی‌گفت کدام
+ * **دارد** تمام می‌شود. یعنی صاحب سامانه همیشه دیر می‌فهمید: وقتی که
+ * دکان‌دار قفل شده بود و زنگ می‌زد.
+ *
+ * `daysLeft` منفی هم می‌تواند باشد (تازه‌تمام‌شده‌ها) تا فهرستِ «تازه از
+ * دست رفتند» را هم بدهد — کسانی که هنوز می‌شود برشان گرداند.
+ */
+export function expiringSoon({ withinDays = 7, includeExpired = 3, limit = 100 } = {}) {
+  const now = Date.now();
+  const until = now + withinDays * DAY;
+  const from = now - includeExpired * DAY;
+
+  const rows = db.prepare(`
+    SELECT s.*, a.name AS owner_name, a.email AS owner_email, a.phone AS owner_phone,
+           sh.name AS shop_name
+      FROM th_subscriptions s
+      JOIN th_accounts a ON a.account_id = s.account_id
+      LEFT JOIN th_shops sh ON sh.owner_id = s.account_id
+     WHERE s.status IN ('active','suspended','expired')
+       AND (s.ends_at + (s.grace_days * ?)) BETWEEN ? AND ?
+     ORDER BY (s.ends_at + (s.grace_days * ?)) ASC
+     LIMIT ?
+  `).all(DAY, from, until, DAY, Number(limit) || 100);
+
+  return rows.map((r) => {
+    const graceEnd = r.ends_at + (r.grace_days || 0) * DAY;
+    return {
+      subscriptionId: r.id,
+      //  در این API «دکان» یعنی حساب — همان قاعدهٔ بقیهٔ مسیرهای مدیریت
+      shopId: r.account_id,
+      accountId: r.account_id,
+      shopName: r.shop_name || r.owner_name || 'بی‌نام',
+      ownerUserId: r.account_id,
+      ownerName: r.owner_name || '',
+      ownerEmail: r.owner_email || '',
+      ownerPhone: r.owner_phone || '',
+      plan: r.plan_code || '',
+      status: graceEnd < now ? 'expired' : r.status,
+      endsAt: r.ends_at,
+      graceEndsAt: graceEnd,
+      //  منفی یعنی همین‌قدر روز است که تمام شده
+      daysLeft: Math.ceil((graceEnd - now) / DAY),
+      note: r.note || '',
+    };
+  });
+}
+
+/**
+ * خبر دادن به دکان‌دارهایی که اشتراکشان نزدیکِ پایان است.
+ *
+ * پیام در همان چت پشتیبانیِ خودشان می‌نشیند، پس در برنامه و سایت هر دو
+ * دیده می‌شود.
+ *
+ * برای هر اشتراک فقط یک بار در هر «آستانه» فرستاده می‌شود — با یک کلید
+ * در تنظیمات. بدونِ این، هر بار که سرور این را صدا می‌زد یک پیامِ تکراری
+ * می‌رفت و کاربر پشتیبانی را می‌بست.
+ */
+export async function notifyExpiring({ thresholds = [7, 3, 1] } = {}) {
+  const { systemMessage } = await import('./support.js');
+  const { getSetting, setSetting } = await import('../db.js');
+
+  const rows = expiringSoon({ withinDays: Math.max(...thresholds), includeExpired: 0, limit: 500 });
+  let sent = 0;
+  for (const row of rows) {
+    if (row.daysLeft < 0) continue;
+    const hit = thresholds.filter((d) => row.daysLeft <= d).sort((a, b) => a - b)[0];
+    if (hit === undefined) continue;
+
+    const key = `th_subnotice_${row.subscriptionId}_${hit}`;
+    if (getSetting(key, null)) continue;
+
+    try {
+      systemMessage({
+        accountId: row.accountId,
+        who: row.ownerName,
+        body: row.daysLeft <= 0
+          ? 'اشتراک شما امروز تمام می‌شود. برای اینکه قابلیت‌ها بسته نشوند، تمدیدش کنید.'
+          : `اشتراک شما ${row.daysLeft} روز دیگر تمام می‌شود. اگر بخواهید، همین‌جا بگویید تا تمدید شود.`,
+      });
+      setSetting(key, String(Date.now()));
+      sent++;
+    } catch (e) {
+      console.error('[توحید] خبرِ پایانِ اشتراک نرفت:', e.message);
+    }
+  }
+  return { sent, checked: rows.length };
+}
