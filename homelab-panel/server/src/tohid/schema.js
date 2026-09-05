@@ -187,10 +187,158 @@ CREATE TABLE IF NOT EXISTS th_connections (
   last_seen   INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS th_conn_seen ON th_connections(last_seen);
+    -- ─────────────────────────── کد اشتراک ───────────────────────────
+    --
+    --  مدیر کد می‌سازد، سرور خودش ایمیلش می‌کند، کاربر در برنامه یا سایت
+    --  می‌زند و اشتراکش فعال می‌شود. صاحب سامانه دیگر واسطه نیست.
+    --
+    --  خودِ کد اینجا نیست — فقط HMACش. پس کسی که به فایلِ دیتابیس دست
+    --  پیدا کند نمی‌تواند کدها را بردارد و برای خودش اشتراک بسازد.
+    CREATE TABLE IF NOT EXISTS th_vip_codes (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      code_id       TEXT    NOT NULL UNIQUE,       -- vip_xxxxxxxx
+      code_hash     TEXT    NOT NULL UNIQUE,
+      code_hint     TEXT    NOT NULL DEFAULT '',   -- دو رقم آخر، برای شناختن در فهرست
+      plan          TEXT    NOT NULL DEFAULT 'custom',
+      days          INTEGER,
+      note          TEXT    NOT NULL DEFAULT '',
+      -- به کدام ایمیل رفت و آیا رسید
+      email         TEXT    NOT NULL DEFAULT '',
+      email_status  TEXT    NOT NULL DEFAULT 'none',   -- none | sent | failed
+      email_error   TEXT    NOT NULL DEFAULT '',
+      email_sent_at INTEGER,
+      -- اگر برای حسابِ مشخصی صادر شده باشد، فقط همان می‌تواند خرجش کند
+      account_id    TEXT,
+      created_by    TEXT    NOT NULL DEFAULT '',
+      created_at    INTEGER NOT NULL,
+      expires_at    INTEGER,
+      status        TEXT    NOT NULL DEFAULT 'active', -- active | used | revoked | expired
+      used_at       INTEGER,
+      used_by       TEXT    NOT NULL DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS th_vip_codes_status ON th_vip_codes(status, created_at DESC);
+
+    -- ─────────────────────────── بازدیدکننده‌ها ───────────────────────────
+    --
+    --  تا امروز فقط کسی دیده می‌شد که ثبت‌نام کرده بود. کسی که برنامه را
+    --  باز کرده ولی هنوز حساب نساخته — یعنی همان کسی که باید دنبالش رفت —
+    --  هیچ‌جا شمرده نمی‌شد.
+    --
+    --  ردیف به «دستگاه» بسته است نه به حساب، چون مهمان حسابی ندارد. اگر
+    --  بعداً حساب ساخت، account_id همان ردیف پر می‌شود و تاریخِ اولین
+    --  باری که آمده گم نمی‌شود.
+    CREATE TABLE IF NOT EXISTS th_visitors (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      app           TEXT    NOT NULL DEFAULT 'shop',
+      device_uid    TEXT    NOT NULL,
+      platform      TEXT    NOT NULL DEFAULT '',   -- web | android | ios | desktop
+      app_version   TEXT    NOT NULL DEFAULT '',
+      account_id    TEXT    NOT NULL DEFAULT '',   -- خالی یعنی مهمان
+      name          TEXT    NOT NULL DEFAULT '',
+      ip            TEXT    NOT NULL DEFAULT '',
+      user_agent    TEXT    NOT NULL DEFAULT '',
+      language      TEXT    NOT NULL DEFAULT '',
+      lat           REAL,
+      lng           REAL,
+      accuracy      REAL,
+      place         TEXT    NOT NULL DEFAULT '',
+      first_seen_at INTEGER NOT NULL,
+      last_seen_at  INTEGER NOT NULL,
+      visits        INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS th_visitors_device ON th_visitors(app, device_uid);
+    CREATE INDEX IF NOT EXISTS th_visitors_seen ON th_visitors(last_seen_at DESC);
+
+    -- ─────────────────────────── چت پشتیبانی ───────────────────────────
+    --
+    --  هر «گفت‌وگو» یک نفر است، نه یک موضوع: کسی که وسطِ فروش گیر کرده،
+    --  موضوع نمی‌سازد و شمارهٔ پیگیری دنبال نمی‌کند.
+    --
+    --  مهمانِ بی‌حساب هم می‌تواند بنویسد — با شناسهٔ دستگاهش. کسی که هنوز
+    --  ثبت‌نام نکرده و همان‌جا گیر کرده، بیشتر از همه به این نیاز دارد.
+    CREATE TABLE IF NOT EXISTS th_support_threads (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      thread_id    TEXT    NOT NULL UNIQUE,        -- thr_xxxxxxxx
+      app          TEXT    NOT NULL DEFAULT 'shop',
+      account_id   TEXT    NOT NULL DEFAULT '',
+      device_uid   TEXT    NOT NULL DEFAULT '',
+      who          TEXT    NOT NULL DEFAULT '',
+      contact      TEXT    NOT NULL DEFAULT '',
+      status       TEXT    NOT NULL DEFAULT 'open',  -- open | closed
+      unread_admin INTEGER NOT NULL DEFAULT 0,
+      unread_user  INTEGER NOT NULL DEFAULT 0,
+      last_message TEXT    NOT NULL DEFAULT '',
+      last_sender  TEXT    NOT NULL DEFAULT '',
+      created_at   INTEGER NOT NULL,
+      updated_at   INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS th_threads_updated ON th_support_threads(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS th_threads_account ON th_support_threads(account_id);
+    CREATE INDEX IF NOT EXISTS th_threads_device  ON th_support_threads(device_uid);
+
+    CREATE TABLE IF NOT EXISTS th_support_messages (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      message_id  TEXT    NOT NULL UNIQUE,
+      thread_id   TEXT    NOT NULL,
+      sender      TEXT    NOT NULL DEFAULT 'user',  -- user | admin | system
+      sender_name TEXT    NOT NULL DEFAULT '',
+      body        TEXT    NOT NULL,
+      kind        TEXT    NOT NULL DEFAULT 'text',
+      created_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS th_messages_thread ON th_support_messages(thread_id, created_at);
+
+    -- ─────────────────────────── توکن پوش ───────────────────────────
+    --
+    --  «حتی برنامه‌اش که بسته بود پیام برود» فقط با این ممکن است: برنامهٔ
+    --  بسته هیچ درخواستی نمی‌زند، پس سرور باید پیام را به سرویسِ پوش
+    --  بسپارد نه به برنامه‌ای که باز نیست.
+    CREATE TABLE IF NOT EXISTS th_push_tokens (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      app         TEXT    NOT NULL DEFAULT 'shop',
+      token       TEXT    NOT NULL,
+      account_id  TEXT    NOT NULL DEFAULT '',
+      admin_user  TEXT    NOT NULL DEFAULT '',
+      device_uid  TEXT    NOT NULL DEFAULT '',
+      platform    TEXT    NOT NULL DEFAULT '',
+      status      TEXT    NOT NULL DEFAULT 'active', -- active | stale
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL,
+      last_error  TEXT    NOT NULL DEFAULT ''
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS th_push_token ON th_push_tokens(app, token);
+
+    -- ─────────────────────── برنامه‌ها و سایت‌های دیگر ───────────────────────
+    --
+    --  قرارِ صاحب سامانه: این پنل فقط برای فروشگاه نباشد. از هر برنامه سه
+    --  چیز دیده می‌شود: بالا هست یا نه، چند نفر آمده‌اند، و چند گفت‌وگوی
+    --  پشتیبانیِ باز دارد.
+    CREATE TABLE IF NOT EXISTS th_managed_apps (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug          TEXT    NOT NULL UNIQUE,
+      title         TEXT    NOT NULL DEFAULT '',
+      kind          TEXT    NOT NULL DEFAULT 'app',   -- app | site | service
+      url           TEXT    NOT NULL DEFAULT '',
+      health_url    TEXT    NOT NULL DEFAULT '',
+      note          TEXT    NOT NULL DEFAULT '',
+      -- کلیدِ برنامه‌ای که خودش می‌خواهد به این سرور خبر بدهد.
+      -- خام هرگز ذخیره نمی‌شود؛ فقط HMACش و چهار نویسهٔ آخر برای شناختن.
+      api_key_hash  TEXT    NOT NULL DEFAULT '',
+      api_key_hint  TEXT    NOT NULL DEFAULT '',
+      status        TEXT    NOT NULL DEFAULT 'active',-- active | paused | archived
+      last_check_at INTEGER,
+      last_ok       INTEGER,
+      last_status   INTEGER,
+      last_ms       INTEGER,
+      last_error    TEXT    NOT NULL DEFAULT '',
+      created_at    INTEGER NOT NULL,
+      updated_at    INTEGER NOT NULL
+    );
   `);
 
   addMissingColumns();
   seedPlans();
+  seedApps();
 }
 
 /**
@@ -211,6 +359,40 @@ function addMissingColumns() {
   add('th_shop_invites', 'used_count', 'INTEGER NOT NULL DEFAULT 0');
   add('th_shop_invites', 'revoked', 'INTEGER NOT NULL DEFAULT 0');
   add('th_shop_invites', 'created_by', 'TEXT');
+
+  /*
+   *  تخفیف روی نرخ‌ها.
+   *
+   *  قیمتِ اصلی (`price`) دست نمی‌خورد؛ تخفیف کنارش می‌نشیند. پس وقتی
+   *  مهلتش تمام شد، قیمتِ خودش برمی‌گردد و کسی لازم نیست عددِ قبلی را به
+   *  یاد داشته باشد.
+   *
+   *  دو راه: درصد یا قیمتِ ثابتِ تخفیفی. اگر هر دو پر باشند، قیمتِ ثابت
+   *  می‌چربد — عددِ صریح از درصد روشن‌تر است و گِردکردن ندارد.
+   */
+  add('th_plans', 'discount_percent', 'INTEGER NOT NULL DEFAULT 0');
+  add('th_plans', 'discount_price', 'REAL');
+  add('th_plans', 'discount_label', 'TEXT');
+  //  NULL یعنی بی‌مهلت
+  add('th_plans', 'discount_until', 'INTEGER');
+}
+
+/**
+ * دو برنامهٔ همیشگی — فروشگاه و خودِ پنل.
+ *
+ * تا فهرست خالی نباشد؛ صفحهٔ «برنامه‌ها» با صفرِ خالی، آدم را به این فکر
+ * می‌اندازد که چیزی خراب است.
+ */
+function seedApps() {
+  const count = db.prepare('SELECT COUNT(*) AS n FROM th_managed_apps').get().n;
+  if (count > 0) return;
+  const now = Date.now();
+  const insert = db.prepare(`
+    INSERT INTO th_managed_apps (slug, title, kind, url, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'active', ?, ?)
+  `);
+  insert.run('shop', 'فروشگاه توحید', 'app', 'https://vil3ntec-it.github.io/shop/', now, now);
+  insert.run('admin', 'برنامهٔ مدیریت', 'app', '', now, now);
 }
 
 /** قیمت‌نامهٔ اولیه — همان چیزی که خودِ برنامه به‌عنوان پیش‌فرض دارد */

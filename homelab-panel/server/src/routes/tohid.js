@@ -14,6 +14,11 @@ import { licensePublicKey } from '../tohid/keys.js';
 import { issueLicense, LicenseError } from '../tohid/license.js';
 import { entitlementFor } from '../tohid/subscriptions.js';
 import { plansPayload } from '../tohid/plans.js';
+import {
+  threadFor, postMessage, messagesOf, markRead, shapeThread, unreadForUser,
+} from '../tohid/support.js';
+import { touchVisitor, claimVisitor } from '../tohid/visitors.js';
+import { redeemVipCode } from '../tohid/vip-codes.js';
 import { readTohidSettings } from '../tohid/settings.js';
 import {
   createShop, createInvite, joinShop, removeMember, shopInfo, pushChanges, pullChanges,
@@ -286,5 +291,177 @@ router.get('/health', (_req, res) => {
     features: SHOP_FEATURES,
   });
 });
+
+
+/* ==========================================================
+   بخش‌های تازه — قیمت‌نامهٔ باز، پشتیبانی، تپشِ بازدید، کد اشتراک
+   ----------------------------------------------------------
+   سه‌تای اولی عمداً توکن نمی‌خواهند. کسی که هنوز حساب نساخته و همان اولِ
+   کار گیر کرده، بیشتر از همه به آن‌ها نیاز دارد.
+   ========================================================== */
+
+/**
+ *  قیمت‌نامه — بی‌نیاز به ورود.
+ *
+ *  ── چه چیزی این را لازم کرد ──────────────────────────────────────
+ *  تنها راهِ گرفتنِ قیمت‌ها `/billing/plans` بود که توکن می‌خواهد. نسخهٔ
+ *  وب آن را بی‌توکن صدا می‌زد، همیشه ۴۰۱ می‌گرفت و بی‌صدا به فهرستِ
+ *  قیمتِ داخلِ خودش برمی‌گشت — یعنی هر تغییرِ قیمتی که در پنل داده
+ *  می‌شد روی سایت دیده نمی‌شد، و تخفیف هم هرگز نمی‌رسید.
+ *
+ *  قیمت راز نیست: هر کسی که صفحهٔ اشتراک را باز کند باید ببیندش.
+ */
+router.get('/plans', guard(async (_req, res) => {
+  res.json({ ...plansPayload(), serverTime: Date.now() });
+}));
+
+/* --------------------------- پشتیبانی --------------------------- */
+
+/**
+ *  کیستیِ درخواست — با توکن اگر بود، وگرنه با شناسهٔ دستگاه.
+ *
+ *  توکنِ نامعتبر خطا نمی‌دهد، فقط نادیده گرفته می‌شود: کاربری که نشستش
+ *  منقضی شده هم باید بتواند بپرسد «چرا نمی‌توانم وارد شوم؟».
+ */
+function whoIs(req) {
+  const account = accountFromToken(req.headers.authorization);
+  const body = req.body || {};
+  const deviceUid = String(body.deviceUid || body.device?.uid || req.query.deviceUid || '').slice(0, 64).trim();
+  if (!account && !deviceUid) {
+    throw Object.assign(new Error('برای پشتیبانی، شناسهٔ دستگاه لازم است'), { code: 'device_required' });
+  }
+  return {
+    app: String(body.app || req.query.app || 'shop').slice(0, 40),
+    accountId: account ? account.account_id : '',
+    deviceUid,
+    who: account ? (account.name || '') : String(body.name || req.query.name || '').slice(0, 80),
+    contact: account ? (account.email || account.phone || '') : String(body.contact || '').slice(0, 120),
+  };
+}
+
+/** گفت‌وگوی من، با پیام‌هایش. `after` یعنی فقط تازه‌ها. */
+router.get('/support/thread', guard(async (req, res) => {
+  const id = whoIs(req);
+  const thread = threadFor(id);
+  res.json({
+    thread: shapeThread(thread),
+    messages: messagesOf(thread.thread_id, { after: Number(req.query.after || 0) || 0 }),
+    serverTime: Date.now(),
+    greeting: 'سلام. هر مشکلی یا سؤالی دارید همین‌جا بنویسید — پاسخ می‌دهیم.',
+  });
+}));
+
+router.post('/support/messages', guard(async (req, res) => {
+  const id = whoIs(req);
+  const thread = threadFor(id);
+  const body = String((req.body || {}).body ?? (req.body || {}).text ?? '');
+  const message = postMessage(thread.thread_id, {
+    sender: 'user', senderName: id.who, body,
+  });
+  res.json({
+    message,
+    thread: shapeThread(
+      db.prepare('SELECT * FROM th_support_threads WHERE thread_id = ?').get(thread.thread_id),
+    ),
+  });
+}));
+
+/** «خواندم» — نقطهٔ قرمز را پاک می‌کند */
+router.post('/support/read', guard(async (req, res) => {
+  const id = whoIs(req);
+  const thread = threadFor(id);
+  markRead(thread.thread_id, 'user');
+  res.json({ ok: true });
+}));
+
+/**
+ *  ثبتِ توکنِ پوش.
+ *
+ *  پوش هنوز روی این سرور راه نیفتاده، ولی توکن‌ها از همین حالا ثبت
+ *  می‌شوند تا روزی که راه افتاد، دستگاه‌ها از قبل شناخته باشند.
+ */
+router.post('/support/push', guard(async (req, res) => {
+  const id = whoIs(req);
+  const token = String((req.body || {}).token || '').trim();
+  if (!token || token.length > 500) return fail(res, 400, 'bad_token', 'توکن پوش درست نیست');
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO th_push_tokens (app, token, account_id, device_uid, platform, status, created_at, updated_at)
+    VALUES (?,?,?,?,?, 'active', ?, ?)
+    ON CONFLICT(app, token) DO UPDATE SET account_id = excluded.account_id,
+      device_uid = excluded.device_uid, platform = excluded.platform,
+      status = 'active', updated_at = excluded.updated_at
+  `).run(id.app, token, id.accountId, id.deviceUid,
+    String((req.body || {}).platform || ''), now, now);
+  res.json({ ok: true });
+}));
+
+/* -------------------------- تپشِ بازدید -------------------------- */
+
+/**
+ *  «من آمدم» — بی‌توکن هم کار می‌کند.
+ *
+ *  تمامِ نکتهٔ این مسیر همان کسی است که هنوز حساب ندارد. اگر توکن
+ *  می‌خواست، دقیقاً کسانی را می‌شمرد که از قبل شمرده شده بودند.
+ *
+ *  پاسخ عمداً کوچک است و چیزی دربارهٔ بقیه نمی‌گوید: ساعتِ سرور و اینکه
+ *  پیامِ پشتیبانیِ خوانده‌نشده دارد یا نه.
+ */
+router.post('/visit', guard(async (req, res) => {
+  const b = req.body || {};
+  const deviceUid = String(b.deviceUid || b.device?.uid || '').slice(0, 64).trim();
+  if (!deviceUid) return res.json({ ok: true, serverTime: Date.now() });
+
+  const account = accountFromToken(req.headers.authorization);
+  const accountId = account ? account.account_id : '';
+
+  const visitor = touchVisitor({
+    app: String(b.app || 'shop').slice(0, 40),
+    deviceUid,
+    platform: String(b.platform || ''),
+    appVersion: String(b.version || ''),
+    accountId,
+    name: account ? (account.name || '') : String(b.name || ''),
+    ip: clientIp(req) || '',
+    userAgent: String(req.headers['user-agent'] || ''),
+    language: String(b.language || ''),
+    location: b.location && typeof b.location === 'object' ? b.location : null,
+  });
+
+  //  مهمانی که حالا حساب دارد، ردیف‌های قبلی‌اش هم به حسابش می‌چسبند
+  if (accountId) claimVisitor(deviceUid, accountId);
+
+  res.json({
+    ok: true,
+    serverTime: Date.now(),
+    supportUnread: unreadForUser({ accountId, deviceUid }),
+    visits: visitor ? visitor.visits : 1,
+  });
+}));
+
+/* --------------------------- کد اشتراک --------------------------- */
+
+/**
+ *  خرج کردنِ کدِ شش‌رقمی که صاحب سامانه به ایمیلِ کاربر فرستاده.
+ *
+ *  این یکی **حساب لازم دارد**: اشتراک روی حساب می‌نشیند.
+ */
+router.post('/vip/redeem', guard(async (req, res) => {
+  const account = requireAccount(req, res);
+  if (!account) return undefined;
+
+  const out = redeemVipCode(String((req.body || {}).code || ''), {
+    accountId: account.account_id,
+    actor: 'vip-code',
+  });
+
+  return res.json({
+    ok: true,
+    message: `اشتراک شما فعال شد — ${out.days} روز.`,
+    subscription: out.subscription,
+    entitlement: entitlementFor(account.account_id),
+    serverTime: Date.now(),
+  });
+}));
 
 export default router;
