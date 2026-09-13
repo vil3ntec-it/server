@@ -4,6 +4,7 @@
 //  سه چیز پشتیبان می‌شود:
 //      دیتابیسِ پنل   · تنظیمات، کاربران، برنامه‌ها، دفترِ کارها
 //      دادهٔ سایت‌ها   · دفترهای site-sync
+//      دادهٔ پمپ‌ها    · پوشهٔ هر پمپ بنزین
 //      فایلِ .env     · رمزهای پیامک و ایمیل
 //
 //  قانون‌ها:
@@ -36,6 +37,8 @@ function sources() {
   return [
     { name: 'panel.db', from: paths.db, kind: 'file' },
     { name: 'site-sync', from: config.siteSync.dataDir, kind: 'dir' },
+    // دادهٔ هر پمپ بنزین — پوشهٔ جدا برای هرکدام
+    { name: 'stations', from: config.stations.dataDir, kind: 'dir' },
     { name: '.env', from: path.join(path.dirname(paths.db), '..', '.env'), kind: 'file' },
   ];
 }

@@ -487,9 +487,18 @@ export function createStore({ key = 'main', label = null, dataDir, token = '', s
     ws._onDisc = null;
   }
 
+  /* اتصالِ «فقط خواندنی» — گوشیِ کارمند با کیو‌آر همین را می‌گیرد.
+     ⚠️ بی این، رمزی که روی کاغذِ کیو‌آر چاپ می‌شود اجازهٔ نوشتن هم داشت و
+     یک اسکنِ ساده می‌توانست دفترِ همان پمپ را پاک کند. */
+  const WRITE_OPS = new Set(['set', 'update', 'remove', 'push', 'onDisc', 'onDiscCancel']);
+
   function handleMessage(ws, m) {
     stats.messages++;
     stats.lastActivity = Date.now();
+    if (ws._readOnly && WRITE_OPS.has(m.op)) {
+      send(ws, { op: 'ack', id: m.id, ok: false, error: 'read_only' });
+      return;
+    }
     switch (m.op) {
       case 'get':
         stats.reads++;
@@ -588,8 +597,9 @@ export function createStore({ key = 'main', label = null, dataDir, token = '', s
   }
 
   /** اتصالِ تاییدشده را به همین دفتر می‌چسباند */
-  function handleConnection(ws, req) {
+  function handleConnection(ws, req, { readOnly = false } = {}) {
     ws._onDisc = null;
+    ws._readOnly = readOnly;
     ws._subs = new Map();
     ws._alive = true;
     ws._connectedAt = Date.now();
@@ -597,7 +607,7 @@ export function createStore({ key = 'main', label = null, dataDir, token = '', s
     clients.add(ws);
     stats.connections++;
     stats.lastActivity = Date.now();
-    send(ws, { op: 'connected' });
+    send(ws, { op: 'connected', readOnly: readOnly || undefined });
 
     ws.on('message', (raw) => {
       ws._alive = true;
@@ -711,6 +721,17 @@ export function createStore({ key = 'main', label = null, dataDir, token = '', s
     key,
     label: label || key,
     dataDir,
+
+    /* ── خواندن و نوشتنِ مستقیم، بی وب‌سوکت ────────────────────────────────
+       گوشیِ کارمند و شورت‌کاتِ آیفون وب‌سوکت ندارند و فقط یک درخواستِ ساده
+       می‌زنند. این چهار تا همان مسیرِ عادیِ نوشتن را می‌روند — یعنی رویدادها
+       هم پخش می‌شوند و روی دیسک هم می‌نشیند — نه یک درِ پشتی. */
+    read: (p) => getNode(p),
+    write: (p, value) => applyMutation('set', p, value),
+    merge: (p, value) => applyMutation('update', p, value),
+    append: (p, value) => applyMutation('push', p, value),
+    erase: (p) => applyMutation('remove', p, null),
+
     handleConnection,
     acceptsToken,
     isOpen,

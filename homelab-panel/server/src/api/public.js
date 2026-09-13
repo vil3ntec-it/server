@@ -27,6 +27,7 @@ import { Router } from 'express';
 import appRoutes from '../routes/app.js';
 import messengerRoutes from '../routes/messenger.js';
 import notifyRoutes from '../routes/notify.js';
+import stationRoutes from '../routes/stations.js';
 import tohidPublicRoutes from '../routes/tohid.js';
 import tohidAdminApiRoutes from '../routes/tohid-admin.js';
 import { readyPayload } from '../platform/health.js';
@@ -50,6 +51,7 @@ const ENDPOINTS = [
   { path: '/api/v1/app', what: 'ورودِ برنامه‌ها با کد' },
   { path: '/api/v1/messenger', what: 'پیام‌رسان (HTTP و WebSocket)' },
   { path: '/api/v1/notify', what: 'اعلان‌ها' },
+  { path: '/api/v1/stations', what: 'پمپ‌بنزین‌ها — دادهٔ زندهٔ هر پمپ، با رمزِ خودِ همان پمپ' },
 ];
 
 /**
@@ -125,6 +127,13 @@ export function createPublicApi() {
   v1.use('/app', appRoutes);
   v1.use('/messenger', messengerRoutes);
   v1.use('/notify', notifyRoutes);
+  /*
+   *  پمپ‌بنزین‌ها. عمداً عمومی است: برنامهٔ نیتیو، اپِ کارمندان و شورت‌کاتِ
+   *  آیفون از راهِ همین تونل می‌آیند. ولی هر مسیرش رمزِ خودِ همان پمپ را
+   *  می‌خواهد و پمپِ تازه از اینترنت اصلاً ثبت نمی‌شود (‎HLP_STATIONS_ENROLL‎).
+   *  روترِ پنل (‎stations-admin‎) هرگز این‌جا نمی‌آید.
+   */
+  v1.use('/stations', stationRoutes);
   // برنامهٔ مشتری: /api/v1/auth/login، /api/v1/sync و بقیه روی ریشهٔ v1
   v1.use(tohidPublicRoutes);
 
@@ -134,6 +143,7 @@ export function createPublicApi() {
   router.use('/app', appRoutes);
   router.use('/messenger', messengerRoutes);
   router.use('/notify', notifyRoutes);
+  router.use('/stations', stationRoutes);
 
   router.use((req, res) => res.status(404).json({ error: 'not_found' }));
   return router;

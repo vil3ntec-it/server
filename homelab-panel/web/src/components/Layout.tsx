@@ -32,6 +32,7 @@ import {
   TerminalSquare,
   UserCog,
   X,
+  Fuel,
 } from 'lucide-react';
 import { useApp } from '../app-context';
 import { LANGUAGES, type Dict } from '../i18n';
@@ -67,6 +68,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/control/tohid', key: 'thTitle', icon: Store },
       { to: '/sites', key: 'websites', icon: Server },
       { to: '/site-server', key: 'siteServer', icon: Globe },
+      { to: '/stations', key: 'stations', icon: Fuel },
     ],
   },
   {

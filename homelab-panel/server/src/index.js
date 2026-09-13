@@ -14,8 +14,9 @@ import express from 'express';
 import { config, ensureDirs, SERVER_ROOT } from './config.js';
 import { db, logEvent, pruneEvents, getSetting, setSetting } from './db.js';
 import { pruneSessions } from './auth.js';
-import { setSiteSync, setIo, getIo } from './state.js';
+import { setSiteSync, setStations, setIo, getIo } from './state.js';
 import { createSiteSync } from './sitesync/index.js';
+import { createStations } from './stations/index.js';
 import { attachRealtime, broadcastMetrics } from './realtime.js';
 import { startCollector, stopCollector } from './metrics/index.js';
 import { startWinSampler, stopWinSampler } from './metrics/win-sampler.js';
@@ -43,6 +44,7 @@ import logsRoutes from './routes/logs.js';
 import networkRoutes from './routes/network.js';
 import settingsRoutes from './routes/settings.js';
 import siteServerRoutes from './routes/site-server.js';
+import stationRoutes, { adminRouter as stationAdminRoutes } from './routes/stations.js';
 import messengerRoutes from './routes/messenger.js';
 import notifyRoutes, { adminRouter as notifyAdminRoutes } from './routes/notify.js';
 import appRoutes, { adminRouter as appAdminRoutes } from './routes/app.js';
@@ -224,6 +226,9 @@ app.use('/api/logs', logsRoutes);
 app.use('/api/network', networkRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/site-server', siteServerRoutes);
+// بخشِ پمپ‌بنزین‌ها: روترِ عمومی با رمزِ خودِ پمپ، روترِ پنل پشتِ ورودِ پنل
+app.use('/api/stations', stationRoutes);
+app.use('/api/stations-admin', stationAdminRoutes);
 app.use('/api/messenger', messengerRoutes);
 app.use('/api/notify', notifyRoutes);
 app.use('/api/notify-admin', notifyAdminRoutes);
@@ -390,6 +395,14 @@ setIo(io);
 const tohidWs = createTohidWs();
 
 // ۲) سرورِ سایت روی همان پورت — هر ارتقای WebSocket که مسیرش /socket.io نباشد
+// بخشِ پمپ‌بنزین‌ها — پیش از سرورِ سایت ساخته می‌شود چون مسیرِ ارتقایش
+// باید *قبل* از دفترِ همه‌کارهٔ site-sync سنجیده شود.
+let stations = null;
+if (config.stations.enabled) {
+  stations = createStations({ dataDir: config.stations.dataDir, enroll: config.stations.enroll });
+  setStations(stations);
+}
+
 let siteSync = null;
 if (config.siteSync.enabled) {
   siteSync = createSiteSync({ dataDir: config.siteSync.dataDir, token: config.siteSync.token });
@@ -404,6 +417,7 @@ if (config.siteSync.enabled) {
     if (pathname.startsWith('/messenger')) return messenger.handleUpgrade(req, socket, head);
     if (pathname.startsWith('/notify')) return notify.handleUpgrade(req, socket, head);
     if (pathname.startsWith('/tohid')) return tohidWs.handleUpgrade(req, socket, head);
+    if (stations?.ownsPath(pathname)) return stations.handleUpgrade(req, socket, head);
     siteSync.handleUpgrade(req, socket, head);
   });
 }
@@ -421,6 +435,7 @@ if (!config.siteSync.enabled) {
     if (pathname.startsWith('/messenger')) return messenger.handleUpgrade(req, socket, head);
     if (pathname.startsWith('/notify')) return notify.handleUpgrade(req, socket, head);
     if (pathname.startsWith('/tohid')) return tohidWs.handleUpgrade(req, socket, head);
+    if (stations?.ownsPath(pathname)) return stations.handleUpgrade(req, socket, head);
     socket.destroy();
   });
 }
@@ -490,6 +505,7 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
     } catch { /* مسیر خراب */ }
     if (pathname.startsWith('/messenger')) return messenger.handleUpgrade(req, socket, head);
     if (pathname.startsWith('/notify')) return notify.handleUpgrade(req, socket, head);
+    if (stations?.ownsPath(pathname)) return stations.handleUpgrade(req, socket, head);
     siteSync.handleUpgrade(req, socket, head);
   });
   syncOnlyServer.on('error', (e) => {
@@ -600,6 +616,11 @@ const cronTick = setInterval(() => {
 cronTick.unref?.();
 
 async function main() {
+  if (stations) {
+    const loaded = await stations.loadAll();
+    if (loaded.length) console.log(`[stations] ${loaded.length} پمپ بنزین بازخوانی شد: ${loaded.join(', ')}`);
+  }
+
   if (siteSync) {
     await siteSync.ensureToken();
     const loaded = await siteSync.loadFromDisk();
@@ -668,6 +689,19 @@ async function main() {
       console.log('');
       console.log('  ℹ️  اگر سایت را با آدرس https باز می‌کنید، آدرس ws:// کار نمی‌کند؛');
       console.log('     مرورگر جلویش را می‌گیرد. آنجا باید wss:// داشته باشید (تونل).');
+      console.log('');
+    }
+    if (stations) {
+      const list = stations.list();
+      console.log('  ⛽ پمپ‌بنزین‌ها — هر کدام پوشه و رمزِ خودش:');
+      if (!list.length) {
+        console.log('     هنوز هیچ پمپی ثبت نشده. برنامهٔ کامپیوترِ همان پمپ را در همین');
+        console.log('     شبکهٔ خانگی باز کنید؛ خودش سرور را پیدا و خودش را ثبت می‌کند.');
+      }
+      for (const st of list) {
+        console.log(`     ${st.name} (${st.code})  →  ${st.dataDir}`);
+      }
+      console.log(`     آدرسی که برنامهٔ نیتیو می‌گیرد: ws://${ips[0] || 'localhost'}:${config.port}/station`);
       console.log('');
     }
     // ---- ورودِ برنامه‌ها: همان چیزی که باید در اپِ اندروید/ویندوز/سایت بگذارید ----
@@ -754,6 +788,9 @@ async function shutdown(signal) {
   } catch { /* بی‌خیال */ }
   try {
     if (siteSync) await siteSync.flush();
+  } catch { /* بی‌خیال */ }
+  try {
+    if (stations) await stations.flush();
   } catch { /* بی‌خیال */ }
   try {
     db.close();
