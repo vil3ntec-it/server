@@ -213,6 +213,7 @@ IP سرور، پورت، و اینکه پشتِ تونل است یا reverse pro
 - [`homelab-panel/مرکز-فرمان.md`](homelab-panel/مرکز-فرمان.md) — راهنمای کاملِ مرکز فرمان
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — معماری و دلیلِ هر تصمیم
 - [`docs/API.md`](docs/API.md) — مرجعِ API نسخهٔ ۱
+- [`docs/STATIONS-fa.md`](docs/STATIONS-fa.md) — بخشِ پمپ‌بنزین‌ها: پوشه و رمزِ جدا برای هر پمپ، و راهِ اتصالِ برنامهٔ نیتیو و گوشی‌ها
 - [`deploy/README-fa.md`](deploy/README-fa.md) — استقرار با Docker و Caddy
 - [`homelab-panel/README-fa.md`](homelab-panel/README-fa.md)
 - [`ai-support/README-fa.md`](ai-support/README-fa.md)

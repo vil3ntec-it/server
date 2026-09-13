@@ -108,6 +108,28 @@ export const config = {
     token: process.env.HLP_SITESYNC_TOKEN || '',
   },
 
+  /*
+   *  بخشِ پمپ‌بنزین‌ها — خانهٔ برنامهٔ نیتیوِ هر پمپ.
+   *
+   *  عمداً پوشه‌ای جدا از site-sync است: آن یکی مالِ سایت‌هاست و کلِ شاخه‌اش
+   *  را یک‌جا می‌نویسد. این‌جا هر پمپ بنزین پوشه و رمزِ خودش را دارد تا
+   *  فردا که پمپِ دوم و سوم اضافه شود، هیچ عددی جابه‌جا نشود.
+   */
+  stations: {
+    enabled: (process.env.HLP_STATIONS ?? '1') !== '0',
+    dataDir: path.resolve(
+      process.env.HLP_STATIONS_DATA_DIR ||
+        path.join(process.env.HLP_DATA_DIR || path.join(SERVER_ROOT, 'data'), 'stations')
+    ),
+    // چه کسی می‌تواند پمپِ تازه ثبت کند:
+    //   lan  (پیش‌فرض) فقط از شبکهٔ خانگی — از اینترنت هرگز
+    //   off               هیچ‌کس؛ فقط پنل پمپ می‌سازد
+    //   open              هر کسی (فقط برای آزمون)
+    enroll: ['lan', 'off', 'open'].includes(process.env.HLP_STATIONS_ENROLL)
+      ? process.env.HLP_STATIONS_ENROLL
+      : 'lan',
+  },
+
   // ── HTTPS مستقیم روی خودِ پنل ────────────────────────────────────────────
   // اگر گواهی و کلید بدهید، پنل خودش https سرو می‌کند. لازم نیست: وقتی از
   // راهِ تونل باز می‌شود، Cloudflare خودش https را فراهم می‌کند.
@@ -146,7 +168,7 @@ export const paths = {
 };
 
 export function ensureDirs() {
-  for (const dir of [config.dataDir, paths.sitesData, paths.uploads, paths.backups, config.siteSync.dataDir]) {
+  for (const dir of [config.dataDir, paths.sitesData, paths.uploads, paths.backups, config.siteSync.dataDir, config.stations.dataDir]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
