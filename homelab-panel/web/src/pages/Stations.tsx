@@ -19,6 +19,7 @@ import { api } from '../api';
 import { useApp } from '../app-context';
 import { Card, ConfirmDialog, CopyButton, Empty, Field, Loading, Modal, StatusDot, toast } from '../components/ui';
 import { ActionButton, Cell, Notice, Row, Table } from '../control/ui';
+import StationsCloud from './StationsCloud';
 
 type Station = {
   code: string;
@@ -240,6 +241,9 @@ export default function StationsPage() {
           </Table>
         )}
       </Card>
+
+      {/* حساب‌ها و اشتراک — از سرورِ ابر می‌آید، نه از این‌جا */}
+      <StationsCloud />
 
       {(data?.pairings?.length ?? 0) > 0 && (
         <Card title="کدهای جفت‌شدنِ باز" icon={<Smartphone size={18} />}>
