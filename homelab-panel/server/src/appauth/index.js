@@ -260,14 +260,39 @@ export function verifyAppToken(token) {
   }
 }
 
-/** میان‌افزارِ Express برای مسیرهایی که کاربرِ واردشده می‌خواهند */
+/**
+ * میان‌افزارِ Express برای مسیرهایی که کاربرِ واردشده می‌خواهند.
+ *
+ * ⚠️ نشستِ هر بخش فقط مالِ همان بخش است.
+ *
+ * تا پیش از این، `app`ی که `verifyAppToken` برمی‌گرداند همین‌جا دور
+ * ریخته می‌شد. نتیجه‌اش این بود که سرور هیچ راهی نداشت بگوید «این توکن
+ * مالِ بخشِ پمپ است یا دکان» — و چون `appOf(req)` نامِ برنامه را از
+ * خودِ درخواست می‌خواند (`body` / `query` / `x-app`)، هر مسیری که روزی
+ * بر اساسِ آن فیلتر می‌کرد با توکنِ بخشِ دیگر باز می‌شد.
+ *
+ * حالا اگر درخواست نامِ برنامه‌ای بدهد که با نشست نمی‌خواند، جواب
+ * «چنین نشستی نیست» است — نه «دسترسی نداری». همان چیزی که دربارهٔ
+ * `tokens.app`ِ سرورِ ابر هم رعایت شده: وجودِ حسابِ آن بخش لو نرود.
+ */
 export function requireAppUser(req, res, next) {
   const header = String(req.headers.authorization || '');
   const token = header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : req.query?.token;
   const found = token ? verifyAppToken(token) : null;
   if (!found) return res.status(401).json({ ok: false, error: 'unauthorized', message: 'اول وارد شوید' });
+
+  //  نامِ برنامه فقط وقتی سنجیده می‌شود که درخواست خودش گفته باشد؛
+  //  برنامه‌های قدیمی که چیزی نمی‌گویند نباید بیفتند.
+  const asked = req.body?.app ?? req.query?.app ?? req.headers['x-app'];
+  if (asked !== undefined && asked !== null && String(asked).trim() !== '') {
+    if (cleanApp(asked) !== cleanApp(found.app)) {
+      return res.status(401).json({ ok: false, error: 'unauthorized', message: 'اول وارد شوید' });
+    }
+  }
+
   req.appUser = found.user;
   req.appSessionId = found.sessionId;
+  req.appName = cleanApp(found.app);
   next();
 }
 
