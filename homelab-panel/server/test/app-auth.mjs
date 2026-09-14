@@ -231,6 +231,32 @@ try {
   const shopLogin = await post('/api/app/auth/verify-code', { phone: '09121234567', code: codeShop, app: 'shop' });
   check('کاربرِ برنامهٔ دوم جداست', shopLogin.body.user?.id !== ok.body.user?.id && shopLogin.body.isNew === true);
 
+  //  ⚠️ نشستِ هر بخش فقط مالِ همان بخش است.
+  //  تا پیش از این requireAppUser نامِ برنامهٔ نشست را دور می‌ریخت، پس
+  //  توکنِ «shop» روی درخواستی که خودش را «my-app» معرفی می‌کرد هم
+  //  می‌نشست. این سه سنجه همان را قفل می‌کنند.
+  const shopToken = shopLogin.body.token;
+  const crossHeader = await fetch(`${BASE}/api/app/me`, {
+    headers: { Authorization: `Bearer ${shopToken}`, 'x-app': 'my-app' },
+  });
+  check('توکنِ بخشِ دکان روی بخشِ دیگر باز نمی‌شود (x-app)', crossHeader.status === 401);
+
+  const crossQuery = await fetch(`${BASE}/api/app/me?app=my-app`, {
+    headers: { Authorization: `Bearer ${shopToken}` },
+  });
+  check('توکنِ بخشِ دکان روی بخشِ دیگر باز نمی‌شود (query)', crossQuery.status === 401);
+
+  const sameApp = await fetch(`${BASE}/api/app/me?app=shop`, {
+    headers: { Authorization: `Bearer ${shopToken}` },
+  });
+  check('ولی روی بخشِ خودش باز است', sameApp.status === 200);
+
+  //  برنامه‌های قدیمی که نامِ بخش را نمی‌فرستند نباید بیفتند.
+  const silent = await fetch(`${BASE}/api/app/me`, {
+    headers: { Authorization: `Bearer ${shopToken}` },
+  });
+  check('درخواستی که نامِ بخش نمی‌دهد همچنان کار می‌کند', silent.status === 200);
+
   console.log('\n▶ برنامه‌هایی که فرمِ ساده می‌فرستند (نه JSON)');
   await wait(2100);
   const formRes = await fetch(`${BASE}/api/app/auth/request-code`, {
