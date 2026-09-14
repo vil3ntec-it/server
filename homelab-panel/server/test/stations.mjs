@@ -269,6 +269,30 @@ try {
   const gone = await api('DELETE', '/api/stations-admin/pump3?confirm=pump3', undefined, auth);
   check('حذف با تاییدِ نام انجام شد', gone.status === 200 && !fs.existsSync(path.join(root, 'pump3')));
 
+  // ── پلِ ابر: حساب‌ها و اشتراکِ پمپ ─────────────────────────────────
+  //
+  //  مرکز فرمان اشتراک را خودش نگه نمی‌دارد؛ از ابر می‌پرسد. این‌جا
+  //  سنجیده می‌شود که پل بسته و امن باشد تا وقتی وصل نشده‌ایم.
+
+  const cloudSt = await api('GET', '/api/stations-admin/cloud/status', undefined, auth);
+  check('حالِ پل خوانده می‌شود', cloudSt.status === 200, String(cloudSt.status));
+  check('نشانیِ ابر قفل است', cloudSt.json?.base === 'https://api.vill3n.top', String(cloudSt.json?.base));
+  check('تا وصل نشده‌ایم، linked دروغ نمی‌گوید', cloudSt.json?.linked === false);
+
+  //  ⚠️ مهم‌ترین سنجه: تا توکنی نیست، هیچ‌کدام از خواندنی‌ها نباید
+  //  چیزی برگردانند — نه خطای گنگ، نه دادهٔ خالیِ گمراه‌کننده.
+  const notLinked = await api('GET', '/api/stations-admin/cloud/users', undefined, auth);
+  check('بی وصل بودن، «وصل نشده‌اید» می‌گوید',
+    notLinked.status === 409 && notLinked.json?.error === 'not_linked',
+    `${notLinked.status} ${JSON.stringify(notLinked.json)}`);
+
+  //  مسیری که در فهرستِ سفید نیست اصلاً روتی ندارد — پروکسیِ باز نیست
+  const notAllowed = await api('GET', '/api/stations-admin/cloud/shops', undefined, auth);
+  check('مسیرِ بیرون از فهرستِ سفید باز نیست', notAllowed.status === 404, String(notAllowed.status));
+
+  const cloudNoAuth = await api('GET', '/api/stations-admin/cloud/status');
+  check('پلِ ابر هم بی ورود بسته است', cloudNoAuth.status === 401, String(cloudNoAuth.status));
+
   // ── ۱۰) کدِ جفت‌شدن — برای برنامه‌ای که در شبکهٔ خانگی نیست ─────────────
   console.log('\n۱۰) کدِ جفت‌شدن');
   const pair = await api('POST', '/api/stations-admin/pair', { code: 'pump4', name: 'پمپ چهارم' }, auth);

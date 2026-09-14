@@ -20,6 +20,7 @@ import { requireAuth, requireWriteRole } from '../auth.js';
 import { getStations } from '../state.js';
 import { logEvent } from '../db.js';
 import { isLocalRequest, safeCode, LIVE_BRANCH, INBOX_BRANCH, META_BRANCH } from '../stations/index.js';
+import { cloudStatus, cloudLogin, cloudForget, cloudCall } from '../stations/cloud.js';
 
 /** بلندترین درخواستی که یک گوشی می‌تواند در صندوقِ ورودی بگذارد */
 const INBOX_TEXT_LIMIT = 4000;
@@ -342,4 +343,76 @@ adminRouter.get('/:code/connect', async (req, res) => {
       ? `${httpBase}/api/stations/${encodeURIComponent(code)}/live?token=${encodeURIComponent(readKey)}`
       : null,
   });
+});
+
+
+// ═══════════════ حساب‌ها و اشتراکِ پمپ — از سرورِ ابر ═══════════════
+//
+//  خواستهٔ صاحب ریپو: «اشتراک بدم به اپ و ببینم افراد رو، اشتراک‌هاشون
+//  و غیره؛ بخشِ فروشگاه خیلی تکمیل است، شبیه همون باشه.»
+//
+//  ⚠️ این‌جا هیچ دفترِ اشتراکی ساخته نمی‌شود. اشتراکِ پمپ روی ابر
+//  زندگی می‌کند — همان‌جا که برنامه مجوزش را می‌گیرد. اگر این‌جا هم
+//  دفتری می‌بود، روزی یکی می‌گفت «فعال» و آن یکی «تمام شده».
+
+/** کمکی: خطای پل را با همان کدِ خودش برگردان، نه ۵۰۰ی گنگ. */
+function cloudFail(res, err) {
+  return res.status(err.status || 502).json({
+    error: err.code || 'cloud_error',
+    message: err.message || 'سرورِ ابر جواب نداد',
+  });
+}
+
+adminRouter.get('/cloud/status', (req, res) => res.json(cloudStatus()));
+
+adminRouter.post('/cloud/login', requireWriteRole('admin'), async (req, res) => {
+  const username = String(req.body?.username || '').trim();
+  const password = String(req.body?.password || '');
+  if (!username || !password) {
+    return res.status(400).json({ error: 'bad_request', message: 'نام کاربری و رمز لازم است' });
+  }
+  try {
+    const out = await cloudLogin(username, password, req.user?.username || 'admin');
+    logEvent('stations', 'cloud_linked', { username });
+    res.json(out);
+  } catch (err) { cloudFail(res, err); }
+});
+
+adminRouter.post('/cloud/forget', requireWriteRole('admin'), (req, res) => {
+  const gone = cloudForget(req.user?.username || 'admin');
+  if (gone) logEvent('stations', 'cloud_unlinked', {});
+  res.json({ ok: true, forgotten: gone });
+});
+
+/**
+ * خواندنی‌ها — همان چیزی که پنلِ ابر نشان می‌دهد، این‌جا هم.
+ *
+ * ⚠️ `name` از فهرستِ سفیدِ `cloud.js` می‌آید؛ مسیرِ دلخواه پذیرفته
+ * نمی‌شود، وگرنه پنل یک پروکسیِ باز به همهٔ مسیرهای مدیریتیِ ابر
+ * می‌شد — از جمله بخشِ دکان.
+ */
+for (const name of ['stats', 'stations', 'users', 'subscriptions', 'expiring', 'vipCodes', 'plans']) {
+  adminRouter.get(`/cloud/${name}`, async (req, res) => {
+    try {
+      res.json(await cloudCall(name, { query: req.query }));
+    } catch (err) { cloudFail(res, err); }
+  });
+}
+
+/** اشتراک دادن یا تمدید — همان کاری که در بخشِ دکان می‌شود. */
+adminRouter.post('/cloud/grant', requireWriteRole('operator'), async (req, res) => {
+  try {
+    const out = await cloudCall('grant', { body: req.body || {} });
+    logEvent('stations', 'cloud_subscription_granted', { stationId: req.body?.stationId });
+    res.json(out);
+  } catch (err) { cloudFail(res, err); }
+});
+
+/** کدِ شش‌رقمی برای دادن به یک پمپ. */
+adminRouter.post('/cloud/vip-codes', requireWriteRole('operator'), async (req, res) => {
+  try {
+    const out = await cloudCall('makeCode', { body: req.body || {} });
+    logEvent('stations', 'cloud_code_made', {});
+    res.json(out);
+  } catch (err) { cloudFail(res, err); }
 });
