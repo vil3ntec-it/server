@@ -69,15 +69,27 @@ jobs:
         shell: pwsh
         working-directory: homelab-panel/desktop/dist
         run: |
-          $exe = Get-ChildItem -Filter '*.exe' | Select-Object -First 1
+          # ⚠️ دو فایل ساخته می‌شود: نصبی (Setup) و قابل‌حمل (Portable). تکه‌ها
+          # مالِ نصبی‌اند؛ جمعِ کنترلی برای هر دو نوشته می‌شود.
+          $exe = Get-ChildItem -Filter '*Setup*.exe' | Select-Object -First 1
           if (-not $exe) { throw 'فایل نصبی ساخته نشد' }
           Write-Host "فایل: $($exe.Name) — $([math]::Round($exe.Length/1MB,1)) MB"
+          $portable = Get-ChildItem -Filter '*Portable*.exe' | Select-Object -First 1
+          if (-not $portable) { throw 'فایل قابل‌حمل ساخته نشد' }
+          Write-Host "قابل‌حمل: $($portable.Name) — $([math]::Round($portable.Length/1MB,1)) MB"
 
+          $lines = @()
+          foreach ($f in @($exe, $portable)) {
+            $h = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
+            $lines += "$h  $($f.Name)"
+          }
+          $lines | Set-Content -Path 'SHA256SUMS.txt' -Encoding ascii
           $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
-          "$hash  $($exe.Name)" | Set-Content -Path 'SHA256SUMS.txt' -Encoding ascii
           "SHA256=$hash" >> $env:GITHUB_ENV
           "EXE_NAME=$($exe.Name)" >> $env:GITHUB_ENV
           "EXE_MB=$([math]::Round($exe.Length/1MB,1))" >> $env:GITHUB_ENV
+          "PORTABLE_NAME=$($portable.Name)" >> $env:GITHUB_ENV
+          "PORTABLE_MB=$([math]::Round($portable.Length/1MB,1))" >> $env:GITHUB_ENV
 
           New-Item -ItemType Directory -Force -Path 'parts' | Out-Null
           $chunk  = 20MB
@@ -206,6 +218,13 @@ jobs:
 
             این فایل روی CDN است، پس اگر وسطِ کار قطع شد، دانلود **ادامه می‌گیرد**
             و از اول شروع نمی‌شود. با یک دانلود‌منیجر (مثل IDM یا FDM) مطمئن‌تر است.
+
+            **نسخهٔ قابل‌حمل** (`${{ env.PORTABLE_NAME }}`، حدود ${{ env.PORTABLE_MB }} مگابایت)
+
+            نصب نمی‌خواهد. آن را داخلِ **پوشهٔ داده** بگذارید (یا از داخلِ برنامه دکمهٔ
+            «برنامه در پوشه» را بزنید): از آن به بعد کلِ پوشه را به هر کامپیوتر یا
+            لپ‌تاپی که ببرید و روی همین فایل دوبار کلیک کنید، همه‌چیز — حساب‌ها،
+            پمپ‌ها، بکاپ‌ها — سرِ جایش است.
 
             **راهِ دوم — تکه‌های ۲۰ مگابایتی**
 

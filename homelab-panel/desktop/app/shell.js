@@ -73,7 +73,8 @@ const LABEL = {
 function applyStatus(s) {
   el.dot.className = `dot ${s.status}`;
   el.statusText.textContent =
-    s.status === 'running' ? `${LABEL.running} · ${s.url}` : s.error ? `${LABEL[s.status]} — ${s.error}` : LABEL[s.status];
+    (s.status === 'running' ? `${LABEL.running} · ${s.url}` : s.error ? `${LABEL[s.status]} — ${s.error}` : LABEL[s.status]) +
+    (s.runFromHome ? ' · از داخلِ پوشهٔ داده' : '');
 
   if (s.status === 'running' && s.url && loadedUrl !== s.url) {
     loadedUrl = s.url;
@@ -286,6 +287,25 @@ window.addEventListener('resize', () => {
 
 $('btnBrowser').addEventListener('click', () => window.cc.openInBrowser());
 $('btnData').addEventListener('click', () => window.cc.openDataFolder());
+$('btnCopyApp').addEventListener('click', async () => {
+  const b = $('btnCopyApp');
+  b.disabled = true;
+  try {
+    const res = await window.cc.copyAppIntoData();
+    if (res?.ok) {
+      b.textContent = res.already ? 'همین‌جاست' : 'کپی شد';
+    } else {
+      b.textContent = 'نشد';
+      if (res?.installed && res.url) {
+        // نسخهٔ نصبی: فایلِ تنها ندارد — نسخهٔ قابل‌حمل را نشان بده
+        window.cc.openExternal?.(res.url);
+      }
+      window.alert(res?.error || 'کپی نشد');
+    }
+  } finally {
+    setTimeout(() => { b.textContent = 'برنامه در پوشه'; b.disabled = false; }, 1600);
+  }
+});
 $('btnRestart').addEventListener('click', () => window.cc.restart());
 $('btnClear').addEventListener('click', async () => {
   await window.cc.clearLogs();

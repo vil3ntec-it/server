@@ -70,6 +70,78 @@ function defaultDataDir() {
   return path.join(docs, 'ControlCenter');
 }
 
+/* ------------------- پوشهٔ داده‌ای که همه‌چیز با خودش می‌برد -------------- */
+/*
+ * خواستهٔ صاحب مخزن: «فولدرِ سرور جوری باشه که همه‌چی توش باشه و اگه از یک
+ * کامپیوتر به کامپیوترِ دیگه بردم اطلاعات باشه، و برنامهٔ سرور هم توی همان
+ * فولدر باشه که آیکونش رو بتونم توی کامپیوترِ جدید بذارم یا از خودِ فولدر باز
+ * کنم.»
+ *
+ * پس:
+ *   ۱) داخلِ پوشهٔ داده یک نشانه می‌نشیند (‎ControlCenter.home.json‎). هر
+ *      پوشه‌ای که این نشانه را دارد «خانهٔ مرکز فرمان» است.
+ *   ۲) نسخهٔ قابل‌حملِ برنامه (‎ControlCenter-Portable-*.exe‎، بی نصب) با یک
+ *      دکمه داخلِ همان پوشه کپی می‌شود.
+ *   ۳) هر بار که برنامه از داخلِ پوشه‌ای اجرا شود که نشانه دارد — یا از
+ *      زیرپوشه‌اش — همان پوشه، پوشهٔ داده است؛ بی سوال، بی تنظیمِ قبلی.
+ *      یعنی کلِ پوشه را روی فلش می‌برید، روی کامپیوترِ تازه دوبار کلیک
+ *      می‌کنید و همه‌چیز سرِ جایش است.
+ *
+ * ⚠️ نشانه فقط یک فایلِ کوچکِ JSON است، نه چیزی که سرور بخواندش. اگر نبود،
+ * رفتارِ قدیمی (پوشهٔ ذخیره‌شده یا پرسیدن) عیناً سرِ جایش است.
+ */
+const HOME_MARKER = 'ControlCenter.home.json';
+
+/** نشانه را در پوشهٔ داده بنویس (یا تازه کن). هیچ‌وقت خطا بیرون نمی‌دهد. */
+function writeHomeMarker(dir) {
+  if (!dir) return;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, HOME_MARKER),
+      JSON.stringify({ app: 'control-center', version: app.getVersion(), at: Date.now() }, null, 2),
+      'utf8'
+    );
+  } catch { /* پوشهٔ فقط‌خواندنی؛ نشانه اختیاری است */ }
+}
+
+/** آیا این پوشه نشانهٔ «خانه» دارد؟ */
+function isHome(dir) {
+  try {
+    return !!dir && fs.existsSync(path.join(dir, HOME_MARKER));
+  } catch {
+    return false;
+  }
+}
+
+/** فایلِ اجراییِ قابل‌حمل — فقط وقتی همین برنامه به شکلِ قابل‌حمل اجرا شده. */
+function portableExe() {
+  return process.env.PORTABLE_EXECUTABLE_FILE || null;
+}
+
+/**
+ * «برنامه از داخلِ پوشهٔ داده اجرا شده؟» — پوشهٔ فایلِ اجرایی و تا دو پدرِ
+ * بالاترش را نگاه می‌کند. خروجی همان پوشهٔ خانه است، یا ‎null‎.
+ *
+ * ⚠️ ‎process.execPath‎ی نسخهٔ نصبی داخلِ ‎Program Files‎ است و هیچ‌وقت نشانه
+ * ندارد، پس نسخهٔ نصبی رفتارش عوض نمی‌شود.
+ */
+function homeNearExe() {
+  const starts = [process.env.PORTABLE_EXECUTABLE_DIR, path.dirname(process.execPath)]
+    .filter(Boolean)
+    .map((d) => path.resolve(d));
+  for (const start of starts) {
+    let dir = start;
+    for (let i = 0; i < 3; i++) {
+      if (isHome(dir)) return dir;
+      const up = path.dirname(dir);
+      if (up === dir) break;
+      dir = up;
+    }
+  }
+  return null;
+}
+
 /* ------------------------------ پورتِ آزاد ------------------------------- */
 
 function portFree(port) {
@@ -99,6 +171,7 @@ const state = {
   status: 'stopped', // stopped | starting | running | error
   error: null,
   dataDir: null,
+  runFromHome: false, // برنامه از داخلِ خودِ پوشهٔ داده باز شده
   logs: [],
   stopping: false,
   appliedWatcher: null,
@@ -138,6 +211,8 @@ function publicState() {
     port: state.port,
     url: state.url,
     dataDir: state.dataDir,
+    runFromHome: state.runFromHome,
+    portable: !!portableExe(),
     serverDir: serverDir(),
     version: app.getVersion(),
     node: process.versions.node,
@@ -182,7 +257,8 @@ async function startServer() {
   const hasAi = fs.existsSync(path.resolve(dir, '..', '..', 'ai-support', 'package.json'));
 
   pushLog(`راه‌اندازی سرور روی پورت ${state.port} …`);
-  pushLog(`پوشهٔ داده: ${state.dataDir}`);
+  pushLog(`پوشهٔ داده: ${state.dataDir}${state.runFromHome ? ' (برنامه از داخلِ همین پوشه باز شده)' : ''}`);
+  writeHomeMarker(state.dataDir);
 
   state.child = spawn(process.execPath, [entry], {
     cwd: dir,
@@ -351,7 +427,46 @@ ipcMain.handle('state', () => publicState());
 ipcMain.handle('logs', () => state.logs);
 ipcMain.handle('restart', () => restartServer());
 ipcMain.handle('open-browser', () => (state.url ? shell.openExternal(state.url) : null));
+// فقط صفحهٔ انتشارهای همین مخزن — نه هر نشانی‌ای که پوسته بدهد
+ipcMain.handle('open-external', (_event, url) => {
+  const s = String(url || '');
+  if (!s.startsWith('https://github.com/vil3ntec-it/')) return false;
+  shell.openExternal(s);
+  return true;
+});
 ipcMain.handle('open-data', () => (state.dataDir ? shell.openPath(state.dataDir) : null));
+
+/**
+ * کپیِ خودِ برنامه به داخلِ پوشهٔ داده — تا پوشه «همه‌چیز» را با خود ببرد.
+ *
+ * فقط نسخهٔ قابل‌حمل یک فایلِ تنهاست که هر جا برود کار می‌کند؛ فایلِ اجراییِ
+ * نسخهٔ نصبی بی پوشهٔ کنارش (‎resources/‎) باز نمی‌شود. پس برای نسخهٔ نصبی
+ * نشانیِ دانلودِ نسخهٔ قابل‌حمل برمی‌گردد و کاربر همان را در پوشه می‌گذارد.
+ */
+ipcMain.handle('copy-app-into-data', async () => {
+  if (!state.dataDir) return { ok: false, error: 'هنوز پوشهٔ داده انتخاب نشده است' };
+  const exe = portableExe();
+  if (!exe) {
+    return {
+      ok: false,
+      installed: true,
+      error: 'این نسخه نصب‌شده است و یک فایلِ تنها نیست. نسخهٔ قابل‌حمل (Portable) را بگیرید و داخلِ پوشهٔ داده بگذارید.',
+      url: 'https://github.com/vil3ntec-it/server/releases',
+    };
+  }
+  const target = path.join(state.dataDir, 'ControlCenter.exe');
+  try {
+    if (path.resolve(exe) === path.resolve(target)) {
+      return { ok: true, path: target, already: true };
+    }
+    await fsp.copyFile(exe, target);
+    writeHomeMarker(state.dataDir);
+    pushLog(`برنامه داخلِ پوشهٔ داده کپی شد: ${target}`);
+    return { ok: true, path: target };
+  } catch (e) {
+    return { ok: false, error: `کپی نشد (${e.code || e.message})` };
+  }
+});
 ipcMain.handle('clear-logs', () => {
   state.logs = [];
 });
@@ -544,7 +659,17 @@ export async function start(context) {
   createWindow();
 
   const saved = readSettings();
-  if (saved.dataDir) {
+  const home = homeNearExe();
+  if (home) {
+    // از داخلِ پوشهٔ داده باز شده — همان پوشه، بی سوال. (کامپیوترِ تازه،
+    // فلش، پوشهٔ جابه‌جاشده.) تنظیمِ ذخیره‌شده هم به همین می‌نشیند تا دفعهٔ
+    // بعد از هر جا باز شد، همین را بگیرد.
+    state.dataDir = home;
+    state.runFromHome = true;
+    if (saved.dataDir !== home) writeSettings({ dataDir: home });
+    watchApplied();
+    await startServer();
+  } else if (saved.dataDir) {
     state.dataDir = saved.dataDir;
     watchApplied();
     await startServer();

@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('cc', {
   restart: () => ipcRenderer.invoke('restart'),
   openInBrowser: () => ipcRenderer.invoke('open-browser'),
   openDataFolder: () => ipcRenderer.invoke('open-data'),
+  copyAppIntoData: () => ipcRenderer.invoke('copy-app-into-data'),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
   clearLogs: () => ipcRenderer.invoke('clear-logs'),
 
   // ترمینال: داخلِ برنامه یا در پنجرهٔ خودش

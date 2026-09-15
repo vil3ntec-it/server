@@ -77,7 +77,7 @@ async function api(method, url, body, headers = {}) {
   try {
     json = await res.json();
   } catch { /* بدنهٔ غیرِ JSON */ }
-  return { status: res.status, json };
+  return { status: res.status, json, headers: res.headers };
 }
 
 /** یک اتصالِ وب‌سوکت به دفترِ یک پمپ، با همان پروتکلِ خودِ برنامه */
@@ -235,6 +235,26 @@ try {
   const adminLeak = await api('GET', `${PUBLIC}/api/stations-admin/`);
   check('روترِ پنل روی پورتِ عمومی نیست', adminLeak.status === 404, String(adminLeak.status));
 
+  // ── کیو‌آرِ زندهٔ مشتری: فقط رمزِ همان یک حساب، بی رمزِ پمپ ───────────
+  console.log('\n۸ب) کیو‌آرِ زندهٔ مشتری');
+  sendOp(app1.ws, {
+    op: 'set', id: 7, path: 'acct/d12',
+    value: { v: 1, k: 'abcdef0123456789abcd', at: 1700000000000, d: { n: 'محمد', s: [['الباقی', '640']] } },
+  });
+  await app1.next();
+  const acctOk = await api('GET', `${PUBLIC}/api/stations/pump1/acct/d12?k=abcdef0123456789abcd`);
+  check('با رمزِ همان حساب، حساب برمی‌گردد', acctOk.json?.d?.n === 'محمد' && acctOk.json.at === 1700000000000);
+  check('رمزِ حساب در پاسخ نیست', !JSON.stringify(acctOk.json).includes('abcdef0123456789abcd'));
+  check('CORS باز است تا صفحهٔ مشتری بتواند بپرسد', acctOk.headers.get('access-control-allow-origin') === '*');
+  const acctBad = await api('GET', `${PUBLIC}/api/stations/pump1/acct/d12?k=abcdef0123456789abce`);
+  check('رمزِ غلط ⇒ ۴۰۴', acctBad.status === 404);
+  const acctNone = await api('GET', `${PUBLIC}/api/stations/pump1/acct/d99?k=abcdef0123456789abcd`);
+  check('حسابِ نبوده ⇒ همان ۴۰۴', acctNone.status === 404);
+  const acctNoKey = await api('GET', `${PUBLIC}/api/stations/pump1/acct/d12`);
+  check('بی رمز ⇒ ۴۰۴، نه داده', acctNoKey.status === 404);
+  const acctReadKey = await api('GET', `${PUBLIC}/api/stations/pump1/acct/d12?k=${one.json.readKey}`);
+  check('رمزِ خواندنِ پمپ این در را باز نمی‌کند', acctReadKey.status === 404);
+
   const listed = await api('GET', `${PUBLIC}/api`);
   check(
     'در فهرستِ رسمیِ APIِ عمومی آمده',
@@ -292,6 +312,17 @@ try {
 
   const cloudNoAuth = await api('GET', '/api/stations-admin/cloud/status');
   check('پلِ ابر هم بی ورود بسته است', cloudNoAuth.status === 401, String(cloudNoAuth.status));
+
+  //  آینهٔ ابر در پوشهٔ داده — «حساب‌ها از سرور به فولدرِ خودِ سرور ثبت می‌شه؟»
+  const mirrorSt = await api('GET', '/api/stations-admin/cloud/mirror', undefined, auth);
+  check('حالِ آینه خوانده می‌شود و پوشه‌اش داخلِ پوشهٔ داده است',
+    mirrorSt.status === 200 && String(mirrorSt.json?.dir || '').startsWith(dataDir), JSON.stringify(mirrorSt.json));
+  const mirrorNow = await api('POST', '/api/stations-admin/cloud/mirror', {}, auth);
+  check('بی وصل بودن، آینه «وصل نشده‌اید» می‌گوید', mirrorNow.status === 409 && mirrorNow.json?.error === 'not_linked',
+    `${mirrorNow.status} ${JSON.stringify(mirrorNow.json)}`);
+  check('و همان را در mirror.json می‌نویسد', fs.existsSync(path.join(dataDir, 'cloud', 'mirror.json')));
+  const mirrorNoAuth = await api('POST', '/api/stations-admin/cloud/mirror', {});
+  check('آینه بی ورود بسته است', mirrorNoAuth.status === 401, String(mirrorNoAuth.status));
 
   // ── ۱۰) کدِ جفت‌شدن — برای برنامه‌ای که در شبکهٔ خانگی نیست ─────────────
   console.log('\n۱۰) کدِ جفت‌شدن');
