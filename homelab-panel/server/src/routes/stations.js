@@ -14,13 +14,27 @@
 //  ندارند. یک ‎GET‎ی ساده کارِ همه‌شان را راه می‌اندازد، و ‎POST‎ی ‎inbox‎ راهِ
 //  برگشتِ داده است.
 // ---------------------------------------------------------------------------
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import QRCode from 'qrcode';
 import { requireAuth, requireWriteRole } from '../auth.js';
-import { getStations } from '../state.js';
+import { getStations, getMirror } from '../state.js';
+import { config } from '../config.js';
+import { readMirrorStatus, mirrorDir } from '../stations/cloud-mirror.js';
 import { logEvent } from '../db.js';
 import { isLocalRequest, safeCode, LIVE_BRANCH, INBOX_BRANCH, META_BRANCH } from '../stations/index.js';
 import { cloudStatus, cloudLogin, cloudForget, cloudCall } from '../stations/cloud.js';
+
+/** شاخهٔ حساب‌های کیو‌آردار — ‎acct/<شناسه>‎ (برنامهٔ نیتیو می‌نویسد) */
+const ACCT_BRANCH = 'acct';
+
+/** مقایسهٔ زمان‌ثابتِ دو رشته — تا درازای پاسخ چیزی دربارهٔ رمز نگوید */
+function timingEqual(a, b) {
+  const x = Buffer.from(String(a), 'utf8');
+  const y = Buffer.from(String(b), 'utf8');
+  if (x.length !== y.length) return false;
+  return crypto.timingSafeEqual(x, y);
+}
 
 /** بلندترین درخواستی که یک گوشی می‌تواند در صندوقِ ورودی بگذارد */
 const INBOX_TEXT_LIMIT = 4000;
@@ -105,6 +119,40 @@ router.get('/:code/live', (req, res) => {
   const live = ctx.store.read(LIVE_BRANCH);
   if (live === undefined) return res.json({ ok: true, code: ctx.code, live: null, empty: true });
   res.json({ ok: true, code: ctx.code, live });
+});
+
+/**
+ * ══ کیو‌آرِ زندهٔ مشتری — بی رمزِ پمپ ═══════════════════════════════════════
+ *
+ * برنامهٔ نیتیو هر حسابی را که کیو‌آر دارد در ‎acct/<شناسه>‎ی همین پمپ
+ * می‌نویسد: ‎{v, k, at, d}‎. ‎k‎ رمزِ **همان یک حساب** است که داخلِ کیو‌آرِ
+ * مشتری چاپ شده. این‌جا فقط با همان رمز باز می‌شود — نه رمزِ برنامه، نه
+ * رمزِ خواندن — و فقط ‎{at, d}‎ پس می‌دهد؛ خودِ ‎k‎ هرگز برنمی‌گردد.
+ *
+ * ⚠️ «پمپ نیست»، «حساب نیست» و «رمز غلط» عمداً یکی‌اند (‎404‎)، تا کسی با
+ * آزمون‌وخطا نفهمد کدام شناسه‌ها هست. مقایسهٔ رمز زمان‌ثابت است.
+ *
+ * ⚠️ CORS باز است: صفحهٔ مشتری روی دامنهٔ خودِ پمپ (‎yaqobipump.top/view‎)
+ * است و از این‌جا می‌پرسد. داده‌ای که پشتِ رمزِ همان حساب است، برای همان
+ * حساب عمومی است.
+ */
+router.get('/:code/acct/:id', (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Cache-Control', 'no-store');
+  const stations = getStations();
+  if (!stations) return res.status(503).json({ error: 'stations_disabled' });
+
+  const code = safeCode(req.params.code);
+  const id = String(req.params.id || '').trim();
+  const key = String(req.query.k || '').trim();
+  if (!/^[a-z][0-9]{1,18}$/.test(id) || !/^[A-Za-z0-9]{8,64}$/.test(key) || !stations.has(code)) {
+    return res.status(404).json({ error: 'not_found' });
+  }
+  const env = stations.get(code).read(ACCT_BRANCH + '/' + id);
+  if (!env || typeof env !== 'object' || !timingEqual(String(env.k || ''), key)) {
+    return res.status(404).json({ error: 'not_found' });
+  }
+  res.json({ ok: true, at: Number(env.at) || 0, d: env.d === undefined ? null : env.d });
 });
 
 /** نام و کدِ پمپ — کم‌هزینه‌ترین راهِ «این رمز به کجا می‌خورد؟» */
@@ -398,6 +446,22 @@ for (const name of ['stats', 'stations', 'users', 'subscriptions', 'expiring', '
     } catch (err) { cloudFail(res, err); }
   });
 }
+
+/**
+ * آینهٔ ابر در پوشهٔ داده — «حساب‌ها از سرور به فولدرِ خودِ سرور ثبت می‌شه؟»
+ * حالا بله: هر نیم ساعت خودکار، و با این دکمه همین حالا.
+ */
+adminRouter.get('/cloud/mirror', (req, res) => {
+  res.json({ ok: true, dir: mirrorDir(config.dataDir), last: readMirrorStatus(config.dataDir) });
+});
+adminRouter.post('/cloud/mirror', requireWriteRole('operator'), async (req, res) => {
+  const mirror = getMirror();
+  if (!mirror) return res.status(503).json({ error: 'stations_disabled' });
+  const rep = await mirror.now();
+  if (rep?.skipped === 'not_linked') return res.status(409).json({ error: 'not_linked', report: rep });
+  logEvent('stations', 'cloud_mirrored', { ok: rep?.ok?.length || 0, failed: rep?.failed?.length || 0 });
+  res.json({ ok: true, report: rep, dir: mirrorDir(config.dataDir) });
+});
 
 /** اشتراک دادن یا تمدید — همان کاری که در بخشِ دکان می‌شود. */
 adminRouter.post('/cloud/grant', requireWriteRole('operator'), async (req, res) => {

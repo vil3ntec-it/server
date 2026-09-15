@@ -17,6 +17,8 @@ import { pruneSessions } from './auth.js';
 import { setSiteSync, setStations, setIo, getIo } from './state.js';
 import { createSiteSync } from './sitesync/index.js';
 import { createStations } from './stations/index.js';
+import { startMirror } from './stations/cloud-mirror.js';
+import { setMirror } from './state.js';
 import { attachRealtime, broadcastMetrics } from './realtime.js';
 import { startCollector, stopCollector } from './metrics/index.js';
 import { startWinSampler, stopWinSampler } from './metrics/win-sampler.js';
@@ -401,6 +403,11 @@ let stations = null;
 if (config.stations.enabled) {
   stations = createStations({ dataDir: config.stations.dataDir, enroll: config.stations.enroll });
   setStations(stations);
+  //  آینهٔ ابر در پوشهٔ داده — حساب‌ها و اشتراک‌های پمپ و دکان، فقط‌خواندنی
+  setMirror(startMirror({
+    dataDir: config.dataDir,
+    log: (m) => logEvent('info', 'stations', m),
+  }));
 }
 
 let siteSync = null;

@@ -1,7 +1,7 @@
 {
   "name": "control-center-desktop",
   "productName": "Control Center",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "private": true,
   "description": "Control Center — Windows desktop app for the home server panel",
   "type": "module",
@@ -54,10 +54,20 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.ico",
       "artifactName": "ControlCenter-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "ControlCenter-Portable-${version}.${ext}",
+      "requestExecutionLevel": "user"
     },
     "nsis": {
       "oneClick": false,

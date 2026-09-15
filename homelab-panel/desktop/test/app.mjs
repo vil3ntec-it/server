@@ -207,6 +207,39 @@ try {
   await win.waitForTimeout(1500);
   await win.waitForSelector('#dot.running', { timeout: 60000 });
   check('بعد از راه‌اندازی دوباره باز هم بالا می‌آید', true);
+
+  console.log('\n── برنامه در پوشه ──');
+  check('دکمهٔ «برنامه در پوشه» هست', await win.$('#btnCopyApp') !== null);
+  check('نشانهٔ خانه در پوشهٔ داده نوشته شد', fs.existsSync(path.join(DATA, 'ControlCenter.home.json')));
+
+  // ── از داخلِ پوشهٔ داده باز شدن — کامپیوترِ تازه ─────────────────────
+  //  کلِ پوشه (با نشانه) جای دیگری می‌رود، تنظیمِ قبلی‌ای در کار نیست
+  //  (user-data-dirِ تازه) و برنامه از «داخلِ همان پوشه» اجرا می‌شود.
+  await app.close().catch(() => {});
+  const MOVED = path.join(tmp, 'moved-home');
+  fs.cpSync(DATA, MOVED, { recursive: true });
+  const USER2 = path.join(tmp, 'userdata-2');
+  const app2 = await electron.launch({
+    executablePath: './node_modules/electron/dist/electron',
+    args: ['.', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', `--user-data-dir=${USER2}`],
+    cwd: process.cwd(),
+    env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: '1', PORTABLE_EXECUTABLE_DIR: MOVED },
+    timeout: 60000,
+  });
+  try {
+    console.log('\n── باز شدن از داخلِ پوشهٔ داده (کامپیوترِ تازه) ──');
+    const win2 = await app2.firstWindow({ timeout: 30000 });
+    await win2.waitForLoadState('domcontentloaded');
+    await win2.waitForSelector('#stage:not([hidden])', { timeout: 20000 });
+    check('بی سوال، مستقیم به صفحهٔ اصلی می‌رود', await win2.isHidden('#setup'));
+    await win2.waitForSelector('#dot.running', { timeout: 60000 });
+    const st2 = await win2.textContent('#statusText');
+    check('نوار می‌گوید از داخلِ پوشهٔ داده باز شده', st2.includes('از داخلِ پوشهٔ داده'), st2);
+    check('دیتابیسِ پنلِ همان پوشه به کار رفت', fs.existsSync(path.join(MOVED, 'panel.db')));
+    await win2.screenshot({ path: path.join(SHOTS, '9-run-from-home.png') });
+  } finally {
+    await app2.close().catch(() => {});
+  }
 } catch (e) {
   fail++;
   console.log(`\n❌ ${e.message}`);

@@ -44,6 +44,13 @@ const ALLOWED = {
   plans:        ['GET',  '/api/admin/plans'],
   grant:        ['POST', '/api/admin/pump/subscriptions'],
   makeCode:     ['POST', '/api/admin/pump/vip-codes'],
+
+  //  ⚠️ فقط برای آینه (‎cloud-mirror.js‎) — پنل این‌ها را نشان نمی‌دهد.
+  //  خواستهٔ صاحب مخزن: «فولدرِ سرور همه‌چی رو داشته باشه، چه از این چه
+  //  از اپِ شاپ.» پس حساب‌ها و اشتراک‌های دکان هم به پوشه می‌آیند.
+  shopUsers:    ['GET',  '/api/admin/users'],
+  shops:        ['GET',  '/api/admin/shops'],
+  shopSubs:     ['GET',  '/api/admin/subscriptions'],
 };
 
 // ── توکن ───────────────────────────────────────────────────────────

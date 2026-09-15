@@ -18,3 +18,10 @@ export const setIo = (v) => {
   io = v;
 };
 export const getIo = () => io;
+
+// آینهٔ ابر در پوشهٔ داده (‎stations/cloud-mirror.js‎) — {now, stop}
+let mirror = null;
+export const setMirror = (v) => {
+  mirror = v;
+};
+export const getMirror = () => mirror;

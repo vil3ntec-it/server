@@ -13,7 +13,7 @@
 //  پس این صفحه فقط یک پنجره است: می‌پرسد و نشان می‌دهد.
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from 'react';
-import { CreditCard, Users } from 'lucide-react';
+import { CreditCard, HardDriveDownload, Users } from 'lucide-react';
 
 import { api } from '../api';
 import { Card, Field, Loading, toast } from '../components/ui';
@@ -72,6 +72,23 @@ export default function StationsCloud() {
       setUsers([]); setSubs([]);
     }
   }, []);
+
+  //  آینهٔ ابر در پوشهٔ داده — «حساب‌ها از سرور به فولدرِ خودِ سرور ثبت می‌شه؟»
+  const [mirror, setMirror] = useState<MirrorInfo | null>(null);
+  const loadMirror = useCallback(async () => {
+    try { setMirror(await api<MirrorInfo>('/api/stations-admin/cloud/mirror')); } catch { /* اختیاری */ }
+  }, []);
+  useEffect(() => { loadMirror(); }, [loadMirror]);
+  async function mirrorNow() {
+    setBusy(true);
+    try {
+      await api('/api/stations-admin/cloud/mirror', { method: 'POST' });
+      await loadMirror();
+      toast('آینهٔ ابر در پوشهٔ داده تازه شد');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'نشد', 'bad');
+    } finally { setBusy(false); }
+  }
 
   useEffect(() => { loadStatus(); }, [loadStatus]);
   useEffect(() => { if (status?.linked) loadData(expiring); }, [status?.linked, expiring, loadData]);
@@ -200,6 +217,36 @@ export default function StationsCloud() {
           </Table>
         )}
       </Card>
+
+      <Card
+        title="آینهٔ ابر در پوشهٔ داده"
+        icon={<HardDriveDownload size={18} />}
+        action={<ActionButton onClick={mirrorNow} disabled={busy}>همین حالا تازه کن</ActionButton>}
+      >
+        <Notice>
+          حساب‌ها، اشتراک‌ها و کدهای پمپ — و حساب‌ها و اشتراک‌های دکان — هر نیم ساعت از ابر
+          گرفته و داخلِ پوشهٔ داده نوشته می‌شوند (<code dir="ltr">{mirror?.dir || '…/cloud'}</code>).
+          پوشه را به هر کامپیوتری ببرید، این‌ها هم با آن می‌روند. فقط‌خواندنی است؛ منبعِ اصلی همچنان ابر است.
+        </Notice>
+        <div className="mt-2 text-sm">
+          {mirror?.last
+            ? mirror.last.skipped
+              ? <span>آخرین بار ({fmtDate(mirror.last.at)}) رد شد: به ابر وصل نبودیم.</span>
+              : <span>
+                  آخرین بار {fmtDate(mirror.last.at)} — {mirror.last.ok?.length ?? 0} فایل رفت
+                  {mirror.last.failed?.length ? `، ${mirror.last.failed.length} نرفت (${mirror.last.failed.map((f) => f.file).join('، ')})` : ''}.
+                </span>
+            : <span>هنوز آینه‌ای گرفته نشده.</span>}
+        </div>
+      </Card>
     </>
   );
 }
+
+type MirrorInfo = {
+  dir: string;
+  last: null | {
+    at: number; reason?: string; skipped?: string;
+    ok?: string[]; failed?: { file: string; error: string }[];
+  };
+};
