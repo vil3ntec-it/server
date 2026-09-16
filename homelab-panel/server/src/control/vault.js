@@ -73,6 +73,30 @@ function decrypt({ ciphertext, iv, tag }) {
   return Buffer.concat([decipher.update(Buffer.from(ciphertext, 'base64')), decipher.final()]).toString('utf8');
 }
 
+/*
+ *  همان رمزنگاری، برای جاهای دیگری که یک مقدارِ کوتاه را باید بشود دوباره
+ *  خواند — مثلِ کدِ شش‌رقمی که صاحبِ سرور در پنل می‌بیند و کپی می‌کند.
+ *
+ *  روی همین کلیدِ اصلی می‌نشیند (data/vault.key)، پس اگر دیتابیس جدا از
+ *  پوشهٔ داده به دستِ کسی برسد، چیزی خوانده نمی‌شود. خروجی یک رشتهٔ تنهاست
+ *  تا در یک ستون جا شود.
+ */
+export function sealValue(plaintext) {
+  const { ciphertext, iv, tag } = encrypt(plaintext);
+  return `v1.${iv}.${tag}.${ciphertext}`;
+}
+
+/** بازکردنِ چیزی که sealValue بسته — اگر نشد، null (نه استثنا) */
+export function openValue(sealed) {
+  try {
+    const [version, iv, tag, ciphertext] = String(sealed || '').split('.');
+    if (version !== 'v1' || !iv || !tag || !ciphertext) return null;
+    return decrypt({ ciphertext, iv, tag });
+  } catch {
+    return null;
+  }
+}
+
 function hintOf(value) {
   const s = String(value);
   return s.length <= 4 ? '••••' : `••••${s.slice(-4)}`;

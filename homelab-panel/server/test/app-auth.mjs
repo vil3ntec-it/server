@@ -154,45 +154,78 @@ try {
 
   const cfg = await (await fetch(`${BASE}/api/app/config`)).json();
   check('GET /api/app/config جواب می‌دهد', cfg.ok === true);
-  check('پیامک روشن گزارش می‌شود', cfg.login?.smsReady === true);
+  check('پیامک خاموش گزارش می‌شود', cfg.login?.smsReady === false && cfg.login?.phone === false,
+    JSON.stringify(cfg.login));
   check('ایمیل روشن گزارش می‌شود', cfg.login?.emailReady === true);
   check('طولِ کد ۶ است', cfg.login?.codeLength === 6);
 
   const ping = await (await fetch(`${BASE}/api/app/ping`)).json();
   check('GET /api/app/ping جواب می‌دهد', ping.ok === true);
 
-  console.log('\n▶ ورود با شمارهٔ موبایل');
-  const phone = '۰۹۱۲۱۲۳۴۵۶۷'; // عمداً با ارقامِ فارسی
-  const req1 = await post('/api/app/auth/request-code', { phone, app: 'my-app' });
-  check('درخواستِ کد قبول شد', req1.status === 200 && req1.body.sent === true, JSON.stringify(req1.body));
-  check('کد از راهِ سرویسِ پیامک رفت', req1.body.via === 'webhook');
+  /*
+   *  ⚠️ ورود با پیامک برداشته شد و کدها فقط ایمیلی‌اند.
+   *
+   *  و «کد فرستاده شد» دیگر یعنی «کد ساخته و در صف نشست» — ارسال پشتِ سر
+   *  انجام می‌شود تا صدها درخواستِ هم‌زمان پشتِ گفت‌وگوی SMTP نمانند. پس
+   *  آزمون هم مثلِ خودِ برنامه منتظرِ رسیدنِ نامه می‌ماند.
+   */
+  const waitForMail = async (since = mailInbox.length) => {
+    for (let i = 0; i < 80 && mailInbox.length <= since; i++) await wait(100);
+    return mailInbox[mailInbox.length - 1] || '';
+  };
+
+  /** بدنهٔ ایمیل base64 است — هر تکه را جدا باز می‌کنیم */
+  const codeInMail = (mail) => {
+    const decoded = String(mail)
+      .split(/\r?\n/)
+      .reduce((runs, line) => {
+        if (/^[A-Za-z0-9+/=]{20,}$/.test(line)) runs[runs.length - 1] += line;
+        else if (runs[runs.length - 1] !== '') runs.push('');
+        return runs;
+      }, [''])
+      .map((chunk) => Buffer.from(chunk, 'base64').toString('utf8'))
+      .join('\n');
+    return (decoded.match(/(\d{6})/) || [])[1];
+  };
+
+  console.log('\n▶ پیامک برداشته شده است');
+  const byPhone = await post('/api/app/auth/request-code', { phone: '09121234567', app: 'my-app' });
+  check('درخواستِ شماره رد می‌شود', byPhone.status === 400, `status ${byPhone.status}`);
+  check('دلیلش روشن گفته می‌شود', byPhone.body.error === 'sms_removed', JSON.stringify(byPhone.body));
+  check('سرویسِ پیامک اصلاً صدا زده نشد', smsInbox.length === 0, JSON.stringify(smsInbox));
+
+  console.log('\n▶ ورود با ایمیل');
+  const before1 = mailInbox.length;
+  const req1 = await post('/api/app/auth/request-code', { email: 'Ali@Gmail.COM', app: 'my-app' });
+  check('درخواستِ کد قبول شد', req1.status === 200 && req1.body.ok === true, JSON.stringify(req1.body));
   check('کد در پاسخِ HTTP لو نمی‌رود', req1.body.code === undefined);
 
-  const sms = smsInbox[smsInbox.length - 1];
-  check('سرویسِ پیامک پیام گرفت', Boolean(sms), JSON.stringify(smsInbox));
-  check('شمارهٔ فارسی درست تبدیل شد', sms?.to === '09121234567', sms?.to);
-  const code = sms?.code;
+  const mail1 = await waitForMail(before1);
+  check('ایمیل به سرورِ ایمیل رسید', mail1.includes('robot@test.local'), mail1.slice(0, 100));
+  const code = codeInMail(mail1);
   check('کد شش‌رقمی است', /^\d{6}$/.test(String(code)), String(code));
 
-  const tooSoon = await post('/api/app/auth/request-code', { phone: '09121234567', app: 'my-app' });
-  check('درخواستِ پشتِ‌سرهم جلویش گرفته می‌شود', tooSoon.status === 429 && tooSoon.body.error === 'too_soon');
+  const tooSoon = await post('/api/app/auth/request-code', { email: 'ali@gmail.com', app: 'my-app' });
+  check('درخواستِ پشتِ‌سرهم جلویش گرفته می‌شود', tooSoon.status === 429 && tooSoon.body.error === 'too_soon',
+    JSON.stringify(tooSoon.body));
 
-  const wrong = await post('/api/app/auth/verify-code', { phone: '09121234567', code: '000000', app: 'my-app' });
+  const wrong = await post('/api/app/auth/verify-code', { email: 'ali@gmail.com', code: '000000', app: 'my-app' });
   check('کدِ غلط رد می‌شود', wrong.status === 400 && wrong.body.error === 'wrong_code', JSON.stringify(wrong.body));
   check('تعدادِ تلاشِ باقی‌مانده گفته می‌شود', typeof wrong.body.triesLeft === 'number');
 
-  const ok = await post('/api/app/auth/verify-code', { phone: '0912 123 4567', code, app: 'my-app', name: 'یعقوبی' });
+  const ok = await post('/api/app/auth/verify-code', { email: ' ALI@gmail.com ', code, app: 'my-app', name: 'یعقوبی' });
   check('کدِ درست توکن می‌دهد', ok.status === 200 && typeof ok.body.token === 'string', JSON.stringify(ok.body));
   check('کاربر تازه شناخته می‌شود', ok.body.isNew === true);
-  check('شماره به شکلِ جهانی ذخیره شد', ok.body.user?.phone === '+989121234567', ok.body.user?.phone);
+  check('ایمیل با حروفِ کوچک ذخیره شد', ok.body.user?.email === 'ali@gmail.com', ok.body.user?.email);
 
   const token = ok.body.token;
   const me = await (await fetch(`${BASE}/api/app/me`, { headers: { Authorization: `Bearer ${token}` } })).json();
-  check('GET /api/app/me با توکن کار می‌کند', me.ok === true && me.user.phone === '+989121234567');
+  check('GET /api/app/me با توکن کار می‌کند', me.ok === true && me.user.email === 'ali@gmail.com');
   check('نامِ کاربر ذخیره شد', me.user.name === 'یعقوبی');
 
-  const again = await post('/api/app/auth/verify-code', { phone: '09121234567', code, app: 'my-app' });
-  check('کدِ مصرف‌شده دوباره کار نمی‌کند', again.status === 400 && again.body.error === 'no_code');
+  const again = await post('/api/app/auth/verify-code', { email: 'ali@gmail.com', code, app: 'my-app' });
+  check('کدِ مصرف‌شده دوباره کار نمی‌کند', again.status === 400 && again.body.error === 'no_code',
+    JSON.stringify(again.body));
 
   console.log('\n▶ جداییِ توکنِ برنامه از پنل');
   const panel = await fetch(`${BASE}/api/dashboard`, { headers: { Authorization: `Bearer ${token}` } });
@@ -200,36 +233,17 @@ try {
   const noToken = await fetch(`${BASE}/api/app/me`);
   check('بدونِ توکن، /api/app/me بسته است', noToken.status === 401);
 
-  console.log('\n▶ ورود با ایمیل');
-  const req2 = await post('/api/app/auth/request-code', { email: 'Ali@Gmail.COM', app: 'my-app' });
-  check('درخواستِ کدِ ایمیل قبول شد', req2.status === 200 && req2.body.sent === true, JSON.stringify(req2.body));
-  check('از راهِ SMTP رفت', req2.body.via === 'smtp');
-  const mail = mailInbox[mailInbox.length - 1] || '';
-  check('ایمیل به سرورِ ایمیل رسید', mail.includes('robot@test.local'));
-  // بدنهٔ ایمیل base64 است — هر تکهٔ base64 را جدا باز می‌کنیم
-  const decoded = mail
-    .split(/\r?\n/)
-    .reduce((runs, line) => {
-      if (/^[A-Za-z0-9+/=]{20,}$/.test(line)) runs[runs.length - 1] += line;
-      else if (runs[runs.length - 1] !== '') runs.push('');
-      return runs;
-    }, [''])
-    .map((chunk) => Buffer.from(chunk, 'base64').toString('utf8'))
-    .join('\n');
-  const mailCode = (decoded.match(/(\d{6})/) || [])[1];
-  check('کدِ شش‌رقمی داخلِ ایمیل هست', Boolean(mailCode), decoded.slice(0, 120));
-
-  const okMail = await post('/api/app/auth/verify-code', { email: 'ali@gmail.com', code: mailCode, app: 'my-app' });
-  check('ورود با ایمیل توکن می‌دهد', okMail.status === 200 && typeof okMail.body.token === 'string');
-  check('ایمیل با حروفِ کوچک ذخیره شد', okMail.body.user?.email === 'ali@gmail.com');
-
   console.log('\n▶ هر برنامه، کاربرانِ خودش');
   await wait(2100);
-  const otherApp = await post('/api/app/auth/request-code', { phone: '09121234567', app: 'shop' });
-  check('همان شماره در برنامهٔ دیگر هم کد می‌گیرد', otherApp.status === 200, JSON.stringify(otherApp.body));
-  const codeShop = smsInbox[smsInbox.length - 1]?.code;
-  const shopLogin = await post('/api/app/auth/verify-code', { phone: '09121234567', code: codeShop, app: 'shop' });
-  check('کاربرِ برنامهٔ دوم جداست', shopLogin.body.user?.id !== ok.body.user?.id && shopLogin.body.isNew === true);
+  const before2 = mailInbox.length;
+  const otherApp = await post('/api/app/auth/request-code', { email: 'ali@gmail.com', app: 'shop' });
+  check('همان ایمیل در برنامهٔ دیگر هم کد می‌گیرد', otherApp.status === 200, JSON.stringify(otherApp.body));
+  const codeShop = codeInMail(await waitForMail(before2));
+  check('کدِ برنامهٔ دوم با اولی فرق دارد', codeShop && codeShop !== code, `${code} / ${codeShop}`);
+
+  const shopLogin = await post('/api/app/auth/verify-code', { email: 'ali@gmail.com', code: codeShop, app: 'shop' });
+  check('کاربرِ برنامهٔ دوم جداست',
+    shopLogin.body.user?.id !== ok.body.user?.id && shopLogin.body.isNew === true, JSON.stringify(shopLogin.body));
 
   //  ⚠️ نشستِ هر بخش فقط مالِ همان بخش است.
   //  تا پیش از این requireAppUser نامِ برنامهٔ نشست را دور می‌ریخت، پس
@@ -262,29 +276,22 @@ try {
   const formRes = await fetch(`${BASE}/api/app/auth/request-code`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ phone: '09350001122', app: 'my-app' }),
+    body: new URLSearchParams({ email: 'form@example.com', app: 'my-app' }),
   });
   const formBody = await formRes.json().catch(() => ({}));
-  check('فرمِ ساده هم قبول می‌شود', formRes.status === 200 && formBody.sent === true, JSON.stringify(formBody));
-
-  console.log('\n▶ وقتی سرویسِ پیامک خراب است');
-  await wait(2100);
-  const broken = await post('/api/app/auth/request-code', { phone: '09990000000', app: 'my-app' });
-  check('خطای سرویسِ پیامک به برنامه گفته می‌شود', broken.status === 502 && broken.body.error === 'not_sent', JSON.stringify(broken.body));
-  check('متنِ خطا هم می‌آید', typeof broken.body.deliveryError === 'string');
+  check('فرمِ ساده هم قبول می‌شود', formRes.status === 200 && formBody.ok === true, JSON.stringify(formBody));
 
   console.log('\n▶ فرمی که هر دو فیلد را می‌فرستد');
   await wait(2100);
   const bothFields = await post('/api/app/auth/request-code', { phone: '', email: 'zahra@example.com', app: 'my-app' });
-  check('فیلدِ خالی نادیده گرفته می‌شود', bothFields.status === 200 && bothFields.body.channel === 'email', JSON.stringify(bothFields.body));
+  check('فیلدِ خالی نادیده گرفته می‌شود', bothFields.status === 200 && bothFields.body.channel === 'email',
+    JSON.stringify(bothFields.body));
 
   console.log('\n▶ ورودی‌های غلط');
-  const bad1 = await post('/api/app/auth/request-code', { phone: '12' });
-  check('شمارهٔ خراب رد می‌شود', bad1.status === 400 && bad1.body.error === 'bad_phone');
   const bad2 = await post('/api/app/auth/request-code', { email: 'not-an-email' });
-  check('ایمیلِ خراب رد می‌شود', bad2.status === 400 && bad2.body.error === 'bad_email');
+  check('ایمیلِ خراب رد می‌شود', bad2.status === 400 && bad2.body.error === 'bad_email', JSON.stringify(bad2.body));
   const bad3 = await post('/api/app/auth/request-code', {});
-  check('ورودیِ خالی رد می‌شود', bad3.status === 400 && bad3.body.error === 'empty');
+  check('ورودیِ خالی رد می‌شود', bad3.status === 400 && bad3.body.error === 'empty', JSON.stringify(bad3.body));
 
   console.log('\n▶ صفحهٔ راهنما و پورتِ عمومی');
   const page = await fetch(`${BASE}/connect`);
@@ -330,15 +337,23 @@ try {
   check('تنظیماتِ اختصاصیِ برنامه ذخیره می‌شود', tuned.ok && tunedBody.client?.codeLength === 5 && tunedBody.client?.requireKey === true, JSON.stringify(tunedBody));
 
   await wait(2100);
-  const withoutKey = await post('/api/app-admin/../app/auth/request-code', { phone: '09120000001', app: 'test-shop' });
+  const withoutKey = await post('/api/app-admin/../app/auth/request-code', { email: 'shopper@example.com', app: 'test-shop' });
   check('وقتی کلید لازم است، بی‌کلید رد می‌شود', withoutKey.status === 401 && withoutKey.body.error === 'bad_api_key', JSON.stringify(withoutKey.body));
 
-  const withKey = await post('/api/app/auth/request-code', { phone: '09120000001', app: 'test-shop', key: made.body.client.apiKey });
+  const beforeShop = mailInbox.length;
+  const withKey = await post('/api/app/auth/request-code', { email: 'shopper@example.com', app: 'test-shop', key: made.body.client.apiKey });
   check('با کلیدِ درست قبول می‌شود', withKey.status === 200 && withKey.body.ok === true, JSON.stringify(withKey.body));
-  const shopSms = smsInbox[smsInbox.length - 1];
-  check('متنِ پیامکِ اختصاصی رفت', String(shopSms?.text || '').includes('کد فروشگاه'), shopSms?.text);
-  check('طولِ کدِ اختصاصی ۵ شد', /^\d{5}$/.test(String(shopSms?.code)), String(shopSms?.code));
-  check('زمانِ فرستادن گزارش می‌شود', typeof withKey.body.tookMs === 'number' && withKey.body.tookMs < 5000, String(withKey.body.tookMs));
+  /*
+   *  ⚠️ طولِ کد دیگر برای هر برنامه جدا تنظیم نمی‌شود.
+   *
+   *  یک موتور همهٔ برنامه‌ها را اداره می‌کند و طولِ کد آن‌جا یک‌جا تعیین
+   *  می‌شود (پیش‌فرض شش). سطرِ code_length در دفترِ قدیمی مانده ولی کاری
+   *  نمی‌کند — و همین بهتر است از اینکه بنویسدش و هیچ اثری نداشته باشد.
+   */
+  const shopMail = await waitForMail(beforeShop);
+  check('ایمیلِ همین برنامه رفت', shopMail.includes('shopper@example.com'), shopMail.slice(0, 120));
+  check('کد شش‌رقمی است', /^\d{6}$/.test(String(codeInMail(shopMail))), String(codeInMail(shopMail)));
+  check('زمانِ ساختِ کد گزارش می‌شود', typeof withKey.body.tookMs === 'number' && withKey.body.tookMs < 5000, String(withKey.body.tookMs));
 
   // خاموش کردنِ یک برنامه
   await fetch(`${BASE}/api/app-admin/clients/test-shop`, {

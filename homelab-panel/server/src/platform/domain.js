@@ -122,6 +122,29 @@ export function registrableRoot(raw) {
 }
 
 /**
+ * ریشهٔ دامنه — از *هر* نامی، حتی زیردامنه.
+ *
+ *      sync.vill3n.top   →  vill3n.top
+ *      a.b.yaqobi.co.ir  →  yaqobi.co.ir
+ *      vill3n.top        →  vill3n.top
+ *
+ * ⚠️ فرقش با registrableRoot این است که آن یکی برای زیردامنه null می‌دهد
+ * («این خودش ریشه نیست»). آن معنی جای خودش لازم است، ولی برای ساختنِ
+ * زیردامنه‌های نقش‌دار غلط بود: کسی که تونلش روی sync.example.com نشسته،
+ * ریشه‌اش example.com است و باید admin.example.com بگیرد — نه هیچ‌چیز.
+ * همین باعث شده بود برنامهٔ مدیر هیچ آدرسی نداشته باشد و به آدرسِ تونل
+ * بیفتد، که اصلاً پنل را سرو نمی‌کند.
+ */
+export function rootOf(raw) {
+  const clean = cleanDomain(raw);
+  if (!clean) return null;
+  const labels = clean.replace(/^www\./, '').split('.');
+  const suffixLabels = TWO_PART_SUFFIXES.has(labels.slice(-2).join('.')) ? 2 : 1;
+  const keep = suffixLabels + 1;
+  return labels.length >= keep ? labels.slice(-keep).join('.') : null;
+}
+
+/**
  * آدرسِ APIِ یک دامنه.
  * @returns {string|null} api.<ریشه>، یا null اگر دامنه ریشه نباشد یا خودش
  *   یکی از زیردامنه‌های نقش‌دار (api/admin/files) باشد.
@@ -132,6 +155,33 @@ export function apiHostFor(raw) {
   const first = clean.split('.')[0];
   // api.foo.com که دوباره api.api.foo.com نشود
   if (ROLE_PREFIXES.has(first) && first !== 'www') return null;
+  /*
+   *  ⚠️ عمداً registrableRoot و نه rootOf.
+   *
+   *  اگر کسی زیردامنه‌ای مثلِ shop.example.com را به‌عنوان سایت اضافه کند،
+   *  نباید api.example.com ساخته شود: شاید کلِ example.com اصلاً مالِ او
+   *  نباشد و رکوردِ DNS جای دیگری بنشیند. آدرسِ API فقط از دامنه‌ای می‌آید
+   *  که خودش ریشه است.
+   */
   const root = registrableRoot(clean);
   return root ? `api.${root}` : null;
+}
+
+/**
+ * آدرسِ برنامهٔ مدیر روی هر دامنه: `admin.<دامنه>`.
+ *
+ *      📱 ویلن ادمین → https://admin.yaqobipump.top → ☁️ → 🏠 سرور
+ *
+ *  ⚠️ چرا زیردامنهٔ جدا و نه همان دامنهٔ اصلی: روی دامنهٔ اصلی، سایت و
+ *  APIِ عمومی نشسته‌اند و هر کسی می‌تواند بازشان کند. این یکی فقط یک در
+ *  دارد و آن هم بی کلیدِ همان گوشی باز نمی‌شود — پس هرچه پشتش است، از
+ *  بقیهٔ دامنه جدا می‌ماند.
+ */
+export function adminHostFor(raw) {
+  const clean = cleanDomain(raw);
+  if (!clean) return null;
+  const first = clean.split('.')[0];
+  if (ROLE_PREFIXES.has(first) && first !== 'www') return null;
+  const root = rootOf(clean);
+  return root ? `admin.${root}` : null;
 }

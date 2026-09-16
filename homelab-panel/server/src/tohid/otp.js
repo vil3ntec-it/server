@@ -1,159 +1,114 @@
 // ---------------------------------------------------------------------------
-//  کدِ شش‌رقمیِ ورود
+//  کدِ ورودِ فروشگاه — حالا روی موتورِ «کدهای شش‌رقمی»
 //
-//  قانون‌ها:
-//    • خودِ کد هیچ‌جا ذخیره نمی‌شود — فقط hash آن، و بعد از مصرف پاک می‌شود.
-//    • برای هر نشانی، یک کدِ فعال؛ کدِ تازه جای قبلی را می‌گیرد.
-//    • فاصلهٔ اجباری بینِ دو درخواست، و سقفِ تعدادِ حدس.
-//    • کد هیچ‌وقت در لاگ نوشته نمی‌شود.
+//  ⚠️ این فایل دیگر موتور نیست، یک مترجم است.
+//
+//  تا پیش از این، فروشگاه موتورِ کدِ خودش را داشت (جدولِ th_otp) و برنامه‌ها
+//  یکی دیگر را. دو موتور برای یک کار یعنی دو جا برای خراب شدن، دو جای
+//  تنظیم، و کدی که در هیچ‌کدام از صفحه‌های پنل دیده نمی‌شد. حالا هر دو به
+//  server/src/codes/ می‌روند: یک موتور، یک صف، و یک فهرست که همه‌چیز در آن
+//  دیده می‌شود.
+//
+//  ⚠️ پیامک برداشته شد. خواستهٔ صاحبِ سرور این بود که کدها فقط ایمیلی باشند.
+//  درخواستِ شماره بی‌صدا رد نمی‌شود؛ خطایی برمی‌گردد که خودِ برنامه بتواند
+//  به کاربر بگوید ایمیلش را بزند.
 // ---------------------------------------------------------------------------
-import crypto from 'node:crypto';
 import { db } from '../db.js';
-import { readTohidSettings, mailSettings } from './settings.js';
-import { sendMail } from './smtp.js';
-import { sendSms } from './sms.js';
-import { otpEmail } from '../emails/otp.js';
+import { readTohidSettings } from './settings.js';
+import { codeSettings } from '../codes/settings.js';
+import { drainQueue } from '../codes/queue.js';
+import { ensureApp, liveRequest } from '../codes/store.js';
+import {
+  issueCode,
+  normalizeEmail,
+  revealCode,
+  verifyCode as verifyWithEngine,
+} from '../codes/service.js';
 
-const hash = (v) => crypto.createHash('sha256').update(String(v)).digest('hex');
+/** شناسهٔ فروشگاه در دفترِ برنامه‌ها */
+export const SHOP_APP = 'shop';
 
-function sixDigits() {
-  // بازهٔ ۱۰۰۰۰۰ تا ۹۹۹۹۹۹ به‌صورت یکنواخت
-  return String(100000 + crypto.randomInt(900000));
+function shopApp() {
+  // کلید لازم نیست: این مسیر از قبل ورودِ خودش را دارد و از بیرونِ پنل
+  // با توکنِ خودِ فروشگاه محافظت می‌شود
+  const row = ensureApp(SHOP_APP, { name: 'فروشگاه', kind: 'app' });
+  return row;
 }
 
+const smsGone = () =>
+  Object.assign(new Error('ورود با پیامک برداشته شد — ایمیلتان را وارد کنید'), { code: 'sms_removed' });
+
 export function normalizeContact(method, value) {
-  const raw = String(value || '').trim();
-  if (method === 'email') {
-    const v = raw.toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
-      throw Object.assign(new Error('ایمیل درست نیست'), { code: 'bad_email' });
-    }
-    return v;
-  }
-  const digits = raw.replace(/[\s-]/g, '');
-  if (!/^\+?\d{9,13}$/.test(digits)) {
-    throw Object.assign(new Error('شماره درست نیست'), { code: 'bad_phone' });
-  }
-  return digits;
+  if (method !== 'email') throw smsGone();
+  const email = normalizeEmail(value);
+  if (!email) throw Object.assign(new Error('ایمیل درست نیست'), { code: 'bad_email' });
+  return email;
 }
 
 /**
  * ساخت و فرستادنِ کد.
- * اگر فرستادن شکست بخورد، کد ذخیره نمی‌ماند — وگرنه کاربر پشتِ کدی می‌ماند
- * که هرگز به دستش نرسیده.
+ *
+ * `deliver = false` یعنی «فقط بساز، نفرست» — همان چیزی که صفحهٔ «فرستادنِ
+ * دستی» لازم دارد: کد به مدیر برمی‌گردد تا خودش برای مشتری بفرستد.
  */
 export async function sendCode({ method, value, name, deliver = true, force = false }) {
-  const cfg = readTohidSettings();
-  const contact = normalizeContact(method, value);
-  const now = Date.now();
-  const code = sixDigits();
-  const minutes = Math.round(cfg.otpTtlSeconds / 60);
+  if (method !== 'email') throw smsGone();
 
-  /*
-   *  ⚠️ اول جا را می‌گیریم، بعد می‌فرستیم — و این ترتیب عمدی است.
-   *
-   *  قبلاً بررسیِ فاصله بالا بود و ذخیره پایین، با یک await (فرستادنِ ایمیل)
-   *  در میانه. دو درخواستِ پشتِ هم هر دو از بررسی رد می‌شدند، هر دو ایمیل
-   *  می‌فرستادند، و بعد هر دو می‌نوشتند. جدول UNIQUE(method, value) دارد پس
-   *  فقط یکی می‌ماند: کاربر دو ایمیل می‌گرفت و کدِ اولی — که معمولاً همان را
-   *  می‌خواند — کار نمی‌کرد.
-   *
-   *  حالا این تکه یک‌جا و بدونِ await اجرا می‌شود، پس هیچ درخواستِ دیگری
-   *  نمی‌تواند وسطش بیفتد. برای هر نشانی همیشه دقیقاً یک کدِ زنده هست؛ نه
-   *  صف، نه دو کدِ هم‌زمان.
-   */
-  const previous = db.prepare('SELECT created_at FROM th_otp WHERE method = ? AND value = ?').get(method, contact);
-  if (previous && !force) {
-    const wait = cfg.resendSeconds * 1000 - (now - previous.created_at);
-    if (wait > 0) {
-      throw Object.assign(
-        new Error(`تا ${Math.ceil(wait / 1000)} ثانیهٔ دیگر دوباره تلاش کنید`),
-        { code: 'too_soon', wait: Math.ceil(wait / 1000) },
-      );
-    }
-  }
-  db.prepare('DELETE FROM th_otp WHERE method = ? AND value = ?').run(method, contact);
-  db.prepare(`
-    INSERT INTO th_otp (method, value, code_hash, name, created_at, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(method, contact, hash(code), String(name || '').trim() || null, now, now + cfg.otpTtlSeconds * 1000);
+  const app = shopApp();
+  const result = issueCode({
+    app: app.slug,
+    email: value,
+    subjectId: name ? String(name).slice(0, 80) : null,
+    purpose: 'login',
+    force,
+  });
 
-  /*
-   *  deliver = false یعنی «فقط بساز، نفرست».
-   *
-   *  ⚠️ برای وقتی است که سرویسِ ایمیل هنوز تنظیم نشده. صاحبِ سرور کد را در
-   *  پنل می‌بیند و خودش برای مشتری می‌فرستد — به‌جای اینکه کاربر پشتِ کدی
-   *  بماند که هیچ‌وقت نمی‌رسد. کد فقط در همان پاسخِ API برمی‌گردد و هیچ‌جا
-   *  لاگ نمی‌شود.
-   */
-  try {
-    await deliverCode({ method, contact, code, minutes, deliver });
-  } catch (e) {
-    // کدی که به دستِ کاربر نرسیده نباید بماند — وگرنه پشتِ کدی می‌ماند که
-    // هیچ‌وقت نگرفته و کدِ تازه هم به‌خاطرِ فاصله رد می‌شود
-    db.prepare('DELETE FROM th_otp WHERE method = ? AND value = ?').run(method, contact);
-    throw e;
-  }
-
-  // کد فقط وقتی برمی‌گردد که خودمان نفرستاده باشیم — و آن مسیر فقط admin است
-  return deliver ? { ok: true } : { ok: true, code, minutes, contact };
-}
-
-/** رساندنِ کد از راهی که خواسته شده */
-async function deliverCode({ method, contact, code, minutes, deliver }) {
-  if (!deliver) return;
-  if (method === 'email') {
-    // نامِ فرستنده همان نامی است که در هدرِ ایمیل هم می‌نشیند، پس کاربر یک
-    // نام می‌بیند نه دو تا
-    const mail = mailSettings();
-    const { subject, html, text } = otpEmail({
-      code,
-      minutes,
-      appName: mail.fromName || 'توحید',
+  if (!result.ok) {
+    throw Object.assign(new Error(result.message || 'کد فرستاده نشد'), {
+      code: result.error,
+      wait: result.retryAfter,
     });
-    await sendMail(mail, { to: contact, subject, html, text });
-  } else {
-    // متنِ پیامک از تنظیمات می‌آید تا هر دکان بتواند نامِ خودش را بگذارد
-    const text = String(readTohidSettings().otpMessage || 'کد ورود شما: {code}')
-      .replaceAll('{code}', code)
-      .replaceAll('{minutes}', String(minutes));
-    await sendSms({ to: contact, text });
   }
+
+  const minutes = Math.max(1, Math.round((codeSettings().ttlSeconds || 120) / 60));
+
+  if (!deliver) {
+    /*
+     *  کد باید برگردد، ولی نباید در صف بماند و خودش هم برود — وگرنه مشتری
+     *  دو کد می‌گیرد و آن که مدیر خوانده، کارِ کدِ دوم را خراب می‌کند.
+     */
+    const row = liveRequest(app.slug, normalizeContact('email', value));
+    markHandled(result.id);
+    return { ok: true, code: revealCode(row), minutes, contact: row?.email || value };
+  }
+
+  // صف را هل می‌دهیم تا در بارِ کم منتظرِ تیکِ بعدی نماند
+  drainQueue().catch(() => { /* خطا روی ردیفِ خودش ثبت می‌شود */ });
+  return { ok: true };
 }
 
-/** بررسیِ کد. کدِ درست همان لحظه مصرف و پاک می‌شود. */
+/** ردیفی که خودِ مدیر دستی می‌فرستد، نباید صف هم بفرستدش */
+function markHandled(id) {
+  db.prepare("UPDATE code_requests SET send_state = 'sent', sent_at = ? WHERE id = ?").run(Date.now(), id);
+}
+
+/** بررسیِ کد. کدِ درست همان لحظه مصرف و باطل می‌شود. */
 export function verifyCode({ method, value, code }) {
-  const cfg = readTohidSettings();
-  const contact = normalizeContact(method, value);
-  const row = db.prepare('SELECT * FROM th_otp WHERE method = ? AND value = ?').get(method, contact);
+  if (method !== 'email') throw smsGone();
 
-  if (!row) throw Object.assign(new Error('کدی برای این نشانی فرستاده نشده'), { code: 'no_code' });
-  if (row.expires_at < Date.now()) {
-    db.prepare('DELETE FROM th_otp WHERE id = ?').run(row.id);
-    throw Object.assign(new Error('کد منقضی شده — دوباره درخواست کنید'), { code: 'expired' });
+  const result = verifyWithEngine({ app: SHOP_APP, email: value, code });
+  if (!result.ok) {
+    throw Object.assign(new Error(result.message || 'کد درست نیست'), { code: result.error });
   }
-  if (row.tries >= cfg.maxTries) {
-    db.prepare('DELETE FROM th_otp WHERE id = ?').run(row.id);
-    throw Object.assign(new Error('تعداد تلاش زیاد شد — کد تازه بگیرید'), { code: 'too_many_tries' });
-  }
-
-  const given = String(code || '').trim();
-  const expected = row.code_hash;
-  const ok = given.length === 6 && crypto.timingSafeEqual(
-    Buffer.from(hash(given), 'hex'),
-    Buffer.from(expected, 'hex'),
-  );
-
-  if (!ok) {
-    db.prepare('UPDATE th_otp SET tries = tries + 1 WHERE id = ?').run(row.id);
-    throw Object.assign(new Error('کد درست نیست'), { code: 'bad_code' });
-  }
-
-  db.prepare('DELETE FROM th_otp WHERE id = ?').run(row.id);
-  return { ok: true, contact, name: row.name };
+  return { ok: true, contact: result.email, name: result.subjectId || null };
 }
 
-/** کدهای منقضی را جمع می‌کند */
+/** کدهای منقضی را موتورِ خودش جمع می‌کند — این‌جا فقط برای سازگاری مانده */
 export function pruneCodes() {
-  db.prepare('DELETE FROM th_otp WHERE expires_at < ?').run(Date.now());
+  return 0;
+}
+
+/** تنظیماتِ فروشگاه هنوز مدتِ اعتبار را نشان می‌دهد */
+export function otpTtlSeconds() {
+  return readTohidSettings().otpTtlSeconds || codeSettings().ttlSeconds;
 }

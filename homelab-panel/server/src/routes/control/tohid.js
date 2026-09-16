@@ -19,7 +19,8 @@ import {
   setSmsToken, mailPassword,
 } from '../../tohid/settings.js';
 import { sendMail } from '../../tohid/smtp.js';
-import { smsReady } from '../../tohid/sms.js';
+import { recentRequests } from '../../codes/store.js';
+import { SHOP_APP } from '../../tohid/otp.js';
 import { sendCode } from '../../tohid/otp.js';
 import { onlineNow, connectionStats } from '../../tohid/presence.js';
 import { shopInfo } from '../../tohid/shop.js';
@@ -359,12 +360,25 @@ router.post('/settings/test-mail', requireRole('admin'), guard(async (req, res) 
 router.get('/otp', guard(async (_req, res) => {
   const cfg = readTohidSettings();
   const now = Date.now();
-  const rows = db.prepare('SELECT method, value, name, tries, created_at, expires_at FROM th_otp ORDER BY created_at DESC LIMIT 50').all();
+  /*
+   *  کدها دیگر در جدولِ خودِ فروشگاه نیستند: یک موتور همهٔ برنامه‌ها را
+   *  اداره می‌کند و ردیف‌ها آن‌جا می‌نشینند. این صفحه همان کدهای فروشگاه را
+   *  از همان‌جا می‌خواند، پس چیزی که نشان می‌دهد با «کدهای شش‌رقمی» یکی است.
+   */
+  const rows = recentRequests({ app: SHOP_APP, limit: 50 }).map((r) => ({
+    method: 'email',
+    value: r.email,
+    name: r.subject_id,
+    tries: r.tries,
+    created_at: r.created_at,
+    expires_at: r.expires_at,
+  }));
 
   res.json({
     channels: {
       email: { ready: Boolean(cfg.mail?.host && mailPassword()), host: cfg.mail?.host || '' },
-      sms: { ready: smsReady(), url: cfg.sms?.url || '' },
+      // پیامک برداشته شد — کدها فقط ایمیلی‌اند
+      sms: { ready: false, removed: true, url: '' },
     },
     ttlSeconds: cfg.otpTtlSeconds,
     resendSeconds: cfg.resendSeconds,
@@ -395,7 +409,7 @@ function mask(method, value) {
 
 /** پاک کردنِ کدهای منقضی — کاری که خودِ سرور هم می‌کند، اینجا دستی */
 router.post('/otp/purge', requireRole('operator'), guard(async (req, res) => {
-  const info = db.prepare('DELETE FROM th_otp WHERE expires_at <= ?').run(Date.now());
+  const info = db.prepare('DELETE FROM code_requests WHERE app = ? AND expires_at <= ?').run(SHOP_APP, Date.now());
   audit({ actor: actorOf(req), action: 'tohid.otp.purge', entity: 'tohid' });
   res.json({ ok: true, removed: info.changes });
 }));

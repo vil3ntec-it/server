@@ -10,7 +10,16 @@ import { allSettings, getSetting, setSetting, logEvent } from '../db.js';
 import { config, paths } from '../config.js';
 import { versionInfo } from '../version.js';
 import { sitesRoot, setSitesRoot, NEXT_TO_SERVER } from '../sites/root.js';
+import { folderReport, moveSitesIntoFolder } from '../sites/portable.js';
 import { normalizeDomain } from '../sites/registry.js';
+import { adminUrl, publicState as tunnelState } from '../tunnel.js';
+import {
+  GATE_HEADER,
+  GATE_PREFIX,
+  issueGateKey,
+  listGateDevices,
+  revokeGateDevice,
+} from '../api/admin-gate.js';
 
 const router = Router();
 
@@ -145,6 +154,80 @@ router.delete('/logo', async (req, res) => {
   if (file) await fsp.rm(file, { force: true });
   setSetting('logo_file', null);
   res.json({ ok: true });
+});
+
+/* ── پوشهٔ قابل‌حمل ────────────────────────────────────────────────────────
+   «اگر همین الان پوشه را بردارم و ببرم، چه چیزی جا می‌ماند؟» — جوابش را
+   پیش از جابه‌جایی باید دید، نه بعد از اینکه سرور روی کامپیوترِ تازه بالا
+   نیامد. */
+router.get('/portable', (req, res) => {
+  res.json({ ok: true, ...folderReport() });
+});
+
+/* آوردنِ سایت‌ها به داخلِ پوشه — فایل‌ها واقعاً جابه‌جا می‌شوند، پس فقط با
+   درخواستِ صریح. گزارش می‌گوید کدام رفت و کدام نه. */
+router.post('/portable/move-sites', async (req, res) => {
+  try {
+    const report = await moveSitesIntoFolder({ actor: req.user?.username || 'admin' });
+    logEvent('info', 'panel', `سایت‌ها به داخلِ پوشهٔ داده آورده شدند (${report.moved.length} مورد)`);
+    res.json(report);
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+/* ── درِ مدیر: رسیدن به کلِ سرور از راهِ دامنه ──────────────────────────────
+   تونل فقط پورتِ عمومی را بیرون می‌دهد و پنل هرگز به اینترنت درز نمی‌کند —
+   آن تصمیم سرِ جایش است. برنامهٔ مدیر اما باید از بیرونِ خانه به همه‌چیز
+   برسد، پس درِ جداگانه‌ای دارد که پشتِ کلیدِ مخصوصِ همان دستگاه است.
+
+   ⚠️ صدورِ کلید فقط از همین مسیرِ خصوصی ممکن است — یعنی از داخلِ خانه و با
+   ورودِ مدیر. از خودِ دامنه هیچ‌وقت نمی‌شود کلیدِ تازه گرفت، وگرنه آن در
+   خودش را باز می‌کرد. */
+router.get('/remote', (req, res) => {
+  const tunnel = tunnelState();
+  const admin = adminUrl();
+  res.json({
+    ok: true,
+    /*
+     *  آدرسی که برنامه باید از بیرونِ خانه بزند.
+     *
+     *  ⚠️ اگر دامنه‌ای ساخته شده، آدرسِ اختصاصیِ برنامه (admin.<دامنه>)
+     *  ترجیح دارد: ثابت است، جدا از سایت، و پشتش فقط همان در است. آدرسِ
+     *  تونلِ سریع فقط وقتی می‌آید که دامنه‌ای نباشد — و آن آدرس با هر بار
+     *  روشن شدنِ سرور عوض می‌شود.
+     */
+    url: admin || tunnel.url || null,
+    adminUrl: admin,
+    tunnelUrl: tunnel.url || null,
+    hostname: tunnel.hostname || null,
+    running: tunnel.status === 'running',
+    permanent: Boolean(tunnel.permanent),
+    gatePath: GATE_PREFIX,
+    gateHeader: GATE_HEADER,
+    devices: listGateDevices(),
+  });
+});
+
+/* کلیدِ تازه برای یک دستگاه. خودِ کلید فقط همین یک بار برمی‌گردد و هیچ‌جا
+   ذخیره نمی‌شود؛ اگر گم شد، کلیدِ تازه صادر می‌شود. */
+router.post('/remote/device', (req, res) => {
+  const name = String(req.body?.name || '').trim() || 'برنامهٔ مدیر';
+  const deviceId = String(req.body?.deviceId || '').trim();
+  const issued = issueGateKey({ deviceId, name, actor: req.user?.username || 'admin' });
+  const tunnel = tunnelState();
+  res.json({
+    ok: true,
+    ...issued,
+    url: adminUrl() || tunnel.url || null,
+    gatePath: GATE_PREFIX,
+    gateHeader: GATE_HEADER,
+  });
+});
+
+/* گوشیِ گم‌شده: کلیدش همین‌جا باطل می‌شود و همان لحظه از کار می‌افتد */
+router.delete('/remote/device/:id', (req, res) => {
+  res.json({ ok: revokeGateDevice(req.params.id, req.user?.username || 'admin') });
 });
 
 export default router;

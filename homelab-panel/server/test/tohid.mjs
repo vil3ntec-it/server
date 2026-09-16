@@ -289,6 +289,15 @@ try {
   const sent = await wsOnce(`${WS}?token=${encodeURIComponent('رمزِ-سرور')}`,
     { action: 'send-code', method: 'email', value: 'Ali@Example.com', name: 'علی' });
   check('کد فرستاده شد', sent.data?.ok === true, JSON.stringify(sent));
+
+  /*
+   *  ⚠️ جوابِ «کد فرستاده شد» دیگر به معنیِ «ایمیل رفت» نیست.
+   *
+   *  کد همان لحظه ساخته و ثبت می‌شود و ارسال کارِ صف است — عمداً، تا وقتی
+   *  صدها نفر هم‌زمان کد می‌خواهند، هیچ درخواستی پشتِ گفت‌وگوی SMTP نماند.
+   *  پس آزمون هم مثلِ خودِ برنامه باید منتظرِ رسیدنِ نامه بماند.
+   */
+  for (let i = 0; i < 60 && inbox.length === 0; i++) await new Promise((r) => setTimeout(r, 100));
   check('ایمیل واقعاً رفت', inbox.length === 1, `${inbox.length} نامه`);
 
   // نامه چندتکه است (متن + HTML)، پس با خوانندهٔ مشترک باز می‌شود
