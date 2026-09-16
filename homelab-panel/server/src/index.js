@@ -67,7 +67,7 @@ import { startBackupSchedule, stopBackupSchedule } from './storage/backup.js';
 import { pruneAudit as pruneAppAudit } from './lib/audit.js';
 import { pruneTickets } from './lib/ws-ticket.js';
 import { rateLimit, pruneRateLimits } from './lib/rate-limit.js';
-import { otpSettings } from './appauth/settings.js';
+import { codeSettings } from './codes/settings.js';
 import { pinSitesRoot } from './sites/portable.js';
 import { startQueue, stopQueue } from './codes/queue.js';
 import { readyPayload } from './platform/health.js';
@@ -739,19 +739,18 @@ async function main() {
       console.log('');
     }
     // ---- ورودِ برنامه‌ها: همان چیزی که باید در اپِ اندروید/ویندوز/سایت بگذارید ----
-    const otp = otpSettings();
-    const smsOn = otp.sms.provider !== 'none';
-    const mailOn = otp.email.provider !== 'none' && Boolean(otp.email.host);
-    console.log('  📱 ورودِ برنامه‌ها با شماره یا ایمیل (کدِ شش‌رقمی):');
+    const codes = codeSettings();
+    const mailOn = Boolean(codes.email.host && codes.email.from);
+    console.log('  📧 کدهای شش‌رقمیِ ورودِ برنامه‌ها:');
     console.log(`     آدرسی که در برنامه می‌گذارید:  http://${ips[0] || 'localhost'}:${config.port}`);
     console.log(`     راهنما و تستِ زنده:            http://${ips[0] || 'localhost'}:${config.port}/connect`);
-    console.log(`     فرستادنِ کد:  POST /api/app/auth/request-code   {"phone":"09121234567"}`);
-    console.log(`     تأییدِ کد:     POST /api/app/auth/verify-code    {"phone":"...","code":"123456"}`);
-    console.log(`     پیامک: ${smsOn ? `روشن (${otp.sms.provider})` : 'خاموش'}   ·   ایمیل: ${mailOn ? `روشن (${otp.email.host})` : 'خاموش'}`);
+    console.log(`     گرفتنِ کد:   POST /api/codes/request   {"app":"app-fuel","email":"a@b.com"}`);
+    console.log(`     سنجشِ کد:    POST /api/codes/verify    {"app":"app-fuel","email":"a@b.com","code":"123456"}`);
+    console.log(`     ایمیل: ${mailOn ? `روشن (${codes.email.host})` : 'خاموش'}`);
     console.log('     برنامهٔ ویندوزیِ همین کارها:  homelab-panel\\desktop\\برنامه-سرور.bat');
-    if (!smsOn && !mailOn) {
-      console.log('     ⚠️  تا وقتی پیامک/ایمیل تنظیم نشده، کد در همین پنجره و در «لاگ‌ها» نوشته می‌شود.');
-      console.log('        روشن کردنش: صفحهٔ /connect را باز کنید، بخشِ ۴.');
+    if (!mailOn) {
+      console.log('     ⚠️  تا وقتی سرورِ ایمیل تنظیم نشده، کدها ساخته می‌شوند ولی فرستاده نمی‌شوند.');
+      console.log('        دیدن و تنظیمش: پنل ← «کدهای شش‌رقمی».');
     }
     console.log('');
     console.log(`  پوشهٔ داده:  ${config.dataDir}`);

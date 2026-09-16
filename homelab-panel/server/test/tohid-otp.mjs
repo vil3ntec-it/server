@@ -154,7 +154,7 @@ try {
   });
   const st = await api('/api/control/tohid/otp', { token });
   check('ایمیل آماده است', st.data.channels?.email?.ready === true, JSON.stringify(st.data.channels));
-  check('پیامک آماده است', st.data.channels?.sms?.ready === true, JSON.stringify(st.data.channels));
+  check('پیامک برداشته شده گزارش می‌شود', st.data.channels?.sms?.removed === true, JSON.stringify(st.data.channels));
 
   console.log('\n── کدِ ایمیل ──');
   const firstMail = await api('/api/control/tohid/otp/test', { method: 'POST', token, body: { method: 'email', to: 'shop@example.com' } });
@@ -164,30 +164,23 @@ try {
   check('نامه واقعاً فرستاده شد', mailInbox.length > 0);
   check('کدِ شش‌رقمی داخلِ نامه هست', /^\d{6}$/.test(mailCode || ''), mailCode);
 
-  console.log('\n── کدِ پیامک ──');
-  await api('/api/control/tohid/otp/test', { method: 'POST', token, body: { method: 'phone', to: '0700123456' } });
-  await waitFor('صدا زده شدنِ دروازهٔ پیامک', () => smsInbox.length > 0);
-  check('دروازهٔ پیامک صدا زده شد', smsInbox.length > 0);
-  const sms = smsInbox[0] || {};
-  const smsBody = JSON.parse(sms.body || '{}');
-  const smsCode = (String(smsBody.message || '').match(/(\d{6})/) || [])[1];
-  check('شماره درست به دروازه رفت', smsBody.to === '0700123456', sms.body);
-  check('کدِ شش‌رقمی در متنِ پیامک هست', /^\d{6}$/.test(smsCode || ''), smsBody.message);
-  check('متنِ دلخواه اعمال شد', String(smsBody.message).includes('کد ورود شما'), smsBody.message);
-  check('توکن از گاوصندوق در سربرگ نشست', sms.auth === 'Bearer secret-token-123', sms.auth);
+  console.log('\n── پیامک برداشته شده ──');
+  const byPhone = await api('/api/control/tohid/otp/test', { method: 'POST', token, body: { method: 'phone', to: '0700123456' } });
+  check('درخواستِ شماره رد می‌شود', byPhone.data.ok === false, JSON.stringify(byPhone.data));
+  check('دلیلش روشن گفته می‌شود', byPhone.data.error === 'sms_removed', JSON.stringify(byPhone.data));
+  check('دروازهٔ پیامک اصلاً صدا زده نشد', smsInbox.length === 0, `${smsInbox.length} درخواست`);
 
   console.log('\n── کدها تصادفی‌اند ──');
-  const seen = new Set([mailCode, smsCode].filter(Boolean));
+  const seen = new Set([mailCode].filter(Boolean));
   for (let i = 0; i < 6; i++) {
-    smsInbox.length = 0;
-    // مهلتِ ارسالِ دوباره را رد کنیم: هر بار شمارهٔ دیگری
-    await api('/api/control/tohid/otp/test', { method: 'POST', token, body: { method: 'phone', to: `07001234${10 + i}` } });
-    await waitFor(`پیامکِ شمارهٔ ${i + 1}`, () => smsInbox.length > 0);
-    const b = JSON.parse(smsInbox[0]?.body || '{}');
-    const c = (String(b.message || '').match(/(\d{6})/) || [])[1];
+    const seenBefore = mailInbox.length;
+    // مهلتِ ارسالِ دوباره را رد کنیم: هر بار ایمیلِ دیگری
+    await api('/api/control/tohid/otp/test', { method: 'POST', token, body: { method: 'email', to: `user${i}@example.com` } });
+    await waitFor(`نامهٔ شمارهٔ ${i + 1}`, () => mailInbox.length > seenBefore);
+    const c = (mailText(mailInbox[mailInbox.length - 1]).match(/(\d{6})/) || [])[1];
     if (c) seen.add(c);
   }
-  check('هشت کدِ پیاپی همه متفاوت‌اند', seen.size === 8, `${seen.size} کدِ یکتا`);
+  check('هفت کدِ پیاپی همه متفاوت‌اند', seen.size === 7, `${seen.size} کدِ یکتا`);
   check('همه دقیقاً شش رقم‌اند', [...seen].every((c) => /^\d{6}$/.test(c)), [...seen].join(','));
 
   console.log('\n── ورود با همان کد ──');
