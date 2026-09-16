@@ -50,6 +50,7 @@ import stationRoutes, { adminRouter as stationAdminRoutes } from './routes/stati
 import messengerRoutes from './routes/messenger.js';
 import notifyRoutes, { adminRouter as notifyAdminRoutes } from './routes/notify.js';
 import appRoutes, { adminRouter as appAdminRoutes } from './routes/app.js';
+import codeRoutes, { adminRouter as codeAdminRoutes } from './routes/codes.js';
 import storageRoutes from './routes/storage.js';
 import aiRoutes from './routes/ai.js';
 import dockerRoutes from './routes/docker.js';
@@ -68,6 +69,7 @@ import { pruneTickets } from './lib/ws-ticket.js';
 import { rateLimit, pruneRateLimits } from './lib/rate-limit.js';
 import { otpSettings } from './appauth/settings.js';
 import { pinSitesRoot } from './sites/portable.js';
+import { startQueue, stopQueue } from './codes/queue.js';
 import { readyPayload } from './platform/health.js';
 import { createBackup } from './backup/index.js';
 import * as notify from './notify/index.js';
@@ -166,7 +168,10 @@ function originAllowed(origin) {
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   // فقط مسیرهای «برنامه‌ها» برای همه بازند؛ بقیه — /health هم — از فهرستِ سفید می‌گذرند
-  const openApi = req.path.startsWith('/api/app/');
+  // مسیرِ کدهای شش‌رقمی هم مثلِ «برنامه‌ها» باز است: اپِ اندروید، سایتِ روی
+  // هاست و برنامهٔ ویندوز همه از بیرون صدایش می‌زنند. با کلیدِ هدر کار می‌کند
+  // نه کوکی، پس credentials نمی‌گیرد و نشستِ کسی سوءاستفاده نمی‌شود.
+  const openApi = req.path.startsWith('/api/app/') || req.path.startsWith('/api/codes/');
 
   if (openApi) {
     res.setHeader('Access-Control-Allow-Origin', origin || '*');
@@ -190,9 +195,19 @@ app.use((req, res, next) => {
 app.use('/api/auth/login', rateLimit('login', 10, 5 * 60 * 1000));
 app.use('/api/auth/setup', rateLimit('setup', 5, 60 * 60 * 1000));
 app.use('/api/app/auth', rateLimit('app-auth', 60, 10 * 60 * 1000));
+/*
+ *  کدهای شش‌رقمی سقفِ خودش را دارد و عمداً بلند است: خواسته این بود که اگر
+ *  صدها یا هزاران نفر هم‌زمان کد خواستند، هیچ‌کس پشتِ در نماند. جلوی
+ *  سوءاستفاده را فاصلهٔ اجباریِ هر ایمیل می‌گیرد (در خودِ موتور)، نه این سقف.
+ *  سقفِ عمومیِ /api هم عمداً از این مسیر رد می‌شود، وگرنه همان ۱۲۰۰ تا سر می‌رسد.
+ */
+app.use('/api/codes', rateLimit('codes', 6000, 60 * 1000));
 app.use('/api/notify', rateLimit('notify', 240, 60 * 1000));
 app.use('/api/messenger', rateLimit('messenger', 600, 60 * 1000));
-app.use('/api', rateLimit('api', 1200, 60 * 1000));
+const apiLimiter = rateLimit('api', 1200, 60 * 1000);
+app.use('/api', (req, res, next) =>
+  req.path.startsWith('/codes/') || req.path === '/codes' ? next() : apiLimiter(req, res, next)
+);
 
 // دستیارِ پشتیبانی — پیش از میان‌افزارِ JSON، به همان دلیلِ بالا
 app.use(AI_PREFIX, aiProxy);
@@ -245,6 +260,8 @@ app.use('/api/notify-admin', notifyAdminRoutes);
 // ورودِ کاربرانِ برنامه‌ها (اپِ اندروید، برنامهٔ ویندوز، سایت‌ها) با کدِ شش‌رقمی
 app.use('/api/app', appRoutes);
 app.use('/api/app-admin', appAdminRoutes);
+app.use('/api/codes', codeRoutes);
+app.use('/api/codes-admin', codeAdminRoutes);
 // کتابخانه: یک جای مرتب برای سایت‌ها، برنامه‌ها، پشتیبان‌ها و فایل‌های موقت
 app.use('/api/storage', storageRoutes);
 app.use('/api/ai', aiRoutes);
@@ -663,6 +680,8 @@ async function main() {
     syncMonitors();
     startMonitor();
     startUpdateWatcher();
+    // صفِ کدهای شش‌رقمی — ایمیل‌ها پشتِ سرِ درخواست‌ها می‌روند، نه داخلشان
+    startQueue();
   } catch (e) {
     console.warn(`⚠️  مرکز فرمان کامل بالا نیامد: ${e.message}`);
     logEvent('error', 'panel', `راه‌اندازی مرکز فرمان: ${e.message}`);
@@ -790,6 +809,7 @@ async function shutdown(signal) {
   try {
     stopMonitor();
     stopUpdateWatcher();
+    stopQueue();
   } catch { /* بسته شده */ }
   try {
     syncOnlyServer?.close();
