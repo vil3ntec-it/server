@@ -32,8 +32,20 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-/** روشن، خاموش، یا هنوز معلوم نیست */
+/** روشن، خاموش، یا هنوز معلوم نیست — و اگر خاموش، چرا */
 enum class ServerState { Unknown, Online, Offline }
+
+/**
+ *  وضعیت به‌علاوهٔ دلیل.
+ *
+ *  ⚠️ دلیل عمداً نگه داشته می‌شود. «خاموش» بدونِ دلیل بدترین چیزی است که
+ *  می‌شود نشان داد: سرورِ خاموش، فایروالِ بسته، آدرسِ غلط و اینترنتِ قطع
+ *  همه یک شکل دیده می‌شوند و آدم نمی‌داند کدامش را درست کند.
+ */
+data class ServerHealth(
+  val state: ServerState = ServerState.Unknown,
+  val reason: String = "",
+)
 
 /**
  *  «سرور روشن است یا خاموش؟»
@@ -47,31 +59,39 @@ enum class ServerState { Unknown, Online, Offline }
  *  کوتاه، «خاموش» خیلی زود دیده می‌شود نه یک دقیقه بعد.
  */
 @Composable
-fun rememberServerState(
+fun rememberServerHealth(
   serverUrl: String,
   remote: RemoteAccess? = null,
   everyMs: Long = 10_000,
-): ServerState {
-  var state by remember(serverUrl, remote?.key) { mutableStateOf(ServerState.Unknown) }
+): ServerHealth {
+  var health by remember(serverUrl, remote?.key) { mutableStateOf(ServerHealth()) }
 
   LaunchedEffect(serverUrl, remote?.key) {
     // آدرسی نداریم که بسنجیم — نه «خاموش»، که هنوز معلوم نیست
     if (serverUrl.isBlank()) {
-      state = ServerState.Unknown
+      health = ServerHealth()
       return@LaunchedEffect
     }
     while (true) {
-      state = try {
+      health = try {
         withContext(Dispatchers.IO) { Api.health(serverUrl, remote) }
-        ServerState.Online
-      } catch (_: Exception) {
-        ServerState.Offline
+        ServerHealth(ServerState.Online)
+      } catch (e: Exception) {
+        ServerHealth(ServerState.Offline, e.message.orEmpty().ifBlank { e.javaClass.simpleName })
       }
       delay(everyMs)
     }
   }
-  return state
+  return health
 }
+
+/** همان، وقتی فقط خودِ وضعیت لازم است */
+@Composable
+fun rememberServerState(
+  serverUrl: String,
+  remote: RemoteAccess? = null,
+  everyMs: Long = 10_000,
+): ServerState = rememberServerHealth(serverUrl, remote, everyMs).state
 
 /** چراغِ وضعیت — نقطهٔ رنگی و یک کلمه */
 @Composable

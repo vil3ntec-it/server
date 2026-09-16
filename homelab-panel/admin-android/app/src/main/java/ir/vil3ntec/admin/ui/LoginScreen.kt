@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import ir.vil3ntec.admin.data.Api
 import ir.vil3ntec.admin.data.Discovery
 import ir.vil3ntec.admin.data.FoundServer
+import ir.vil3ntec.admin.data.Remote
 import ir.vil3ntec.admin.data.RemoteAccess
 import ir.vil3ntec.admin.data.Session
 import kotlinx.coroutines.Dispatchers
@@ -64,6 +65,8 @@ fun LoginScreen(
   initialUrl: String,
   /** اگر این گوشی از قبل کلیدِ در را دارد، ورود از بیرونِ خانه هم ممکن است */
   remote: RemoteAccess? = null,
+  /** شناسهٔ همین گوشی — کلیدِ در به آن بسته می‌شود */
+  onDeviceId: () -> String = { "phone" },
   onDone: (Session) -> Unit,
 ) {
   var url by remember { mutableStateOf(initialUrl) }
@@ -77,7 +80,8 @@ fun LoginScreen(
   val scope = rememberCoroutineScope()
 
   // خودِ نبض می‌داند آدرسِ خالی را نسنجد
-  val state = rememberServerState(url, remote, everyMs = 6_000)
+  val health = rememberServerHealth(url, remote, everyMs = 6_000)
+  val state = health.state
 
   fun normalize(raw: String): String {
     val trimmed = raw.trim().trimEnd('/')
@@ -95,7 +99,14 @@ fun LoginScreen(
         val servers = withContext(Dispatchers.IO) { Discovery.search() }
         found = servers
         // اولی خودش می‌نشیند تا کاربر چیزی تایپ نکند
-        if (servers.isNotEmpty() && url.isBlank()) url = servers.first().url
+        /*
+         *  دامنه ترجیح دارد، نه IPِ محلی.
+         *
+         *  ⚠️ IPِ کامپیوتر با هر بار روشن شدنِ مودم عوض می‌شود و بیرون از
+         *  خانه اصلاً وجود ندارد. دامنه هر دو جا کار می‌کند، پس همان
+         *  می‌نشیند — مگر اینکه سرور دامنه‌ای نداشته باشد.
+         */
+        if (servers.isNotEmpty() && url.isBlank()) url = servers.first().best
       } catch (e: Exception) {
         error = e.message ?: "جست‌وجو نشد"
       } finally {
@@ -132,15 +143,32 @@ fun LoginScreen(
         if (token.isBlank()) {
           error = "نامِ کاربری یا رمز درست نیست"
         } else {
-          onDone(
-            Session(
-              serverUrl = address,
-              token = token,
-              username = reply.optJSONObject("user")?.optString("username") ?: username.trim(),
-              role = reply.optJSONObject("user")?.optString("role") ?: "admin",
-              remote = remote,
-            )
+          val fresh = Session(
+            serverUrl = address,
+            token = token,
+            username = reply.optJSONObject("user")?.optString("username") ?: username.trim(),
+            role = reply.optJSONObject("user")?.optString("role") ?: "admin",
+            remote = remote,
           )
+
+          /*
+           *  کلیدِ دسترسی از بیرون، همین‌جا و خودکار.
+           *
+           *  ⚠️ چرا خودکار: کلید فقط از داخلِ خانه صادر می‌شود، و همین
+           *  الان که تازه وارد شده‌ایم بهترین — و شاید تنها — فرصتش است.
+           *  اگر منتظرِ فشردنِ دکمه می‌ماندیم، اولین بار که کاربر از خانه
+           *  بیرون می‌رفت برنامه کار نمی‌کرد و دلیلش را هم نمی‌فهمید.
+           *
+           *  ⚠️ و اگر نشد، ورود نباید بخورد زمین: شاید تونل هنوز بالا
+           *  نیامده. همان کارتِ «دسترسی از بیرونِ خانه» بعداً هست.
+           */
+          val withRemote = runCatching {
+            withContext(Dispatchers.IO) {
+              Remote.provision(fresh, onDeviceId(), "ویلن ادمین")
+            }
+          }.getOrNull()?.let { fresh.copy(remote = it) } ?: fresh
+
+          onDone(withRemote)
         }
       } catch (e: Exception) {
         error = e.message ?: "وصل نشد"
@@ -188,7 +216,7 @@ fun LoginScreen(
         Modifier
           .fillMaxWidth()
           .padding(bottom = 8.dp)
-          .clickable { url = server.url },
+          .clickable { url = server.best },
       ) {
         Row(
           Modifier.fillMaxWidth().padding(14.dp),
@@ -197,11 +225,29 @@ fun LoginScreen(
         ) {
           Column(Modifier.weight(1f)) {
             Text(server.name, style = MaterialTheme.typography.bodyLarge)
-            Text(
-              server.url,
-              style = MaterialTheme.typography.labelSmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (server.internet.isNotBlank()) {
+              Text(
+                server.internet,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+              )
+              Text(
+                "در خانه: ${server.url}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            } else {
+              Text(
+                server.url,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              Text(
+                "دامنه‌ای اعلام نشد — تونل روی سرور روشن است؟",
+                style = MaterialTheme.typography.labelSmall,
+                color = StatusColor.warn,
+              )
+            }
           }
           if (server.version.isNotBlank()) {
             Chip("نسخهٔ ${server.version}", MaterialTheme.colorScheme.primary)
@@ -256,6 +302,20 @@ fun LoginScreen(
       TextButton(onClick = { search() }, enabled = !searching) {
         Text(if (searching) "…" else "پیدا کردنِ سرور")
       }
+    }
+
+    /*
+     *  ⚠️ دلیلِ خاموشی نشان داده می‌شود، نه فقط خودِ کلمه. «خاموش» تنها،
+     *  سرورِ خواب و فایروالِ بسته و آدرسِ غلط را یک شکل نشان می‌دهد و آدم
+     *  نمی‌داند کدامش را درست کند.
+     */
+    if (state == ServerState.Offline && health.reason.isNotBlank()) {
+      Text(
+        health.reason,
+        Modifier.fillMaxWidth().padding(top = 2.dp),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
     }
 
     Spacer(Modifier.height(8.dp))

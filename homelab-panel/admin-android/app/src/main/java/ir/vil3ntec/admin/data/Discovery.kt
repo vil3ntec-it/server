@@ -12,9 +12,15 @@ import java.net.SocketTimeoutException
 data class FoundServer(
   val id: String,
   val name: String,
+  /** آدرسِ محلی — سریع، ولی فقط داخلِ همین شبکه */
   val url: String,
+  /** دامنهٔ اینترنتی — اگر تونل بالا باشد، هر جای دنیا کار می‌کند */
+  val internet: String,
   val version: String,
-)
+) {
+  /** آدرسی که باید در برنامه بنشیند: دامنه اگر هست، وگرنه همان محلی */
+  val best: String get() = internet.ifBlank { url }
+}
 
 /**
  *  پیدا کردنِ خودکارِ سرور در شبکهٔ خانگی.
@@ -85,6 +91,7 @@ object Discovery {
             id = id,
             name = card.optString("name").ifBlank { "سرور خانگی" },
             url = url,
+            internet = card.optString("internet"),
             version = card.optString("version"),
           )
         }

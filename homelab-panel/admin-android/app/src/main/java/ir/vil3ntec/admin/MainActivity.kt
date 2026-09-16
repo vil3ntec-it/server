@@ -73,6 +73,7 @@ class MainActivity : ComponentActivity() {
                 // کلیدِ درِ مدیر از نشستِ ذخیره‌شده می‌آید، پس ورود از
                 // بیرونِ خانه هم ممکن است — حتی وقتی توکن منقضی شده
                 remote = session.remote,
+                onDeviceId = { store.deviceId },
                 onDone = { fresh ->
                   store.save(fresh)
                   session = fresh
