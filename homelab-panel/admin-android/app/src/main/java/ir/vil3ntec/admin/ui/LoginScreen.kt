@@ -106,7 +106,14 @@ fun LoginScreen(
          *  خانه اصلاً وجود ندارد. دامنه هر دو جا کار می‌کند، پس همان
          *  می‌نشیند — مگر اینکه سرور دامنه‌ای نداشته باشد.
          */
-        if (servers.isNotEmpty() && url.isBlank()) url = servers.first().best
+        /*
+         *  ⚠️ بی کلید، آدرسِ admin به درد نمی‌خورد — درش بسته است و حتی
+         *  ورود هم از آن‌جا رد نمی‌شود. پس بارِ اول آدرسِ خانه می‌نشیند؛
+         *  کلید که صادر شد، دفعهٔ بعد خودِ admin می‌آید.
+         */
+        if (servers.isNotEmpty() && url.isBlank()) {
+          url = servers.first().best(remote?.usable == true)
+        }
       } catch (e: Exception) {
         error = e.message ?: "جست‌وجو نشد"
       } finally {
@@ -216,7 +223,7 @@ fun LoginScreen(
         Modifier
           .fillMaxWidth()
           .padding(bottom = 8.dp)
-          .clickable { url = server.best },
+          .clickable { url = server.best(remote?.usable == true) },
       ) {
         Row(
           Modifier.fillMaxWidth().padding(14.dp),
@@ -227,12 +234,13 @@ fun LoginScreen(
             Text(server.name, style = MaterialTheme.typography.bodyLarge)
             if (server.hasInternet) {
               Text(
-                server.admin,
+                if (remote?.usable == true) server.admin else server.url,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
               )
               Text(
-                "در خانه: ${server.url}",
+                if (remote?.usable == true) "در خانه: ${server.url}"
+                else "از بیرون: ${server.admin} — بعد از ورودِ اول فعال می‌شود",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )

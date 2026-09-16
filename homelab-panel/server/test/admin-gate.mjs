@@ -220,6 +220,52 @@ try {
   });
   check('روی دامنهٔ معمولی باز نمی‌شود', plainHost.status === 404, `status ${plainHost.status}`);
 
+  console.log('\n── مسیرِ واقعیِ برنامه، از بارِ اول ──');
+  /*
+   *  ⚠️ این همان چیزی است که یک بار خوابید و با اسکرین‌شاتِ کاربر پیدا شد.
+   *
+   *  برنامه آدرسِ admin.<دامنه> را برداشته بود *پیش از* گرفتنِ کلید. آن در
+   *  بی کلید بسته است — و درست هم همین است — پس حتی /health و خودِ ورود
+   *  هم «not found» می‌گرفتند: «سرور پیدا شد» ولی هیچ‌کاری نمی‌شد کرد.
+   *
+   *  ترتیبِ درست این است و همین‌جا قفل می‌شود.
+   */
+  const freshDevice = 'phone-flow';
+
+  // ۱) بی کلید، آدرسِ admin هیچ راهی نمی‌دهد — حتی برای سنجیدنِ سلامت
+  const coldHealth = await withHost(PUBLIC_PORT, '/health', 'admin.example.com');
+  check('بی کلید، /health روی admin بسته است', coldHealth.status === 404, `status ${coldHealth.status}`);
+  const coldLogin = await withHost(PUBLIC_PORT, '/api/auth/login', 'admin.example.com');
+  check('بی کلید، ورود هم بسته است', coldLogin.status === 404, `status ${coldLogin.status}`);
+
+  // ۲) پس بارِ اول باید از آدرسِ خانه رفت
+  const homeHealth = await call(PANEL, '/health');
+  check('آدرسِ خانه باز است', homeHealth.status === 200 && homeHealth.body?.ok === true);
+  const homeLogin = await call(PANEL, '/api/auth/login', {
+    method: 'POST',
+    body: { username: 'admin', password: 'ControlCenter!2026' },
+  });
+  check('ورود از خانه انجام می‌شود', Boolean(homeLogin.body?.token), JSON.stringify(homeLogin.body));
+
+  // ۳) و همان‌جا کلید صادر می‌شود
+  const flowKey = (await call(PANEL, '/api/settings/remote/device', {
+    method: 'POST',
+    token: homeLogin.body.token,
+    body: { deviceId: freshDevice, name: 'گوشیِ آزمون' },
+  })).body?.key;
+  check('کلید همان لحظه صادر شد', Boolean(flowKey));
+
+  // ۴) از این به بعد، آدرسِ admin هر جای دنیا کار می‌کند
+  const warmHealth = await withHost(PUBLIC_PORT, '/health', 'admin.example.com', {
+    'x-admin-gate': flowKey,
+  });
+  check('با کلید، /health روی admin باز است', warmHealth.status === 200, `status ${warmHealth.status}`);
+  const warmDash = await withHost(PUBLIC_PORT, '/api/dashboard', 'admin.example.com', {
+    'x-admin-gate': flowKey,
+    authorization: `Bearer ${homeLogin.body.token}`,
+  });
+  check('و کلِ پنل هم', warmDash.status === 200, `status ${warmDash.status}`);
+
   console.log('\n── آدرسِ تونل خودش را جای پنل جا نمی‌زند ──');
   /*
    *  ⚠️ /health روی هر دو پورت هست و جوابشان شبیهِ هم. اگر پورتِ عمومی
