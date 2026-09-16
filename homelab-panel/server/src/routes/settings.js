@@ -12,7 +12,7 @@ import { versionInfo } from '../version.js';
 import { sitesRoot, setSitesRoot, NEXT_TO_SERVER } from '../sites/root.js';
 import { folderReport, moveSitesIntoFolder } from '../sites/portable.js';
 import { normalizeDomain } from '../sites/registry.js';
-import { publicState as tunnelState } from '../tunnel.js';
+import { adminUrl, publicState as tunnelState } from '../tunnel.js';
 import {
   GATE_HEADER,
   GATE_PREFIX,
@@ -186,10 +186,20 @@ router.post('/portable/move-sites', async (req, res) => {
    خودش را باز می‌کرد. */
 router.get('/remote', (req, res) => {
   const tunnel = tunnelState();
+  const admin = adminUrl();
   res.json({
     ok: true,
-    // آدرسی که برنامه باید از بیرونِ خانه بزند
-    url: tunnel.url || null,
+    /*
+     *  آدرسی که برنامه باید از بیرونِ خانه بزند.
+     *
+     *  ⚠️ اگر دامنه‌ای ساخته شده، آدرسِ اختصاصیِ برنامه (admin.<دامنه>)
+     *  ترجیح دارد: ثابت است، جدا از سایت، و پشتش فقط همان در است. آدرسِ
+     *  تونلِ سریع فقط وقتی می‌آید که دامنه‌ای نباشد — و آن آدرس با هر بار
+     *  روشن شدنِ سرور عوض می‌شود.
+     */
+    url: admin || tunnel.url || null,
+    adminUrl: admin,
+    tunnelUrl: tunnel.url || null,
     hostname: tunnel.hostname || null,
     running: tunnel.status === 'running',
     permanent: Boolean(tunnel.permanent),
@@ -209,7 +219,7 @@ router.post('/remote/device', (req, res) => {
   res.json({
     ok: true,
     ...issued,
-    url: tunnel.url || null,
+    url: adminUrl() || tunnel.url || null,
     gatePath: GATE_PREFIX,
     gateHeader: GATE_HEADER,
   });

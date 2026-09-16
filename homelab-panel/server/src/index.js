@@ -70,7 +70,7 @@ import { rateLimit, pruneRateLimits } from './lib/rate-limit.js';
 import { codeSettings } from './codes/settings.js';
 import { pinSitesRoot } from './sites/portable.js';
 import { startQueue, stopQueue } from './codes/queue.js';
-import { adminGate, GATE_PREFIX } from './api/admin-gate.js';
+import { adminGate, adminHostGate, GATE_PREFIX } from './api/admin-gate.js';
 import { readyPayload } from './platform/health.js';
 import { createBackup } from './backup/index.js';
 import * as notify from './notify/index.js';
@@ -508,11 +508,21 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
    *  ⚠️ و **پیش از** express.json می‌نشیند: آن میان‌افزار جریانِ بدنه را
    *  می‌خورد و بعدش دیگر چیزی برای لوله کردن نمی‌ماند.
    */
-  publicApp.use(
-    GATE_PREFIX,
-    rateLimitCfg({ name: 'admin-gate', max: 20, windowMs: 10 * 60 * 1000, skipSuccess: true }),
-    adminGate,
-  );
+  const gateLimiter = rateLimitCfg({
+    name: 'admin-gate', max: 20, windowMs: 10 * 60 * 1000, skipSuccess: true,
+  });
+
+  /*
+   *  دو راه به یک در:
+   *
+   *    admin.<دامنه>/...            ← آدرسی که در برنامه می‌نشیند
+   *    <هر دامنه>/api/admin-gate/... ← همان در، وقتی زیردامنه نیست
+   *
+   *  اولی برای کاربر ساده‌تر است (آدرسِ کوتاه و جدا از سایت)، دومی برای
+   *  وقتی که هنوز دامنه‌ای ساخته نشده و فقط آدرسِ تونل هست.
+   */
+  publicApp.use(gateLimiter, adminHostGate);
+  publicApp.use(GATE_PREFIX, gateLimiter, adminGate);
 
   // ⚠️ پراکسیِ دستیار هم به همان دلیل پیش از express.json است
   publicApp.use(AI_PREFIX, aiProxy);

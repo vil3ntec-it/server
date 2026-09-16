@@ -135,3 +135,22 @@ export function apiHostFor(raw) {
   const root = registrableRoot(clean);
   return root ? `api.${root}` : null;
 }
+
+/**
+ * آدرسِ برنامهٔ مدیر روی هر دامنه: `admin.<دامنه>`.
+ *
+ *      📱 ویلن ادمین → https://admin.yaqobipump.top → ☁️ → 🏠 سرور
+ *
+ *  ⚠️ چرا زیردامنهٔ جدا و نه همان دامنهٔ اصلی: روی دامنهٔ اصلی، سایت و
+ *  APIِ عمومی نشسته‌اند و هر کسی می‌تواند بازشان کند. این یکی فقط یک در
+ *  دارد و آن هم بی کلیدِ همان گوشی باز نمی‌شود — پس هرچه پشتش است، از
+ *  بقیهٔ دامنه جدا می‌ماند.
+ */
+export function adminHostFor(raw) {
+  const clean = cleanDomain(raw);
+  if (!clean) return null;
+  const first = clean.split('.')[0];
+  if (ROLE_PREFIXES.has(first) && first !== 'www') return null;
+  const root = registrableRoot(clean);
+  return root ? `admin.${root}` : null;
+}

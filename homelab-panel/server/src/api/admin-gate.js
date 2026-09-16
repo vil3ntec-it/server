@@ -134,6 +134,30 @@ function notFound(res) {
 }
 
 /**
+ *  آیا این درخواست روی زیردامنهٔ برنامهٔ مدیر آمده؟
+ *
+ *  ⚠️ روی `admin.<دامنه>` خودِ ریشه همان در است، پس برنامه با آدرسِ ساده
+ *  کار می‌کند: https://admin.example.com/api/dashboard — نه مسیرِ درازِ
+ *  اضافه. برای کسی که آدرس را نمی‌داند هم فرقی نمی‌کند: بی کلید، همان
+ *  «not found» را می‌گیرد.
+ */
+export function isAdminHost(req) {
+  const host = String(req.headers.host || '').toLowerCase().split(':')[0];
+  return host.startsWith('admin.');
+}
+
+/**
+ * میان‌افزارِ زیردامنهٔ مدیر — روی ریشه می‌نشیند.
+ *
+ * فرقش با `adminGate` فقط در این است که مسیر را نمی‌برد: آن‌جا پیشوندِ
+ * `/api/admin-gate` باید کنده شود، این‌جا کلِ مسیر همان است که هست.
+ */
+export function adminHostGate(req, res, next) {
+  if (!isAdminHost(req)) return next();
+  return adminGate(req, res, { stripPrefix: false });
+}
+
+/**
  * میان‌افزارِ در.
  *
  * درخواستی که کلیدِ درست داشته باشد، همان‌طور که هست به پنلِ محلی
@@ -144,7 +168,7 @@ function notFound(res) {
  * ⚠️ خودِ کلید به آن‌طرف نمی‌رود: کارش همین‌جا تمام شد. آن‌طرف فقط
  * Authorization را می‌بیند، مثلِ هر درخواستِ داخلِ خانه.
  */
-export function adminGate(req, res) {
+export function adminGate(req, res, { stripPrefix = true } = {}) {
   const key = String(req.headers[GATE_HEADER] || '').trim();
   const device = deviceFor(key);
 
@@ -157,9 +181,14 @@ export function adminGate(req, res) {
     || req.socket?.remoteAddress || '';
   touch(device, ip);
 
-  // مسیرِ داخلی: /api/admin-gate/api/dashboard → /api/dashboard
+  /*
+   *  مسیرِ داخلی.
+   *
+   *  روی مسیرِ `/api/admin-gate/...` باید پیشوند کنده شود؛ روی زیردامنهٔ
+   *  `admin.<دامنه>` کلِ مسیر همان است که هست.
+   */
   const full = String(req.originalUrl || req.url || '');
-  const inner = full.slice(GATE_PREFIX.length) || '/';
+  const inner = (stripPrefix ? full.slice(GATE_PREFIX.length) : full) || '/';
   if (!inner.startsWith('/')) return notFound(res);
 
   const headers = { host: `127.0.0.1:${config.port}` };

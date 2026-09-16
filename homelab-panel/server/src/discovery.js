@@ -16,7 +16,7 @@ import os from 'node:os';
 import { config } from './config.js';
 import { getSetting } from './db.js';
 import { secret } from './lib/secrets.js';
-import { publicState as tunnelState } from './tunnel.js';
+import { adminUrl, publicState as tunnelState } from './tunnel.js';
 import { versionInfo } from './version.js';
 import { logEvent } from './db.js';
 
@@ -77,7 +77,9 @@ export function serverCard() {
     // آدرسی که اپ باید مستقیم استفاده کند
     url: addresses.length ? `http://${addresses[0]}:${config.port}` : null,
     // آدرسی که از بیرونِ خانه کار می‌کند — اگر تونل بالا باشد
-    internet: internetUrl(),
+    internet: adminUrl() || internetUrl(),
+    // همان، جدا: آدرسِ اختصاصیِ برنامهٔ مدیر روی دامنهٔ خودتان
+    admin: adminUrl(),
     api: '/api/app',
     time: Date.now(),
   };

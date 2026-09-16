@@ -16,10 +16,19 @@ data class FoundServer(
   val url: String,
   /** دامنهٔ اینترنتی — اگر تونل بالا باشد، هر جای دنیا کار می‌کند */
   val internet: String,
+  /** آدرسِ اختصاصیِ همین برنامه روی دامنهٔ خودتان: admin.<دامنه> */
+  val admin: String,
   val version: String,
 ) {
-  /** آدرسی که باید در برنامه بنشیند: دامنه اگر هست، وگرنه همان محلی */
-  val best: String get() = internet.ifBlank { url }
+  /**
+   *  آدرسی که باید در برنامه بنشیند.
+   *
+   *  ترتیب عمدی است: آدرسِ اختصاصیِ برنامه روی دامنهٔ خودتان بهترین است
+   *  (ثابت، جدا از سایت، و پشتش فقط درِ کلیددار)، بعد آدرسِ تونل، و
+   *  IPِ محلی فقط وقتی هیچ‌کدام نباشند — چون آن با هر بار روشن شدنِ مودم
+   *  عوض می‌شود و بیرون از خانه اصلاً وجود ندارد.
+   */
+  val best: String get() = admin.ifBlank { internet }.ifBlank { url }
 }
 
 /**
@@ -92,6 +101,7 @@ object Discovery {
             name = card.optString("name").ifBlank { "سرور خانگی" },
             url = url,
             internet = card.optString("internet"),
+            admin = card.optString("admin"),
             version = card.optString("version"),
           )
         }

@@ -11,6 +11,7 @@
 // ---------------------------------------------------------------------------
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -59,6 +60,28 @@ child.stdout.on('data', (d) => (out += d));
 child.stderr.on('data', (d) => (out += d));
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/*
+ *  درخواست با هدرِ Host دلخواه.
+ *
+ *  ⚠️ با fetch نمی‌شود: undici هدرِ Host را «ممنوع» می‌داند و بی‌صدا
+ *  دور می‌ریزد، پس درخواست با نامِ میزبانِ واقعی می‌رسد و آزمون چیزی را
+ *  می‌سنجد که فکر می‌کند. با http.request خودمان هدر را می‌گذاریم.
+ */
+function withHost(port, url, host, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { host: '127.0.0.1', port, path: url, method: 'GET', headers: { ...headers, host } },
+      (res) => {
+        let text = '';
+        res.on('data', (c) => (text += c));
+        res.on('end', () => resolve({ status: res.statusCode, text }));
+      },
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
 
 async function call(base, url, { method = 'GET', body, token, gate } = {}) {
   const headers = { 'Content-Type': 'application/json' };
@@ -163,6 +186,39 @@ try {
   const afterRevoke = await call(PUBLIC, '/api/admin-gate/api/dashboard', { token, gate: key });
   check('کلیدِ باطل‌شده همان لحظه از کار افتاد', afterRevoke.status === 404,
     `status ${afterRevoke.status}`);
+
+  console.log('\n── همان در، روی زیردامنهٔ admin.<دامنه> ──');
+  /*
+   *  روی زیردامنهٔ برنامه، خودِ ریشه همان در است — پس برنامه با آدرسِ ساده
+   *  کار می‌کند: https://admin.example.com/api/dashboard
+   *
+   *  ⚠️ کلید را دوباره صادر می‌کنیم چون بالاتر باطلش کردیم.
+   */
+  const again = await call(PANEL, '/api/settings/remote/device', {
+    method: 'POST',
+    token,
+    body: { deviceId: 'phone-2', name: 'گوشیِ دوم' },
+  });
+  const key2 = again.body?.key;
+  check('کلیدِ تازه صادر شد', Boolean(key2));
+
+  const viaHost = await withHost(PUBLIC_PORT, '/api/dashboard', 'admin.example.com', {
+    authorization: `Bearer ${token}`,
+    'x-admin-gate': key2,
+  });
+  check('از زیردامنهٔ مدیر، داشبورد می‌آید', viaHost.status === 200, `status ${viaHost.status}`);
+
+  const hostNoKey = await withHost(PUBLIC_PORT, '/api/dashboard', 'admin.example.com', {
+    authorization: `Bearer ${token}`,
+  });
+  check('همان زیردامنه بدونِ کلید: not found', hostNoKey.status === 404, `status ${hostNoKey.status}`);
+
+  // و روی دامنهٔ معمولی، همان مسیر همچنان عمومی نیست
+  const plainHost = await withHost(PUBLIC_PORT, '/api/dashboard', 'example.com', {
+    authorization: `Bearer ${token}`,
+    'x-admin-gate': key2,
+  });
+  check('روی دامنهٔ معمولی باز نمی‌شود', plainHost.status === 404, `status ${plainHost.status}`);
 
   console.log('\n── کلید در جای دیگری درز نمی‌کند ──');
   const index = await call(PUBLIC, '/');
