@@ -225,9 +225,9 @@ fun LoginScreen(
         ) {
           Column(Modifier.weight(1f)) {
             Text(server.name, style = MaterialTheme.typography.bodyLarge)
-            if (server.best != server.url) {
+            if (server.hasInternet) {
               Text(
-                server.best,
+                server.admin,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
               )
@@ -243,7 +243,7 @@ fun LoginScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
               Text(
-                "دامنه‌ای اعلام نشد — در پنل، بخشِ «دامنه‌ها»، دامنه‌تان را بنویسید",
+                "فعلاً فقط داخلِ خانه — دامنه‌تان را در پنل، بخشِ «دامنه‌ها» بنویسید",
                 style = MaterialTheme.typography.labelSmall,
                 color = StatusColor.warn,
               )

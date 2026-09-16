@@ -74,8 +74,25 @@ fun rememberServerHealth(
     }
     while (true) {
       health = try {
-        withContext(Dispatchers.IO) { Api.health(serverUrl, remote) }
-        ServerHealth(ServerState.Online)
+        val info = withContext(Dispatchers.IO) { Api.health(serverUrl, remote) }
+        /*
+         *  ⚠️ «جواب داد» با «جای درستی است» یکی نیست.
+         *
+         *  /health روی هر دو پورت هست: پنل، و پورتِ عمومی که تونل رویش
+         *  باز است. یک بار چراغ روی آدرسِ تونل سبز شد و بعد ورود با «این
+         *  آدرس روی سرور نیست» رد شد — چون پنل آن‌جا اصلاً سرو نمی‌شود.
+         *
+         *  خودِ سرور در پاسخ می‌گوید از کدام پورت آمده (mode). پس همان را
+         *  می‌سنجیم، نه صرفِ جواب گرفتن.
+         */
+        if (info.optString("mode") == "sync-only") {
+          ServerHealth(
+            ServerState.Offline,
+            "این آدرس فقط بخشِ عمومیِ سرور است و پنل روی آن نیست — آدرسِ admin را بگذارید",
+          )
+        } else {
+          ServerHealth(ServerState.Online)
+        }
       } catch (e: Exception) {
         ServerHealth(ServerState.Offline, e.message.orEmpty().ifBlank { e.javaClass.simpleName })
       }

@@ -76,9 +76,14 @@ export function serverCard() {
     addresses,
     // آدرسی که اپ باید مستقیم استفاده کند
     url: addresses.length ? `http://${addresses[0]}:${config.port}` : null,
-    // آدرسی که از بیرونِ خانه کار می‌کند — اگر تونل بالا باشد
-    internet: adminUrl() || internetUrl(),
-    // همان، جدا: آدرسِ اختصاصیِ برنامهٔ مدیر روی دامنهٔ خودتان
+    /*
+     *  دو آدرسِ جدا، و جدا ماندنشان مهم است:
+     *
+     *    internet  آدرسِ تونل. به پورتِ عمومی می‌رود؛ سایت و APIِ عمومی
+     *              آن‌جاست، ولی پنل نه. برنامهٔ مدیر با این کار نمی‌کند.
+     *    admin     آدرسِ اختصاصیِ برنامهٔ مدیر. پشتش کلِ سرور است.
+     */
+    internet: internetUrl(),
     admin: adminUrl(),
     api: '/api/app',
     time: Date.now(),

@@ -220,6 +220,28 @@ try {
   });
   check('روی دامنهٔ معمولی باز نمی‌شود', plainHost.status === 404, `status ${plainHost.status}`);
 
+  console.log('\n── آدرسِ تونل خودش را جای پنل جا نمی‌زند ──');
+  /*
+   *  ⚠️ /health روی هر دو پورت هست و جوابشان شبیهِ هم. اگر پورتِ عمومی
+   *  نگوید «من عمومی‌ام»، برنامه آدرسِ تونل را آدرسِ پنل می‌فهمد، چراغش
+   *  سبز می‌شود، و بعد ورود رد می‌شود. همان چیزی که یک بار اتفاق افتاد.
+   */
+  const pubHealth = await call(PUBLIC, '/health');
+  check('پورتِ عمومی خودش را معرفی می‌کند', pubHealth.body?.mode === 'sync-only',
+    JSON.stringify(pubHealth.body));
+  const panelHealth = await call(PANEL, '/health');
+  check('پورتِ پنل چنین چیزی نمی‌گوید', panelHealth.body?.mode === undefined,
+    JSON.stringify(panelHealth.body));
+
+  console.log('\n── ریشهٔ دامنه از زیردامنه هم پیدا می‌شود ──');
+  const { rootOf, adminHostFor } = await import('../src/platform/domain.js');
+  check('sync.vill3n.top → vill3n.top', rootOf('sync.vill3n.top') === 'vill3n.top');
+  check('و آدرسِ برنامه‌اش ساخته می‌شود',
+    adminHostFor('sync.vill3n.top') === 'admin.vill3n.top', adminHostFor('sync.vill3n.top'));
+  check('روی خودِ admin دوباره admin نمی‌نشیند', adminHostFor('admin.vill3n.top') === null);
+  check('پسوندِ دوتکه‌ای هم درست می‌شود',
+    adminHostFor('a.b.yaqobi.co.ir') === 'admin.yaqobi.co.ir', adminHostFor('a.b.yaqobi.co.ir'));
+
   console.log('\n── کلید در جای دیگری درز نمی‌کند ──');
   const index = await call(PUBLIC, '/');
   check('فهرستِ عمومی نامی از در نمی‌برد', !/admin-gate/i.test(index.text), index.text.slice(0, 200));
