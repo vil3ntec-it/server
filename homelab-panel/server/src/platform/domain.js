@@ -155,7 +155,15 @@ export function apiHostFor(raw) {
   const first = clean.split('.')[0];
   // api.foo.com که دوباره api.api.foo.com نشود
   if (ROLE_PREFIXES.has(first) && first !== 'www') return null;
-  const root = rootOf(clean);
+  /*
+   *  ⚠️ عمداً registrableRoot و نه rootOf.
+   *
+   *  اگر کسی زیردامنه‌ای مثلِ shop.example.com را به‌عنوان سایت اضافه کند،
+   *  نباید api.example.com ساخته شود: شاید کلِ example.com اصلاً مالِ او
+   *  نباشد و رکوردِ DNS جای دیگری بنشیند. آدرسِ API فقط از دامنه‌ای می‌آید
+   *  که خودش ریشه است.
+   */
+  const root = registrableRoot(clean);
   return root ? `api.${root}` : null;
 }
 
