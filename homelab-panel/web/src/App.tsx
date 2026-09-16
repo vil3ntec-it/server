@@ -35,6 +35,7 @@ import RuntimesPage from './pages/Runtimes';
 import TerminalPage from './pages/Terminal';
 import CronPage from './pages/Cron';
 import StationsPage from './pages/Stations';
+import StationProfile from './pages/StationProfile';
 import TunnelDomainsPage from './pages/TunnelDomains';
 
 function Shell() {
@@ -61,6 +62,7 @@ function Shell() {
         <Route path="/logs" element={<Logs />} />
         <Route path="/site-server" element={<SiteServer />} />
         <Route path="/stations" element={<StationsPage />} />
+        <Route path="/stations/:code" element={<StationProfile />} />
         <Route path="/settings" element={<Settings />} />
 
         {/* مرکز فرمان */}

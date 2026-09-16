@@ -361,6 +361,7 @@ try {
   check('بخش‌ها خلاصه شدند', detail.json?.live?.sections?.[0]?.title === 'مصارف'
     && detail.json.live.sections[0].rows === 3 && detail.json.live.sections[0].months === 2);
   check('حسابِ کیو‌آردار شمرده شد', detail.json?.qrAccounts === 1);
+  check('فایل‌های دفتر برای صفحهٔ پروفایل آمدند', Array.isArray(detail.json?.files) && detail.json.files.some((f) => f.key === 'live'));
   check('رمزِ برنامه در جزئیات نیست', !JSON.stringify(detail.json).includes(one.json.token)
     && !JSON.stringify(detail.json).includes(one.json.readKey));
   check('رمزِ قفلِ اپ فقط «دارد/ندارد» است', detail.json?.live?.hasGate === true && !JSON.stringify(detail.json).includes('pbkdf2'));

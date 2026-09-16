@@ -13,12 +13,13 @@
 //  می‌شود) دیده می‌شوند. رمزِ برنامه هیچ‌وقت در فهرست نمی‌آید.
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Fuel, KeyRound, Smartphone } from 'lucide-react';
 
 import { api } from '../api';
 import { useApp } from '../app-context';
 import { Card, ConfirmDialog, CopyButton, Empty, Field, Loading, Modal, StatusDot, toast } from '../components/ui';
-import { ActionButton, Cell, KV, Notice, Row, Stat, Table, Tabs } from '../control/ui';
+import { ActionButton, Cell, Notice, Row, Stat, Table } from '../control/ui';
 import StationsCloud from './StationsCloud';
 
 type Station = {
@@ -45,41 +46,6 @@ type Overview = {
 };
 
 type Keys = { code: string; token: string; readKey: string };
-
-/** جزئیاتِ یک پمپ — ‎/api/stations-admin/:code/detail‎ (از روی همان ‎live.json‎) */
-type TankSide = { in?: number; out?: number; show?: number; current?: number; low?: boolean; near?: boolean };
-type Detail = {
-  code: string;
-  name: string;
-  dataDir: string;
-  diskBytes: number;
-  liveConnections: number;
-  reads: number;
-  writes: number;
-  lastActivity: number | null;
-  live: null | {
-    at: string | null;
-    atUtc: string | null;
-    seq: number | null;
-    hasGate: boolean;
-    detail: boolean;
-    station: { name: string; address: string; phone: string; ratePetrol: number | null; rateDiesel: number | null } | null;
-    tank: { petrol?: TankSide; diesel?: TankSide } | null;
-    debtors: { total: number; ok: number; low: number; out: number; none: number };
-    alerts: { k?: string; s?: string; t?: string }[];
-    sections: { id: string; title: string; rows: number; months: number }[];
-  };
-  inbox: { id: string; text?: string; from?: string; at?: number; kind?: string }[];
-  inboxCount: number;
-  qrAccounts: number;
-};
-
-type Connect = {
-  code: string;
-  name: string;
-  staff: { link: string | null; qr: string | null; readKey: string };
-  shortcut: string | null;
-};
 
 const fa = (n: number | null | undefined) => (n == null ? '—' : Number(n).toLocaleString('fa-AF'));
 
@@ -117,9 +83,7 @@ export default function StationsPage() {
   const [keys, setKeys] = useState<Keys | null>(null);
   const [pairing, setPairing] = useState<{ pin: string; code: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Station | null>(null);
-  const [detail, setDetail] = useState<Detail | null>(null);
-  const [connect, setConnect] = useState<Connect | null>(null);
-  const [detailTab, setDetailTab] = useState('summary');
+  const navigate = useNavigate();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -156,21 +120,6 @@ export default function StationsPage() {
   async function showKeys(code: string) {
     try {
       setKeys(await api<Keys>(`/api/stations-admin/${encodeURIComponent(code)}/keys`));
-    } catch (e) {
-      toast((e as Error).message, 'bad');
-    }
-  }
-
-  /** «داخلِ این پمپ چه خبر است؟» — جزئیات از همان عکسِ زنده، بی رمز */
-  async function openDetail(code: string) {
-    try {
-      setDetailTab('summary');
-      const d = await api<Detail>(`/api/stations-admin/${encodeURIComponent(code)}/detail`);
-      setDetail(d);
-      //  لینک و کیو‌آرِ اپِ کارمندان — جدا و اختیاری، تا اگر تونل نبود صفحه نیفتد
-      api<Connect>(`/api/stations-admin/${encodeURIComponent(code)}/connect?karBase=${encodeURIComponent('https://yaqobipump.top/kar')}`)
-        .then(setConnect)
-        .catch(() => setConnect(null));
     } catch (e) {
       toast((e as Error).message, 'bad');
     }
@@ -296,7 +245,7 @@ export default function StationsPage() {
                 </Cell>
                 <Cell>
                   <div className="flex flex-wrap gap-1">
-                    <ActionButton className="btn btn-sm btn-primary" onClick={() => openDetail(s.code)}>جزئیات</ActionButton>
+                    <ActionButton className="btn btn-sm btn-primary" onClick={() => navigate(`/stations/${encodeURIComponent(s.code)}`)}>پروفایلِ پمپ</ActionButton>
                     <ActionButton onClick={() => showKeys(s.code)}>رمزها</ActionButton>
                     {canWrite && <ActionButton onClick={() => makePairing(s.code)}>کدِ جفت‌شدن</ActionButton>}
                     {isAdmin && (
@@ -382,169 +331,6 @@ export default function StationsPage() {
         <Notice tone="info">
           همین کد باید در تنظیماتِ برنامهٔ کامپیوترِ همان پمپ هم نوشته شود؛ وگرنه برنامه پوشهٔ دیگری می‌سازد.
         </Notice>
-      </Modal>
-
-      {/* ══ جزئیاتِ پمپ — همان چیزی که اپِ کارمندان می‌بیند، این‌جا برای صاحبِ سرور ══ */}
-      <Modal open={Boolean(detail)} wide title={`پمپ «${detail?.name ?? ''}» — ${detail?.code ?? ''}`}
-             onClose={() => { setDetail(null); setConnect(null); }}>
-        {detail && (
-          <div className="space-y-3">
-            <Tabs
-              active={detailTab}
-              onChange={setDetailTab}
-              tabs={[
-                { id: 'summary', label: 'خلاصه' },
-                { id: 'debtors', label: 'قرض‌داران و خبرها', badge: detail.live?.alerts.length ?? 0 },
-                { id: 'sections', label: 'بخش‌ها', badge: detail.live?.sections.length ?? 0 },
-                { id: 'inbox', label: 'صندوقِ ورودی', badge: detail.inboxCount },
-                { id: 'staff', label: 'اپِ کارمندان' },
-              ]}
-            />
-
-            {!detail.live && (
-              <Notice tone="warn">
-                برنامهٔ کامپیوترِ این پمپ هنوز هیچ عکسی نفرستاده. همین که روشن شود و وصل باشد، هر بیست ثانیه
-                یک عکسِ کامل می‌آید و همه‌چیز این‌جا پُر می‌شود.
-              </Notice>
-            )}
-
-            {detailTab === 'summary' && (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="card p-3">
-                  <div className="mb-1 text-xs font-semibold">وضعیت</div>
-                  <KV label="آخرین عکس">{detail.live?.at ?? '—'}{detail.live?.atUtc ? ` · ${new Date(detail.live.atUtc).toLocaleTimeString('fa-IR')}` : ''}</KV>
-                  <KV label="شمارهٔ عکس" mono>{detail.live?.seq ?? '—'}</KV>
-                  <KV label="دستگاه‌های وصل">{fa(detail.liveConnections)}</KV>
-                  <KV label="خوانده / نوشته">{fa(detail.reads)} / {fa(detail.writes)}</KV>
-                  <KV label="روی دیسک">{fmtBytes(detail.diskBytes)}</KV>
-                  <KV label="رمزِ قفلِ اپ">{detail.live ? (detail.live.hasGate ? 'دارد' : 'برنامه هنوز رمز نساخته') : '—'}</KV>
-                  <KV label="ردیف‌های حساب‌ها">{detail.live ? (detail.live.detail ? 'کامل به گوشی می‌رود' : 'فقط جمع‌ها (دفتر بزرگ است)') : '—'}</KV>
-                </div>
-                <div className="card p-3">
-                  <div className="mb-1 text-xs font-semibold">پمپ</div>
-                  <KV label="نام">{detail.live?.station?.name || detail.name}</KV>
-                  <KV label="نشانی">{detail.live?.station?.address || '—'}</KV>
-                  <KV label="شماره" mono>{detail.live?.station?.phone || '—'}</KV>
-                  <KV label="نرخِ اتحادیه — پطرول">{fa(detail.live?.station?.ratePetrol)}</KV>
-                  <KV label="نرخِ اتحادیه — دیزل">{fa(detail.live?.station?.rateDiesel)}</KV>
-                  <KV label="حساب‌های کیو‌آردار">{fa(detail.qrAccounts)}</KV>
-                </div>
-                {detail.live?.tank && (['petrol', 'diesel'] as const).map((k) => {
-                  const t = detail.live!.tank![k];
-                  if (!t) return null;
-                  return (
-                    <div key={k} className="card p-3">
-                      <div className="mb-1 flex items-center justify-between text-xs font-semibold">
-                        <span>مخزن — {k === 'petrol' ? 'پطرول' : 'دیزل'}</span>
-                        {t.low ? <span className="chip" style={{ color: 'var(--status-critical)' }}>کم آمده</span>
-                          : t.near ? <span className="chip" style={{ color: 'var(--status-warning)' }}>نزدیکِ حد</span> : null}
-                      </div>
-                      <KV label="موجودی (لیتر)">{fa(t.show ?? t.current)}</KV>
-                      <KV label="وارد">{fa(t.in)}</KV>
-                      <KV label="فروش">{fa(t.out)}</KV>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {detailTab === 'debtors' && detail.live && (
-              <div className="space-y-3">
-                <div className="grid gap-3 sm:grid-cols-4">
-                  <Stat label="قرض‌داران" value={fa(detail.live.debtors.total)} />
-                  <Stat label="موجودی دارد" value={fa(detail.live.debtors.ok)} tone="good" />
-                  <Stat label="کم مانده" value={fa(detail.live.debtors.low)} tone="warn" />
-                  <Stat label="تمام شده / اضافه برد" value={fa(detail.live.debtors.out)} tone="bad" />
-                </div>
-                {detail.live.alerts.length === 0 ? (
-                  <Notice tone="good">همین حالا خبری نیست — هیچ قرض‌داری اضافه نبرده و کم هم نمانده.</Notice>
-                ) : (
-                  <Table head={['خبر', 'نوع']}>
-                    {detail.live.alerts.map((a, i) => (
-                      <Row key={a.k || i}>
-                        <Cell>{a.t || '—'}</Cell>
-                        <Cell>
-                          <span className="chip" style={{ color: a.s === 'out' ? 'var(--status-critical)' : 'var(--status-warning)' }}>
-                            {a.s === 'out' ? 'اضافه برد' : 'کم مانده'}
-                          </span>
-                        </Cell>
-                      </Row>
-                    ))}
-                  </Table>
-                )}
-                <div className="text-xs opacity-60">
-                  همان فهرستی که گوشیِ کارمندان زنگ می‌زند (‎StationSnapshot.Alerts‎). نام‌ها و مبلغ‌ها فقط در خودِ برنامه و اپِ کارمندان دیده می‌شوند.
-                </div>
-              </div>
-            )}
-
-            {detailTab === 'sections' && detail.live && (
-              detail.live.sections.length === 0 ? <Notice>هنوز بخشی در عکس نیست.</Notice> : (
-                <Table head={['بخش', 'ردیف‌ها', 'ماه‌ها']}>
-                  {detail.live.sections.map((sec) => (
-                    <Row key={sec.id}>
-                      <Cell><div className="font-medium">{sec.title}</div><div className="text-xs opacity-60">{sec.id}</div></Cell>
-                      <Cell>{fa(sec.rows)}</Cell>
-                      <Cell>{fa(sec.months)}</Cell>
-                    </Row>
-                  ))}
-                </Table>
-              )
-            )}
-
-            {detailTab === 'inbox' && (
-              detail.inbox.length === 0 ? (
-                <Notice>صندوق خالی است. گوشیِ کارمندان از این‌جا درخواست و یادداشت می‌گذارند و برنامهٔ کامپیوتر پس از خواندن پاک می‌کند.</Notice>
-              ) : (
-                <Table head={['از', 'پیام', 'زمان']}>
-                  {detail.inbox.map((m) => (
-                    <Row key={m.id}>
-                      <Cell>{m.from || '—'}</Cell>
-                      <Cell><div className="max-w-md whitespace-pre-wrap break-words">{m.text || JSON.stringify(m)}</div></Cell>
-                      <Cell>{fmtTime(m.at ? Number(m.at) : null)}</Cell>
-                    </Row>
-                  ))}
-                </Table>
-              )
-            )}
-
-            {detailTab === 'staff' && (
-              <div className="space-y-3">
-                <Notice>
-                  کارمندان با <b>کدِ پمپ</b> وارد اپ می‌شوند — همان کدی که برنامهٔ کامپیوتر در بخشِ «پروفایل» نشان
-                  می‌دهد و در «پمپ‌ها روی ابر» هم دیده می‌شود. کیو‌آرِ زیر راهِ دوم است: فقط برای جایی که اینترنت
-                  نیست ولی شبکهٔ پمپ هست. رمزِ داخلش فقط‌خواندنی است.
-                </Notice>
-                {connect ? (
-                  <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
-                    {connect.staff.qr ? (
-                      <img src={connect.staff.qr} alt="کیو‌آرِ اپِ کارمندان" className="h-44 w-44 rounded-xl bg-white p-2" />
-                    ) : (
-                      <div className="text-xs opacity-60">تونلِ عمومی روشن نیست؛ کیو‌آر ساخته نمی‌شود.</div>
-                    )}
-                    <div className="space-y-2 text-sm">
-                      <div>
-                        <div className="text-xs opacity-60">لینکِ اپِ کارمندان (اندروید و آیفون)</div>
-                        {connect.staff.link ? (
-                          <div className="flex items-center gap-2"><code className="text-xs break-all flex-1" dir="ltr">{connect.staff.link}</code><CopyButton value={connect.staff.link} /></div>
-                        ) : <span className="opacity-60">—</span>}
-                      </div>
-                      <div>
-                        <div className="text-xs opacity-60">شورت‌کاتِ آیفون (یک GET ساده)</div>
-                        {connect.shortcut ? (
-                          <div className="flex items-center gap-2"><code className="text-xs break-all flex-1" dir="ltr">{connect.shortcut}</code><CopyButton value={connect.shortcut} /></div>
-                        ) : <span className="opacity-60">—</span>}
-                      </div>
-                      <div className="text-xs opacity-60">
-                        فایلِ نصبِ اندروید: <code dir="ltr">PumpYaqobiKar.apk</code> از انتشارِ <code dir="ltr">kar-latest</code>. آیفون: همان صفحه در Safari و «افزودن به صفحهٔ اصلی».
-                      </div>
-                    </div>
-                  </div>
-                ) : <Loading label="لینکِ اپ" />}
-              </div>
-            )}
-          </div>
-        )}
       </Modal>
 
       <Modal open={Boolean(keys)} title={`رمزهای پمپ «${keys?.code ?? ''}»`} onClose={() => setKeys(null)}>
