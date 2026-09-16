@@ -370,6 +370,54 @@ try {
   const p2detail = await api('GET', '/api/stations-admin/pump2/detail', undefined, auth);
   check('پمپِ خالی جزئیاتِ خالی دارد — نه دادهٔ پمپِ اول', p2detail.json?.live === null && p2detail.json?.inboxCount === 0);
 
+  // ── ۱۰ب) پشتیبانِ برنامه روی سرور ───────────────────────────────────────
+  //  خواستهٔ صاحب ریپو: «هر ۶ ساعت بک‌آپ برود و تا سه روز بماند؛ روزِ چهارم
+  //  کهنه‌ترین برود.» این‌جا با چهار روزِ ساختگی همان قاعده سنجیده می‌شود.
+  console.log('\n۱۰ب) پشتیبانِ پمپ روی سرور');
+  async function sendBackup(name, token, body = 'SQLite format 3\u0000ساختگی') {
+    const res = await fetch(`${BASE}/api/stations/pump1/backup`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream', 'x-station-token': token, 'x-backup-name': name },
+      body,
+    });
+    let json = null;
+    try { json = await res.json(); } catch { /* بدنهٔ غیرِ JSON */ }
+    return { status: res.status, json };
+  }
+
+  const bk1 = await sendBackup('pump-1405-06-24-0600.db', one.json.token);
+  check('پشتیبان با رمزِ برنامه پذیرفته شد', bk1.status === 200 && bk1.json?.ok === true);
+  check('روزِ فایل از نامش درآمد', bk1.json?.day === '1405-06-24');
+
+  const bkRead = await sendBackup('pump-1405-06-24-1200.db', one.json.readKey);
+  check('رمزِ فقط‌خواندنی پشتیبان نمی‌فرستد', bkRead.status === 403);
+
+  for (const name of ['pump-1405-06-24-1200.db', 'pump-1405-06-25-0600.db',
+                      'pump-1405-06-26-0600.db', 'pump-1405-06-26-1200.db']) {
+    await sendBackup(name, one.json.token);
+  }
+  const before = await api('GET', '/api/stations/pump1/backups', undefined, { 'x-station-token': one.json.token });
+  check('سه روز روی سرور ماند', new Set((before.json?.items || []).map((x) => x.day)).size === 3);
+  check('هر پنج فایلِ سه روزِ آخر هست', (before.json?.items || []).length === 5);
+
+  //  روزِ چهارم که آمد، کهنه‌ترین روز می‌رود
+  await sendBackup('pump-1405-06-27-0600.db', one.json.token);
+  const after = await api('GET', '/api/stations/pump1/backups', undefined, { 'x-station-token': one.json.token });
+  const days = [...new Set((after.json?.items || []).map((x) => x.day))].sort();
+  check('روزِ چهارم که آمد، روزِ اول رفت', days.length === 3 && days[0] === '1405-06-25' && !days.includes('1405-06-24'));
+  check('پشتیبان روی دیسکِ همان پمپ نشست',
+    fs.existsSync(path.join(root, 'pump1', 'backups', 'pump-1405-06-27-0600.db')));
+
+  //  ⚠️ رمزِ ساختگی باید لاتین باشد: هدرِ HTTP فقط ByteString می‌پذیرد
+  const bkBad = await sendBackup('x.db', 'wrong-token-1234');
+  check('رمزِ غلط ⇒ ۴۰۴', bkBad.status === 404);
+
+  const detailBk = await api('GET', '/api/stations-admin/pump1/detail', undefined, auth);
+  check('پشتیبان‌ها در جزئیاتِ پنل هم هستند',
+    Array.isArray(detailBk.json?.backups)
+    && new Set(detailBk.json.backups.map((x) => x.day)).size === 3
+    && detailBk.json.backups.length === 4);
+
   // ── ۱۱) داده پس از راه‌اندازیِ دوباره سرِ جایش است ──────────────────────
   console.log('\n۱۱) ماندگاری');
   app1.ws.close();

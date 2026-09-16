@@ -15,7 +15,7 @@
 //  برگشتِ داده است.
 // ---------------------------------------------------------------------------
 import crypto from 'node:crypto';
-import { Router } from 'express';
+import express, { Router } from 'express';
 import QRCode from 'qrcode';
 import { requireAuth, requireWriteRole } from '../auth.js';
 import { getStations, getMirror } from '../state.js';
@@ -23,6 +23,7 @@ import { config } from '../config.js';
 import { readMirrorStatus, mirrorDir } from '../stations/cloud-mirror.js';
 import { logEvent } from '../db.js';
 import { isLocalRequest, safeCode, LIVE_BRANCH, INBOX_BRANCH, META_BRANCH } from '../stations/index.js';
+import { listBackups, saveBackup, KEEP_DAYS, MAX_BYTES } from '../stations/backups.js';
 import { cloudStatus, cloudLogin, cloudForget, cloudCall } from '../stations/cloud.js';
 
 /** شاخهٔ حساب‌های کیو‌آردار — ‎acct/<شناسه>‎ (برنامهٔ نیتیو می‌نویسد) */
@@ -191,6 +192,38 @@ router.put('/:code/data/*', (req, res) => {
   const value = req.body && Object.prototype.hasOwnProperty.call(req.body, 'value') ? req.body.value : req.body;
   ctx.store.write(path, value);
   res.json({ ok: true, code: ctx.code, path });
+});
+
+/**
+ * ══ پشتیبانِ برنامهٔ نیتیو ═══════════════════════════════════════════════════
+ *
+ * خواستهٔ صاحب ریپو: «هر ۶ ساعت بک‌آپ برود به سرور و تا سه روز بماند.»
+ * بدنه **خام** است (فایلِ SQLite)، پس این مسیر از میان‌افزارِ JSON رد نمی‌شود
+ * و ‎express.raw‎ی خودش را دارد. فقط رمزِ برنامه (‎owner‎) می‌تواند بفرستد.
+ */
+router.post(
+  '/:code/backup',
+  (req, res, next) => express.raw({ type: '*/*', limit: MAX_BYTES })(req, res, next),
+  async (req, res) => {
+    const ctx = open(req, res, 'owner');
+    if (!ctx) return;
+    const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    if (body.length === 0) return res.status(400).json({ error: 'empty' });
+    try {
+      const saved = await saveBackup(config.stations.dataDir, ctx.code, req.get('x-backup-name') || '', body);
+      logEvent('station_backup', `پشتیبانِ پمپ ${ctx.code}: ${saved.name} (${saved.bytes} بایت)`);
+      res.json({ ok: true, code: ctx.code, ...saved, keepDays: KEEP_DAYS });
+    } catch (err) {
+      res.status(500).json({ error: 'save_failed', message: String(err?.message || err) });
+    }
+  }
+);
+
+/** فهرستِ پشتیبان‌های همین پمپ — برنامه با آن می‌فهمد آخرین بک‌آپ کِی رفته. */
+router.get('/:code/backups', (req, res) => {
+  const ctx = open(req, res, 'read');
+  if (!ctx) return;
+  res.json({ ok: true, code: ctx.code, keepDays: KEEP_DAYS, items: listBackups(config.stations.dataDir, ctx.code) });
 });
 
 /**
@@ -440,6 +473,8 @@ adminRouter.get('/:code/detail', async (req, res) => {
     qrAccounts: acctCount,
     //  «فایل‌ها»ی صفحهٔ پروفایلِ پمپ — هر شاخهٔ دفتر با حجمش
     files: store.branches().map((b) => ({ key: b.key, bytes: b.bytes, children: b.children })),
+    //  پشتیبان‌های همین پمپ — سه روزِ آخر (‎stations/backups.js‎)
+    backups: listBackups(config.stations.dataDir, store.key),
   });
 });
 
