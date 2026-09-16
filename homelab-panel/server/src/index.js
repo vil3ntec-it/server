@@ -28,6 +28,7 @@ import { sitesRoot, ensureSitesRoot } from './sites/root.js';
 import { stopAll } from './sites/process.js';
 import {
   startTunnel, stopTunnel, tunnelEvents, publicState as tunnelState, reconcileNamedTunnel,
+  syncTunnelRoutes,
 } from './tunnel.js';
 import { versionInfo, versionLine } from './version.js';
 import { corsMiddleware, isAllowedOrigin, secureHeaders } from './platform/security.js';
@@ -800,6 +801,19 @@ async function main() {
        */
       reconcileNamedTunnel()
         .catch(() => null)
+        /*
+         *  ⚠️ مسیرها هم پیش از راه‌اندازی همگام می‌شوند.
+         *
+         *  تا امروز syncTunnelRoutes فقط وقتی اجرا می‌شد که کاربر دامنه‌ای
+         *  اضافه یا عوض کند. یعنی اگر به‌روزرسانی یک زیردامنهٔ تازه بیاورد
+         *  — همان‌طور که admin.<دامنه> آورد — آن زیردامنه نه رکوردِ DNS
+         *  می‌گرفت و نه در ingress می‌نشست، و کاربر هیچ راهی نداشت جز
+         *  دست‌زدن به تنظیماتِ دامنه تا تصادفاً همگام شود.
+         *
+         *  restart: false چون تونل همین پایین تازه بالا می‌آید و نباید دو
+         *  بار روشن و خاموش شود؛ فایلِ ingress پیش از آن نوشته شده است.
+         */
+        .then(() => syncTunnelRoutes({ restart: false }).catch(() => null))
         .then(() =>
           startTunnel({}).then((st) => {
             if (st.status === 'error') {
