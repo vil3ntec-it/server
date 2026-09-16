@@ -69,6 +69,17 @@ object Api {
     val remote = session.remote?.takeIf { it.usable && !path.startsWith("http") }
     if (remote == null) return raw(session, url(session, path), method, body, timeoutMs, timeoutMs, null)
 
+    /*
+     *  ⚠️ وقتی آدرسِ سرور خودش همان درِ دامنه است، «راهِ محلی» وجود ندارد —
+     *  همان آدرس است، فقط بی کلید. و بی کلید آن در ۴۰۴ می‌دهد، که خطای
+     *  خودِ سرور حساب می‌شود و همین‌جا پرتاب می‌شد؛ یعنی راهِ دوم هیچ‌وقت
+     *  امتحان نمی‌شد و برنامه با کلیدِ درست هم «این آدرس روی سرور نیست»
+     *  می‌گرفت. پس این‌جا یک راه بیشتر نیست.
+     */
+    if (remote.sameAs(session.serverUrl)) {
+      return raw(session, URL(remote.wrap(path)), method, body, timeoutMs, timeoutMs, remote)
+    }
+
     val local = Route(url(session, path), null)
     val away = Route(URL(remote.wrap(path)), remote)
     val order = if (preferRemote) listOf(away, local) else listOf(local, away)

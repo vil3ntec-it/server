@@ -71,7 +71,7 @@ import { rateLimit, pruneRateLimits } from './lib/rate-limit.js';
 import { codeSettings } from './codes/settings.js';
 import { pinSitesRoot } from './sites/portable.js';
 import { startQueue, stopQueue } from './codes/queue.js';
-import { adminGate, adminHostGate, GATE_PREFIX } from './api/admin-gate.js';
+import { adminEnrollRoute, adminGate, adminHostGate, GATE_ENROLL, GATE_PREFIX } from './api/admin-gate.js';
 import { readyPayload } from './platform/health.js';
 import { createBackup } from './backup/index.js';
 import * as notify from './notify/index.js';
@@ -522,6 +522,27 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
    *  اولی برای کاربر ساده‌تر است (آدرسِ کوتاه و جدا از سایت)، دومی برای
    *  وقتی که هنوز دامنه‌ای ساخته نشده و فقط آدرسِ تونل هست.
    */
+  /*
+   *  کلیدِ بارِ اول — و تنها چیزی که بی کلید جواب می‌دهد.
+   *
+   *  ⚠️ باید *پیش از* دو خطِ پایین بنشیند، وگرنه خودِ در می‌بلعدش و بی
+   *  کلید ۴۰۴ می‌دهد — یعنی دقیقاً همان بن‌بستی که می‌خواهد باز کند.
+   *
+   *  ⚠️ و express.json مخصوصِ خودش را دارد: میان‌افزارِ عمومیِ JSON پایین‌تر
+   *  است و این‌جا هنوز اجرا نشده، ولی در بی بدنه هم کار می‌کند و نباید
+   *  جریانِ بقیهٔ مسیرها خورده شود. سقفِ چهار کیلوبایت برای یک نام و رمز
+   *  بیش از کافی است.
+   *
+   *  ⚠️ شمارنده‌اش سخت‌تر از خودِ در است: ده تلاشِ ناموفق در ساعت. برنامه
+   *  یک بار در عمرش این‌جا می‌آید؛ کسی که رمز حدس می‌زند، هر بار.
+   */
+  publicApp.post(
+    GATE_ENROLL,
+    rateLimitCfg({ name: 'admin-enroll', max: 10, windowMs: 60 * 60 * 1000, skipSuccess: true }),
+    express.json({ limit: '4kb' }),
+    adminEnrollRoute,
+  );
+
   publicApp.use(gateLimiter, adminHostGate);
   publicApp.use(GATE_PREFIX, gateLimiter, adminGate);
 

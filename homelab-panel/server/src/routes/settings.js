@@ -14,6 +14,7 @@ import { folderReport, moveSitesIntoFolder } from '../sites/portable.js';
 import { normalizeDomain } from '../sites/registry.js';
 import { adminUrl, publicState as tunnelState } from '../tunnel.js';
 import {
+  GATE_ENROLL,
   GATE_HEADER,
   GATE_PREFIX,
   issueGateKey,
@@ -203,8 +204,14 @@ router.get('/remote', (req, res) => {
     hostname: tunnel.hostname || null,
     running: tunnel.status === 'running',
     permanent: Boolean(tunnel.permanent),
-    gatePath: GATE_PREFIX,
+    /*
+     *  ⚠️ روی زیردامنهٔ admin پیشوند لازم نیست — آن‌جا کلِ میزبان همان در
+     *  است. چسباندنِ پیشوند به آن، مسیری می‌ساخت که پنل نمی‌شناخت و هر
+     *  درخواستِ برنامه از بیرونِ خانه ۴۰۴ می‌گرفت.
+     */
+    gatePath: admin ? '' : GATE_PREFIX,
     gateHeader: GATE_HEADER,
+    enrollPath: GATE_ENROLL,
     devices: listGateDevices(),
   });
 });
@@ -220,7 +227,7 @@ router.post('/remote/device', (req, res) => {
     ok: true,
     ...issued,
     url: adminUrl() || tunnel.url || null,
-    gatePath: GATE_PREFIX,
+    gatePath: adminUrl() ? '' : GATE_PREFIX,
     gateHeader: GATE_HEADER,
   });
 });

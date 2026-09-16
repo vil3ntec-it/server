@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import ir.vil3ntec.admin.data.Api
+import ir.vil3ntec.admin.data.ApiError
 import ir.vil3ntec.admin.data.RemoteAccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -94,7 +95,29 @@ fun rememberServerHealth(
           ServerHealth(ServerState.Online)
         }
       } catch (e: Exception) {
-        ServerHealth(ServerState.Offline, e.message.orEmpty().ifBlank { e.javaClass.simpleName })
+        /*
+         *  ⚠️ «بسته» با «خاموش» یکی نیست، و نگفتنِ فرقشان یک بار کلِ ورود را
+         *  به بن‌بست برد.
+         *
+         *  درِ دامنه تا وقتی این گوشی کلید نگرفته، به *هر* مسیری «not found»
+         *  می‌دهد — حتی /health. پس چراغ قرمز می‌شد و زیرش می‌نوشت «این آدرس
+         *  روی سرور نیست»، در حالی که آدرس درست بود و سرور هم روشن. آدم
+         *  آدرسِ درست را پاک می‌کرد و دنبالِ آدرسِ دیگری می‌گشت.
+         *
+         *  حالا همان حالت را می‌شناسیم و می‌گوییم کارِ بعدی چیست: ورود.
+         */
+        val locked = e is ApiError
+          && e.status == 404
+          && remote == null
+          && serverUrl.startsWith("https://")
+        if (locked) {
+          ServerHealth(
+            ServerState.Unknown,
+            "این آدرس تا ورودِ شما بسته است — نام و رمزتان را بزنید",
+          )
+        } else {
+          ServerHealth(ServerState.Offline, e.message.orEmpty().ifBlank { e.javaClass.simpleName })
+        }
       }
       delay(everyMs)
     }

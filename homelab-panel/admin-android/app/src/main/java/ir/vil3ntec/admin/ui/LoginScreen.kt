@@ -142,9 +142,28 @@ fun LoginScreen(
     error = ""
     scope.launch {
       try {
-        withContext(Dispatchers.IO) { Api.health(address, remote) }
+        /*
+         *  کلیدِ در، با همان نام و رمز — پیش از هر چیزِ دیگر.
+         *
+         *  ⚠️ چرا این‌جا و چرا اول: اگر آدرس همان درِ دامنه باشد، بی کلید
+         *  *هیچ* مسیری جواب نمی‌دهد — نه /health، نه خودِ ورود. یعنی بدونِ
+         *  این چند خط، کسی که بارِ اول برنامه را بیرونِ خانه باز می‌کند
+         *  فقط «این آدرس روی سرور نیست» می‌دید و هیچ راهی نداشت.
+         *
+         *  ⚠️ فقط روی https: آدرسِ محلیِ خانه اصلاً دری ندارد و زدنش آن‌جا
+         *  یک درخواستِ بی‌فایده است. در خانه کلید بعدِ ورود صادر می‌شود،
+         *  همان‌طور که بود.
+         */
+        var gate = remote?.takeIf { it.usable }
+        if (gate == null && address.startsWith("https://")) {
+          gate = withContext(Dispatchers.IO) {
+            Remote.enroll(address, username.trim(), password, onDeviceId(), "ویلن ادمین")
+          }
+        }
+
+        withContext(Dispatchers.IO) { Api.health(address, gate) }
         val reply = withContext(Dispatchers.IO) {
-          Api.login(address, username.trim(), password, remote)
+          Api.login(address, username.trim(), password, gate)
         }
         val token = reply.optString("token")
         if (token.isBlank()) {
@@ -155,21 +174,21 @@ fun LoginScreen(
             token = token,
             username = reply.optJSONObject("user")?.optString("username") ?: username.trim(),
             role = reply.optJSONObject("user")?.optString("role") ?: "admin",
-            remote = remote,
+            remote = gate,
           )
 
           /*
            *  کلیدِ دسترسی از بیرون، همین‌جا و خودکار.
            *
-           *  ⚠️ چرا خودکار: کلید فقط از داخلِ خانه صادر می‌شود، و همین
-           *  الان که تازه وارد شده‌ایم بهترین — و شاید تنها — فرصتش است.
+           *  ⚠️ چرا خودکار: این‌جا ورود از داخلِ خانه بوده و کلیدی هنوز
+           *  نگرفته‌ایم. همین حالا که تازه وارد شده‌ایم بهترین فرصت است؛
            *  اگر منتظرِ فشردنِ دکمه می‌ماندیم، اولین بار که کاربر از خانه
-           *  بیرون می‌رفت برنامه کار نمی‌کرد و دلیلش را هم نمی‌فهمید.
+           *  بیرون می‌رفت باید دوباره نام و رمز می‌زد.
            *
            *  ⚠️ و اگر نشد، ورود نباید بخورد زمین: شاید تونل هنوز بالا
            *  نیامده. همان کارتِ «دسترسی از بیرونِ خانه» بعداً هست.
            */
-          val withRemote = runCatching {
+          val withRemote = if (gate != null) fresh else runCatching {
             withContext(Dispatchers.IO) {
               Remote.provision(fresh, onDeviceId(), "ویلن ادمین")
             }
@@ -240,7 +259,7 @@ fun LoginScreen(
               )
               Text(
                 if (remote?.usable == true) "در خانه: ${server.url}"
-                else "از بیرون: ${server.admin} — بعد از ورودِ اول فعال می‌شود",
+                else "از بیرونِ خانه: ${server.admin}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
@@ -317,7 +336,7 @@ fun LoginScreen(
      *  سرورِ خواب و فایروالِ بسته و آدرسِ غلط را یک شکل نشان می‌دهد و آدم
      *  نمی‌داند کدامش را درست کند.
      */
-    if (state == ServerState.Offline && health.reason.isNotBlank()) {
+    if (state != ServerState.Online && health.reason.isNotBlank()) {
       Text(
         health.reason,
         Modifier.fillMaxWidth().padding(top = 2.dp),
@@ -370,7 +389,7 @@ fun LoginScreen(
     }
 
     Text(
-      "از بیرونِ خانه، آدرسِ اینترنتیِ تونل را این‌جا بگذارید.",
+      "بیرونِ خانه، آدرسِ دامنه‌تان را این‌جا بنویسید — همان نام و رمز کافی است.",
       Modifier.padding(top = 20.dp),
       style = MaterialTheme.typography.labelSmall,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
