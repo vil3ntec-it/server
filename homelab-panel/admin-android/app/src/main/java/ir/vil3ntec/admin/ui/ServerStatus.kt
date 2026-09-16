@@ -1,0 +1,124 @@
+package ir.vil3ntec.admin.ui
+
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import ir.vil3ntec.admin.data.Api
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+
+/** روشن، خاموش، یا هنوز معلوم نیست */
+enum class ServerState { Unknown, Online, Offline }
+
+/**
+ *  «سرور روشن است یا خاموش؟»
+ *
+ *  ⚠️ این را نمی‌شود از روی موفقیتِ آخرین درخواستِ صفحه فهمید: صفحه‌ای که
+ *  باز نشده هیچ درخواستی نمی‌زند و آدم نمی‌فهمد سرور خوابیده یا فقط
+ *  صفحه خالی است. پس یک نبضِ مستقل هر چند ثانیه /health را می‌زند.
+ *
+ *  مهلتش کوتاه است: سرورِ خاموش در شبکهٔ محلی فوراً «وصل نشد» می‌دهد، ولی
+ *  اگر آدرس اشتباه باشد درخواست تا آخرین ثانیه منتظر می‌ماند. با مهلتِ
+ *  کوتاه، «خاموش» خیلی زود دیده می‌شود نه یک دقیقه بعد.
+ */
+@Composable
+fun rememberServerState(serverUrl: String, everyMs: Long = 10_000): ServerState {
+  var state by remember(serverUrl) { mutableStateOf(ServerState.Unknown) }
+
+  LaunchedEffect(serverUrl) {
+    // آدرسی نداریم که بسنجیم — نه «خاموش»، که هنوز معلوم نیست
+    if (serverUrl.isBlank()) {
+      state = ServerState.Unknown
+      return@LaunchedEffect
+    }
+    while (true) {
+      state = try {
+        withContext(Dispatchers.IO) { Api.health(serverUrl) }
+        ServerState.Online
+      } catch (_: Exception) {
+        ServerState.Offline
+      }
+      delay(everyMs)
+    }
+  }
+  return state
+}
+
+/** چراغِ وضعیت — نقطهٔ رنگی و یک کلمه */
+@Composable
+fun ServerStatusDot(state: ServerState, showLabel: Boolean = true) {
+  val color = when (state) {
+    ServerState.Online -> StatusColor.good
+    ServerState.Offline -> StatusColor.bad
+    ServerState.Unknown -> MaterialTheme.colorScheme.onSurfaceVariant
+  }
+  val label = when (state) {
+    ServerState.Online -> "روشن"
+    ServerState.Offline -> "خاموش"
+    ServerState.Unknown -> "در حال بررسی…"
+  }
+
+  // نقطه وقتی روشن است آرام نفس می‌کشد، تا معلوم باشد زنده است نه عکس
+  val transition = rememberInfiniteTransition(label = "pulse")
+  val alpha by transition.animateFloat(
+    initialValue = 1f,
+    targetValue = if (state == ServerState.Online) 0.35f else 1f,
+    animationSpec = infiniteRepeatable(tween(1_200), RepeatMode.Reverse),
+    label = "alpha",
+  )
+
+  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Box(
+      Modifier
+        .size(9.dp)
+        .alpha(if (state == ServerState.Online) alpha else 1f)
+        .clip(CircleShape)
+        .background(color)
+    )
+    if (showLabel) {
+      Text(label, style = MaterialTheme.typography.labelMedium, color = color)
+    }
+  }
+}
+
+/** همان چراغ، داخلِ یک قابِ کوچکِ رنگی */
+@Composable
+fun ServerStatusChip(state: ServerState) {
+  val color: Color = when (state) {
+    ServerState.Online -> StatusColor.good
+    ServerState.Offline -> StatusColor.bad
+    ServerState.Unknown -> MaterialTheme.colorScheme.onSurfaceVariant
+  }
+  Box(
+    Modifier
+      .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+      .background(color.copy(alpha = 0.14f))
+      .padding(horizontal = 10.dp, vertical = 5.dp)
+  ) {
+    ServerStatusDot(state)
+  }
+}

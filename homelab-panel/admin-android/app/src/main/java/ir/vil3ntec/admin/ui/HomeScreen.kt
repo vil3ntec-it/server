@@ -47,6 +47,7 @@ fun HomeScreen(session: Session, onLogout: () -> Unit) {
   val store = remember { (context.applicationContext as AdminApp).store }
   var watching by remember { mutableStateOf(store.watchEnabled) }
   val scope = rememberCoroutineScope()
+  val serverState = rememberServerState(session.serverUrl)
 
   LaunchedEffect(reload) {
     error = ""
@@ -78,14 +79,22 @@ fun HomeScreen(session: Session, onLogout: () -> Unit) {
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     item {
-      Column {
-        Text(server.optString("name").ifBlank { "سرور خانگی" },
-          style = MaterialTheme.typography.headlineSmall)
-        Text(
-          "${session.username} · ${session.serverUrl}",
-          style = MaterialTheme.typography.labelSmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+      Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top,
+      ) {
+        Column(Modifier.weight(1f)) {
+          Text(server.optString("name").ifBlank { "سرور خانگی" },
+            style = MaterialTheme.typography.headlineSmall)
+          Text(
+            "${session.username} · ${session.serverUrl}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+        // روشن یا خاموش — نبضِ مستقل، نه حدس از روی آخرین درخواست
+        ServerStatusChip(serverState)
       }
     }
 
