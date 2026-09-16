@@ -44,6 +44,12 @@ const ALLOWED = {
   plans:        ['GET',  '/api/admin/plans'],
   grant:        ['POST', '/api/admin/pump/subscriptions'],
   makeCode:     ['POST', '/api/admin/pump/vip-codes'],
+  //  پلن و قیمتِ خودِ پمپ — باز است، ولی از همین پل می‌رود تا نشانی یکی بماند
+  pumpPlans:    ['GET',  '/api/pump/plans'],
+  //  ‎:id‎ از ‎params.id‎ می‌آید و فقط حرف/رقم/خطِ تیره — نه هر چیزی
+  stationDetail:['GET',  '/api/admin/pump/stations/:id'],
+  revokeCode:   ['POST', '/api/admin/pump/vip-codes/:id/revoke'],
+  subStatus:    ['POST', '/api/admin/pump/subscriptions/:id/status'],
 
   //  ⚠️ فقط برای آینه (‎cloud-mirror.js‎) — پنل این‌ها را نشان نمی‌دهد.
   //  خواستهٔ صاحب مخزن: «فولدرِ سرور همه‌چی رو داشته باشه، چه از این چه
@@ -130,13 +136,23 @@ export function cloudForget(actor = 'admin') {
  * @param {string} name کلیدی از ALLOWED — نه یک مسیرِ دلخواه.
  * @param {object} opts { query, body }
  */
-export async function cloudCall(name, { query = {}, body = null } = {}) {
-  const entry = ALLOWED[name];
+export async function cloudCall(name, { query = {}, body = null, params = {} } = {}) {
+  let entry = ALLOWED[name];
   if (!entry) {
     const err = new Error('این مسیر از پنل باز نیست');
     err.code = 'path_not_allowed';
     err.status = 400;
     throw err;
+  }
+  if (entry[1].includes(':id')) {
+    const id = String(params.id || '');
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(id)) {
+      const err = new Error('شناسه معتبر نیست');
+      err.code = 'bad_id';
+      err.status = 400;
+      throw err;
+    }
+    entry = [entry[0], entry[1].replace(':id', encodeURIComponent(id))];
   }
   const t = token();
   if (!t) {

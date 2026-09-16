@@ -335,6 +335,40 @@ try {
   const reuse = await api('POST', '/api/stations/enroll', { code: 'pump5', pin: pair.json.pin });
   check('کد یک‌بارمصرف است', reuse.status === 403);
 
+  // ── ۱۰ب) جزئیاتِ پمپ در پنل — «بخشِ پمپ هیچی نداره» ──────────────────────
+  console.log('\n۱۰ب) جزئیاتِ پمپ در پنل');
+  sendOp(app1.ws, {
+    op: 'set', id: 8, path: 'live',
+    value: {
+      seq: 5, at: '1405/06/26', gate: 'pbkdf2$sha256$x',
+      station: { name: 'پمپ یعقوبی', phone: '0700' },
+      tank: { petrol: { in: 10000, out: 5800, show: 4200, low: false }, diesel: { in: 4000, out: 3900, show: 100, low: true } },
+      debtors: [
+        { id: 1, name: 'هارون', status: 'ok' }, { id: 2, name: 'محمد', status: 'out' },
+        { id: 3, name: 'علی', status: 'low' }, { id: 4, name: 'جدید', status: 'none' },
+      ],
+      alerts: [{ k: 'd2-out', s: 'out', t: 'محمد — اضافه برد' }],
+      sections: { expense: { t: 'مصارف', rows: [[1], [2], [3]], m: ['1405/06', '1405/06', '1405/05'] } },
+    },
+  });
+  await app1.next();
+  const detail = await api('GET', '/api/stations-admin/pump1/detail', undefined, auth);
+  check('جزئیات آمد', detail.status === 200 && detail.json?.ok === true, JSON.stringify(detail.json).slice(0, 200));
+  check('قرض‌داران شمرده شدند', detail.json?.live?.debtors?.total === 4 && detail.json.live.debtors.out === 1
+    && detail.json.live.debtors.low === 1 && detail.json.live.debtors.ok === 1 && detail.json.live.debtors.none === 1);
+  check('مخزن همان است', detail.json?.live?.tank?.diesel?.low === true && detail.json.live.tank.petrol.show === 4200);
+  check('خبرها آمدند', detail.json?.live?.alerts?.length === 1 && detail.json.live.alerts[0].s === 'out');
+  check('بخش‌ها خلاصه شدند', detail.json?.live?.sections?.[0]?.title === 'مصارف'
+    && detail.json.live.sections[0].rows === 3 && detail.json.live.sections[0].months === 2);
+  check('حسابِ کیو‌آردار شمرده شد', detail.json?.qrAccounts === 1);
+  check('رمزِ برنامه در جزئیات نیست', !JSON.stringify(detail.json).includes(one.json.token)
+    && !JSON.stringify(detail.json).includes(one.json.readKey));
+  check('رمزِ قفلِ اپ فقط «دارد/ندارد» است', detail.json?.live?.hasGate === true && !JSON.stringify(detail.json).includes('pbkdf2'));
+  const noDetail = await api('GET', '/api/stations-admin/pump-nist/detail', undefined, auth);
+  check('پمپِ نبوده ⇒ ۴۰۴', noDetail.status === 404);
+  const p2detail = await api('GET', '/api/stations-admin/pump2/detail', undefined, auth);
+  check('پمپِ خالی جزئیاتِ خالی دارد — نه دادهٔ پمپِ اول', p2detail.json?.live === null && p2detail.json?.inboxCount === 0);
+
   // ── ۱۱) داده پس از راه‌اندازیِ دوباره سرِ جایش است ──────────────────────
   console.log('\n۱۱) ماندگاری');
   app1.ws.close();
@@ -342,7 +376,7 @@ try {
   crossWs.ws.close();
   await new Promise((r) => setTimeout(r, 800));
   const onDisk = JSON.parse(fs.readFileSync(path.join(root, 'pump1', 'live.json'), 'utf8'));
-  check('عکسِ زنده روی دیسکِ همان پمپ نشست', onDisk?.tank?.petrol === 4200);
+  check('عکسِ زنده روی دیسکِ همان پمپ نشست', onDisk?.tank?.petrol?.show === 4200 && onDisk?.seq === 5);
 } catch (e) {
   failed++;
   console.log(`\n❌ آزمون شکست: ${e.message}`);
