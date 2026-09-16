@@ -418,6 +418,15 @@ try {
     && new Set(detailBk.json.backups.map((x) => x.day)).size === 3
     && detailBk.json.backups.length === 4);
 
+  //  ══ سهمِ دیسکِ هر پمپ ═════════════════════════════════════════════════
+  //  «سه روز» سقفِ دیسک نیست: دیتابیسِ بزرگِ یک پمپ می‌تواند دیسکِ سرور را پر
+  //  کند و همهٔ پمپ‌های دیگر را بخواباند. سقفِ واقعی ۱ گیگابایت است، پس این‌جا
+  //  خودِ قاعده با سهمِ ده‌بایتی سنجیده می‌شود.
+  const { pruneBackups: pruneOne } = await import('../src/stations/backups.js');
+  await pruneOne(root, 'pump1', 3, 10);
+  const slim = await api('GET', '/api/stations/pump1/backups', undefined, { 'x-station-token': one.json.token });
+  check('سهمِ دیسک: کهنه‌ها رفتند و فقط تازه‌ترین ماند', (slim.json?.items || []).length === 1);
+
   // ── ۱۱) داده پس از راه‌اندازیِ دوباره سرِ جایش است ──────────────────────
   console.log('\n۱۱) ماندگاری');
   app1.ws.close();

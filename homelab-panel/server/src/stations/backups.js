@@ -25,6 +25,22 @@ export const KEEP_DAYS = 3;
 /** بزرگ‌ترین فایلی که پذیرفته می‌شود — دیتابیسِ پنج‌سالهٔ پمپ ده‌ها مگابایت است. */
 export const MAX_BYTES = 256 * 1024 * 1024;
 
+/**
+ * ══ سهمِ هر پمپ از دیسک ═════════════════════════════════════════════════════
+ *
+ * خواستهٔ صاحب ریپو (۱۴۰۵/۰۶/۲۷): «چند صد نفر هم‌زمان در حساب‌های مختلف کار
+ * می‌کنند… نمی‌خواهم دیتابیسِ آن‌ها برنامه یا سرور را کرش کند.»
+ *
+ * «سه روز» به‌تنهایی سقفِ دیسک نیست: هر ۶ ساعت یک فایل یعنی تا دوازده فایل،
+ * و اگر دیتابیسِ یک پمپ بزرگ باشد همان یک پمپ می‌تواند دیسکِ سرور را پر کند
+ * و **همهٔ** پمپ‌های دیگر را بخواباند. پس هر پمپ سهمِ خودش را دارد و از آن
+ * بالاتر، کهنه‌ترین فایل‌هایش می‌روند — نه فایلِ پمپِ دیگری.
+ *
+ * ⚠️ تازه‌ترین پشتیبان هرگز حذف نمی‌شود، حتی اگر خودش از سهم بزرگ‌تر باشد:
+ * «پشتیبان نداشتن» از «دیسکِ پر» بدتر است.
+ */
+export const MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
+
 export function backupDir(dataDir, code) {
   return path.join(dataDir, code, 'backups');
 }
@@ -64,13 +80,23 @@ export function listBackups(dataDir, code) {
  * کهنه‌ها را می‌برد: فقط <see cref="KEEP_DAYS"/> روزِ تازه می‌ماند.
  * برمی‌گرداند چند فایل رفت.
  */
-export async function pruneBackups(dataDir, code, keepDays = KEEP_DAYS) {
+export async function pruneBackups(dataDir, code, keepDays = KEEP_DAYS, maxBytes = MAX_TOTAL_BYTES) {
   const list = listBackups(dataDir, code);
   const days = [...new Set(list.map((x) => x.day))].sort().reverse();
   const keep = new Set(days.slice(0, Math.max(1, keepDays)));
+
+  //  سهمِ دیسک: از تازه به کهنه جمع می‌زنیم و هرچه از سهم بیرون زد می‌رود.
+  //  ⚠️ فایلِ اول (تازه‌ترین) همیشه می‌ماند.
+  let sum = 0;
+  const over = new Set();
+  list.forEach((item, i) => {
+    sum += item.bytes;
+    if (i > 0 && sum > maxBytes) over.add(item.name);
+  });
+
   let gone = 0;
   for (const item of list) {
-    if (keep.has(item.day)) continue;
+    if (keep.has(item.day) && !over.has(item.name)) continue;
     try {
       await fsp.unlink(path.join(backupDir(dataDir, code), item.name));
       gone++;
