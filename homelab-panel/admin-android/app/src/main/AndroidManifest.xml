@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <uses-permission android:name="android.permission.INTERNET" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <!-- اعلانِ پیامِ تازه، حتی وقتی برنامه بسته است -->
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <!-- نصبِ به‌روزرسانی‌ای که خودِ برنامه دانلود کرده -->
+  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+  <application
+      android:name=".AdminApp"
+      android:allowBackup="false"
+      android:icon="@mipmap/ic_launcher"
+      android:label="@string/app_name"
+      android:supportsRtl="true"
+      android:networkSecurityConfig="@xml/network_security_config"
+      android:theme="@style/Theme.VillainAdmin">
+
+    <activity
+        android:name=".MainActivity"
+        android:exported="true"
+        android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+        android:windowSoftInputMode="adjustResize"
+        android:theme="@style/Theme.VillainAdmin">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity>
+
+    <!-- نگهبانِ پیام‌ها: با اعلانِ همیشگی زنده می‌ماند تا اندروید نخوابانَدش -->
+    <service
+        android:name=".work.WatchService"
+        android:exported="false"
+        android:foregroundServiceType="dataSync" />
+
+    <receiver
+        android:name=".work.BootReceiver"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
+
+    <!-- فایلِ نصبیِ دانلودشده باید به نصب‌کنندهٔ اندروید داده شود -->
+    <provider
+        android:name="androidx.core.content.FileProvider"
+        android:authorities="${applicationId}.files"
+        android:exported="false"
+        android:grantUriPermissions="true">
+      <meta-data
+          android:name="android.support.FILE_PROVIDER_PATHS"
+          android:resource="@xml/file_paths" />
+    </provider>
+  </application>
+</manifest>

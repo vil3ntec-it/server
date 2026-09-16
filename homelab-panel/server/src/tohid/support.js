@@ -183,19 +183,28 @@ export function markRead(threadId, side) {
  * نام و ایمیلِ حساب با همین یک کوئری می‌آید؛ صفحه‌ای که برای هر سطر یک
  * کوئریِ جدا بزند، روی صد گفت‌وگو می‌ایستد.
  */
-export function listThreads({ status = '', q = '', limit = 100, offset = 0 } = {}) {
+/**
+ * فهرستِ گفت‌وگوها.
+ *
+ * ⚠️ `app` بخش را جدا می‌کند — پمپ، فروشگاه، سایت. بدونِ این، همهٔ
+ * گفت‌وگوها در یک فهرست قاطی می‌شدند و جوابِ مشتریِ پمپ می‌توانست برای
+ * صاحبِ فروشگاه برود.
+ */
+export function listThreads({ app = '', status = '', q = '', limit = 100, offset = 0 } = {}) {
   const like = `%${String(q || '').toLowerCase()}%`;
   return db.prepare(`
     SELECT t.*, a.name AS account_name, a.email AS account_email, s.name AS shop_name
       FROM th_support_threads t
       LEFT JOIN th_accounts a ON a.account_id = t.account_id
       LEFT JOIN th_shops s ON s.owner_id = t.account_id
-     WHERE (? = '' OR t.status = ?)
+     WHERE (? = '' OR t.app = ?)
+       AND (? = '' OR t.status = ?)
        AND (? = '' OR lower(t.who) LIKE ? OR lower(COALESCE(a.name,'')) LIKE ?
             OR lower(COALESCE(a.email,'')) LIKE ? OR lower(t.last_message) LIKE ?)
      ORDER BY (t.unread_admin > 0) DESC, t.updated_at DESC
      LIMIT ? OFFSET ?
-  `).all(String(status), String(status), String(q || ''), like, like, like, like,
+  `).all(String(app), String(app), String(status), String(status),
+    String(q || ''), like, like, like, like,
     Number(limit) || 100, Number(offset) || 0).map(shapeThread);
 }
 
@@ -208,10 +217,11 @@ export function setThreadStatus(threadId, status) {
 }
 
 /** چند پیامِ خوانده‌نشده در کل — برای نقطهٔ قرمزِ تبِ پشتیبانی */
-export function unreadForAdmin() {
+export function unreadForAdmin(app = '') {
   return db.prepare(`
-    SELECT COALESCE(SUM(unread_admin), 0) AS n FROM th_support_threads WHERE status <> 'closed'
-  `).get().n;
+    SELECT COALESCE(SUM(unread_admin), 0) AS n FROM th_support_threads
+     WHERE status <> 'closed' AND (? = '' OR app = ?)
+  `).get(String(app), String(app)).n;
 }
 
 /** چند پیامِ خوانده‌نشده برای این کاربر یا دستگاه */
