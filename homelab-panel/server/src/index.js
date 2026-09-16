@@ -67,6 +67,7 @@ import { pruneAudit as pruneAppAudit } from './lib/audit.js';
 import { pruneTickets } from './lib/ws-ticket.js';
 import { rateLimit, pruneRateLimits } from './lib/rate-limit.js';
 import { otpSettings } from './appauth/settings.js';
+import { pinSitesRoot } from './sites/portable.js';
 import { readyPayload } from './platform/health.js';
 import { createBackup } from './backup/index.js';
 import * as notify from './notify/index.js';
@@ -118,6 +119,11 @@ ensureTohidSchema();
 // کلیدِ محلی همین اول ساخته می‌شود تا «برنامهٔ سرور خانگی» روی همین کامپیوتر
 // بتواند بدونِ ورودِ دستی، برنامه‌ها و تنظیمات را اداره کند.
 localKey();
+
+// نصبِ قدیمی نباید با عوض‌شدنِ پیش‌فرضِ «ریشهٔ سایت‌ها» تکان بخورد — اگر
+// سایت‌هایش بیرونِ پوشهٔ داده‌اند، همان‌جا ثبت می‌شوند و جابه‌جایی وقتی
+// انجام می‌شود که خودِ صاحبِ سرور بخواهد.
+pinSitesRoot();
 
 // شمارهٔ پروسه روی دیسک می‌ماند تا اسکریپت‌های سرویس (وقتی پنجره‌ای باز نیست)
 // بتوانند همین سرور را پیدا و متوقف کنند.

@@ -10,6 +10,7 @@ import { allSettings, getSetting, setSetting, logEvent } from '../db.js';
 import { config, paths } from '../config.js';
 import { versionInfo } from '../version.js';
 import { sitesRoot, setSitesRoot, NEXT_TO_SERVER } from '../sites/root.js';
+import { folderReport, moveSitesIntoFolder } from '../sites/portable.js';
 import { normalizeDomain } from '../sites/registry.js';
 
 const router = Router();
@@ -145,6 +146,26 @@ router.delete('/logo', async (req, res) => {
   if (file) await fsp.rm(file, { force: true });
   setSetting('logo_file', null);
   res.json({ ok: true });
+});
+
+/* ── پوشهٔ قابل‌حمل ────────────────────────────────────────────────────────
+   «اگر همین الان پوشه را بردارم و ببرم، چه چیزی جا می‌ماند؟» — جوابش را
+   پیش از جابه‌جایی باید دید، نه بعد از اینکه سرور روی کامپیوترِ تازه بالا
+   نیامد. */
+router.get('/portable', (req, res) => {
+  res.json({ ok: true, ...folderReport() });
+});
+
+/* آوردنِ سایت‌ها به داخلِ پوشه — فایل‌ها واقعاً جابه‌جا می‌شوند، پس فقط با
+   درخواستِ صریح. گزارش می‌گوید کدام رفت و کدام نه. */
+router.post('/portable/move-sites', async (req, res) => {
+  try {
+    const report = await moveSitesIntoFolder({ actor: req.user?.username || 'admin' });
+    logEvent('info', 'panel', `سایت‌ها به داخلِ پوشهٔ داده آورده شدند (${report.moved.length} مورد)`);
+    res.json(report);
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
 });
 
 export default router;

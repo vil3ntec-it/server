@@ -264,7 +264,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $keep = @($env:EXE_NAME, 'SHA256SUMS.txt', 'JOIN-PARTS.bat')
+          # ⚠️ نسخهٔ قابل‌حمل هم باید بماند. تا پیش از این در این فهرست نبود، پس
+          #    هر بار ساخته و بارگذاری می‌شد و بلافاصله همین‌جا پاک می‌شد —
+          #    جمعِ کنترلی‌اش در SHA256SUMS.txt می‌ماند ولی خودِ فایل نبود، و
+          #    همان فایلی است که پوشهٔ داده را قابلِ حمل می‌کند.
+          $keep = @($env:EXE_NAME, $env:PORTABLE_NAME, 'SHA256SUMS.txt', 'JOIN-PARTS.bat')
           $release = gh api "repos/${{ github.repository }}/releases/tags/windows-preview" | ConvertFrom-Json
           foreach ($asset in $release.assets) {
             $mine = ($keep -contains $asset.name) -or $asset.name.StartsWith("$($env:EXE_NAME).part")
