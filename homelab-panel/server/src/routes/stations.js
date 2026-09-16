@@ -357,6 +357,91 @@ adminRouter.post('/pair', requireWriteRole('operator'), (req, res) => {
 });
 
 /**
+ * ══ جزئیاتِ یک پمپ — همان چیزی که تا امروز فقط داخلِ اپِ کارمندان دیده می‌شد ══
+ *
+ * گزارشِ صاحب ریپو: «برنامهٔ سرور بخشِ پمپ رو خیلی بدون محتوا درست کردی؛
+ * برنامهٔ فروشگاه خیلی بخش‌های مختلف داره اما بخشِ پمپ هیچی نداره.»
+ *
+ * از روی همان ‎live.json‎ که برنامهٔ کامپیوتر هر بیست ثانیه می‌فرستد —
+ * هیچ حسابی این‌جا دوباره حساب نمی‌شود، فقط شمرده و خلاصه می‌شود:
+ *   • قرض‌داران: چند نفر، چند نفر تمام‌شده/کم‌مانده/موجودی‌دار
+ *   • خبرها (‎alerts‎): همان فهرستی که گوشیِ کارمند زنگ می‌زند
+ *   • مخزن: پطرول و دیزل، وارد/فروش/موجودی، و کم بودن
+ *   • بخش‌ها: نام و شمارِ ردیف‌های هر دفتر
+ *   • صندوقِ ورودی: پیام‌هایی که گوشی‌ها گذاشته‌اند و برنامه هنوز پاک نکرده
+ *   • حساب‌های کیو‌آردار (‎acct/…‎) و لینکِ اپِ کارمندان
+ *
+ * ⚠️ رمزها این‌جا نمی‌آیند — همان ‎/:code/keys‎ی ثبت‌شونده در لاگ.
+ */
+adminRouter.get('/:code/detail', async (req, res) => {
+  const stations = getStations();
+  const store = stations?.get(req.params.code);
+  if (!store) return res.status(404).json({ error: 'not_found' });
+
+  const live = store.read(LIVE_BRANCH);
+  const inbox = store.read(INBOX_BRANCH);
+  const meta = store.read(META_BRANCH);
+  const snap = store.snapshot();
+  const ok = live && typeof live === 'object' ? live : null;
+
+  const debtors = Array.isArray(ok?.debtors) ? ok.debtors : [];
+  const byStatus = { ok: 0, low: 0, out: 0, none: 0 };
+  for (const d of debtors) byStatus[d?.status in byStatus ? d.status : 'none']++;
+
+  const sections = ok?.sections && typeof ok.sections === 'object'
+    ? Object.entries(ok.sections).map(([id, sec]) => ({
+        id,
+        title: sec?.t || id,
+        rows: Array.isArray(sec?.rows) ? sec.rows.length : 0,
+        months: Array.isArray(sec?.m) ? [...new Set(sec.m.filter(Boolean))].length : 0,
+      }))
+    : [];
+
+  const inboxList = inbox && typeof inbox === 'object'
+    ? Object.entries(inbox)
+        .map(([id, m]) => ({ id, ...(m && typeof m === 'object' ? m : { text: String(m) }) }))
+        .sort((a, b) => Number(b.at || 0) - Number(a.at || 0))
+        .slice(0, 50)
+    : [];
+
+  const accts = store.read(ACCT_BRANCH);
+  const acctCount = accts && typeof accts === 'object' ? Object.keys(accts).length : 0;
+
+  res.json({
+    ok: true,
+    code: store.key,
+    name: (meta && meta.name) || store.key,
+    dataDir: store.dataDir,
+    diskBytes: store.diskBytes(),
+    liveConnections: snap.liveConnections,
+    reads: snap.reads,
+    writes: snap.writes,
+    lastActivity: snap.lastActivity,
+    live: ok
+      ? {
+          at: ok.at || null,
+          atUtc: ok.atUtc || null,
+          seq: Number(ok.seq) || null,
+          version: ok.v ?? null,
+          hasGate: Boolean(ok.gate),
+          detail: ok.detail !== false,
+          station: ok.station && typeof ok.station === 'object'
+            ? { name: ok.station.name || '', address: ok.station.address || '', phone: ok.station.phone || '',
+                ratePetrol: ok.station.ratePetrol ?? null, rateDiesel: ok.station.rateDiesel ?? null }
+            : null,
+          tank: ok.tank && typeof ok.tank === 'object' ? ok.tank : null,
+          debtors: { total: debtors.length, ...byStatus },
+          alerts: Array.isArray(ok.alerts) ? ok.alerts.slice(0, 50) : [],
+          sections,
+        }
+      : null,
+    inbox: inboxList,
+    inboxCount: inbox && typeof inbox === 'object' ? Object.keys(inbox).length : 0,
+    qrAccounts: acctCount,
+  });
+});
+
+/**
  * «این پمپ را چطور به همه وصل کنم؟» — یک جواب، آمادهٔ کپی.
  *
  * سه لینک برمی‌گردد و هر سه از یک جا می‌آیند تا هیچ‌وقت با هم نخوانند نباشند:
@@ -439,7 +524,7 @@ adminRouter.post('/cloud/forget', requireWriteRole('admin'), (req, res) => {
  * نمی‌شود، وگرنه پنل یک پروکسیِ باز به همهٔ مسیرهای مدیریتیِ ابر
  * می‌شد — از جمله بخشِ دکان.
  */
-for (const name of ['stats', 'stations', 'users', 'subscriptions', 'expiring', 'vipCodes', 'plans']) {
+for (const name of ['stats', 'stations', 'users', 'subscriptions', 'expiring', 'vipCodes', 'plans', 'pumpPlans']) {
   adminRouter.get(`/cloud/${name}`, async (req, res) => {
     try {
       res.json(await cloudCall(name, { query: req.query }));
@@ -473,6 +558,29 @@ adminRouter.post('/cloud/grant', requireWriteRole('operator'), async (req, res) 
 });
 
 /** کدِ شش‌رقمی برای دادن به یک پمپ. */
+/** جزئیاتِ یک پمپ روی ابر — اعضا، اشتراک، پوشهٔ ابری و کدِ اپِ کارمندان. */
+adminRouter.get('/cloud/station/:id', async (req, res) => {
+  try {
+    res.json(await cloudCall('stationDetail', { params: { id: req.params.id } }));
+  } catch (err) { cloudFail(res, err); }
+});
+
+adminRouter.post('/cloud/vip-codes/:id/revoke', requireWriteRole('operator'), async (req, res) => {
+  try {
+    const out = await cloudCall('revokeCode', { params: { id: req.params.id } });
+    logEvent('stations', 'cloud_code_revoked', { id: req.params.id });
+    res.json(out);
+  } catch (err) { cloudFail(res, err); }
+});
+
+adminRouter.post('/cloud/subscriptions/:id/status', requireWriteRole('operator'), async (req, res) => {
+  try {
+    const out = await cloudCall('subStatus', { params: { id: req.params.id }, body: req.body || {} });
+    logEvent('stations', 'cloud_subscription_status', { id: req.params.id, status: req.body?.status });
+    res.json(out);
+  } catch (err) { cloudFail(res, err); }
+});
+
 adminRouter.post('/cloud/vip-codes', requireWriteRole('operator'), async (req, res) => {
   try {
     const out = await cloudCall('makeCode', { body: req.body || {} });
