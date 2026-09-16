@@ -5,12 +5,14 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
-/** آدرسِ سرور، توکنِ ورود، و نامِ کسی که وارد شده */
+/** آدرسِ سرور، توکنِ ورود، نامِ کسی که وارد شده، و راهِ بیرون از خانه */
 data class Session(
   val serverUrl: String,
   val token: String?,
   val username: String,
   val role: String = "admin",
+  /** دامنه و کلیدِ درِ مدیر — برای وقتی که روی وای‌فایِ خانه نیستید */
+  val remote: RemoteAccess? = null,
 ) {
   val loggedIn: Boolean get() = !token.isNullOrBlank() && serverUrl.isNotBlank()
 }
@@ -43,12 +45,23 @@ class SessionStore(context: Context) {
     context.getSharedPreferences("villain-admin", Context.MODE_PRIVATE)
   }
 
-  fun load(): Session = Session(
-    serverUrl = prefs.getString(KEY_URL, "").orEmpty(),
-    token = prefs.getString(KEY_TOKEN, null),
-    username = prefs.getString(KEY_USER, "").orEmpty(),
-    role = prefs.getString(KEY_ROLE, "admin").orEmpty(),
-  )
+  fun load(): Session {
+    val key = prefs.getString(KEY_GATE_KEY, "").orEmpty()
+    val remoteUrl = prefs.getString(KEY_REMOTE_URL, "").orEmpty()
+    return Session(
+      serverUrl = prefs.getString(KEY_URL, "").orEmpty(),
+      token = prefs.getString(KEY_TOKEN, null),
+      username = prefs.getString(KEY_USER, "").orEmpty(),
+      role = prefs.getString(KEY_ROLE, "admin").orEmpty(),
+      remote = if (key.isBlank() || remoteUrl.isBlank()) null else RemoteAccess(
+        url = remoteUrl,
+        gatePath = prefs.getString(KEY_GATE_PATH, "/api/admin-gate").orEmpty(),
+        gateHeader = prefs.getString(KEY_GATE_HEADER, "x-admin-gate").orEmpty(),
+        key = key,
+        deviceId = deviceId,
+      ),
+    )
+  }
 
   fun save(session: Session) {
     prefs.edit()
@@ -57,7 +70,46 @@ class SessionStore(context: Context) {
       .putString(KEY_USER, session.username)
       .putString(KEY_ROLE, session.role)
       .apply()
+    session.remote?.let { saveRemote(it) }
   }
+
+  /**
+   * دامنه و کلیدِ در.
+   *
+   * ⚠️ کلید مثلِ رمز است — هر کس داشته باشدش، درِ سرور از اینترنت برایش باز
+   * می‌شود. برای همین در همان حافظهٔ رمزنگاری‌شده می‌نشیند و هیچ‌جای دیگری
+   * نوشته یا لاگ نمی‌شود.
+   */
+  fun saveRemote(remote: RemoteAccess) {
+    prefs.edit()
+      .putString(KEY_REMOTE_URL, remote.url)
+      .putString(KEY_GATE_PATH, remote.gatePath)
+      .putString(KEY_GATE_HEADER, remote.gateHeader)
+      .putString(KEY_GATE_KEY, remote.key)
+      .putString(KEY_DEVICE, remote.deviceId)
+      .apply()
+  }
+
+  fun clearRemote() {
+    prefs.edit()
+      .remove(KEY_REMOTE_URL)
+      .remove(KEY_GATE_KEY)
+      .apply()
+  }
+
+  /**
+   * شناسهٔ همین گوشی — یک بار ساخته می‌شود و می‌ماند.
+   *
+   * کلیدِ در به همین بسته است، تا اگر گوشی گم شد بشود از پنل همین یکی را
+   * باطل کرد بی‌آنکه بقیه از کار بیفتند.
+   */
+  val deviceId: String
+    get() {
+      prefs.getString(KEY_DEVICE, null)?.let { if (it.isNotBlank()) return it }
+      val fresh = "phone-" + java.util.UUID.randomUUID().toString().take(8)
+      prefs.edit().putString(KEY_DEVICE, fresh).apply()
+      return fresh
+    }
 
   /** خروج — آدرسِ سرور می‌ماند تا بارِ بعد دوباره تایپ نشود */
   fun clearToken() {
@@ -81,5 +133,10 @@ class SessionStore(context: Context) {
     const val KEY_ROLE = "role"
     const val KEY_LAST_MESSAGE = "last_message"
     const val KEY_WATCH = "watch_enabled"
+    const val KEY_REMOTE_URL = "remote_url"
+    const val KEY_GATE_PATH = "gate_path"
+    const val KEY_GATE_HEADER = "gate_header"
+    const val KEY_GATE_KEY = "gate_key"
+    const val KEY_DEVICE = "device_id"
   }
 }

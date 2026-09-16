@@ -35,7 +35,17 @@ object Api {
   }
 
   /**
-   * یک درخواست. `body` که null باشد یعنی GET.
+   * یک درخواست.
+   *
+   * ⚠️ اول آدرسِ خانه، بعد دامنه.
+   *
+   * وقتی گوشی روی وای‌فایِ خانه است، آدرسِ محلی هم سریع‌تر است هم از
+   * اینترنت رد نمی‌شود. وقتی بیرونید، آن آدرس اصلاً وجود ندارد — پس اگر
+   * *وصل نشد*، همان درخواست از راهِ دامنه و درِ مدیر دوباره فرستاده می‌شود.
+   *
+   * ⚠️ فقط شکستِ اتصال باعثِ تلاشِ دوم می‌شود، نه خطای خودِ سرور: اگر سرور
+   * «رمز غلط» گفته، تکرارش از راهِ دیگر همان جواب را می‌دهد و فقط وقت
+   * می‌برد — و بدتر، یک تلاشِ ناموفقِ دیگر روی شمارنده می‌گذارد.
    */
   fun call(
     session: Session,
@@ -44,13 +54,33 @@ object Api {
     body: JSONObject? = null,
     timeoutMs: Int = 20_000,
   ): Reply {
-    val conn = url(session, path).openConnection() as HttpURLConnection
+    return try {
+      raw(session, url(session, path), method, body, timeoutMs, null)
+    } catch (e: IOException) {
+      if (e is ApiError) throw e
+      val remote = session.remote
+      if (remote == null || !remote.usable || path.startsWith("http")) throw e
+      raw(session, URL(remote.wrap(path)), method, body, timeoutMs, remote)
+    }
+  }
+
+  private fun raw(
+    session: Session,
+    target: URL,
+    method: String,
+    body: JSONObject?,
+    timeoutMs: Int,
+    gate: RemoteAccess?,
+  ): Reply {
+    val conn = target.openConnection() as HttpURLConnection
     try {
       conn.requestMethod = method
       conn.connectTimeout = timeoutMs
       conn.readTimeout = timeoutMs
       conn.setRequestProperty("Accept", "application/json")
       session.token?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
+      // کلیدِ در فقط روی همان درخواستی می‌نشیند که از راهِ دامنه می‌رود
+      gate?.let { conn.setRequestProperty(it.gateHeader, it.key) }
 
       if (body != null) {
         conn.doOutput = true

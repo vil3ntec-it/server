@@ -70,6 +70,7 @@ import { rateLimit, pruneRateLimits } from './lib/rate-limit.js';
 import { codeSettings } from './codes/settings.js';
 import { pinSitesRoot } from './sites/portable.js';
 import { startQueue, stopQueue } from './codes/queue.js';
+import { adminGate, GATE_PREFIX } from './api/admin-gate.js';
 import { readyPayload } from './platform/health.js';
 import { createBackup } from './backup/index.js';
 import * as notify from './notify/index.js';
@@ -495,8 +496,25 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
   publicApp.use('/api/app/auth', rateLimit('pub-app-auth', 60, 10 * 60 * 1000));
   publicApp.use('/api/notify', rateLimit('pub-notify', 240, 60 * 1000));
   publicApp.use('/api', rateLimit('pub-api', 1200, 60 * 1000));
-  // ⚠️ پراکسیِ دستیار **پیش از** express.json می‌نشیند: آن میان‌افزار جریانِ
-  //    بدنه را می‌خورد و بعدش دیگر چیزی برای لوله کردن نمی‌ماند.
+
+  /*
+   *  درِ مدیر — تنها راهی که برنامهٔ «ویلن ادمین» از اینترنت به کلِ سرور
+   *  می‌رسد. هر چیزِ دیگری روی این پورت همان‌قدر عمومی می‌ماند که بود.
+   *
+   *  ⚠️ سقفِ نرخ فقط شکست‌ها را می‌شمارد (skipSuccess): برنامهٔ مدیر هر چند
+   *  ثانیه سر می‌زند و نباید قفل شود، ولی کسی که کلید را حدس می‌زند بعد از
+   *  بیست تلاشِ ناموفق در ده دقیقه می‌ماند پشتِ در.
+   *
+   *  ⚠️ و **پیش از** express.json می‌نشیند: آن میان‌افزار جریانِ بدنه را
+   *  می‌خورد و بعدش دیگر چیزی برای لوله کردن نمی‌ماند.
+   */
+  publicApp.use(
+    GATE_PREFIX,
+    rateLimitCfg({ name: 'admin-gate', max: 20, windowMs: 10 * 60 * 1000, skipSuccess: true }),
+    adminGate,
+  );
+
+  // ⚠️ پراکسیِ دستیار هم به همان دلیل پیش از express.json است
   publicApp.use(AI_PREFIX, aiProxy);
   publicApp.use(express.json({ limit: MSG_LIMIT }));
   /*

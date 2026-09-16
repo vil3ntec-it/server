@@ -142,6 +142,8 @@ fun HomeScreen(session: Session, onLogout: () -> Unit) {
       }
     }
 
+    item { RemoteCard(session) { /* نشست در همان جا به‌روز می‌شود */ } }
+
     item { UpdateCard() }
 
     item {
