@@ -36,9 +36,18 @@ import {
 } from 'lucide-react';
 import { useApp } from '../app-context';
 import { LANGUAGES, type Dict } from '../i18n';
+import { featureOn, type FeatureKey } from '../features';
 import { logoUrl } from '../api';
 
-type NavItem = { to: string; key: keyof Dict; icon: typeof Gauge; end?: boolean; needs?: 'operator' | 'admin' };
+type NavItem = {
+  to: string;
+  key: keyof Dict;
+  icon: typeof Gauge;
+  end?: boolean;
+  needs?: 'operator' | 'admin';
+  /** اگر این بخش در features.ts خاموش باشد، اصلاً در منو نمی‌آید */
+  feature?: FeatureKey;
+};
 type NavGroup = {
   id: string;
   key: keyof Dict;
@@ -64,7 +73,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       // صفحه‌ای که بعد از ورود روی آن می‌نشینید — پس اولین چیزِ منو
       { to: '/', key: 'dashboard', icon: LayoutDashboard, end: true },
-      { to: '/control', key: 'ccCommand', icon: CommandIcon, end: true },
+      { to: '/control', key: 'ccCommand', icon: CommandIcon, end: true, feature: 'commandCenter' },
       { to: '/control/tohid', key: 'thTitle', icon: Store },
       { to: '/sites', key: 'websites', icon: Server },
       { to: '/site-server', key: 'siteServer', icon: Globe },
@@ -117,10 +126,10 @@ const NAV_GROUPS: NavGroup[] = [
     collapsed: true,
     items: [
       { to: '/control/updates', key: 'ccUpdates', icon: Download },
-      { to: '/control/panel-users', key: 'ccPanelUsers', icon: UserCog, needs: 'admin' },
-      { to: '/files', key: 'files', icon: FolderTree },
+      { to: '/control/panel-users', key: 'ccPanelUsers', icon: UserCog, needs: 'admin', feature: 'panelUsers' },
+      { to: '/files', key: 'files', icon: FolderTree, feature: 'files' },
       { to: '/terminal', key: 'terminal', icon: TerminalSquare, needs: 'admin' },
-      { to: '/settings', key: 'settings', icon: SettingsIcon },
+      { to: '/settings', key: 'settings', icon: SettingsIcon, feature: 'settings' },
     ],
   },
 ];
@@ -160,8 +169,10 @@ export default function Layout() {
     <nav className="flex flex-col gap-1 p-3">
       {NAV_GROUPS.map((group) => {
         const isCollapsed = collapsed.includes(group.id);
-        // چیزی که نقشِ کاربر به آن دسترسی ندارد، اصلاً نشان داده نمی‌شود
-        const items = group.items.filter((item) => !item.needs || can(item.needs));
+        // چیزی که خاموش است یا نقشِ کاربر به آن دسترسی ندارد، اصلاً نشان داده نمی‌شود
+        const items = group.items.filter(
+          (item) => (!item.feature || featureOn(item.feature)) && (!item.needs || can(item.needs))
+        );
         if (items.length === 0) return null;
         return (
           <section key={group.id} className="mb-1">

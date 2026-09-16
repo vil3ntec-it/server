@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppProvider, useApp } from './app-context';
+import { featureOn } from './features';
 import { Loading, ToastHost } from './components/ui';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -49,7 +50,7 @@ function Shell() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/sites" element={<Sites />} />
         <Route path="/domains" element={<Domains />} />
-        <Route path="/files" element={<Files />} />
+        {featureOn('files') && <Route path="/files" element={<Files />} />}
         <Route path="/docker" element={<DockerPage />} />
         <Route path="/processes" element={<ProcessesPage />} />
         <Route path="/databases" element={<DatabasesPage />} />
@@ -63,10 +64,10 @@ function Shell() {
         <Route path="/site-server" element={<SiteServer />} />
         <Route path="/stations" element={<StationsPage />} />
         <Route path="/stations/:code" element={<StationProfile />} />
-        <Route path="/settings" element={<Settings />} />
+        {featureOn('settings') && <Route path="/settings" element={<Settings />} />}
 
         {/* مرکز فرمان */}
-        <Route path="/control" element={<Command />} />
+        {featureOn('commandCenter') && <Route path="/control" element={<Command />} />}
         <Route path="/control/projects" element={<CcProjects />} />
         <Route path="/control/projects/:projectId" element={<ProjectDetail />} />
         <Route path="/control/servers" element={<CcServers />} />
@@ -79,7 +80,7 @@ function Shell() {
         <Route path="/control/audit" element={<Audit />} />
         <Route path="/control/updates" element={<Updates />} />
         <Route path="/control/tohid" element={<Tohid />} />
-        <Route path="/control/panel-users" element={<PanelUsers />} />
+        {featureOn('panelUsers') && <Route path="/control/panel-users" element={<PanelUsers />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
