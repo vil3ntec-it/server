@@ -13,6 +13,7 @@ import NetworkPage from './pages/NetworkPage';
 import Logs from './pages/Logs';
 import SiteServer from './pages/SiteServer';
 import Settings from './pages/Settings';
+import CodesPage from './pages/Codes';
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
 import Command from './pages/control/Command';
@@ -64,6 +65,7 @@ function Shell() {
         <Route path="/site-server" element={<SiteServer />} />
         <Route path="/stations" element={<StationsPage />} />
         <Route path="/stations/:code" element={<StationProfile />} />
+        <Route path="/codes" element={<CodesPage />} />
         {featureOn('settings') && <Route path="/settings" element={<Settings />} />}
 
         {/* مرکز فرمان */}
