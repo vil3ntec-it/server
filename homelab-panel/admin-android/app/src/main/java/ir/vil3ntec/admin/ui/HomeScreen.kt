@@ -39,7 +39,12 @@ import org.json.JSONObject
  *  خانه — «سرور در چه حالی است؟» در یک نگاه، به‌علاوهٔ به‌روزرسانی و خروج.
  */
 @Composable
-fun HomeScreen(session: Session, onLogout: () -> Unit) {
+fun HomeScreen(
+  session: Session,
+  onLogout: () -> Unit,
+  /** وقتی کلیدِ دسترسی از بیرون گرفته شد، نشست باید همان لحظه تازه شود */
+  onSession: (Session) -> Unit = {},
+) {
   var data by remember { mutableStateOf<JSONObject?>(null) }
   var error by remember { mutableStateOf("") }
   var reload by remember { mutableStateOf(0) }
@@ -47,7 +52,7 @@ fun HomeScreen(session: Session, onLogout: () -> Unit) {
   val store = remember { (context.applicationContext as AdminApp).store }
   var watching by remember { mutableStateOf(store.watchEnabled) }
   val scope = rememberCoroutineScope()
-  val serverState = rememberServerState(session.serverUrl)
+  val serverState = rememberServerState(session.serverUrl, session.remote)
 
   LaunchedEffect(reload) {
     error = ""
@@ -142,7 +147,7 @@ fun HomeScreen(session: Session, onLogout: () -> Unit) {
       }
     }
 
-    item { RemoteCard(session) { /* نشست در همان جا به‌روز می‌شود */ } }
+    item { RemoteCard(session, onChanged = onSession) }
 
     item { UpdateCard() }
 

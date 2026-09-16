@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import ir.vil3ntec.admin.data.Api
 import ir.vil3ntec.admin.data.Discovery
 import ir.vil3ntec.admin.data.FoundServer
+import ir.vil3ntec.admin.data.RemoteAccess
 import ir.vil3ntec.admin.data.Session
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -59,7 +60,12 @@ import kotlinx.coroutines.withContext
  *  خاموش است» و «رمز غلط است» هر دو یک خطای گنگ می‌دهند.
  */
 @Composable
-fun LoginScreen(initialUrl: String, onDone: (Session) -> Unit) {
+fun LoginScreen(
+  initialUrl: String,
+  /** اگر این گوشی از قبل کلیدِ در را دارد، ورود از بیرونِ خانه هم ممکن است */
+  remote: RemoteAccess? = null,
+  onDone: (Session) -> Unit,
+) {
   var url by remember { mutableStateOf(initialUrl) }
   var username by remember { mutableStateOf("") }
   var password by remember { mutableStateOf("") }
@@ -71,7 +77,7 @@ fun LoginScreen(initialUrl: String, onDone: (Session) -> Unit) {
   val scope = rememberCoroutineScope()
 
   // خودِ نبض می‌داند آدرسِ خالی را نسنجد
-  val state = rememberServerState(url, everyMs = 6_000)
+  val state = rememberServerState(url, remote, everyMs = 6_000)
 
   fun normalize(raw: String): String {
     val trimmed = raw.trim().trimEnd('/')
@@ -104,6 +110,9 @@ fun LoginScreen(initialUrl: String, onDone: (Session) -> Unit) {
     if (initialUrl.isBlank()) search()
   }
 
+  // بیرون از خانه، سرور در شبکه پیدا نمی‌شود — ولی راهِ دامنه باز است
+  val awayHint = remote?.usable == true && state == ServerState.Offline
+
   fun submit() {
     if (busy) return
     val address = normalize(url)
@@ -115,8 +124,10 @@ fun LoginScreen(initialUrl: String, onDone: (Session) -> Unit) {
     error = ""
     scope.launch {
       try {
-        withContext(Dispatchers.IO) { Api.health(address) }
-        val reply = withContext(Dispatchers.IO) { Api.login(address, username.trim(), password) }
+        withContext(Dispatchers.IO) { Api.health(address, remote) }
+        val reply = withContext(Dispatchers.IO) {
+          Api.login(address, username.trim(), password, remote)
+        }
         val token = reply.optString("token")
         if (token.isBlank()) {
           error = "نامِ کاربری یا رمز درست نیست"
@@ -127,6 +138,7 @@ fun LoginScreen(initialUrl: String, onDone: (Session) -> Unit) {
               token = token,
               username = reply.optJSONObject("user")?.optString("username") ?: username.trim(),
               role = reply.optJSONObject("user")?.optString("role") ?: "admin",
+              remote = remote,
             )
           )
         }
@@ -198,7 +210,18 @@ fun LoginScreen(initialUrl: String, onDone: (Session) -> Unit) {
       }
     }
 
-    if (searched && found.isEmpty() && !searching) {
+    if (awayHint) {
+      Text(
+        "سرور در این شبکه نیست، ولی این گوشی کلیدِ دسترسی از بیرون را دارد — " +
+          "ورود از راهِ دامنه انجام می‌شود.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+      )
+      Spacer(Modifier.height(12.dp))
+    }
+
+    if (searched && found.isEmpty() && !searching && !awayHint) {
       Text(
         "سروری در این شبکه پیدا نشد. مطمئن شوید گوشی به همان وای‌فایِ سرور وصل است، " +
           "یا آدرس را دستی بنویسید.",

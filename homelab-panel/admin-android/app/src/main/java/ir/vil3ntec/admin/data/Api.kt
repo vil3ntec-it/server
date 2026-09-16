@@ -35,17 +35,29 @@ object Api {
   }
 
   /**
-   * یک درخواست.
+   *  کدام راه بارِ قبل جواب داد.
    *
-   * ⚠️ اول آدرسِ خانه، بعد دامنه.
+   *  ⚠️ بدونِ این، بیرون از خانه هر درخواست اول آدرسِ محلی را می‌زد و تا
+   *  سر رسیدنِ مهلت منتظر می‌ماند — یعنی هر صفحه چند ثانیه دیرتر باز
+   *  می‌شد، و چتِ پشتیبانی که هر سه ثانیه سر می‌زند عملاً از کار می‌افتاد.
+   *  حالا راهی که آخرین بار جواب داده، اول امتحان می‌شود.
+   */
+  @Volatile
+  private var preferRemote = false
+
+  /** مهلتِ کوتاهِ راهِ اول — فقط برای فهمیدنِ «این راه باز است یا نه» */
+  private const val PROBE_CONNECT_MS = 3_500
+
+  /**
+   * یک درخواست، از هر راهی که باز باشد.
    *
-   * وقتی گوشی روی وای‌فایِ خانه است، آدرسِ محلی هم سریع‌تر است هم از
-   * اینترنت رد نمی‌شود. وقتی بیرونید، آن آدرس اصلاً وجود ندارد — پس اگر
-   * *وصل نشد*، همان درخواست از راهِ دامنه و درِ مدیر دوباره فرستاده می‌شود.
+   * خانه و بیرون هر دو کار می‌کنند: آدرسِ محلی وقتی روی وای‌فایِ خانه‌اید،
+   * و دامنه وقتی نیستید. کدام‌یک اول امتحان شود را حافظهٔ بالا تعیین
+   * می‌کند، پس جابه‌جا شدن بینِ خانه و بیرون یک بار کُندی دارد نه همیشه.
    *
-   * ⚠️ فقط شکستِ اتصال باعثِ تلاشِ دوم می‌شود، نه خطای خودِ سرور: اگر سرور
-   * «رمز غلط» گفته، تکرارش از راهِ دیگر همان جواب را می‌دهد و فقط وقت
-   * می‌برد — و بدتر، یک تلاشِ ناموفقِ دیگر روی شمارنده می‌گذارد.
+   * ⚠️ فقط شکستِ *اتصال* باعثِ تلاش از راهِ دیگر می‌شود، نه خطای خودِ سرور:
+   * اگر سرور «رمز غلط» گفته، تکرارش از راهِ دیگر همان جواب را می‌دهد و فقط
+   * وقت می‌برد — و بدتر، یک تلاشِ ناموفقِ دیگر روی شمارنده می‌گذارد.
    */
   fun call(
     session: Session,
@@ -54,29 +66,48 @@ object Api {
     body: JSONObject? = null,
     timeoutMs: Int = 20_000,
   ): Reply {
-    return try {
-      raw(session, url(session, path), method, body, timeoutMs, null)
-    } catch (e: IOException) {
-      if (e is ApiError) throw e
-      val remote = session.remote
-      if (remote == null || !remote.usable || path.startsWith("http")) throw e
-      raw(session, URL(remote.wrap(path)), method, body, timeoutMs, remote)
+    val remote = session.remote?.takeIf { it.usable && !path.startsWith("http") }
+    if (remote == null) return raw(session, url(session, path), method, body, timeoutMs, timeoutMs, null)
+
+    val local = Route(url(session, path), null)
+    val away = Route(URL(remote.wrap(path)), remote)
+    val order = if (preferRemote) listOf(away, local) else listOf(local, away)
+
+    var firstFailure: IOException? = null
+    for ((index, route) in order.withIndex()) {
+      val last = index == order.lastIndex
+      try {
+        // راهِ اول مهلتِ اتصالِ کوتاه دارد تا اگر بسته است، زود رد شویم
+        val connectMs = if (last) timeoutMs else minOf(timeoutMs, PROBE_CONNECT_MS)
+        val reply = raw(session, route.url, method, body, connectMs, timeoutMs, route.gate)
+        preferRemote = route.gate != null
+        return reply
+      } catch (e: IOException) {
+        // خطای خودِ سرور یعنی رسیدیم؛ راهِ دیگر چیزی عوض نمی‌کند
+        if (e is ApiError) throw e
+        if (firstFailure == null) firstFailure = e
+        if (last) throw firstFailure
+      }
     }
+    throw firstFailure ?: IOException("وصل نشد")
   }
+
+  private class Route(val url: URL, val gate: RemoteAccess?)
 
   private fun raw(
     session: Session,
     target: URL,
     method: String,
     body: JSONObject?,
-    timeoutMs: Int,
+    connectMs: Int,
+    readMs: Int,
     gate: RemoteAccess?,
   ): Reply {
     val conn = target.openConnection() as HttpURLConnection
     try {
       conn.requestMethod = method
-      conn.connectTimeout = timeoutMs
-      conn.readTimeout = timeoutMs
+      conn.connectTimeout = connectMs
+      conn.readTimeout = readMs
       conn.setRequestProperty("Accept", "application/json")
       session.token?.let { conn.setRequestProperty("Authorization", "Bearer $it") }
       // کلیدِ در فقط روی همان درخواستی می‌نشیند که از راهِ دامنه می‌رود
@@ -122,14 +153,31 @@ object Api {
 
   /* ----------------------------- ورود ---------------------------------- */
 
-  /** سرور زنده است؟ پیش از ورود، تا آدرسِ غلط را همان‌جا بفهمیم */
-  fun health(serverUrl: String): JSONObject {
-    val probe = Session(serverUrl = serverUrl, token = null, username = "")
+  /**
+   * سرور زنده است؟
+   *
+   * ⚠️ `remote` را هم می‌گیرد و همین مهم است: بیرون از خانه، آدرسِ محلی
+   * هیچ‌وقت جواب نمی‌دهد. اگر این‌جا فقط آدرسِ محلی سنجیده می‌شد، چراغِ
+   * وضعیت همیشه «خاموش» نشان می‌داد در حالی که سرور بالا و در دسترس بود.
+   */
+  fun health(serverUrl: String, remote: RemoteAccess? = null): JSONObject {
+    val probe = Session(serverUrl = serverUrl, token = null, username = "", remote = remote)
     return call(probe, "/health", timeoutMs = 8_000).o()
   }
 
-  fun login(serverUrl: String, username: String, password: String): JSONObject {
-    val probe = Session(serverUrl = serverUrl, token = null, username = "")
+  /**
+   * ورود.
+   *
+   * ⚠️ این هم `remote` می‌گیرد: اگر بیرونِ خانه از برنامه خارج شوید، بدونِ
+   * آن دیگر هیچ راهی برای ورودِ دوباره نبود تا به خانه برگردید.
+   */
+  fun login(
+    serverUrl: String,
+    username: String,
+    password: String,
+    remote: RemoteAccess? = null,
+  ): JSONObject {
+    val probe = Session(serverUrl = serverUrl, token = null, username = "", remote = remote)
     val body = JSONObject().put("username", username).put("password", password)
     return call(probe, "/api/auth/login", "POST", body).o()
   }

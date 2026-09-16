@@ -70,6 +70,9 @@ class MainActivity : ComponentActivity() {
             if (!session.loggedIn) {
               LoginScreen(
                 initialUrl = session.serverUrl,
+                // کلیدِ درِ مدیر از نشستِ ذخیره‌شده می‌آید، پس ورود از
+                // بیرونِ خانه هم ممکن است — حتی وقتی توکن منقضی شده
+                remote = session.remote,
                 onDone = { fresh ->
                   store.save(fresh)
                   session = fresh
@@ -84,6 +87,7 @@ class MainActivity : ComponentActivity() {
                   WatchService.stop(this@MainActivity)
                   session = session.copy(token = null)
                 },
+                onSession = { fresh -> session = fresh },
               )
             }
           }
@@ -101,7 +105,11 @@ private enum class Tab(val title: String) {
 }
 
 @Composable
-private fun MainShell(session: Session, onLogout: () -> Unit) {
+private fun MainShell(
+  session: Session,
+  onLogout: () -> Unit,
+  onSession: (Session) -> Unit,
+) {
   var tab by remember { mutableStateOf(Tab.Home) }
   // شمارهٔ پیام‌های خوانده‌نشده، تا نقطهٔ قرمزِ تبِ پشتیبانی درست باشد
   var unread by remember { mutableIntStateOf(0) }
@@ -136,7 +144,7 @@ private fun MainShell(session: Session, onLogout: () -> Unit) {
   ) { padding ->
     Box(Modifier.fillMaxSize().padding(padding)) {
       when (tab) {
-        Tab.Home -> HomeScreen(session, onLogout = onLogout)
+        Tab.Home -> HomeScreen(session, onLogout = onLogout, onSession = onSession)
         Tab.Codes -> CodesScreen(session)
         Tab.Accounts -> AccountsScreen(session)
         Tab.Support -> SupportScreen(session, onUnread = { unread = it })

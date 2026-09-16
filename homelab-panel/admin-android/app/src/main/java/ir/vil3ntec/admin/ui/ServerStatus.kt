@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import ir.vil3ntec.admin.data.Api
+import ir.vil3ntec.admin.data.RemoteAccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -46,10 +47,14 @@ enum class ServerState { Unknown, Online, Offline }
  *  کوتاه، «خاموش» خیلی زود دیده می‌شود نه یک دقیقه بعد.
  */
 @Composable
-fun rememberServerState(serverUrl: String, everyMs: Long = 10_000): ServerState {
-  var state by remember(serverUrl) { mutableStateOf(ServerState.Unknown) }
+fun rememberServerState(
+  serverUrl: String,
+  remote: RemoteAccess? = null,
+  everyMs: Long = 10_000,
+): ServerState {
+  var state by remember(serverUrl, remote?.key) { mutableStateOf(ServerState.Unknown) }
 
-  LaunchedEffect(serverUrl) {
+  LaunchedEffect(serverUrl, remote?.key) {
     // آدرسی نداریم که بسنجیم — نه «خاموش»، که هنوز معلوم نیست
     if (serverUrl.isBlank()) {
       state = ServerState.Unknown
@@ -57,7 +62,7 @@ fun rememberServerState(serverUrl: String, everyMs: Long = 10_000): ServerState 
     }
     while (true) {
       state = try {
-        withContext(Dispatchers.IO) { Api.health(serverUrl) }
+        withContext(Dispatchers.IO) { Api.health(serverUrl, remote) }
         ServerState.Online
       } catch (_: Exception) {
         ServerState.Offline
