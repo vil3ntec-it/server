@@ -438,6 +438,8 @@ adminRouter.get('/:code/detail', async (req, res) => {
     inbox: inboxList,
     inboxCount: inbox && typeof inbox === 'object' ? Object.keys(inbox).length : 0,
     qrAccounts: acctCount,
+    //  «فایل‌ها»ی صفحهٔ پروفایلِ پمپ — هر شاخهٔ دفتر با حجمش
+    files: store.branches().map((b) => ({ key: b.key, bytes: b.bytes, children: b.children })),
   });
 });
 
