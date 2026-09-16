@@ -195,6 +195,8 @@ app.use(AI_PREFIX, aiProxy);
 const MSG_LIMIT = `${Math.max(1, Math.round(config.messengerMaxBytes / (1024 * 1024)))}mb`;
 app.use((req, res, next) => {
   if (req.path === '/api/files/upload' || req.path === '/api/settings/logo') return next();
+  // پشتیبانِ پمپ فایلِ خامِ SQLite است، نه JSON — مسیرِ خودش ‎express.raw‎ دارد
+  if (/^\/api\/stations\/[^/]+\/backup$/.test(req.path)) return next();
   // گزارشِ Agent باید خام بماند تا امضایش قابلِ سنجش باشد
   if (req.path.startsWith('/api/control/agent')) return next();
   // پیام‌رسان سقفِ خودش را دارد تا پیام‌های بلند رد نشوند
