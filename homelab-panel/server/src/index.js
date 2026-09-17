@@ -67,7 +67,7 @@ import { startDiscovery, stopDiscovery, serverCard, DISCOVERY_PORT } from './dis
 import { startBackupSchedule, stopBackupSchedule } from './storage/backup.js';
 import { pruneAudit as pruneAppAudit } from './lib/audit.js';
 import { pruneTickets } from './lib/ws-ticket.js';
-import { rateLimit, pruneRateLimits } from './lib/rate-limit.js';
+import { rateLimit, pruneRateLimits, clientIp } from './lib/rate-limit.js';
 import { codeSettings } from './codes/settings.js';
 import { pinSitesRoot } from './sites/portable.js';
 import { startQueue, stopQueue } from './codes/queue.js';
@@ -206,9 +206,37 @@ app.use('/api/app/auth', rateLimit('app-auth', 60, 10 * 60 * 1000));
 app.use('/api/codes', rateLimit('codes', 6000, 60 * 1000));
 app.use('/api/notify', rateLimit('notify', 240, 60 * 1000));
 app.use('/api/messenger', rateLimit('messenger', 600, 60 * 1000));
+
+/*  ══ سهمِ هر پمپ، جدا از پمپِ همسایه ══════════════════════════════════════
+    یک سرور می‌تواند چند پمپ داشته باشد (‎data/stations/<کد>‎)، و برنامهٔ
+    کامپیوتر و همهٔ گوشی‌های یک پمپ از **یک آی‌پیِ محلی** می‌آیند. با سطلِ
+    مشترکِ آی‌پی، یک پمپِ پرکار می‌توانست سهمِ پمپ‌های دیگرِ همان سرور را
+    تمام کند و آن‌ها ‎429‎ بگیرند.
+
+    تستِ فشار (‎test/stations-load.mjs‎) همین را نشان داد: با ۲۰۰ پمپ و پنج
+    دور نوشتن، خواندن‌های بعدی همه ‎429‎ شدند.
+
+    ⚠️ **دو سطل، نه یکی.** سطلِ «هر پمپ» تنهایی یک درِ باز می‌شد: کسی که کدِ
+    ساختگیِ تازه می‌سازد، هر بار سطلِ خالیِ تازه می‌گرفت و سقفِ آی‌پی را دور
+    می‌زد. پس سطلِ آی‌پی هم می‌ماند، با سقفِ بلندتر — چون یک پمپِ سالم
+    (برنامه + چند گوشی) از یک آی‌پی می‌آید و نباید به هم بخورد.             */
+app.use('/api/stations', rateLimit('stations-ip', 3000, 60 * 1000));
+app.use('/api/stations', rateLimit('stations', 1200, 60 * 1000, {
+  keyOf: (req) => {
+    const code = String(req.path || '').split('/').filter(Boolean)[0] || '';
+    return /^[a-z0-9_-]{1,48}$/i.test(code) ? 'stn:' + code.toLowerCase() : clientIp(req);
+  },
+}));
+
+/*  سطلِ عمومیِ آی‌پی — کدها و مسیرهای پمپ سطلِ خودشان را دارند و این‌جا
+    دوباره شمرده نمی‌شوند، وگرنه همان سقفِ آی‌پی اصلاحِ بالا را بی‌اثر
+    می‌کرد (خودِ تستِ فشار همین را گرفت: هر دو سطل می‌دویدند).              */
 const apiLimiter = rateLimit('api', 1200, 60 * 1000);
 app.use('/api', (req, res, next) =>
-  req.path.startsWith('/codes/') || req.path === '/codes' ? next() : apiLimiter(req, res, next)
+  req.path.startsWith('/codes/') || req.path === '/codes'
+  || req.path.startsWith('/stations')
+    ? next()
+    : apiLimiter(req, res, next)
 );
 
 // دستیارِ پشتیبانی — پیش از میان‌افزارِ JSON، به همان دلیلِ بالا
