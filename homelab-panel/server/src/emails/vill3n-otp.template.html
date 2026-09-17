@@ -1,89 +1,4 @@
-// ---------------------------------------------------------------------------
-//  ایمیلِ کدِ شش‌رقمی — قالبِ VILL3N
-//
-//  ⚠️ این فایل «طراحی» نمی‌کند. قالبِ HTML عیناً همانی است که شما دادید؛
-//  اینجا فقط پنج جای‌خالیِ آن پُر می‌شود:
-//
-//      {{NAME}}        نامِ خودِ همان شخص
-//      {{CODE}}        کدِ شش‌رقمیِ خودِ همان شخص
-//      {{MINUTES}}     چند دقیقه معتبر است
-//      {{VERIFY_URL}}  لینکِ دکمهٔ «تأیید حساب کاربری»
-//      {{SITE_URL}}    لینکِ VILL3N در پاورقی
-//      {{YEAR}}        سالِ جاری
-//
-//  هیچ رنگ، فاصله، گرادیان یا نوشته‌ای دست‌کاری نشده است. اگر روزی قالب
-//  عوض شد، فقط همین فایل را با فایلِ تازه جایگزین کنید و جای‌خالی‌ها را
-//  سرِ جایشان بگذارید.
-//
-//  ⚠️ یک نکتهٔ بیرونی که باید بدانید: جیمیل `linear-gradient` را از ایمیل
-//  دور می‌ریزد. یعنی همین قالب در مرورگر شیبِ نارنجی→بنفش دارد و در جیمیل
-//  همان جاها تخت دیده می‌شود. این کارِ جیمیل است، نه تغییرِ ما.
-// ---------------------------------------------------------------------------
-
-/** نشانیِ سایت، وقتی صدازننده چیزی نداده باشد */
-const DEFAULT_SITE = 'https://vill3n.top';
-
-/** هر چیزی که به HTML می‌رود، اول بی‌خطر می‌شود */
-function esc(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-/**
- * فقط http و https.
- *
- * ⚠️ بدونِ این، یک نشانیِ `javascript:...` می‌توانست از تنظیمات تا دکمهٔ
- * داخلِ ایمیل برود.
- */
-function safeUrl(value, fallback = DEFAULT_SITE) {
-  const raw = String(value ?? '').trim();
-  if (!raw) return fallback;
-  try {
-    const u = new URL(raw);
-    if (u.protocol === 'http:' || u.protocol === 'https:') return u.href;
-  } catch { /* نشانی نبود */ }
-  return fallback;
-}
-
-/**
- * ایمیلِ کدِ ورود.
- *
- * @param {object} o
- * @param {string|number} o.code   کدِ شش‌رقمیِ همین شخص
- * @param {number} [o.minutes]     چند دقیقه معتبر است
- * @param {string} [o.appName]     نامِ برنامه، فقط برای عنوانِ ایمیل
- * @param {string} [o.name]        نامِ همین شخص
- * @param {string} [o.actionUrl]   لینکِ دکمه
- * @param {string} [o.siteUrl]     لینکِ پاورقی
- * @returns {{subject:string, html:string, text:string}}
- */
-export function otpEmail({
-  code,
-  minutes = 5,
-  appName = 'VILL3N',
-  name = '',
-  actionUrl = '',
-  siteUrl = '',
-} = {}) {
-  const safeCode = esc(code);
-  const mins = Number.isFinite(Number(minutes)) && Number(minutes) > 0 ? Math.round(Number(minutes)) : 5;
-  const who = esc(String(name || '').trim());
-  const site = safeUrl(siteUrl, DEFAULT_SITE);
-  const verify = safeUrl(actionUrl, site);
-  const year = new Date().getFullYear();
-
-  /*
-   *  قالب می‌گوید «{{NAME}} عزیز، به VILL3N خوش آمدید».
-   *  اگر نامی نداشته باشیم، جملهٔ «عزیز،» بی‌صاحب می‌ماند — پس همان
-   *  تکه حذف می‌شود و بقیهٔ جمله دست‌نخورده می‌ماند.
-   */
-  const greeting = who ? `${who} عزیز، به VILL3N خوش آمدید` : 'به VILL3N خوش آمدید';
-
-  const html = `<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="fa" dir="rtl" xmlns="http://www.w3.org/1999/xhtml">
 <head>
 <meta charset="utf-8">
@@ -111,7 +26,7 @@ export function otpEmail({
 <body style="margin:0;padding:0;background:#f6e3d8;">
 
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f6e3d8;">
-  کد تأیید حساب شما در VILL3N: ${safeCode}
+  کد تأیید حساب شما در VILL3N: {{CODE}}
   &#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;
 </div>
 
@@ -134,7 +49,7 @@ export function otpEmail({
       </td>
     </tr></table>
     <h1 class="h1" style="margin:20px 0 0;font-family:'Vazirmatn',Tahoma,Arial,sans-serif;font-size:30px;line-height:1.5;font-weight:900;color:#ffffff;">
-      ${greeting}
+      {{NAME}} عزیز، به VILL3N خوش آمدید
     </h1>
   </td></tr>
 
@@ -150,15 +65,15 @@ export function otpEmail({
         <table role="presentation"><tr>
           <td bgcolor="#e8458b" style="padding:3px;border-radius:22px;background:#e8458b;background-image:linear-gradient(90deg,#ff7a59,#e8458b,#7b3fe4);">
             <div dir="ltr" class="otp"
-                 style="background:#ffffff;border-radius:19px;padding:14px 30px 14px 44px;font-family:'SF Mono',Menlo,Consolas,'Courier New',monospace;font-size:54px;line-height:1.2;font-weight:700;letter-spacing:14px;color:#2b1640;-webkit-user-select:all;user-select:all;">${safeCode}</div>
+                 style="background:#ffffff;border-radius:19px;padding:14px 30px 14px 44px;font-family:'SF Mono',Menlo,Consolas,'Courier New',monospace;font-size:54px;line-height:1.2;font-weight:700;letter-spacing:14px;color:#2b1640;-webkit-user-select:all;user-select:all;">{{CODE}}</div>
           </td>
         </tr></table>
         <p style="margin:14px 0 0;font-family:'Vazirmatn',Tahoma,Arial,sans-serif;font-size:13px;line-height:1.9;color:#7a6a82;">
-          برای کپی، روی کد بزنید. این کد تا ${mins} دقیقه معتبر است.
+          برای کپی، روی کد بزنید. این کد تا {{MINUTES}} دقیقه معتبر است.
         </p>
         <table role="presentation" style="margin-top:22px;"><tr>
           <td align="center" bgcolor="#2b1640" style="border-radius:40px;background:#2b1640;">
-            <a href="${esc(verify)}" target="_blank"
+            <a href="{{VERIFY_URL}}" target="_blank"
                style="display:inline-block;padding:15px 44px;font-family:'Vazirmatn',Tahoma,Arial,sans-serif;font-size:17px;font-weight:700;color:#ffffff;border-radius:40px;">
               تأیید حساب کاربری
             </a>
@@ -234,7 +149,7 @@ export function otpEmail({
     این کد را در اختیار هیچ‌کس قرار ندهید؛ VILL3N هرگز کد تأیید را از شما درخواست نمی‌کند.
     اگر این درخواست از طرف شما نبوده است، این ایمیل را نادیده بگیرید.
     <div style="margin-top:10px;">
-      <a href="${esc(site)}" style="color:#c2185b;font-weight:700;">VILL3N</a> &copy; ${year} | <a href="mailto:vil3ntec@gmail.com" style="color:#c2185b;">vil3ntec@gmail.com</a>
+      <a href="{{SITE_URL}}" style="color:#c2185b;font-weight:700;">VILL3N</a> &copy; {{YEAR}} | <a href="mailto:vil3ntec@gmail.com" style="color:#c2185b;">vil3ntec@gmail.com</a>
     </div>
   </td></tr>
 
@@ -243,27 +158,4 @@ export function otpEmail({
 </td></tr>
 </table>
 </body>
-</html>`;
-
-  /*
-   *  نسخهٔ متنی — برای کلاینت‌هایی که HTML نشان نمی‌دهند و برای فیلترهای
-   *  هرزنامه که ایمیلِ بی‌متن را بدگمان می‌بینند.
-   */
-  const text = [
-    who ? `${who} عزیز، به VILL3N خوش آمدید` : 'به VILL3N خوش آمدید',
-    '',
-    `کد تأیید شما: ${code}`,
-    `این کد تا ${mins} دقیقه معتبر است.`,
-    '',
-    'این کد را در اختیار هیچ‌کس قرار ندهید؛ VILL3N هرگز کد تأیید را از شما درخواست نمی‌کند.',
-    'اگر این درخواست از طرف شما نبوده است، این ایمیل را نادیده بگیرید.',
-  ].join('\n');
-
-  return {
-    subject: `کد تأیید ${appName || 'VILL3N'}: ${code}`,
-    html,
-    text,
-  };
-}
-
-export default otpEmail;
+</html>

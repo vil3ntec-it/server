@@ -6,6 +6,7 @@
 //  می‌شود همان چیزهایی است که اگر بشکنند، ایمیل در صندوقِ کاربر خراب دیده
 //  می‌شود و هیچ خطایی هم جایی چاپ نمی‌شود.
 // ---------------------------------------------------------------------------
+import { readFileSync } from 'node:fs';
 import { otpEmail } from '../src/emails/otp.js';
 
 let passed = 0;
@@ -88,17 +89,21 @@ const noArgs = otpEmail();
 check('بدونِ ورودی هم نمی‌شکند', Boolean(noArgs.html && noArgs.text && noArgs.subject));
 
 const injected = otpEmail({ code: '111111', appName: '<script>bad()</script>', name: '<b>x</b>' });
-check(
-  'نامِ برنامه از تگ بیرون نمی‌زند',
-  !injected.html.includes('<script>bad()') && injected.html.includes('&lt;script&gt;'),
-);
+check('نامِ برنامه فقط به عنوان می‌رود، نه به HTML',
+  injected.subject.includes('<script>bad()</script>') && !/<script>bad\(\)/.test(injected.html));
 check('نامِ گیرنده هم از تگ بیرون نمی‌زند',
   !injected.html.includes('<b>x</b>') && injected.html.includes('&lt;b&gt;x&lt;/b&gt;'));
 
+/*
+ *  دکمه همیشه هست — در قالبِ کاربر شرطی نیست. اگر actionUrl ندهیم،
+ *  به نشانیِ سایت می‌رود، نه به هیچ‌جا.
+ */
 const withButton = otpEmail({ code: '222222', actionUrl: 'https://api.vill3n.top' });
-check('با actionUrl دکمه می‌آید', withButton.html.includes('href="https://api.vill3n.top"'));
+check('با actionUrl دکمه به همان‌جا می‌رود', withButton.html.includes('href="https://api.vill3n.top/"'),
+  withButton.html.match(/href="[^"]*"/g)?.join(' '));
 check('و متنِ دکمه درست است', withButton.html.includes('تأیید حساب کاربری'));
-check('بدونِ actionUrl دکمه نمی‌آید', !mail.html.includes('تأیید حساب کاربری'));
+check('بدونِ actionUrl هم دکمه هست و مقصد دارد',
+  mail.html.includes('تأیید حساب کاربری') && mail.html.includes('href="https://vill3n.top"'));
 
 /*
  *  ⚠️ آدرس ممکن است از تنظیمات بیاید. اگر کسی آن‌جا javascript: بگذارد،
@@ -112,6 +117,41 @@ check('و به آدرسِ پیش‌فرض برمی‌گردد', evilSite.html.in
 
 const rounded = otpEmail({ code: '333333', minutes: 0 });
 check('دقیقهٔ نامعتبر به پیش‌فرض برمی‌گردد', rounded.html.includes('5 دقیقه'));
+
+console.log('\n── مو‌به‌مو همان قالبی که دادید ──');
+/*
+ *  ⚠️ این مهم‌ترین آزمونِ این فایل است.
+ *
+ *  قالبِ اصلی عیناً در src/emails/vill3n-otp.template.html نگه داشته شده.
+ *  این‌جا همان فایل را با همان مقدارها پُر می‌کنیم و با خروجیِ سرور
+ *  حرف‌به‌حرف مقایسه می‌کنیم. اگر روزی کسی (هر کسی) یک رنگ، یک فاصله یا
+ *  یک کلمه را در otp.js عوض کند، این‌جا قرمز می‌شود.
+ *
+ *  یعنی: فقط نام و کد جای‌گذاری می‌شوند و بس.
+ */
+const reference = readFileSync(new URL('../src/emails/vill3n-otp.template.html', import.meta.url), 'utf8')
+  .replaceAll('{{CODE}}', '482715')
+  .replaceAll('{{NAME}}', 'احمد یعقوبی')
+  .replaceAll('{{MINUTES}}', '2')
+  .replaceAll('{{VERIFY_URL}}', 'https://vill3n.top')
+  .replaceAll('{{SITE_URL}}', 'https://vill3n.top')
+  .replaceAll('{{YEAR}}', String(new Date().getFullYear()))
+  .trimEnd();
+
+const produced = otpEmail({ code: '482715', name: 'احمد یعقوبی', minutes: 2 }).html.trimEnd();
+
+check('خروجیِ سرور حرف‌به‌حرف همان قالب است', reference === produced,
+  (() => {
+    const a = reference.split('\n');
+    const b = produced.split('\n');
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      if (a[i] !== b[i]) return `خط ${i + 1} — قالب: ${a[i]} | ما: ${b[i]}`;
+    }
+    return 'فقط در انتها فرق دارند';
+  })());
+
+/*  و جای‌خالی‌ها واقعاً پُر شده‌اند، نه اینکه {{...}} تهِ ایمیل بماند.  */
+check('هیچ جای‌خالیِ پُرنشده نمانده', !/\{\{[A-Z_]+\}\}/.test(produced), produced.match(/\{\{[A-Z_]+\}\}/g)?.join(' '));
 
 console.log(`\n${failed === 0 ? '✅' : '❌'} ${passed} سبز، ${failed} قرمز\n`);
 process.exit(failed === 0 ? 0 : 1);
