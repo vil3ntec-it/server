@@ -123,11 +123,41 @@ try {
   check('با توکن می‌شود وارد شد', (await me(null, login.token)).status === 200);
 
   console.log('\n── توکن که منقضی شد، تمدید کار می‌کند ──');
-  //  نشست را از خودِ دیتابیس منقضی می‌کنیم — بی‌آنکه پنج دقیقه صبر کنیم
+  /*
+   *  نشست را از خودِ دیتابیس منقضی می‌کنیم — بی‌آنکه پنج دقیقه صبر کنیم.
+   *
+   *  ⚠️ این تکه یک بار روی CI قرمز شد با «database is locked» و همان‌جا
+   *  یک اشتباهِ واقعی را نشان داد: busy_timeout را به اتصالِ *سرور*
+   *  اضافه کرده بودم، ولی این‌جا اتصالِ دومی باز می‌شود که آن تنظیم را
+   *  ندارد. بی busy_timeout، SQLite همان لحظه که قفل ببیند می‌افتد —
+   *  صبر نمی‌کند.
+   *
+   *  و سرور همان لحظه بی‌کار نیست: صفِ کدها هر ۱٫۵ ثانیه می‌نویسد. پس
+   *  بسته به اینکه این خط کجای آن تیک بیفتد، گاهی می‌گذشت و گاهی نه.
+   *  همان کامیت روی یک اجرا سبز شد و روی اجرای دیگر قرمز — آزمونی که
+   *  به شانسِ زمان‌بندی بسته باشد از آزمونِ نداشته هم بدتر است.
+   *
+   *  اثبات شد: با قفلِ نگه‌داشته، بدونِ busy_timeout همان لحظه
+   *  «database is locked»؛ با آن، صبر می‌کند.
+   */
   {
-    const handle = new DatabaseSync(path.join(tmp, 'data', 'panel.db'));
-    handle.exec(`UPDATE app_sessions SET expires_at = ${Date.now() - 1000}`);
-    handle.close();
+    const dbFile = path.join(tmp, 'data', 'panel.db');
+    let done = false;
+    let lastError = null;
+    for (let attempt = 0; attempt < 5 && !done; attempt++) {
+      const handle = new DatabaseSync(dbFile);
+      try {
+        handle.exec('PRAGMA busy_timeout = 5000');
+        handle.exec(`UPDATE app_sessions SET expires_at = ${Date.now() - 1000}`);
+        done = true;
+      } catch (e) {
+        lastError = e;
+        await wait(300);
+      } finally {
+        try { handle.close(); } catch { /* بسته شده */ }
+      }
+    }
+    check('نشست از دیتابیس منقضی شد', done, lastError?.message);
   }
   check('توکنِ منقضی رد می‌شود', (await me(null, login.token)).status === 401);
 
