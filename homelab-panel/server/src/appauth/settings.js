@@ -76,7 +76,22 @@ function fromEnv() {
     maxTries: num(process.env.OTP_MAX_TRIES, 5),             // چند بار غلط زدن
     maxPerHour: num(process.env.OTP_MAX_PER_HOUR, 5),        // سقفِ کد برای هر شماره
     maxPerHourIp: num(process.env.OTP_MAX_PER_HOUR_IP, 30),  // سقفِ کد برای هر IP
-    tokenTtlSeconds: num(process.env.OTP_TOKEN_TTL, 30 * 24 * 3600), // اعتبارِ ورود
+    /*
+     *  ── عمرِ ورود: دو عدد، نه یکی ──────────────────────────────────────
+     *
+     *  ⚠️ تا امروز فقط یکی بود (۳۰ روز) و راهِ تمدید نداشت. یعنی توکنی که
+     *  دزدیده می‌شد یک ماهِ تمام کار می‌کرد، و کوتاه کردنش یعنی کاربر هر
+     *  چند روز دوباره کدِ ایمیلی بخواهد — که هم آزاردهنده است و هم
+     *  سهمیهٔ ایمیل را می‌سوزاند.
+     *
+     *    accessTtlSeconds  عمرِ توکنی که در هر درخواست می‌رود (۱ روز)
+     *    tokenTtlSeconds   تا کِی می‌شود تمدید کرد (۳۰ روز)
+     *
+     *  نامِ tokenTtlSeconds عمداً عوض نشد: هر جای دیگری که از آن می‌خواند
+     *  همان معنای «کاربر تا کِی وارد می‌ماند» را می‌گیرد.
+     */
+    accessTtlSeconds: num(process.env.OTP_ACCESS_TTL, 24 * 3600),
+    tokenTtlSeconds: num(process.env.OTP_TOKEN_TTL, 30 * 24 * 3600), // تا کِی قابلِ تمدید
 
     // متنِ پیامک و ایمیل — {code} جای کد و {app} جای نامِ برنامه می‌نشیند
     smsText: process.env.OTP_SMS_TEXT || 'کد ورود شما: {code}',

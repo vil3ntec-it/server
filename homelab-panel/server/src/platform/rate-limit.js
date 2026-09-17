@@ -9,22 +9,58 @@
 //  چرا سخت‌گیریِ جداگانه روی ورود: بقیهٔ مسیرها توکن می‌خواهند، پس مهاجم
 //  اول باید از ورود رد شود. تنها درِ باز همان است، و brute-forceِ رمز دقیقاً
 //  از همان‌جا می‌آید. سقفِ عمومی برای اسکنرهاست، سقفِ ورود برای حدسِ رمز.
+//
+//  ⚠️ این تنها پیادهٔ محدودیتِ نرخ در سرور است. تا امروز دو تا بود
+//  (lib/ و platform/) با رفتارِ متفاوت، و هیچ‌کس نمی‌دانست کدام مسیر به
+//  کدام‌یک وصل است. حالا lib/rate-limit.js فقط یک پوستهٔ نازک روی همین
+//  است، تا امضای قدیمی‌اش نشکند.
+//
+//  ⚠️ و پنجره «کشویی» است نه «ثابت». با پنجرهٔ ثابت، مهاجم سقف را در
+//  ثانیهٔ آخرِ یک پنجره و دوباره در ثانیهٔ اولِ پنجرهٔ بعد می‌زند — یعنی
+//  عملاً دو برابرِ سقف در یک چشم‌به‌هم‌زدن. با کشویی این ممکن نیست.
 // ---------------------------------------------------------------------------
 import { clientIp } from './security.js';
 
-/** کلید → { count, resetAt } */
+/** کلید → آرایهٔ زمانِ درخواست‌ها (پنجرهٔ کشویی) */
 const buckets = new Map();
 
-// سطل‌های منقضی نباید بی‌نهایت جمع شوند
+/** زمان‌های بیرونِ پنجره را دور می‌ریزد و سطل را برمی‌گرداند */
+function bucketOf(key, windowMs, now) {
+  let hits = buckets.get(key);
+  if (!hits) {
+    hits = [];
+    buckets.set(key, hits);
+  }
+  while (hits.length && hits[0] <= now - windowMs) hits.shift();
+  return hits;
+}
+
+// سطل‌های خالی نباید بی‌نهایت جمع شوند
 const sweeper = setInterval(() => {
   const now = Date.now();
-  for (const [key, b] of buckets) if (b.resetAt <= now) buckets.delete(key);
+  for (const [key, hits] of buckets) {
+    while (hits.length && hits[0] <= now - 3600_000) hits.shift();
+    if (hits.length === 0) buckets.delete(key);
+  }
 }, 60_000);
 sweeper.unref?.();
 
 /** فقط برای آزمون‌ها */
 export function resetLimits() {
   buckets.clear();
+}
+
+export function rateLimitStats() {
+  return { buckets: buckets.size };
+}
+
+/** نگهداریِ دوره‌ای — از بیرون هم صدا زده می‌شود */
+export function pruneRateLimits(windowMs = 3600_000) {
+  const cutoff = Date.now() - windowMs;
+  for (const [key, hits] of buckets) {
+    while (hits.length && hits[0] <= cutoff) hits.shift();
+    if (hits.length === 0) buckets.delete(key);
+  }
 }
 
 /**
@@ -44,33 +80,34 @@ export function rateLimit(opts) {
 
     const key = `${name}:${keyOf(req)}`;
     const now = Date.now();
-    let bucket = buckets.get(key);
-    if (!bucket || bucket.resetAt <= now) {
-      bucket = { count: 0, resetAt: now + windowMs };
-      buckets.set(key, bucket);
-    }
+    const hits = bucketOf(key, windowMs, now);
 
-    if (bucket.count >= max) {
-      const retryAfter = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
+    if (hits.length >= max) {
+      const retryAfter = Math.max(1, Math.ceil((hits[0] + windowMs - now) / 1000));
       res.setHeader('Retry-After', String(retryAfter));
       res.setHeader('RateLimit-Limit', String(max));
       res.setHeader('RateLimit-Remaining', '0');
       res.setHeader('RateLimit-Reset', String(retryAfter));
-      return res.status(429).json({ error: 'rate_limited', retryAfter });
+      return res.status(429).json({
+        ok: false,
+        error: 'rate_limited',
+        retryAfter,
+        message: `درخواست‌ها زیاد شد. ${retryAfter} ثانیه صبر کنید.`,
+      });
     }
 
     // در حالتِ skipSuccess فقط شکست‌ها شمرده می‌شوند: کاربری که رمزش را درست
     // می‌زند نباید به‌خاطر ورود و خروجِ مکرر قفل شود.
     if (opts.skipSuccess) {
       res.on('finish', () => {
-        if (res.statusCode >= 400) bucket.count++;
+        if (res.statusCode >= 400) bucketOf(key, windowMs, Date.now()).push(Date.now());
       });
     } else {
-      bucket.count++;
+      hits.push(now);
     }
 
     res.setHeader('RateLimit-Limit', String(max));
-    res.setHeader('RateLimit-Remaining', String(Math.max(0, max - bucket.count)));
+    res.setHeader('RateLimit-Remaining', String(Math.max(0, max - hits.length)));
     next();
   };
 }

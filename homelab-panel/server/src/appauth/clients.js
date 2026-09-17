@@ -13,6 +13,7 @@
 //  برنامه‌ای پشتِ در نماند و صاحبِ سرور بعداً در پنل ببیندش.
 // ---------------------------------------------------------------------------
 import crypto from 'node:crypto';
+import { sameSecret } from '../lib/secret-compare.js';
 import { db, logEvent } from '../db.js';
 import { otpSettings } from './settings.js';
 import { cleanApp } from './identity.js';
@@ -78,8 +79,14 @@ export function listClients() {
 
   return rows.map((row) => {
     const users = db.prepare('SELECT COUNT(*) AS n FROM app_users WHERE app = ?').get(row.slug).n;
+    /*
+     *  ⚠️ این‌جا تا امروز از app_codes می‌خواند — جدولی که از وقتی دو
+     *  موتورِ کد یکی شدند هیچ‌کس در آن نمی‌نویسد. یعنی ستونِ «کدِ امروز»
+     *  همیشه صفر بود، و روی نصبِ تازه که اصلاً جدول ساخته نمی‌شود، کلِ
+     *  فهرست با ۵۰۰ می‌افتاد. آزمونِ دفترِ برنامه‌ها همین را گرفت.
+     */
     const codes = db
-      .prepare('SELECT COUNT(*) AS n FROM app_codes WHERE app = ? AND created_at > ?')
+      .prepare('SELECT COUNT(*) AS n FROM code_requests WHERE app = ? AND created_at > ?')
       .get(row.slug, dayAgo).n;
     const sessions = db
       .prepare('SELECT COUNT(*) AS n FROM app_sessions WHERE app = ? AND expires_at > ?')
@@ -156,7 +163,9 @@ export function removeClient(slug, { withUsers = false } = {}) {
   if (!row) return { ok: false, error: 'not_found' };
   if (withUsers) {
     db.prepare('DELETE FROM app_users WHERE app = ?').run(row.slug);
-    db.prepare('DELETE FROM app_codes WHERE app = ?').run(row.slug);
+    // app_codes روی نصبِ تازه اصلاً وجود ندارد — نبودنش نباید حذف را بیندازد
+    try { db.prepare('DELETE FROM app_codes WHERE app = ?').run(row.slug); }
+    catch { /* جدولِ متروک */ }
   }
   db.prepare('DELETE FROM app_clients WHERE slug = ?').run(row.slug);
   logEvent('warn', 'panel', `برنامهٔ ${row.slug} حذف شد`);
@@ -192,7 +201,8 @@ export function checkAccess(slug, { key = null, channel = null } = {}) {
     return { ok: false, status: 403, error: 'app_disabled', message: 'این برنامه موقتاً خاموش است' };
   }
   if (row.require_key) {
-    if (!key || String(key) !== String(row.api_key || '')) {
+    // مقایسهٔ ثابت‌زمان — وگرنه مدتِ پاسخ می‌گوید چند بایتِ اول درست بوده
+    if (!sameSecret(key, row.api_key)) {
       return { ok: false, status: 401, error: 'bad_api_key', message: 'کلیدِ برنامه درست نیست' };
     }
   }

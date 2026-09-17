@@ -14,6 +14,7 @@ import { Router } from 'express';
 import { requireAuth, requireWriteRole } from '../auth.js';
 import { logEvent } from '../db.js';
 import { clientIp } from '../platform/security.js';
+import { sameSecret } from '../lib/secret-compare.js';
 import { allowAutoRegister } from '../lib/auto-register.js';
 import { checkMailSettings, codeSettings, safeCodeSettings, saveCodeSettings } from '../codes/settings.js';
 import { issueCode, maskEmail, revealCode, verifyCode } from '../codes/service.js';
@@ -52,14 +53,27 @@ function appOf(req) {
   );
 }
 
+/*
+ *  کلیدِ برنامه از کجا خوانده می‌شود.
+ *
+ *  ⚠️ «Authorization: Bearer» عمداً آخر است و عمداً مانده:
+ *
+ *    • آخر است چون آن خانه مالِ *توکنِ کاربر* است، نه کلیدِ برنامه. اگر
+ *      اول بود، برنامه‌ای که هر دو را دارد ممکن بود اشتباهی توکنِ کاربر
+ *      را به‌عنوان کلید بفرستد و نفهمد چرا ۴۰۱ می‌گیرد.
+ *    • مانده چون برنامه‌های موجود از همان‌جا می‌فرستند و برداشتنش
+ *      همه‌شان را می‌شکست.
+ *
+ *  یعنی x-api-key راهِ درست است و Bearer راهِ سازگاریِ عقب‌رو.
+ */
 const keyOf = (req) =>
   String(
     req.headers['x-api-key']
       || req.headers['x-app-key']
+      || req.body?.apiKey
       || (String(req.headers.authorization || '').startsWith('Bearer ')
         ? req.headers.authorization.slice(7)
         : '')
-      || req.body?.apiKey
       || ''
   ).trim();
 
@@ -97,8 +111,8 @@ function checkApp(slug, req) {
     return { ok: false, status: 403, error: 'app_disabled', message: 'این برنامه خاموش است' };
   }
   if (row.require_key) {
-    const given = keyOf(req);
-    if (!given || given !== row.api_key) {
+    // مقایسهٔ ثابت‌زمان — `!==` مدتِ پاسخ را به تعدادِ بایتِ درست گره می‌زد
+    if (!sameSecret(keyOf(req), row.api_key)) {
       return {
         ok: false,
         status: 401,

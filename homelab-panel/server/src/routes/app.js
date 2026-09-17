@@ -33,6 +33,7 @@ import {
   setBlocked,
   deleteUser,
   recentCodes,
+  refreshAppSession,
   stats,
 } from '../appauth/index.js';
 import { db, getSetting } from '../db.js';
@@ -62,6 +63,7 @@ router.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
 // IP از تنها جای محاسبه‌اش می‌آید — نسخهٔ محلی، هدرِ جعلی را باور می‌کرد
 import { clientIp } from '../platform/security.js';
+import { rateLimit } from '../lib/rate-limit.js';
 import { allowAutoRegister } from '../lib/auto-register.js';
 
 const appOf = (req) => cleanApp(req.body?.app || req.query?.app || req.headers['x-app'] || 'main');
@@ -115,12 +117,27 @@ router.get('/config', (req, res) => {
         }
       })(),
     },
+    /*
+     *  ⚠️ نشانی‌های قدیمی عمداً دست‌نخورده‌اند: برنامه‌هایی که همین حالا
+     *  روی گوشیِ مردم نصب‌اند از همین‌ها می‌خوانند و عوض کردنشان یعنی
+     *  همه با هم بشکنند. نشانیِ نسخه‌دار کنارشان اضافه شد، نه به‌جایشان.
+     */
     endpoints: {
       requestCode: '/api/app/auth/request-code',
       verifyCode: '/api/app/auth/verify-code',
       me: '/api/app/me',
       logout: '/api/app/auth/logout',
     },
+    /** نشانیِ نسخه‌دار — برنامهٔ تازه این‌ها را بزند */
+    v1: {
+      base: '/api/v1/app',
+      requestCode: '/api/v1/app/auth/request-code',
+      verifyCode: '/api/v1/app/auth/verify-code',
+      refresh: '/api/v1/app/auth/refresh',
+      me: '/api/v1/app/me',
+      logout: '/api/v1/app/auth/logout',
+    },
+    apiVersion: 1,
   });
 });
 
@@ -176,6 +193,8 @@ async function handleRequestCode(req, res) {
     app,
     channel: picked.channel,
     target: picked.target,
+    // نامِ خودِ شخص، تا ایمیل «فلانی عزیز» بگوید نه یک خوش‌آمدِ خشک
+    name: req.body?.name ?? req.body?.fullName ?? req.body?.userName ?? null,
     ip: clientIp(req),
     settings,
   });
@@ -199,8 +218,12 @@ async function handleRequestCode(req, res) {
 }
 
 // یک کار، چند اسم — هر برنامه‌ای اسمِ رایجِ خودش را صدا بزند، همین کار انجام می‌شود
+/*
+ *  ⚠️ «request-code» بی پیشوندِ auth هم هست، تا وقتی این روتر زیرِ
+ *  /api/v1/auth سوار می‌شود نشانی «/api/v1/auth/auth/...» نشود.
+ */
 router.post(
-  ['/auth/request-code', '/auth/send-code', '/auth/otp', '/login/request', '/send-code'],
+  ['/auth/request-code', '/auth/send-code', '/auth/otp', '/login/request', '/send-code', '/request-code'],
   handleRequestCode
 );
 
@@ -270,7 +293,35 @@ router.put('/me', requireAppUser, (req, res) => {
   res.json({ ok: true, user: publicUser(user) });
 });
 
-router.post('/auth/logout', requireAppUser, (req, res) => {
+/* ---------------------------------------------------------------------------
+ *  تمدیدِ ورود — بدونِ کدِ تازه
+ *
+ *  ⚠️ این مسیر عمداً requireAppUser ندارد: کارش دقیقاً همان وقتی است که
+ *  توکن منقضی شده. کلیدِ تمدید خودش سندِ هویت است.
+ *
+ *  و عمداً سقفِ خودش را دارد: کلیدِ تمدید یک رازِ ۳۲ بایتی است و حدس زدنش
+ *  شدنی نیست، ولی سقف جلوی کوبیدنِ بی‌هدف را می‌گیرد.
+ * ------------------------------------------------------------------------- */
+router.post(
+  ['/auth/refresh', '/auth/renew', '/refresh'],
+  rateLimit('app-refresh', 60, 10 * 60 * 1000),
+  (req, res) => {
+    const app = appOf(req);
+    const settings = settingsFor(app);
+    const result = refreshAppSession({
+      refreshToken: req.body?.refreshToken ?? req.body?.refresh_token ?? req.body?.refresh,
+      device: req.body?.device || req.headers['user-agent'],
+      ip: clientIp(req),
+      settings,
+    });
+    if (!result.ok) {
+      return res.status(result.error === 'blocked' ? 403 : 401).json(result);
+    }
+    res.json(result);
+  }
+);
+
+router.post(['/auth/logout', '/logout'], requireAppUser, (req, res) => {
   res.json(req.body?.allDevices ? logoutAllDevices(req.appUser.id) : logoutApp(req.appSessionId));
 });
 

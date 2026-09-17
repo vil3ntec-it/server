@@ -23,7 +23,7 @@ import { otpSettings } from './settings.js';
 import { mask } from './send.js';
 import { drainQueue } from '../codes/queue.js';
 import { mailReady } from '../codes/mail.js';
-import { ensureApp as ensureCodeApp } from '../codes/store.js';
+import { ensureApp as ensureCodeApp, recentRequests } from '../codes/store.js';
 import { issueCode, verifyCode as verifyWithEngine } from '../codes/service.js';
 import { latinDigits, cleanApp } from './identity.js';
 
@@ -41,20 +41,12 @@ CREATE TABLE IF NOT EXISTS app_users (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_app_users_phone ON app_users(app, phone) WHERE phone IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_app_users_email ON app_users(app, email) WHERE email IS NOT NULL;
 
-CREATE TABLE IF NOT EXISTS app_codes (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  app        TEXT NOT NULL DEFAULT 'main',
-  channel    TEXT NOT NULL,                    -- sms | email
-  target     TEXT NOT NULL,                    -- شماره یا ایمیلِ استاندارد شده
-  code_hash  TEXT NOT NULL,
-  tries      INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL,
-  used_at    INTEGER,
-  ip         TEXT,
-  sent_via   TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_app_codes_target ON app_codes(app, target, id DESC);
+-- ⚠️ جدولِ app_codes این‌جا بود و دیگر ساخته نمی‌شود: از وقتی دو موتورِ
+-- کد یکی شدند، کدها در code_requests می‌نشینند و کسی در این نمی‌نویسد.
+--
+-- عمداً DROP نشد. روی نصب‌های موجود ممکن است کدهای قدیمی داشته باشد و
+-- «جدولِ بی‌مصرف» دلیلِ خوبی برای پاک کردنِ دادهٔ کسی نیست. فقط دیگر
+-- ساخته و خوانده نمی‌شود؛ نصبِ تازه اصلاً آن را ندارد.
 
 CREATE TABLE IF NOT EXISTS app_sessions (
   id         TEXT PRIMARY KEY,
@@ -66,25 +58,49 @@ CREATE TABLE IF NOT EXISTS app_sessions (
   ip         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_app_sessions_user ON app_sessions(user_id);
+-- پاک‌سازیِ نشست‌های منقضی بی این، کلِ جدول را می‌خواند
+CREATE INDEX IF NOT EXISTS idx_app_sessions_expiry ON app_sessions(expires_at);
 `);
+
+/*
+ *  ستون‌هایی که بعداً اضافه شدند.
+ *
+ *  ⚠️ «CREATE TABLE IF NOT EXISTS» فقط روی دیتابیسِ نو کار می‌کند. روی
+ *  سروری که از قبل بالا بوده جدول هست و ستونِ تازه نیست — و اولین ورودی
+ *  که بخواهد تمدید شود با «چنین ستونی نداریم» می‌افتد.
+ */
+function addSessionColumn(column, type) {
+  try {
+    const has = db.prepare('PRAGMA table_info(app_sessions)').all().some((c) => c.name === column);
+    if (!has) db.exec(`ALTER TABLE app_sessions ADD COLUMN ${column} ${type}`);
+  } catch { /* از قبل هست — بی‌ضرر */ }
+}
+//  هشِ کلیدِ تمدید. خودِ کلید ذخیره نمی‌شود، مثلِ رمز.
+addSessionColumn('refresh_hash', 'TEXT');
+//  تا کِی می‌شود تمدید کرد (فراتر از عمرِ خودِ توکن)
+addSessionColumn('refresh_expires_at', 'INTEGER');
+//  آخرین تمدید — برای اینکه در پنل معلوم باشد نشست زنده است یا رها شده
+addSessionColumn('last_used_at', 'INTEGER');
+//  چند بار تمدید شده
+addSessionColumn('refresh_count', 'INTEGER');
 
 // پاک‌سازیِ ورودی‌ها در identity.js است — از این‌جا هم بیرون داده می‌شود تا
 // جاهایی که از قبل از این فایل می‌خواندند نشکنند.
 export { latinDigits, normalizePhone, normalizeEmail, cleanApp, pickTarget } from './identity.js';
 
 // ---------------------------------------------------------------------------
-//  خودِ کد
+//  ⚠️ این‌جا زمانی makeCode و hashCodeِ خودِ این ماژول بودند. وقتی دو موتورِ
+//  کد یکی شدند، کارشان به src/codes/service.js رفت و این‌ها ماندند بی‌مصرف.
+//
+//  برداشته شدند، و یکی‌شان یک اشکالِ واقعی داشت که خوب است در تاریخ بماند:
+//
+//      digits[bytes[i] % 10]
+//
+//  ۲۵۶ بر ۱۰ بخش‌پذیر نیست (۲۵۶ = ۲۵×۱۰ + ۶)، پس رقم‌های ۰ تا ۵ کمی
+//  بیشتر از ۶ تا ۹ می‌آمدند. موتورِ فعلی crypto.randomInt می‌زند که این
+//  سوگیری را ندارد. اگر روزی کسی این فایل را باز کرد و خواست «کدساز»ی
+//  بنویسد: randomInt، نه modulo.
 // ---------------------------------------------------------------------------
-function makeCode(length) {
-  const digits = '0123456789';
-  let out = '';
-  const bytes = crypto.randomBytes(length);
-  for (let i = 0; i < length; i++) out += digits[bytes[i] % 10];
-  return out;
-}
-
-const hashCode = (code, target) =>
-  crypto.createHmac('sha256', jwtSecret()).update(`${target}:${code}`).digest('hex');
 
 const HOUR = 3600 * 1000;
 
@@ -103,7 +119,7 @@ const HOUR = 3600 * 1000;
  * درخواستِ شماره بی‌صدا رد نمی‌شود: خطای روشن برمی‌گردد تا برنامه بتواند به
  * کاربر بگوید ایمیلش را بزند.
  */
-export async function requestCode({ app, channel, target, ip = '', settings = otpSettings() }) {
+export async function requestCode({ app, channel, target, name = null, ip = '', settings = otpSettings() }) {
   if (channel !== 'email') {
     return {
       ok: false,
@@ -114,7 +130,14 @@ export async function requestCode({ app, channel, target, ip = '', settings = ot
 
   ensureCodeApp(app, { name: app });
   const started = Date.now();
-  const result = issueCode({ app, email: target, purpose: 'login', ip });
+  /*
+   *  ⚠️ `subjectName` این‌جا نبود و ایمیل‌های این مسیر بی‌نام می‌رفتند —
+   *  «به VILL3N خوش آمدید» به‌جای «سارا عزیز، به VILL3N خوش آمدید».
+   *  مسیرِ دیگر (/api/codes/request) نام را می‌فرستاد و این یکی نه، پس
+   *  بسته به اینکه کلاینت کدام نشانی را زده بود، نتیجه فرق می‌کرد.
+   *  یک آزمونِ سرتاسری گرفتش.
+   */
+  const result = issueCode({ app, email: target, subjectName: name, purpose: 'login', ip });
 
   if (!result.ok) {
     return {
@@ -168,24 +191,163 @@ export function upsertUser({ app, channel, target, name = null }) {
   return { user, isNew: true };
 }
 
+/* ---------------------------------------------------------------------------
+ *  کلیدِ تمدید (refresh token)
+ *
+ *  ⚠️ چرا لازم شد: توکنِ برنامه ۳۰ روزه بود و راهِ تمدید نداشت. یعنی یا
+ *  باید بلند می‌ماند — و توکنِ دزدیده‌شده یک ماه کار می‌کرد — یا کوتاه
+ *  می‌شد و کاربر هر چند روز دوباره کدِ ایمیلی می‌خواست.
+ *
+ *  حالا دو تکه است:
+ *    • توکنِ کوتاه‌عمر (پیش‌فرض ۱ روز) که در هر درخواست می‌رود
+ *    • کلیدِ تمدیدِ بلندعمر (پیش‌فرض ۳۰ روز) که فقط به یک مسیر می‌رود
+ *
+ *  کلیدِ تمدید مثلِ رمز رفتار می‌شود: فقط هشش ذخیره می‌شود، پس اگر
+ *  دیتابیس لو برود کلیدی در دست نیست.
+ *
+ *  ⚠️ و هر تمدید کلیدِ تازه می‌دهد و قبلی را می‌سوزاند (rotation). اگر
+ *  کلیدی دو بار استفاده شود یعنی یکی‌شان دزدیده شده — و آن‌جا کلِ نشست
+ *  بسته می‌شود، نه اینکه هر دو ادامه بدهند.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * ساختِ خودِ توکن.
+ *
+ * ⚠️ دو ریزه‌کاری که هر دو از یک آزمونِ قرمز درآمدند:
+ *
+ *   ۱) `exp` مستقیم از expiresAt می‌آید، نه از `expiresIn`. با expiresIn،
+ *      jsonwebtoken آن را نسبت به `iat` حساب می‌کند و iat دقتِ ثانیه
+ *      دارد — پس تمدیدی که در همان ثانیهٔ ساختِ توکنِ قبلی انجام می‌شد،
+ *      توکنی می‌داد با *همان* لحظهٔ انقضا. یعنی تمدید هیچ چیزی تمدید
+ *      نمی‌کرد. حالا انقضای توکن و انقضای ردیفِ نشست یک عدد است.
+ *
+ *   ۲) `jti` یکتا، وگرنه دو توکن با ادعای یکسان در یک ثانیه بایت‌به‌بایت
+ *      یکی می‌شدند و کلاینت نمی‌فهمید تمدید انجام شده.
+ */
+function signAccess({ uid, sid, app, expiresAt }) {
+  return jwt.sign(
+    { typ: 'app', uid, sid, app, jti: crypto.randomUUID(), exp: Math.floor(expiresAt / 1000) },
+    jwtSecret()
+  );
+}
+
+const newRefresh = () => crypto.randomBytes(32).toString('base64url');
+const hashRefresh = (value) => crypto.createHash('sha256').update(String(value)).digest('hex');
+
+/** عمرِ خودِ توکن — کوتاه، چون تمدید دارد */
+const accessTtl = (settings) =>
+  Math.max(300, Number(settings.accessTtlSeconds) || 24 * 3600);
+
+/** تا کِی می‌شود تمدید کرد */
+const refreshTtl = (settings) =>
+  Math.max(accessTtl(settings), Number(settings.tokenTtlSeconds) || 30 * 24 * 3600);
+
 export function createAppSession(user, { device = '', ip = '', settings = otpSettings() } = {}) {
   const id = crypto.randomUUID();
   const now = Date.now();
-  const expiresAt = now + settings.tokenTtlSeconds * 1000;
-  db.prepare('INSERT INTO app_sessions(id, user_id, app, created_at, expires_at, device, ip) VALUES(?,?,?,?,?,?,?)').run(
+  const expiresAt = now + accessTtl(settings) * 1000;
+  const refreshToken = newRefresh();
+  const refreshExpiresAt = now + refreshTtl(settings) * 1000;
+
+  db.prepare(
+    `INSERT INTO app_sessions
+       (id, user_id, app, created_at, expires_at, device, ip,
+        refresh_hash, refresh_expires_at, last_used_at, refresh_count)
+     VALUES(?,?,?,?,?,?,?,?,?,?,0)`
+  ).run(
     id,
     user.id,
     user.app,
     now,
     expiresAt,
     String(device || '').slice(0, 200),
-    String(ip || '')
+    String(ip || ''),
+    hashRefresh(refreshToken),
+    refreshExpiresAt,
+    now
   );
   db.prepare('UPDATE app_users SET last_login_at = ? WHERE id = ?').run(now, user.id);
-  const token = jwt.sign({ typ: 'app', uid: user.id, sid: id, app: user.app }, jwtSecret(), {
-    expiresIn: settings.tokenTtlSeconds,
-  });
-  return { token, expiresAt, expiresIn: settings.tokenTtlSeconds };
+  const token = signAccess({ uid: user.id, sid: id, app: user.app, expiresAt });
+  return {
+    token,
+    expiresAt,
+    expiresIn: accessTtl(settings),
+    refreshToken,
+    refreshExpiresAt,
+    refreshExpiresIn: refreshTtl(settings),
+  };
+}
+
+/**
+ * توکنِ تازه با کلیدِ تمدید.
+ *
+ * @returns {{ok:true, token, …}|{ok:false, error:string, message:string}}
+ */
+export function refreshAppSession({ refreshToken, device = '', ip = '', settings = otpSettings() }) {
+  const given = String(refreshToken || '').trim();
+  if (!given) {
+    return { ok: false, error: 'refresh_required', message: 'کلیدِ تمدید را بفرستید' };
+  }
+
+  const row = db
+    .prepare('SELECT * FROM app_sessions WHERE refresh_hash = ?')
+    .get(hashRefresh(given));
+
+  /*
+   *  ⚠️ کلیدی که در دفتر نیست یعنی یا هرگز نبوده، یا یک بار مصرف شده و
+   *  سوخته. حالتِ دوم خطرناک است: کسی دارد از کلیدِ کهنه استفاده می‌کند.
+   *  ولی نمی‌شود از هم جدایشان کرد بی‌آنکه کلیدهای سوخته را نگه داریم؛
+   *  پس هر دو یک جواب می‌گیرند: «دوباره وارد شو».
+   */
+  if (!row) {
+    return { ok: false, error: 'bad_refresh', message: 'نشست تمام شده — دوباره وارد شوید' };
+  }
+
+  const now = Date.now();
+  if (!row.refresh_expires_at || row.refresh_expires_at < now) {
+    db.prepare('DELETE FROM app_sessions WHERE id = ?').run(row.id);
+    return { ok: false, error: 'refresh_expired', message: 'نشست تمام شده — دوباره وارد شوید' };
+  }
+
+  const user = db.prepare('SELECT * FROM app_users WHERE id = ?').get(row.user_id);
+  if (!user) {
+    db.prepare('DELETE FROM app_sessions WHERE id = ?').run(row.id);
+    return { ok: false, error: 'bad_refresh', message: 'نشست تمام شده — دوباره وارد شوید' };
+  }
+  if (user.blocked) {
+    db.prepare('DELETE FROM app_sessions WHERE user_id = ?').run(user.id);
+    return { ok: false, error: 'blocked', message: 'این حساب مسدود است' };
+  }
+
+  /*
+   *  کلیدِ تازه، و قبلی همین‌جا می‌سوزد.
+   *
+   *  ⚠️ سقفِ تمدید از سرِ نو شروع نمی‌شود: refresh_expires_at دست‌نخورده
+   *  می‌ماند. وگرنه یک نشست با تمدیدهای پشتِ هم برای همیشه زنده می‌ماند
+   *  و «۳۰ روز» عملاً بی‌معنا می‌شد.
+   */
+  const rotated = newRefresh();
+  const expiresAt = now + accessTtl(settings) * 1000;
+  db.prepare(
+    `UPDATE app_sessions
+        SET refresh_hash = ?, expires_at = ?, last_used_at = ?,
+            refresh_count = COALESCE(refresh_count, 0) + 1,
+            device = COALESCE(NULLIF(?, ''), device),
+            ip = COALESCE(NULLIF(?, ''), ip)
+      WHERE id = ?`
+  ).run(hashRefresh(rotated), expiresAt, now, String(device || '').slice(0, 200), String(ip || ''), row.id);
+
+  const token = signAccess({ uid: user.id, sid: row.id, app: row.app, expiresAt });
+  return {
+    ok: true,
+    token,
+    expiresAt,
+    expiresIn: accessTtl(settings),
+    refreshToken: rotated,
+    refreshExpiresAt: row.refresh_expires_at,
+    refreshExpiresIn: Math.max(0, Math.round((row.refresh_expires_at - now) / 1000)),
+    user: publicUser(user),
+  };
 }
 
 /**
@@ -328,14 +490,28 @@ export function deleteUser(userId) {
   return { ok: true };
 }
 
-/** آخرین کدها — برای وقتی که پیامک هنوز تنظیم نشده و خودتان باید کد را ببینید */
+/**
+ * آخرین کدها.
+ *
+ * ⚠️ این تابع تا امروز از جدولِ app_codes می‌خواند — جدولی که از وقتی دو
+ * موتور یکی شدند **هیچ‌کس در آن نمی‌نویسد**. یعنی صفحهٔ «کدهای اخیر»
+ * همیشه خالی بود و هیچ خطایی هم نمی‌داد؛ بدترین جور خرابی.
+ *
+ * حالا از همان‌جایی می‌خواند که کدها واقعاً آن‌جا ثبت می‌شوند.
+ * شکلِ خروجی عمداً دست‌نخورده ماند تا هر چه از این می‌خواند نشکند.
+ */
 export function recentCodes(limit = 20) {
-  return db
-    .prepare(
-      `SELECT id, app, channel, target, created_at, expires_at, used_at, sent_via, tries
-         FROM app_codes ORDER BY id DESC LIMIT ?`
-    )
-    .all(Math.min(100, Number(limit) || 20));
+  return recentRequests({ limit: Math.min(100, Number(limit) || 20) }).map((row) => ({
+    id: row.id,
+    app: row.app,
+    channel: 'email',
+    target: row.email,
+    created_at: row.created_at,
+    expires_at: row.expires_at,
+    used_at: row.used_at,
+    sent_via: row.send_state === 'sent' ? 'email' : null,
+    tries: row.tries,
+  }));
 }
 
 export function stats() {
@@ -345,7 +521,8 @@ export function stats() {
     users: one('SELECT COUNT(*) AS n FROM app_users').n,
     apps: one('SELECT COUNT(DISTINCT app) AS n FROM app_users').n,
     activeSessions: one('SELECT COUNT(*) AS n FROM app_sessions WHERE expires_at > ?', now).n,
-    codesLastHour: one('SELECT COUNT(*) AS n FROM app_codes WHERE created_at > ?', now - HOUR).n,
+    // ⚠️ از جدولِ زنده، نه app_codesِ متروک که همیشه صفر می‌داد
+    codesLastHour: one('SELECT COUNT(*) AS n FROM code_requests WHERE created_at > ?', now - HOUR).n,
     loginsToday: one('SELECT COUNT(*) AS n FROM app_users WHERE last_login_at > ?', now - 24 * HOUR).n,
   };
 }
@@ -355,6 +532,8 @@ export function pruneAppAuth() {
   const now = Date.now();
   try {
     db.prepare('DELETE FROM app_sessions WHERE expires_at < ?').run(now);
-    db.prepare('DELETE FROM app_codes WHERE created_at < ?').run(now - 7 * 24 * HOUR);
+    // app_codes دیگر نوشته نمی‌شود؛ اگر روی نصبِ قدیمی هست، کهنه‌هایش برود
+    try { db.prepare('DELETE FROM app_codes WHERE created_at < ?').run(now - 7 * 24 * HOUR); }
+    catch { /* نصبِ تازه این جدول را ندارد */ }
   } catch { /* بی‌خیال */ }
 }
