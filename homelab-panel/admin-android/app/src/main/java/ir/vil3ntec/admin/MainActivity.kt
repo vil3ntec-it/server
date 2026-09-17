@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Pin
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -39,6 +40,7 @@ import ir.vil3ntec.admin.ui.AccountsScreen
 import ir.vil3ntec.admin.ui.CodesScreen
 import ir.vil3ntec.admin.ui.HomeScreen
 import ir.vil3ntec.admin.ui.LoginScreen
+import ir.vil3ntec.admin.ui.SettingsScreen
 import ir.vil3ntec.admin.ui.SupportScreen
 import ir.vil3ntec.admin.ui.ThemeMode
 import ir.vil3ntec.admin.ui.VillainAdminTheme
@@ -125,6 +127,7 @@ private enum class Tab(val title: String) {
   Codes("کدها"),
   Accounts("حساب‌ها"),
   Support("پشتیبانی"),
+  Settings("تنظیمات"),
 }
 
 @Composable
@@ -152,6 +155,7 @@ private fun MainShell(
                 Tab.Codes -> Icons.Filled.Pin
                 Tab.Accounts -> Icons.Filled.Groups
                 Tab.Support -> Icons.Filled.SupportAgent
+                Tab.Settings -> Icons.Filled.Settings
               }
               if (item == Tab.Support && unread > 0) {
                 BadgedBox(badge = { Badge { Text(unread.toString()) } }) {
@@ -169,16 +173,17 @@ private fun MainShell(
   ) { padding ->
     Box(Modifier.fillMaxSize().padding(padding)) {
       when (tab) {
-        Tab.Home -> HomeScreen(
+        Tab.Home -> HomeScreen(session)
+        Tab.Codes -> CodesScreen(session)
+        Tab.Accounts -> AccountsScreen(session)
+        Tab.Support -> SupportScreen(session, onUnread = { unread = it })
+        Tab.Settings -> SettingsScreen(
           session = session,
           onLogout = onLogout,
           onSession = onSession,
           themeMode = themeMode,
           onThemeMode = onThemeMode,
         )
-        Tab.Codes -> CodesScreen(session)
-        Tab.Accounts -> AccountsScreen(session)
-        Tab.Support -> SupportScreen(session, onUnread = { unread = it })
       }
     }
   }

@@ -9,11 +9,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import ir.vil3ntec.admin.BuildConfig
@@ -33,11 +36,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- *  کارتِ به‌روزرسانی.
+ *  به‌روزرسانی از گیت‌هاب، داخلِ خودِ برنامه.
  *
  *  ⚠️ دکمه در حالِ دانلود غیرفعال نمی‌شود که «کنسل» شود — زدنِ دوباره‌اش
  *  همان دانلود را از جایی که مانده ادامه می‌دهد. روی اینترنتی که قطع و وصل
  *  می‌شود، همین تفاوتِ «تمام می‌شود» و «هیچ‌وقت تمام نمی‌شود» است.
+ *
+ *  ⚠️ و خودش یک بار، بی آنکه کسی دکمه بزند، سر می‌زند. «بررسی»ِ دستی سرِ
+ *  جایش هست، ولی کسی که نمی‌داند باید دکمه بزند، هیچ‌وقت نمی‌فهمید نسخهٔ
+ *  تازه‌ای آمده.
  */
 @Composable
 fun UpdateCard() {
@@ -49,29 +56,35 @@ fun UpdateCard() {
   var downloading by remember { mutableStateOf(false) }
   var percent by remember { mutableIntStateOf(0) }
   var message by remember { mutableStateOf("") }
+  var ready by remember { mutableStateOf(false) }
 
   val current = BuildConfig.VERSION_NAME
 
-  fun check() {
+  fun check(quiet: Boolean = false) {
     if (checking) return
     checking = true
-    message = ""
+    if (!quiet) message = ""
     scope.launch {
       try {
         val found = withContext(Dispatchers.IO) { Updater.latest() }
         release = found
+        // در حالتِ خودکار، «تازه‌ترین است» را نمی‌نویسیم؛ سکوت یعنی خبری نیست
         message = when {
+          quiet -> message
           found == null -> "نسخه‌ای روی گیت‌هاب پیدا نشد"
           Updater.isNewer(found.version, current) -> ""
           else -> "همین نسخه تازه‌ترین است"
         }
       } catch (e: Exception) {
-        message = e.message ?: "بررسی نشد"
+        if (!quiet) message = e.message ?: "بررسی نشد"
       } finally {
         checking = false
       }
     }
   }
+
+  // یک بار با باز شدنِ صفحه، بی‌صدا
+  LaunchedEffect(Unit) { check(quiet = true) }
 
   fun download() {
     val target = release ?: return
@@ -83,7 +96,8 @@ fun UpdateCard() {
         val file = withContext(Dispatchers.IO) {
           Updater.download(context, target) { progress -> percent = progress.percent }
         }
-        Updater.install(context, file)
+        ready = true
+        message = Updater.install(context, file) ?: ""
       } catch (e: Exception) {
         message = e.message ?: "دانلود نشد"
       } finally {
@@ -96,7 +110,10 @@ fun UpdateCard() {
   val hasNew = fresh != null && Updater.isNewer(fresh.version, current)
 
   PanelCard {
-    CardHeader("به‌روزرسانی", "نسخهٔ این برنامه: $current") {
+    CardHeader(
+      "به‌روزرسانی",
+      "نسخهٔ این برنامه: $current",
+    ) {
       RoundIcon(
         Icons.Filled.SystemUpdate,
         if (hasNew) StatusColor.good else MaterialTheme.colorScheme.primary,
@@ -105,16 +122,24 @@ fun UpdateCard() {
     }
 
     if (hasNew && fresh != null) {
-      Text(
-        "نسخهٔ ${fresh.version} آماده است",
-        Modifier.padding(top = 10.dp),
-        style = MaterialTheme.typography.bodyMedium,
-        color = StatusColor.good,
-      )
-      if (fresh.sizeBytes > 0) {
+      Row(
+        Modifier.fillMaxWidth().padding(top = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Chip("نسخهٔ ${fresh.version}", StatusColor.good, StatusColor.goodTint)
+        if (fresh.sizeBytes > 0) {
+          Text(
+            "  ${fresh.sizeBytes / (1024 * 1024)} مگابایت",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+      }
+      if (fresh.notes.isNotBlank()) {
+        HorizontalDivider(Modifier.padding(vertical = 10.dp), color = StatusColor.border)
         Text(
-          "${fresh.sizeBytes / (1024 * 1024)} مگابایت",
-          style = MaterialTheme.typography.labelSmall,
+          fresh.notes.lineSequence().filter { it.isNotBlank() }.take(8).joinToString("\n"),
+          style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
@@ -124,7 +149,7 @@ fun UpdateCard() {
       LinearProgressIndicator(
         progress = { percent / 100f },
         trackColor = StatusColor.border,
-        strokeCap = androidx.compose.ui.graphics.StrokeCap.Round,
+        strokeCap = StrokeCap.Round,
         modifier = Modifier
           .fillMaxWidth()
           .height(7.dp)
@@ -144,7 +169,8 @@ fun UpdateCard() {
         message,
         Modifier.padding(top = 10.dp),
         style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = if (ready && !Updater.canInstall(context)) StatusColor.warn
+        else MaterialTheme.colorScheme.onSurfaceVariant,
       )
     }
 
@@ -158,7 +184,13 @@ fun UpdateCard() {
       }
       if (hasNew) {
         Button(onClick = { download() }, modifier = Modifier.padding(start = 8.dp)) {
-          Text(if (downloading) "ادامه" else "دانلود و نصب")
+          Text(
+            when {
+              downloading -> "ادامه"
+              ready -> "نصب"
+              else -> "دانلود و نصب"
+            }
+          )
         }
       }
     }
