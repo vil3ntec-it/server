@@ -13477,6 +13477,8 @@ html.vip-lock-debtors [data-page="debtors"]{ opacity:.5; }
         write(ENT_KEY, ENT);
         apply();
       }
+      // اطلاعیه‌های صاحبِ سرور — روی همین پاسخ می‌آیند، بی درخواستِ تازه
+      if (data && window.__serverNotices) window.__serverNotices(data.notices);
     } catch { /* آفلاین: با وضعیت کش‌شده ادامه می‌دهیم */ }
     return ENT;
   }
@@ -13952,6 +13954,100 @@ html.vip-lock-debtors [data-page="debtors"]{ opacity:.5; }
   else init();
 })();
 
+</script>
+
+<!-- ─────────────────────────── اطلاعیه‌های سرور ───────────────────────────
+     پیامی که صاحبِ سرور از برنامهٔ «ویلن ادمین» می‌فرستد، این‌جا دیده
+     می‌شود — بالای صفحه، تا وقتی برداشته شود یا مهلتش تمام شود.
+
+     ⚠️ عمداً کاملاً جداست: نه به کدِ بالا دست می‌زند، نه چیزی از آن
+     می‌خواهد. تنها راهِ ارتباطش یک تابعِ سراسری است که همان جایی صدا
+     زده می‌شود که برنامه از قبل وضعیتِ اشتراک را می‌گرفت. اگر روزی
+     خواستید بردارید، همین یک بلوک را پاک کنید.
+
+     ⚠️ و اطلاعیه درخواستِ تازه‌ای نمی‌زند: روی همان پاسخی سوار است که
+     برنامه هر چند دقیقه می‌گیرد.
+-->
+<style>
+  .srv-notices{position:fixed;inset-inline:0;top:0;z-index:9999;display:flex;
+    flex-direction:column;gap:8px;padding:10px 12px;pointer-events:none}
+  .srv-notice{pointer-events:auto;display:flex;gap:10px;align-items:flex-start;
+    background:var(--surface,#f6f8fc);border:1px solid var(--border,#e5eaf3);
+    border-inline-start:4px solid var(--primary,#2c5ce6);
+    border-radius:var(--radius-md,14px);padding:11px 13px;
+    box-shadow:var(--shadow-md,0 6px 20px -8px rgba(30,50,110,.15));
+    font-size:13px;line-height:1.7;color:var(--text,#1a2233);
+    max-width:640px;margin-inline:auto;width:100%}
+  .srv-notice.success{border-inline-start-color:var(--success,#18a06b)}
+  .srv-notice.warn{border-inline-start-color:var(--warning,#e8a13a)}
+  .srv-notice.danger{border-inline-start-color:var(--danger,#e54b4b)}
+  .srv-notice b{display:block;font-size:13.5px;margin-bottom:2px}
+  .srv-notice p{margin:0;color:var(--muted,#7c8698)}
+  .srv-notice button{flex:none;background:none;border:0;cursor:pointer;
+    color:var(--muted,#7c8698);font-size:18px;line-height:1;padding:0 2px}
+</style>
+<script>
+(function(){
+  var KEY = 'srv-notices-dismissed-v1';
+  var box = null;
+
+  function dismissed(){
+    try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch(e){ return []; }
+  }
+  function dismiss(id){
+    try {
+      var list = dismissed();
+      if (list.indexOf(id) < 0) list.push(id);
+      localStorage.setItem(KEY, JSON.stringify(list.slice(-200)));
+    } catch(e){}
+  }
+
+  /*
+   *  ⚠️ متن با textContent نوشته می‌شود نه innerHTML.
+   *  اطلاعیه از سرور می‌آید و سرور مالِ خودِ شماست، ولی یک روز ممکن است
+   *  متنش را از جای دیگری بگیرد. با textContent، هر چه بیاید فقط متن است.
+   */
+  function render(list){
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'srv-notices';
+      document.body.appendChild(box);
+    }
+    box.textContent = '';
+    var hidden = dismissed();
+    (list || []).forEach(function(n){
+      if (!n || !n.title) return;
+      if (hidden.indexOf(n.id) >= 0) return;
+
+      var card = document.createElement('div');
+      card.className = 'srv-notice ' + (n.kind || 'info');
+
+      var main = document.createElement('div');
+      main.style.flex = '1';
+      var title = document.createElement('b');
+      title.textContent = n.title;
+      main.appendChild(title);
+      if (n.body) {
+        var p = document.createElement('p');
+        p.textContent = n.body;
+        main.appendChild(p);
+      }
+      card.appendChild(main);
+
+      if (n.dismissible !== false) {
+        var x = document.createElement('button');
+        x.type = 'button';
+        x.setAttribute('aria-label', 'بستن');
+        x.textContent = '\u00d7';
+        x.onclick = function(){ dismiss(n.id); card.remove(); };
+        card.appendChild(x);
+      }
+      box.appendChild(card);
+    });
+  }
+
+  window.__serverNotices = render;
+})();
 </script>
 
 </body>
