@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Pin
@@ -37,6 +38,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import ir.vil3ntec.admin.data.Session
 import ir.vil3ntec.admin.ui.AccountsScreen
+import ir.vil3ntec.admin.ui.BroadcastScreen
 import ir.vil3ntec.admin.ui.CodesScreen
 import ir.vil3ntec.admin.ui.HomeScreen
 import ir.vil3ntec.admin.ui.LoginScreen
@@ -127,6 +129,7 @@ private enum class Tab(val title: String) {
   Codes("کدها"),
   Accounts("حساب‌ها"),
   Support("پشتیبانی"),
+  Broadcast("پخش"),
   Settings("تنظیمات"),
 }
 
@@ -155,6 +158,7 @@ private fun MainShell(
                 Tab.Codes -> Icons.Filled.Pin
                 Tab.Accounts -> Icons.Filled.Groups
                 Tab.Support -> Icons.Filled.SupportAgent
+                Tab.Broadcast -> Icons.Filled.Campaign
                 Tab.Settings -> Icons.Filled.Settings
               }
               if (item == Tab.Support && unread > 0) {
@@ -177,6 +181,7 @@ private fun MainShell(
         Tab.Codes -> CodesScreen(session)
         Tab.Accounts -> AccountsScreen(session)
         Tab.Support -> SupportScreen(session, onUnread = { unread = it })
+        Tab.Broadcast -> BroadcastScreen(session)
         Tab.Settings -> SettingsScreen(
           session = session,
           onLogout = onLogout,

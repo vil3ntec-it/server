@@ -25,6 +25,7 @@ import { logEvent } from '../db.js';
 import { isLocalRequest, safeCode, LIVE_BRANCH, INBOX_BRANCH, META_BRANCH } from '../stations/index.js';
 import { listBackups, saveBackup, KEEP_DAYS, MAX_BYTES } from '../stations/backups.js';
 import { cloudStatus, cloudLogin, cloudForget, cloudCall } from '../stations/cloud.js';
+import { noticesFor } from '../announce/store.js';
 
 /** شاخهٔ حساب‌های کیو‌آردار — ‎acct/<شناسه>‎ (برنامهٔ نیتیو می‌نویسد) */
 const ACCT_BRANCH = 'acct';
@@ -117,9 +118,19 @@ router.post('/enroll', async (req, res) => {
 router.get('/:code/live', (req, res) => {
   const ctx = open(req, res, 'read');
   if (!ctx) return;
+  /*
+   *  ⚠️ اطلاعیه‌ها روی همین پاسخ سوار می‌شوند.
+   *
+   *  برنامهٔ پمپ همین حالا این مسیر را هر چند ثانیه می‌زند. اگر اطلاعیه
+   *  مسیرِ خودش را می‌خواست، تا روزی که آن برنامه به‌روز شود پیامِ شما به
+   *  هیچ پمپی نمی‌رسید. این‌طور همان تپشِ همیشگی اطلاعیه را هم می‌آورد.
+   */
+  const notices = noticesFor('station', ctx.code);
   const live = ctx.store.read(LIVE_BRANCH);
-  if (live === undefined) return res.json({ ok: true, code: ctx.code, live: null, empty: true });
-  res.json({ ok: true, code: ctx.code, live });
+  if (live === undefined) {
+    return res.json({ ok: true, code: ctx.code, live: null, empty: true, notices });
+  }
+  res.json({ ok: true, code: ctx.code, live, notices });
 });
 
 /**

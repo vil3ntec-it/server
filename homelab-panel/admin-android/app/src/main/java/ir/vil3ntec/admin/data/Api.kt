@@ -261,6 +261,68 @@ object Api {
     return call(session, "/api/control/tohid/subscriptions/$subscriptionId/status", "POST", body)
   }
 
+  /* --------------------------- اطلاعیه‌ها -------------------------------- */
+
+  /**
+   *  پیام‌هایی که روی صفحهٔ برنامه‌های دیگر می‌نشینند.
+   *
+   *  ⚠️ این‌ها پوشِ لحظه‌ای نیستند — روی صفحه *می‌مانند* تا برشان دارید یا
+   *  مهلتشان تمام شود. کسی که فردا برنامه را باز می‌کند هم باید «تخفیفِ
+   *  این هفته» را ببیند، نه اینکه چون دیروز آنلاین نبوده از دستش برود.
+   */
+  fun announcements(session: Session): Reply = call(session, "/api/announce-admin")
+
+  fun postAnnouncement(
+    session: Session,
+    audience: String,
+    title: String,
+    body: String,
+    kind: String,
+    endsAt: Long? = null,
+    targetId: String = "",
+  ): Reply {
+    val payload = JSONObject()
+      .put("audience", audience)
+      .put("title", title)
+      .put("body", body)
+      .put("kind", kind)
+    if (endsAt != null && endsAt > 0) payload.put("endsAt", endsAt)
+    if (targetId.isNotBlank()) payload.put("targetId", targetId)
+    return call(session, "/api/announce-admin", "POST", payload)
+  }
+
+  fun setAnnouncementEnabled(session: Session, id: Int, enabled: Boolean): Reply =
+    call(session, "/api/announce-admin/$id", "PUT", JSONObject().put("enabled", enabled))
+
+  fun deleteAnnouncement(session: Session, id: Int): Reply =
+    call(session, "/api/announce-admin/$id", "DELETE")
+
+  /* ----------------------------- تخفیف ---------------------------------- */
+
+  /** نرخ‌نامه با تخفیف‌های جاری — همان چیزی که مشتری هم می‌بیند */
+  fun adminPlans(session: Session): Reply = call(session, "/api/v1/admin/plans")
+
+  /**
+   * گذاشتنِ تخفیف روی یک نرخ.
+   *
+   * ⚠️ قیمتِ اصلی دست نمی‌خورد؛ تخفیف کنارش می‌نشیند. مهلتش که تمام شد،
+   * قیمتِ خودش برمی‌گردد و لازم نیست کسی عددِ قبلی را به یاد داشته باشد.
+   */
+  fun setDiscount(
+    session: Session,
+    code: String,
+    percent: Int,
+    label: String,
+    until: Long?,
+  ): Reply {
+    val payload = JSONObject().put("percent", percent).put("label", label)
+    if (until != null && until > 0) payload.put("until", until)
+    return call(session, "/api/v1/admin/plans/$code/discount", "PUT", payload)
+  }
+
+  fun clearDiscount(session: Session, code: String): Reply =
+    call(session, "/api/v1/admin/plans/$code/discount", "DELETE")
+
   /* ---------------------------- پشتیبانی -------------------------------- */
 
   /**
