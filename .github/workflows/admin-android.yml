@@ -1,0 +1,117 @@
+name: برنامه ادمین اندروید
+
+on:
+  push:
+    branches: ['claude/**', main]
+    paths:
+      # ⚠️ نسخهٔ برنامه از package.json سرور خوانده می‌شود، پس هر به‌روزرسانیِ
+      #    سرور هم باید ساختِ تازه بدهد — وگرنه برنامه عقب می‌ماند و
+      #    «به‌روزرسانیِ تازه» هیچ‌وقت دیده نمی‌شود.
+      - 'homelab-panel/admin-android/**'
+      - 'homelab-panel/server/package.json'
+      - '.github/workflows/admin-android.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: admin-android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ساخت فایل نصبی ادمین
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: آماده‌سازی Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: ساخت APK
+        working-directory: homelab-panel/admin-android
+        run: gradle --no-daemon assembleRelease
+
+      - name: نام‌گذاری و جمع کنترلی
+        working-directory: homelab-panel/admin-android
+        run: |
+          mkdir -p out
+          version=$(grep -oP '"version"\s*:\s*"\K[^"]+' ../server/package.json | head -1)
+          cp app/build/outputs/apk/release/app-release.apk "out/VillainAdmin-$version.apk"
+          cd out
+          sha256sum "VillainAdmin-$version.apk" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          echo "APP_VERSION=$version" >> $GITHUB_ENV
+
+      - name: بارگذاری خروجی
+        uses: actions/upload-artifact@v4
+        with:
+          name: VillainAdmin
+          path: homelab-panel/admin-android/out/*
+          if-no-files-found: error
+          retention-days: 30
+
+      # ── انتشار ─────────────────────────────────────────────────────────
+      # برچسب روی همین ساخت می‌نشیند، وگرنه فایلِ منتشرشده مالِ یک کامیتِ
+      # قدیمی می‌ماند و به‌روزرسانیِ داخلِ برنامه نسخهٔ کهنه می‌گیرد.
+      - name: جابه‌جا کردن برچسب
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X PATCH "repos/${{ github.repository }}/git/refs/tags/admin-android" \
+            -f sha='${{ github.sha }}' -F force=true \
+          || gh api -X POST "repos/${{ github.repository }}/git/refs" \
+            -f ref='refs/tags/admin-android' -f sha='${{ github.sha }}'
+
+      - name: انتشار
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: admin-android
+          name: ویلن ادمین — برنامهٔ اندروید
+          prerelease: true
+          target_commitish: ${{ github.sha }}
+          files: |
+            homelab-panel/admin-android/out/*.apk
+            homelab-panel/admin-android/out/SHA256SUMS.txt
+          body: |
+            ## ویلن ادمین
+
+            برنامهٔ مدیریتِ سرور روی گوشی: کدهای شش‌رقمی، حساب‌ها، اشتراک‌ها،
+            و پشتیبانی در سه بخشِ پمپ و فروشگاه و سایت‌ها.
+
+            **نسخهٔ ${{ env.APP_VERSION }}** — همان شمارهٔ سرور، چون با هر
+            به‌روزرسانیِ سرور این هم تازه می‌شود.
+
+            ### نصب
+            فایل `VillainAdmin-${{ env.APP_VERSION }}.apk` را روی گوشی باز کنید.
+            بارِ اول اندروید اجازهٔ «نصب از این منبع» می‌خواهد.
+
+            بعد از نصب، آدرسِ سرور و نامِ کاربری و رمزِ پنل را می‌زنید و تمام.
+            به‌روزرسانی‌های بعدی از داخلِ خودِ برنامه می‌آید و اگر دانلود وسطِ
+            کار قطع شد، از همان‌جا ادامه می‌گیرد.
+
+            ---
+            <sub>ساخته‌شده از `${{ github.sha }}` روی شاخهٔ `${{ github.ref_name }}`</sub>
+
+      - name: پاک کردن فایل‌های نسخه‌های قبلی
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          keep="VillainAdmin-${{ env.APP_VERSION }}.apk SHA256SUMS.txt"
+          gh api "repos/${{ github.repository }}/releases/tags/admin-android" \
+            --jq '.assets[] | "\(.id) \(.name)"' | while read -r id name; do
+              case " $keep " in
+                *" $name "*) continue ;;
+              esac
+              echo "پاک کردن $name"
+              gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$id"
+            done
+          echo 'فقط فایل‌های همین ساخت ماندند.'

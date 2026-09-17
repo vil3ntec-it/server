@@ -18,7 +18,7 @@ import { serverCard, DISCOVERY_PORT } from '../discovery.js';
 import { issueTicket } from '../lib/ws-ticket.js';
 import { publicState as tunnelState } from '../tunnel.js';
 import { otpSettings, saveOtpSettings, safeOtpSettings } from '../appauth/settings.js';
-import { smsProviders } from '../appauth/send.js';
+import { codeSettings } from '../codes/settings.js';
 import {
   cleanApp,
   pickTarget,
@@ -71,6 +71,7 @@ const appOf = (req) => cleanApp(req.body?.app || req.query?.app || req.headers['
 router.get('/config', (req, res) => {
   const app = appOf(req);
   const s = settingsFor(app);
+  const codes = codeSettings();
   const client = getClient(app);
   res.json({
     ok: true,
@@ -85,15 +86,20 @@ router.get('/config', (req, res) => {
       keyRequired: client ? Boolean(client.require_key) : false,
     },
     login: {
-      // برنامه از روی همین دو تا تصمیم می‌گیرد کدام دکمه را نشان بدهد
-      phone: true,
+      /*
+       *  برنامه از روی همین‌ها تصمیم می‌گیرد کدام دکمه را نشان بدهد.
+       *
+       *  ⚠️ phone عمداً false است: ورود با پیامک برداشته شد و کدها فقط
+       *  ایمیلی‌اند. اگر این‌جا هنوز true می‌گفتیم، برنامه دکمهٔ شماره را
+       *  نشان می‌داد و کاربر تا لحظهٔ خطا خوردن نمی‌فهمید که کار نمی‌کند.
+       */
+      phone: false,
       email: true,
-      codeLength: s.codeLength,
-      expiresIn: s.codeTtlSeconds,
-      resendIn: s.resendSeconds,
-      // آیا واقعاً پیامک/ایمیل می‌رود یا هنوز تنظیم نشده
-      smsReady: s.sms.provider !== 'none',
-      emailReady: s.email.provider !== 'none' && Boolean(s.email.host),
+      codeLength: codes.codeLength,
+      expiresIn: codes.ttlSeconds,
+      resendIn: codes.resendSeconds,
+      smsReady: false,
+      emailReady: Boolean(codes.email.host && codes.email.from),
     },
     // آدرس‌هایی که برنامه می‌تواند با آن‌ها وصل شود — آدرسِ اینترنتی (تونل)
     // همان چیزی است که باید در اپِ روی گوشیِ بیرون از خانه گذاشته شود
@@ -254,7 +260,6 @@ adminRouter.get('/', (req, res) => {
     stats: stats(),
     apps: listApps(),
     settings: safeOtpSettings(),
-    smsProviders,
   });
 });
 

@@ -66,9 +66,17 @@ function talk(socket, timeoutMs) {
   };
 }
 
+/*
+ *  SNI فقط برای نامِ دامنه معنی دارد. اگر میزبان یک IP باشد، فرستادنش به
+ *  عنوانِ servername خلافِ RFC 6066 است: Node هشدار می‌دهد و دست‌دادنِ TLS
+ *  می‌تواند همان‌جا بخورد زمین — چیزی که روی سرورِ ایمیلِ داخلِ شبکه (که با
+ *  IP صدا زده می‌شود) دقیقاً اتفاق می‌افتد. بررسیِ گواهی سرِ جایش می‌ماند.
+ */
+const isIp = (host) => /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':');
+
 function connect({ host, port, secure, rejectUnauthorized, timeoutMs }) {
   return new Promise((resolve, reject) => {
-    const options = { host, port, servername: host, rejectUnauthorized };
+    const options = { host, port, rejectUnauthorized, ...(isIp(host) ? {} : { servername: host }) };
     const ready = () => {
       // مهلت فقط برای «وصل شدن» است؛ بعد از آن مهلتِ خواندن کار می‌کند
       socket.setTimeout(0);

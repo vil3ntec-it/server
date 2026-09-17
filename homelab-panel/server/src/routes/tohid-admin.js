@@ -730,11 +730,12 @@ router.get('/visitors', guard(async (req, res) => {
 router.get('/support/threads', guard(async (req, res) => {
   res.json({
     threads: listThreads({
+      app: String(req.query.app || ''),
       status: String(req.query.status || ''),
       q: String(req.query.q || ''),
       limit: limitOf(req.query.limit),
     }),
-    unread: unreadForAdmin(),
+    unread: unreadForAdmin(String(req.query.app || '')),
   });
 }));
 

@@ -16,6 +16,7 @@ import os from 'node:os';
 import { config } from './config.js';
 import { getSetting } from './db.js';
 import { secret } from './lib/secrets.js';
+import { adminUrl, publicState as tunnelState } from './tunnel.js';
 import { versionInfo } from './version.js';
 import { logEvent } from './db.js';
 
@@ -42,6 +43,26 @@ function localAddresses() {
   return found;
 }
 
+/**
+ * آدرسِ اینترنتیِ این سرور — همان دامنه‌ای که صاحبش ساخته.
+ *
+ * ⚠️ چرا این‌جا و نه فقط پشتِ ورودِ مدیر: برنامهٔ مدیر باید *پیش از ورود*
+ * بداند دامنه چیست، وگرنه چاره‌ای جز کار کردن با IPِ محلی ندارد — و آن IP
+ * با هر بار روشن شدنِ مودم عوض می‌شود و بیرون از خانه اصلاً وجود ندارد.
+ *
+ * ⚠️ و چرا لو رفتنی نیست: این پاسخ فقط داخلِ شبکهٔ خانه پخش می‌شود و
+ * خودِ دامنه هم چیزی جز یک نامِ عمومی نیست. هیچ کلید و رمزی این‌جا نمی‌آید؛
+ * رسیدن به پنل از راهِ دامنه همچنان کلیدِ درِ مدیر می‌خواهد.
+ */
+function internetUrl() {
+  try {
+    const tunnel = tunnelState();
+    return tunnel.status === 'running' && tunnel.url ? tunnel.url : null;
+  } catch {
+    return null;
+  }
+}
+
 /** همان چیزی که به پرسنده جواب داده می‌شود */
 export function serverCard() {
   const addresses = localAddresses();
@@ -55,6 +76,15 @@ export function serverCard() {
     addresses,
     // آدرسی که اپ باید مستقیم استفاده کند
     url: addresses.length ? `http://${addresses[0]}:${config.port}` : null,
+    /*
+     *  دو آدرسِ جدا، و جدا ماندنشان مهم است:
+     *
+     *    internet  آدرسِ تونل. به پورتِ عمومی می‌رود؛ سایت و APIِ عمومی
+     *              آن‌جاست، ولی پنل نه. برنامهٔ مدیر با این کار نمی‌کند.
+     *    admin     آدرسِ اختصاصیِ برنامهٔ مدیر. پشتش کلِ سرور است.
+     */
+    internet: internetUrl(),
+    admin: adminUrl(),
     api: '/api/app',
     time: Date.now(),
   };

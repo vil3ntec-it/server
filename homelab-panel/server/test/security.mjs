@@ -215,14 +215,25 @@ try {
   console.log('\n▶ بلیتِ کوتاه‌عمرِ وب‌سوکت');
   const codeReq = await fetch(`${BASE}/api/app/auth/request-code`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone: '09121110000', app: 'main' }),
+    body: JSON.stringify({ email: 'ws@example.com', app: 'main' }),
   });
-  check('کد ساخته شد', codeReq.ok);
-  const codeMatch = out.match(/کد ورود برای \+\d+\s+→\s+(\d{6})/);
-  if (codeMatch) {
+  check('کد ساخته شد', codeReq.ok, `status ${codeReq.status}`);
+
+  /*
+   *  ⚠️ کد دیگر در خروجیِ سرور چاپ نمی‌شود.
+   *
+   *  جایش «پنل ← کدهای شش‌رقمی» است و همان‌جا هم فقط پشتِ ورودِ مدیر دیده
+   *  می‌شود. آزمون هم از همان راه می‌خواندش — همان راهی که خودِ صاحبِ سرور
+   *  می‌رود.
+   */
+  const liveList = await (await fetch(`${BASE}/api/codes-admin/live`, { headers: auth })).json();
+  const codeMatch = [null, liveList.items?.find((i) => i.email === 'ws@example.com')?.code];
+  check('کد از راهِ پنل خوانده می‌شود', /^\d{6}$/.test(String(codeMatch[1])), String(codeMatch[1]));
+
+  if (codeMatch[1]) {
     const verify = await (await fetch(`${BASE}/api/app/auth/verify-code`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone: '09121110000', code: codeMatch[1], app: 'main' }),
+      body: JSON.stringify({ email: 'ws@example.com', code: codeMatch[1], app: 'main' }),
     })).json();
     check('ورود انجام شد', verify.ok === true);
 

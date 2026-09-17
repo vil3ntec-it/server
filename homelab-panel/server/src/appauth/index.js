@@ -20,7 +20,11 @@ import jwt from 'jsonwebtoken';
 import { db, logEvent } from '../db.js';
 import { jwtSecret } from '../auth.js';
 import { otpSettings } from './settings.js';
-import { deliverCode, mask } from './send.js';
+import { mask } from './send.js';
+import { drainQueue } from '../codes/queue.js';
+import { mailReady } from '../codes/mail.js';
+import { ensureApp as ensureCodeApp } from '../codes/store.js';
+import { issueCode, verifyCode as verifyWithEngine } from '../codes/service.js';
 import { latinDigits, cleanApp } from './identity.js';
 
 db.exec(`
@@ -87,70 +91,61 @@ const HOUR = 3600 * 1000;
 /**
  * درخواستِ کد. همیشه یک شیء برمی‌گرداند؛ اگر ok=false باشد، `error` می‌گوید چرا.
  */
+/**
+ * درخواستِ کد — حالا روی موتورِ «کدهای شش‌رقمی».
+ *
+ * ⚠️ این تابع دیگر خودش کد نمی‌سازد. تا پیش از این، این‌جا یک موتور بود و
+ * فروشگاه یکی دیگر؛ کدها در دو جدولِ جدا می‌نشستند و هیچ‌کدام در پنل دیده
+ * نمی‌شدند. حالا هر دو به server/src/codes/ می‌روند: یک موتور، یک صف، و یک
+ * فهرستِ زنده که صاحبِ سرور در آن همه‌چیز را می‌بیند.
+ *
+ * ⚠️ پیامک برداشته شد — خواستهٔ صاحبِ سرور این بود که کدها فقط ایمیلی باشند.
+ * درخواستِ شماره بی‌صدا رد نمی‌شود: خطای روشن برمی‌گردد تا برنامه بتواند به
+ * کاربر بگوید ایمیلش را بزند.
+ */
 export async function requestCode({ app, channel, target, ip = '', settings = otpSettings() }) {
-  const now = Date.now();
-
-  const last = db
-    .prepare('SELECT created_at FROM app_codes WHERE app = ? AND target = ? ORDER BY id DESC LIMIT 1')
-    .get(app, target);
-  if (last && now - last.created_at < settings.resendSeconds * 1000) {
-    const wait = Math.ceil((settings.resendSeconds * 1000 - (now - last.created_at)) / 1000);
-    return { ok: false, error: 'too_soon', retryAfter: wait, message: `${wait} ثانیه صبر کنید و دوباره بزنید` };
+  if (channel !== 'email') {
+    return {
+      ok: false,
+      error: 'sms_removed',
+      message: 'ورود با پیامک برداشته شد — ایمیلتان را وارد کنید',
+    };
   }
 
-  const perTarget = db
-    .prepare('SELECT COUNT(*) AS n FROM app_codes WHERE app = ? AND target = ? AND created_at > ?')
-    .get(app, target, now - HOUR).n;
-  if (perTarget >= settings.maxPerHour) {
-    return { ok: false, error: 'rate_limited', retryAfter: 3600, message: 'تعدادِ درخواستِ کد در یک ساعت زیاد شد' };
+  ensureCodeApp(app, { name: app });
+  const started = Date.now();
+  const result = issueCode({ app, email: target, purpose: 'login', ip });
+
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: result.error === 'too_soon' ? 'too_soon' : result.error,
+      retryAfter: result.retryAfter,
+      message: result.message,
+    };
   }
 
-  if (ip) {
-    const perIp = db
-      .prepare('SELECT COUNT(*) AS n FROM app_codes WHERE ip = ? AND created_at > ?')
-      .get(ip, now - HOUR).n;
-    if (perIp >= settings.maxPerHourIp) {
-      return { ok: false, error: 'rate_limited', retryAfter: 3600, message: 'تعدادِ درخواست از این دستگاه زیاد شد' };
-    }
-  }
-
-  // کدهای قبلیِ همین شماره می‌سوزند تا فقط تازه‌ترین کد کار کند
-  db.prepare('UPDATE app_codes SET used_at = ? WHERE app = ? AND target = ? AND used_at IS NULL').run(now, app, target);
-
-  const startedAt = Date.now();
-  const code = makeCode(settings.codeLength);
-  // اول در دیتابیس می‌نشیند و بعد فرستاده می‌شود: اگر پیامک نرفت، کد باز هم
-  // معتبر است (شاید از لاگِ پنل خوانده شود) و سقفِ ساعتی هم دور زده نمی‌شود.
-  const inserted = db
-    .prepare(
-      'INSERT INTO app_codes(app, channel, target, code_hash, created_at, expires_at, ip) VALUES(?,?,?,?,?,?,?) RETURNING id'
-    )
-    .get(app, channel, target, hashCode(code, target), now, now + settings.codeTtlSeconds * 1000, ip);
-
-  const delivery = await deliverCode({ channel, to: target, code, settings });
-  db.prepare('UPDATE app_codes SET sent_via = ? WHERE id = ?').run(delivery.via, inserted.id);
+  // صف را هل می‌دهیم تا در بارِ کم منتظرِ تیکِ بعدی نماند
+  drainQueue().catch(() => { /* خطا روی ردیفِ خودش ثبت می‌شود */ });
+  const ready = mailReady();
 
   return {
     ok: true,
     app,
-    channel,
+    channel: 'email',
     to: mask(target),
-    sent: delivery.sent,
-    via: delivery.via,
-    // چند میلی‌ثانیه طول کشید تا کد واقعاً تحویلِ سرویسِ پیامک/ایمیل شود
-    tookMs: Date.now() - startedAt,
-    expiresIn: settings.codeTtlSeconds,
-    resendIn: settings.resendSeconds,
-    codeLength: settings.codeLength,
-    needsSetup: Boolean(delivery.needsSetup),
-    message: delivery.sent
-      ? `کد ${settings.codeLength} رقمی فرستاده شد`
-      : delivery.needsSetup
-        ? 'سرویسِ پیامک/ایمیل هنوز تنظیم نشده — کد در «پنل ← لاگ‌ها» دیده می‌شود'
-        : `کد ساخته شد ولی فرستاده نشد: ${delivery.error || 'خطای نامعلوم'}`,
-    deliveryError: delivery.sent ? null : delivery.error || null,
-    // فقط وقتی OTP_ECHO=1 باشد (حالتِ آزمایش)
-    ...(settings.echoCode ? { code } : {}),
+    // ایمیل در صف است؛ اگر سرورِ ایمیل تنظیم نشده باشد، کد فقط در پنل هست
+    sent: ready,
+    via: ready ? 'email' : null,
+    needsSetup: !ready,
+    tookMs: Date.now() - started,
+    expiresIn: result.expiresIn,
+    resendIn: result.resendIn,
+    codeLength: result.codeLength,
+    message: ready
+      ? `کد ${result.codeLength} رقمی فرستاده شد`
+      : 'سرورِ ایمیل هنوز تنظیم نشده — کد در «پنل ← کدهای شش‌رقمی» دیده می‌شود',
+    deliveryError: null,
   };
 }
 
@@ -195,38 +190,28 @@ export function createAppSession(user, { device = '', ip = '', settings = otpSet
 /**
  * بررسیِ کد. اگر درست بود، کاربر ساخته/پیدا و توکن داده می‌شود.
  */
+/**
+ * سنجیدنِ کد. درست که باشد، کاربر ساخته/پیدا و توکن داده می‌شود.
+ *
+ * خودِ کد را موتورِ تازه می‌سنجد؛ چیزی که این‌جا مانده، همان بخشی است که
+ * مالِ خودِ این ماژول است: کاربرِ برنامه و نشستش.
+ */
 export function verifyCode({ app, target, code, device = '', ip = '', name = null, settings = otpSettings() }) {
-  const now = Date.now();
-  const clean = latinDigits(code).replace(/\D/g, '');
-  if (!clean) return { ok: false, error: 'code_required', message: 'کد را وارد کنید' };
-
-  const row = db
-    .prepare('SELECT * FROM app_codes WHERE app = ? AND target = ? AND used_at IS NULL ORDER BY id DESC LIMIT 1')
-    .get(app, target);
-
-  if (!row) return { ok: false, error: 'no_code', message: 'اول درخواستِ کد بدهید' };
-  if (row.expires_at < now) {
-    db.prepare('UPDATE app_codes SET used_at = ? WHERE id = ?').run(now, row.id);
-    return { ok: false, error: 'expired', message: 'کد منقضی شده — دوباره کد بگیرید' };
-  }
-  if (row.tries >= settings.maxTries) {
-    db.prepare('UPDATE app_codes SET used_at = ? WHERE id = ?').run(now, row.id);
-    return { ok: false, error: 'too_many_tries', message: 'تعدادِ تلاش زیاد شد — دوباره کد بگیرید' };
+  // برنامه‌ای که هنوز کد نخواسته در دفترِ موتور نیست؛ بدونِ این، خطا
+  // «برنامه ثبت نشده» می‌شد در حالی که مشکلِ واقعی «کدی نفرستاده‌ای» است
+  ensureCodeApp(app, { name: app });
+  const result = verifyWithEngine({ app, email: target, code });
+  if (!result.ok) {
+    const map = { no_code: 'no_code', expired: 'expired', wrong_code: 'wrong_code' };
+    return {
+      ok: false,
+      error: map[result.error] || result.error,
+      triesLeft: result.triesLeft,
+      message: result.message,
+    };
   }
 
-  const expected = Buffer.from(row.code_hash, 'hex');
-  const actual = Buffer.from(hashCode(clean, target), 'hex');
-  const same = expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
-
-  if (!same) {
-    db.prepare('UPDATE app_codes SET tries = tries + 1 WHERE id = ?').run(row.id);
-    const left = Math.max(0, settings.maxTries - (row.tries + 1));
-    return { ok: false, error: 'wrong_code', triesLeft: left, message: `کد درست نیست (${left} تلاشِ دیگر)` };
-  }
-
-  db.prepare('UPDATE app_codes SET used_at = ? WHERE id = ?').run(now, row.id);
-
-  const { user, isNew } = upsertUser({ app, channel: row.channel, target, name });
+  const { user, isNew } = upsertUser({ app, channel: 'email', target: result.email, name });
   if (user.blocked) return { ok: false, error: 'blocked', message: 'این حساب مسدود است' };
 
   const session = createAppSession(user, { device, ip, settings });

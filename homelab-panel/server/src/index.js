@@ -28,6 +28,7 @@ import { sitesRoot, ensureSitesRoot } from './sites/root.js';
 import { stopAll } from './sites/process.js';
 import {
   startTunnel, stopTunnel, tunnelEvents, publicState as tunnelState, reconcileNamedTunnel,
+  syncTunnelRoutes,
 } from './tunnel.js';
 import { versionInfo, versionLine } from './version.js';
 import { corsMiddleware, isAllowedOrigin, secureHeaders } from './platform/security.js';
@@ -50,6 +51,7 @@ import stationRoutes, { adminRouter as stationAdminRoutes } from './routes/stati
 import messengerRoutes from './routes/messenger.js';
 import notifyRoutes, { adminRouter as notifyAdminRoutes } from './routes/notify.js';
 import appRoutes, { adminRouter as appAdminRoutes } from './routes/app.js';
+import codeRoutes, { adminRouter as codeAdminRoutes } from './routes/codes.js';
 import storageRoutes from './routes/storage.js';
 import aiRoutes from './routes/ai.js';
 import dockerRoutes from './routes/docker.js';
@@ -66,7 +68,10 @@ import { startBackupSchedule, stopBackupSchedule } from './storage/backup.js';
 import { pruneAudit as pruneAppAudit } from './lib/audit.js';
 import { pruneTickets } from './lib/ws-ticket.js';
 import { rateLimit, pruneRateLimits, clientIp } from './lib/rate-limit.js';
-import { otpSettings } from './appauth/settings.js';
+import { codeSettings } from './codes/settings.js';
+import { pinSitesRoot } from './sites/portable.js';
+import { startQueue, stopQueue } from './codes/queue.js';
+import { adminGate, adminHostGate, GATE_PREFIX } from './api/admin-gate.js';
 import { readyPayload } from './platform/health.js';
 import { createBackup } from './backup/index.js';
 import * as notify from './notify/index.js';
@@ -119,6 +124,11 @@ ensureTohidSchema();
 // بتواند بدونِ ورودِ دستی، برنامه‌ها و تنظیمات را اداره کند.
 localKey();
 
+// نصبِ قدیمی نباید با عوض‌شدنِ پیش‌فرضِ «ریشهٔ سایت‌ها» تکان بخورد — اگر
+// سایت‌هایش بیرونِ پوشهٔ داده‌اند، همان‌جا ثبت می‌شوند و جابه‌جایی وقتی
+// انجام می‌شود که خودِ صاحبِ سرور بخواهد.
+pinSitesRoot();
+
 // شمارهٔ پروسه روی دیسک می‌ماند تا اسکریپت‌های سرویس (وقتی پنجره‌ای باز نیست)
 // بتوانند همین سرور را پیدا و متوقف کنند.
 try {
@@ -160,7 +170,10 @@ function originAllowed(origin) {
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   // فقط مسیرهای «برنامه‌ها» برای همه بازند؛ بقیه — /health هم — از فهرستِ سفید می‌گذرند
-  const openApi = req.path.startsWith('/api/app/');
+  // مسیرِ کدهای شش‌رقمی هم مثلِ «برنامه‌ها» باز است: اپِ اندروید، سایتِ روی
+  // هاست و برنامهٔ ویندوز همه از بیرون صدایش می‌زنند. با کلیدِ هدر کار می‌کند
+  // نه کوکی، پس credentials نمی‌گیرد و نشستِ کسی سوءاستفاده نمی‌شود.
+  const openApi = req.path.startsWith('/api/app/') || req.path.startsWith('/api/codes/');
 
   if (openApi) {
     res.setHeader('Access-Control-Allow-Origin', origin || '*');
@@ -184,6 +197,13 @@ app.use((req, res, next) => {
 app.use('/api/auth/login', rateLimit('login', 10, 5 * 60 * 1000));
 app.use('/api/auth/setup', rateLimit('setup', 5, 60 * 60 * 1000));
 app.use('/api/app/auth', rateLimit('app-auth', 60, 10 * 60 * 1000));
+/*
+ *  کدهای شش‌رقمی سقفِ خودش را دارد و عمداً بلند است: خواسته این بود که اگر
+ *  صدها یا هزاران نفر هم‌زمان کد خواستند، هیچ‌کس پشتِ در نماند. جلوی
+ *  سوءاستفاده را فاصلهٔ اجباریِ هر ایمیل می‌گیرد (در خودِ موتور)، نه این سقف.
+ *  سقفِ عمومیِ /api هم عمداً از این مسیر رد می‌شود، وگرنه همان ۱۲۰۰ تا سر می‌رسد.
+ */
+app.use('/api/codes', rateLimit('codes', 6000, 60 * 1000));
 app.use('/api/notify', rateLimit('notify', 240, 60 * 1000));
 app.use('/api/messenger', rateLimit('messenger', 600, 60 * 1000));
 
@@ -194,15 +214,11 @@ app.use('/api/messenger', rateLimit('messenger', 600, 60 * 1000));
     تمام کند و آن‌ها ‎429‎ بگیرند.
 
     تستِ فشار (‎test/stations-load.mjs‎) همین را نشان داد: با ۲۰۰ پمپ و پنج
-    دور نوشتن، خواندن‌های بعدی همه ‎429‎ شدند — سقفِ ۱۲۰۰ درخواست در دقیقهٔ
-    **هر آی‌پی**، نه هر پمپ.
+    دور نوشتن، خواندن‌های بعدی همه ‎429‎ شدند.
 
-    پس سهمِ مسیرهای پمپ با **کدِ خودِ پمپ** شمرده می‌شود (از مسیر درمی‌آید) و
-    آی‌پی فقط وقتی به کار می‌رود که کدی در مسیر نباشد (مثلِ ‎enroll‎). سقف
-    بالاتر هم نرفت: همان ۱۲۰۰ در دقیقه، ولی برای هر پمپ.                     */
-/*  ⚠️ **دو سطل، نه یکی.** سطلِ «هر پمپ» تنهایی یک درِ باز می‌شد: کسی که کدِ
+    ⚠️ **دو سطل، نه یکی.** سطلِ «هر پمپ» تنهایی یک درِ باز می‌شد: کسی که کدِ
     ساختگیِ تازه می‌سازد، هر بار سطلِ خالیِ تازه می‌گرفت و سقفِ آی‌پی را دور
-    می‌زد. پس سطلِ آی‌پی هم می‌ماند، فقط با سقفِ بلندتر — چون یک پمپِ سالم
+    می‌زد. پس سطلِ آی‌پی هم می‌ماند، با سقفِ بلندتر — چون یک پمپِ سالم
     (برنامه + چند گوشی) از یک آی‌پی می‌آید و نباید به هم بخورد.             */
 app.use('/api/stations', rateLimit('stations-ip', 3000, 60 * 1000));
 app.use('/api/stations', rateLimit('stations', 1200, 60 * 1000, {
@@ -212,14 +228,16 @@ app.use('/api/stations', rateLimit('stations', 1200, 60 * 1000, {
   },
 }));
 
-/*  سطلِ عمومیِ آی‌پی — ولی مسیرهای پمپ سطلِ خودشان را دارند (بالا)، وگرنه
-    همان سقفِ آی‌پی دوباره همه را با هم می‌شمرد و اصلاحِ بالا بی‌اثر می‌شد
-    (خودِ تستِ فشار همین را گرفت: هر دو سطل می‌دویدند).                      */
+/*  سطلِ عمومیِ آی‌پی — کدها و مسیرهای پمپ سطلِ خودشان را دارند و این‌جا
+    دوباره شمرده نمی‌شوند، وگرنه همان سقفِ آی‌پی اصلاحِ بالا را بی‌اثر
+    می‌کرد (خودِ تستِ فشار همین را گرفت: هر دو سطل می‌دویدند).              */
 const apiLimiter = rateLimit('api', 1200, 60 * 1000);
 app.use('/api', (req, res, next) =>
-  String(req.path || '').startsWith('/stations')
+  req.path.startsWith('/codes/') || req.path === '/codes'
+  || req.path.startsWith('/stations')
     ? next()
-    : apiLimiter(req, res, next));
+    : apiLimiter(req, res, next)
+);
 
 // دستیارِ پشتیبانی — پیش از میان‌افزارِ JSON، به همان دلیلِ بالا
 app.use(AI_PREFIX, aiProxy);
@@ -272,6 +290,8 @@ app.use('/api/notify-admin', notifyAdminRoutes);
 // ورودِ کاربرانِ برنامه‌ها (اپِ اندروید، برنامهٔ ویندوز، سایت‌ها) با کدِ شش‌رقمی
 app.use('/api/app', appRoutes);
 app.use('/api/app-admin', appAdminRoutes);
+app.use('/api/codes', codeRoutes);
+app.use('/api/codes-admin', codeAdminRoutes);
 // کتابخانه: یک جای مرتب برای سایت‌ها، برنامه‌ها، پشتیبان‌ها و فایل‌های موقت
 app.use('/api/storage', storageRoutes);
 app.use('/api/ai', aiRoutes);
@@ -505,8 +525,35 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
   publicApp.use('/api/app/auth', rateLimit('pub-app-auth', 60, 10 * 60 * 1000));
   publicApp.use('/api/notify', rateLimit('pub-notify', 240, 60 * 1000));
   publicApp.use('/api', rateLimit('pub-api', 1200, 60 * 1000));
-  // ⚠️ پراکسیِ دستیار **پیش از** express.json می‌نشیند: آن میان‌افزار جریانِ
-  //    بدنه را می‌خورد و بعدش دیگر چیزی برای لوله کردن نمی‌ماند.
+
+  /*
+   *  درِ مدیر — تنها راهی که برنامهٔ «ویلن ادمین» از اینترنت به کلِ سرور
+   *  می‌رسد. هر چیزِ دیگری روی این پورت همان‌قدر عمومی می‌ماند که بود.
+   *
+   *  ⚠️ سقفِ نرخ فقط شکست‌ها را می‌شمارد (skipSuccess): برنامهٔ مدیر هر چند
+   *  ثانیه سر می‌زند و نباید قفل شود، ولی کسی که کلید را حدس می‌زند بعد از
+   *  بیست تلاشِ ناموفق در ده دقیقه می‌ماند پشتِ در.
+   *
+   *  ⚠️ و **پیش از** express.json می‌نشیند: آن میان‌افزار جریانِ بدنه را
+   *  می‌خورد و بعدش دیگر چیزی برای لوله کردن نمی‌ماند.
+   */
+  const gateLimiter = rateLimitCfg({
+    name: 'admin-gate', max: 20, windowMs: 10 * 60 * 1000, skipSuccess: true,
+  });
+
+  /*
+   *  دو راه به یک در:
+   *
+   *    admin.<دامنه>/...            ← آدرسی که در برنامه می‌نشیند
+   *    <هر دامنه>/api/admin-gate/... ← همان در، وقتی زیردامنه نیست
+   *
+   *  اولی برای کاربر ساده‌تر است (آدرسِ کوتاه و جدا از سایت)، دومی برای
+   *  وقتی که هنوز دامنه‌ای ساخته نشده و فقط آدرسِ تونل هست.
+   */
+  publicApp.use(gateLimiter, adminHostGate);
+  publicApp.use(GATE_PREFIX, gateLimiter, adminGate);
+
+  // ⚠️ پراکسیِ دستیار هم به همان دلیل پیش از express.json است
   publicApp.use(AI_PREFIX, aiProxy);
   publicApp.use(express.json({ limit: MSG_LIMIT }));
   /*
@@ -690,6 +737,8 @@ async function main() {
     syncMonitors();
     startMonitor();
     startUpdateWatcher();
+    // صفِ کدهای شش‌رقمی — ایمیل‌ها پشتِ سرِ درخواست‌ها می‌روند، نه داخلشان
+    startQueue();
   } catch (e) {
     console.warn(`⚠️  مرکز فرمان کامل بالا نیامد: ${e.message}`);
     logEvent('error', 'panel', `راه‌اندازی مرکز فرمان: ${e.message}`);
@@ -747,19 +796,18 @@ async function main() {
       console.log('');
     }
     // ---- ورودِ برنامه‌ها: همان چیزی که باید در اپِ اندروید/ویندوز/سایت بگذارید ----
-    const otp = otpSettings();
-    const smsOn = otp.sms.provider !== 'none';
-    const mailOn = otp.email.provider !== 'none' && Boolean(otp.email.host);
-    console.log('  📱 ورودِ برنامه‌ها با شماره یا ایمیل (کدِ شش‌رقمی):');
+    const codes = codeSettings();
+    const mailOn = Boolean(codes.email.host && codes.email.from);
+    console.log('  📧 کدهای شش‌رقمیِ ورودِ برنامه‌ها:');
     console.log(`     آدرسی که در برنامه می‌گذارید:  http://${ips[0] || 'localhost'}:${config.port}`);
     console.log(`     راهنما و تستِ زنده:            http://${ips[0] || 'localhost'}:${config.port}/connect`);
-    console.log(`     فرستادنِ کد:  POST /api/app/auth/request-code   {"phone":"09121234567"}`);
-    console.log(`     تأییدِ کد:     POST /api/app/auth/verify-code    {"phone":"...","code":"123456"}`);
-    console.log(`     پیامک: ${smsOn ? `روشن (${otp.sms.provider})` : 'خاموش'}   ·   ایمیل: ${mailOn ? `روشن (${otp.email.host})` : 'خاموش'}`);
+    console.log(`     گرفتنِ کد:   POST /api/codes/request   {"app":"app-fuel","email":"a@b.com"}`);
+    console.log(`     سنجشِ کد:    POST /api/codes/verify    {"app":"app-fuel","email":"a@b.com","code":"123456"}`);
+    console.log(`     ایمیل: ${mailOn ? `روشن (${codes.email.host})` : 'خاموش'}`);
     console.log('     برنامهٔ ویندوزیِ همین کارها:  homelab-panel\\desktop\\برنامه-سرور.bat');
-    if (!smsOn && !mailOn) {
-      console.log('     ⚠️  تا وقتی پیامک/ایمیل تنظیم نشده، کد در همین پنجره و در «لاگ‌ها» نوشته می‌شود.');
-      console.log('        روشن کردنش: صفحهٔ /connect را باز کنید، بخشِ ۴.');
+    if (!mailOn) {
+      console.log('     ⚠️  تا وقتی سرورِ ایمیل تنظیم نشده، کدها ساخته می‌شوند ولی فرستاده نمی‌شوند.');
+      console.log('        دیدن و تنظیمش: پنل ← «کدهای شش‌رقمی».');
     }
     console.log('');
     console.log(`  پوشهٔ داده:  ${config.dataDir}`);
@@ -781,6 +829,19 @@ async function main() {
        */
       reconcileNamedTunnel()
         .catch(() => null)
+        /*
+         *  ⚠️ مسیرها هم پیش از راه‌اندازی همگام می‌شوند.
+         *
+         *  تا امروز syncTunnelRoutes فقط وقتی اجرا می‌شد که کاربر دامنه‌ای
+         *  اضافه یا عوض کند. یعنی اگر به‌روزرسانی یک زیردامنهٔ تازه بیاورد
+         *  — همان‌طور که admin.<دامنه> آورد — آن زیردامنه نه رکوردِ DNS
+         *  می‌گرفت و نه در ingress می‌نشست، و کاربر هیچ راهی نداشت جز
+         *  دست‌زدن به تنظیماتِ دامنه تا تصادفاً همگام شود.
+         *
+         *  restart: false چون تونل همین پایین تازه بالا می‌آید و نباید دو
+         *  بار روشن و خاموش شود؛ فایلِ ingress پیش از آن نوشته شده است.
+         */
+        .then(() => syncTunnelRoutes({ restart: false }).catch(() => null))
         .then(() =>
           startTunnel({}).then((st) => {
             if (st.status === 'error') {
@@ -817,6 +878,7 @@ async function shutdown(signal) {
   try {
     stopMonitor();
     stopUpdateWatcher();
+    stopQueue();
   } catch { /* بسته شده */ }
   try {
     syncOnlyServer?.close();

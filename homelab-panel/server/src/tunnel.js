@@ -18,7 +18,7 @@ import os from 'node:os';
 import { config } from './config.js';
 import { db, logEvent, getSetting, setSetting } from './db.js';
 import { isProtectedHost } from './protected-hosts.js';
-import { apiHostFor, registrableRoot } from './platform/domain.js';
+import { adminHostFor, apiHostFor, registrableRoot } from './platform/domain.js';
 
 export const tunnelEvents = new EventEmitter();
 
@@ -780,18 +780,45 @@ function publicApiPort() {
  *  HLP_DOMAIN. هرکدام که باشد کافی است؛ تکراری‌ها یک‌بار حساب می‌شوند.
  */
 export function apiHostnames() {
+  const hosts = new Set();
+  for (const root of domainRoots()) {
+    const host = apiHostFor(root);
+    if (host) hosts.add(host);
+  }
+  return [...hosts].sort();
+}
+
+/** ریشه‌ها از سه جا: جدولِ دامنه‌ها، میزبانِ اصلیِ تونل، و HLP_DOMAIN */
+function domainRoots() {
   const roots = [];
   try {
     for (const row of db.prepare('SELECT name FROM domains').all()) roots.push(row.name);
   } catch { /* جدول هنوز ساخته نشده */ }
   roots.push(getSetting('tunnel_hostname', null), config.domains?.root);
+  return roots;
+}
 
+/**
+ * آدرسِ برنامهٔ مدیر روی هر دامنه: `admin.<دامنه>`.
+ *
+ *  ⚠️ همان‌طور که api.<دامنه> خودکار ساخته می‌شود، این هم می‌شود — کاربر
+ *  فقط دامنه‌اش را در بخشِ «دامنه‌ها» می‌نویسد و آدرسِ برنامه خودش می‌آید.
+ *  بدونِ این، تنها راهِ رسیدنِ برنامه از بیرون، IPِ کامپیوتر بود که با هر
+ *  بار روشن شدنِ مودم عوض می‌شود و اصلاً بیرون از خانه وجود ندارد.
+ */
+export function adminHostnames() {
   const hosts = new Set();
-  for (const root of roots) {
-    const host = apiHostFor(root);
+  for (const root of domainRoots()) {
+    const host = adminHostFor(root);
     if (host) hosts.add(host);
   }
   return [...hosts].sort();
+}
+
+/** آدرسِ کاملی که در برنامه می‌نشیند — یا null اگر دامنه‌ای نباشد */
+export function adminUrl() {
+  const host = adminHostnames()[0];
+  return host ? `https://${host}` : null;
 }
 
 /** همهٔ نامزدهای مسیر — پیش از کنار گذاشتنِ دامنه‌های قُرق */
@@ -826,6 +853,13 @@ function candidateHostnames() {
     if (seen.has(host)) continue;
     seen.add(host);
     list.push({ hostname: host, port: publicApiPort(), main: false, source: 'api' });
+  }
+
+  // آدرسِ برنامهٔ مدیر — همان پورتِ عمومی، ولی پشتِ درِ کلیددار
+  for (const host of adminHostnames()) {
+    if (seen.has(host)) continue;
+    seen.add(host);
+    list.push({ hostname: host, port: publicApiPort(), main: false, source: 'admin' });
   }
 
   // زیردامنه‌هایی که دستی اضافه شده‌اند

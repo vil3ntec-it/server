@@ -91,9 +91,19 @@ try {
   const rc = await fetch(`${BASE}/api/app/auth/request-code`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone: '09121234567' }),
+    body: JSON.stringify({ email: 'user@example.com' }),
   });
   check('درخواستِ کدِ ورود از همین آدرس کار می‌کند', rc.status === 200, `status ${rc.status}`);
+
+  // پیامک برداشته شد — درخواستِ شماره باید دلیلِ روشن بگیرد، نه خطای گنگ
+  const byPhone = await fetch(`${BASE}/api/app/auth/request-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone: '09121234567' }),
+  });
+  const phoneBody = await byPhone.json().catch(() => ({}));
+  check('درخواستِ شماره با دلیلِ روشن رد می‌شود',
+    byPhone.status === 400 && phoneBody.error === 'sms_removed', JSON.stringify(phoneBody));
 
   console.log('\n── صفحهٔ اتصال ──');
   const conn = await fetch(`${BASE}/connect`);
