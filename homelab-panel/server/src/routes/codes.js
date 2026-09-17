@@ -13,7 +13,7 @@
 import { Router } from 'express';
 import { requireAuth, requireWriteRole } from '../auth.js';
 import { logEvent } from '../db.js';
-import { codeSettings, safeCodeSettings, saveCodeSettings } from '../codes/settings.js';
+import { checkMailSettings, codeSettings, safeCodeSettings, saveCodeSettings } from '../codes/settings.js';
 import { issueCode, maskEmail, revealCode, verifyCode } from '../codes/service.js';
 import { drainQueue, queueStatus } from '../codes/queue.js';
 import { mailReady, sendCodeEmail } from '../codes/mail.js';
@@ -105,6 +105,8 @@ async function handleRequest(req, res) {
     app,
     email: req.body?.email ?? req.body?.mail ?? req.body?.address,
     subjectId: req.body?.userId ?? req.body?.deviceId ?? req.body?.subjectId ?? null,
+    // نامِ خودِ شخص — تا ایمیل «احمد عزیز» بگوید. نبودنش مشکلی نیست.
+    subjectName: req.body?.name ?? req.body?.fullName ?? req.body?.userName ?? null,
     purpose: req.body?.purpose ?? req.body?.type ?? 'login',
     ip: clientIp(req),
   });
@@ -230,6 +232,7 @@ adminRouter.post('/send', async (req, res) => {
     app: row.slug,
     email: req.body?.email,
     subjectId: req.body?.userId ?? req.body?.subjectId ?? null,
+    subjectName: req.body?.name ?? req.body?.fullName ?? null,
     purpose: req.body?.purpose ?? 'login',
     ip: clientIp(req),
     // دستِ مدیر است؛ فاصلهٔ اجباری برای جلوگیری از کوبیدنِ دکمه توسطِ
@@ -286,6 +289,19 @@ adminRouter.put('/settings', (req, res) => {
   const patch = { ...(req.body || {}) };
   // رمزِ ماسک‌شده نباید جای رمزِ واقعی بنشیند
   if (patch.email && /^•+$/.test(String(patch.email.password || ''))) delete patch.email.password;
+
+  /*
+   *  ⚠️ جلوی تنظیماتِ غلط همین‌جا گرفته می‌شود، نه وقتی اولین کد نرفت.
+   *
+   *  یک بار در خانهٔ «آدرسِ سرور» ایمیل نوشته شده بود و نتیجه‌اش این بود
+   *  که کدها ساخته می‌شدند ولی هیچ‌کدام نمی‌رفت، و تنها نشانه‌اش یک خطای
+   *  انگلیسیِ خام (EAI_FAIL) تهِ صفحه بود.
+   */
+  if (patch.email) {
+    const verdict = checkMailSettings({ ...codeSettings().email, ...patch.email });
+    if (!verdict.ok) return res.status(400).json({ ok: false, ...verdict });
+  }
+
   saveCodeSettings(patch);
   res.json({ ok: true, settings: safeCodeSettings() });
 });
@@ -296,6 +312,8 @@ adminRouter.post('/test-email', async (req, res) => {
   if (!mailReady(settings)) {
     return res.status(400).json({ ok: false, error: 'mail_not_configured', message: 'سرورِ ایمیل تنظیم نشده' });
   }
+  const verdict = checkMailSettings(settings.email);
+  if (!verdict.ok) return res.status(400).json({ ok: false, ...verdict });
   try {
     await sendCodeEmail({
       to: String(req.body?.to || settings.email.from),

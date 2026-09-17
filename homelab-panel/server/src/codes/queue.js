@@ -58,6 +58,7 @@ async function sendOne(row, settings) {
     await sendCodeEmail({
       to: row.email,
       code,
+      name: row.subject_name || '',
       appName: app?.name || row.app,
       subject: app?.subject || null,
       minutes: Math.max(1, Math.round((row.expires_at - row.created_at) / 60000)),

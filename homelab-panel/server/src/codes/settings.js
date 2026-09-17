@@ -164,6 +164,80 @@ export function codeSettings() {
   return merge(base, saved);
 }
 
+/**
+ *  آدرس‌های SMTPِ سرویس‌های مشهور — برای وقتی کسی ایمیلش را جای آدرسِ
+ *  سرور می‌گذارد.
+ */
+const SMTP_OF = {
+  'gmail.com': 'smtp.gmail.com',
+  'googlemail.com': 'smtp.gmail.com',
+  'outlook.com': 'smtp-mail.outlook.com',
+  'hotmail.com': 'smtp-mail.outlook.com',
+  'live.com': 'smtp-mail.outlook.com',
+  'yahoo.com': 'smtp.mail.yahoo.com',
+  'zoho.com': 'smtp.zoho.com',
+  'yandex.com': 'smtp.yandex.com',
+  'icloud.com': 'smtp.mail.me.com',
+};
+
+/**
+ *  ایراد گرفتن از تنظیماتِ ایمیل، پیش از ذخیره.
+ *
+ *  ⚠️ چرا لازم شد: در خانهٔ «آدرسِ سرور» ایمیل نوشته شده بود
+ *  (vill3ntec@gmail.com به‌جای smtp.gmail.com). سرور همان را به DNS داد،
+ *  DNS گفت «چنین نامی نیست» (EAI_FAIL) و تهِ صفحه یک خطای انگلیسیِ خام
+ *  دیده می‌شد که هیچ نمی‌گفت چه کار باید کرد.
+ *
+ *  یک خانهٔ اشتباه، و کلِ کدهای شش‌رقمی از کار افتاده بود. حالا همان‌جا
+ *  که ذخیره می‌شود جلویش گرفته می‌شود و گفته می‌شود چه بگذارد.
+ *
+ *  @returns {{ok: boolean, error?: string, message?: string, suggest?: object}}
+ */
+export function checkMailSettings(email = {}) {
+  const host = String(email.host ?? '').trim();
+  if (!host) return { ok: true };
+
+  if (host.includes('@')) {
+    const domain = host.split('@').pop().toLowerCase();
+    const smtp = SMTP_OF[domain];
+    return {
+      ok: false,
+      error: 'host_is_email',
+      message: smtp
+        ? `«${host}» ایمیل است، نه آدرسِ سرورِ ایمیل. در خانهٔ آدرس «${smtp}» بگذارید و همین ایمیل را در «نام کاربری».`
+        : `«${host}» ایمیل است، نه آدرسِ سرورِ ایمیل. آدرسِ SMTPِ سرویس‌تان را بگذارید (معمولاً mail.${domain} یا smtp.${domain}).`,
+      suggest: { host: smtp || `smtp.${domain}`, username: host, from: host },
+    };
+  }
+
+  if (/^https?:\/\//i.test(host) || host.includes('/')) {
+    return {
+      ok: false,
+      error: 'host_is_url',
+      message: 'آدرسِ سرورِ ایمیل، آدرسِ سایت نیست. فقط نام را بگذارید، مثلِ smtp.gmail.com',
+      suggest: { host: host.replace(/^https?:\/\//i, '').split('/')[0] },
+    };
+  }
+
+  /*
+   *  ⚠️ جیمیل رمزِ خودِ حساب را قبول نمی‌کند و خطایش هم گنگ است
+   *  («Username and Password not accepted»). این را از قبل می‌گوییم.
+   */
+  const password = String(email.password ?? '');
+  const gmail = /(^|\.)gmail\.com$|(^|\.)googlemail\.com$/i.test(host);
+  if (gmail && password && !/^•+$/.test(password) && password.replace(/\s/g, '').length !== 16) {
+    return {
+      ok: false,
+      error: 'gmail_needs_app_password',
+      message:
+        'جیمیل رمزِ خودِ حساب را قبول نمی‌کند. از حسابِ گوگل یک «App Password» بسازید ' +
+        '(۱۶ حرف) و همان را این‌جا بگذارید.',
+    };
+  }
+
+  return { ok: true };
+}
+
 export function saveCodeSettings(patch) {
   const current = getSetting(SETTING_KEY, {}) || {};
   setSetting(SETTING_KEY, merge(current, patch || {}));

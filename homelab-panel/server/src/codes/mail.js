@@ -27,14 +27,14 @@ export function mailReady(settings = codeSettings()) {
  * خطا را بالا می‌دهد (نه اینکه بخورد) تا صف بداند باید دوباره تلاش کند و
  * پنل بتواند بگوید دقیقاً چه شد.
  */
-export async function sendCodeEmail({ to, code, appName, subject, minutes, settings = codeSettings() }) {
+export async function sendCodeEmail({ to, code, name = '', appName, subject, minutes, settings = codeSettings() }) {
   if (!mailReady(settings)) {
     throw Object.assign(new Error('سرورِ ایمیل تنظیم نشده است'), { code: 'mail_not_configured' });
   }
 
-  const name = appName || settings.appName || 'مرکز فرمان';
-  const built = otpEmail({ code, minutes, appName: name });
-  const line = fill(subject || settings.subject, { code, app: name }) || built.subject;
+  const label = appName || settings.appName || 'مرکز فرمان';
+  const built = otpEmail({ code, minutes, appName: label, name });
+  const line = fill(subject || settings.subject, { code, app: label }) || built.subject;
 
   await sendMail({
     host: settings.email.host,
@@ -43,7 +43,7 @@ export async function sendCodeEmail({ to, code, appName, subject, minutes, setti
     username: settings.email.username,
     password: settings.email.password,
     from: settings.email.from,
-    fromName: settings.email.fromName || name,
+    fromName: settings.email.fromName || label,
     rejectUnauthorized: settings.email.rejectUnauthorized !== false,
     to,
     subject: line,

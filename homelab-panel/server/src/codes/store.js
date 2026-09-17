@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS code_requests (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   app             TEXT NOT NULL,            -- شناسهٔ برنامه
   subject_id      TEXT,                     -- شناسهٔ کاربر/دستگاه در آن برنامه
+  subject_name    TEXT,                     -- نامِ خودِ شخص، برای «فلانی عزیز» در ایمیل
   purpose         TEXT NOT NULL DEFAULT 'login', -- نوعِ درخواست
   email           TEXT NOT NULL,
   code_hash       TEXT NOT NULL,
@@ -64,6 +65,25 @@ CREATE INDEX IF NOT EXISTS idx_code_requests_live  ON code_requests(app, email, 
 CREATE INDEX IF NOT EXISTS idx_code_requests_queue ON code_requests(send_state, next_attempt_at);
 CREATE INDEX IF NOT EXISTS idx_code_requests_time  ON code_requests(created_at DESC);
 `);
+
+/*
+ *  ستون‌هایی که بعداً اضافه شدند.
+ *
+ *  ⚠️ چرا لازم است: «CREATE TABLE IF NOT EXISTS» فقط روی دیتابیسِ نو کار
+ *  می‌کند. روی سروری که از قبل بالا بوده، جدول هست و ستونِ تازه نیست —
+ *  و اولین کدی که ساخته شود با خطای «چنین ستونی نداریم» می‌افتد.
+ *
+ *  یعنی بی این چند خط، به‌روزرسانی روی سرورِ واقعی کلِ کدهای شش‌رقمی را
+ *  از کار می‌انداخت، در حالی که روی دیتابیسِ خالیِ آزمون همه‌چیز سبز بود.
+ */
+function addColumn(table, column, type) {
+  try {
+    const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+    if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  } catch { /* ستون از قبل هست یا جدول نیست — هر دو بی‌ضرر */ }
+}
+
+addColumn('code_requests', 'subject_name', 'TEXT');
 
 /* ------------------------------ برنامه‌ها -------------------------------- */
 
@@ -153,14 +173,15 @@ export function insertRequest(row) {
   return db
     .prepare(
       `INSERT INTO code_requests
-         (app, subject_id, purpose, email, code_hash, code_seal,
+         (app, subject_id, subject_name, purpose, email, code_hash, code_seal,
           created_at, expires_at, ip, resend_chain, parent_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
        RETURNING id`
     )
     .get(
       row.app,
       row.subjectId || null,
+      row.subjectName || null,
       row.purpose,
       row.email,
       row.codeHash,

@@ -93,6 +93,13 @@ export function issueCode({
   app,
   email,
   subjectId = null,
+  /*
+   *  نامِ خودِ شخص — تا ایمیل «احمد عزیز» بگوید نه یک خوش‌آمدِ خشک.
+   *
+   *  ⚠️ اختیاری است و باید بماند: بیشترِ برنامه‌ها فقط ایمیل دارند. اگر
+   *  اجباری می‌شد، همان‌ها از کار می‌افتادند.
+   */
+  subjectName = null,
   purpose = 'login',
   ip = '',
   settings = codeSettings(),
@@ -140,6 +147,7 @@ export function issueCode({
   const id = insertRequest({
     app: row.slug,
     subjectId: subjectId ? String(subjectId).slice(0, 80) : null,
+    subjectName: subjectName ? String(subjectName).trim().slice(0, 60) : null,
     purpose: cleanPurpose(purpose),
     email: target,
     codeHash: hashCode(code, row.slug, target),
@@ -236,6 +244,7 @@ export function autoResend(previous, settings = codeSettings()) {
     app: previous.app,
     email: previous.email,
     subjectId: previous.subject_id,
+    subjectName: previous.subject_name,
     purpose: previous.purpose,
     ip: previous.ip,
     settings,
