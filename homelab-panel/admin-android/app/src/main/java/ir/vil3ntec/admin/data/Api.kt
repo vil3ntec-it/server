@@ -215,8 +215,82 @@ object Api {
   fun setShopAccountDisabled(session: Session, id: String, disabled: Boolean): Reply =
     call(session, "/api/control/tohid/accounts/$id/disable", "POST", JSONObject().put("disabled", disabled))
 
-  /** پمپ‌بنزین‌ها */
+  /* ------------------------------ پمپ بنزین ----------------------------- */
+
+  /** پمپ‌بنزین‌ها — همان‌هایی که روی همین سرور نشسته‌اند */
   fun stations(session: Session): Reply = call(session, "/api/stations-admin/")
+
+  /** پروندهٔ یک پمپ: پشتیبان‌ها، حجم، آخرین تپش */
+  fun stationDetail(session: Session, code: String): Reply =
+    call(session, "/api/stations-admin/$code/detail")
+
+  /*
+   *  ⚠️ حساب‌ها و اشتراک‌ها و نرخ‌های پمپ روی «ابر» هستند نه این سرور،
+   *  و سرور فقط واسطه است. برای همین این‌ها ممکن است جواب ندهند و باید
+   *  نبودشان را صفحه بفهمد، نه اینکه بیفتد: تا وقتی مرکز فرمان به ابر
+   *  وصل نشده، همه‌شان خطا می‌دهند و همان درست است.
+   */
+  fun pumpUsers(session: Session): Reply = call(session, "/api/stations-admin/cloud/users?limit=200")
+
+  fun pumpSubscriptions(session: Session): Reply =
+    call(session, "/api/stations-admin/cloud/subscriptions?limit=200")
+
+  fun pumpPlans(session: Session): Reply = call(session, "/api/stations-admin/cloud/plans")
+
+  fun pumpCloudStations(session: Session): Reply =
+    call(session, "/api/stations-admin/cloud/stations?limit=200")
+
+  fun cloudStatus(session: Session): Reply = call(session, "/api/stations-admin/cloud/status")
+
+  /** اشتراک دادن به یک پمپ */
+  fun grantPumpSubscription(
+    session: Session,
+    stationId: String,
+    planCode: String,
+    months: Int,
+  ): Reply {
+    val body = JSONObject()
+      .put("stationId", stationId)
+      .put("planCode", planCode)
+      .put("months", months)
+    return call(session, "/api/stations-admin/cloud/grant", "POST", body)
+  }
+
+  fun setPumpSubscriptionStatus(session: Session, id: String, status: String): Reply =
+    call(session, "/api/stations-admin/cloud/subscriptions/$id/status", "POST",
+      JSONObject().put("status", status))
+
+  /** آینهٔ ابر در پوشهٔ داده — «حساب‌ها روی خودِ سرور هم ثبت می‌شوند؟» */
+  fun cloudMirror(session: Session): Reply = call(session, "/api/stations-admin/cloud/mirror")
+
+  fun runCloudMirror(session: Session): Reply =
+    call(session, "/api/stations-admin/cloud/mirror", "POST", JSONObject())
+
+  /* ---------------------------- عیب‌یابی -------------------------------- */
+
+  /** «چرا کار نمی‌کند؟» — یک فهرست، با وضعیت و راهنمای فارسی */
+  fun diagnostics(session: Session): Reply = call(session, "/api/diagnostics")
+
+  /* --------------------- فرستادنِ کد از خودِ پنل -------------------------- */
+
+  /**
+   * ربات، برای این ایمیل کد بفرست.
+   *
+   * ⚠️ همان موتور و همان صفِ بخشِ «کدهای شش‌رقمی» — فقط دستِ دیگری دکمه
+   * را می‌زند. کد در همان فهرست هم دیده می‌شود، با نامِ همین برنامه.
+   */
+  fun sendCode(
+    session: Session,
+    app: String,
+    email: String,
+    appName: String = "",
+    userId: String = "",
+  ): Reply {
+    val body = JSONObject().put("app", app).put("email", email)
+    if (appName.isNotBlank()) body.put("appName", appName)
+    if (userId.isNotBlank()) body.put("userId", userId)
+    return call(session, "/api/codes-admin/send", "POST", body)
+  }
 
   /** سایت‌های روی سرور */
   fun sites(session: Session): Reply = call(session, "/api/sites")

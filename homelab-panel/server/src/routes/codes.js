@@ -211,6 +211,39 @@ adminRouter.get('/live', (req, res) => {
   res.json({ ok: true, items, queue: queueStatus(), now });
 });
 
+/**
+ *  فرستادنِ کد از خودِ پنل — «ربات، برای این ایمیل کد بفرست».
+ *
+ *  ⚠️ چرا لازم شد: تا امروز کد فقط وقتی ساخته می‌شد که *برنامه‌ای* با
+ *  کلیدِ خودش بخواهد. یعنی صاحبِ سرور که می‌خواست برای یک حساب دستی کد
+ *  بفرستد — چون طرف گیر کرده بود، یا تازه ثبت‌نام کرده — هیچ راهی نداشت
+ *  جز اینکه از آن طرف وارد شود.
+ *
+ *  ⚠️ و این‌جا کلیدِ برنامه نمی‌خواهد، چون پشتِ ورودِ مدیر است. همان
+ *  موتور، همان صف، همان قالبِ ایمیل — فقط دستِ دیگری دکمه را می‌زند.
+ */
+adminRouter.post('/send', async (req, res) => {
+  const app = cleanSlug(req.body?.app || 'main');
+  const row = getApp(app) || ensureApp(app, { name: req.body?.appName || app, kind: req.body?.kind });
+
+  const result = issueCode({
+    app: row.slug,
+    email: req.body?.email,
+    subjectId: req.body?.userId ?? req.body?.subjectId ?? null,
+    purpose: req.body?.purpose ?? 'login',
+    ip: clientIp(req),
+    // دستِ مدیر است؛ فاصلهٔ اجباری برای جلوگیری از کوبیدنِ دکمه توسطِ
+    // کاربر است، نه برای خودِ صاحبِ سرور
+    force: req.body?.force !== false,
+  });
+
+  if (!result.ok) return res.status(400).json(result);
+
+  drainQueue().catch(() => { /* خطا روی ردیفِ خودش ثبت می‌شود */ });
+  logEvent('info', 'panel', `کد برای ${result.email} از پنل فرستاده شد (${row.slug})`);
+  res.json(result);
+});
+
 /* ── دفترِ برنامه‌ها ─────────────────────────────────────────────────────── */
 
 adminRouter.get('/apps', (req, res) => {

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LocalGasStation
 import androidx.compose.material.icons.filled.Pin
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SupportAgent
@@ -43,6 +44,7 @@ import ir.vil3ntec.admin.ui.CodesScreen
 import ir.vil3ntec.admin.ui.HomeScreen
 import ir.vil3ntec.admin.ui.LoginScreen
 import ir.vil3ntec.admin.ui.SettingsScreen
+import ir.vil3ntec.admin.ui.StationsScreen
 import ir.vil3ntec.admin.ui.SupportScreen
 import ir.vil3ntec.admin.ui.ThemeMode
 import ir.vil3ntec.admin.ui.VillainAdminTheme
@@ -136,6 +138,7 @@ class MainActivity : ComponentActivity() {
 private enum class Tab(val title: String) {
   Home("خانه"),
   Codes("کدها"),
+  Stations("پمپ"),
   Accounts("حساب‌ها"),
   Support("پشتیبانی"),
   Broadcast("پخش"),
@@ -166,6 +169,7 @@ private fun MainShell(
               val icon = when (item) {
                 Tab.Home -> Icons.Filled.Home
                 Tab.Codes -> Icons.Filled.Pin
+                Tab.Stations -> Icons.Filled.LocalGasStation
                 Tab.Accounts -> Icons.Filled.Groups
                 Tab.Support -> Icons.Filled.SupportAgent
                 Tab.Broadcast -> Icons.Filled.Campaign
@@ -189,6 +193,7 @@ private fun MainShell(
       when (tab) {
         Tab.Home -> HomeScreen(session)
         Tab.Codes -> CodesScreen(session)
+        Tab.Stations -> StationsScreen(session)
         Tab.Accounts -> AccountsScreen(session)
         Tab.Support -> SupportScreen(session, onUnread = { unread = it })
         Tab.Broadcast -> BroadcastScreen(session)

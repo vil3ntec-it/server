@@ -86,6 +86,7 @@ import tohidPublicRoutes from './routes/tohid.js';
 import tohidAdminRoutes from './routes/control/tohid.js';
 import tohidAdminApiRoutes from './routes/tohid-admin.js';
 import { router as announceRoutes, adminRouter as announceAdminRoutes } from './routes/announce.js';
+import diagnosticsRoutes from './routes/diagnostics.js';
 import { createTohidWs } from './tohid/ws.js';
 import controlRoutes, { agentRouter, appConfigRouter } from './routes/control/index.js';
 import { ensureLocalServer } from './routes/control/servers.js';
@@ -263,6 +264,7 @@ app.use('/api/notify-admin', notifyAdminRoutes);
 // ورودِ کاربرانِ برنامه‌ها (اپِ اندروید، برنامهٔ ویندوز، سایت‌ها) با کدِ شش‌رقمی
 app.use('/api/app', appRoutes);
 app.use('/api/app-admin', appAdminRoutes);
+app.use('/api/diagnostics', diagnosticsRoutes);
 app.use('/api/announce', announceRoutes);
 app.use('/api/announce-admin', announceAdminRoutes);
 app.use('/api/codes', codeRoutes);
