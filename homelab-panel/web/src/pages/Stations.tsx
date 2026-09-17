@@ -1,5 +1,18 @@
 // ---------------------------------------------------------------------------
-//  ⛽ پمپ‌بنزین‌ها
+//  ⛽ پمپ‌بنزین‌ها — پنج زیربخشِ نام‌دار
+//
+//  خواستهٔ صاحبِ مخزن، کلمه‌به‌کلمه:
+//
+//    ۱ حساب‌ها و کاربرها  کی حساب دارد، فعال است یا نه، بک‌آپ دارد یا نه،
+//                         چه اشتراکی دارد — و دادنِ اشتراک از همان‌جا
+//    ۲ وصل بودن           کی آنلاین است و آخرین داده‌اش کِی آمد
+//    ۳ نرخ‌ها              قیمت‌ها با واحدِ خودشان (افغانی / دلار)
+//    ۴ کد و ربات          کدِ شش‌رقمیِ پمپ، و رباتی که به ایمیلِ طرف می‌فرستد
+//    ۵ تنظیمات و داده‌ها   پوشه، اتصال به ابر، آینه، و «چه چیزی خراب است»
+//
+//  ⚠️ تا امروز همهٔ این‌ها یک طومارِ بلند بود که باید تا تهش اسکرول می‌کردید،
+//  و دو تایشان (نرخ‌ها و کد و ربات) اصلاً نبودند — نرخ‌ها از ابر گرفته
+//  می‌شد و هیچ‌جا کشیده نمی‌شد. برای همین «بخشِ پمپ خالی» به نظر می‌رسید.
 //
 //  هر پمپ بنزین یک پوشه و دو رمزِ کاملاً جدا دارد. این صفحه همان چیزی است که
 //  صاحبِ سرور واقعاً لازم دارد و تا امروز هیچ‌جا نبود:
@@ -19,8 +32,10 @@ import { Fuel, KeyRound, Smartphone } from 'lucide-react';
 import { api } from '../api';
 import { useApp } from '../app-context';
 import { Card, ConfirmDialog, CopyButton, Empty, Field, Loading, Modal, StatusDot, toast } from '../components/ui';
-import { ActionButton, Cell, Notice, Row, Stat, Table } from '../control/ui';
+import { ActionButton, Cell, Notice, Row, Stat, Table, Tabs } from '../control/ui';
 import StationsCloud from './StationsCloud';
+import PumpCodes from './PumpCodes';
+import PumpHealth from './PumpHealth';
 
 type Station = {
   code: string;
@@ -83,6 +98,15 @@ export default function StationsPage() {
   const [keys, setKeys] = useState<Keys | null>(null);
   const [pairing, setPairing] = useState<{ pin: string; code: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Station | null>(null);
+  /*
+   *  کدام زیربخش. در نشانیِ صفحه هم می‌نشیند (#online) تا اگر کسی لینک را
+   *  نگه داشت یا صفحه را تازه کرد، همان‌جا برگردد نه سرِ خط.
+   */
+  const [tab, setTab] = useState(() => {
+    const want = window.location.hash.replace('#', '');
+    return ['accounts', 'online', 'plans', 'codes', 'data'].includes(want) ? want : 'accounts';
+  });
+  const goTab = (id: string) => { setTab(id); window.location.hash = id; };
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
@@ -197,6 +221,29 @@ export default function StationsPage() {
               sub={`${fmtBytes(data?.stats?.diskBytes ?? 0)} روی دیسک`} />
       </div>
 
+      <Tabs
+        active={tab}
+        onChange={goTab}
+        tabs={[
+          { id: 'accounts', label: 'حساب‌ها و کاربرها' },
+          { id: 'online', label: 'وصل بودن', badge: liveCount },
+          { id: 'plans', label: 'نرخ‌ها' },
+          { id: 'codes', label: 'کد و ربات' },
+          { id: 'data', label: 'تنظیمات و داده‌ها' },
+        ]}
+      />
+
+      {/* ── ۱ — حساب‌ها و کاربرها: روی ابر ─────────────────────────────── */}
+      {tab === 'accounts' && <StationsCloud section="accounts" />}
+
+      {/* ── ۳ — نرخ‌ها ─────────────────────────────────────────────────── */}
+      {tab === 'plans' && <StationsCloud section="plans" />}
+
+      {/* ── ۴ — کد و ربات ──────────────────────────────────────────────── */}
+      {tab === 'codes' && <PumpCodes />}
+
+      {/* ── ۲ — وصل بودن: پمپ‌های همین سرور ────────────────────────────── */}
+      {tab === 'online' && (
       <Card
         title="پمپ‌بنزین‌ها"
         icon={<Fuel size={18} />}
@@ -260,11 +307,13 @@ export default function StationsPage() {
           </Table>
         )}
       </Card>
+      )}
 
-      {/* حساب‌ها و اشتراک — از سرورِ ابر می‌آید، نه از این‌جا */}
-      <StationsCloud />
+      {/* ── ۵ — تنظیمات و داده‌ها ──────────────────────────────────────── */}
+      {tab === 'data' && <StationsCloud section="data" />}
+      {tab === 'data' && <PumpHealth />}
 
-      {(data?.pairings?.length ?? 0) > 0 && (
+      {tab === 'online' && (data?.pairings?.length ?? 0) > 0 && (
         <Card title="کدهای جفت‌شدنِ باز" icon={<Smartphone size={18} />}>
           <Table head={['کد', 'پمپ', 'تا']}>
             {data!.pairings!.map((p) => (
@@ -280,7 +329,7 @@ export default function StationsPage() {
         </Card>
       )}
 
-      {data?.dataDir && (
+      {tab === 'data' && data?.dataDir && (
         <Card title="پوشهٔ داده" icon={<KeyRound size={18} />}>
           <div className="text-sm">
             همهٔ پوشه‌ها زیرِ <code className="break-all">{data.dataDir}</code> می‌نشینند و در پشتیبان‌گیریِ خودکارِ

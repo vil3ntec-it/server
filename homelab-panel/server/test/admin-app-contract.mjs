@@ -73,6 +73,8 @@ const child = spawn(
       HLP_TUNNEL: '0',
       HLP_AI_ENABLED: '0',
       HLP_SITESYNC: '0',
+      // بخشِ پمپ باید روشن باشد، وگرنه مسیرهایش اصلاً سوار نمی‌شوند
+      HLP_STATIONS: '1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   },
@@ -206,6 +208,52 @@ try {
   const notices = await call('GET', '/api/announce-admin');
   check('اطلاعیه‌ها «id» دارند',
     (notices.body?.items || []).every((r) => r.id !== undefined));
+
+  console.log('\n── بخشِ پمپ: هر پنج زیربخش باید مسیرش زنده باشد ──');
+  /*
+   *  ⚠️ این آزمون از یک گزارشِ واقعی درآمد: «چرا بخشِ پمپ بنزین هیچ چیزی
+   *  توش اضافه نشده؟»
+   *
+   *  علتش این نبود که کد نوشته نشده — نوشته شده بود. علتش این بود که
+   *  هر زیربخش به یک مسیرِ سرور تکیه دارد، و اگر یکی از آن‌ها ۴۰۴ بدهد
+   *  یا خاموش باشد، همان زیربخش *خالی* دیده می‌شود، نه «خراب». پنج
+   *  کارتِ خالی هم از دور یعنی «هیچی اضافه نشده».
+   *
+   *  پس این‌جا فقط یک چیز را می‌سنجیم و همان کافی است: هیچ‌کدام از این
+   *  مسیرها «نیست» نباشند. ۴۰۹ (به ابر وصل نیستیم) پاسخِ درستی است؛
+   *  ۴۰۴ و ۵۰۰ نه.
+   */
+  const pumpRoutes = [
+    ['حساب‌ها و کاربرها', '/api/stations-admin/cloud/users?limit=5'],
+    ['حساب‌ها و کاربرها — پمپ‌های ابر', '/api/stations-admin/cloud/stations?limit=5'],
+    ['حساب‌ها و کاربرها — اشتراک‌ها', '/api/stations-admin/cloud/subscriptions?limit=5'],
+    ['حساب‌ها و کاربرها — کدهای اشتراک', '/api/stations-admin/cloud/vipCodes?limit=5'],
+    ['وصل بودن', '/api/stations-admin/'],
+    ['نرخ‌ها', '/api/stations-admin/cloud/pumpPlans'],
+    ['کد و ربات', '/api/codes-admin/live?app=pump-station'],
+    ['تنظیمات — وضعیتِ ابر', '/api/stations-admin/cloud/status'],
+    ['تنظیمات — آینه', '/api/stations-admin/cloud/mirror'],
+    ['تنظیمات — بررسیِ سلامت', '/api/diagnostics'],
+  ];
+  for (const [label, url] of pumpRoutes) {
+    const res = await call('GET', url);
+    check(`${label} — مسیرش هست (${res.status})`, res.status !== 404 && res.status < 500,
+      `${url} → ${res.status} ${JSON.stringify(res.body).slice(0, 120)}`);
+  }
+
+  const diag = await call('GET', '/api/diagnostics');
+  check('بررسیِ سلامت فهرستِ سنجه‌ها می‌دهد', Array.isArray(diag.body?.checks) && diag.body.checks.length > 0,
+    JSON.stringify(diag.body).slice(0, 160));
+  check('هر سنجه عنوان و وضعیت دارد',
+    (diag.body?.checks || []).every((c) => c.title && ['good', 'warn', 'bad'].includes(c.state)),
+    JSON.stringify(diag.body?.checks?.[0]));
+  check('و صفِ کدها در آن هست',
+    (diag.body?.checks || []).some((c) => c.key === 'codeQueue'));
+
+  const pumpCodes = await call('GET', '/api/codes-admin/live?app=pump-station');
+  check('کدهای پمپ فهرست و وضعیتِ صف می‌دهند',
+    Array.isArray(pumpCodes.body?.items) && pumpCodes.body?.queue !== undefined,
+    JSON.stringify(pumpCodes.body).slice(0, 160));
 
   const users = await call('GET', '/api/auth/users');
   const userRows = users.body?.users || [];
