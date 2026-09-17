@@ -13,6 +13,8 @@
 import { Router } from 'express';
 import { requireAuth, requireWriteRole } from '../auth.js';
 import { logEvent } from '../db.js';
+import { clientIp } from '../platform/security.js';
+import { allowAutoRegister } from '../lib/auto-register.js';
 import { checkMailSettings, codeSettings, safeCodeSettings, saveCodeSettings } from '../codes/settings.js';
 import { issueCode, maskEmail, revealCode, verifyCode } from '../codes/service.js';
 import { awaitDelivery, drainQueue, queueStatus } from '../codes/queue.js';
@@ -32,8 +34,7 @@ import {
 export const router = Router();
 export const adminRouter = Router();
 
-const clientIp = (req) =>
-  String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || '';
+// IP از تنها جای محاسبه‌اش می‌آید (platform/security.js)
 
 /* ========================================================================= */
 /*  مسیرِ برنامه‌ها                                                            */
@@ -70,7 +71,28 @@ const keyOf = (req) =>
  * این همان «هیچ برنامه‌ای پشتِ در نماند» است، بدونِ اینکه در باز بماند.
  */
 function checkApp(slug, req) {
-  const row = getApp(slug) || ensureApp(slug, { name: slug });
+  /*
+   *  ⚠️ این‌جا تا امروز `getApp(slug) || ensureApp(slug, …)` بود — یعنی
+   *  *پیش از* هر بررسیِ کلید، هر نامی که می‌آمد در دفتر ثبت می‌شد.
+   *  اندازه‌اش گرفته شد: ۲۰ درخواستِ بی‌کلید با نامِ ساختگی → ۲۰ ردیفِ
+   *  تازه. یعنی هر کسی از اینترنت می‌توانست جدولِ برنامه‌ها را پر کند و
+   *  فهرستِ پنل را غیرِقابلِ استفاده کند.
+   *
+   *  «هیچ برنامه‌ای پشتِ در نماند» هنوز برقرار است — ولی از راهِ درست:
+   *  برنامهٔ تازه را صاحبِ سرور در پنل ثبت می‌کند و کلیدش را برمی‌دارد.
+   */
+  let row = getApp(slug);
+  if (!row) {
+    if (!allowAutoRegister(slug)) {
+      return {
+        ok: false,
+        status: 404,
+        error: 'unknown_app',
+        message: 'این برنامه ثبت نشده است — در پنل ← کدهای شش‌رقمی اضافه‌اش کنید',
+      };
+    }
+    row = ensureApp(slug, { name: slug });
+  }
   if (!row.enabled) {
     return { ok: false, status: 403, error: 'app_disabled', message: 'این برنامه خاموش است' };
   }
@@ -112,7 +134,10 @@ async function handleRequest(req, res) {
   });
 
   if (!result.ok) {
-    return res.status(result.error === 'too_soon' ? 429 : 400).json(result);
+    // «زیاد شد» یعنی ۴۲۹، نه ۴۰۰ — کلاینت باید بتواند فرقشان را بفهمد
+    const busy = result.error === 'too_soon' || result.error === 'too_many_requests';
+    if (busy && result.retryAfter) res.setHeader('Retry-After', String(result.retryAfter));
+    return res.status(busy ? 429 : 400).json(result);
   }
 
   // صف را هل می‌دهیم تا در بارِ کم، ایمیل منتظرِ تیکِ بعدی نماند

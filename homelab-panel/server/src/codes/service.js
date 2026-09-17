@@ -26,6 +26,8 @@ import { codeSettings } from './settings.js';
 import {
   cancelLive,
   bumpTries,
+  countForEmail,
+  countForIp,
   getApp,
   insertRequest,
   lastRequest,
@@ -132,6 +134,42 @@ export function issueCode({
         error: 'too_soon',
         retryAfter: wait,
         message: `${wait} ثانیه صبر کنید و دوباره بزنید`,
+      };
+    }
+  }
+
+  /*
+   *  ── سقفِ ساعتی: نگهبانِ سهمیهٔ ایمیل ──────────────────────────────────
+   *
+   *  فاصلهٔ بالا فقط جلوی تکرارِ *همان* ایمیل را می‌گیرد. این‌جا جلوی
+   *  کسی گرفته می‌شود که ایمیل‌های مختلف را پشتِ هم می‌کوبد — که هم
+   *  سهمیهٔ روزانهٔ فرستنده را می‌سوزاند و هم صندوقِ قربانی را پر می‌کند.
+   *
+   *  ⚠️ ارسالِ خودکارِ خودِ سرور (force) از این سقف رد می‌شود: آن تصمیمِ
+   *  ما بوده، نه درخواستِ کاربر — و اگر شمرده می‌شد، کاربری که کدش را
+   *  نگرفته بود با سقفِ پرشده روبه‌رو می‌شد.
+   */
+  if (!force) {
+    const hourAgo = now - 3600_000;
+
+    if (settings.perEmailHour > 0 && countForEmail(target, hourAgo) >= settings.perEmailHour) {
+      return {
+        ok: false,
+        error: 'too_many_requests',
+        scope: 'email',
+        retryAfter: 3600,
+        message: 'برای این ایمیل در یک ساعت کدِ زیادی خواسته شد — بعداً دوباره بزنید',
+      };
+    }
+
+    const from = String(ip || '').slice(0, 64);
+    if (settings.perIpHour > 0 && from && countForIp(from, hourAgo) >= settings.perIpHour) {
+      return {
+        ok: false,
+        error: 'too_many_requests',
+        scope: 'ip',
+        retryAfter: 3600,
+        message: 'درخواست‌ها از این دستگاه زیاد شد — بعداً دوباره بزنید',
       };
     }
   }

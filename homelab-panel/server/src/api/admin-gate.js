@@ -21,6 +21,7 @@
 //  لازم است. دو قفلِ مستقل — یکی می‌گوید «تو همان برنامه‌ای»، دیگری
 //  می‌گوید «تو همان آدمی».
 // ---------------------------------------------------------------------------
+import { clientIp } from '../platform/security.js';
 import crypto from 'node:crypto';
 import http from 'node:http';
 import { config } from '../config.js';
@@ -201,8 +202,7 @@ export function isAdminHost(req) {
  * می‌زند نباید بفهمد اصلاً جایی برای حدس زدن هست.
  */
 export function adminEnrollRoute(req, res) {
-  const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-    || req.socket?.remoteAddress || '';
+  const ip = clientIp(req);
 
   const issued = enrollDevice({
     username: req.body?.username,
@@ -247,8 +247,7 @@ export function adminGate(req, res, { stripPrefix = true } = {}) {
     return notFound(res);
   }
 
-  const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-    || req.socket?.remoteAddress || '';
+  const ip = clientIp(req);
   touch(device, ip);
 
   /*

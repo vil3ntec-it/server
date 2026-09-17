@@ -4,6 +4,7 @@
 //  «چه کسی، کِی، چه کرد» — برای وقتی که چیزی پاک شده و کسی یادش نیست چرا.
 //  فقط کارهای حساس ثبت می‌شوند، نه هر درخواستِ خواندن.
 // ---------------------------------------------------------------------------
+import { clientIp } from '../platform/security.js';
 import { db } from '../db.js';
 
 /* ⚠️ دستور را همان اول آماده نمی‌کنیم: ماژول‌ها پیش از اجرای مهاجرت‌ها
@@ -37,10 +38,8 @@ export function actorOf(req) {
 
 export function audit(req, action, { target = null, ok = true, detail = null } = {}) {
   try {
-    const ip =
-      String(req?.headers?.['x-forwarded-for'] || '').split(',')[0].trim() ||
-      req?.socket?.remoteAddress ||
-      '';
+    // IPِ دروغ در دفترِ حسابرسی از نبودش بدتر است — از تنها محاسبهٔ معتبر
+    const ip = clientIp(req);
     statement().run(
       Date.now(),
       actorOf(req),

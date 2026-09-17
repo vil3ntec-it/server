@@ -29,6 +29,7 @@
 //  پمپ یک دفترِ خودش می‌گیرد به‌جای این‌که همه در یک دفتر بنویسند.
 // ---------------------------------------------------------------------------
 import crypto from 'node:crypto';
+import { clientIp } from '../platform/security.js';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -63,12 +64,19 @@ export function safeCode(value) {
  * هیچ‌کس نمی‌تواند پمپِ جدید بسازد، حتی اگر آدرسِ عمومی را بداند.
  */
 export function isLocalRequest(req) {
-  const raw = String(
-    req?.headers?.['x-forwarded-for']?.split(',')[0] ||
-      req?.socket?.remoteAddress ||
-      ''
-  ).trim();
-  const ip = raw.replace(/^::ffff:/, '');
+  /*
+   *  ⚠️ این‌جا تا امروز اول x-forwarded-for خوانده می‌شد و بعد نشانیِ
+   *  واقعیِ اتصال. یعنی هر کسی از اینترنت می‌توانست هدرِ
+   *  «X-Forwarded-For: 192.168.1.5» بگذارد و همین نگهبان را رد کند —
+   *  و پمپِ تازه ثبت کند. درست همان کاری که این تابع قرار بود جلویش را
+   *  بگیرد.
+   *
+   *  حالا از همان محاسبه‌ای می‌آید که بقیهٔ سرور استفاده می‌کند: هدر فقط
+   *  وقتی باور می‌شود که خودِ اتصال از لوکال‌هاست آمده باشد یا
+   *  HLP_TRUST_PROXY گفته باشد. با تونل، هدرِ کلودفلر نشانیِ *واقعیِ*
+   *  اینترنتی را می‌دهد — که خصوصی نیست و درست رد می‌شود.
+   */
+  const ip = clientIp(req);
   if (!ip) return false;
   if (ip === '127.0.0.1' || ip === '::1' || ip === 'localhost') return true;
   if (/^10\./.test(ip)) return true;

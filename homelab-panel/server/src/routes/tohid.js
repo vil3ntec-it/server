@@ -56,8 +56,8 @@ function requireAccount(req, res) {
   return account;
 }
 
-const clientIp = (req) =>
-  (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || null;
+// IP از تنها جای محاسبه‌اش (platform/security.js) — نسخهٔ محلی هدرِ جعلی را باور می‌کرد
+import { clientIp } from '../platform/security.js';
 
 /* ------------------------------- حساب --------------------------------- */
 

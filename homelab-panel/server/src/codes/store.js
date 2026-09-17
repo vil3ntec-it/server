@@ -64,6 +64,9 @@ CREATE TABLE IF NOT EXISTS code_requests (
 CREATE INDEX IF NOT EXISTS idx_code_requests_live  ON code_requests(app, email, id DESC);
 CREATE INDEX IF NOT EXISTS idx_code_requests_queue ON code_requests(send_state, next_attempt_at);
 CREATE INDEX IF NOT EXISTS idx_code_requests_time  ON code_requests(created_at DESC);
+-- شمارشِ سقفِ ساعتی: بی این‌ها هر درخواستِ کد کلِ جدول را می‌خواند
+CREATE INDEX IF NOT EXISTS idx_code_requests_email_time ON code_requests(email, created_at);
+CREATE INDEX IF NOT EXISTS idx_code_requests_ip_time    ON code_requests(ip, created_at);
 `);
 
 /*
@@ -227,6 +230,36 @@ export function lastRequest(app, email) {
       .prepare('SELECT * FROM code_requests WHERE app = ? AND email = ? ORDER BY id DESC LIMIT 1')
       .get(app, email) || null
   );
+}
+
+/**
+ * چند کد در ساعتِ گذشته برای این ایمیل ساخته شده؟
+ *
+ * ⚠️ شمارش روی *همهٔ* برنامه‌هاست، نه فقط یکی. وگرنه کسی که ده برنامه را
+ * نوبتی صدا می‌زند، ده برابرِ سقف ایمیل می‌گیرد — و قربانی ده برابر ایمیل.
+ * سهمیهٔ ایمیل هم یکی است، پس سقف هم باید یکی باشد.
+ *
+ * ⚠️ ارسال‌های خودکارِ خودِ سرور (resend_chain > 0) شمرده نمی‌شوند: آن‌ها
+ * تصمیمِ ما بوده‌اند نه کاربر، و نباید سقفِ خودِ کاربر را پر کنند.
+ */
+export function countForEmail(email, sinceMs) {
+  return db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM code_requests
+        WHERE email = ? AND created_at > ? AND resend_chain = 0`
+    )
+    .get(email, sinceMs).n;
+}
+
+/** چند کد در ساعتِ گذشته از این IP خواسته شده؟ */
+export function countForIp(ip, sinceMs) {
+  if (!ip) return 0;
+  return db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM code_requests
+        WHERE ip = ? AND created_at > ? AND resend_chain = 0`
+    )
+    .get(ip, sinceMs).n;
 }
 
 /** کدهای قبلیِ همین ایمیل باطل می‌شوند — همیشه فقط یک کدِ زنده */

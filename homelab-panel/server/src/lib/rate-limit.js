@@ -4,13 +4,19 @@
 //  ساده و بدونِ وابستگی: یک پنجرهٔ زمانیِ کشویی در حافظه. برای سرورِ خانگی
 //  دقیقاً همین لازم است؛ چیزی برای نصب و تنظیم ندارد.
 // ---------------------------------------------------------------------------
+import { clientIp } from '../platform/security.js';
+
 const buckets = new Map();
 
-/** IP درخواست — پشتِ تونل، هدرِ x-forwarded-for را هم می‌بینیم */
-export function clientIp(req) {
-  const forwarded = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
-  return forwarded || req.socket?.remoteAddress || 'unknown';
-}
+/*
+ *  ⚠️ این‌جا زمانی یک نسخهٔ دومِ clientIp بود که هدرِ x-forwarded-for را
+ *  بی‌قید‌وشرط باور می‌کرد — و چون همین فایل سقفِ «ورود»، «کد» و کلِ API
+ *  را می‌سازد، هر سه با یک هدرِ ساده بی‌اثر می‌شدند. اندازه‌اش گرفته شد:
+ *  ۲۵ تلاشِ ورود با هدرِ جعلی، صفر تا مسدود.
+ *
+ *  حالا فقط یک محاسبه در کلِ سرور هست، در platform/security.js.
+ */
+export { clientIp };
 
 /**
  * @param {string} name     نامِ سطل (تا مسیرهای مختلف روی هم اثر نگذارند)

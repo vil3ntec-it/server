@@ -119,7 +119,8 @@ export async function requestCode({ app, channel, target, ip = '', settings = ot
   if (!result.ok) {
     return {
       ok: false,
-      error: result.error === 'too_soon' ? 'too_soon' : result.error,
+      error: result.error,
+      scope: result.scope,
       retryAfter: result.retryAfter,
       message: result.message,
     };

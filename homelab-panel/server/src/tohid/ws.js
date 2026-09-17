@@ -12,6 +12,7 @@
 //  رد می‌شود. اگر به‌جایش دست‌دادن را تمام می‌کردیم و بعد می‌بستیم، «آزمایش
 //  اتصال»ِ برنامه اول رویدادِ open را می‌دید و اشتباهاً «متصل شد» می‌گفت.
 // ---------------------------------------------------------------------------
+import { clientIp } from '../platform/security.js';
 import crypto from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { sendCode, verifyCode, pruneCodes } from './otp.js';
@@ -35,8 +36,7 @@ export function createTohidWs() {
   const wss = new WebSocketServer({ noServer: true, maxPayload: MESSAGE_LIMIT });
 
   wss.on('connection', (ws, req) => {
-    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-      || req.socket?.remoteAddress || null;
+    const ip = clientIp(req);
 
     // یک پیام و تمام؛ اتصالِ باز و بی‌کار بسته می‌شود
     const idle = setTimeout(() => {

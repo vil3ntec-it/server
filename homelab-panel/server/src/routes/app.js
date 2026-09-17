@@ -60,8 +60,9 @@ const router = Router();
    فرمِ معمولی می‌فرستند. هر دو را می‌پذیریم تا کسی پشتِ در نماند. */
 router.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
-const clientIp = (req) =>
-  String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || '';
+// IP از تنها جای محاسبه‌اش می‌آید — نسخهٔ محلی، هدرِ جعلی را باور می‌کرد
+import { clientIp } from '../platform/security.js';
+import { allowAutoRegister } from '../lib/auto-register.js';
 
 const appOf = (req) => cleanApp(req.body?.app || req.query?.app || req.headers['x-app'] || 'main');
 
@@ -138,8 +139,21 @@ const apiKeyOf = (req) =>
 
 async function handleRequestCode(req, res) {
   const app = appOf(req);
-  // برنامهٔ تازه خودش ثبت می‌شود تا هیچ‌کس پشتِ در نماند
-  ensureClient(app, { name: req.body?.appName || null });
+  /*
+   *  ⚠️ این‌جا هم مثلِ مسیرِ /api/codes، ثبتِ خودکار *پیش از* هر بررسی
+   *  انجام می‌شد — پس هر کسی از اینترنت می‌توانست با نامِ ساختگی ردیف
+   *  بسازد و دفترِ برنامه‌ها را پر کند. ثبتِ برنامهٔ تازه کارِ پنل است.
+   */
+  if (!getClient(app)) {
+    if (!allowAutoRegister(app)) {
+      return res.status(404).json({
+        ok: false,
+        error: 'unknown_app',
+        message: 'این برنامه ثبت نشده است — در پنل اضافه‌اش کنید',
+      });
+    }
+    ensureClient(app, { name: req.body?.appName || null });
+  }
   const settings = settingsFor(app);
   const picked = pickTarget(req.body || {}, settings);
   if (picked.error) {
@@ -167,7 +181,10 @@ async function handleRequestCode(req, res) {
   });
 
   if (!result.ok) {
-    return res.status(result.error === 'too_soon' || result.error === 'rate_limited' ? 429 : 400).json(result);
+    // «زیاد شد» یعنی ۴۲۹ — کلاینت باید بتواند «صبر کن» را از «غلط فرستادی» جدا کند
+    const busy = ['too_soon', 'rate_limited', 'too_many_requests'].includes(result.error);
+    if (busy && result.retryAfter) res.setHeader('Retry-After', String(result.retryAfter));
+    return res.status(busy ? 429 : 400).json(result);
   }
 
   /* سرویسِ پیامک/ایمیل تنظیم شده ولی کد نرفت (کلیدِ اشتباه، اعتبارِ تمام‌شده،
@@ -192,6 +209,17 @@ router.post(
 // ---------------------------------------------------------------------------
 function handleVerifyCode(req, res) {
   const app = appOf(req);
+  /*
+   *  در «سنجیدنِ کد» ثبتِ خودکار معنا ندارد: اگر برنامه نیست، کدی هم
+   *  ساخته نشده. پس این‌جا فقط رد.
+   */
+  if (!getClient(app)) {
+    return res.status(404).json({
+      ok: false,
+      error: 'unknown_app',
+      message: 'این برنامه ثبت نشده است — در پنل اضافه‌اش کنید',
+    });
+  }
   const settings = settingsFor(app);
   const picked = pickTarget(req.body || {}, settings);
   if (picked.error) {

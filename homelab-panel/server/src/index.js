@@ -205,7 +205,9 @@ app.use('/api/app/auth', rateLimit('app-auth', 60, 10 * 60 * 1000));
  *  سوءاستفاده را فاصلهٔ اجباریِ هر ایمیل می‌گیرد (در خودِ موتور)، نه این سقف.
  *  سقفِ عمومیِ /api هم عمداً از این مسیر رد می‌شود، وگرنه همان ۱۲۰۰ تا سر می‌رسد.
  */
-app.use('/api/codes', rateLimit('codes', 6000, 60 * 1000));
+// سقفِ مسیرِ کدها. ۶۰۰۰ در دقیقه یعنی عملاً هیچ سقفی — با ۶۰۰ هم هزار
+// کاربرِ هم‌زمان جا دارند، ولی یک اسکریپت دیگر نمی‌تواند سرور را بکوبد.
+app.use('/api/codes', rateLimit('codes', 600, 60 * 1000));
 app.use('/api/notify', rateLimit('notify', 240, 60 * 1000));
 app.use('/api/messenger', rateLimit('messenger', 600, 60 * 1000));
 const apiLimiter = rateLimit('api', 1200, 60 * 1000);
