@@ -60,6 +60,36 @@ CREATE TABLE IF NOT EXISTS app_sessions (
 CREATE INDEX IF NOT EXISTS idx_app_sessions_user ON app_sessions(user_id);
 -- پاک‌سازیِ نشست‌های منقضی بی این، کلِ جدول را می‌خواند
 CREATE INDEX IF NOT EXISTS idx_app_sessions_expiry ON app_sessions(expires_at);
+
+/*
+ *  ── دفترِ ورود ───────────────────────────────────────────────────────────
+ *
+ *  ⚠️ تا امروز هیچ تاریخچه‌ای از ورود نبود — فقط یک «last_login_at» روی
+ *  خودِ کاربر. یعنی هیچ راهی نبود بفهمی کی، کِی، از کجا و به کدام برنامه
+ *  وارد شده؛ و اگر حسابی دستِ کسِ دیگری می‌افتاد، هیچ ردی نمی‌ماند.
+ *
+ *  ⚠️ تلاش‌های *ناموفق* هم ثبت می‌شوند و همان‌ها مهم‌ترند: ده کدِ غلط
+ *  پشتِ هم روی یک ایمیل، تنها نشانه‌ای است که کسی دارد حدس می‌زند.
+ *
+ *  ⚠️ و آنچه این‌جا ثبت *نمی‌شود*: کد، توکن، کلیدِ تمدید، رمز. دفترِ ورود
+ *  نباید خودش یک گاوصندوقِ باز باشد.
+ */
+CREATE TABLE IF NOT EXISTS app_logins (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  app        TEXT NOT NULL,              -- کدام برنامه/سایت
+  user_id    INTEGER,                    -- اگر کاربر ساخته شده باشد
+  email      TEXT NOT NULL,
+  at         INTEGER NOT NULL,
+  ok         INTEGER NOT NULL,           -- ۱ وارد شد، ۰ نشد
+  reason     TEXT,                       -- چرا نشد: wrong_code | expired | …
+  device     TEXT,
+  ip         TEXT,
+  session_id TEXT,                       -- نشستی که ساخته شد (اگر شد)
+  is_new     INTEGER NOT NULL DEFAULT 0  -- اولین ورودِ این حساب؟
+);
+CREATE INDEX IF NOT EXISTS idx_app_logins_app  ON app_logins(app, at DESC);
+CREATE INDEX IF NOT EXISTS idx_app_logins_mail ON app_logins(email, at DESC);
+CREATE INDEX IF NOT EXISTS idx_app_logins_time ON app_logins(at DESC);
 `);
 
 /*
@@ -269,6 +299,8 @@ export function createAppSession(user, { device = '', ip = '', settings = otpSet
   db.prepare('UPDATE app_users SET last_login_at = ? WHERE id = ?').run(now, user.id);
   const token = signAccess({ uid: user.id, sid: id, app: user.app, expiresAt });
   return {
+    //  شناسهٔ نشست برای دفترِ ورود لازم است؛ در خودِ توکن هم هست، پس راز نیست
+    sessionId: id,
     token,
     expiresAt,
     expiresIn: accessTtl(settings),
@@ -359,12 +391,39 @@ export function refreshAppSession({ refreshToken, device = '', ip = '', settings
  * خودِ کد را موتورِ تازه می‌سنجد؛ چیزی که این‌جا مانده، همان بخشی است که
  * مالِ خودِ این ماژول است: کاربرِ برنامه و نشستش.
  */
+/**
+ * یک سطر در دفترِ ورود.
+ *
+ * ⚠️ هیچ‌وقت پرتاب نمی‌کند: ثبتِ ناموفق نباید جلوی ورودِ درست را بگیرد.
+ */
+function noteLogin({ app, userId = null, email, ok, reason = null, device = '', ip = '', sessionId = null, isNew = false }) {
+  try {
+    db.prepare(
+      `INSERT INTO app_logins(app, user_id, email, at, ok, reason, device, ip, session_id, is_new)
+       VALUES(?,?,?,?,?,?,?,?,?,?)`
+    ).run(
+      cleanApp(app),
+      userId,
+      String(email || '').slice(0, 254),
+      Date.now(),
+      ok ? 1 : 0,
+      reason ? String(reason).slice(0, 40) : null,
+      String(device || '').slice(0, 200),
+      String(ip || '').slice(0, 64),
+      sessionId,
+      isNew ? 1 : 0
+    );
+  } catch { /* دفتر نباید جلوی ورود را بگیرد */ }
+}
+
 export function verifyCode({ app, target, code, device = '', ip = '', name = null, settings = otpSettings() }) {
   // برنامه‌ای که هنوز کد نخواسته در دفترِ موتور نیست؛ بدونِ این، خطا
   // «برنامه ثبت نشده» می‌شد در حالی که مشکلِ واقعی «کدی نفرستاده‌ای» است
   ensureCodeApp(app, { name: app });
   const result = verifyWithEngine({ app, email: target, code });
   if (!result.ok) {
+    //  ⚠️ شکست هم ثبت می‌شود — همین‌ها می‌گویند کسی دارد حدس می‌زند
+    noteLogin({ app, email: target, ok: false, reason: result.error, device, ip });
     const map = { no_code: 'no_code', expired: 'expired', wrong_code: 'wrong_code' };
     return {
       ok: false,
@@ -375,10 +434,76 @@ export function verifyCode({ app, target, code, device = '', ip = '', name = nul
   }
 
   const { user, isNew } = upsertUser({ app, channel: 'email', target: result.email, name });
-  if (user.blocked) return { ok: false, error: 'blocked', message: 'این حساب مسدود است' };
+  if (user.blocked) {
+    noteLogin({ app, userId: user.id, email: result.email, ok: false, reason: 'blocked', device, ip });
+    return { ok: false, error: 'blocked', message: 'این حساب مسدود است' };
+  }
 
   const session = createAppSession(user, { device, ip, settings });
-  return { ok: true, isNew, user: publicUser(user), ...session };
+  noteLogin({
+    app, userId: user.id, email: result.email, ok: true,
+    device, ip, sessionId: session.sessionId, isNew,
+  });
+  //  sessionId مالِ دفترِ خودمان است؛ کلاینت لازمش ندارد
+  const { sessionId: _sid, ...forClient } = session;
+  return { ok: true, isNew, user: publicUser(user), ...forClient };
+}
+
+/* ---------------------------------------------------------------------------
+ *  خواندنِ دفترِ ورود — «هر برنامه در بخشِ خودش»
+ * ------------------------------------------------------------------------- */
+
+/**
+ * ورودهای یک برنامه (یا همه، اگر app ندهید).
+ *
+ * @param {object} o
+ * @param {string|null} [o.app]   فقط همین برنامه
+ * @param {string} [o.email]      فقط همین ایمیل
+ * @param {'all'|'ok'|'failed'} [o.only]
+ */
+export function listLogins({ app = null, email = '', only = 'all', limit = 100, offset = 0 } = {}) {
+  const slug = app ? cleanApp(app) : null;
+  const mail = String(email || '').trim().toLowerCase();
+  const rows = db
+    .prepare(
+      `SELECT * FROM app_logins
+        WHERE (? IS NULL OR app = ?)
+          AND (? = '' OR email = ?)
+          AND (? = 'all' OR (? = 'ok' AND ok = 1) OR (? = 'failed' AND ok = 0))
+        ORDER BY id DESC LIMIT ? OFFSET ?`
+    )
+    .all(slug, slug, mail, mail, only, only, only,
+      Math.min(500, Number(limit) || 100), Number(offset) || 0);
+
+  return rows.map((r) => ({
+    id: r.id,
+    app: r.app,
+    userId: r.user_id,
+    email: r.email,
+    at: r.at,
+    ok: Boolean(r.ok),
+    reason: r.reason,
+    device: r.device || null,
+    ip: r.ip || null,
+    isNew: Boolean(r.is_new),
+  }));
+}
+
+/** خلاصهٔ ورودهای هر برنامه — همان چیزی که کنارِ نامِ برنامه نشان داده می‌شود */
+export function loginSummary(app = null) {
+  const slug = app ? cleanApp(app) : null;
+  const now = Date.now();
+  const one = (sql, ...args) => db.prepare(sql).get(...args);
+  const where = slug ? 'app = ? AND ' : '';
+  const args = (extra) => (slug ? [slug, ...extra] : extra);
+  return {
+    app: slug,
+    total: one(`SELECT COUNT(*) AS n FROM app_logins WHERE ${where}ok = 1`, ...args([])).n,
+    today: one(`SELECT COUNT(*) AS n FROM app_logins WHERE ${where}ok = 1 AND at > ?`, ...args([now - 24 * HOUR])).n,
+    failedToday: one(`SELECT COUNT(*) AS n FROM app_logins WHERE ${where}ok = 0 AND at > ?`, ...args([now - 24 * HOUR])).n,
+    newToday: one(`SELECT COUNT(*) AS n FROM app_logins WHERE ${where}is_new = 1 AND at > ?`, ...args([now - 24 * HOUR])).n,
+    lastAt: one(`SELECT MAX(at) AS t FROM app_logins WHERE ${where}ok = 1`, ...args([])).t || null,
+  };
 }
 
 export const publicUser = (u) => ({

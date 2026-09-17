@@ -44,8 +44,29 @@ try {
 } catch { /* ستون از قبل هست */ }
 
 /** سه نوعی که پشتیبانی می‌شود */
-export const KINDS = ['android', 'web', 'desktop'];
-export const KIND_LABELS = { android: 'برنامهٔ اندروید', web: 'سایت', desktop: 'برنامهٔ کامپیوتری' };
+/*
+ *  ⚠️ «app» بعداً اضافه شد و دلیلش یک باگِ دیده‌شده است.
+ *
+ *  دو دفترِ برنامه واژگانِ متفاوتی برای «نوع» داشتند:
+ *
+ *      code_apps    → app | site
+ *      app_clients  → android | web | desktop
+ *
+ *  وقتی پل بینشان زده شد، `cleanKind('app')` در این فهرست پیدا نمی‌شد و
+ *  بی‌صدا به 'web' می‌افتاد — یعنی «پمپ بنزین» در فهرستِ ورودها «سایت»
+ *  نشان داده می‌شد. در عکسِ صفحه دیده شد، نه در هیچ خطایی.
+ *
+ *  به‌جای حدس زدنِ اینکه یک «app» اندرویدی است یا کامپیوتری، همان
+ *  «برنامه»ی خنثی اضافه شد. ردیف‌های قدیمی دست‌نخورده می‌مانند.
+ */
+export const KINDS = ['android', 'web', 'desktop', 'app', 'site'];
+export const KIND_LABELS = {
+  android: 'برنامهٔ اندروید',
+  web: 'سایت',
+  desktop: 'برنامهٔ کامپیوتری',
+  app: 'برنامه',
+  site: 'سایت',
+};
 export const cleanKind = (value) => (KINDS.includes(String(value)) ? String(value) : 'web');
 
 const newKey = () => `hlp_${crypto.randomBytes(16).toString('hex')}`;
@@ -147,6 +168,21 @@ export function updateClient(slug, patch = {}) {
 
   db.prepare(`UPDATE app_clients SET ${sets.join(', ')} WHERE slug = ?`).run(...values, row.slug);
   return getClient(row.slug);
+}
+
+/**
+ * کلیدِ این برنامه را با کلیدِ دفترِ دیگر یکی می‌کند.
+ *
+ * ⚠️ عمداً در FIELDS نیست و از مسیرِ عادیِ ویرایش در دسترس نیست: کلید
+ * چیزی است که ساخته یا چرخانده می‌شود، نه دستی نوشته. تنها کاربردش
+ * هم‌ترازیِ دو دفترِ برنامه است (registry-link.js) تا یک کلید روی هر دو
+ * مسیرِ ورود کار کند.
+ */
+export function syncClientKey(slug, apiKey) {
+  const key = String(apiKey || '').trim();
+  if (!key) return null;
+  db.prepare('UPDATE app_clients SET api_key = ? WHERE slug = ?').run(key, cleanApp(slug));
+  return getClient(slug);
 }
 
 export function rotateKey(slug) {

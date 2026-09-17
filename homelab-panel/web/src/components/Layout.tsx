@@ -34,6 +34,7 @@ import {
   X,
   Fuel,
   Hash,
+  LogIn,
 } from 'lucide-react';
 import { useApp } from '../app-context';
 import { LANGUAGES, type Dict } from '../i18n';
@@ -79,6 +80,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/sites', key: 'websites', icon: Server },
       { to: '/site-server', key: 'siteServer', icon: Globe },
       { to: '/stations', key: 'stations', icon: Fuel },
+      { to: '/logins', key: 'logins', icon: LogIn },
       { to: '/codes', key: 'codesTitle', icon: Hash },
     ],
   },

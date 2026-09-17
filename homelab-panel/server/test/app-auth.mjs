@@ -322,7 +322,19 @@ try {
 
   const made = await post('/api/app-admin/clients', { name: 'فروشگاه تست', slug: 'test-shop' }, adminHeaders);
   check('برنامهٔ تازه ساخته می‌شود', made.status === 200 && made.body.client?.slug === 'test-shop', JSON.stringify(made.body));
-  check('کلیدِ اختصاصی می‌گیرد', /^hlp_[0-9a-f]{32}$/.test(made.body.client?.apiKey || ''), made.body.client?.apiKey);
+  /*
+   *  ⚠️ پیشوندِ کلید عمداً دیگر سنجیده نمی‌شود.
+   *
+   *  سرور دو دفترِ برنامه دارد (code_apps و app_clients) و تا دیروز هر
+   *  کدام کلیدِ خودش را می‌ساخت — یعنی یک برنامه دو کلید داشت و صاحبِ
+   *  سرور نمی‌دانست کدام را کجا بگذارد. حالا هم‌تراز می‌شوند و کلیدِ
+   *  دفترِ کدها مرجع است (همان که در صفحهٔ «کدهای شش‌رقمی» کپی می‌شود).
+   *  پس پیشوند می‌تواند hlp_ یا code_ باشد؛ آنچه مهم است یکتا بودن و
+   *  کار کردنش روی *هر دو* مسیر است — که در test/app-logins.mjs سنجیده
+   *  می‌شود.
+   */
+  check('کلیدِ اختصاصی می‌گیرد', /^(hlp|code)_[0-9a-f]{32,40}$/.test(made.body.client?.apiKey || ''),
+    made.body.client?.apiKey);
 
   const dup = await post('/api/app-admin/clients', { slug: 'test-shop' }, adminHeaders);
   check('شناسهٔ تکراری رد می‌شود', dup.status === 409);

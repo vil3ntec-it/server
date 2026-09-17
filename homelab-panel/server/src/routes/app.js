@@ -32,6 +32,8 @@ import {
   listUsers,
   setBlocked,
   deleteUser,
+  listLogins,
+  loginSummary,
   recentCodes,
   refreshAppSession,
   stats,
@@ -65,6 +67,7 @@ router.use(express.urlencoded({ extended: false, limit: '1mb' }));
 import { clientIp } from '../platform/security.js';
 import { rateLimit } from '../lib/rate-limit.js';
 import { allowAutoRegister } from '../lib/auto-register.js';
+import { linkApp } from '../appauth/registry-link.js';
 
 const appOf = (req) => cleanApp(req.body?.app || req.query?.app || req.headers['x-app'] || 'main');
 
@@ -161,6 +164,13 @@ async function handleRequestCode(req, res) {
    *  انجام می‌شد — پس هر کسی از اینترنت می‌توانست با نامِ ساختگی ردیف
    *  بسازد و دفترِ برنامه‌ها را پر کند. ثبتِ برنامهٔ تازه کارِ پنل است.
    */
+  /*
+   *  ⚠️ سرور دو دفترِ برنامه دارد و این مسیر فقط یکی را می‌شناخت. یعنی
+   *  برنامه‌ای که در بخشِ «کدهای شش‌رقمی» ثبت شده بود، این‌جا
+   *  «unknown_app» می‌گرفت. linkApp پل می‌زند: ثبت در هر کدام، آن یکی
+   *  را هم می‌سازد — با همان کلید.
+   */
+  linkApp(app);
   if (!getClient(app)) {
     if (!allowAutoRegister(app)) {
       return res.status(404).json({
@@ -170,6 +180,7 @@ async function handleRequestCode(req, res) {
       });
     }
     ensureClient(app, { name: req.body?.appName || null });
+    linkApp(app, { name: req.body?.appName || null });
   }
   const settings = settingsFor(app);
   const picked = pickTarget(req.body || {}, settings);
@@ -236,6 +247,7 @@ function handleVerifyCode(req, res) {
    *  در «سنجیدنِ کد» ثبتِ خودکار معنا ندارد: اگر برنامه نیست، کدی هم
    *  ساخته نشده. پس این‌جا فقط رد.
    */
+  linkApp(app);
   if (!getClient(app)) {
     return res.status(404).json({
       ok: false,
@@ -355,7 +367,9 @@ adminRouter.post('/clients', (req, res) => {
     return res.status(409).json({ ok: false, error: 'exists', message: 'برنامه‌ای با همین شناسه هست' });
   }
   const client = ensureClient(slug, { name: req.body?.name || slug, kind: cleanKind(req.body?.kind) });
-  res.json({ ok: true, client: publicClient(client) });
+  //  و در دفترِ کدها هم — یک ثبت، هر دو مسیر
+  linkApp(slug, { name: req.body?.name || slug, kind: cleanKind(req.body?.kind) });
+  res.json({ ok: true, client: publicClient(getClient(slug) || client) });
 });
 
 adminRouter.put('/clients/:slug', (req, res) => {
@@ -451,6 +465,41 @@ adminRouter.delete('/users/:id', (req, res) => {
 /* آخرین کدها — بدونِ خودِ کد (کد اصلاً ذخیره نمی‌شود). برای وقتی که می‌خواهید
    ببینید درخواست‌ها می‌رسند و از چه راهی فرستاده شده‌اند. */
 adminRouter.get('/codes', (req, res) => res.json({ codes: recentCodes(req.query.limit) }));
+
+/* ---------------------------------------------------------------------------
+ *  دفترِ ورود — «هر برنامه در بخشِ خودش»
+ *
+ *  ⚠️ چرا لازم شد: تا امروز هیچ تاریخچه‌ای از ورود نبود، فقط «آخرین ورود»
+ *  روی خودِ کاربر. یعنی نمی‌شد فهمید کی، کِی، از کجا و به کدام برنامه وارد
+ *  شده — و اگر حسابی دستِ کسِ دیگری می‌افتاد هیچ ردی نمی‌ماند.
+ * ------------------------------------------------------------------------- */
+adminRouter.get('/logins', (req, res) => {
+  const app = req.query.app ? cleanApp(req.query.app) : null;
+  res.json({
+    ok: true,
+    app,
+    summary: loginSummary(app),
+    logins: listLogins({
+      app,
+      email: req.query.email || '',
+      only: ['ok', 'failed'].includes(req.query.only) ? req.query.only : 'all',
+      limit: req.query.limit,
+      offset: req.query.offset,
+    }),
+  });
+});
+
+/** خلاصهٔ ورودِ همهٔ برنامه‌ها، کنارِ هم */
+adminRouter.get('/logins/summary', (req, res) => {
+  const rows = listClients().map((c) => ({
+    slug: c.slug,
+    name: c.name,
+    kind: c.kind,
+    kindLabel: c.kindLabel,
+    ...loginSummary(c.slug),
+  }));
+  res.json({ ok: true, apps: rows, all: loginSummary(null) });
+});
 
 /* دفترِ کارهای حساس — چه کسی، کِی، چه کرد */
 adminRouter.get('/audit', (req, res) => {

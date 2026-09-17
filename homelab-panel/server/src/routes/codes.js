@@ -16,6 +16,7 @@ import { logEvent } from '../db.js';
 import { clientIp } from '../platform/security.js';
 import { sameSecret } from '../lib/secret-compare.js';
 import { allowAutoRegister } from '../lib/auto-register.js';
+import { linkApp } from '../appauth/registry-link.js';
 import { checkMailSettings, codeSettings, safeCodeSettings, saveCodeSettings } from '../codes/settings.js';
 import { issueCode, maskEmail, revealCode, verifyCode } from '../codes/service.js';
 import { awaitDelivery, drainQueue, queueStatus } from '../codes/queue.js';
@@ -95,6 +96,8 @@ function checkApp(slug, req) {
    *  «هیچ برنامه‌ای پشتِ در نماند» هنوز برقرار است — ولی از راهِ درست:
    *  برنامهٔ تازه را صاحبِ سرور در پنل ثبت می‌کند و کلیدش را برمی‌دارد.
    */
+  //  اگر فقط در دفترِ ورود ثبت شده، همین‌جا در دفترِ کدها هم ساخته می‌شود
+  linkApp(slug);
   let row = getApp(slug);
   if (!row) {
     if (!allowAutoRegister(slug)) {
@@ -106,6 +109,7 @@ function checkApp(slug, req) {
       };
     }
     row = ensureApp(slug, { name: slug });
+    linkApp(slug);
   }
   if (!row.enabled) {
     return { ok: false, status: 403, error: 'app_disabled', message: 'این برنامه خاموش است' };
@@ -323,6 +327,8 @@ adminRouter.post('/apps', (req, res) => {
   const slug = cleanSlug(req.body?.slug || req.body?.name);
   if (getApp(slug)) return res.status(409).json({ ok: false, error: 'exists' });
   const row = ensureApp(slug, { name: req.body?.name || slug, kind: req.body?.kind });
+  //  یک بار ثبت، هر دو مسیرِ ورود — وگرنه نصفِ سرور این برنامه را نمی‌شناسد
+  linkApp(slug, { name: req.body?.name || slug, kind: req.body?.kind });
   const saved = saveApp(slug, req.body || {});
   logEvent('info', 'panel', `برنامهٔ «${row.slug}» به بخشِ کدهای شش‌رقمی اضافه شد`);
   res.json({ ok: true, app: publicApp(saved || row) });
