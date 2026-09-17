@@ -171,7 +171,7 @@ fun AccountsScreen(session: Session) {
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
-        items(visible, key = { it.id }) { row ->
+        items(safeKeys(visible) { it.id }, key = { it.first }) { (_, row) ->
           AccountCard(row, onOpen = { if (row.openable) open = row })
         }
       }

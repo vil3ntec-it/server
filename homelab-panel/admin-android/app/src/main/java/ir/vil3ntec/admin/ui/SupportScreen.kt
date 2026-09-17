@@ -62,7 +62,12 @@ private data class Thread(
 )
 
 private data class Message(
-  val id: Long,
+  /*
+   *  ⚠️ متن، نه عدد. سرور «msg_1a2b3c» می‌فرستد و optLong رویش صفر
+   *  می‌دهد — یعنی شناسهٔ همهٔ پیام‌ها صفر می‌شد: هم فهرست می‌افتاد، هم
+   *  حذفِ تکراری‌ها همهٔ پیام‌ها را یکی می‌کرد.
+   */
+  val id: String,
   val fromAdmin: Boolean,
   val body: String,
   val at: Long,
@@ -125,7 +130,18 @@ private fun ThreadList(
         threads = (0 until array.length()).map { index ->
           val row = array.optJSONObject(index) ?: JSONObject()
           Thread(
-            id = row.optString("threadId").ifBlank { row.optString("thread_id") },
+            /*
+             *  ⚠️ سرور شناسه را در «id» می‌فرستد.
+             *
+             *  این‌جا «threadId» و «thread_id» خوانده می‌شد — هیچ‌کدام
+             *  وجود نداشت، پس شناسهٔ *همهٔ* گفت‌وگوها خالی می‌ماند. و
+             *  فهرستِ Compose با دو کلیدِ یکسان، کلِ برنامه را می‌اندازد.
+             *  برای همین بخشِ خالی سالم بود و هر بخشی که پیام داشت،
+             *  همان لحظه بیرون می‌انداخت.
+             */
+            id = row.optString("id")
+              .ifBlank { row.optString("threadId") }
+              .ifBlank { row.optString("thread_id") },
             who = row.optString("who").ifBlank { row.optString("accountName") },
             lastMessage = row.optString("lastMessage"),
             updatedAt = row.optLong("updatedAt"),
@@ -154,7 +170,7 @@ private fun ThreadList(
       contentPadding = PaddingValues(16.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      items(threads!!, key = { it.id }) { thread ->
+      items(safeKeys(threads!!) { it.id }, key = { it.first }) { (_, thread) ->
         PanelCard(Modifier.clickable { onOpen(thread) }) {
           Row(
             Modifier.fillMaxWidth(),
@@ -207,7 +223,7 @@ private fun ChatScreen(session: Session, thread: Thread, onBack: () -> Unit) {
     val fresh = (0 until array.length()).map { index ->
       val row = array.optJSONObject(index) ?: JSONObject()
       Message(
-        id = row.optLong("id"),
+        id = row.optString("id"),
         fromAdmin = row.optString("sender") == "admin",
         body = row.optString("body"),
         at = row.optLong("createdAt"),
@@ -222,7 +238,12 @@ private fun ChatScreen(session: Session, thread: Thread, onBack: () -> Unit) {
   LaunchedEffect(thread.id) {
     while (true) {
       try {
-        val after = messages.maxOfOrNull { it.id } ?: 0L
+        /*
+         *  ⚠️ سرور «after» را با زمانِ ساخت می‌سنجد (created_at > ?), نه
+         *  با شناسه. این‌جا شناسه فرستاده می‌شد، که همیشه صفر بود — پس هر
+         *  سه ثانیه کلِ گفت‌وگو از نو کشیده می‌شد.
+         */
+        val after = messages.maxOfOrNull { it.at } ?: 0L
         val reply = withContext(Dispatchers.IO) { Api.supportThread(session, thread.id, after) }
         absorb(reply.items("messages"))
         error = ""
@@ -259,7 +280,7 @@ private fun ChatScreen(session: Session, thread: Thread, onBack: () -> Unit) {
       contentPadding = PaddingValues(16.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      items(messages, key = { it.id }) { message -> Bubble(message) }
+      items(safeKeys(messages) { it.id }, key = { it.first }) { (_, message) -> Bubble(message) }
     }
 
     Row(

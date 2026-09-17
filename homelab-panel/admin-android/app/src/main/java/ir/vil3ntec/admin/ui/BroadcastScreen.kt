@@ -300,7 +300,7 @@ private fun AnnouncementsTab(session: Session) {
       }
       else -> {
         item { SectionTitle("اطلاعیه‌های شما") }
-        items(notices!!, key = { it.id }) { notice ->
+        items(safeKeys(notices!!) { it.id.toString() }, key = { it.first }) { (_, notice) ->
           NoticeCard(
             notice = notice,
             busy = busy,
@@ -462,7 +462,7 @@ private fun DiscountsTab(session: Session) {
           )
         }
       }
-      else -> items(plans!!, key = { it.code }) { plan ->
+      else -> items(safeKeys(plans!!) { it.code }, key = { it.first }) { (_, plan) ->
         PlanDiscountCard(
           plan = plan,
           busy = busy,

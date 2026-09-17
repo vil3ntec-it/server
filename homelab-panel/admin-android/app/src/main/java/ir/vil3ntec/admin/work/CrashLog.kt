@@ -1,12 +1,15 @@
 package ir.vil3ntec.admin.work
 
 import android.content.Context
+import android.content.Intent
 import android.os.Build
+import android.os.Process
 import java.io.PrintWriter
 import java.io.StringWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.system.exitProcess
 
 /**
  *  دفترچهٔ کِرَش — «چرا برنامه پرید بیرون؟»
@@ -27,6 +30,10 @@ object CrashLog {
   private const val FILE = "villain-admin-crash"
   private const val KEY_TEXT = "last_crash"
   private const val KEY_AT = "last_crash_at"
+  private const val KEY_RESTART = "last_restart_at"
+
+  /** به MainActivity می‌گوید «این بار بعدِ یک کِرَش باز شده‌ای» */
+  const val EXTRA_CRASHED = "crashed"
 
   /**
    * از این به بعد هر خطای نگرفته، پیش از بسته شدنِ برنامه نوشته می‌شود.
@@ -37,11 +44,51 @@ object CrashLog {
   fun install(context: Context) {
     val app = context.applicationContext
     val previous = Thread.getDefaultUncaughtExceptionHandler()
+
     Thread.setDefaultUncaughtExceptionHandler { thread, error ->
       runCatching { write(app, thread, error) }
-      previous?.uncaughtException(thread, error)
+
+      /*
+       *  ⚠️ به‌جای انداختنِ کاربر بیرون، برنامه را برمی‌گردانیم.
+       *
+       *  کادرِ «has stopped» بدترین چیزی است که می‌شود نشان داد: کاربر
+       *  وسطِ کارش روی صفحهٔ خانهٔ گوشی می‌افتد، هیچ نمی‌فهمد چه شد، و
+       *  هیچ ردی هم نمی‌ماند. حالا برنامه دوباره باز می‌شود و همان
+       *  خطا را با دکمهٔ کپی نشان می‌دهد.
+       *
+       *  ⚠️ و محافظِ حلقه: اگر دو کِرَش در ده ثانیه پشتِ هم بیایند، یعنی
+       *  خودِ راه‌اندازی خراب است و باز کردنِ دوباره فقط یک چرخهٔ بی‌پایان
+       *  می‌سازد. آن‌جا کارِ همیشگیِ اندروید انجام می‌شود.
+       */
+      val spinning = runCatching { restartedRecently(app) }.getOrDefault(true)
+      if (spinning || !relaunch(app)) {
+        previous?.uncaughtException(thread, error)
+        return@setDefaultUncaughtExceptionHandler
+      }
+
+      Process.killProcess(Process.myPid())
+      exitProcess(10)
     }
   }
+
+  /** آیا همین چند ثانیهٔ پیش هم یک بار برگشته‌ایم؟ */
+  private fun restartedRecently(context: Context): Boolean {
+    val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+    val last = prefs.getLong(KEY_RESTART, 0L)
+    val now = System.currentTimeMillis()
+    prefs.edit().putLong(KEY_RESTART, now).apply()
+    return now - last < 10_000
+  }
+
+  /** باز کردنِ دوبارهٔ برنامه روی صفحه‌ای که خطا را نشان می‌دهد */
+  private fun relaunch(context: Context): Boolean = runCatching {
+    val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+      ?: return@runCatching false
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+    intent.putExtra(EXTRA_CRASHED, true)
+    context.startActivity(intent)
+    true
+  }.getOrDefault(false)
 
   private fun write(context: Context, thread: Thread, error: Throwable) {
     val trace = StringWriter().also { error.printStackTrace(PrintWriter(it)) }.toString()

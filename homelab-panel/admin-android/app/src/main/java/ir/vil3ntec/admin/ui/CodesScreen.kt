@@ -136,7 +136,9 @@ fun CodesScreen(session: Session) {
       contentPadding = PaddingValues(16.dp),
       verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-      items(shown, key = { it.id }) { row -> CodeCard(row, now, context) }
+      items(safeKeys(shown) { it.id.toString() }, key = { it.first }) { (_, row) ->
+        CodeCard(row, now, context)
+      }
     }
   }
 }

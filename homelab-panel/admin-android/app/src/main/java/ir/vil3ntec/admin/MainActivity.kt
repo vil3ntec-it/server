@@ -46,6 +46,7 @@ import ir.vil3ntec.admin.ui.SettingsScreen
 import ir.vil3ntec.admin.ui.SupportScreen
 import ir.vil3ntec.admin.ui.ThemeMode
 import ir.vil3ntec.admin.ui.VillainAdminTheme
+import ir.vil3ntec.admin.work.CrashLog
 import ir.vil3ntec.admin.work.WatchService
 
 class MainActivity : ComponentActivity() {
@@ -65,6 +66,13 @@ class MainActivity : ComponentActivity() {
     }
 
     val store = (application as AdminApp).store
+
+    /*
+     *  اگر بعدِ یک کِرَش برگشته‌ایم، مستقیم می‌رویم سرِ تنظیمات — همان‌جا
+     *  که گزارشِ خطا با دکمهٔ کپی نشسته. وگرنه کاربر برگشتنِ ناگهانیِ
+     *  برنامه را می‌بیند و باز هم نمی‌داند چه شد.
+     */
+    val afterCrash = intent?.getBooleanExtra(CrashLog.EXTRA_CRASHED, false) == true
 
     setContent {
       var mode by remember { mutableStateOf(ThemeMode.of(store.themeMode)) }
@@ -111,6 +119,7 @@ class MainActivity : ComponentActivity() {
                 },
                 onSession = { fresh -> session = fresh },
                 themeMode = mode,
+                startOnSettings = afterCrash,
                 onThemeMode = { picked ->
                   mode = picked
                   store.themeMode = picked.key
@@ -140,8 +149,9 @@ private fun MainShell(
   onSession: (Session) -> Unit,
   themeMode: ThemeMode,
   onThemeMode: (ThemeMode) -> Unit,
+  startOnSettings: Boolean = false,
 ) {
-  var tab by remember { mutableStateOf(Tab.Home) }
+  var tab by remember { mutableStateOf(if (startOnSettings) Tab.Settings else Tab.Home) }
   // شمارهٔ پیام‌های خوانده‌نشده، تا نقطهٔ قرمزِ تبِ پشتیبانی درست باشد
   var unread by remember { mutableIntStateOf(0) }
 
