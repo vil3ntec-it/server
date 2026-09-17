@@ -1,6 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+  <!--
+    پنجره‌ای که پیش از بالا آمدنِ Compose دیده می‌شود.
+
+    ⚠️ رنگش باید همان پس‌زمینهٔ خودِ برنامه باشد، وگرنه در تمِ تاریک یک
+    چشمکِ سفید موقعِ باز شدن دیده می‌شود — همان چیزی که برنامه را ارزان
+    نشان می‌دهد.
+
+    ⚠️ نوارِ وضعیت و نوارِ پایین شفاف‌اند تا برنامه تا لبه‌ها برود؛
+    فاصله‌گذاریِ امن را خودِ Compose با Scaffold انجام می‌دهد.
+  -->
   <style name="Theme.VillainAdmin" parent="android:Theme.Material.Light.NoActionBar">
-    <item name="android:windowBackground">@android:color/white</item>
+    <item name="android:windowBackground">@color/window_bg</item>
+    <item name="android:statusBarColor">@android:color/transparent</item>
+    <item name="android:navigationBarColor">@android:color/transparent</item>
+    <item name="android:windowLightStatusBar">true</item>
   </style>
 </resources>

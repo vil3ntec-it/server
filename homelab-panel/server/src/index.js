@@ -71,7 +71,7 @@ import { rateLimit, pruneRateLimits, clientIp } from './lib/rate-limit.js';
 import { codeSettings } from './codes/settings.js';
 import { pinSitesRoot } from './sites/portable.js';
 import { startQueue, stopQueue } from './codes/queue.js';
-import { adminGate, adminHostGate, GATE_PREFIX } from './api/admin-gate.js';
+import { adminEnrollRoute, adminGate, adminHostGate, GATE_ENROLL, GATE_PREFIX } from './api/admin-gate.js';
 import { readyPayload } from './platform/health.js';
 import { createBackup } from './backup/index.js';
 import * as notify from './notify/index.js';
@@ -85,6 +85,8 @@ import { ensureTohidSchema } from './tohid/schema.js';
 import tohidPublicRoutes from './routes/tohid.js';
 import tohidAdminRoutes from './routes/control/tohid.js';
 import tohidAdminApiRoutes from './routes/tohid-admin.js';
+import { router as announceRoutes, adminRouter as announceAdminRoutes } from './routes/announce.js';
+import diagnosticsRoutes from './routes/diagnostics.js';
 import { createTohidWs } from './tohid/ws.js';
 import controlRoutes, { agentRouter, appConfigRouter } from './routes/control/index.js';
 import { ensureLocalServer } from './routes/control/servers.js';
@@ -193,19 +195,34 @@ app.use((req, res, next) => {
 });
 
 /* ── محدودیتِ نرخ ────────────────────────────────────────────────────────────
-   ورود و کدِ یک‌بارمصرف سخت‌گیرانه‌تر است، چون هدفِ حدس‌زدن‌اند. */
-app.use('/api/auth/login', rateLimit('login', 10, 5 * 60 * 1000));
-app.use('/api/auth/setup', rateLimit('setup', 5, 60 * 60 * 1000));
-app.use('/api/app/auth', rateLimit('app-auth', 60, 10 * 60 * 1000));
+   ورود و کدِ یک‌بارمصرف سخت‌گیرانه‌تر است، چون هدفِ حدس‌زدن‌اند.
+
+   ⚠️ همهٔ سقف‌ها از محیط قابلِ تنظیم‌اند. دلیلش فقط انعطاف نیست: بی این،
+   آزمونِ فشار نمی‌تواند *ظرفیتِ خودِ سرور* را بسنجد، چون همین سقف‌ها جلوش
+   را می‌گیرند و عدد به‌دست‌آمده سقفِ نرخ می‌شود نه سقفِ سرور. (اولین باری
+   که آزمونِ فشار اجرا شد، ۴۰۰ تا از ۱۰۰۰ درخواست ۴۲۹ گرفتند.) */
+const cap = (name, fallback) => {
+  const raw = Number(process.env[name]);
+  return Number.isFinite(raw) && raw >= 0 ? raw : fallback;
+};
+
+app.use('/api/auth/login', rateLimit('login', cap('HLP_RATE_LOGIN', 10), 5 * 60 * 1000));
+app.use('/api/auth/setup', rateLimit('setup', cap('HLP_RATE_SETUP', 5), 60 * 60 * 1000));
+app.use('/api/app/auth', rateLimit('app-auth', cap('HLP_RATE_APP_AUTH', 60), 10 * 60 * 1000));
 /*
  *  کدهای شش‌رقمی سقفِ خودش را دارد و عمداً بلند است: خواسته این بود که اگر
- *  صدها یا هزاران نفر هم‌زمان کد خواستند، هیچ‌کس پشتِ در نماند. جلوی
- *  سوءاستفاده را فاصلهٔ اجباریِ هر ایمیل می‌گیرد (در خودِ موتور)، نه این سقف.
- *  سقفِ عمومیِ /api هم عمداً از این مسیر رد می‌شود، وگرنه همان ۱۲۰۰ تا سر می‌رسد.
+ *  صدها یا هزاران نفر هم‌زمان کد خواستند، هیچ‌کس پشتِ در نماند.
+ *
+ *  ⚠️ ولی «بلند» یعنی بلند، نه «هیچ». پیش از این ۶۰۰۰ در دقیقه بود که
+ *  عملاً سقفی نیست. جلوی سوءاستفاده را دو چیزِ دیگر می‌گیرند — فاصلهٔ
+ *  اجباریِ هر ایمیل و سقفِ ساعتیِ ایمیل/IP در خودِ موتور — و این سقف
+ *  فقط نمی‌گذارد یک اسکریپت کلِ سرور را بکوبد.
+ *
+ *  سقفِ عمومیِ /api عمداً از این مسیر رد می‌شود، وگرنه همان ۱۲۰۰ زودتر سر می‌رسد.
  */
-app.use('/api/codes', rateLimit('codes', 6000, 60 * 1000));
-app.use('/api/notify', rateLimit('notify', 240, 60 * 1000));
-app.use('/api/messenger', rateLimit('messenger', 600, 60 * 1000));
+app.use('/api/codes', rateLimit('codes', cap('HLP_RATE_CODES', 600), 60 * 1000));
+app.use('/api/notify', rateLimit('notify', cap('HLP_RATE_NOTIFY', 240), 60 * 1000));
+app.use('/api/messenger', rateLimit('messenger', cap('HLP_RATE_MESSENGER', 600), 60 * 1000));
 
 /*  ══ سهمِ هر پمپ، جدا از پمپِ همسایه ══════════════════════════════════════
     یک سرور می‌تواند چند پمپ داشته باشد (‎data/stations/<کد>‎)، و برنامهٔ
@@ -220,8 +237,8 @@ app.use('/api/messenger', rateLimit('messenger', 600, 60 * 1000));
     ساختگیِ تازه می‌سازد، هر بار سطلِ خالیِ تازه می‌گرفت و سقفِ آی‌پی را دور
     می‌زد. پس سطلِ آی‌پی هم می‌ماند، با سقفِ بلندتر — چون یک پمپِ سالم
     (برنامه + چند گوشی) از یک آی‌پی می‌آید و نباید به هم بخورد.             */
-app.use('/api/stations', rateLimit('stations-ip', 3000, 60 * 1000));
-app.use('/api/stations', rateLimit('stations', 1200, 60 * 1000, {
+app.use('/api/stations', rateLimit('stations-ip', cap('HLP_RATE_STATIONS_IP', 3000), 60 * 1000));
+app.use('/api/stations', rateLimit('stations', cap('HLP_RATE_STATIONS', 1200), 60 * 1000, {
   keyOf: (req) => {
     const code = String(req.path || '').split('/').filter(Boolean)[0] || '';
     return /^[a-z0-9_-]{1,48}$/i.test(code) ? 'stn:' + code.toLowerCase() : clientIp(req);
@@ -231,7 +248,7 @@ app.use('/api/stations', rateLimit('stations', 1200, 60 * 1000, {
 /*  سطلِ عمومیِ آی‌پی — کدها و مسیرهای پمپ سطلِ خودشان را دارند و این‌جا
     دوباره شمرده نمی‌شوند، وگرنه همان سقفِ آی‌پی اصلاحِ بالا را بی‌اثر
     می‌کرد (خودِ تستِ فشار همین را گرفت: هر دو سطل می‌دویدند).              */
-const apiLimiter = rateLimit('api', 1200, 60 * 1000);
+const apiLimiter = rateLimit('api', cap('HLP_RATE_API', 1200), 60 * 1000);
 app.use('/api', (req, res, next) =>
   req.path.startsWith('/codes/') || req.path === '/codes'
   || req.path.startsWith('/stations')
@@ -288,8 +305,36 @@ app.use('/api/messenger', messengerRoutes);
 app.use('/api/notify', notifyRoutes);
 app.use('/api/notify-admin', notifyAdminRoutes);
 // ورودِ کاربرانِ برنامه‌ها (اپِ اندروید، برنامهٔ ویندوز، سایت‌ها) با کدِ شش‌رقمی
+/*
+ *  ── نشانیِ احراز هویت، با نسخه ─────────────────────────────────────────
+ *
+ *  ⚠️ چرا لازم شد: چند برنامهٔ نیتیو و چند سایت به این سرور وصل می‌شوند و
+ *  همه با هم به‌روز نمی‌شوند. برنامه‌ای که روی گوشیِ کسی نصب است، ماه‌ها
+ *  همان نسخه می‌ماند. اگر روزی شکلِ پاسخی عوض شود، بی نسخه‌بندی همهٔ آن‌ها
+ *  با هم می‌شکنند و هیچ راهی جز «همه باید به‌روز شوند» نمی‌ماند.
+ *
+ *  ⚠️ و `/api/app` عمداً *دقیقاً همان روتر* است، نه یک نسخهٔ منجمد:
+ *  برنامه‌های موجود از همان‌جا حرف می‌زنند و هیچ‌کدام نباید امروز بشکنند.
+ *  یعنی امروز هر دو یک چیزند. فایدهٔ نسخه‌بندی روزی است که v2 بیاید:
+ *  آن‌وقت v1 همین‌جا می‌ماند و برنامه‌های قدیمی سرِ جایشان کار می‌کنند.
+ *
+ *  ⚠️ و چرا /api/v1/app و نه /api/v1/auth: آن نشانی از قبل مالِ ورودِ
+ *  فروشگاه است (رمز + refresh، در routes/tohid.js). آزمونِ فروشگاه همان
+ *  لحظه قرمز شد و جلوی یک برخوردِ خاموش را گرفت — دو سیستمِ ورود روی یک
+ *  نشانی، که هر کدام پاسخِ شکلِ دیگری می‌دهند.
+ *
+ *  یعنی این سرور امروز *دو* سیستمِ ورود دارد: ورود با کدِ ایمیلی (این‌جا)
+ *  و ورود با رمزِ فروشگاه (/api/v1/auth). یکی کردنشان کارِ کوچکی نیست و
+ *  بی اجازه انجام نمی‌شود.
+ *
+ *  برنامهٔ تازه باید /api/v1/app را بزند.
+ */
+app.use('/api/v1/app', appRoutes);
 app.use('/api/app', appRoutes);
 app.use('/api/app-admin', appAdminRoutes);
+app.use('/api/diagnostics', diagnosticsRoutes);
+app.use('/api/announce', announceRoutes);
+app.use('/api/announce-admin', announceAdminRoutes);
 app.use('/api/codes', codeRoutes);
 app.use('/api/codes-admin', codeAdminRoutes);
 // کتابخانه: یک جای مرتب برای سایت‌ها، برنامه‌ها، پشتیبان‌ها و فایل‌های موقت
@@ -550,6 +595,27 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
    *  اولی برای کاربر ساده‌تر است (آدرسِ کوتاه و جدا از سایت)، دومی برای
    *  وقتی که هنوز دامنه‌ای ساخته نشده و فقط آدرسِ تونل هست.
    */
+  /*
+   *  کلیدِ بارِ اول — و تنها چیزی که بی کلید جواب می‌دهد.
+   *
+   *  ⚠️ باید *پیش از* دو خطِ پایین بنشیند، وگرنه خودِ در می‌بلعدش و بی
+   *  کلید ۴۰۴ می‌دهد — یعنی دقیقاً همان بن‌بستی که می‌خواهد باز کند.
+   *
+   *  ⚠️ و express.json مخصوصِ خودش را دارد: میان‌افزارِ عمومیِ JSON پایین‌تر
+   *  است و این‌جا هنوز اجرا نشده، ولی در بی بدنه هم کار می‌کند و نباید
+   *  جریانِ بقیهٔ مسیرها خورده شود. سقفِ چهار کیلوبایت برای یک نام و رمز
+   *  بیش از کافی است.
+   *
+   *  ⚠️ شمارنده‌اش سخت‌تر از خودِ در است: ده تلاشِ ناموفق در ساعت. برنامه
+   *  یک بار در عمرش این‌جا می‌آید؛ کسی که رمز حدس می‌زند، هر بار.
+   */
+  publicApp.post(
+    GATE_ENROLL,
+    rateLimitCfg({ name: 'admin-enroll', max: 10, windowMs: 60 * 60 * 1000, skipSuccess: true }),
+    express.json({ limit: '4kb' }),
+    adminEnrollRoute,
+  );
+
   publicApp.use(gateLimiter, adminHostGate);
   publicApp.use(GATE_PREFIX, gateLimiter, adminGate);
 

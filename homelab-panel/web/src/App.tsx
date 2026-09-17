@@ -37,6 +37,7 @@ import RuntimesPage from './pages/Runtimes';
 import TerminalPage from './pages/Terminal';
 import CronPage from './pages/Cron';
 import StationsPage from './pages/Stations';
+import AppLoginsPage from './pages/AppLogins';
 import StationProfile from './pages/StationProfile';
 import TunnelDomainsPage from './pages/TunnelDomains';
 
@@ -63,6 +64,7 @@ function Shell() {
         <Route path="/network" element={<NetworkPage />} />
         <Route path="/logs" element={<Logs />} />
         <Route path="/site-server" element={<SiteServer />} />
+        <Route path="/logins" element={<AppLoginsPage />} />
         <Route path="/stations" element={<StationsPage />} />
         <Route path="/stations/:code" element={<StationProfile />} />
         <Route path="/codes" element={<CodesPage />} />

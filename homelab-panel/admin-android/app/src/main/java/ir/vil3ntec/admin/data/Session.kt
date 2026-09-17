@@ -126,6 +126,16 @@ class SessionStore(context: Context) {
     get() = prefs.getBoolean(KEY_WATCH, true)
     set(value) = prefs.edit().putBoolean(KEY_WATCH, value).apply()
 
+  /**
+   * روشن، تاریک، یا هرچه گوشی می‌گوید.
+   *
+   * ⚠️ این‌جا ذخیره می‌شود نه در حافظهٔ موقت: تمی که با هر بار بستنِ برنامه
+   * برگردد سرِ جای اولش، از نبودنش هم بدتر است.
+   */
+  var themeMode: String
+    get() = prefs.getString(KEY_THEME, "system").orEmpty()
+    set(value) = prefs.edit().putString(KEY_THEME, value).apply()
+
   private companion object {
     const val KEY_URL = "server_url"
     const val KEY_TOKEN = "token"
@@ -133,6 +143,7 @@ class SessionStore(context: Context) {
     const val KEY_ROLE = "role"
     const val KEY_LAST_MESSAGE = "last_message"
     const val KEY_WATCH = "watch_enabled"
+    const val KEY_THEME = "theme_mode"
     const val KEY_REMOTE_URL = "remote_url"
     const val KEY_GATE_PATH = "gate_path"
     const val KEY_GATE_HEADER = "gate_header"

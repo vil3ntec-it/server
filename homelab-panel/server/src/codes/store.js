@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS code_requests (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   app             TEXT NOT NULL,            -- شناسهٔ برنامه
   subject_id      TEXT,                     -- شناسهٔ کاربر/دستگاه در آن برنامه
+  subject_name    TEXT,                     -- نامِ خودِ شخص، برای «فلانی عزیز» در ایمیل
   purpose         TEXT NOT NULL DEFAULT 'login', -- نوعِ درخواست
   email           TEXT NOT NULL,
   code_hash       TEXT NOT NULL,
@@ -63,7 +64,38 @@ CREATE TABLE IF NOT EXISTS code_requests (
 CREATE INDEX IF NOT EXISTS idx_code_requests_live  ON code_requests(app, email, id DESC);
 CREATE INDEX IF NOT EXISTS idx_code_requests_queue ON code_requests(send_state, next_attempt_at);
 CREATE INDEX IF NOT EXISTS idx_code_requests_time  ON code_requests(created_at DESC);
+-- شمارشِ سقفِ ساعتی: بی این‌ها هر درخواستِ کد کلِ جدول را می‌خواند
+CREATE INDEX IF NOT EXISTS idx_code_requests_email_time ON code_requests(email, created_at);
+CREATE INDEX IF NOT EXISTS idx_code_requests_ip_time    ON code_requests(ip, created_at);
 `);
+
+/*
+ *  ستون‌هایی که بعداً اضافه شدند.
+ *
+ *  ⚠️ چرا لازم است: «CREATE TABLE IF NOT EXISTS» فقط روی دیتابیسِ نو کار
+ *  می‌کند. روی سروری که از قبل بالا بوده، جدول هست و ستونِ تازه نیست —
+ *  و اولین کدی که ساخته شود با خطای «چنین ستونی نداریم» می‌افتد.
+ *
+ *  یعنی بی این چند خط، به‌روزرسانی روی سرورِ واقعی کلِ کدهای شش‌رقمی را
+ *  از کار می‌انداخت، در حالی که روی دیتابیسِ خالیِ آزمون همه‌چیز سبز بود.
+ */
+function addColumn(table, column, type) {
+  try {
+    const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+    if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  } catch { /* ستون از قبل هست یا جدول نیست — هر دو بی‌ضرر */ }
+}
+
+addColumn('code_requests', 'subject_name', 'TEXT');
+/*
+ *  رسیدِ خودِ سرورِ ایمیل — همان جمله‌ای که بعدِ تحویل می‌گوید، مثلاً:
+ *      250 2.0.0 OK 1699… j7-20020a17…sm… - gsmtp
+ *
+ *  ⚠️ چرا نگهش می‌داریم: بدونِ آن، «فرستاده شد» فقط ادعای ماست. با آن،
+ *  می‌شود ثابت کرد که جیمیل پیام را گرفته و اگر باز هم نرسیده، مشکل
+ *  بعدِ جیمیل است (اسپم یا برگشتِ دیرهنگام)، نه این‌جا.
+ */
+addColumn('code_requests', 'send_response', 'TEXT');
 
 /* ------------------------------ برنامه‌ها -------------------------------- */
 
@@ -153,14 +185,15 @@ export function insertRequest(row) {
   return db
     .prepare(
       `INSERT INTO code_requests
-         (app, subject_id, purpose, email, code_hash, code_seal,
+         (app, subject_id, subject_name, purpose, email, code_hash, code_seal,
           created_at, expires_at, ip, resend_chain, parent_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
        RETURNING id`
     )
     .get(
       row.app,
       row.subjectId || null,
+      row.subjectName || null,
       row.purpose,
       row.email,
       row.codeHash,
@@ -197,6 +230,36 @@ export function lastRequest(app, email) {
       .prepare('SELECT * FROM code_requests WHERE app = ? AND email = ? ORDER BY id DESC LIMIT 1')
       .get(app, email) || null
   );
+}
+
+/**
+ * چند کد در ساعتِ گذشته برای این ایمیل ساخته شده؟
+ *
+ * ⚠️ شمارش روی *همهٔ* برنامه‌هاست، نه فقط یکی. وگرنه کسی که ده برنامه را
+ * نوبتی صدا می‌زند، ده برابرِ سقف ایمیل می‌گیرد — و قربانی ده برابر ایمیل.
+ * سهمیهٔ ایمیل هم یکی است، پس سقف هم باید یکی باشد.
+ *
+ * ⚠️ ارسال‌های خودکارِ خودِ سرور (resend_chain > 0) شمرده نمی‌شوند: آن‌ها
+ * تصمیمِ ما بوده‌اند نه کاربر، و نباید سقفِ خودِ کاربر را پر کنند.
+ */
+export function countForEmail(email, sinceMs) {
+  return db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM code_requests
+        WHERE email = ? AND created_at > ? AND resend_chain = 0`
+    )
+    .get(email, sinceMs).n;
+}
+
+/** چند کد در ساعتِ گذشته از این IP خواسته شده؟ */
+export function countForIp(ip, sinceMs) {
+  if (!ip) return 0;
+  return db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM code_requests
+        WHERE ip = ? AND created_at > ? AND resend_chain = 0`
+    )
+    .get(ip, sinceMs).n;
 }
 
 /** کدهای قبلیِ همین ایمیل باطل می‌شوند — همیشه فقط یک کدِ زنده */
@@ -241,10 +304,27 @@ export function claimNext(now = Date.now()) {
   return row || null;
 }
 
-export function markSent(id, at = Date.now()) {
+export function markSent(id, at = Date.now(), response = '') {
   db.prepare(
-    "UPDATE code_requests SET send_state = 'sent', sent_at = ?, send_error = NULL WHERE id = ?"
-  ).run(at, id);
+    `UPDATE code_requests
+        SET send_state = 'sent', sent_at = ?, send_error = NULL, send_response = ?
+      WHERE id = ?`
+  ).run(at, String(response || '').slice(0, 300), id);
+}
+
+/** وضعیتِ ارسالِ یک ردیف — برای وقتی می‌خواهیم منتظرِ نتیجهٔ واقعی بمانیم */
+export function deliveryOf(id) {
+  const row = db
+    .prepare('SELECT send_state, send_error, send_response, send_tries, sent_at FROM code_requests WHERE id = ?')
+    .get(id);
+  if (!row) return null;
+  return {
+    state: row.send_state,
+    error: row.send_error || null,
+    response: row.send_response || null,
+    tries: row.send_tries,
+    sentAt: row.sent_at,
+  };
 }
 
 /** ارسال نشد: یا دوباره در صف می‌نشیند، یا شکست‌خورده می‌ماند */
@@ -276,6 +356,19 @@ export function queueDepth(now = Date.now()) {
     failed: db
       .prepare("SELECT COUNT(*) AS n FROM code_requests WHERE send_state = 'failed' AND created_at > ?")
       .get(now - 24 * 3600 * 1000).n,
+    /*
+     *  ⚠️ آخرین دلیلِ نرفتن، همان‌جا کنارِ شمارنده.
+     *
+     *  بی این، «۳ نرفته» فقط یک عدد بود و صاحبِ سرور باید ردیف‌به‌ردیف
+     *  دنبالِ علت می‌گشت. حالا در همان صفحهٔ بررسیِ سلامت پیداست.
+     */
+    lastError: db
+      .prepare(
+        `SELECT send_error FROM code_requests
+          WHERE send_state = 'failed' AND send_error IS NOT NULL AND created_at > ?
+          ORDER BY id DESC LIMIT 1`
+      )
+      .get(now - 24 * 3600 * 1000)?.send_error || null,
     sentLastHour: db
       .prepare("SELECT COUNT(*) AS n FROM code_requests WHERE send_state = 'sent' AND sent_at > ?")
       .get(now - 3600 * 1000).n,

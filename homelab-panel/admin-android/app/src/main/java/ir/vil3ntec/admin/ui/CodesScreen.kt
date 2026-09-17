@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -137,7 +136,9 @@ fun CodesScreen(session: Session) {
       contentPadding = PaddingValues(16.dp),
       verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-      items(shown, key = { it.id }) { row -> CodeCard(row, now, context) }
+      items(safeKeys(shown) { it.id.toString() }, key = { it.first }) { (_, row) ->
+        CodeCard(row, now, context)
+      }
     }
   }
 }
@@ -147,18 +148,18 @@ private fun CodeCard(row: LiveCode, now: Long, context: Context) {
   val left = ((row.expiresAt - now) / 1000).coerceAtLeast(0)
   val live = row.status == "live" && left > 0
 
-  Card(Modifier.fillMaxWidth()) {
+  PanelCard {
     Row(
-      Modifier.fillMaxWidth().padding(14.dp),
+      Modifier.fillMaxWidth(),
       verticalAlignment = Alignment.CenterVertically,
     ) {
       Column(Modifier.weight(1f)) {
         Text(row.email, style = MaterialTheme.typography.bodyMedium, maxLines = 1,
           overflow = TextOverflow.Ellipsis)
         Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-          Chip(row.appName, MaterialTheme.colorScheme.primary)
-          Chip(sendLabel(row.sendState), sendColor(row.sendState))
-          if (row.auto) Chip("خودکار", MaterialTheme.colorScheme.onSurfaceVariant)
+          Chip(row.appName, MaterialTheme.colorScheme.primary, StatusColor.tint)
+          Chip(sendLabel(row.sendState), sendColor(row.sendState), sendTint(row.sendState))
+          if (row.auto) Chip("خودکار", MaterialTheme.colorScheme.onSurfaceVariant, StatusColor.tint)
         }
         if (live) {
           Text(
@@ -199,10 +200,22 @@ private fun sendLabel(state: String) = when (state) {
   else -> "در صف"
 }
 
+/*
+ *  ⚠️ @Composable لازم است: رنگِ وضعیت حالا به تمِ جاری بسته است (سبزِ
+ *  تمِ تاریک با سبزِ تمِ روشن یکی نیست) و از CompositionLocal می‌آید.
+ */
+@Composable
 private fun sendColor(state: String) = when (state) {
   "sent" -> StatusColor.good
   "failed" -> StatusColor.bad
   else -> StatusColor.warn
+}
+
+@Composable
+private fun sendTint(state: String) = when (state) {
+  "sent" -> StatusColor.goodTint
+  "failed" -> StatusColor.badTint
+  else -> StatusColor.warnTint
 }
 
 private fun statusLabel(status: String) = when (status) {

@@ -1,5 +1,7 @@
 package ir.vil3ntec.admin.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -7,32 +9,38 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ir.vil3ntec.admin.data.Ago
 import ir.vil3ntec.admin.data.Api
 import ir.vil3ntec.admin.data.Session
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
@@ -43,8 +51,8 @@ private data class AccountRow(
   val subtitle: String,
   val badge: String,
   val badgeTone: Int,
-  /** فقط حساب‌های فروشگاه اشتراک می‌گیرند */
-  val canSubscribe: Boolean,
+  /** فقط حساب‌های فروشگاه پروندهٔ کامل دارند */
+  val openable: Boolean,
 )
 
 private const val TONE_NEUTRAL = 0
@@ -72,8 +80,8 @@ fun AccountsScreen(session: Session) {
   var rows by remember { mutableStateOf<List<AccountRow>?>(null) }
   var error by remember { mutableStateOf("") }
   var reload by remember { mutableIntStateOf(0) }
-  var subscribing by remember { mutableStateOf<AccountRow?>(null) }
-  val scope = rememberCoroutineScope()
+  var query by remember { mutableStateOf("") }
+  var open by remember { mutableStateOf<AccountRow?>(null) }
 
   LaunchedEffect(section, reload) {
     rows = null
@@ -85,85 +93,126 @@ fun AccountsScreen(session: Session) {
     }
   }
 
+  /*
+   *  پروندهٔ یک حساب، روی همین تب.
+   *
+   *  ⚠️ به‌جای کادرِ شناور: صفحهٔ کامل جا دارد برای اشتراک و تاریخچه و
+   *  دستگاه‌ها، و دکمهٔ برگشتِ خودِ گوشی هم همان‌طور که انتظار می‌رود
+   *  کار می‌کند.
+   */
+  open?.let { target ->
+    // دکمهٔ برگشتِ خودِ گوشی باید فهرست را برگرداند، نه برنامه را ببندد
+    BackHandler { open = null }
+    ShopAccountDetail(
+      session = session,
+      accountId = target.id,
+      fallbackName = target.title,
+      onBack = { open = null },
+      onChanged = { reload++ },
+    )
+    return
+  }
+
+  val visible = rows?.filter { row ->
+    query.isBlank() ||
+      row.title.contains(query, true) ||
+      row.subtitle.contains(query, true) ||
+      row.id.contains(query, true)
+  }
+
   Column(Modifier.fillMaxSize()) {
     Text(
       "حساب‌ها",
-      Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp),
+      Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp),
       style = MaterialTheme.typography.headlineSmall,
     )
 
-    ScrollableTabRow(selectedTabIndex = section.ordinal, edgePadding = 12.dp) {
+    ScrollableTabRow(
+      selectedTabIndex = section.ordinal,
+      edgePadding = 12.dp,
+      containerColor = MaterialTheme.colorScheme.background,
+      divider = {},
+    ) {
       Section.entries.forEach { item ->
         Tab(
           selected = section == item,
-          onClick = { section = item },
-          text = { Text(item.title) },
+          onClick = { section = item; query = "" },
+          text = { Text(item.title, style = MaterialTheme.typography.labelLarge) },
         )
       }
     }
 
+    OutlinedTextField(
+      value = query,
+      onValueChange = { query = it },
+      placeholder = { Text("جست‌وجو در نام، ایمیل، شماره…") },
+      leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+      trailingIcon = {
+        if (query.isNotBlank()) {
+          IconButton(onClick = { query = "" }) {
+            Icon(Icons.Filled.Close, contentDescription = "پاک کردن")
+          }
+        }
+      },
+      singleLine = true,
+      shape = MaterialTheme.shapes.medium,
+      keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+    )
+
     when {
       rows == null && error.isNotBlank() -> ErrorState(error) { reload++ }
       rows == null -> Loading()
-      rows!!.isEmpty() -> EmptyState("چیزی در این بخش نیست")
+      visible.isNullOrEmpty() && query.isNotBlank() ->
+        EmptyState("چیزی پیدا نشد", "«$query» در این بخش نیست")
+      visible.isNullOrEmpty() -> EmptyState("چیزی در این بخش نیست")
       else -> LazyColumn(
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
-        items(rows!!, key = { it.id }) { row ->
-          AccountCard(row, onSubscribe = { subscribing = row })
+        items(safeKeys(visible) { it.id }, key = { it.first }) { (_, row) ->
+          AccountCard(row, onOpen = { if (row.openable) open = row })
         }
       }
     }
   }
-
-  subscribing?.let { target ->
-    SubscribeDialog(
-      account = target,
-      onDismiss = { subscribing = null },
-      onConfirm = { amount, unit ->
-        scope.launch {
-          runCatching {
-            withContext(Dispatchers.IO) {
-              Api.grantSubscription(session, target.id, "custom", amount, unit)
-            }
-          }
-          subscribing = null
-          reload++
-        }
-      },
-    )
-  }
 }
 
 @Composable
-private fun AccountCard(row: AccountRow, onSubscribe: () -> Unit) {
-  Card(Modifier.fillMaxWidth()) {
-    Row(
-      Modifier.fillMaxWidth().padding(14.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Column(Modifier.weight(1f)) {
-        Text(row.title.ifBlank { "بی‌نام" }, style = MaterialTheme.typography.bodyLarge,
-          maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(row.subtitle, Modifier.padding(top = 2.dp),
+private fun AccountCard(row: AccountRow, onOpen: () -> Unit) {
+  PanelCard(Modifier.clickable(enabled = row.openable, onClick = onOpen)) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+      Avatar(row.title, toneColor(row.badgeTone), toneTint(row.badgeTone))
+      Column(Modifier.weight(1f).padding(start = 12.dp)) {
+        Text(
+          row.title.ifBlank { "بی‌نام" },
+          style = MaterialTheme.typography.bodyLarge,
+          maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          row.subtitle.ifBlank { "—" },
+          Modifier.padding(top = 2.dp),
           style = MaterialTheme.typography.labelSmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
-          maxLines = 1, overflow = TextOverflow.Ellipsis)
+          maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
       }
-      Column(horizontalAlignment = Alignment.End) {
-        Chip(row.badge, toneColor(row.badgeTone))
-        if (row.canSubscribe) {
-          TextButton(onClick = onSubscribe) { Text("اشتراک") }
-        }
+      Chip(row.badge, toneColor(row.badgeTone), toneTint(row.badgeTone))
+      if (row.openable) {
+        Icon(
+          Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.size(20.dp).padding(start = 2.dp),
+        )
       }
     }
   }
 }
 
 @Composable
-private fun toneColor(tone: Int) = when (tone) {
+private fun toneColor(tone: Int): Color = when (tone) {
   TONE_GOOD -> StatusColor.good
   TONE_WARN -> StatusColor.warn
   TONE_BAD -> StatusColor.bad
@@ -171,37 +220,11 @@ private fun toneColor(tone: Int) = when (tone) {
 }
 
 @Composable
-private fun SubscribeDialog(
-  account: AccountRow,
-  onDismiss: () -> Unit,
-  onConfirm: (Int, String) -> Unit,
-) {
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text("اشتراک برای ${account.title}") },
-    text = {
-      Column {
-        Text(
-          "چقدر اشتراک داده شود؟",
-          style = MaterialTheme.typography.bodyMedium,
-        )
-        Text(
-          account.subtitle,
-          Modifier.padding(top = 4.dp),
-          style = MaterialTheme.typography.labelSmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-      }
-    },
-    confirmButton = {
-      Row {
-        TextButton(onClick = { onConfirm(7, "day") }) { Text("۷ روز") }
-        TextButton(onClick = { onConfirm(1, "month") }) { Text("۱ ماه") }
-        TextButton(onClick = { onConfirm(1, "year") }) { Text("۱ سال") }
-      }
-    },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("انصراف") } },
-  )
+private fun toneTint(tone: Int): Color = when (tone) {
+  TONE_GOOD -> StatusColor.goodTint
+  TONE_WARN -> StatusColor.warnTint
+  TONE_BAD -> StatusColor.badTint
+  else -> StatusColor.tint
 }
 
 /* ------------------------- گرفتن و ترجمهٔ داده ---------------------------- */
@@ -228,7 +251,7 @@ private fun load(session: Session, section: Section): List<AccountRow> = when (s
           days in 0..7 -> TONE_WARN
           else -> TONE_GOOD
         },
-        canSubscribe = true,
+        openable = true,
       )
     }
   }
@@ -244,7 +267,7 @@ private fun load(session: Session, section: Section): List<AccountRow> = when (s
           row.optLong("lastSeenAt").let { if (it > 0) " · ${Ago.of(it)}" else "" },
         badge = if (online) "آنلاین" else "آفلاین",
         badgeTone = if (online) TONE_GOOD else TONE_NEUTRAL,
-        canSubscribe = false,
+        openable = false,
       )
     }
   }
@@ -260,7 +283,7 @@ private fun load(session: Session, section: Section): List<AccountRow> = when (s
           .filter { it.isNotBlank() }.joinToString(" · "),
         badge = if (running) "بالا" else "خاموش",
         badgeTone = if (running) TONE_GOOD else TONE_NEUTRAL,
-        canSubscribe = false,
+        openable = false,
       )
     }
   }
@@ -280,7 +303,7 @@ private fun load(session: Session, section: Section): List<AccountRow> = when (s
           else -> "بیننده"
         },
         badgeTone = if (row.optString("role") == "admin") TONE_WARN else TONE_NEUTRAL,
-        canSubscribe = false,
+        openable = false,
       )
     }
   }

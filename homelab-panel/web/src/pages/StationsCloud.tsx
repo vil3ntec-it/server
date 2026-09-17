@@ -81,7 +81,18 @@ const fmtBytes = (n: number) => {
   return `${v.toFixed(i ? 1 : 0)} ${u[i]}`;
 };
 
-export default function StationsCloud() {
+/**
+ * کدام تکه از این صفحه کشیده شود.
+ *
+ * ⚠️ چرا این ورودی اضافه شد: صفحهٔ پمپ به پنج زیربخشِ نام‌دار تقسیم شد
+ * («حساب‌ها و کاربرها»، «وصل بودن»، «نرخ‌ها»، «کد و ربات»، «تنظیمات و
+ * داده‌ها») و این کامپوننت تکه‌های سه‌تای آن‌ها را دارد. به‌جای سه‌تکه
+ * کردنِ یک فایلِ کارکُرده — که ریسکِ بی‌دلیل است — همان‌جا می‌ماند و فقط
+ * می‌گوییم کدام کارت را بکشد.
+ */
+export type CloudSection = 'accounts' | 'plans' | 'data';
+
+export default function StationsCloud({ section = 'accounts' }: { section?: CloudSection } = {}) {
   const [status, setStatus] = useState<Status | null>(null);
   const [users, setUsers] = useState<PumpUser[]>([]);
   const [subs, setSubs] = useState<Sub[]>([]);
@@ -93,7 +104,7 @@ export default function StationsCloud() {
   const canWrite = role === 'admin' || role === 'operator';
 
   //  ── تب‌ها، مثلِ بخشِ فروشگاه: نمای کلی · افراد · اشتراک‌ها · کدها · پمپ‌ها ──
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useState(section === 'plans' ? 'plans' : section === 'data' ? 'mirror' : 'overview');
   const [stats, setStats] = useState<CloudStats | null>(null);
   const [cloudStations, setCloudStations] = useState<CloudStation[]>([]);
   const [codes, setCodes] = useState<VipCode[]>([]);
@@ -293,6 +304,53 @@ export default function StationsCloud() {
     </Card>
   );
 
+  /*
+   *  ⚠️ نرخ‌ها تا امروز از ابر *گرفته* می‌شدند و هیچ‌جای پنل دیده
+   *  نمی‌شدند — حالت‌شان ساخته شده بود ولی تبی نداشت. همان چیزی که
+   *  «بخشِ پمپ خالی است» را می‌ساخت.
+   *
+   *  ⚠️ و عمداً فقط خواندنی است: نوشتنِ نرخ روی ابر انجام می‌شود و
+   *  مسیرش در پلِ این پنل باز نیست. دکمه‌ای که کار نمی‌کند نمی‌گذارم؛
+   *  به‌جایش نوشته‌ام کجا باید انجام شود.
+   */
+  const plansCard = (
+    <div className="space-y-3">
+      {plans.length === 0 ? (
+        <Notice>نرخی از ابر نیامد. یا هنوز پلنی تعریف نشده، یا ابر جواب نداد.</Notice>
+      ) : (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {plans.map((p) => {
+              const amount = Number(p.price ?? p.amount ?? 0);
+              const unit = String(p.unit || '').toUpperCase();
+              const unitFa = unit === 'AFN' ? 'افغانی' : unit === 'USD' ? 'دلار' : unit || '';
+              return (
+                <div key={p.code} className="card p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-semibold">{p.title || p.code}</div>
+                      <div className="text-xs opacity-60" dir="ltr">{p.code}</div>
+                    </div>
+                    {p.badge && <span className="chip shrink-0 text-[10px]">{p.badge}</span>}
+                  </div>
+                  <div className="mt-3 flex items-baseline gap-1.5">
+                    <span className="tnum text-2xl font-bold">{amount.toLocaleString('fa-AF')}</span>
+                    <span className="text-sm opacity-70">{unitFa}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <Notice tone="info">
+            نرخ‌ها روی سرورِ ابر (<code dir="ltr">{status?.base}</code>) تعریف می‌شوند و همین‌جا فقط
+            نشان داده می‌شوند. تغییرِ قیمت و گذاشتنِ تخفیفِ پمپ هم همان‌جا انجام می‌شود —
+            این پل عمداً فقط خواندن را باز گذاشته تا یک قیمت دو جا دو رقم نشود.
+          </Notice>
+        </>
+      )}
+    </div>
+  );
+
   const mirrorCard = (
     <Card
       title="آینهٔ ابر در پوشهٔ داده"
@@ -320,27 +378,35 @@ export default function StationsCloud() {
   return (
     <>
       <Card
-        title="حساب‌ها و اشتراکِ پمپ‌ها — روی ابر"
-        icon={<CreditCard size={18} />}
+        title={
+          section === 'plans' ? 'نرخ‌های پمپ — روی ابر'
+          : section === 'data' ? 'اتصال به ابر و آینهٔ پوشهٔ داده'
+          : 'حساب‌ها و اشتراکِ پمپ‌ها — روی ابر'
+        }
+        icon={section === 'plans' ? <CreditCard size={18} /> : section === 'data' ? <HardDriveDownload size={18} /> : <CreditCard size={18} />}
         action={
           <div className="flex gap-2">
             <ActionButton onClick={() => { loadData(expiring); loadMore(); }} disabled={busy}>تازه‌سازی</ActionButton>
-            <ActionButton onClick={unlink} disabled={busy}>قطعِ اتصال به ابر</ActionButton>
+            {/* قطعِ اتصال فقط در بخشِ تنظیمات — نه کنارِ فهرستِ حساب‌ها که اشتباهی زده شود */}
+            {section === 'data' && (
+              <ActionButton onClick={unlink} disabled={busy}>قطعِ اتصال به ابر</ActionButton>
+            )}
           </div>
         }
       >
-        <Tabs
-          active={tab}
-          onChange={setTab}
-          tabs={[
-            { id: 'overview', label: 'نمای کلی' },
-            { id: 'stations', label: 'پمپ‌ها روی ابر', badge: cloudStations.length },
-            { id: 'users', label: 'افراد', badge: users.length },
-            { id: 'subs', label: 'اشتراک‌ها', badge: subs.length },
-            { id: 'codes', label: 'کدهای اشتراک', badge: codes.filter((c) => c.status === 'active').length },
-            { id: 'mirror', label: 'آینه' },
-          ]}
-        />
+        {section === 'accounts' && (
+          <Tabs
+            active={tab}
+            onChange={setTab}
+            tabs={[
+              { id: 'overview', label: 'نمای کلی' },
+              { id: 'stations', label: 'پمپ‌ها روی ابر', badge: cloudStations.length },
+              { id: 'users', label: 'افراد', badge: users.length },
+              { id: 'subs', label: 'اشتراک‌ها', badge: subs.length },
+              { id: 'codes', label: 'کدهای اشتراک', badge: codes.filter((c) => c.status === 'active').length },
+            ]}
+          />
+        )}
 
         {tab === 'overview' && (
           <div className="space-y-4">
@@ -377,7 +443,7 @@ export default function StationsCloud() {
             {cloudStations.length === 0 ? (
               <Notice>هنوز پمپی روی ابر ثبت نشده. اولین فعال‌سازی با کدِ شش‌رقمی، پمپ را همین‌جا می‌آورد.</Notice>
             ) : (
-              <Table head={['پمپ', 'صاحب', 'اعضا', 'اشتراک', 'پایان', 'سرورِ خانگی', '']}>
+              <Table head={['پمپ', 'وضعیت', 'صاحب', 'اعضا', 'بک‌آپ', 'اشتراک', 'پایان', 'سرورِ خانگی', '']}>
                 {cloudStations.map((s) => {
                   const left = s.ends_at ? Math.max(0, Math.ceil((Number(s.ends_at) - Date.now()) / day_)) : null;
                   return (
@@ -386,11 +452,31 @@ export default function StationsCloud() {
                         <div className="font-medium">{s.name || '—'}</div>
                         <div className="text-xs opacity-60" dir="ltr">{s.code}</div>
                       </Cell>
+                      {/*
+                        «فعال است یا نه» و «بک‌آپ دارد یا نه» — دو چیزی که
+                        خواسته شده بود و در جدول نبود، هرچند داده‌شان می‌آمد.
+                      */}
+                      <Cell>
+                        <span
+                          className="chip whitespace-nowrap text-xs"
+                          style={{
+                            background: `color-mix(in srgb, ${s.status === 'active' ? 'var(--status-good)' : 'var(--status-critical)'} 15%, transparent)`,
+                            color: s.status === 'active' ? 'var(--status-good)' : 'var(--status-critical)',
+                          }}
+                        >
+                          {s.status === 'active' ? 'فعال' : 'غیرِ فعال'}
+                        </span>
+                      </Cell>
                       <Cell>
                         <div>{s.owner_name || <span className="opacity-60">بی صاحبِ گوگل</span>}</div>
                         <div className="text-xs opacity-60" dir="ltr">{s.owner_email || s.owner_phone || ''}</div>
                       </Cell>
                       <Cell>{fa(s.members)}</Cell>
+                      <Cell>
+                        {s.files > 0
+                          ? <span style={{ color: 'var(--status-good)' }}>{fa(s.files)} فایل</span>
+                          : <span className="text-xs" style={{ color: 'var(--status-warning)' }}>ندارد</span>}
+                      </Cell>
                       <Cell>
                         <div>{SUB_FA[s.sub_status || ''] || 'بدون اشتراک'}</div>
                         <div className="text-xs opacity-60">{s.plan || ''}</div>
@@ -455,6 +541,7 @@ export default function StationsCloud() {
           </div>
         )}
 
+        {tab === 'plans' && plansCard}
         {tab === 'mirror' && mirrorCard}
       </Card>
 

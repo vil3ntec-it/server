@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LocalGasStation
 import androidx.compose.material.icons.filled.Pin
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -25,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -35,11 +39,16 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import ir.vil3ntec.admin.data.Session
 import ir.vil3ntec.admin.ui.AccountsScreen
+import ir.vil3ntec.admin.ui.BroadcastScreen
 import ir.vil3ntec.admin.ui.CodesScreen
 import ir.vil3ntec.admin.ui.HomeScreen
 import ir.vil3ntec.admin.ui.LoginScreen
+import ir.vil3ntec.admin.ui.SettingsScreen
+import ir.vil3ntec.admin.ui.StationsScreen
 import ir.vil3ntec.admin.ui.SupportScreen
+import ir.vil3ntec.admin.ui.ThemeMode
 import ir.vil3ntec.admin.ui.VillainAdminTheme
+import ir.vil3ntec.admin.work.CrashLog
 import ir.vil3ntec.admin.work.WatchService
 
 class MainActivity : ComponentActivity() {
@@ -60,12 +69,35 @@ class MainActivity : ComponentActivity() {
 
     val store = (application as AdminApp).store
 
+    /*
+     *  اگر بعدِ یک کِرَش برگشته‌ایم، مستقیم می‌رویم سرِ تنظیمات — همان‌جا
+     *  که گزارشِ خطا با دکمهٔ کپی نشسته. وگرنه کاربر برگشتنِ ناگهانیِ
+     *  برنامه را می‌بیند و باز هم نمی‌داند چه شد.
+     */
+    val afterCrash = intent?.getBooleanExtra(CrashLog.EXTRA_CRASHED, false) == true
+
     setContent {
-      VillainAdminTheme {
+      var mode by remember { mutableStateOf(ThemeMode.of(store.themeMode)) }
+
+      VillainAdminTheme(mode) {
         // کلِ برنامه راست‌چین است
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
           Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             var session by remember { mutableStateOf(store.load()) }
+
+            /*
+             *  نگهبان این‌جا روشن می‌شود و نه در AdminApp.
+             *
+             *  ⚠️ چرا: شروعِ سرویسِ پیش‌زمینه فقط وقتی مجاز است که برنامه
+             *  جلوی چشم باشد. AdminApp هر بار که اندروید پروسه را برای یک
+             *  کارِ پس‌زمینه بالا می‌آورد هم اجرا می‌شود — و همان‌جا بود
+             *  که برنامه با «has stopped» می‌افتاد.
+             */
+            LaunchedEffect(session.loggedIn) {
+              if (session.loggedIn && store.watchEnabled) {
+                WatchService.start(this@MainActivity)
+              }
+            }
 
             if (!session.loggedIn) {
               LoginScreen(
@@ -77,7 +109,6 @@ class MainActivity : ComponentActivity() {
                 onDone = { fresh ->
                   store.save(fresh)
                   session = fresh
-                  if (store.watchEnabled) runCatching { WatchService.start(this@MainActivity) }
                 },
               )
             } else {
@@ -89,6 +120,12 @@ class MainActivity : ComponentActivity() {
                   session = session.copy(token = null)
                 },
                 onSession = { fresh -> session = fresh },
+                themeMode = mode,
+                startOnSettings = afterCrash,
+                onThemeMode = { picked ->
+                  mode = picked
+                  store.themeMode = picked.key
+                },
               )
             }
           }
@@ -101,8 +138,11 @@ class MainActivity : ComponentActivity() {
 private enum class Tab(val title: String) {
   Home("خانه"),
   Codes("کدها"),
+  Stations("پمپ"),
   Accounts("حساب‌ها"),
   Support("پشتیبانی"),
+  Broadcast("پخش"),
+  Settings("تنظیمات"),
 }
 
 @Composable
@@ -110,8 +150,11 @@ private fun MainShell(
   session: Session,
   onLogout: () -> Unit,
   onSession: (Session) -> Unit,
+  themeMode: ThemeMode,
+  onThemeMode: (ThemeMode) -> Unit,
+  startOnSettings: Boolean = false,
 ) {
-  var tab by remember { mutableStateOf(Tab.Home) }
+  var tab by remember { mutableStateOf(if (startOnSettings) Tab.Settings else Tab.Home) }
   // شمارهٔ پیام‌های خوانده‌نشده، تا نقطهٔ قرمزِ تبِ پشتیبانی درست باشد
   var unread by remember { mutableIntStateOf(0) }
 
@@ -126,8 +169,11 @@ private fun MainShell(
               val icon = when (item) {
                 Tab.Home -> Icons.Filled.Home
                 Tab.Codes -> Icons.Filled.Pin
+                Tab.Stations -> Icons.Filled.LocalGasStation
                 Tab.Accounts -> Icons.Filled.Groups
                 Tab.Support -> Icons.Filled.SupportAgent
+                Tab.Broadcast -> Icons.Filled.Campaign
+                Tab.Settings -> Icons.Filled.Settings
               }
               if (item == Tab.Support && unread > 0) {
                 BadgedBox(badge = { Badge { Text(unread.toString()) } }) {
@@ -145,10 +191,19 @@ private fun MainShell(
   ) { padding ->
     Box(Modifier.fillMaxSize().padding(padding)) {
       when (tab) {
-        Tab.Home -> HomeScreen(session, onLogout = onLogout, onSession = onSession)
+        Tab.Home -> HomeScreen(session)
         Tab.Codes -> CodesScreen(session)
+        Tab.Stations -> StationsScreen(session)
         Tab.Accounts -> AccountsScreen(session)
         Tab.Support -> SupportScreen(session, onUnread = { unread = it })
+        Tab.Broadcast -> BroadcastScreen(session)
+        Tab.Settings -> SettingsScreen(
+          session = session,
+          onLogout = onLogout,
+          onSession = onSession,
+          themeMode = themeMode,
+          onThemeMode = onThemeMode,
+        )
       }
     }
   }

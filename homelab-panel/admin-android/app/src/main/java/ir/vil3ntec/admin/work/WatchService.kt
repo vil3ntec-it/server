@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -40,20 +41,71 @@ import org.json.JSONObject
 class WatchService : Service() {
 
   private var job: Job? = null
+  private var standing = false
   private val scope = CoroutineScope(Dispatchers.IO)
 
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onCreate() {
     super.onCreate()
-    startForeground(ONGOING_ID, ongoingNotification())
+    standing = goForeground()
+    // اجازه ندادند؟ همین‌جا تمام. کشاندنِ برنامه به زمین، جوابِ «نه»ی
+    // اندروید نیست.
+    if (!standing) stopSelf()
+  }
+
+  /**
+   *  ایستادن در پیش‌زمینه — و نیفتادن اگر اندروید اجازه ندهد.
+   *
+   *  ⚠️ این همان جایی است که برنامه روی گوشی می‌افتاد و کادرِ «ویلن ادمین
+   *  has stopped» می‌آمد، بی آنکه کسی برنامه را باز کرده باشد.
+   *
+   *  ماجرا: بعدِ نصبِ به‌روزرسانی (و هر بار روشن شدنِ گوشی)، اندروید پیامِ
+   *  MY_PACKAGE_REPLACED می‌فرستد و نگهبان از همان‌جا بالا می‌آمد — یعنی
+   *  در حالی که برنامه در پس‌زمینه است. از اندروید ۱۲ به بعد شروعِ سرویسِ
+   *  پیش‌زمینه از پس‌زمینه ممنوع است و اندروید ۱۵ نوعِ dataSync را از
+   *  بوت هم رد می‌کند.
+   *
+   *  ⚠️ و نکتهٔ اصلی: آن استثنا سرِ صدا زدنِ startForegroundService پرتاب
+   *  نمی‌شود — پس runCatchingی که آن‌جا گذاشته بودیم هیچ کاری نمی‌کرد.
+   *  استثنا همین‌جا می‌آید، داخلِ خودِ سرویس، وقتی startForeground صدا
+   *  زده می‌شود. پس گرفتنش هم باید همین‌جا باشد.
+   *
+   *  ⚠️ stopSelf() لازم است، نه فقط return: سرویسی که با
+   *  startForegroundService بالا آمده و پیش‌زمینه نشود، پنج ثانیه بعد
+   *  خودش باعثِ کِرَش می‌شود. متوقف کردنش این را هم می‌بندد.
+   */
+  private fun goForeground(): Boolean = try {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      startForeground(
+        ONGOING_ID,
+        ongoingNotification(),
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+      )
+    } else {
+      startForeground(ONGOING_ID, ongoingNotification())
+    }
+    true
+  } catch (_: Throwable) {
+    /*
+     *  Throwable و نه Exception: ForegroundServiceStartNotAllowedException
+     *  از خانوادهٔ IllegalStateException است ولی سازنده‌های گوشی گاهی
+     *  چیزهای دیگری هم پرتاب می‌کنند. این‌جا هیچ خطایی ارزشِ خواباندنِ
+     *  برنامه را ندارد — نبودنِ اعلان بد است، افتادنِ برنامه بدتر.
+     */
+    false
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    if (!standing) {
+      stopSelf()
+      return START_NOT_STICKY
+    }
     if (job?.isActive != true) job = scope.launch { loop() }
     // اگر اندروید سرویس را کشت، خودش دوباره بالا بیاورد
     return START_STICKY
   }
+
 
   override fun onDestroy() {
     job?.cancel()
@@ -63,7 +115,26 @@ class WatchService : Service() {
 
   private suspend fun loop() {
     val store = SessionStore(applicationContext)
+    val startedAt = System.currentTimeMillis()
+
     while (scope.isActive) {
+      /*
+       *  ⚠️ سقفِ زمانیِ خودمان — پیش از سقفِ اندروید.
+       *
+       *  اندروید ۱۵ به سرویسِ dataSync شش ساعت در هر شبانه‌روز اجازه
+       *  می‌دهد و بعدش، اگر سرویس خودش کنار نکشد، برنامه را می‌اندازد.
+       *
+       *  به‌جای دست بردن به آن سقف، کمی زودتر خودمان کنار می‌کشیم. با
+       *  اولین باز شدنِ برنامه دوباره راه می‌افتد — و در این فاصله هم
+       *  چیزی از دست نمی‌رود، چون «آخرین پیامِ دیده‌شده» ذخیره است و
+       *  دورِ بعد همان‌جا را ادامه می‌دهد.
+       */
+      if (System.currentTimeMillis() - startedAt > MAX_RUN_MS) {
+        standing = false
+        stopSelf()
+        return
+      }
+
       val session = store.load()
       if (!session.loggedIn || !store.watchEnabled) {
         delay(60_000)
@@ -162,17 +233,29 @@ class WatchService : Service() {
      */
     private const val POLL_MS = 20_000L
 
+    /** پنج ساعت و نیم — کمی زیرِ سقفِ شش‌ساعتهٔ اندروید ۱۵ */
+    private const val MAX_RUN_MS = 5L * 60 * 60 * 1000 + 30 * 60 * 1000
+
+    /**
+     * روشن کردنِ نگهبان.
+     *
+     * ⚠️ خودش هم استثنا نمی‌دهد. جایِ اصلیِ گرفتنِ «اجازه نداری» داخلِ
+     * سرویس است (goForeground بالا)، ولی بعضی نسخه‌ها همین‌جا هم پرتاب
+     * می‌کنند. صدا زدنِ این تابع هیچ‌وقت نباید صفحه‌ای را بخواباند.
+     */
     fun start(context: Context) {
-      val intent = Intent(context, WatchService::class.java)
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        context.startForegroundService(intent)
-      } else {
-        context.startService(intent)
+      runCatching {
+        val intent = Intent(context, WatchService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          context.startForegroundService(intent)
+        } else {
+          context.startService(intent)
+        }
       }
     }
 
     fun stop(context: Context) {
-      context.stopService(Intent(context, WatchService::class.java))
+      runCatching { context.stopService(Intent(context, WatchService::class.java)) }
     }
   }
 }

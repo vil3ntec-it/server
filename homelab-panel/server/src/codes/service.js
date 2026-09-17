@@ -26,6 +26,8 @@ import { codeSettings } from './settings.js';
 import {
   cancelLive,
   bumpTries,
+  countForEmail,
+  countForIp,
   getApp,
   insertRequest,
   lastRequest,
@@ -93,6 +95,13 @@ export function issueCode({
   app,
   email,
   subjectId = null,
+  /*
+   *  نامِ خودِ شخص — تا ایمیل «احمد عزیز» بگوید نه یک خوش‌آمدِ خشک.
+   *
+   *  ⚠️ اختیاری است و باید بماند: بیشترِ برنامه‌ها فقط ایمیل دارند. اگر
+   *  اجباری می‌شد، همان‌ها از کار می‌افتادند.
+   */
+  subjectName = null,
   purpose = 'login',
   ip = '',
   settings = codeSettings(),
@@ -129,6 +138,42 @@ export function issueCode({
     }
   }
 
+  /*
+   *  ── سقفِ ساعتی: نگهبانِ سهمیهٔ ایمیل ──────────────────────────────────
+   *
+   *  فاصلهٔ بالا فقط جلوی تکرارِ *همان* ایمیل را می‌گیرد. این‌جا جلوی
+   *  کسی گرفته می‌شود که ایمیل‌های مختلف را پشتِ هم می‌کوبد — که هم
+   *  سهمیهٔ روزانهٔ فرستنده را می‌سوزاند و هم صندوقِ قربانی را پر می‌کند.
+   *
+   *  ⚠️ ارسالِ خودکارِ خودِ سرور (force) از این سقف رد می‌شود: آن تصمیمِ
+   *  ما بوده، نه درخواستِ کاربر — و اگر شمرده می‌شد، کاربری که کدش را
+   *  نگرفته بود با سقفِ پرشده روبه‌رو می‌شد.
+   */
+  if (!force) {
+    const hourAgo = now - 3600_000;
+
+    if (settings.perEmailHour > 0 && countForEmail(target, hourAgo) >= settings.perEmailHour) {
+      return {
+        ok: false,
+        error: 'too_many_requests',
+        scope: 'email',
+        retryAfter: 3600,
+        message: 'برای این ایمیل در یک ساعت کدِ زیادی خواسته شد — بعداً دوباره بزنید',
+      };
+    }
+
+    const from = String(ip || '').slice(0, 64);
+    if (settings.perIpHour > 0 && from && countForIp(from, hourAgo) >= settings.perIpHour) {
+      return {
+        ok: false,
+        error: 'too_many_requests',
+        scope: 'ip',
+        retryAfter: 3600,
+        message: 'درخواست‌ها از این دستگاه زیاد شد — بعداً دوباره بزنید',
+      };
+    }
+  }
+
   // فقط یک کدِ زنده برای هر ایمیل — وگرنه کاربر کدِ اولی را می‌خواند و
   // سرور کدِ دومی را انتظار دارد
   cancelLive(row.slug, target, now);
@@ -140,6 +185,7 @@ export function issueCode({
   const id = insertRequest({
     app: row.slug,
     subjectId: subjectId ? String(subjectId).slice(0, 80) : null,
+    subjectName: subjectName ? String(subjectName).trim().slice(0, 60) : null,
     purpose: cleanPurpose(purpose),
     email: target,
     codeHash: hashCode(code, row.slug, target),
@@ -236,6 +282,7 @@ export function autoResend(previous, settings = codeSettings()) {
     app: previous.app,
     email: previous.email,
     subjectId: previous.subject_id,
+    subjectName: previous.subject_name,
     purpose: previous.purpose,
     ip: previous.ip,
     settings,

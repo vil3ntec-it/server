@@ -2,6 +2,7 @@
 //  دفترِ رخدادها — «چه کسی، چه کاری، کِی، روی چه چیزی، با چه نتیجه‌ای»
 //  هر تغییرِ مهم اینجا می‌ماند. رمز و توکن هرگز نوشته نمی‌شود.
 // ---------------------------------------------------------------------------
+import { clientIp } from '../platform/security.js';
 import { db } from '../db.js';
 
 /** کلیدهایی که اگر در detail باشند، مقدارشان نوشته نمی‌شود */
@@ -44,7 +45,7 @@ export function audit({ actor = 'system', action, entity = null, entityId = null
 export function auditFromReq(req, action, extra = {}) {
   audit({
     actor: req?.user?.username || 'unknown',
-    ip: req?.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req?.socket?.remoteAddress || null,
+    ip: clientIp(req),
     action,
     ...extra,
   });

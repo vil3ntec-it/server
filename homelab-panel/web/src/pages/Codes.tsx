@@ -44,6 +44,8 @@ type LiveItem = {
   status: 'live' | 'used' | 'replaced' | 'expired';
   sendState: 'queued' | 'sending' | 'sent' | 'failed';
   sendError: string | null;
+  /** رسیدِ خودِ سرورِ ایمیل — «فرستادم» را از ادعا به سند تبدیل می‌کند */
+  sendResponse?: string | null;
   autoResend: boolean;
 };
 
@@ -315,12 +317,21 @@ function CodeRow({ item, now }: { item: LiveItem; now: number }) {
         <span
           className="chip whitespace-nowrap"
           style={{ background: `color-mix(in srgb, ${stateColor} 15%, transparent)`, color: stateColor }}
-          title={item.sendError || undefined}
+          title={item.sendError || item.sendResponse || undefined}
         >
           {stateLabel}
         </span>
         {item.tries > 0 && (
           <span className="ms-1 text-[10px] text-ink-muted">{t('codesTries')}: {item.tries}</span>
+        )}
+        {/*
+          ⚠️ دلیلِ نرفتن باید دیده شود، نه اینکه پشتِ نگه‌داشتنِ موس قایم بماند.
+          گزارشِ واقعی: «۵ تا تست زدم، ۲ تا رفت و سه تا نیامد و هیچ‌جا نگفت چرا.»
+        */}
+        {item.sendState === 'failed' && item.sendError && (
+          <p className="mt-1 text-[10px] leading-snug" style={{ color: 'var(--status-critical)' }} dir="auto">
+            {item.sendError}
+          </p>
         )}
       </Cell>
 

@@ -13,9 +13,13 @@
 import { Router } from 'express';
 import { requireAuth, requireWriteRole } from '../auth.js';
 import { logEvent } from '../db.js';
-import { codeSettings, safeCodeSettings, saveCodeSettings } from '../codes/settings.js';
+import { clientIp } from '../platform/security.js';
+import { sameSecret } from '../lib/secret-compare.js';
+import { allowAutoRegister } from '../lib/auto-register.js';
+import { linkApp } from '../appauth/registry-link.js';
+import { checkMailSettings, codeSettings, safeCodeSettings, saveCodeSettings } from '../codes/settings.js';
 import { issueCode, maskEmail, revealCode, verifyCode } from '../codes/service.js';
-import { drainQueue, queueStatus } from '../codes/queue.js';
+import { awaitDelivery, drainQueue, queueStatus } from '../codes/queue.js';
 import { mailReady, sendCodeEmail } from '../codes/mail.js';
 import {
   KIND_LABELS,
@@ -32,8 +36,7 @@ import {
 export const router = Router();
 export const adminRouter = Router();
 
-const clientIp = (req) =>
-  String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.ip || '';
+// IP از تنها جای محاسبه‌اش می‌آید (platform/security.js)
 
 /* ========================================================================= */
 /*  مسیرِ برنامه‌ها                                                            */
@@ -51,14 +54,27 @@ function appOf(req) {
   );
 }
 
+/*
+ *  کلیدِ برنامه از کجا خوانده می‌شود.
+ *
+ *  ⚠️ «Authorization: Bearer» عمداً آخر است و عمداً مانده:
+ *
+ *    • آخر است چون آن خانه مالِ *توکنِ کاربر* است، نه کلیدِ برنامه. اگر
+ *      اول بود، برنامه‌ای که هر دو را دارد ممکن بود اشتباهی توکنِ کاربر
+ *      را به‌عنوان کلید بفرستد و نفهمد چرا ۴۰۱ می‌گیرد.
+ *    • مانده چون برنامه‌های موجود از همان‌جا می‌فرستند و برداشتنش
+ *      همه‌شان را می‌شکست.
+ *
+ *  یعنی x-api-key راهِ درست است و Bearer راهِ سازگاریِ عقب‌رو.
+ */
 const keyOf = (req) =>
   String(
     req.headers['x-api-key']
       || req.headers['x-app-key']
+      || req.body?.apiKey
       || (String(req.headers.authorization || '').startsWith('Bearer ')
         ? req.headers.authorization.slice(7)
         : '')
-      || req.body?.apiKey
       || ''
   ).trim();
 
@@ -70,13 +86,37 @@ const keyOf = (req) =>
  * این همان «هیچ برنامه‌ای پشتِ در نماند» است، بدونِ اینکه در باز بماند.
  */
 function checkApp(slug, req) {
-  const row = getApp(slug) || ensureApp(slug, { name: slug });
+  /*
+   *  ⚠️ این‌جا تا امروز `getApp(slug) || ensureApp(slug, …)` بود — یعنی
+   *  *پیش از* هر بررسیِ کلید، هر نامی که می‌آمد در دفتر ثبت می‌شد.
+   *  اندازه‌اش گرفته شد: ۲۰ درخواستِ بی‌کلید با نامِ ساختگی → ۲۰ ردیفِ
+   *  تازه. یعنی هر کسی از اینترنت می‌توانست جدولِ برنامه‌ها را پر کند و
+   *  فهرستِ پنل را غیرِقابلِ استفاده کند.
+   *
+   *  «هیچ برنامه‌ای پشتِ در نماند» هنوز برقرار است — ولی از راهِ درست:
+   *  برنامهٔ تازه را صاحبِ سرور در پنل ثبت می‌کند و کلیدش را برمی‌دارد.
+   */
+  //  اگر فقط در دفترِ ورود ثبت شده، همین‌جا در دفترِ کدها هم ساخته می‌شود
+  linkApp(slug);
+  let row = getApp(slug);
+  if (!row) {
+    if (!allowAutoRegister(slug)) {
+      return {
+        ok: false,
+        status: 404,
+        error: 'unknown_app',
+        message: 'این برنامه ثبت نشده است — در پنل ← کدهای شش‌رقمی اضافه‌اش کنید',
+      };
+    }
+    row = ensureApp(slug, { name: slug });
+    linkApp(slug);
+  }
   if (!row.enabled) {
     return { ok: false, status: 403, error: 'app_disabled', message: 'این برنامه خاموش است' };
   }
   if (row.require_key) {
-    const given = keyOf(req);
-    if (!given || given !== row.api_key) {
+    // مقایسهٔ ثابت‌زمان — `!==` مدتِ پاسخ را به تعدادِ بایتِ درست گره می‌زد
+    if (!sameSecret(keyOf(req), row.api_key)) {
       return {
         ok: false,
         status: 401,
@@ -105,12 +145,17 @@ async function handleRequest(req, res) {
     app,
     email: req.body?.email ?? req.body?.mail ?? req.body?.address,
     subjectId: req.body?.userId ?? req.body?.deviceId ?? req.body?.subjectId ?? null,
+    // نامِ خودِ شخص — تا ایمیل «احمد عزیز» بگوید. نبودنش مشکلی نیست.
+    subjectName: req.body?.name ?? req.body?.fullName ?? req.body?.userName ?? null,
     purpose: req.body?.purpose ?? req.body?.type ?? 'login',
     ip: clientIp(req),
   });
 
   if (!result.ok) {
-    return res.status(result.error === 'too_soon' ? 429 : 400).json(result);
+    // «زیاد شد» یعنی ۴۲۹، نه ۴۰۰ — کلاینت باید بتواند فرقشان را بفهمد
+    const busy = result.error === 'too_soon' || result.error === 'too_many_requests';
+    if (busy && result.retryAfter) res.setHeader('Retry-After', String(result.retryAfter));
+    return res.status(busy ? 429 : 400).json(result);
   }
 
   // صف را هل می‌دهیم تا در بارِ کم، ایمیل منتظرِ تیکِ بعدی نماند
@@ -203,12 +248,73 @@ adminRouter.get('/live', (req, res) => {
       status: row.used_at ? 'used' : row.cancelled_at ? 'replaced' : live ? 'live' : 'expired',
       sendState: row.send_state,
       sendError: row.send_error,
+      // رسیدِ خودِ سرورِ ایمیل — «فرستادم» را از ادعا به سند تبدیل می‌کند
+      sendResponse: row.send_response || null,
       sentAt: row.sent_at,
       autoResend: row.resend_chain > 0,
     };
   });
 
   res.json({ ok: true, items, queue: queueStatus(), now });
+});
+
+/**
+ *  فرستادنِ کد از خودِ پنل — «ربات، برای این ایمیل کد بفرست».
+ *
+ *  ⚠️ چرا لازم شد: تا امروز کد فقط وقتی ساخته می‌شد که *برنامه‌ای* با
+ *  کلیدِ خودش بخواهد. یعنی صاحبِ سرور که می‌خواست برای یک حساب دستی کد
+ *  بفرستد — چون طرف گیر کرده بود، یا تازه ثبت‌نام کرده — هیچ راهی نداشت
+ *  جز اینکه از آن طرف وارد شود.
+ *
+ *  ⚠️ و این‌جا کلیدِ برنامه نمی‌خواهد، چون پشتِ ورودِ مدیر است. همان
+ *  موتور، همان صف، همان قالبِ ایمیل — فقط دستِ دیگری دکمه را می‌زند.
+ */
+adminRouter.post('/send', async (req, res) => {
+  const app = cleanSlug(req.body?.app || 'main');
+  const row = getApp(app) || ensureApp(app, { name: req.body?.appName || app, kind: req.body?.kind });
+
+  const result = issueCode({
+    app: row.slug,
+    email: req.body?.email,
+    subjectId: req.body?.userId ?? req.body?.subjectId ?? null,
+    subjectName: req.body?.name ?? req.body?.fullName ?? null,
+    purpose: req.body?.purpose ?? 'login',
+    ip: clientIp(req),
+    // دستِ مدیر است؛ فاصلهٔ اجباری برای جلوگیری از کوبیدنِ دکمه توسطِ
+    // کاربر است، نه برای خودِ صاحبِ سرور
+    force: req.body?.force !== false,
+  });
+
+  if (!result.ok) return res.status(400).json(result);
+
+  drainQueue().catch(() => { /* خطا روی ردیفِ خودش ثبت می‌شود */ });
+
+  /*
+   *  ⚠️ این‌جا منتظر می‌مانیم، برخلافِ مسیرِ برنامه‌ها.
+   *
+   *  گزارشِ واقعی: «۵ تا تست زدم، ۲ ایمیل رفت و سه تای دیگر نیامد، در
+   *  حالی که می‌گوید فرستادم.» علتش همین بود — پاسخ پیش از خودِ ارسال
+   *  برمی‌گشت و «نه»ی سرورِ ایمیل هیچ‌جا دیده نمی‌شد.
+   *
+   *  دکمه‌ای که خودِ صاحبِ سرور می‌زند یکی‌یکی است، پس چند ثانیه صبر
+   *  اشکالی ندارد و در عوض جواب راست می‌شود. مسیرِ برنامه‌ها دست‌نخورده
+   *  ماند، چون آن‌جا ممکن است صدها نفر هم‌زمان باشند.
+   */
+  const delivery = await awaitDelivery(result.id, { timeoutMs: 12_000 });
+
+  const message = delivery.state === 'sent'
+    ? 'ایمیل تحویلِ سرورِ ایمیل شد'
+    : delivery.state === 'failed'
+      ? `ایمیل نرفت — ${delivery.error || 'سرورِ ایمیل دلیلی نگفت'}`
+      : 'هنوز در صفِ ارسال است؛ وضعیتش در همین فهرست به‌روز می‌شود';
+
+  logEvent(
+    delivery.state === 'failed' ? 'warn' : 'info',
+    'panel',
+    `کد برای ${result.email} از پنل: ${delivery.state === 'sent' ? 'رفت' : message}`,
+  );
+
+  res.json({ ...result, ok: delivery.state !== 'failed', delivery, message });
 });
 
 /* ── دفترِ برنامه‌ها ─────────────────────────────────────────────────────── */
@@ -221,6 +327,8 @@ adminRouter.post('/apps', (req, res) => {
   const slug = cleanSlug(req.body?.slug || req.body?.name);
   if (getApp(slug)) return res.status(409).json({ ok: false, error: 'exists' });
   const row = ensureApp(slug, { name: req.body?.name || slug, kind: req.body?.kind });
+  //  یک بار ثبت، هر دو مسیرِ ورود — وگرنه نصفِ سرور این برنامه را نمی‌شناسد
+  linkApp(slug, { name: req.body?.name || slug, kind: req.body?.kind });
   const saved = saveApp(slug, req.body || {});
   logEvent('info', 'panel', `برنامهٔ «${row.slug}» به بخشِ کدهای شش‌رقمی اضافه شد`);
   res.json({ ok: true, app: publicApp(saved || row) });
@@ -253,8 +361,24 @@ adminRouter.put('/settings', (req, res) => {
   const patch = { ...(req.body || {}) };
   // رمزِ ماسک‌شده نباید جای رمزِ واقعی بنشیند
   if (patch.email && /^•+$/.test(String(patch.email.password || ''))) delete patch.email.password;
+
+  /*
+   *  ⚠️ جلوی تنظیماتِ غلط همین‌جا گرفته می‌شود، نه وقتی اولین کد نرفت.
+   *
+   *  یک بار در خانهٔ «آدرسِ سرور» ایمیل نوشته شده بود و نتیجه‌اش این بود
+   *  که کدها ساخته می‌شدند ولی هیچ‌کدام نمی‌رفت، و تنها نشانه‌اش یک خطای
+   *  انگلیسیِ خام (EAI_FAIL) تهِ صفحه بود.
+   */
+  let warning = null;
+  if (patch.email) {
+    const verdict = checkMailSettings({ ...codeSettings().email, ...patch.email });
+    if (!verdict.ok) return res.status(400).json({ ok: false, ...verdict });
+    // هشدار جلوی ذخیره را نمی‌گیرد، ولی باید دیده شود
+    if (verdict.warn) warning = { code: verdict.warn, message: verdict.message, suggest: verdict.suggest };
+  }
+
   saveCodeSettings(patch);
-  res.json({ ok: true, settings: safeCodeSettings() });
+  res.json({ ok: true, settings: safeCodeSettings(), warning });
 });
 
 /** آزمایشِ سرورِ ایمیل — یک ایمیلِ واقعی با کدِ نمونه */
@@ -263,6 +387,8 @@ adminRouter.post('/test-email', async (req, res) => {
   if (!mailReady(settings)) {
     return res.status(400).json({ ok: false, error: 'mail_not_configured', message: 'سرورِ ایمیل تنظیم نشده' });
   }
+  const verdict = checkMailSettings(settings.email);
+  if (!verdict.ok) return res.status(400).json({ ok: false, ...verdict });
   try {
     await sendCodeEmail({
       to: String(req.body?.to || settings.email.from),

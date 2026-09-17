@@ -69,6 +69,17 @@ object Api {
     val remote = session.remote?.takeIf { it.usable && !path.startsWith("http") }
     if (remote == null) return raw(session, url(session, path), method, body, timeoutMs, timeoutMs, null)
 
+    /*
+     *  ⚠️ وقتی آدرسِ سرور خودش همان درِ دامنه است، «راهِ محلی» وجود ندارد —
+     *  همان آدرس است، فقط بی کلید. و بی کلید آن در ۴۰۴ می‌دهد، که خطای
+     *  خودِ سرور حساب می‌شود و همین‌جا پرتاب می‌شد؛ یعنی راهِ دوم هیچ‌وقت
+     *  امتحان نمی‌شد و برنامه با کلیدِ درست هم «این آدرس روی سرور نیست»
+     *  می‌گرفت. پس این‌جا یک راه بیشتر نیست.
+     */
+    if (remote.sameAs(session.serverUrl)) {
+      return raw(session, URL(remote.wrap(path)), method, body, timeoutMs, timeoutMs, remote)
+    }
+
     val local = Route(url(session, path), null)
     val away = Route(URL(remote.wrap(path)), remote)
     val order = if (preferRemote) listOf(away, local) else listOf(local, away)
@@ -200,8 +211,91 @@ object Api {
   fun shopAccount(session: Session, id: String): Reply =
     call(session, "/api/control/tohid/accounts/$id")
 
-  /** پمپ‌بنزین‌ها */
+  /** بستن یا باز کردنِ یک حسابِ فروشگاه */
+  fun setShopAccountDisabled(session: Session, id: String, disabled: Boolean): Reply =
+    call(session, "/api/control/tohid/accounts/$id/disable", "POST", JSONObject().put("disabled", disabled))
+
+  /* ------------------------------ پمپ بنزین ----------------------------- */
+
+  /** پمپ‌بنزین‌ها — همان‌هایی که روی همین سرور نشسته‌اند */
   fun stations(session: Session): Reply = call(session, "/api/stations-admin/")
+
+  /** پروندهٔ یک پمپ: پشتیبان‌ها، حجم، آخرین تپش */
+  fun stationDetail(session: Session, code: String): Reply =
+    call(session, "/api/stations-admin/$code/detail")
+
+  /*
+   *  ⚠️ حساب‌ها و اشتراک‌ها و نرخ‌های پمپ روی «ابر» هستند نه این سرور،
+   *  و سرور فقط واسطه است. برای همین این‌ها ممکن است جواب ندهند و باید
+   *  نبودشان را صفحه بفهمد، نه اینکه بیفتد: تا وقتی مرکز فرمان به ابر
+   *  وصل نشده، همه‌شان خطا می‌دهند و همان درست است.
+   */
+  fun pumpUsers(session: Session): Reply = call(session, "/api/stations-admin/cloud/users?limit=200")
+
+  fun pumpSubscriptions(session: Session): Reply =
+    call(session, "/api/stations-admin/cloud/subscriptions?limit=200")
+
+  fun pumpPlans(session: Session): Reply = call(session, "/api/stations-admin/cloud/plans")
+
+  fun pumpCloudStations(session: Session): Reply =
+    call(session, "/api/stations-admin/cloud/stations?limit=200")
+
+  fun cloudStatus(session: Session): Reply = call(session, "/api/stations-admin/cloud/status")
+
+  /** اشتراک دادن به یک پمپ */
+  fun grantPumpSubscription(
+    session: Session,
+    stationId: String,
+    planCode: String,
+    months: Int,
+  ): Reply {
+    val body = JSONObject()
+      .put("stationId", stationId)
+      .put("planCode", planCode)
+      .put("months", months)
+    return call(session, "/api/stations-admin/cloud/grant", "POST", body)
+  }
+
+  fun setPumpSubscriptionStatus(session: Session, id: String, status: String): Reply =
+    call(session, "/api/stations-admin/cloud/subscriptions/$id/status", "POST",
+      JSONObject().put("status", status))
+
+  /** آینهٔ ابر در پوشهٔ داده — «حساب‌ها روی خودِ سرور هم ثبت می‌شوند؟» */
+  fun cloudMirror(session: Session): Reply = call(session, "/api/stations-admin/cloud/mirror")
+
+  fun runCloudMirror(session: Session): Reply =
+    call(session, "/api/stations-admin/cloud/mirror", "POST", JSONObject())
+
+  /* ---------------------------- عیب‌یابی -------------------------------- */
+
+  /** «چرا کار نمی‌کند؟» — یک فهرست، با وضعیت و راهنمای فارسی */
+  fun diagnostics(session: Session): Reply = call(session, "/api/diagnostics")
+
+  /* --------------------- فرستادنِ کد از خودِ پنل -------------------------- */
+
+  /**
+   * ربات، برای این ایمیل کد بفرست.
+   *
+   * ⚠️ همان موتور و همان صفِ بخشِ «کدهای شش‌رقمی» — فقط دستِ دیگری دکمه
+   * را می‌زند. کد در همان فهرست هم دیده می‌شود، با نامِ همین برنامه.
+   */
+  fun sendCode(
+    session: Session,
+    app: String,
+    email: String,
+    appName: String = "",
+    userId: String = "",
+  ): Reply {
+    val body = JSONObject().put("app", app).put("email", email)
+    if (appName.isNotBlank()) body.put("appName", appName)
+    if (userId.isNotBlank()) body.put("userId", userId)
+    /*
+     *  ⚠️ مهلت بلندتر از بقیه است، عمداً: این درخواست منتظر می‌ماند تا
+     *  سرورِ ایمیل واقعاً بگوید گرفتم یا نگرفتم. تا دیروز همان لحظه
+     *  «فرستاده شد» می‌گفت و اگر نمی‌رفت، هیچ‌جا معلوم نمی‌شد.
+     */
+    return call(session, "/api/codes-admin/send", "POST", body, timeoutMs = 30_000)
+  }
 
   /** سایت‌های روی سرور */
   fun sites(session: Session): Reply = call(session, "/api/sites")
@@ -226,11 +320,13 @@ object Api {
     planCode: String,
     amount: Int,
     unit: String,
+    planTitle: String = "",
   ): Reply {
     val body = JSONObject()
       .put("planCode", planCode)
       .put("amount", amount)
       .put("unit", unit)
+    if (planTitle.isNotBlank()) body.put("planTitle", planTitle)
     return call(session, "/api/control/tohid/accounts/$accountId/vip", "POST", body)
   }
 
@@ -243,6 +339,68 @@ object Api {
     val body = JSONObject().put("status", status)
     return call(session, "/api/control/tohid/subscriptions/$subscriptionId/status", "POST", body)
   }
+
+  /* --------------------------- اطلاعیه‌ها -------------------------------- */
+
+  /**
+   *  پیام‌هایی که روی صفحهٔ برنامه‌های دیگر می‌نشینند.
+   *
+   *  ⚠️ این‌ها پوشِ لحظه‌ای نیستند — روی صفحه *می‌مانند* تا برشان دارید یا
+   *  مهلتشان تمام شود. کسی که فردا برنامه را باز می‌کند هم باید «تخفیفِ
+   *  این هفته» را ببیند، نه اینکه چون دیروز آنلاین نبوده از دستش برود.
+   */
+  fun announcements(session: Session): Reply = call(session, "/api/announce-admin")
+
+  fun postAnnouncement(
+    session: Session,
+    audience: String,
+    title: String,
+    body: String,
+    kind: String,
+    endsAt: Long? = null,
+    targetId: String = "",
+  ): Reply {
+    val payload = JSONObject()
+      .put("audience", audience)
+      .put("title", title)
+      .put("body", body)
+      .put("kind", kind)
+    if (endsAt != null && endsAt > 0) payload.put("endsAt", endsAt)
+    if (targetId.isNotBlank()) payload.put("targetId", targetId)
+    return call(session, "/api/announce-admin", "POST", payload)
+  }
+
+  fun setAnnouncementEnabled(session: Session, id: Int, enabled: Boolean): Reply =
+    call(session, "/api/announce-admin/$id", "PUT", JSONObject().put("enabled", enabled))
+
+  fun deleteAnnouncement(session: Session, id: Int): Reply =
+    call(session, "/api/announce-admin/$id", "DELETE")
+
+  /* ----------------------------- تخفیف ---------------------------------- */
+
+  /** نرخ‌نامه با تخفیف‌های جاری — همان چیزی که مشتری هم می‌بیند */
+  fun adminPlans(session: Session): Reply = call(session, "/api/v1/admin/plans")
+
+  /**
+   * گذاشتنِ تخفیف روی یک نرخ.
+   *
+   * ⚠️ قیمتِ اصلی دست نمی‌خورد؛ تخفیف کنارش می‌نشیند. مهلتش که تمام شد،
+   * قیمتِ خودش برمی‌گردد و لازم نیست کسی عددِ قبلی را به یاد داشته باشد.
+   */
+  fun setDiscount(
+    session: Session,
+    code: String,
+    percent: Int,
+    label: String,
+    until: Long?,
+  ): Reply {
+    val payload = JSONObject().put("percent", percent).put("label", label)
+    if (until != null && until > 0) payload.put("until", until)
+    return call(session, "/api/v1/admin/plans/$code/discount", "PUT", payload)
+  }
+
+  fun clearDiscount(session: Session, code: String): Reply =
+    call(session, "/api/v1/admin/plans/$code/discount", "DELETE")
 
   /* ---------------------------- پشتیبانی -------------------------------- */
 

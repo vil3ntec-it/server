@@ -68,6 +68,31 @@ function fromEnv() {
     resendSeconds: clamp(num(process.env.CODES_RESEND_SECONDS, 60), 0, 3600),
 
     /*
+     *  ── سقفِ ساعتی: نگهبانِ سهمیهٔ ایمیلِ شما ─────────────────────────────
+     *
+     *  ⚠️ این‌ها یک بار تعریف شده بودند (در appauth/settings.js) و موقعِ
+     *  یکی کردنِ دو موتور از دست رفتند. اندازه‌اش گرفته شد:
+     *
+     *      ۱۲ درخواست برای *یک* ایمیل  → ۱ ساخته شد، ۱۱ رد شد   ✔
+     *      ۶۰ ایمیلِ *متفاوت* از یک IP → ۶۰ تا در صفِ ارسال رفت  ❗
+     *
+     *  یعنی فاصلهٔ ۶۰ ثانیه فقط جلوی تکرارِ همان یک ایمیل را می‌گرفت. یک
+     *  نفر با شصت ایمیلِ ساختگی می‌توانست در چند ثانیه سهمیهٔ روزانهٔ
+     *  جیمیل را بسوزاند — یا بدتر، از سرورِ شما برای ایمیل‌بمبارانِ
+     *  دیگران استفاده کند و آبروی دامنه‌تان را ببرد.
+     *
+     *  دو سقفِ جدا لازم است، چون دو حملهٔ متفاوت‌اند:
+     *    • perEmailHour — یک نفر که یک ایمیل را می‌کوبد
+     *    • perIpHour    — یک نفر که ایمیل‌های مختلف را می‌کوبد
+     *
+     *  اعداد سخاوتمندانه‌اند تا کاربرِ عادی هرگز به آن‌ها نخورد: کسی که
+     *  کدش نرسیده و سه‌چهار بار دوباره می‌زند، به ۶ نمی‌رسد.
+     *  صفر یعنی خاموش.
+     */
+    perEmailHour: clamp(num(process.env.CODES_MAX_PER_EMAIL_HOUR ?? process.env.OTP_MAX_PER_HOUR, 6), 0, 1000),
+    perIpHour: clamp(num(process.env.CODES_MAX_PER_IP_HOUR ?? process.env.OTP_MAX_PER_HOUR_IP, 40), 0, 100000),
+
+    /*
      *  «کدش را نگرفت» — پس از این چند ثانیه، کدِ تازه خودکار ساخته و فرستاده
      *  می‌شود. صفر یعنی خاموش.
      */
@@ -162,6 +187,107 @@ export function codeSettings() {
   }
 
   return merge(base, saved);
+}
+
+/**
+ *  آدرس‌های SMTPِ سرویس‌های مشهور — برای وقتی کسی ایمیلش را جای آدرسِ
+ *  سرور می‌گذارد.
+ */
+const SMTP_OF = {
+  'gmail.com': 'smtp.gmail.com',
+  'googlemail.com': 'smtp.gmail.com',
+  'outlook.com': 'smtp-mail.outlook.com',
+  'hotmail.com': 'smtp-mail.outlook.com',
+  'live.com': 'smtp-mail.outlook.com',
+  'yahoo.com': 'smtp.mail.yahoo.com',
+  'zoho.com': 'smtp.zoho.com',
+  'yandex.com': 'smtp.yandex.com',
+  'icloud.com': 'smtp.mail.me.com',
+};
+
+/**
+ *  ایراد گرفتن از تنظیماتِ ایمیل، پیش از ذخیره.
+ *
+ *  ⚠️ چرا لازم شد: در خانهٔ «آدرسِ سرور» ایمیل نوشته شده بود
+ *  (vill3ntec@gmail.com به‌جای smtp.gmail.com). سرور همان را به DNS داد،
+ *  DNS گفت «چنین نامی نیست» (EAI_FAIL) و تهِ صفحه یک خطای انگلیسیِ خام
+ *  دیده می‌شد که هیچ نمی‌گفت چه کار باید کرد.
+ *
+ *  یک خانهٔ اشتباه، و کلِ کدهای شش‌رقمی از کار افتاده بود. حالا همان‌جا
+ *  که ذخیره می‌شود جلویش گرفته می‌شود و گفته می‌شود چه بگذارد.
+ *
+ *  @returns {{ok: boolean, error?: string, message?: string, suggest?: object}}
+ */
+export function checkMailSettings(email = {}) {
+  const host = String(email.host ?? '').trim();
+  if (!host) return { ok: true };
+
+  if (host.includes('@')) {
+    const domain = host.split('@').pop().toLowerCase();
+    const smtp = SMTP_OF[domain];
+    return {
+      ok: false,
+      error: 'host_is_email',
+      message: smtp
+        ? `«${host}» ایمیل است، نه آدرسِ سرورِ ایمیل. در خانهٔ آدرس «${smtp}» بگذارید و همین ایمیل را در «نام کاربری».`
+        : `«${host}» ایمیل است، نه آدرسِ سرورِ ایمیل. آدرسِ SMTPِ سرویس‌تان را بگذارید (معمولاً mail.${domain} یا smtp.${domain}).`,
+      suggest: { host: smtp || `smtp.${domain}`, username: host, from: host },
+    };
+  }
+
+  if (/^https?:\/\//i.test(host) || host.includes('/')) {
+    return {
+      ok: false,
+      error: 'host_is_url',
+      message: 'آدرسِ سرورِ ایمیل، آدرسِ سایت نیست. فقط نام را بگذارید، مثلِ smtp.gmail.com',
+      suggest: { host: host.replace(/^https?:\/\//i, '').split('/')[0] },
+    };
+  }
+
+  /*
+   *  ⚠️ جیمیل رمزِ خودِ حساب را قبول نمی‌کند و خطایش هم گنگ است
+   *  («Username and Password not accepted»). این را از قبل می‌گوییم.
+   */
+  const password = String(email.password ?? '');
+  const gmail = /(^|\.)gmail\.com$|(^|\.)googlemail\.com$/i.test(host);
+  if (gmail && password && !/^•+$/.test(password) && password.replace(/\s/g, '').length !== 16) {
+    return {
+      ok: false,
+      error: 'gmail_needs_app_password',
+      message:
+        'جیمیل رمزِ خودِ حساب را قبول نمی‌کند. از حسابِ گوگل یک «App Password» بسازید ' +
+        '(۱۶ حرف) و همان را این‌جا بگذارید.',
+    };
+  }
+
+  /*
+   *  ⚠️ جیمیل فقط از طرفِ «همان حسابی که وارد شده» ایمیل می‌فرستد.
+   *
+   *  اگر در خانهٔ «فرستنده» ایمیلِ دیگری بنویسید، جیمیل یا همان‌جا رد
+   *  می‌کند یا — بدتر — قبول می‌کند، آدرس را با حسابِ خودش عوض می‌کند و
+   *  گیرنده‌های سخت‌گیر پیام را دور می‌ریزند. آن‌وقت این‌طرف همه‌چیز سبز
+   *  است و آن‌طرف هیچ ایمیلی نیامده.
+   */
+  const username = String(email.username ?? '').trim().toLowerCase();
+  const from = String(email.from ?? '').trim().toLowerCase();
+  if (gmail && username && from && username !== from) {
+    /*
+     *  ⚠️ این «هشدار» است نه «خطا»، عمداً: اگر آن آدرس را در خودِ گوگل
+     *  به‌عنوانِ «Send mail as» تأیید کرده باشید، واقعاً کار می‌کند. پس
+     *  جلویش را نمی‌گیریم، فقط می‌گوییم اگر ایمیل‌ها نرسیدند، اول این‌جا
+     *  را نگاه کنید.
+     */
+    return {
+      ok: true,
+      warn: 'gmail_from_mismatch',
+      message:
+        `جیمیل فقط از طرفِ «${username}» ایمیل می‌فرستد. در خانهٔ «فرستنده» هم ` +
+        `همین را بگذارید، وگرنه ممکن است ایمیل به دستِ بعضی‌ها نرسد.`,
+      suggest: { from: username },
+    };
+  }
+
+  return { ok: true };
 }
 
 export function saveCodeSettings(patch) {

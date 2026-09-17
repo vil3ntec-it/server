@@ -13,6 +13,7 @@
 //  برنامه‌ای پشتِ در نماند و صاحبِ سرور بعداً در پنل ببیندش.
 // ---------------------------------------------------------------------------
 import crypto from 'node:crypto';
+import { sameSecret } from '../lib/secret-compare.js';
 import { db, logEvent } from '../db.js';
 import { otpSettings } from './settings.js';
 import { cleanApp } from './identity.js';
@@ -43,8 +44,29 @@ try {
 } catch { /* ستون از قبل هست */ }
 
 /** سه نوعی که پشتیبانی می‌شود */
-export const KINDS = ['android', 'web', 'desktop'];
-export const KIND_LABELS = { android: 'برنامهٔ اندروید', web: 'سایت', desktop: 'برنامهٔ کامپیوتری' };
+/*
+ *  ⚠️ «app» بعداً اضافه شد و دلیلش یک باگِ دیده‌شده است.
+ *
+ *  دو دفترِ برنامه واژگانِ متفاوتی برای «نوع» داشتند:
+ *
+ *      code_apps    → app | site
+ *      app_clients  → android | web | desktop
+ *
+ *  وقتی پل بینشان زده شد، `cleanKind('app')` در این فهرست پیدا نمی‌شد و
+ *  بی‌صدا به 'web' می‌افتاد — یعنی «پمپ بنزین» در فهرستِ ورودها «سایت»
+ *  نشان داده می‌شد. در عکسِ صفحه دیده شد، نه در هیچ خطایی.
+ *
+ *  به‌جای حدس زدنِ اینکه یک «app» اندرویدی است یا کامپیوتری، همان
+ *  «برنامه»ی خنثی اضافه شد. ردیف‌های قدیمی دست‌نخورده می‌مانند.
+ */
+export const KINDS = ['android', 'web', 'desktop', 'app', 'site'];
+export const KIND_LABELS = {
+  android: 'برنامهٔ اندروید',
+  web: 'سایت',
+  desktop: 'برنامهٔ کامپیوتری',
+  app: 'برنامه',
+  site: 'سایت',
+};
 export const cleanKind = (value) => (KINDS.includes(String(value)) ? String(value) : 'web');
 
 const newKey = () => `hlp_${crypto.randomBytes(16).toString('hex')}`;
@@ -78,8 +100,14 @@ export function listClients() {
 
   return rows.map((row) => {
     const users = db.prepare('SELECT COUNT(*) AS n FROM app_users WHERE app = ?').get(row.slug).n;
+    /*
+     *  ⚠️ این‌جا تا امروز از app_codes می‌خواند — جدولی که از وقتی دو
+     *  موتورِ کد یکی شدند هیچ‌کس در آن نمی‌نویسد. یعنی ستونِ «کدِ امروز»
+     *  همیشه صفر بود، و روی نصبِ تازه که اصلاً جدول ساخته نمی‌شود، کلِ
+     *  فهرست با ۵۰۰ می‌افتاد. آزمونِ دفترِ برنامه‌ها همین را گرفت.
+     */
     const codes = db
-      .prepare('SELECT COUNT(*) AS n FROM app_codes WHERE app = ? AND created_at > ?')
+      .prepare('SELECT COUNT(*) AS n FROM code_requests WHERE app = ? AND created_at > ?')
       .get(row.slug, dayAgo).n;
     const sessions = db
       .prepare('SELECT COUNT(*) AS n FROM app_sessions WHERE app = ? AND expires_at > ?')
@@ -142,6 +170,21 @@ export function updateClient(slug, patch = {}) {
   return getClient(row.slug);
 }
 
+/**
+ * کلیدِ این برنامه را با کلیدِ دفترِ دیگر یکی می‌کند.
+ *
+ * ⚠️ عمداً در FIELDS نیست و از مسیرِ عادیِ ویرایش در دسترس نیست: کلید
+ * چیزی است که ساخته یا چرخانده می‌شود، نه دستی نوشته. تنها کاربردش
+ * هم‌ترازیِ دو دفترِ برنامه است (registry-link.js) تا یک کلید روی هر دو
+ * مسیرِ ورود کار کند.
+ */
+export function syncClientKey(slug, apiKey) {
+  const key = String(apiKey || '').trim();
+  if (!key) return null;
+  db.prepare('UPDATE app_clients SET api_key = ? WHERE slug = ?').run(key, cleanApp(slug));
+  return getClient(slug);
+}
+
 export function rotateKey(slug) {
   const row = getClient(slug);
   if (!row) return null;
@@ -156,7 +199,9 @@ export function removeClient(slug, { withUsers = false } = {}) {
   if (!row) return { ok: false, error: 'not_found' };
   if (withUsers) {
     db.prepare('DELETE FROM app_users WHERE app = ?').run(row.slug);
-    db.prepare('DELETE FROM app_codes WHERE app = ?').run(row.slug);
+    // app_codes روی نصبِ تازه اصلاً وجود ندارد — نبودنش نباید حذف را بیندازد
+    try { db.prepare('DELETE FROM app_codes WHERE app = ?').run(row.slug); }
+    catch { /* جدولِ متروک */ }
   }
   db.prepare('DELETE FROM app_clients WHERE slug = ?').run(row.slug);
   logEvent('warn', 'panel', `برنامهٔ ${row.slug} حذف شد`);
@@ -192,7 +237,8 @@ export function checkAccess(slug, { key = null, channel = null } = {}) {
     return { ok: false, status: 403, error: 'app_disabled', message: 'این برنامه موقتاً خاموش است' };
   }
   if (row.require_key) {
-    if (!key || String(key) !== String(row.api_key || '')) {
+    // مقایسهٔ ثابت‌زمان — وگرنه مدتِ پاسخ می‌گوید چند بایتِ اول درست بوده
+    if (!sameSecret(key, row.api_key)) {
       return { ok: false, status: 401, error: 'bad_api_key', message: 'کلیدِ برنامه درست نیست' };
     }
   }

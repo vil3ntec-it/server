@@ -1,17 +1,12 @@
 package ir.vil3ntec.admin.ui
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,11 +17,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ir.vil3ntec.admin.data.Api
+import ir.vil3ntec.admin.data.ApiError
 import ir.vil3ntec.admin.data.RemoteAccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -94,7 +89,29 @@ fun rememberServerHealth(
           ServerHealth(ServerState.Online)
         }
       } catch (e: Exception) {
-        ServerHealth(ServerState.Offline, e.message.orEmpty().ifBlank { e.javaClass.simpleName })
+        /*
+         *  ⚠️ «بسته» با «خاموش» یکی نیست، و نگفتنِ فرقشان یک بار کلِ ورود را
+         *  به بن‌بست برد.
+         *
+         *  درِ دامنه تا وقتی این گوشی کلید نگرفته، به *هر* مسیری «not found»
+         *  می‌دهد — حتی /health. پس چراغ قرمز می‌شد و زیرش می‌نوشت «این آدرس
+         *  روی سرور نیست»، در حالی که آدرس درست بود و سرور هم روشن. آدم
+         *  آدرسِ درست را پاک می‌کرد و دنبالِ آدرسِ دیگری می‌گشت.
+         *
+         *  حالا همان حالت را می‌شناسیم و می‌گوییم کارِ بعدی چیست: ورود.
+         */
+        val locked = e is ApiError
+          && e.status == 404
+          && remote == null
+          && serverUrl.startsWith("https://")
+        if (locked) {
+          ServerHealth(
+            ServerState.Unknown,
+            "این آدرس تا ورودِ شما بسته است — نام و رمزتان را بزنید",
+          )
+        } else {
+          ServerHealth(ServerState.Offline, e.message.orEmpty().ifBlank { e.javaClass.simpleName })
+        }
       }
       delay(everyMs)
     }
@@ -124,42 +141,40 @@ fun ServerStatusDot(state: ServerState, showLabel: Boolean = true) {
     ServerState.Unknown -> "در حال بررسی…"
   }
 
-  // نقطه وقتی روشن است آرام نفس می‌کشد، تا معلوم باشد زنده است نه عکس
-  val transition = rememberInfiniteTransition(label = "pulse")
-  val alpha by transition.animateFloat(
-    initialValue = 1f,
-    targetValue = if (state == ServerState.Online) 0.35f else 1f,
-    animationSpec = infiniteRepeatable(tween(1_200), RepeatMode.Reverse),
-    label = "alpha",
-  )
-
-  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-    Box(
-      Modifier
-        .size(9.dp)
-        .alpha(if (state == ServerState.Online) alpha else 1f)
-        .clip(CircleShape)
-        .background(color)
-    )
+  Row(
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(7.dp),
+  ) {
+    PulseDot(color, alive = state == ServerState.Online)
     if (showLabel) {
-      Text(label, style = MaterialTheme.typography.labelMedium, color = color)
+      Text(
+        label,
+        style = MaterialTheme.typography.labelMedium,
+        color = color,
+        fontWeight = FontWeight.Medium,
+      )
     }
   }
 }
 
-/** همان چراغ، داخلِ یک قابِ کوچکِ رنگی */
+/**
+ *  همان چراغ، داخلِ یک قابِ کوچکِ رنگی.
+ *
+ *  ⚠️ پس‌زمینه از پالتِ تم می‌آید نه نیمه‌شفاف: `copy(alpha)` روی کارتِ
+ *  تیره خاکستریِ گِل‌آلود می‌ساخت.
+ */
 @Composable
 fun ServerStatusChip(state: ServerState) {
-  val color: Color = when (state) {
-    ServerState.Online -> StatusColor.good
-    ServerState.Offline -> StatusColor.bad
-    ServerState.Unknown -> MaterialTheme.colorScheme.onSurfaceVariant
+  val tint = when (state) {
+    ServerState.Online -> StatusColor.goodTint
+    ServerState.Offline -> StatusColor.badTint
+    ServerState.Unknown -> StatusColor.tint
   }
   Box(
     Modifier
-      .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
-      .background(color.copy(alpha = 0.14f))
-      .padding(horizontal = 10.dp, vertical = 5.dp)
+      .clip(RoundedCornerShape(11.dp))
+      .background(tint)
+      .padding(horizontal = 11.dp, vertical = 6.dp)
   ) {
     ServerStatusDot(state)
   }

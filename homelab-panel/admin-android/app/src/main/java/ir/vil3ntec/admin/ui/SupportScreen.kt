@@ -22,7 +22,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.Badge
-import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,7 +62,12 @@ private data class Thread(
 )
 
 private data class Message(
-  val id: Long,
+  /*
+   *  ⚠️ متن، نه عدد. سرور «msg_1a2b3c» می‌فرستد و optLong رویش صفر
+   *  می‌دهد — یعنی شناسهٔ همهٔ پیام‌ها صفر می‌شد: هم فهرست می‌افتاد، هم
+   *  حذفِ تکراری‌ها همهٔ پیام‌ها را یکی می‌کرد.
+   */
+  val id: String,
   val fromAdmin: Boolean,
   val body: String,
   val at: Long,
@@ -126,7 +130,18 @@ private fun ThreadList(
         threads = (0 until array.length()).map { index ->
           val row = array.optJSONObject(index) ?: JSONObject()
           Thread(
-            id = row.optString("threadId").ifBlank { row.optString("thread_id") },
+            /*
+             *  ⚠️ سرور شناسه را در «id» می‌فرستد.
+             *
+             *  این‌جا «threadId» و «thread_id» خوانده می‌شد — هیچ‌کدام
+             *  وجود نداشت، پس شناسهٔ *همهٔ* گفت‌وگوها خالی می‌ماند. و
+             *  فهرستِ Compose با دو کلیدِ یکسان، کلِ برنامه را می‌اندازد.
+             *  برای همین بخشِ خالی سالم بود و هر بخشی که پیام داشت،
+             *  همان لحظه بیرون می‌انداخت.
+             */
+            id = row.optString("id")
+              .ifBlank { row.optString("threadId") }
+              .ifBlank { row.optString("thread_id") },
             who = row.optString("who").ifBlank { row.optString("accountName") },
             lastMessage = row.optString("lastMessage"),
             updatedAt = row.optLong("updatedAt"),
@@ -155,13 +170,14 @@ private fun ThreadList(
       contentPadding = PaddingValues(16.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      items(threads!!, key = { it.id }) { thread ->
-        Card(Modifier.fillMaxWidth().clickable { onOpen(thread) }) {
+      items(safeKeys(threads!!) { it.id }, key = { it.first }) { (_, thread) ->
+        PanelCard(Modifier.clickable { onOpen(thread) }) {
           Row(
-            Modifier.fillMaxWidth().padding(14.dp),
+            Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
           ) {
-            Column(Modifier.weight(1f)) {
+            Avatar(thread.who)
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
               Text(thread.who.ifBlank { "بی‌نام" }, style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
               Text(
@@ -179,7 +195,7 @@ private fun ThreadList(
               )
             }
             if (thread.unread > 0) Badge { Text(thread.unread.toString()) }
-            else if (thread.status == "closed") Chip("بسته", MaterialTheme.colorScheme.onSurfaceVariant)
+            else if (thread.status == "closed") Chip("بسته", MaterialTheme.colorScheme.onSurfaceVariant, StatusColor.tint)
           }
         }
       }
@@ -207,7 +223,7 @@ private fun ChatScreen(session: Session, thread: Thread, onBack: () -> Unit) {
     val fresh = (0 until array.length()).map { index ->
       val row = array.optJSONObject(index) ?: JSONObject()
       Message(
-        id = row.optLong("id"),
+        id = row.optString("id"),
         fromAdmin = row.optString("sender") == "admin",
         body = row.optString("body"),
         at = row.optLong("createdAt"),
@@ -222,7 +238,12 @@ private fun ChatScreen(session: Session, thread: Thread, onBack: () -> Unit) {
   LaunchedEffect(thread.id) {
     while (true) {
       try {
-        val after = messages.maxOfOrNull { it.id } ?: 0L
+        /*
+         *  ⚠️ سرور «after» را با زمانِ ساخت می‌سنجد (created_at > ?), نه
+         *  با شناسه. این‌جا شناسه فرستاده می‌شد، که همیشه صفر بود — پس هر
+         *  سه ثانیه کلِ گفت‌وگو از نو کشیده می‌شد.
+         */
+        val after = messages.maxOfOrNull { it.at } ?: 0L
         val reply = withContext(Dispatchers.IO) { Api.supportThread(session, thread.id, after) }
         absorb(reply.items("messages"))
         error = ""
@@ -259,7 +280,7 @@ private fun ChatScreen(session: Session, thread: Thread, onBack: () -> Unit) {
       contentPadding = PaddingValues(16.dp),
       verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      items(messages, key = { it.id }) { message -> Bubble(message) }
+      items(safeKeys(messages) { it.id }, key = { it.first }) { (_, message) -> Bubble(message) }
     }
 
     Row(

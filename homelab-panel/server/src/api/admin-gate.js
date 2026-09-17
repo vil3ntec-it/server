@@ -21,11 +21,13 @@
 //  لازم است. دو قفلِ مستقل — یکی می‌گوید «تو همان برنامه‌ای»، دیگری
 //  می‌گوید «تو همان آدمی».
 // ---------------------------------------------------------------------------
+import { clientIp } from '../platform/security.js';
 import crypto from 'node:crypto';
 import http from 'node:http';
 import { config } from '../config.js';
 import { db, logEvent } from '../db.js';
 import { audit } from '../control/audit.js';
+import { findUser, verifyPassword } from '../auth.js';
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS admin_gate_devices (
@@ -44,6 +46,22 @@ export const GATE_HEADER = 'x-admin-gate';
 
 /** مسیرِ در روی پورتِ عمومی */
 export const GATE_PREFIX = '/api/admin-gate';
+
+/**
+ * تنها مسیری که بی کلید هم جواب می‌دهد — و آن هم فقط با نام و رمزِ خودِ مدیر.
+ *
+ * ⚠️ چرا لازم شد: کلید تا دیروز فقط از داخلِ خانه صادر می‌شد، و این یعنی
+ * برنامه‌ای که بارِ اول بیرونِ خانه باز می‌شد هیچ راهی نداشت — درِ دامنه بی
+ * کلید بسته بود و کلید هم بی بودنِ داخلِ خانه صادر نمی‌شد. همان گرهی که در
+ * گوشی دیده شد: آدرس درست بود، سرور روشن بود، و باز هم «این آدرس روی سرور
+ * نیست».
+ *
+ * ⚠️ و چرا باز کردنش در را باز نمی‌کند: پشتِ این مسیر همان نام و رمزِ مدیر
+ * است، جوابِ اشتباه دقیقاً همان «not found»ِ همیشگی است (پس از بیرون هیچ
+ * فرقی با یک مسیرِ نبوده ندارد و کسی نمی‌فهمد این‌جا چیزی هست)، و شمارندهٔ
+ * سختِ خودش را دارد.
+ */
+export const GATE_ENROLL = `${GATE_PREFIX}/enroll`;
 
 const hash = (value) => crypto.createHash('sha256').update(String(value)).digest('hex');
 
@@ -100,6 +118,37 @@ export function revokeGateDevice(deviceId, actor = 'admin') {
   return info.changes > 0;
 }
 
+/**
+ * گرفتنِ کلید با نام و رمزِ مدیر — راهِ بارِ اول، از هر جای دنیا.
+ *
+ * ⚠️ فقط مدیر. کاربرِ «viewer» یا «operator» هم اگر رمزش درست باشد از این
+ * در رد نمی‌شود: پشتِ این در کلِ سرور است، نه بخشی از آن.
+ *
+ * @returns {{deviceId:string, key:string}|null} — null یعنی «نه»، بدونِ
+ *   اینکه معلوم شود کدام‌یک غلط بوده: نام، رمز، یا نقش.
+ */
+export function enrollDevice({ username, password, deviceId, name, ip = '' }) {
+  const who = String(username || '').trim();
+  const user = who ? findUser(who) : null;
+
+  if (!user || user.disabled || !verifyPassword(String(password || ''), user.password_hash)) {
+    logEvent('warn', 'panel', `تلاشِ ناموفق برای گرفتنِ کلیدِ درِ مدیر با نامِ «${who.slice(0, 40)}»`);
+    return null;
+  }
+  if ((user.role || 'admin') !== 'admin') {
+    logEvent('warn', 'panel', `کاربرِ «${user.username}» مدیر نیست و کلیدِ درِ مدیر نگرفت`);
+    return null;
+  }
+
+  const issued = issueGateKey({ deviceId, name: name || 'ویلن ادمین', actor: user.username });
+  logEvent(
+    'warn',
+    'panel',
+    `کلیدِ درِ مدیر از راهِ دامنه برای دستگاهِ «${issued.deviceId}» صادر شد (${user.username}${ip ? ` از ${ip}` : ''})`,
+  );
+  return issued;
+}
+
 /* ------------------------------ سنجشِ کلید ------------------------------- */
 
 /**
@@ -147,6 +196,27 @@ export function isAdminHost(req) {
 }
 
 /**
+ * مسیرِ ثبتِ بارِ اول.
+ *
+ * ⚠️ جوابِ «نه» همان ۴۰۴ِ خالیِ بقیهٔ در است، نه ۴۰۱. کسی که رمز را حدس
+ * می‌زند نباید بفهمد اصلاً جایی برای حدس زدن هست.
+ */
+export function adminEnrollRoute(req, res) {
+  const ip = clientIp(req);
+
+  const issued = enrollDevice({
+    username: req.body?.username,
+    password: req.body?.password,
+    deviceId: req.body?.deviceId,
+    name: req.body?.name,
+    ip,
+  });
+  if (!issued) return notFound(res);
+
+  res.json({ ok: true, ...issued, gateHeader: GATE_HEADER, gatePath: '' });
+}
+
+/**
  * میان‌افزارِ زیردامنهٔ مدیر — روی ریشه می‌نشیند.
  *
  * فرقش با `adminGate` فقط در این است که مسیر را نمی‌برد: آن‌جا پیشوندِ
@@ -177,8 +247,7 @@ export function adminGate(req, res, { stripPrefix = true } = {}) {
     return notFound(res);
   }
 
-  const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-    || req.socket?.remoteAddress || '';
+  const ip = clientIp(req);
   touch(device, ip);
 
   /*
@@ -188,7 +257,27 @@ export function adminGate(req, res, { stripPrefix = true } = {}) {
    *  `admin.<دامنه>` کلِ مسیر همان است که هست.
    */
   const full = String(req.originalUrl || req.url || '');
-  const inner = (stripPrefix ? full.slice(GATE_PREFIX.length) : full) || '/';
+
+  /*
+   *  ⚠️ روی زیردامنهٔ admin هم اگر پیشوند آمده باشد، کنده می‌شود — و همین
+   *  یک خط، برنامه را از «کار نمی‌کند» به «کار می‌کند» برد.
+   *
+   *  برنامه آدرسِ درش را از خودِ سرور می‌گیرد و پیشوند را به آن می‌چسباند:
+   *
+   *      https://admin.<دامنه>  +  /api/admin-gate  +  /api/dashboard
+   *
+   *  ولی روی زیردامنهٔ admin *کلِ میزبان* همان در است، پس این‌جا پیشوند
+   *  کنده نمی‌شد و همان‌طور به پنل می‌رفت — و پنل مسیری به نامِ
+   *  «/api/admin-gate/api/dashboard» ندارد. یعنی هر درخواستی که برنامه از
+   *  بیرونِ خانه می‌زد، با کلیدِ درست، ۴۰۴ می‌گرفت. همان «این آدرس روی
+   *  سرور نیست»ی که در گوشی دیده شد.
+   *
+   *  آزمونش پایینِ test/admin-gate.mjs است تا دوباره برنگردد.
+   */
+  const bare = full === GATE_PREFIX || full.startsWith(`${GATE_PREFIX}/`) || full.startsWith(`${GATE_PREFIX}?`)
+    ? full.slice(GATE_PREFIX.length)
+    : full;
+  const inner = (stripPrefix ? full.slice(GATE_PREFIX.length) : bare) || '/';
   if (!inner.startsWith('/')) return notFound(res);
 
   const headers = { host: `127.0.0.1:${config.port}` };

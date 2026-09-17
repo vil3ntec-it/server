@@ -14,6 +14,7 @@ import { licensePublicKey } from '../tohid/keys.js';
 import { issueLicense, LicenseError } from '../tohid/license.js';
 import { entitlementFor } from '../tohid/subscriptions.js';
 import { plansPayload } from '../tohid/plans.js';
+import { noticesFor } from '../announce/store.js';
 import {
   threadFor, postMessage, messagesOf, markRead, shapeThread, unreadForUser,
 } from '../tohid/support.js';
@@ -55,8 +56,8 @@ function requireAccount(req, res) {
   return account;
 }
 
-const clientIp = (req) =>
-  (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || null;
+// IP از تنها جای محاسبه‌اش (platform/security.js) — نسخهٔ محلی هدرِ جعلی را باور می‌کرد
+import { clientIp } from '../platform/security.js';
 
 /* ------------------------------- حساب --------------------------------- */
 
@@ -133,7 +134,12 @@ router.get('/billing/status', guard(async (req, res) => {
     });
   }
   noteActivity({ accountId: account.account_id, kind: 'api', ip: clientIp(req) });
-  res.json({ entitlement: entitlementFor(account.account_id), serverTime: Date.now() });
+  res.json({
+    entitlement: entitlementFor(account.account_id),
+    // اطلاعیهٔ عمومی، به‌علاوهٔ هر چیزی که فقط برای همین حساب گذاشته شده
+    notices: noticesFor('shop', account.account_id),
+    serverTime: Date.now(),
+  });
 }));
 
 router.post('/billing/request', guard(async (req, res) => {
@@ -289,6 +295,7 @@ router.get('/health', (_req, res) => {
     otpReady: Boolean(cfg.mail?.host),
     version: versionInfo.version,
     features: SHOP_FEATURES,
+    notices: noticesFor('shop'),
   });
 });
 
@@ -312,7 +319,15 @@ router.get('/health', (_req, res) => {
  *  قیمت راز نیست: هر کسی که صفحهٔ اشتراک را باز کند باید ببیندش.
  */
 router.get('/plans', guard(async (_req, res) => {
-  res.json({ ...plansPayload(), serverTime: Date.now() });
+  /*
+   *  ⚠️ اطلاعیه‌ها روی همین پاسخ سوار می‌شوند نه یک مسیرِ جدا.
+   *
+   *  برنامه‌ها همین حالا قیمت‌نامه را می‌گیرند. اگر اطلاعیه مسیرِ خودش را
+   *  می‌خواست، هر برنامه باید یک درخواستِ تازه اضافه می‌کرد — و تا آن
+   *  روز، پیامِ شما به هیچ‌کس نمی‌رسید. این‌طور همان درخواستِ همیشگی
+   *  اطلاعیه را هم با خودش می‌آورد.
+   */
+  res.json({ ...plansPayload(), notices: noticesFor('shop'), serverTime: Date.now() });
 }));
 
 /* --------------------------- پشتیبانی --------------------------- */

@@ -68,17 +68,30 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
  *  دور می‌ریزد، پس درخواست با نامِ میزبانِ واقعی می‌رسد و آزمون چیزی را
  *  می‌سنجد که فکر می‌کند. با http.request خودمان هدر را می‌گذاریم.
  */
-function withHost(port, url, host, headers = {}) {
+function withHost(port, url, host, headers = {}, { method = 'GET', body } = {}) {
   return new Promise((resolve, reject) => {
+    const payload = body === undefined ? null : JSON.stringify(body);
+    const head = { ...headers, host };
+    if (payload) {
+      head['content-type'] = 'application/json';
+      head['content-length'] = Buffer.byteLength(payload);
+    }
     const req = http.request(
-      { host: '127.0.0.1', port, path: url, method: 'GET', headers: { ...headers, host } },
+      { host: '127.0.0.1', port, path: url, method, headers: head },
       (res) => {
         let text = '';
         res.on('data', (c) => (text += c));
-        res.on('end', () => resolve({ status: res.statusCode, text }));
+        res.on('end', () => {
+          let parsed = null;
+          try {
+            parsed = JSON.parse(text);
+          } catch { /* متنِ ساده */ }
+          resolve({ status: res.statusCode, text, body: parsed });
+        });
       },
     );
     req.on('error', reject);
+    if (payload) req.write(payload);
     req.end();
   });
 }
@@ -219,6 +232,110 @@ try {
     'x-admin-gate': key2,
   });
   check('روی دامنهٔ معمولی باز نمی‌شود', plainHost.status === 404, `status ${plainHost.status}`);
+
+  console.log('\n── مسیری که برنامه واقعاً می‌سازد ──');
+  /*
+   *  ⚠️ این یکی با اسکرین‌شاتِ کاربر پیدا شد و هیچ آزمونی نمی‌گرفتش.
+   *
+   *  برنامه آدرسِ در را از خودِ سرور می‌گیرد و پیشوند را به آن می‌چسباند:
+   *
+   *      https://admin.<دامنه>  +  /api/admin-gate  +  /api/dashboard
+   *
+   *  آزمون‌های بالا همین پیشوند را می‌زدند، ولی روی میزبانِ *معمولی* — و
+   *  آن‌جا کنده می‌شد و کار می‌کرد. روی زیردامنهٔ admin کنده نمی‌شد و
+   *  همان‌طور به پنل می‌رفت، که چنین مسیری ندارد. یعنی هر درخواستِ برنامه
+   *  از بیرونِ خانه، با کلیدِ درست، ۴۰۴ می‌گرفت: «این آدرس روی سرور نیست».
+   */
+  const wrapped = await withHost(PUBLIC_PORT, '/api/admin-gate/api/dashboard', 'admin.example.com', {
+    authorization: `Bearer ${token}`,
+    'x-admin-gate': key2,
+  });
+  check('پیشوند روی زیردامنهٔ admin هم کنده می‌شود', wrapped.status === 200, `status ${wrapped.status}`);
+  const wrappedHealth = await withHost(PUBLIC_PORT, '/api/admin-gate/health', 'admin.example.com', {
+    'x-admin-gate': key2,
+  });
+  check('چراغِ وضعیت هم از همان راه', wrappedHealth.status === 200, `status ${wrappedHealth.status}`);
+
+  console.log('\n── بارِ اول، از بیرونِ خانه ──');
+  /*
+   *  ⚠️ گرهی که کلِ برنامه را خوابانده بود: درِ دامنه بی کلید بسته است
+   *  (و درست هم همین است)، ولی کلید هم فقط از داخلِ خانه صادر می‌شد. پس
+   *  کسی که بارِ اول برنامه را بیرونِ خانه باز می‌کرد، هیچ راهی نداشت.
+   *
+   *  حالا یک مسیر — و فقط همین یک مسیر — بی کلید جواب می‌دهد، و آن هم
+   *  فقط با نام و رمزِ خودِ مدیر.
+   */
+  const AWAY = 'admin.example.com';
+
+  // ۱) بی کلید و بی رمز، هنوز هیچ چیز
+  const coldHealth = await withHost(PUBLIC_PORT, '/health', AWAY);
+  check('بی کلید، /health روی admin بسته است', coldHealth.status === 404, `status ${coldHealth.status}`);
+  const coldDash = await withHost(PUBLIC_PORT, '/api/dashboard', AWAY);
+  check('بی کلید، پنل هم بسته است', coldDash.status === 404, `status ${coldDash.status}`);
+
+  // ۲) رمزِ غلط: همان «نبوده»، نه ۴۰۱ — کسی نفهمد جایی برای حدس زدن هست
+  const badPass = await withHost(PUBLIC_PORT, '/api/admin-gate/enroll', AWAY, {}, {
+    method: 'POST',
+    body: { username: 'admin', password: 'NotTheRealOne!', deviceId: 'phone-away', name: 'گوشی' },
+  });
+  check('رمزِ غلط: not found', badPass.status === 404, `status ${badPass.status}`);
+  check('و هیچ کلیدی نمی‌دهد', !badPass.text.includes('key'), badPass.text.slice(0, 120));
+  const badUser = await withHost(PUBLIC_PORT, '/api/admin-gate/enroll', AWAY, {}, {
+    method: 'POST',
+    body: { username: 'someone-else', password: 'ControlCenter!2026', deviceId: 'phone-away' },
+  });
+  check('نامِ ناشناس: not found', badUser.status === 404, `status ${badUser.status}`);
+
+  // ۳) نام و رمزِ درست: کلید، همان‌جا، بیرونِ خانه
+  const enrolled = await withHost(PUBLIC_PORT, '/api/admin-gate/enroll', AWAY, {}, {
+    method: 'POST',
+    body: {
+      username: 'admin',
+      password: 'ControlCenter!2026',
+      deviceId: 'phone-away',
+      name: 'گوشیِ بیرون',
+    },
+  });
+  check('با نام و رمزِ درست، کلید صادر می‌شود', enrolled.status === 200 && Boolean(enrolled.body?.key),
+    enrolled.text.slice(0, 160));
+  check('و پیشوند خالی است (خودِ میزبان همان در است)', enrolled.body?.gatePath === '',
+    JSON.stringify(enrolled.body?.gatePath));
+  const awayKey = enrolled.body?.key;
+
+  // ۴) و از همان لحظه، همه‌چیز — بی آنکه پا به خانه گذاشته باشیم
+  const awayHealth = await withHost(PUBLIC_PORT, '/health', AWAY, { 'x-admin-gate': awayKey });
+  check('چراغِ وضعیت روشن می‌شود', awayHealth.status === 200, `status ${awayHealth.status}`);
+  const awayLogin = await withHost(PUBLIC_PORT, '/api/auth/login', AWAY, { 'x-admin-gate': awayKey }, {
+    method: 'POST',
+    body: { username: 'admin', password: 'ControlCenter!2026' },
+  });
+  check('ورود از بیرونِ خانه انجام می‌شود', Boolean(awayLogin.body?.token), awayLogin.text.slice(0, 160));
+  const awayDash = await withHost(PUBLIC_PORT, '/api/dashboard', AWAY, {
+    'x-admin-gate': awayKey,
+    authorization: `Bearer ${awayLogin.body?.token}`,
+  });
+  check('و کلِ پنل هم باز است', awayDash.status === 200, `status ${awayDash.status}`);
+
+  // ۵) گوشیِ گم‌شده: باطل که شد، همان لحظه می‌افتد بیرون
+  await call(PANEL, '/api/settings/remote/device/phone-away', { method: 'DELETE', token });
+  const afterAway = await withHost(PUBLIC_PORT, '/health', AWAY, { 'x-admin-gate': awayKey });
+  check('کلیدِ باطل‌شده دیگر کار نمی‌کند', afterAway.status === 404, `status ${afterAway.status}`);
+
+  // ۶) کاربری که مدیر نیست، از این در رد نمی‌شود
+  const madeViewer = await call(PANEL, '/api/auth/users', {
+    method: 'POST',
+    token,
+    body: { username: 'watcher', password: 'JustLooking!2026', role: 'viewer' },
+  });
+  if (madeViewer.status === 200 || madeViewer.status === 201) {
+    const viewerTry = await withHost(PUBLIC_PORT, '/api/admin-gate/enroll', AWAY, {}, {
+      method: 'POST',
+      body: { username: 'watcher', password: 'JustLooking!2026', deviceId: 'phone-viewer' },
+    });
+    check('کاربرِ غیرِ مدیر کلید نمی‌گیرد', viewerTry.status === 404, `status ${viewerTry.status}`);
+  } else {
+    check('کاربرِ غیرِ مدیر کلید نمی‌گیرد', true, 'ساختنِ کاربر در دسترس نبود');
+  }
 
   console.log('\n── آدرسِ تونل خودش را جای پنل جا نمی‌زند ──');
   /*

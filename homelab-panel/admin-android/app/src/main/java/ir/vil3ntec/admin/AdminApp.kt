@@ -5,7 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import ir.vil3ntec.admin.data.SessionStore
-import ir.vil3ntec.admin.work.WatchService
+import ir.vil3ntec.admin.work.CrashLog
 
 class AdminApp : Application() {
 
@@ -14,13 +14,23 @@ class AdminApp : Application() {
 
   override fun onCreate() {
     super.onCreate()
+    // پیش از هر چیزِ دیگر، تا اگر خودِ راه‌اندازی افتاد هم ثبت شود
+    CrashLog.install(this)
     store = SessionStore(this)
     createChannels()
 
-    // اگر از قبل وارد شده و نگهبان روشن است، با بالا آمدنِ برنامه هم روشن شود
-    if (store.load().loggedIn && store.watchEnabled) {
-      runCatching { WatchService.start(this) }
-    }
+    /*
+     *  ⚠️ نگهبان این‌جا روشن نمی‌شود، و این عمدی است.
+     *
+     *  onCreateِ Application فقط وقتی برنامه را باز می‌کنید صدا زده
+     *  نمی‌شود — هر بار که اندروید پروسه را برای یک پیامِ پس‌زمینه بالا
+     *  می‌آورد هم همین‌جاست. و شروعِ سرویسِ پیش‌زمینه از پس‌زمینه ممنوع
+     *  است. نتیجه‌اش «ویلن ادمین has stopped» بود، بی آنکه کسی برنامه را
+     *  باز کرده باشد.
+     *
+     *  حالا نگهبان از MainActivity روشن می‌شود — یعنی وقتی صفحه جلوی
+     *  چشمِ کاربر است و اندروید اجازه می‌دهد.
+     */
   }
 
   /*

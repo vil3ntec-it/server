@@ -32,7 +32,10 @@ import {
   listUsers,
   setBlocked,
   deleteUser,
+  listLogins,
+  loginSummary,
   recentCodes,
+  refreshAppSession,
   stats,
 } from '../appauth/index.js';
 import { db, getSetting } from '../db.js';
@@ -60,8 +63,11 @@ const router = Router();
    فرمِ معمولی می‌فرستند. هر دو را می‌پذیریم تا کسی پشتِ در نماند. */
 router.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
-const clientIp = (req) =>
-  String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || '';
+// IP از تنها جای محاسبه‌اش می‌آید — نسخهٔ محلی، هدرِ جعلی را باور می‌کرد
+import { clientIp } from '../platform/security.js';
+import { rateLimit } from '../lib/rate-limit.js';
+import { allowAutoRegister } from '../lib/auto-register.js';
+import { linkApp } from '../appauth/registry-link.js';
 
 const appOf = (req) => cleanApp(req.body?.app || req.query?.app || req.headers['x-app'] || 'main');
 
@@ -114,12 +120,27 @@ router.get('/config', (req, res) => {
         }
       })(),
     },
+    /*
+     *  ⚠️ نشانی‌های قدیمی عمداً دست‌نخورده‌اند: برنامه‌هایی که همین حالا
+     *  روی گوشیِ مردم نصب‌اند از همین‌ها می‌خوانند و عوض کردنشان یعنی
+     *  همه با هم بشکنند. نشانیِ نسخه‌دار کنارشان اضافه شد، نه به‌جایشان.
+     */
     endpoints: {
       requestCode: '/api/app/auth/request-code',
       verifyCode: '/api/app/auth/verify-code',
       me: '/api/app/me',
       logout: '/api/app/auth/logout',
     },
+    /** نشانیِ نسخه‌دار — برنامهٔ تازه این‌ها را بزند */
+    v1: {
+      base: '/api/v1/app',
+      requestCode: '/api/v1/app/auth/request-code',
+      verifyCode: '/api/v1/app/auth/verify-code',
+      refresh: '/api/v1/app/auth/refresh',
+      me: '/api/v1/app/me',
+      logout: '/api/v1/app/auth/logout',
+    },
+    apiVersion: 1,
   });
 });
 
@@ -138,8 +159,29 @@ const apiKeyOf = (req) =>
 
 async function handleRequestCode(req, res) {
   const app = appOf(req);
-  // برنامهٔ تازه خودش ثبت می‌شود تا هیچ‌کس پشتِ در نماند
-  ensureClient(app, { name: req.body?.appName || null });
+  /*
+   *  ⚠️ این‌جا هم مثلِ مسیرِ /api/codes، ثبتِ خودکار *پیش از* هر بررسی
+   *  انجام می‌شد — پس هر کسی از اینترنت می‌توانست با نامِ ساختگی ردیف
+   *  بسازد و دفترِ برنامه‌ها را پر کند. ثبتِ برنامهٔ تازه کارِ پنل است.
+   */
+  /*
+   *  ⚠️ سرور دو دفترِ برنامه دارد و این مسیر فقط یکی را می‌شناخت. یعنی
+   *  برنامه‌ای که در بخشِ «کدهای شش‌رقمی» ثبت شده بود، این‌جا
+   *  «unknown_app» می‌گرفت. linkApp پل می‌زند: ثبت در هر کدام، آن یکی
+   *  را هم می‌سازد — با همان کلید.
+   */
+  linkApp(app);
+  if (!getClient(app)) {
+    if (!allowAutoRegister(app)) {
+      return res.status(404).json({
+        ok: false,
+        error: 'unknown_app',
+        message: 'این برنامه ثبت نشده است — در پنل اضافه‌اش کنید',
+      });
+    }
+    ensureClient(app, { name: req.body?.appName || null });
+    linkApp(app, { name: req.body?.appName || null });
+  }
   const settings = settingsFor(app);
   const picked = pickTarget(req.body || {}, settings);
   if (picked.error) {
@@ -162,12 +204,17 @@ async function handleRequestCode(req, res) {
     app,
     channel: picked.channel,
     target: picked.target,
+    // نامِ خودِ شخص، تا ایمیل «فلانی عزیز» بگوید نه یک خوش‌آمدِ خشک
+    name: req.body?.name ?? req.body?.fullName ?? req.body?.userName ?? null,
     ip: clientIp(req),
     settings,
   });
 
   if (!result.ok) {
-    return res.status(result.error === 'too_soon' || result.error === 'rate_limited' ? 429 : 400).json(result);
+    // «زیاد شد» یعنی ۴۲۹ — کلاینت باید بتواند «صبر کن» را از «غلط فرستادی» جدا کند
+    const busy = ['too_soon', 'rate_limited', 'too_many_requests'].includes(result.error);
+    if (busy && result.retryAfter) res.setHeader('Retry-After', String(result.retryAfter));
+    return res.status(busy ? 429 : 400).json(result);
   }
 
   /* سرویسِ پیامک/ایمیل تنظیم شده ولی کد نرفت (کلیدِ اشتباه، اعتبارِ تمام‌شده،
@@ -182,8 +229,12 @@ async function handleRequestCode(req, res) {
 }
 
 // یک کار، چند اسم — هر برنامه‌ای اسمِ رایجِ خودش را صدا بزند، همین کار انجام می‌شود
+/*
+ *  ⚠️ «request-code» بی پیشوندِ auth هم هست، تا وقتی این روتر زیرِ
+ *  /api/v1/auth سوار می‌شود نشانی «/api/v1/auth/auth/...» نشود.
+ */
 router.post(
-  ['/auth/request-code', '/auth/send-code', '/auth/otp', '/login/request', '/send-code'],
+  ['/auth/request-code', '/auth/send-code', '/auth/otp', '/login/request', '/send-code', '/request-code'],
   handleRequestCode
 );
 
@@ -192,6 +243,18 @@ router.post(
 // ---------------------------------------------------------------------------
 function handleVerifyCode(req, res) {
   const app = appOf(req);
+  /*
+   *  در «سنجیدنِ کد» ثبتِ خودکار معنا ندارد: اگر برنامه نیست، کدی هم
+   *  ساخته نشده. پس این‌جا فقط رد.
+   */
+  linkApp(app);
+  if (!getClient(app)) {
+    return res.status(404).json({
+      ok: false,
+      error: 'unknown_app',
+      message: 'این برنامه ثبت نشده است — در پنل اضافه‌اش کنید',
+    });
+  }
   const settings = settingsFor(app);
   const picked = pickTarget(req.body || {}, settings);
   if (picked.error) {
@@ -242,7 +305,35 @@ router.put('/me', requireAppUser, (req, res) => {
   res.json({ ok: true, user: publicUser(user) });
 });
 
-router.post('/auth/logout', requireAppUser, (req, res) => {
+/* ---------------------------------------------------------------------------
+ *  تمدیدِ ورود — بدونِ کدِ تازه
+ *
+ *  ⚠️ این مسیر عمداً requireAppUser ندارد: کارش دقیقاً همان وقتی است که
+ *  توکن منقضی شده. کلیدِ تمدید خودش سندِ هویت است.
+ *
+ *  و عمداً سقفِ خودش را دارد: کلیدِ تمدید یک رازِ ۳۲ بایتی است و حدس زدنش
+ *  شدنی نیست، ولی سقف جلوی کوبیدنِ بی‌هدف را می‌گیرد.
+ * ------------------------------------------------------------------------- */
+router.post(
+  ['/auth/refresh', '/auth/renew', '/refresh'],
+  rateLimit('app-refresh', 60, 10 * 60 * 1000),
+  (req, res) => {
+    const app = appOf(req);
+    const settings = settingsFor(app);
+    const result = refreshAppSession({
+      refreshToken: req.body?.refreshToken ?? req.body?.refresh_token ?? req.body?.refresh,
+      device: req.body?.device || req.headers['user-agent'],
+      ip: clientIp(req),
+      settings,
+    });
+    if (!result.ok) {
+      return res.status(result.error === 'blocked' ? 403 : 401).json(result);
+    }
+    res.json(result);
+  }
+);
+
+router.post(['/auth/logout', '/logout'], requireAppUser, (req, res) => {
   res.json(req.body?.allDevices ? logoutAllDevices(req.appUser.id) : logoutApp(req.appSessionId));
 });
 
@@ -276,7 +367,9 @@ adminRouter.post('/clients', (req, res) => {
     return res.status(409).json({ ok: false, error: 'exists', message: 'برنامه‌ای با همین شناسه هست' });
   }
   const client = ensureClient(slug, { name: req.body?.name || slug, kind: cleanKind(req.body?.kind) });
-  res.json({ ok: true, client: publicClient(client) });
+  //  و در دفترِ کدها هم — یک ثبت، هر دو مسیر
+  linkApp(slug, { name: req.body?.name || slug, kind: cleanKind(req.body?.kind) });
+  res.json({ ok: true, client: publicClient(getClient(slug) || client) });
 });
 
 adminRouter.put('/clients/:slug', (req, res) => {
@@ -372,6 +465,41 @@ adminRouter.delete('/users/:id', (req, res) => {
 /* آخرین کدها — بدونِ خودِ کد (کد اصلاً ذخیره نمی‌شود). برای وقتی که می‌خواهید
    ببینید درخواست‌ها می‌رسند و از چه راهی فرستاده شده‌اند. */
 adminRouter.get('/codes', (req, res) => res.json({ codes: recentCodes(req.query.limit) }));
+
+/* ---------------------------------------------------------------------------
+ *  دفترِ ورود — «هر برنامه در بخشِ خودش»
+ *
+ *  ⚠️ چرا لازم شد: تا امروز هیچ تاریخچه‌ای از ورود نبود، فقط «آخرین ورود»
+ *  روی خودِ کاربر. یعنی نمی‌شد فهمید کی، کِی، از کجا و به کدام برنامه وارد
+ *  شده — و اگر حسابی دستِ کسِ دیگری می‌افتاد هیچ ردی نمی‌ماند.
+ * ------------------------------------------------------------------------- */
+adminRouter.get('/logins', (req, res) => {
+  const app = req.query.app ? cleanApp(req.query.app) : null;
+  res.json({
+    ok: true,
+    app,
+    summary: loginSummary(app),
+    logins: listLogins({
+      app,
+      email: req.query.email || '',
+      only: ['ok', 'failed'].includes(req.query.only) ? req.query.only : 'all',
+      limit: req.query.limit,
+      offset: req.query.offset,
+    }),
+  });
+});
+
+/** خلاصهٔ ورودِ همهٔ برنامه‌ها، کنارِ هم */
+adminRouter.get('/logins/summary', (req, res) => {
+  const rows = listClients().map((c) => ({
+    slug: c.slug,
+    name: c.name,
+    kind: c.kind,
+    kindLabel: c.kindLabel,
+    ...loginSummary(c.slug),
+  }));
+  res.json({ ok: true, apps: rows, all: loginSummary(null) });
+});
 
 /* دفترِ کارهای حساس — چه کسی، کِی، چه کرد */
 adminRouter.get('/audit', (req, res) => {

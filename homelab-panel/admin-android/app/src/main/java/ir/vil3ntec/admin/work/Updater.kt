@@ -3,6 +3,8 @@ package ir.vil3ntec.admin.work
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.core.content.FileProvider
 import org.json.JSONArray
 import org.json.JSONObject
@@ -180,14 +182,59 @@ object Updater {
     return target
   }
 
-  /** فایل را به نصب‌کنندهٔ اندروید می‌دهد */
-  fun install(context: Context, apk: File) {
-    val uri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.files", apk)
-    val intent = Intent(Intent.ACTION_VIEW).apply {
-      setDataAndType(uri, "application/vnd.android.package-archive")
-      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+  /**
+   *  آیا اندروید اجازه می‌دهد این برنامه چیزی نصب کند؟
+   *
+   *  ⚠️ این همان دری بود که «به‌روزرسانی از داخلِ برنامه» را بی‌صدا
+   *  می‌بست. اجازهٔ REQUEST_INSTALL_PACKAGES در مانیفست هست، ولی از
+   *  اندروید ۸ به بعد خودِ کاربر هم باید برای *همین* برنامه سوئیچِ
+   *  «نصبِ برنامه‌های ناشناس» را روشن کند.
+   *
+   *  تا وقتی روشن نشده، دانلود کامل می‌شد، صفحهٔ نصب باز می‌شد و بعد
+   *  هیچ — یا یک پیامِ گنگِ سیستمی. آدم فکر می‌کرد به‌روزرسانی خراب است،
+   *  در حالی که فقط یک سوئیچ لازم بود.
+   */
+  fun canInstall(context: Context): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      runCatching { context.packageManager.canRequestPackageInstalls() }.getOrDefault(false)
+    } else {
+      true
     }
-    context.startActivity(intent)
+
+  /** بردنِ کاربر به همان صفحهٔ تنظیماتی که آن سوئیچ آن‌جاست */
+  fun askInstallPermission(context: Context): Boolean = runCatching {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return@runCatching false
+    context.startActivity(
+      Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
+        .setData(Uri.parse("package:${context.packageName}"))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    )
+    true
+  }.getOrDefault(false)
+
+  /**
+   * فایل را به نصب‌کنندهٔ اندروید می‌دهد.
+   *
+   * @return پیامِ خطا، یا null اگر صفحهٔ نصب باز شد
+   */
+  fun install(context: Context, apk: File): String? {
+    if (!canInstall(context)) {
+      askInstallPermission(context)
+      return "اندروید اجازهٔ نصب نمی‌دهد. در صفحه‌ای که باز شد، «نصبِ برنامه‌های ناشناس» را " +
+        "برای ویلن ادمین روشن کنید و بعد دوباره دکمهٔ نصب را بزنید."
+    }
+    return try {
+      val uri: Uri = FileProvider.getUriForFile(context, "${context.packageName}.files", apk)
+      context.startActivity(
+        Intent(Intent.ACTION_VIEW).apply {
+          setDataAndType(uri, "application/vnd.android.package-archive")
+          addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+      )
+      null
+    } catch (e: Exception) {
+      e.message ?: "صفحهٔ نصب باز نشد"
+    }
   }
 }

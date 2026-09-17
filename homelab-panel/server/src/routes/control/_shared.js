@@ -111,11 +111,10 @@ export function rateLimit({ windowMs = 60000, max = 60, key = (req) => req.ip } 
   };
 }
 
-/** IP واقعیِ درخواست (پشتِ تونل هم درست است) */
-export function clientIp(req) {
-  return (
-    String(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || '')
-      .split(',')[0]
-      .trim() || req.socket?.remoteAddress || null
-  );
-}
+/*
+ *  IP واقعیِ درخواست — از تنها جای محاسبه‌اش.
+ *
+ *  ⚠️ نسخهٔ قبلیِ همین‌جا هدرها را بی‌قید‌وشرط باور می‌کرد، پس سقفِ ورودِ
+ *  مدیرِ فروشگاه و سقفِ گزارشِ عاملان هم با یک هدر دور می‌خورد.
+ */
+export { clientIp } from '../../platform/security.js';
