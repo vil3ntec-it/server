@@ -289,7 +289,12 @@ object Api {
     val body = JSONObject().put("app", app).put("email", email)
     if (appName.isNotBlank()) body.put("appName", appName)
     if (userId.isNotBlank()) body.put("userId", userId)
-    return call(session, "/api/codes-admin/send", "POST", body)
+    /*
+     *  ⚠️ مهلت بلندتر از بقیه است، عمداً: این درخواست منتظر می‌ماند تا
+     *  سرورِ ایمیل واقعاً بگوید گرفتم یا نگرفتم. تا دیروز همان لحظه
+     *  «فرستاده شد» می‌گفت و اگر نمی‌رفت، هیچ‌جا معلوم نمی‌شد.
+     */
+    return call(session, "/api/codes-admin/send", "POST", body, timeoutMs = 30_000)
   }
 
   /** سایت‌های روی سرور */

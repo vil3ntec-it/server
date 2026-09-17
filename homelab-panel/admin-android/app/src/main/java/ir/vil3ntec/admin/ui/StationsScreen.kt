@@ -510,6 +510,14 @@ private fun PumpCodesTab(session: Session) {
   var who by remember { mutableStateOf("") }
   var busy by remember { mutableStateOf(false) }
   var note by remember { mutableStateOf("") }
+  /*
+   *  ⚠️ «رفت» و «نرفت» باید از هم جدا دیده شوند.
+   *
+   *  گزارشِ واقعی: «۵ تا تست زدم، ۲ ایمیل رفت و سه تای دیگر نیامد، در
+   *  حالی که می‌گوید فرستادم.» حالا سرور تا نتیجهٔ واقعی را نبیند جواب
+   *  نمی‌دهد، و این‌جا هم پیامِ شکست قرمز است نه خاکستری.
+   */
+  var noteFailed by remember { mutableStateOf(false) }
   val scope = rememberCoroutineScope()
 
   LaunchedEffect(reload) {
@@ -526,16 +534,25 @@ private fun PumpCodesTab(session: Session) {
     if (busy || email.isBlank()) return
     busy = true
     note = ""
+    noteFailed = false
     scope.launch {
-      note = try {
+      try {
         val reply = withContext(Dispatchers.IO) {
           Api.sendCode(session, PUMP_CODE_APP, email.trim(), PUMP_CODE_NAME, who.trim())
         }.o()
-        email = ""
-        who = ""
-        reply.optString("message").ifBlank { "کد ساخته شد و در صفِ ارسال است." }
+        val state = reply.optJSONObject("delivery")?.optString("state") ?: ""
+        noteFailed = state == "failed" || !reply.optBoolean("ok", true)
+        note = reply.optString("message").ifBlank {
+          if (noteFailed) "ایمیل نرفت" else "کد ساخته شد و در صفِ ارسال است."
+        }
+        // ایمیلی که نرفت را پاک نمی‌کنیم؛ شاید فقط یک حرفش غلط بوده
+        if (!noteFailed) {
+          email = ""
+          who = ""
+        }
       } catch (e: Exception) {
-        e.message ?: "نشد"
+        noteFailed = true
+        note = e.message ?: "نشد"
       } finally {
         busy = false
       }
@@ -582,7 +599,8 @@ private fun PumpCodesTab(session: Session) {
             note,
             Modifier.padding(top = 10.dp),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (noteFailed) MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.onSurfaceVariant,
           )
         }
 
@@ -591,7 +609,7 @@ private fun PumpCodesTab(session: Session) {
           horizontalArrangement = Arrangement.End,
         ) {
           Button(enabled = !busy && email.isNotBlank(), onClick = { send() }) {
-            Text("بفرست")
+            Text(if (busy) "در حالِ فرستادن…" else "بفرست")
           }
         }
       }

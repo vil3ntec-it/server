@@ -77,5 +77,36 @@ check('سرورِ شخصی قبول می‌شود', checkMailSettings({ host: 'm
 check('خالی ایراد نمی‌گیرد', checkMailSettings({}).ok === true);
 check('بدونِ ورودی هم نمی‌شکند', checkMailSettings().ok === true);
 
+console.log('\n── فرستنده‌ای که با حسابِ جیمیل یکی نیست ──');
+/*
+ *  ⚠️ این یکی همان‌جایی است که «می‌گوید فرستادم ولی نرسید» از آن درمی‌آید:
+ *  جیمیل فقط از طرفِ حسابی که وارد شده ایمیل می‌فرستد. با فرستندهٔ دیگر،
+ *  یا رد می‌کند یا آدرس را عوض می‌کند و گیرنده‌های سخت‌گیر دورش می‌ریزند.
+ */
+const mismatch = checkMailSettings({
+  host: 'smtp.gmail.com',
+  username: 'vil3ntec@gmail.com',
+  from: 'support@vill3n.top',
+  password: 'abcdefghijklmnop',
+});
+check('فرستندهٔ ناهماهنگ هشدار می‌گیرد', mismatch.warn === 'gmail_from_mismatch', JSON.stringify(mismatch));
+/*
+ *  ⚠️ هشدار است نه خطا: آدرسِ تأییدشده در «Send mail as» واقعاً کار
+ *  می‌کند، پس جلوی ذخیره را نمی‌گیریم.
+ */
+check('ولی جلوی ذخیره را نمی‌گیرد', mismatch.ok === true, JSON.stringify(mismatch));
+check('و می‌گوید چه بگذارد', mismatch.suggest?.from === 'vil3ntec@gmail.com', JSON.stringify(mismatch.suggest));
+
+const matched = checkMailSettings({
+  host: 'smtp.gmail.com',
+  username: 'vil3ntec@gmail.com',
+  from: 'VIL3NTEC@gmail.com',
+  password: 'abcdefghijklmnop',
+});
+check('همان حساب با حروفِ بزرگ هم قبول است', matched.ok === true, JSON.stringify(matched));
+
+const ownServer = checkMailSettings({ host: 'mail.vill3n.top', username: 'robot', from: 'no-reply@vill3n.top' });
+check('سرورِ شخصی این قید را ندارد', ownServer.ok === true, JSON.stringify(ownServer));
+
 console.log(`\n${failed === 0 ? '✅' : '❌'} ${passed} سبز، ${failed} قرمز\n`);
 process.exit(failed === 0 ? 0 : 1);

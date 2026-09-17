@@ -36,7 +36,7 @@ export async function sendCodeEmail({ to, code, name = '', appName, subject, min
   const built = otpEmail({ code, minutes, appName: label, name });
   const line = fill(subject || settings.subject, { code, app: label }) || built.subject;
 
-  await sendMail({
+  const receipt = await sendMail({
     host: settings.email.host,
     port: settings.email.port,
     secure: settings.email.secure,
@@ -51,5 +51,12 @@ export async function sendCodeEmail({ to, code, name = '', appName, subject, min
     html: built.html,
   });
 
-  return { sent: true };
+  /*
+   *  رسیدِ سرورِ ایمیل را بالا می‌دهیم، نه یک true خشک.
+   *
+   *  ⚠️ چرا مهم است: «فرستادم» بدونِ رسید، حرف است. با رسید معلوم می‌شود
+   *  که طرفِ مقابل واقعاً پیام را گرفته — و اگر باز هم به دستِ کاربر
+   *  نرسیده، دنبالِ اسپم و برگشت بگردیم، نه دنبالِ این سرور.
+   */
+  return { sent: true, response: receipt?.response || '' };
 }

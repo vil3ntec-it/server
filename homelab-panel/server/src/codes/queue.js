@@ -22,6 +22,7 @@ import { mailReady, sendCodeEmail } from './mail.js';
 import { autoResend, revealCode } from './service.js';
 import {
   claimNext,
+  deliveryOf,
   dueForAutoResend,
   markSendFailed,
   markSent,
@@ -55,7 +56,7 @@ async function sendOne(row, settings) {
   }
 
   try {
-    await sendCodeEmail({
+    const receipt = await sendCodeEmail({
       to: row.email,
       code,
       name: row.subject_name || '',
@@ -64,7 +65,7 @@ async function sendOne(row, settings) {
       minutes: Math.max(1, Math.round((row.expires_at - row.created_at) / 60000)),
       settings,
     });
-    markSent(row.id);
+    markSent(row.id, Date.now(), receipt?.response || '');
     state.onSent?.(row);
     return true;
   } catch (e) {
@@ -105,6 +106,33 @@ export async function drainQueue(settings = codeSettings()) {
   const workers = Array.from({ length: settings.workers }, () => worker(settings));
   await Promise.all(workers);
   return { ok: true };
+}
+
+/* ------------------------ منتظرِ نتیجهٔ واقعی ------------------------------ */
+
+/**
+ * می‌ماند تا معلوم شود این ردیف واقعاً رفت یا نه.
+ *
+ * ⚠️ چرا لازم شد: پنل تا دیروز همان میلی‌ثانیه‌ای که *کد* ساخته می‌شد
+ * می‌گفت «فرستاده شد»، چون پاسخِ API پیش از خودِ ارسال برمی‌گشت. اگر سرورِ
+ * ایمیل بعداً نه می‌گفت — ایمیلِ اشتباه، سقفِ روزانه، در بسته — آن پیامِ
+ * سبز همان‌جا روی صفحه می‌ماند و کسی خبردار نمی‌شد.
+ *
+ * این فقط برای دکمه‌ای است که خودِ صاحبِ سرور می‌زند و منتظر می‌ماند.
+ * مسیرِ برنامه‌ها همچنان بی‌معطلی جواب می‌گیرد، چون آن‌جا صدها نفرند.
+ *
+ * @returns {{state:'sent'|'failed'|'pending'|'unknown', error?:string|null, response?:string|null}}
+ */
+export async function awaitDelivery(id, { timeoutMs = 15_000, stepMs = 120 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const row = deliveryOf(id);
+    if (!row) return { state: 'unknown', error: null, response: null };
+    if (row.state === 'sent' || row.state === 'failed') return row;
+    // هنوز در صف یا وسطِ گفت‌وگو با سرورِ ایمیل
+    if (Date.now() >= deadline) return { ...row, state: 'pending' };
+    await new Promise((r) => setTimeout(r, stepMs));
+  }
 }
 
 /* --------------------- ارسالِ خودکارِ کدِ تازه ----------------------------- */

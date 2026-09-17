@@ -84,6 +84,15 @@ function addColumn(table, column, type) {
 }
 
 addColumn('code_requests', 'subject_name', 'TEXT');
+/*
+ *  رسیدِ خودِ سرورِ ایمیل — همان جمله‌ای که بعدِ تحویل می‌گوید، مثلاً:
+ *      250 2.0.0 OK 1699… j7-20020a17…sm… - gsmtp
+ *
+ *  ⚠️ چرا نگهش می‌داریم: بدونِ آن، «فرستاده شد» فقط ادعای ماست. با آن،
+ *  می‌شود ثابت کرد که جیمیل پیام را گرفته و اگر باز هم نرسیده، مشکل
+ *  بعدِ جیمیل است (اسپم یا برگشتِ دیرهنگام)، نه این‌جا.
+ */
+addColumn('code_requests', 'send_response', 'TEXT');
 
 /* ------------------------------ برنامه‌ها -------------------------------- */
 
@@ -262,10 +271,27 @@ export function claimNext(now = Date.now()) {
   return row || null;
 }
 
-export function markSent(id, at = Date.now()) {
+export function markSent(id, at = Date.now(), response = '') {
   db.prepare(
-    "UPDATE code_requests SET send_state = 'sent', sent_at = ?, send_error = NULL WHERE id = ?"
-  ).run(at, id);
+    `UPDATE code_requests
+        SET send_state = 'sent', sent_at = ?, send_error = NULL, send_response = ?
+      WHERE id = ?`
+  ).run(at, String(response || '').slice(0, 300), id);
+}
+
+/** وضعیتِ ارسالِ یک ردیف — برای وقتی می‌خواهیم منتظرِ نتیجهٔ واقعی بمانیم */
+export function deliveryOf(id) {
+  const row = db
+    .prepare('SELECT send_state, send_error, send_response, send_tries, sent_at FROM code_requests WHERE id = ?')
+    .get(id);
+  if (!row) return null;
+  return {
+    state: row.send_state,
+    error: row.send_error || null,
+    response: row.send_response || null,
+    tries: row.send_tries,
+    sentAt: row.sent_at,
+  };
 }
 
 /** ارسال نشد: یا دوباره در صف می‌نشیند، یا شکست‌خورده می‌ماند */

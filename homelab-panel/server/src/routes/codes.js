@@ -15,7 +15,7 @@ import { requireAuth, requireWriteRole } from '../auth.js';
 import { logEvent } from '../db.js';
 import { checkMailSettings, codeSettings, safeCodeSettings, saveCodeSettings } from '../codes/settings.js';
 import { issueCode, maskEmail, revealCode, verifyCode } from '../codes/service.js';
-import { drainQueue, queueStatus } from '../codes/queue.js';
+import { awaitDelivery, drainQueue, queueStatus } from '../codes/queue.js';
 import { mailReady, sendCodeEmail } from '../codes/mail.js';
 import {
   KIND_LABELS,
@@ -205,6 +205,8 @@ adminRouter.get('/live', (req, res) => {
       status: row.used_at ? 'used' : row.cancelled_at ? 'replaced' : live ? 'live' : 'expired',
       sendState: row.send_state,
       sendError: row.send_error,
+      // رسیدِ خودِ سرورِ ایمیل — «فرستادم» را از ادعا به سند تبدیل می‌کند
+      sendResponse: row.send_response || null,
       sentAt: row.sent_at,
       autoResend: row.resend_chain > 0,
     };
@@ -243,8 +245,33 @@ adminRouter.post('/send', async (req, res) => {
   if (!result.ok) return res.status(400).json(result);
 
   drainQueue().catch(() => { /* خطا روی ردیفِ خودش ثبت می‌شود */ });
-  logEvent('info', 'panel', `کد برای ${result.email} از پنل فرستاده شد (${row.slug})`);
-  res.json(result);
+
+  /*
+   *  ⚠️ این‌جا منتظر می‌مانیم، برخلافِ مسیرِ برنامه‌ها.
+   *
+   *  گزارشِ واقعی: «۵ تا تست زدم، ۲ ایمیل رفت و سه تای دیگر نیامد، در
+   *  حالی که می‌گوید فرستادم.» علتش همین بود — پاسخ پیش از خودِ ارسال
+   *  برمی‌گشت و «نه»ی سرورِ ایمیل هیچ‌جا دیده نمی‌شد.
+   *
+   *  دکمه‌ای که خودِ صاحبِ سرور می‌زند یکی‌یکی است، پس چند ثانیه صبر
+   *  اشکالی ندارد و در عوض جواب راست می‌شود. مسیرِ برنامه‌ها دست‌نخورده
+   *  ماند، چون آن‌جا ممکن است صدها نفر هم‌زمان باشند.
+   */
+  const delivery = await awaitDelivery(result.id, { timeoutMs: 12_000 });
+
+  const message = delivery.state === 'sent'
+    ? 'ایمیل تحویلِ سرورِ ایمیل شد'
+    : delivery.state === 'failed'
+      ? `ایمیل نرفت — ${delivery.error || 'سرورِ ایمیل دلیلی نگفت'}`
+      : 'هنوز در صفِ ارسال است؛ وضعیتش در همین فهرست به‌روز می‌شود';
+
+  logEvent(
+    delivery.state === 'failed' ? 'warn' : 'info',
+    'panel',
+    `کد برای ${result.email} از پنل: ${delivery.state === 'sent' ? 'رفت' : message}`,
+  );
+
+  res.json({ ...result, ok: delivery.state !== 'failed', delivery, message });
 });
 
 /* ── دفترِ برنامه‌ها ─────────────────────────────────────────────────────── */
@@ -297,13 +324,16 @@ adminRouter.put('/settings', (req, res) => {
    *  که کدها ساخته می‌شدند ولی هیچ‌کدام نمی‌رفت، و تنها نشانه‌اش یک خطای
    *  انگلیسیِ خام (EAI_FAIL) تهِ صفحه بود.
    */
+  let warning = null;
   if (patch.email) {
     const verdict = checkMailSettings({ ...codeSettings().email, ...patch.email });
     if (!verdict.ok) return res.status(400).json({ ok: false, ...verdict });
+    // هشدار جلوی ذخیره را نمی‌گیرد، ولی باید دیده شود
+    if (verdict.warn) warning = { code: verdict.warn, message: verdict.message, suggest: verdict.suggest };
   }
 
   saveCodeSettings(patch);
-  res.json({ ok: true, settings: safeCodeSettings() });
+  res.json({ ok: true, settings: safeCodeSettings(), warning });
 });
 
 /** آزمایشِ سرورِ ایمیل — یک ایمیلِ واقعی با کدِ نمونه */
