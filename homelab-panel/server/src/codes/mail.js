@@ -5,7 +5,7 @@
 //  ایمیل هنوز تنظیم نشده باشد، صریح می‌گوید — چون کدی که فرستاده نشده باید
 //  در پنل دیده شود، نه اینکه کاربر پشتِ صفحهٔ «کد را وارد کنید» بماند.
 // ---------------------------------------------------------------------------
-import { sendMail } from '../appauth/smtp.js';
+import { openMailer, sendMail } from '../appauth/smtp.js';
 import { otpEmail } from '../emails/otp.js';
 import { codeSettings } from './settings.js';
 
@@ -27,29 +27,60 @@ export function mailReady(settings = codeSettings()) {
  * خطا را بالا می‌دهد (نه اینکه بخورد) تا صف بداند باید دوباره تلاش کند و
  * پنل بتواند بگوید دقیقاً چه شد.
  */
-export async function sendCodeEmail({ to, code, name = '', appName, subject, minutes, settings = codeSettings() }) {
-  if (!mailReady(settings)) {
-    throw Object.assign(new Error('سرورِ ایمیل تنظیم نشده است'), { code: 'mail_not_configured' });
-  }
-
-  const label = appName || settings.appName || 'مرکز فرمان';
-  const built = otpEmail({ code, minutes, appName: label, name });
-  const line = fill(subject || settings.subject, { code, app: label }) || built.subject;
-
-  const receipt = await sendMail({
+/** تنظیماتِ اتصال — جدا شده تا صف بتواند یک اتصال را برای همهٔ ایمیل‌ها نگه دارد */
+export function mailerOptions(settings = codeSettings()) {
+  return {
     host: settings.email.host,
     port: settings.email.port,
     secure: settings.email.secure,
     username: settings.email.username,
     password: settings.email.password,
+    rejectUnauthorized: settings.email.rejectUnauthorized !== false,
+  };
+}
+
+/**
+ * یک اتصالِ بازِ SMTP.
+ *
+ * ⚠️ صف از این استفاده می‌کند تا برای ده ایمیل، ده بار در نزند. جیمیل
+ * روی تعدادِ اتصالِ هم‌زمان سخت‌گیر است و همان بود که باعث می‌شد بعضی
+ * کدها بروند و بعضی نه.
+ */
+export function openCodeMailer(settings = codeSettings()) {
+  if (!mailReady(settings)) {
+    throw Object.assign(new Error('سرورِ ایمیل تنظیم نشده است'), { code: 'mail_not_configured' });
+  }
+  return openMailer(mailerOptions(settings));
+}
+
+/** خودِ نامه — بدونِ هیچ کاری با شبکه */
+export function buildCodeMail({ to, code, name = '', appName, subject, minutes, settings = codeSettings() }) {
+  const label = appName || settings.appName || 'مرکز فرمان';
+  const built = otpEmail({ code, minutes, appName: label, name });
+  const line = fill(subject || settings.subject, { code, app: label }) || built.subject;
+  return {
     from: settings.email.from,
     fromName: settings.email.fromName || label,
-    rejectUnauthorized: settings.email.rejectUnauthorized !== false,
     to,
     subject: line,
     text: built.text,
     html: built.html,
-  });
+  };
+}
+
+export async function sendCodeEmail({
+  to, code, name = '', appName, subject, minutes, settings = codeSettings(), mailer = null,
+}) {
+  if (!mailReady(settings)) {
+    throw Object.assign(new Error('سرورِ ایمیل تنظیم نشده است'), { code: 'mail_not_configured' });
+  }
+
+  const letter = buildCodeMail({ to, code, name, appName, subject, minutes, settings });
+
+  // اتصالِ آماده داده‌اند؟ از همان برو. وگرنه یکی باز و بسته کن.
+  const receipt = mailer
+    ? await mailer.send(letter)
+    : await sendMail({ ...mailerOptions(settings), ...letter });
 
   /*
    *  رسیدِ سرورِ ایمیل را بالا می‌دهیم، نه یک true خشک.

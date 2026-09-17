@@ -48,9 +48,21 @@ const check = (name, ok, extra = '') => {
  */
 const GOOD = ['ok1@example.com', 'ok2@example.com'];
 const BAD = ['no1@example.com', 'no2@example.com', 'no3@example.com'];
+/** گیرنده‌ای که بارِ اول اتصالش قطع می‌شود و بارِ دوم می‌رود */
+const FLAKY = 'flaky@example.com';
+let flakyBurned = false;
 
 const delivered = [];
+/*
+ *  ⚠️ تعدادِ اتصال‌ها را می‌شماریم، نه فقط ایمیل‌ها.
+ *
+ *  ریشهٔ «برای بعضی می‌رود و برای بعضی نه» همین بود: هر ایمیل یک اتصالِ
+ *  تازه، چهار کارگرِ هم‌زمان، و دورهای صف که روی هم می‌افتادند. جیمیل از
+ *  یک جایی به بعد در را می‌بندد.
+ */
+let connections = 0;
 const smtpServer = net.createServer((socket) => {
+  connections++;
   let stage = 'cmd';
   let message = '';
   let rcpt = '';
@@ -110,8 +122,11 @@ const child = spawn(
       OTP_EMAIL_SECURE: '0',
       OTP_EMAIL_FROM: 'robot@test.local',
       CODES_RESEND_SECONDS: '0',
-      // تلاشِ دوباره این‌جا فقط آزمون را کُند می‌کند؛ «نه» یعنی «نه»
-      CODES_SEND_RETRIES: '0',
+      /*
+       *  ⚠️ تلاشِ دوباره روشن است، عمداً: می‌خواهیم ثابت کنیم «نه»ی
+       *  قطعیِ سرور (۵xx) تکرار نمی‌شود ولی قطعِ اتصال تکرار می‌شود.
+       */
+      CODES_SEND_RETRIES: '2',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   },
@@ -181,7 +196,51 @@ try {
     GOOD.every((e) => delivered.includes(e)) && !BAD.some((e) => delivered.includes(e)),
     delivered.join(', '));
 
-  console.log('\n── در فهرستِ پنل هم پیداست ──');
+  console.log('\n── شش ایمیلِ هم‌زمان، با یک اتصال ──');
+/*
+ *  ⚠️ قلبِ اصلاح. شش درخواست با هم می‌روند. انتظار: همه از یک اتصال
+ *  (یا نهایتاً دو تا) رد شوند، نه شش اتصالِ هم‌زمان.
+ */
+const before = connections;
+const burst = ['b1@example.com', 'b2@example.com', 'b3@example.com',
+  'b4@example.com', 'b5@example.com', 'b6@example.com'];
+const burstResults = await Promise.all(
+  burst.map((email) => call('POST', '/api/codes-admin/send', { app: 'main', email, name: 'کاربر' })),
+);
+check('هر شش تا رفتند',
+  burstResults.every((r) => r.body.delivery?.state === 'sent'),
+  burstResults.map((r) => r.body.delivery?.state).join(', '));
+const opened = connections - before;
+check(`و برای شش ایمیل ${opened} اتصال باز شد، نه شش تا`, opened <= 2, String(opened));
+check('و سرورِ ایمیل هر شش تا را گرفت',
+  burst.every((e) => delivered.includes(e)), delivered.join(', '));
+
+console.log('\n── یک گیرندهٔ خراب، جلوی بقیه را نمی‌گیرد ──');
+/*
+ *  ⚠️ وقتی همه از یک اتصال می‌روند، یک «نه»ی سرور نباید اتصال را
+ *  بسوزاند و بقیهٔ صف را زمین بگذارد.
+ */
+const mixed = ['m1@example.com', 'no1@example.com', 'm2@example.com'];
+const mixedResults = await Promise.all(
+  mixed.map((email) => call('POST', '/api/codes-admin/send', { app: 'main', email, force: true })),
+);
+check('اولی رفت', mixedResults[0].body.delivery?.state === 'sent', JSON.stringify(mixedResults[0].body.delivery));
+check('خرابه نرفت', mixedResults[1].body.delivery?.state === 'failed', JSON.stringify(mixedResults[1].body.delivery));
+check('و سومی هم رفت', mixedResults[2].body.delivery?.state === 'sent', JSON.stringify(mixedResults[2].body.delivery));
+
+console.log('\n── وقتی وسطِ کار در بسته می‌شود ──');
+/*
+ *  ⚠️ این همان چیزی است که جیمیل زیرِ فشار می‌کند: بی‌حرف در را می‌بندد.
+ *  پیش از این، کلاینت تا سر رسیدنِ مهلت (۲۰ ثانیه) منتظر می‌ماند و آن
+ *  کد عملاً گم می‌شد. حالا همان‌جا می‌فهمد، اتصالِ نو می‌گیرد و دوباره
+ *  می‌فرستد.
+ */
+const flaky = await call('POST', '/api/codes-admin/send', { app: 'main', email: FLAKY, force: true });
+check('در بسته شد ولی کد بالأخره رفت', flaky.body.delivery?.state === 'sent',
+  JSON.stringify(flaky.body.delivery));
+check('و سرورِ ایمیل گرفتش', delivered.includes(FLAKY), delivered.join(', '));
+
+console.log('\n── در فهرستِ پنل هم پیداست ──');
   const live = await call('GET', '/api/codes-admin/live');
   const byEmail = new Map((live.body.items || []).map((i) => [i.email, i]));
   for (const email of BAD) {

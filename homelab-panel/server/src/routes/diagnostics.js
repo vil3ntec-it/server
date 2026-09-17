@@ -141,7 +141,9 @@ router.get('/', (req, res) => {
         return {
           state: WARN,
           value: `${waiting} در صف · ${failed} نرفته`,
-          hint: 'چند کد نرفته‌اند. معمولاً یعنی سرورِ ایمیل جواب نمی‌دهد.',
+          hint: q.lastError
+            ? `آخرین دلیل: ${String(q.lastError).slice(0, 180)}`
+            : 'چند کد نرفته‌اند. معمولاً یعنی سرورِ ایمیل جواب نمی‌دهد.',
         };
       }
       return {

@@ -18,7 +18,7 @@
 import { logEvent } from '../db.js';
 import { getApp } from './store.js';
 import { codeSettings } from './settings.js';
-import { mailReady, sendCodeEmail } from './mail.js';
+import { mailReady, openCodeMailer, sendCodeEmail } from './mail.js';
 import { autoResend, revealCode } from './service.js';
 import {
   claimNext,
@@ -31,28 +31,51 @@ import {
   requeueStuck,
 } from './store.js';
 
-/** هر تلاشِ ناموفق کمی دیرتر از قبلی: ۵ ثانیه، ۱۵، ۴۵… */
-const backoffMs = (tries) => Math.min(5 * 60_000, 5000 * 3 ** tries);
+/**
+ * هر تلاشِ ناموفق کمی دیرتر از قبلی: ۵ ثانیه، ۱۵، ۴۵…
+ *
+ * ⚠️ نماد از tries-1 شروع می‌شود، وگرنه اولین تلاشِ دوباره ۱۵ ثانیه بعد
+ * می‌افتاد — نه ۵ ثانیه‌ای که این بالا نوشته بود.
+ */
+const backoffMs = (tries) => Math.min(5 * 60_000, 5000 * 3 ** Math.max(0, tries - 1));
+
+/**
+ * قطعِ اتصال فرق دارد: سرور نگفته «یواش‌تر»، فقط در بسته شده.
+ *
+ * حالا که کلِ صف از یک اتصال می‌رود، قطع‌شدن یعنی یک اتفاقِ گذرا — پس
+ * تقریباً همان لحظه دوباره امتحان می‌کنیم: ۱ ثانیه، ۳، ۹…
+ */
+const reconnectMs = (tries) => Math.min(30_000, 1000 * 3 ** Math.max(0, tries - 1));
 
 const state = {
   running: false,
   workers: 0,
   timer: null,
   sweeper: null,
+  /*
+   *  ⚠️ نگهبانِ «یک دور در یک زمان».
+   *
+   *  drainQueue هم از تیکِ هر ۱٫۵ ثانیه صدا زده می‌شود و هم از هر
+   *  درخواستِ تازه. بی این نگهبان، دورها روی هم می‌افتادند و هر دور
+   *  کارگرهای خودش را می‌ساخت — یعنی برای چند ایمیل، ده‌ها اتصالِ
+   *  هم‌زمان به سرورِ ایمیل. جیمیل از یک جایی به بعد در را می‌بندد و
+   *  همان‌جا بود که بعضی کدها می‌رفتند و بعضی نه.
+   */
+  draining: false,
   /** برای آزمون: هر ارسالِ موفق این‌جا هم خبر می‌دهد */
   onSent: null,
 };
 
 /* ----------------------------- یک ارسال ---------------------------------- */
 
-async function sendOne(row, settings) {
+async function sendOne(row, settings, mailer = null) {
   const app = getApp(row.app);
   const code = revealCode(row);
 
   if (!code) {
     // کدِ بازنشدنی یعنی کلیدِ گاوصندوق عوض شده — تلاشِ دوباره کمکی نمی‌کند
     markSendFailed(row.id, 'کد باز نشد (کلیدِ گاوصندوق عوض شده؟)');
-    return false;
+    return { ok: false, connectionLost: false };
   }
 
   try {
@@ -64,48 +87,114 @@ async function sendOne(row, settings) {
       subject: app?.subject || null,
       minutes: Math.max(1, Math.round((row.expires_at - row.created_at) / 60000)),
       settings,
+      mailer,
     });
     markSent(row.id, Date.now(), receipt?.response || '');
     state.onSent?.(row);
-    return true;
+    return { ok: true, connectionLost: false };
   } catch (e) {
+    /*
+     *  ⚠️ سه جور شکست داریم و هر کدام رفتارِ خودش را می‌خواهد:
+     *
+     *    • ۵xx  — «این گیرنده هیچ‌وقت» → تلاشِ دوباره بی‌فایده است
+     *    • ۴xx  — «الان نه» → حتماً دوباره، با فاصله
+     *    • قطعِ اتصال → دوباره، و اتصال هم باید نو شود
+     *
+     *  پیش از این هر سه یکی حساب می‌شدند: ایمیلِ اشتباه سه بار بی‌خود
+     *  تکرار می‌شد و در عوض قطعِ اتصال — که با یک تلاشِ دیگر درست
+     *  می‌شد — گاهی بی‌جواب می‌ماند.
+     */
+    const connectionLost = !e.smtpCode && e.code !== 'mail_not_configured';
+    const permanent = e.smtpCode >= 500 && e.smtpCode < 600;
     const tries = (row.send_tries || 0) + 1;
-    const canRetry = tries <= settings.sendRetries && e.code !== 'mail_not_configured';
-    markSendFailed(row.id, e.message, { retryAt: canRetry ? Date.now() + backoffMs(tries) : null });
+    const canRetry = !permanent && tries <= settings.sendRetries && e.code !== 'mail_not_configured';
+
+    const delay = connectionLost ? reconnectMs(tries) : backoffMs(tries);
+    markSendFailed(row.id, e.message, { retryAt: canRetry ? Date.now() + delay : null });
     if (!canRetry) {
       logEvent('warn', 'panel', `کد به ${row.email} نرفت: ${String(e.message).slice(0, 200)}`);
     }
-    return false;
+    return { ok: false, connectionLost };
   }
 }
 
-/* ------------------------------ کارگرها ---------------------------------- */
-
-async function worker(settings) {
-  state.workers++;
-  try {
-    for (;;) {
-      const row = claimNext();
-      if (!row) return;
-      await sendOne(row, settings);
-    }
-  } finally {
-    state.workers--;
-  }
-}
+/* ------------------------------- یک دور ---------------------------------- */
 
 /**
- * یک دور: تا سقفِ کارگرها هم‌زمان می‌فرستد و تا خالی‌شدنِ صف ادامه می‌دهد.
+ * یک دور: صف را تا خالی‌شدن می‌فرستد — همه از یک اتصالِ SMTP.
  *
- * صدا زدنش از بیرون هم امن است (آزمون‌ها همین کار را می‌کنند) — اگر سرورِ
+ * ⚠️ این تابع دو بار بازنویسی شد و دلیلش را این‌جا می‌گذارم تا کسی
+ * دوباره به حالتِ اول برنگرداند:
+ *
+ * نسخهٔ اول چهار «کارگر» می‌ساخت که هم‌زمان می‌فرستادند، و هر کارگر برای
+ * هر ایمیل یک اتصالِ تازه به سرورِ ایمیل باز می‌کرد. بدتر، خودِ این تابع
+ * هم از دو جا صدا زده می‌شد (تیکِ هر ۱٫۵ ثانیه و هر درخواستِ تازه) بی
+ * آن‌که کسی جلوی روی‌هم‌افتادنشان را بگیرد. برای پنج ایمیل، ده‌ها اتصالِ
+ * هم‌زمان.
+ *
+ * جیمیل از یک جایی به بعد یا «421 Try again later» می‌دهد یا بی‌حرف در
+ * را می‌بندد. نتیجه: چند کد می‌رفت، چند تا نه — با همان تنظیمات، همان
+ * لحظه، بی‌آنکه چیزی عوض شده باشد.
+ *
+ * حالا: یک دور در یک زمان، یک اتصال، یکی‌یکی. کندتر است و درست کار
+ * می‌کند. اگر روزی واقعاً به سرعت نیاز شد، راهش بالا بردنِ تعدادِ
+ * ایمیل روی *همین یک اتصال* است، نه باز کردنِ اتصالِ بیشتر.
+ *
+ * صدا زدنش از بیرون امن است (آزمون‌ها همین کار را می‌کنند) — اگر سرورِ
  * ایمیل تنظیم نشده باشد، اصلاً شروع نمی‌کند تا ردیف‌ها بی‌خود «شکست‌خورده»
  * نشوند؛ کد در پنل هست و صاحبِ سرور می‌بیندش.
  */
 export async function drainQueue(settings = codeSettings()) {
   if (!mailReady(settings)) return { skipped: 'mail_not_configured' };
-  const workers = Array.from({ length: settings.workers }, () => worker(settings));
-  await Promise.all(workers);
-  return { ok: true };
+  // دورِ قبلی هنوز تمام نشده — ردیفِ تازه را خودش برمی‌دارد
+  if (state.draining) return { skipped: 'busy' };
+
+  state.draining = true;
+  state.workers = 1;
+  let mailer = null;
+  let sent = 0;
+  let failed = 0;
+
+  const dropMailer = () => {
+    try { mailer?.close(); } catch { /* بسته شده */ }
+    mailer = null;
+  };
+
+  try {
+    for (;;) {
+      const row = claimNext();
+      if (!row) break;
+
+      if (mailer && !mailer.usable) dropMailer();
+      if (!mailer) {
+        try {
+          mailer = await openCodeMailer(settings);
+        } catch (e) {
+          /*
+           *  در باز نشد. این مشکلِ *این ردیف* نیست، مشکلِ سرورِ ایمیل
+           *  است — پس ردیف را دوباره در صف می‌گذاریم تا دورِ بعد برود،
+           *  نه اینکه «شکست‌خورده» علامتش بزنیم.
+           */
+          markSendFailed(row.id, e.message, { retryAt: Date.now() + reconnectMs((row.send_tries || 0) + 1) });
+          logEvent('warn', 'panel', `اتصال به سرورِ ایمیل نشد: ${String(e.message).slice(0, 200)}`);
+          failed++;
+          break;
+        }
+      }
+
+      const result = await sendOne(row, settings, mailer);
+      if (result.ok) sent++;
+      else failed++;
+      // اتصال مُرد؟ ردیفِ بعدی با اتصالِ نو
+      if (result.connectionLost) dropMailer();
+    }
+  } finally {
+    dropMailer();
+    state.workers = 0;
+    state.draining = false;
+  }
+
+  return { ok: true, sent, failed };
 }
 
 /* ------------------------ منتظرِ نتیجهٔ واقعی ------------------------------ */

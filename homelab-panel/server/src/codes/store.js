@@ -323,6 +323,19 @@ export function queueDepth(now = Date.now()) {
     failed: db
       .prepare("SELECT COUNT(*) AS n FROM code_requests WHERE send_state = 'failed' AND created_at > ?")
       .get(now - 24 * 3600 * 1000).n,
+    /*
+     *  ⚠️ آخرین دلیلِ نرفتن، همان‌جا کنارِ شمارنده.
+     *
+     *  بی این، «۳ نرفته» فقط یک عدد بود و صاحبِ سرور باید ردیف‌به‌ردیف
+     *  دنبالِ علت می‌گشت. حالا در همان صفحهٔ بررسیِ سلامت پیداست.
+     */
+    lastError: db
+      .prepare(
+        `SELECT send_error FROM code_requests
+          WHERE send_state = 'failed' AND send_error IS NOT NULL AND created_at > ?
+          ORDER BY id DESC LIMIT 1`
+      )
+      .get(now - 24 * 3600 * 1000)?.send_error || null,
     sentLastHour: db
       .prepare("SELECT COUNT(*) AS n FROM code_requests WHERE send_state = 'sent' AND sent_at > ?")
       .get(now - 3600 * 1000).n,
