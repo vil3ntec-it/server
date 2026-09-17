@@ -1,17 +1,12 @@
 package ir.vil3ntec.admin.ui
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,9 +17,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ir.vil3ntec.admin.data.Api
 import ir.vil3ntec.admin.data.ApiError
@@ -147,42 +141,40 @@ fun ServerStatusDot(state: ServerState, showLabel: Boolean = true) {
     ServerState.Unknown -> "در حال بررسی…"
   }
 
-  // نقطه وقتی روشن است آرام نفس می‌کشد، تا معلوم باشد زنده است نه عکس
-  val transition = rememberInfiniteTransition(label = "pulse")
-  val alpha by transition.animateFloat(
-    initialValue = 1f,
-    targetValue = if (state == ServerState.Online) 0.35f else 1f,
-    animationSpec = infiniteRepeatable(tween(1_200), RepeatMode.Reverse),
-    label = "alpha",
-  )
-
-  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-    Box(
-      Modifier
-        .size(9.dp)
-        .alpha(if (state == ServerState.Online) alpha else 1f)
-        .clip(CircleShape)
-        .background(color)
-    )
+  Row(
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(7.dp),
+  ) {
+    PulseDot(color, alive = state == ServerState.Online)
     if (showLabel) {
-      Text(label, style = MaterialTheme.typography.labelMedium, color = color)
+      Text(
+        label,
+        style = MaterialTheme.typography.labelMedium,
+        color = color,
+        fontWeight = FontWeight.Medium,
+      )
     }
   }
 }
 
-/** همان چراغ، داخلِ یک قابِ کوچکِ رنگی */
+/**
+ *  همان چراغ، داخلِ یک قابِ کوچکِ رنگی.
+ *
+ *  ⚠️ پس‌زمینه از پالتِ تم می‌آید نه نیمه‌شفاف: `copy(alpha)` روی کارتِ
+ *  تیره خاکستریِ گِل‌آلود می‌ساخت.
+ */
 @Composable
 fun ServerStatusChip(state: ServerState) {
-  val color: Color = when (state) {
-    ServerState.Online -> StatusColor.good
-    ServerState.Offline -> StatusColor.bad
-    ServerState.Unknown -> MaterialTheme.colorScheme.onSurfaceVariant
+  val tint = when (state) {
+    ServerState.Online -> StatusColor.goodTint
+    ServerState.Offline -> StatusColor.badTint
+    ServerState.Unknown -> StatusColor.tint
   }
   Box(
     Modifier
-      .clip(androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
-      .background(color.copy(alpha = 0.14f))
-      .padding(horizontal = 10.dp, vertical = 5.dp)
+      .clip(RoundedCornerShape(11.dp))
+      .background(tint)
+      .padding(horizontal = 11.dp, vertical = 6.dp)
   ) {
     ServerStatusDot(state)
   }

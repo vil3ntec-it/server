@@ -6,3 +6,8 @@ node_modules/
 .env
 *.log
 dist/
+
+# خروجی و کشِ ساختِ اندروید — جای اینها در مخزن نیست
+.gradle/
+homelab-panel/admin-android/build/
+homelab-panel/admin-android/app/build/

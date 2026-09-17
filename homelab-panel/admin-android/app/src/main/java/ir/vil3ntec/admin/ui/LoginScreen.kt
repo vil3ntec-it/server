@@ -14,7 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -238,14 +237,13 @@ fun LoginScreen(
     }
 
     found.forEach { server ->
-      Card(
+      PanelCard(
         Modifier
-          .fillMaxWidth()
           .padding(bottom = 8.dp)
           .clickable { url = server.best(remote?.usable == true) },
       ) {
         Row(
-          Modifier.fillMaxWidth().padding(14.dp),
+          Modifier.fillMaxWidth(),
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -277,7 +275,7 @@ fun LoginScreen(
             }
           }
           if (server.version.isNotBlank()) {
-            Chip("نسخهٔ ${server.version}", MaterialTheme.colorScheme.primary)
+            Chip("نسخهٔ ${server.version}", MaterialTheme.colorScheme.primary, StatusColor.tint)
           }
         }
       }

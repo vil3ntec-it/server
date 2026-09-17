@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-  <color name="icon_bg">#0F62B4</color>
+  <!-- همان آبیِ برنامهٔ فروشگاه — تا آیکن و پنجرهٔ باز شدن هم یک خانواده باشند -->
+  <color name="icon_bg">#2C5CE6</color>
+  <color name="window_bg">#FFFFFF</color>
 </resources>

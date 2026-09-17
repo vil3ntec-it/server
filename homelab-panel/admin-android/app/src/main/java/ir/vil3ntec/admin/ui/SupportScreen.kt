@@ -22,7 +22,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.Badge
-import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -156,12 +155,13 @@ private fun ThreadList(
       verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
       items(threads!!, key = { it.id }) { thread ->
-        Card(Modifier.fillMaxWidth().clickable { onOpen(thread) }) {
+        PanelCard(Modifier.clickable { onOpen(thread) }) {
           Row(
-            Modifier.fillMaxWidth().padding(14.dp),
+            Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
           ) {
-            Column(Modifier.weight(1f)) {
+            Avatar(thread.who)
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
               Text(thread.who.ifBlank { "بی‌نام" }, style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
               Text(
@@ -179,7 +179,7 @@ private fun ThreadList(
               )
             }
             if (thread.unread > 0) Badge { Text(thread.unread.toString()) }
-            else if (thread.status == "closed") Chip("بسته", MaterialTheme.colorScheme.onSurfaceVariant)
+            else if (thread.status == "closed") Chip("بسته", MaterialTheme.colorScheme.onSurfaceVariant, StatusColor.tint)
           }
         }
       }

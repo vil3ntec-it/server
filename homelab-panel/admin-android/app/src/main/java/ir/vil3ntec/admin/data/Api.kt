@@ -211,6 +211,10 @@ object Api {
   fun shopAccount(session: Session, id: String): Reply =
     call(session, "/api/control/tohid/accounts/$id")
 
+  /** بستن یا باز کردنِ یک حسابِ فروشگاه */
+  fun setShopAccountDisabled(session: Session, id: String, disabled: Boolean): Reply =
+    call(session, "/api/control/tohid/accounts/$id/disable", "POST", JSONObject().put("disabled", disabled))
+
   /** پمپ‌بنزین‌ها */
   fun stations(session: Session): Reply = call(session, "/api/stations-admin/")
 
@@ -237,11 +241,13 @@ object Api {
     planCode: String,
     amount: Int,
     unit: String,
+    planTitle: String = "",
   ): Reply {
     val body = JSONObject()
       .put("planCode", planCode)
       .put("amount", amount)
       .put("unit", unit)
+    if (planTitle.isNotBlank()) body.put("planTitle", planTitle)
     return call(session, "/api/control/tohid/accounts/$accountId/vip", "POST", body)
   }
 

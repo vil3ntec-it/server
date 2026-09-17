@@ -25,6 +25,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +40,7 @@ import ir.vil3ntec.admin.ui.CodesScreen
 import ir.vil3ntec.admin.ui.HomeScreen
 import ir.vil3ntec.admin.ui.LoginScreen
 import ir.vil3ntec.admin.ui.SupportScreen
+import ir.vil3ntec.admin.ui.ThemeMode
 import ir.vil3ntec.admin.ui.VillainAdminTheme
 import ir.vil3ntec.admin.work.WatchService
 
@@ -61,11 +63,27 @@ class MainActivity : ComponentActivity() {
     val store = (application as AdminApp).store
 
     setContent {
-      VillainAdminTheme {
+      var mode by remember { mutableStateOf(ThemeMode.of(store.themeMode)) }
+
+      VillainAdminTheme(mode) {
         // کلِ برنامه راست‌چین است
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
           Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             var session by remember { mutableStateOf(store.load()) }
+
+            /*
+             *  نگهبان این‌جا روشن می‌شود و نه در AdminApp.
+             *
+             *  ⚠️ چرا: شروعِ سرویسِ پیش‌زمینه فقط وقتی مجاز است که برنامه
+             *  جلوی چشم باشد. AdminApp هر بار که اندروید پروسه را برای یک
+             *  کارِ پس‌زمینه بالا می‌آورد هم اجرا می‌شود — و همان‌جا بود
+             *  که برنامه با «has stopped» می‌افتاد.
+             */
+            LaunchedEffect(session.loggedIn) {
+              if (session.loggedIn && store.watchEnabled) {
+                WatchService.start(this@MainActivity)
+              }
+            }
 
             if (!session.loggedIn) {
               LoginScreen(
@@ -77,7 +95,6 @@ class MainActivity : ComponentActivity() {
                 onDone = { fresh ->
                   store.save(fresh)
                   session = fresh
-                  if (store.watchEnabled) runCatching { WatchService.start(this@MainActivity) }
                 },
               )
             } else {
@@ -89,6 +106,11 @@ class MainActivity : ComponentActivity() {
                   session = session.copy(token = null)
                 },
                 onSession = { fresh -> session = fresh },
+                themeMode = mode,
+                onThemeMode = { picked ->
+                  mode = picked
+                  store.themeMode = picked.key
+                },
               )
             }
           }
@@ -110,6 +132,8 @@ private fun MainShell(
   session: Session,
   onLogout: () -> Unit,
   onSession: (Session) -> Unit,
+  themeMode: ThemeMode,
+  onThemeMode: (ThemeMode) -> Unit,
 ) {
   var tab by remember { mutableStateOf(Tab.Home) }
   // شمارهٔ پیام‌های خوانده‌نشده، تا نقطهٔ قرمزِ تبِ پشتیبانی درست باشد
@@ -145,7 +169,13 @@ private fun MainShell(
   ) { padding ->
     Box(Modifier.fillMaxSize().padding(padding)) {
       when (tab) {
-        Tab.Home -> HomeScreen(session, onLogout = onLogout, onSession = onSession)
+        Tab.Home -> HomeScreen(
+          session = session,
+          onLogout = onLogout,
+          onSession = onSession,
+          themeMode = themeMode,
+          onThemeMode = onThemeMode,
+        )
         Tab.Codes -> CodesScreen(session)
         Tab.Accounts -> AccountsScreen(session)
         Tab.Support -> SupportScreen(session, onUnread = { unread = it })
