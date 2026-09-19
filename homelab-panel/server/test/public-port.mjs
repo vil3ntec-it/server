@@ -32,7 +32,9 @@ const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning',
   env: { ...process.env, HLP_PORT: String(PANEL), HLP_HOST: '127.0.0.1',
          HLP_DATA_DIR: path.join(tmp, 'data'), HLP_SITES_ROOT: path.join(tmp, 'sites'),
          HLP_SITESYNC: '1', HLP_SITESYNC_PORT: String(PUBLIC),
-         HLP_TUNNEL: '0', HLP_AI_ENABLED: '0' },
+         HLP_TUNNEL: '0', HLP_AI_ENABLED: '0',
+         //  این آزمون مرزِ خودِ پنل را می‌سنجد؛ درِ سرورِ حساب (account-proxy) عمداً بسته است
+         HLP_ACCOUNT_API: '0' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let out = '';

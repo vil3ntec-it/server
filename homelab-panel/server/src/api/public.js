@@ -33,6 +33,7 @@ import tohidAdminApiRoutes from '../routes/tohid-admin.js';
 import { readyPayload } from '../platform/health.js';
 import { versionInfo } from '../version.js';
 import { config } from '../config.js';
+import { accountApiUrl } from './account-proxy.js';
 
 export const PUBLIC_API_VERSION = 'v1';
 
@@ -93,7 +94,9 @@ export function apiIndex(req = null) {
     service: 'control-center',
     version: PUBLIC_API_VERSION,
     baseUrl: apiBaseUrl(req),
-    endpoints: ENDPOINTS,
+    endpoints: accountApiUrl()
+      ? [...ENDPOINTS, { path: '/api/{auth,me,shop,pump,admin,plans,…}', what: 'سرورِ حساب — همهٔ برنامه‌ها (از همین در به shop/server)' }]
+      : ENDPOINTS,
     time: new Date().toISOString(),
   };
 }
