@@ -40,6 +40,7 @@
 import { putSecret, listSecrets, readSecret, deleteSecret, vaultReady } from '../control/vault.js';
 import { config } from '../config.js';
 import { accountApiUrl, downPayload } from '../api/account-proxy.js';
+import { managedAdminCreds } from '../account/supervisor.js';
 
 /** نشانیِ عمومیِ سرورِ حساب — قفل، نه از تنظیمات. همان که برنامه‌ها می‌زنند. */
 export const CLOUD_BASE = 'https://api.vill3n.top';
@@ -59,8 +60,9 @@ export function cloudTarget() {
 
 /** نام و رمزِ مدیرِ سرورِ حساب از ‎.env‎ — اگر هر دو باشند، پل خودش وارد می‌شود. */
 function autoCreds() {
-  const { adminUser, adminPassword } = config.accountApi || {};
-  return adminUser && adminPassword ? { username: adminUser, password: adminPassword } : null;
+  //  تنظیمِ صریح جلوتر؛ وگرنه همان مدیری که ناظرِ سرورِ حساب خودش ساخته
+  //  (account/supervisor.js) — یعنی با نصبِ تازه هیچ چیزی دستی تنظیم نمی‌شود.
+  try { return managedAdminCreds(); } catch { return null; }
 }
 
 /**

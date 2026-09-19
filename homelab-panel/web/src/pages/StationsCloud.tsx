@@ -163,6 +163,25 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
     }
   }, []);
 
+  //  خودِ سرورِ حساب — پنل بالا می‌آوردش (account/supervisor.js). این کارت
+  //  می‌گوید نصب هست، روشن است، چه نسخه‌ای، و اگر افتاد چند بار برگشته.
+  const [acct, setAcct] = useState<AccountServerInfo | null>(null);
+  const loadAcct = useCallback(async () => {
+    try { setAcct(await api<AccountServerInfo>('/api/account-server/status')); } catch { /* اختیاری */ }
+  }, []);
+  useEffect(() => { loadAcct(); }, [loadAcct]);
+  async function acctAction(what: 'start' | 'restart' | 'stop') {
+    setBusy(true);
+    try {
+      const out = await api<{ ok: boolean; reason?: string }>(`/api/account-server/${what}`, { method: 'POST' });
+      if (!out.ok) toast(out.reason || 'نشد', 'bad');
+      else toast(what === 'stop' ? 'سرورِ حساب خاموش شد' : 'سرورِ حساب دارد بالا می‌آید…');
+      setTimeout(() => { loadAcct(); loadStatus(); }, what === 'stop' ? 800 : 4000);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'نشد', 'bad');
+    } finally { setBusy(false); }
+  }
+
   //  آینهٔ سرورِ حساب در پوشهٔ داده — «حساب‌ها از سرور به فولدرِ خودِ سرور ثبت می‌شه؟»
   const [mirror, setMirror] = useState<MirrorInfo | null>(null);
   const loadMirror = useCallback(async () => {
@@ -357,6 +376,47 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
     </div>
   );
 
+  const accountServerCard = (
+    <Card
+      title="سرورِ حساب — روی همین کامپیوتر"
+      icon={<Fuel size={18} />}
+      action={
+        <div className="flex gap-2">
+          <ActionButton onClick={loadAcct} disabled={busy}>تازه‌سازی</ActionButton>
+          {acct?.enabled && acct.installed && (
+            acct.running
+              ? <ActionButton onClick={() => acctAction('restart')} disabled={busy}>راه‌اندازیِ دوباره</ActionButton>
+              : <ActionButton onClick={() => acctAction('start')} disabled={busy}>روشن کن</ActionButton>
+          )}
+        </div>
+      }
+    >
+      {!acct ? <Loading /> : (
+        <>
+          <Notice tone={acct.up ? 'info' : undefined}>
+            {acct.up
+              ? <>سرورِ حساب <b>بالاست</b>{acct.version ? ` (نسخهٔ ${acct.version})` : ''} — همهٔ برنامه‌ها از <code dir="ltr">api.&lt;دامنه&gt;</code> به همین می‌رسند.</>
+              : !acct.enabled
+                ? <>راه‌اندازیِ خودکار خاموش است (<code dir="ltr">HLP_ACCOUNT_AUTOSTART=0</code>) و سرورِ حساب جواب نمی‌دهد.</>
+                : !acct.installed
+                  ? <>کدِ سرورِ حساب کنارِ پنل <b>نیست</b>. برنامهٔ ویندوز را از فایلِ نصبیِ تازه دوباره نصب کنید (سرورِ حساب همراهش می‌آید)؛ روی لینوکس ریپوی <code dir="ltr">shop</code> را کنارِ این ریپو بگذارید.</>
+                  : acct.running
+                    ? <>دارد بالا می‌آید… چند ثانیهٔ دیگر تازه‌سازی کنید.</>
+                    : <>روشن نیست{acct.lastError ? ` — ${acct.lastError}` : ''}.</>}
+          </Notice>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <KV label="پروسه">{acct.running ? `روشن (pid ${acct.pid})` : 'خاموش'}</KV>
+            <KV label="دیتابیس">{acct.driver === 'pglite' ? 'PGlite — داخلِ خودِ پنل، بی نصب' : acct.driver}</KV>
+            <KV label="پورتِ محلی">{acct.port ?? '—'}</KV>
+            <KV label="بازگشت‌ها پس از افتادن">{fa(acct.restarts)}</KV>
+            <KV label="پوشهٔ داده"><code dir="ltr">{acct.dataDir}</code></KV>
+            <KV label="پلِ پمپ‌ها">{acct.bridge?.linked ? (acct.bridge.auto ? 'وصل — با مدیرِ خودساخته' : 'وصل') : 'وارد نشده'}</KV>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+
   const mirrorCard = (
     <Card
       title="آینهٔ سرورِ حساب در پوشهٔ داده"
@@ -548,7 +608,7 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
         )}
 
         {tab === 'plans' && plansCard}
-        {tab === 'mirror' && mirrorCard}
+        {tab === 'mirror' && <div className="space-y-3">{accountServerCard}{mirrorCard}</div>}
       </Card>
 
       {/* ── جزئیاتِ یک پمپ روی سرورِ حساب — با کدِ پمپ برای اپِ کارمندان ── */}
@@ -713,6 +773,13 @@ function CodeModal({ station, plans, onClose, onMade }: {
     </Modal>
   );
 }
+
+type AccountServerInfo = {
+  enabled: boolean; installed: boolean; running: boolean; up: boolean;
+  pid: number | null; port: number | null; version: string | null; driver: string;
+  restarts: number; lastError: string | null; dataDir: string;
+  bridge: null | { linked: boolean; auto?: boolean };
+};
 
 type MirrorInfo = {
   dir: string;

@@ -41,6 +41,16 @@ jobs:
         working-directory: homelab-panel/server
         run: npm run doctor
 
+      # سرورِ حسابِ واقعی (ریپوی shop، عمومی) برای test/account-supervisor.mjs:
+      # پنل باید بتواند خودش بالا بیاوردش — روی PGlite، بی داکر و بی PostgreSQL.
+      - name: سرورِ حساب — از ریپوی shop
+        run: |
+          git clone --depth 1 https://github.com/vil3ntec-it/shop.git /tmp/shop
+          cd /tmp/shop/server && npm ci --omit=dev
+          # ⚠️ نه HLP_ACCOUNT_DIR: آن را همهٔ پنل‌های آزمونی می‌خوانند و هر کدام
+          # یک سرورِ حساب روشن می‌کردند. این نام را فقط خودِ سنجه می‌خواند.
+          echo "ACCOUNT_SERVER_DIR=/tmp/shop/server" >> "$GITHUB_ENV"
+
       - name: آزمون‌ها
         working-directory: homelab-panel/server
         run: npm test

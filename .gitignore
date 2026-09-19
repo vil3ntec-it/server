@@ -11,3 +11,6 @@ dist/
 .gradle/
 homelab-panel/admin-android/build/
 homelab-panel/admin-android/app/build/
+
+# سرورِ حساب (shop/server) که CI کنارِ پنل می‌گذارد — کدش در ریپوی shop است
+homelab-panel/account-server/

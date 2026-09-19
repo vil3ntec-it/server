@@ -79,6 +79,8 @@ import * as messenger from './messenger/index.js';
 import { aiProxy, AI_PREFIX } from './ai/proxy.js';
 import { accountProxy, probeAccountServer } from './api/account-proxy.js';
 import { autostartAi, stopAi } from './ai/supervisor.js';
+import { autostartAccountServer, stopAccountServer } from './account/supervisor.js';
+import accountServerRoutes from './routes/account-server.js';
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
 import { ensureControlSchema } from './control/schema.js';
@@ -341,6 +343,7 @@ app.use('/api/codes-admin', codeAdminRoutes);
 // کتابخانه: یک جای مرتب برای سایت‌ها، برنامه‌ها، پشتیبان‌ها و فایل‌های موقت
 app.use('/api/storage', storageRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/account-server', accountServerRoutes);
 // مدیریتِ Docker — خواندن برای همه، کارها برای operator، حذف فقط admin
 app.use('/api/docker', dockerRoutes);
 // فهرستِ پروسه‌ها — دیدن برای همه، فرستادنِ سیگنال فقط admin
@@ -869,19 +872,32 @@ async function main() {
       console.log('     مرورگر جلویش را می‌گیرد. آنجا باید wss:// داشته باشید (تونل).');
       console.log('');
     }
-    //  سرورِ حساب — همان اول بگو هست یا نه، نه بعد از یک ساعت گشتن
-    probeAccountServer().then((acct) => {
+    //  سرورِ حساب — همان اول بگو هست یا نه، نه بعد از یک ساعت گشتن.
+    //  اگر از قبل بالا نیست، پنل خودش بالا می‌آوردش (account/supervisor.js):
+    //  روی PGlite، بی داکر و بی PostgreSQL — و بعد دوباره می‌پرسد.
+    (async () => {
+      let acct = await probeAccountServer().catch(() => ({ enabled: true, up: false }));
+      if (acct.enabled && !acct.up) {
+        const started = await autostartAccountServer({ probe: () => probeAccountServer() });
+        if (started.ok && started.reason !== 'external') {
+          //  چند ثانیه تا PGlite باز شود و migration بدود
+          for (let i = 0; i < 40 && !acct.up; i++) {
+            await new Promise((r) => setTimeout(r, 500));
+            acct = await probeAccountServer().catch(() => acct);
+          }
+        }
+      }
       if (!acct.enabled) {
         console.log('  🪪 سرورِ حساب: خاموش (HLP_ACCOUNT_API=0) — برنامه‌ها از این‌جا وارد نمی‌شوند');
       } else if (acct.up) {
         console.log(`  🪪 سرورِ حساب: وصل${acct.version ? ` (نسخهٔ ${acct.version})` : ''} — از api.<دامنه> رد می‌شود`);
       } else {
         console.log(`  ⚠️  سرورِ حساب روشن نیست (${acct.url}) — تا روشن نشود هیچ برنامه‌ای وارد نمی‌شود.`);
-        console.log('     روی همین کامپیوتر:  cd shop/server && docker compose up -d');
+        console.log('     پنل ← تنظیمات ← «سرورِ حساب» را ببینید (یا /api/account-server/status)');
         logEvent('warn', 'panel', `سرورِ حساب (${acct.url}) جواب نمی‌دهد — ورودِ برنامه‌ها تا روشن شدنش کار نمی‌کند`);
       }
       console.log('');
-    }).catch(() => {});
+    })().catch(() => {});
     if (stations) {
       const list = stations.list();
       console.log('  ⛽ پمپ‌بنزین‌ها — هر کدام پوشه و رمزِ خودش:');
@@ -986,6 +1002,9 @@ async function shutdown(signal) {
   } catch { /* بسته شده */ }
   try {
     stopAi();
+  } catch { /* بی‌خیال */ }
+  try {
+    stopAccountServer();
   } catch { /* بی‌خیال */ }
   try {
     await stopAll();

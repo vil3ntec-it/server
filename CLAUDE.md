@@ -62,7 +62,7 @@
   ورودِ خودکار همیشه جلوتر از توکنِ گاوصندوق است. بی آن دو، رفتارِ قدیم:
   ورودِ دستی از پنلِ وب — و از امروز از خودِ اپِ مدیریت (`Api.cloudLogin`).
 - ⛔ **سه حالِ «وصل نیستم» یکی نیستند** و کدِ خطا جدایشان می‌کند:
-  `account_server_down` (۵۰۳، با راهِ `docker compose up -d`) ·
+  `account_server_down` (۵۰۳، با راهِ درست کردنش از `downHint()`ِ ناظر) ·
   `not_linked` / `cloud_session_expired` (فرمِ ورود) · `auto_login_rejected`
   (۴۰۹، رمزِ `.env` غلط است). `CloudProblem` در اپ و کارتِ پنلِ وب هر سه را
   جدا می‌گویند؛ `/api/diagnostics` هم ردیفِ `accountServer` دارد.
@@ -72,4 +72,39 @@
 - آزمون: `npm run test:account-link` (`test/account-link.mjs`): پنلِ واقعی با
   سرورِ حسابِ ساختگی — ورودِ خودکار، انقضا و یک بار تازه شدن، رمزِ غلط،
   عیب‌یابی، و خاموش شدنِ سرور.
+
+## 🪪 پنل خودش سرورِ حساب را بالا می‌آورد — PGlite، بی داکر (از ۱۴۰۵/۰۷/۰۲)
+
+گزارشِ صاحب ریپو با سه عکس (برنامهٔ پمپ، برنامهٔ دکان، اپِ مدیریت): همه یک
+جمله — «سرورِ حساب روی سرورِ خانگی روشن نیست… docker compose up -d». کامپیوترِ
+خانگی **ویندوز** است: نه داکر دارد نه PostgreSQL. درگاه درست بود؛ پشتش هیچ‌کس
+نبود.
+
+- ⛔ **`src/account/supervisor.js` تنها راه‌اندازِ سرورِ حساب است** — همان الگوی
+  `ai/supervisor.js`: پروسهٔ فرزند، بازگشتِ خودکار با تأخیرِ فزاینده، لاگِ
+  حلقه‌ای، `/api/account-server/*` فقط روی پورتِ پنل. `HLP_ACCOUNT_AUTOSTART=0`
+  خاموشش می‌کند؛ اگر سرورِ حساب از قبل روی همان پورت بالاست (داکر)، چیزی روشن
+  نمی‌کند («یک سرور، یک دفتر»).
+- ⛔ **دیتابیسِ فرزند `pglite:<dataDir>/account-server/pg` است** (راه‌اندازِ
+  `db.js`ِ ریپوی shop از ۲.۶.۰). رازها (`API_SECRET/OTP_SECRET/JWT_SECRET`) و
+  مدیرِ خودساخته در `<dataDir>/account-server/secrets.json` (۰۶۰۰) — **هیچ‌وقت
+  بازنویسی نمی‌شوند**؛ عوض شدنِ `API_SECRET` یعنی همهٔ نشست‌ها یک‌شبه بی‌اعتبار.
+- ⛔ **مدیر از محیط**: فرزند `ADMIN_BOOTSTRAP_USER/PASSWORD` می‌گیرد و
+  `stations/cloud.js` با همان وارد می‌شود (`managedAdminCreds`) — پس بخشِ
+  «پمپ‌ها» بی هیچ تنظیمی وصل است. تنظیمِ صریحِ `HLP_ACCOUNT_ADMIN_*` جلوتر است.
+- ⛔ کدِ سرورِ حساب در این ریپو **نیست**: `windows-app.yml` ریپوی عمومیِ shop را
+  کلون و بی dev نصب می‌کند و electron-builder آن را در `resources/account-server`
+  می‌گذارد (`homelab-panel/account-server/` در `.gitignore`). لینوکس: symlink
+  به همان نام یا `HLP_ACCOUNT_DIR`. `resolveAccountDir` **ریپوی خواهرِ shop را
+  خودکار پیدا نمی‌کند** — پنجاه آزمونِ این ریپو پنل را بالا می‌آورند و هر کدام
+  یک سرورِ حسابِ واقعی روشن می‌کرد (`stations.mjs` گرفتش). CI مسیرِ shop را در
+  `ACCOUNT_SERVER_DIR` می‌گذارد که فقط خودِ سنجه می‌خواند.
+- ⛔ پیامِ «روشن نیست» دیگر ثابت نیست: `downHint()`ِ ناظر می‌گوید نصب نیست / دارد
+  بالا می‌آید / افتاده، و `account-proxy.js` همان را در ۵۰۳ می‌گذارد
+  (`setDownHint`). **«docker compose» به پیامِ کاربر برنگردد.**
+- آزمون: `npm run test:account-supervisor` (`test/account-supervisor.mjs`) — با
+  shop/serverِ **واقعی** (CI کلونش می‌کند، `HLP_ACCOUNT_DIR`): بالا آمدن،
+  `/api/health` از پورتِ عمومی، ثبت‌نام و ورود از راهِ درگاه، پلِ پمپ‌ها با مدیرِ
+  خودساخته، `SIGKILL` و برگشت، و ۵۰۳ِ بی «docker». نبودِ کدِ shop سنجه را رد
+  می‌کند، نه قرمز.
 
