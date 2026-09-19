@@ -6,11 +6,7 @@ import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Sites from './pages/Sites';
-import Domains from './pages/Domains';
 import Files from './pages/Files';
-import Monitoring from './pages/Monitoring';
-import NetworkPage from './pages/NetworkPage';
-import Logs from './pages/Logs';
 import SiteServer from './pages/SiteServer';
 import Settings from './pages/Settings';
 import CodesPage from './pages/Codes';
@@ -20,16 +16,12 @@ import Command from './pages/control/Command';
 import CcProjects from './pages/control/Projects';
 import ProjectDetail from './pages/control/ProjectDetail';
 import CcServers from './pages/control/Servers';
-import Networking from './pages/control/Networking';
-import Routing from './pages/control/Routing';
-import CloudflarePage from './pages/control/CloudflarePage';
 import StoragePage from './pages/control/StoragePage';
 import Vault from './pages/control/Vault';
-import MonitoringPage from './pages/control/MonitoringPage';
-import Audit from './pages/control/Audit';
 import Updates from './pages/control/Updates';
 import PanelUsers from './pages/control/PanelUsers';
 import Assistant from './pages/Assistant';
+import { DomainsHub, LogsHub, MonitoringHub, NetworkHub } from './pages/hubs';
 import DockerPage from './pages/Docker';
 import ProcessesPage from './pages/Processes';
 import DatabasesPage from './pages/Databases';
@@ -39,7 +31,6 @@ import CronPage from './pages/Cron';
 import StationsPage from './pages/Stations';
 import AppLoginsPage from './pages/AppLogins';
 import StationProfile from './pages/StationProfile';
-import TunnelDomainsPage from './pages/TunnelDomains';
 
 function Shell() {
   const { ready, authed } = useApp();
@@ -52,7 +43,7 @@ function Shell() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/assistant" element={<Assistant />} />
         <Route path="/sites" element={<Sites />} />
-        <Route path="/domains" element={<Domains />} />
+        <Route path="/domains" element={<DomainsHub />} />
         {featureOn('files') && <Route path="/files" element={<Files />} />}
         <Route path="/docker" element={<DockerPage />} />
         <Route path="/processes" element={<ProcessesPage />} />
@@ -60,10 +51,10 @@ function Shell() {
         <Route path="/runtimes" element={<RuntimesPage />} />
         <Route path="/terminal" element={<TerminalPage />} />
         <Route path="/cron" element={<CronPage />} />
-        <Route path="/tunnel-domains" element={<TunnelDomainsPage />} />
-        <Route path="/monitoring" element={<Monitoring />} />
-        <Route path="/network" element={<NetworkPage />} />
-        <Route path="/logs" element={<Logs />} />
+        <Route path="/tunnel-domains" element={<Navigate to="/domains?tab=tunnel" replace />} />
+        <Route path="/monitoring" element={<MonitoringHub />} />
+        <Route path="/network" element={<NetworkHub />} />
+        <Route path="/logs" element={<LogsHub />} />
         <Route path="/site-server" element={<SiteServer />} />
         <Route path="/logins" element={<AppLoginsPage />} />
         <Route path="/stations" element={<StationsPage />} />
@@ -76,13 +67,13 @@ function Shell() {
         <Route path="/control/projects" element={<CcProjects />} />
         <Route path="/control/projects/:projectId" element={<ProjectDetail />} />
         <Route path="/control/servers" element={<CcServers />} />
-        <Route path="/control/networking" element={<Networking />} />
-        <Route path="/control/routing" element={<Routing />} />
-        <Route path="/control/cloudflare" element={<CloudflarePage />} />
+        <Route path="/control/networking" element={<Navigate to="/network?tab=projects" replace />} />
+        <Route path="/control/routing" element={<Navigate to="/domains?tab=routing" replace />} />
+        <Route path="/control/cloudflare" element={<Navigate to="/domains?tab=cloudflare" replace />} />
         <Route path="/control/storage" element={<StoragePage />} />
         <Route path="/control/vault" element={<Vault />} />
-        <Route path="/control/monitoring" element={<MonitoringPage />} />
-        <Route path="/control/audit" element={<Audit />} />
+        <Route path="/control/monitoring" element={<Navigate to="/monitoring?tab=checks" replace />} />
+        <Route path="/control/audit" element={<Navigate to="/logs?tab=audit" replace />} />
         <Route path="/control/updates" element={<Updates />} />
         {featureOn('panelUsers') && <Route path="/control/panel-users" element={<PanelUsers />} />}
         <Route path="*" element={<Navigate to="/" replace />} />

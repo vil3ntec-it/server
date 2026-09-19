@@ -126,7 +126,7 @@ try {
   }
   await page.waitForTimeout(300);
   const navText = await navBox.innerText();
-  for (const label of ['پروژه‌ها', 'سرورها', 'انبار', 'گاوصندوق', 'پایش', 'به‌روزرسانی', 'ترمینال']) {
+  for (const label of ['پروژه‌ها', 'سرورها', 'انبار', 'گاوصندوق', 'مانیتورینگ', 'لاگ‌ها', 'به‌روزرسانی', 'ترمینال']) {
     check(`«${label}» با باز کردنِ گروه می‌آید`, navText.includes(label), navText.slice(0, 200));
   }
 
@@ -135,13 +135,18 @@ try {
   const PAGES = [
     ['/control/projects', 'پروژه‌ها'],
     ['/control/servers', 'سرورها'],
-    ['/control/networking', 'شبکه'],
+    //  نشانی‌های قدیمی به تبِ همان موضوع می‌روند (pages/hubs.tsx)
+    ['/control/networking', 'شبکه و آدرس‌ها'],
     ['/control/routing', 'مسیر دامنه‌ها'],
     ['/control/cloudflare', 'Cloudflare'],
+    ['/network', 'شبکه'],
+    ['/domains', 'دامنه'],
     ['/control/storage', 'انبار'],
     ['/control/vault', 'گاوصندوق'],
     ['/control/monitoring', 'پایش'],
     ['/control/audit', 'دفتر رخدادها'],
+    ['/monitoring', 'مانیتورینگ'],
+    ['/logs', 'لاگ'],
     ['/control/updates', 'به‌روزرسانی'],
     ['/assistant', 'دستیار هوشمند'],
   ];
