@@ -189,6 +189,11 @@ export const config = {
     url: (process.env.HLP_ACCOUNT_API && process.env.HLP_ACCOUNT_API !== '0')
       ? process.env.HLP_ACCOUNT_API
       : 'http://127.0.0.1:3000',
+    // نام و رمزِ مدیرِ سرورِ حساب (همان ADMIN_USER/ADMIN_PASSWORDِ shop/server/.env).
+    // اگر هر دو باشند، پلِ «پمپ‌ها» خودش وارد می‌شود و لازم نیست کسی هر دوازده
+    // ساعت در پنل دوباره وارد شود (stations/cloud.js).
+    adminUser: String(process.env.HLP_ACCOUNT_ADMIN_USER || '').trim(),
+    adminPassword: String(process.env.HLP_ACCOUNT_ADMIN_PASSWORD || ''),
   },
 };
 

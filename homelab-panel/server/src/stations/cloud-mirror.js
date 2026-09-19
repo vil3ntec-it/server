@@ -120,11 +120,11 @@ export function startMirror({ dataDir, log = () => {}, every = MIRROR_EVERY_MS }
       const rep = await runMirror({ dataDir, reason });
       if (rep.skipped) return rep;
       log(rep.failed.length
-        ? `آینهٔ ابر: ${rep.ok.length} رفت، ${rep.failed.length} نرفت (${rep.failed.map((f) => f.file).join('، ')})`
-        : `آینهٔ ابر در پوشهٔ داده تازه شد (${rep.ok.length} فایل)`);
+        ? `آینهٔ سرورِ حساب: ${rep.ok.length} رفت، ${rep.failed.length} نرفت (${rep.failed.map((f) => f.file).join('، ')})`
+        : `آینهٔ سرورِ حساب در پوشهٔ داده تازه شد (${rep.ok.length} فایل)`);
       return rep;
     } catch (e) {
-      log(`آینهٔ ابر ناموفق بود: ${e.message}`);
+      log(`آینهٔ سرورِ حساب ناموفق بود: ${e.message}`);
       return null;
     } finally {
       busy = false;

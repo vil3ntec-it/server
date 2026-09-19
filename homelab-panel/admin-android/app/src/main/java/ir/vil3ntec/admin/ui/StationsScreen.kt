@@ -38,10 +38,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ir.vil3ntec.admin.data.Ago
 import ir.vil3ntec.admin.data.Api
+import ir.vil3ntec.admin.data.ApiError
 import ir.vil3ntec.admin.data.Session
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -58,15 +60,21 @@ import org.json.JSONObject
  *    وصل بودن    کی همین حالا آنلاین است و پشتیبان گرفته یا نه
  *    نرخ‌ها      قیمت‌ها و تخفیف‌ها
  *    کد و ربات   کدهای شش‌رقمیِ همین بخش، و فرستادنشان
- *    داده‌ها      چه چیزی خراب است و آینهٔ ابر کِی گرفته شده
+ *    داده‌ها      چه چیزی خراب است و آینهٔ سرورِ حساب کِی گرفته شده
  *
  *  ⚠️ نکته‌ای که کلِ این صفحه را شکل داد: حساب‌ها و اشتراک‌ها و نرخ‌های
- *  پمپ روی *ابر* هستند (api.vill3n.top)، نه روی این سرور. سرور فقط هر
- *  نیم‌ساعت آینه‌شان می‌کند و درخواست‌ها را رد می‌کند آن‌طرف.
+ *  پمپ روی *سرورِ حساب* هستند (shop/server، همان که تا دیروز «ابر» می‌گفتیم و
+ *  روی همان کامپیوترِ خانگی است)، نه در دفترِ خودِ پنل. پنل فقط هر نیم‌ساعت
+ *  آینه‌شان می‌کند و درخواست‌ها را رد می‌کند آن‌طرف.
  *
- *  یعنی تا وقتی مرکز فرمان به ابر وصل نشده، این سه زیربخش خالی‌اند — و
+ *  یعنی تا وقتی پنل به سرورِ حساب وارد نشده، این سه زیربخش خالی‌اند — و
  *  باید *بگویند* چرا، نه اینکه فهرستِ خالی نشان بدهند. «چیزی نیست» و
- *  «وصل نیستم» دو چیزِ کاملاً متفاوت‌اند.
+ *  «وصل نیستم» دو چیزِ کاملاً متفاوت‌اند. و «وصل نیستم» هم سه شکل دارد که
+ *  ‎CloudProblem‎ جدا می‌گوید: سرور خاموش است، مدیر وارد نشده (فرمِ ورود همین‌جا)،
+ *  یا نشستش تمام شده.
+ *
+ *  ⚠️ واژه‌ها: «پشتیبان» یعنی فایلِ بک‌آپ، نه «پشتیبانی». یک بار «هیچ پشتیبانی
+ *  ندارد» نوشته شد و صاحبِ سامانه خواند «برنامهٔ پمپ پشتیبانی نمی‌شود».
  */
 
 private val PUMP_TABS = listOf(
@@ -136,6 +144,7 @@ private data class PumpUser(
 private fun PumpAccountsTab(session: Session) {
   var users by remember { mutableStateOf<List<PumpUser>?>(null) }
   var error by remember { mutableStateOf("") }
+  var errorCode by remember { mutableStateOf("") }
   var reload by remember { mutableIntStateOf(0) }
   var busy by remember { mutableStateOf(false) }
   var note by remember { mutableStateOf("") }
@@ -144,10 +153,12 @@ private fun PumpAccountsTab(session: Session) {
 
   LaunchedEffect(reload) {
     error = ""
+    errorCode = ""
     try {
       users = withContext(Dispatchers.IO) { readPumpUsers(Api.pumpUsers(session)) }
     } catch (e: Exception) {
       error = e.message ?: "وصل نشد"
+      errorCode = (e as? ApiError)?.code.orEmpty()
     }
   }
 
@@ -161,11 +172,11 @@ private fun PumpAccountsTab(session: Session) {
     }
 
     when {
-      users == null && error.isNotBlank() -> item { CloudProblem(error) { reload++ } }
+      users == null && error.isNotBlank() -> item { CloudProblem(session, errorCode, error) { reload++ } }
       users == null -> item { PanelCard { Text("در حال گرفتن…") } }
       users!!.isEmpty() -> item {
         PanelCard {
-          CardHeader("حسابی نیست", "هنوز کسی روی ابر حسابِ پمپ نساخته است.")
+          CardHeader("حسابی نیست", "هنوز کسی روی سرورِ حساب حسابِ پمپ نساخته است.")
         }
       }
       else -> {
@@ -392,9 +403,9 @@ private fun PumpOnlineTab(session: Session) {
               )
               Text(
                 when {
-                  count == null -> "پشتیبان‌ها خوانده نشد"
-                  count > 0 -> "$count پشتیبان دارد"
-                  else -> "هیچ پشتیبانی ندارد"
+                  count == null -> "فایل‌های بک‌آپ خوانده نشد"
+                  count > 0 -> "$count فایلِ بک‌آپ روی این سرور دارد"
+                  else -> "هنوز فایلِ بک‌آپی نفرستاده — برنامه هر ۶ ساعت می‌فرستد"
                 },
                 Modifier.padding(start = 10.dp),
                 style = MaterialTheme.typography.bodySmall,
@@ -417,10 +428,12 @@ private fun PumpPlansTab(session: Session) {
   var plans by remember { mutableStateOf<JSONArray?>(null) }
   var currency by remember { mutableStateOf("") }
   var error by remember { mutableStateOf("") }
+  var errorCode by remember { mutableStateOf("") }
   var reload by remember { mutableIntStateOf(0) }
 
   LaunchedEffect(reload) {
     error = ""
+    errorCode = ""
     try {
       val reply = withContext(Dispatchers.IO) { Api.pumpPlans(session) }
       plans = reply.items("plans")
@@ -428,6 +441,7 @@ private fun PumpPlansTab(session: Session) {
         .ifBlank { reply.o().optString("currency") }
     } catch (e: Exception) {
       error = e.message ?: "وصل نشد"
+      errorCode = (e as? ApiError)?.code.orEmpty()
     }
   }
 
@@ -437,27 +451,27 @@ private fun PumpPlansTab(session: Session) {
     verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
     when {
-      plans == null && error.isNotBlank() -> item { CloudProblem(error) { reload++ } }
+      plans == null && error.isNotBlank() -> item { CloudProblem(session, errorCode, error) { reload++ } }
       plans == null -> item { PanelCard { Text("در حال گرفتن…") } }
       plans!!.length() == 0 -> item {
-        PanelCard { CardHeader("نرخی نیست", "روی ابر هنوز نرخی تعریف نشده است.") }
+        PanelCard { CardHeader("نرخی نیست", "روی سرورِ حساب هنوز نرخی تعریف نشده است.") }
       }
       else -> {
         item {
           PanelCard {
             CardHeader(
               "نرخ‌های پمپ",
-              if (currency.isNotBlank()) "واحد: $currency" else "نرخ‌هایی که روی ابر ثبت شده‌اند.",
+              if (currency.isNotBlank()) "واحد: $currency" else "نرخ‌هایی که روی سرورِ حساب ثبت شده‌اند.",
             )
             /*
              *  ⚠️ این‌جا عمداً فقط خواندنی است، و دلیلش را می‌گوییم.
              *
-             *  نرخِ پمپ روی ابر تعریف می‌شود و سرورِ خانه فقط واسطه است؛
+             *  نرخِ پمپ روی سرورِ حساب تعریف می‌شود و پنل فقط واسطه است؛
              *  مسیرِ نوشتنِ نرخ در این واسطه باز نیست. نشان دادنِ دکمه‌ای
              *  که کار نمی‌کند، از نبودنش بدتر است.
              */
             Text(
-              "تغییرِ قیمت و تخفیفِ پمپ از پنلِ ابر انجام می‌شود؛ این‌جا فقط دیده می‌شود. " +
+              "تغییرِ قیمت و تخفیفِ پمپ از پنلِ مدیریتِ سرورِ حساب (api.vill3n.top/admin) انجام می‌شود؛ این‌جا فقط دیده می‌شود. " +
                 "تخفیفِ اشتراک‌های فروشگاه در تبِ «پخش» است.",
               Modifier.padding(top = 10.dp),
               style = MaterialTheme.typography.bodySmall,
@@ -711,7 +725,7 @@ private fun PumpDataTab(session: Session) {
     } catch (e: Exception) {
       error = e.message ?: "وصل نشد"
     }
-    // آینهٔ ابر جداست و نبودنش نباید عیب‌یابی را خالی کند
+    // آینهٔ سرورِ حساب جداست و نبودنش نباید عیب‌یابی را خالی کند
     runCatching { withContext(Dispatchers.IO) { Api.cloudMirror(session).o() } }
       .onSuccess { mirror = it }
   }
@@ -784,7 +798,7 @@ private fun PumpDataTab(session: Session) {
       PanelCard {
         val last = mirror?.optJSONObject("last")
         CardHeader(
-          "آینهٔ ابر روی همین سرور",
+          "آینهٔ سرورِ حساب روی همین سرور",
           "حساب‌های پمپ هر نیم ساعت در پوشهٔ دادهٔ خودتان هم نوشته می‌شوند.",
         )
         HorizontalDivider(Modifier.padding(vertical = 10.dp), color = StatusColor.border)
@@ -815,7 +829,7 @@ private fun PumpDataTab(session: Session) {
                   withContext(Dispatchers.IO) { Api.runCloudMirror(session) }
                   "گرفته شد."
                 } catch (e: Exception) {
-                  e.message ?: "نشد — مرکز فرمان به ابر وصل است؟"
+                  e.message ?: "نشد — پنل به سرورِ حساب وصل است؟"
                 } finally {
                   busy = false
                 }
@@ -839,13 +853,37 @@ private fun PumpDataTab(session: Session) {
  *  ⚠️ این دو تا را نباید یک شکل نشان داد. فهرستِ خالی یعنی کاری نمانده؛
  *  این یعنی اصلاً نتوانستیم بپرسیم. کسی که فرقشان را نداند، دنبالِ
  *  مشکلِ اشتباه می‌گردد.
+ *
+ *  ⚠️ و «وصل نیستم» خودش سه حال دارد که پنل با کدِ خطا جدا می‌گوید:
+ *    account_server_down / _unreachable   سرورِ حساب روشن نیست ⇒ راهِ روشن کردنش
+ *    not_linked · cloud_session_expired   مدیر واردش نشده ⇒ فرمِ ورود همین‌جا
+ *    هر چیزِ دیگر                          پیامِ خودِ پنل
+ *  تا پیش از این کارت فقط می‌گفت «از پنل ← پمپ‌ها ← ابر واردش کنید» — یعنی
+ *  کاری که از خودِ گوشی شدنی نبود.
  */
 @Composable
-private fun CloudProblem(message: String, onRetry: () -> Unit) {
+private fun CloudProblem(
+  session: Session,
+  code: String,
+  message: String,
+  onRetry: () -> Unit,
+) {
+  val down = code == "account_server_down" || code == "account_server_unreachable"
+  val needsLogin = code == "not_linked" || code == "cloud_session_expired" || code == "auto_login_rejected"
+  var user by remember { mutableStateOf("") }
+  var pass by remember { mutableStateOf("") }
+  var busy by remember { mutableStateOf(false) }
+  var note by remember { mutableStateOf("") }
+  val scope = rememberCoroutineScope()
+
   PanelCard {
     CardHeader(
-      "از ابر جواب نگرفتیم",
-      "حساب‌ها و نرخ‌های پمپ روی ابر هستند، نه این سرور.",
+      when {
+        down -> "سرورِ حساب روشن نیست"
+        needsLogin -> "به سرورِ حساب وارد نشده‌اید"
+        else -> "از سرورِ حساب جواب نگرفتیم"
+      },
+      "حساب‌ها، اشتراک‌ها و نرخ‌های پمپ روی سرورِ حساب‌اند — همان shop/server روی کامپیوترِ خانگی.",
     ) { RoundIcon(Icons.Filled.CloudOff, StatusColor.warn, StatusColor.warnTint) }
     Text(
       message,
@@ -853,17 +891,80 @@ private fun CloudProblem(message: String, onRetry: () -> Unit) {
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    Text(
-      "اگر مرکز فرمان هنوز به ابر وصل نشده، از پنل ← پمپ‌ها ← ابر واردش کنید.",
-      Modifier.padding(top = 6.dp),
-      style = MaterialTheme.typography.labelSmall,
-      color = StatusColor.warn,
-    )
+
+    if (down) {
+      Text(
+        "روی همان کامپیوتر: cd shop/server && docker compose up -d — بعد «دوباره» را بزنید.",
+        Modifier.padding(top = 6.dp),
+        style = MaterialTheme.typography.labelSmall,
+        color = StatusColor.warn,
+      )
+    }
+
+    if (needsLogin) {
+      Text(
+        "نام و رمزِ مدیرِ همان سرور را بزنید. رمز ذخیره نمی‌شود؛ فقط توکنش در گاوصندوقِ پنل می‌نشیند. " +
+          "اگر نمی‌خواهید هر دوازده ساعت دوباره وارد شوید، در .envِ پنل HLP_ACCOUNT_ADMIN_USER و " +
+          "HLP_ACCOUNT_ADMIN_PASSWORD را بگذارید تا پنل خودش وارد شود.",
+        Modifier.padding(top = 8.dp),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      OutlinedTextField(
+        value = user,
+        onValueChange = { user = it },
+        label = { Text("نام کاربریِ مدیرِ سرورِ حساب") },
+        singleLine = true,
+        enabled = !busy,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+      )
+      OutlinedTextField(
+        value = pass,
+        onValueChange = { pass = it },
+        label = { Text("رمز") },
+        singleLine = true,
+        enabled = !busy,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+      )
+      if (note.isNotBlank()) {
+        Text(
+          note,
+          Modifier.padding(top = 6.dp),
+          style = MaterialTheme.typography.labelSmall,
+          color = StatusColor.warn,
+        )
+      }
+    }
+
     Row(
       Modifier.fillMaxWidth().padding(top = 10.dp),
       horizontalArrangement = Arrangement.End,
+      verticalAlignment = Alignment.CenterVertically,
     ) {
-      TextButton(onClick = onRetry) { Text("دوباره") }
+      TextButton(onClick = onRetry, enabled = !busy) { Text("دوباره") }
+      if (needsLogin) {
+        Button(
+          enabled = !busy && user.isNotBlank() && pass.isNotEmpty(),
+          onClick = {
+            busy = true
+            note = ""
+            scope.launch {
+              try {
+                withContext(Dispatchers.IO) { Api.cloudLogin(session, user.trim(), pass) }
+                pass = ""
+                onRetry()
+              } catch (e: Exception) {
+                note = e.message ?: "وصل نشد"
+              } finally {
+                busy = false
+              }
+            }
+          },
+        ) { Text(if (busy) "در حالِ ورود…" else "وصل شدن") }
+      }
     }
   }
 }
@@ -873,7 +974,7 @@ private fun CloudProblem(message: String, onRetry: () -> Unit) {
 /**
  *  ⚠️ نامِ فیلدها با احتیاط خوانده می‌شود و چند نام امتحان می‌شود.
  *
- *  این داده از ابر می‌آید و شکلش دستِ ما نیست. همین‌جا بود که یک بار
+ *  این داده از سرورِ حساب می‌آید و شکلش دستِ ما نیست. همین‌جا بود که یک بار
  *  کلِ برنامه افتاد — وقتی سرور `id` می‌فرستاد و ما `threadId` می‌خواندیم.
  *  حالا هم چند نام امتحان می‌شود و هم کلیدِ فهرست از safeKeys می‌آید، تا
  *  بدترین حالت «بد دیده شدن» باشد نه افتادنِ برنامه.

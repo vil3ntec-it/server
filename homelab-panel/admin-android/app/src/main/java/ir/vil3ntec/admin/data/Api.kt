@@ -225,10 +225,13 @@ object Api {
     call(session, "/api/stations-admin/$code/detail")
 
   /*
-   *  ⚠️ حساب‌ها و اشتراک‌ها و نرخ‌های پمپ روی «ابر» هستند نه این سرور،
-   *  و سرور فقط واسطه است. برای همین این‌ها ممکن است جواب ندهند و باید
-   *  نبودشان را صفحه بفهمد، نه اینکه بیفتد: تا وقتی مرکز فرمان به ابر
-   *  وصل نشده، همه‌شان خطا می‌دهند و همان درست است.
+   *  ⚠️ حساب‌ها و اشتراک‌ها و نرخ‌های پمپ روی «سرورِ حساب» هستند (shop/server،
+   *  روی همان کامپیوترِ خانگی) نه در دفترِ خودِ پنل، و پنل فقط پل است. برای
+   *  همین این‌ها ممکن است جواب ندهند و باید نبودشان را صفحه بفهمد، نه اینکه
+   *  بیفتد. سه حالِ جدا دارند و صفحه باید هر سه را جدا بگوید:
+   *    account_server_down   سرورِ حساب روشن نیست
+   *    not_linked            روشن است ولی مدیر هنوز واردش نشده ⇒ فرمِ ورود
+   *    cloud_session_expired نشستِ مدیر تمام شده ⇒ دوباره وارد شود
    */
   fun pumpUsers(session: Session): Reply = call(session, "/api/stations-admin/cloud/users?limit=200")
 
@@ -241,6 +244,17 @@ object Api {
     call(session, "/api/stations-admin/cloud/stations?limit=200")
 
   fun cloudStatus(session: Session): Reply = call(session, "/api/stations-admin/cloud/status")
+
+  /**
+   *  ورود به سرورِ حساب با نام و رمزِ مدیرِ همان‌جا — از خودِ گوشی.
+   *
+   *  ⚠️ رمز هیچ‌جا نمی‌ماند: نه این‌جا و نه روی پنل؛ فقط توکنی که برمی‌گردد
+   *  در گاوصندوقِ پنل می‌نشیند. تا پیش از این تنها راه، پنلِ وب بود و کارتِ
+   *  «وصل نشده‌اید» فقط می‌گفت بروید آن‌جا.
+   */
+  fun cloudLogin(session: Session, username: String, password: String): Reply =
+    call(session, "/api/stations-admin/cloud/login", "POST",
+      JSONObject().put("username", username).put("password", password))
 
   /** اشتراک دادن به یک پمپ */
   fun grantPumpSubscription(
@@ -260,7 +274,7 @@ object Api {
     call(session, "/api/stations-admin/cloud/subscriptions/$id/status", "POST",
       JSONObject().put("status", status))
 
-  /** آینهٔ ابر در پوشهٔ داده — «حساب‌ها روی خودِ سرور هم ثبت می‌شوند؟» */
+  /** آینهٔ سرورِ حساب در پوشهٔ داده — «حساب‌ها روی خودِ سرور هم ثبت می‌شوند؟» */
   fun cloudMirror(session: Session): Reply = call(session, "/api/stations-admin/cloud/mirror")
 
   fun runCloudMirror(session: Session): Reply =

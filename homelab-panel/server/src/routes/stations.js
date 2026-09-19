@@ -540,7 +540,7 @@ adminRouter.get('/:code/connect', async (req, res) => {
 function cloudFail(res, err) {
   return res.status(err.status || 502).json({
     error: err.code || 'cloud_error',
-    message: err.message || 'سرورِ ابر جواب نداد',
+    message: err.message || 'سرورِ حساب جواب نداد',
   });
 }
 
@@ -606,7 +606,7 @@ adminRouter.post('/cloud/grant', requireWriteRole('operator'), async (req, res) 
 });
 
 /** کدِ شش‌رقمی برای دادن به یک پمپ. */
-/** جزئیاتِ یک پمپ روی ابر — اعضا، اشتراک، پوشهٔ ابری و کدِ اپِ کارمندان. */
+/** جزئیاتِ یک پمپ روی سرورِ حساب — اعضا، اشتراک، پوشهٔ ابری و کدِ اپِ کارمندان. */
 adminRouter.get('/cloud/station/:id', async (req, res) => {
   try {
     res.json(await cloudCall('stationDetail', { params: { id: req.params.id } }));

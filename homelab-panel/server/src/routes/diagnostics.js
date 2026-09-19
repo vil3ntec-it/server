@@ -23,6 +23,8 @@ import { codeSettings } from '../codes/settings.js';
 import { mailReady } from '../codes/mail.js';
 import { queueStatus } from '../codes/queue.js';
 import { adminHostFor } from '../platform/domain.js';
+import { probeAccountServer } from '../api/account-proxy.js';
+import { cloudStatus } from '../stations/cloud.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -57,8 +59,10 @@ function localAddresses() {
  *
  *   { ok, checks: [ { key, title, state, value, hint } ], summary }
  */
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const codes = codeSettings();
+  //  سرورِ حساب واقعاً زده می‌شود (سه ثانیه سقف) — نه از روی تنظیمات حدس زده شود
+  const account = await probeAccountServer().catch((e) => ({ enabled: true, up: false, error: e.message }));
   const tunnel = tunnelState();
   const ips = localAddresses();
 
@@ -161,6 +165,40 @@ router.get('/', (req, res) => {
         hint: on
           ? 'برنامهٔ پمپ می‌تواند داده‌اش را این‌جا بنویسد.'
           : 'بخشِ پمپ خاموش است و هیچ پمپی وصل نمی‌شود.',
+      };
+    }),
+
+    /*
+     *  ⚠️ سرورِ حساب — همان که تا دیروز «ابر» می‌گفتیم. حساب، اشتراک و نرخِ
+     *  پمپ‌ها روی آن است و اپِ مدیریت هر سه را از همین‌جا می‌خواند. تا پیش از
+     *  این هیچ سنجه‌ای نبود و کاربر فقط «از ابر جواب نگرفتیم» را می‌دید، بی
+     *  این‌که بداند سرور خاموش است یا فقط وارد نشده.
+     */
+    probe('accountServer', 'سرورِ حساب', () => {
+      if (account.enabled === false) {
+        return { state: WARN, value: 'خاموش (HLP_ACCOUNT_API=0)', hint: 'ورودِ برنامه‌ها از این‌جا رد نمی‌شود.' };
+      }
+      if (!account.up) {
+        return {
+          state: BAD,
+          value: account.url || '—',
+          hint: 'سرورِ حساب روی همین کامپیوتر روشن نیست. همان‌جا: cd shop/server && docker compose up -d',
+        };
+      }
+      const st = cloudStatus();
+      if (!st.linked) {
+        return {
+          state: WARN,
+          value: account.version ? `نسخهٔ ${account.version} — وارد نشده‌اید` : 'وارد نشده‌اید',
+          hint: 'سرور بالاست ولی مدیر هنوز واردش نشده. از پنل ← پمپ‌ها ← تنظیمات و داده‌ها، یا HLP_ACCOUNT_ADMIN_USER/PASSWORD در .env تا خودش وارد شود.',
+        };
+      }
+      return {
+        state: GOOD,
+        value: account.version ? `نسخهٔ ${account.version}` : 'وصل',
+        hint: st.auto
+          ? 'حساب‌ها، اشتراک‌ها و نرخ‌های پمپ از همین‌جا می‌آیند؛ پنل خودش وارد می‌شود.'
+          : 'حساب‌ها، اشتراک‌ها و نرخ‌های پمپ از همین‌جا می‌آیند.',
       };
     }),
 
