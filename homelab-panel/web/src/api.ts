@@ -80,3 +80,47 @@ export function downloadUrl(path: string) {
 }
 
 export const logoUrl = () => `/api/settings/logo?v=${Date.now()}`;
+
+/**
+ * پاسخِ جریانی (SSE روی fetch) — چون EventSource هدرِ Authorization ندارد.
+ * هر سطرِ `data: {json}` به onEvent می‌رسد. برمی‌گردد وقتی جریان تمام شد.
+ */
+export async function streamApi(
+  url: string,
+  body: unknown,
+  onEvent: (ev: any) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal });
+  if (res.status === 401) {
+    setToken(null);
+    onUnauthorized?.();
+    throw new ApiError(401, 'unauthorized');
+  }
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => '');
+    let json: any = null;
+    try { json = text ? JSON.parse(text) : null; } catch { json = null; }
+    throw new ApiError(res.status, json?.error || 'request_failed', json?.message || json?.detail);
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf('\n\n')) >= 0) {
+      const chunk = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      for (const line of chunk.split('\n')) {
+        if (!line.startsWith('data: ')) continue;
+        try { onEvent(JSON.parse(line.slice(6))); } catch { /* سطرِ ناقص */ }
+      }
+    }
+  }
+}

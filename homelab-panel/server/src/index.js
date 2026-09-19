@@ -53,7 +53,7 @@ import notifyRoutes, { adminRouter as notifyAdminRoutes } from './routes/notify.
 import appRoutes, { adminRouter as appAdminRoutes } from './routes/app.js';
 import codeRoutes, { adminRouter as codeAdminRoutes } from './routes/codes.js';
 import storageRoutes from './routes/storage.js';
-import aiRoutes from './routes/ai.js';
+import agentRoutes from './routes/agent.js';
 import dockerRoutes from './routes/docker.js';
 import processRoutes from './routes/processes.js';
 import databaseRoutes from './routes/databases.js';
@@ -76,9 +76,8 @@ import { readyPayload } from './platform/health.js';
 import { createBackup } from './backup/index.js';
 import * as notify from './notify/index.js';
 import * as messenger from './messenger/index.js';
-import { aiProxy, AI_PREFIX } from './ai/proxy.js';
 import { accountProxy, probeAccountServer } from './api/account-proxy.js';
-import { autostartAi, stopAi } from './ai/supervisor.js';
+import { startAgent, stopAgent } from './agent/index.js';
 import { autostartAccountServer, stopAccountServer } from './account/supervisor.js';
 import accountServerRoutes from './routes/account-server.js';
 
@@ -254,9 +253,6 @@ app.use('/api', (req, res, next) =>
     : apiLimiter(req, res, next)
 );
 
-// دستیارِ پشتیبانی — پیش از میان‌افزارِ JSON، به همان دلیلِ بالا
-app.use(AI_PREFIX, aiProxy);
-
 // بدنهٔ JSON فقط برای مسیرهایی که JSON می‌گیرند (آپلود فایل خام است)
 const MSG_LIMIT = `${Math.max(1, Math.round(config.messengerMaxBytes / (1024 * 1024)))}mb`;
 app.use((req, res, next) => {
@@ -334,7 +330,8 @@ app.use('/api/codes', codeRoutes);
 app.use('/api/codes-admin', codeAdminRoutes);
 // کتابخانه: یک جای مرتب برای سایت‌ها، برنامه‌ها، پشتیبان‌ها و فایل‌های موقت
 app.use('/api/storage', storageRoutes);
-app.use('/api/ai', aiRoutes);
+// دستیارِ هوشمند — فقط پورتِ پنل؛ خواندن برای همه، گفت‌وگو و تأیید دستِ‌کم operator
+app.use('/api/agent', requireAuth, writeNeedsOperator, agentRoutes);
 app.use('/api/account-server', accountServerRoutes);
 // مدیریتِ Docker — خواندن برای همه، کارها برای operator، حذف فقط admin
 app.use('/api/docker', dockerRoutes);
@@ -620,8 +617,6 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
   publicApp.use((req, res, next) => (isAdminHost(req) ? gateLimiter(req, res, next) : next()), adminHostGate);
   publicApp.use(GATE_PREFIX, gateLimiter, adminGate);
 
-  // ⚠️ پراکسیِ دستیار هم به همان دلیل پیش از express.json است
-  publicApp.use(AI_PREFIX, aiProxy);
   /*
    *  🪪 درِ سرورِ حساب — همان حلقهٔ گم‌شده‌ای که «هیچ لاگینی کار نمی‌کند» را
    *  ساخته بود. هرچه مالِ shop/server است (حساب، پمپ، دکان، پلن، پنلِ
@@ -818,12 +813,11 @@ async function main() {
     logEvent('error', 'panel', `راه‌اندازی مرکز فرمان: ${e.message}`);
   }
 
-  // دستیارِ پشتیبانی هم با پنل بالا می‌آید. اگر پوشه‌اش نبود یا خاموش بود،
-  // فقط یک سطر لاگ می‌شود و بقیهٔ پنل عادی کار می‌کند.
+  // دستیارِ هوشمند — نگهبانِ حرارت/بی‌کاری، گزارشِ صبحگاهی و شنوندهٔ هشدارها
   try {
-    autostartAi();
+    startAgent();
   } catch (e) {
-    console.warn(`⚠️  دستیارِ پشتیبانی بالا نیامد: ${e.message}`);
+    console.warn(`⚠️  دستیارِ هوشمند بالا نیامد: ${e.message}`);
   }
 
   if (syncOnlyServer) {
@@ -904,7 +898,6 @@ async function main() {
     console.log(`     گرفتنِ کد:   POST /api/codes/request   {"app":"app-fuel","email":"a@b.com"}`);
     console.log(`     سنجشِ کد:    POST /api/codes/verify    {"app":"app-fuel","email":"a@b.com","code":"123456"}`);
     console.log(`     ایمیل: ${mailOn ? `روشن (${codes.email.host})` : 'خاموش'}`);
-    console.log('     برنامهٔ ویندوزیِ همین کارها:  homelab-panel\\desktop\\برنامه-سرور.bat');
     if (!mailOn) {
       console.log('     ⚠️  تا وقتی سرورِ ایمیل تنظیم نشده، کدها ساخته می‌شوند ولی فرستاده نمی‌شوند.');
       console.log('        دیدن و تنظیمش: پنل ← «کدهای شش‌رقمی».');
@@ -985,7 +978,7 @@ async function shutdown(signal) {
     redirectServer?.close();
   } catch { /* بسته شده */ }
   try {
-    stopAi();
+    stopAgent();
   } catch { /* بی‌خیال */ }
   try {
     stopAccountServer();

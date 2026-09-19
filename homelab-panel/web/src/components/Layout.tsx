@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   Activity,
   AlertTriangle,
+  Bot,
   Archive,
   Boxes,
   ChevronDown,
@@ -75,6 +76,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       // صفحه‌ای که بعد از ورود روی آن می‌نشینید — پس اولین چیزِ منو
       { to: '/', key: 'dashboard', icon: LayoutDashboard, end: true },
+      { to: '/assistant', key: 'agTitle', icon: Bot },
       { to: '/control', key: 'ccCommand', icon: CommandIcon, end: true, feature: 'commandCenter' },
       { to: '/sites', key: 'websites', icon: Server },
       { to: '/site-server', key: 'siteServer', icon: Globe },

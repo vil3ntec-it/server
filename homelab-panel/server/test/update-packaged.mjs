@@ -77,7 +77,6 @@ await write('homelab-panel/desktop/app/shell.js', '// پوستهٔ تازه\n');
 await write('homelab-panel/desktop/app/main-impl.js', '// مغزِ تازه\n');
 await write('homelab-panel/desktop/package.json', JSON.stringify({ version: '9.9.9' }));
 await write('homelab-panel/web/src/App.tsx', 'سورسِ رابط کاربری — داخلِ برنامه لازم نیست');
-await write('ai-support/index.js', 'دستیار — داخلِ برنامه لازم نیست');
 await write('README.md', '# مستندات — داخلِ برنامه لازم نیست');
 
 const { walk } = await import('../src/control/zip.js');
@@ -122,8 +121,7 @@ try {
   check('هیچ پوشهٔ homelab-panel ای کنارِ برنامه ساخته نشد', !exists(path.join(installDir, 'homelab-panel')));
   check('هیچ پوشهٔ resources تودرتویی ساخته نشد', !exists(path.join(serverRoot, 'resources')));
   check('سورسِ رابط کاربری داخلِ برنامه ریخته نشد', !exists(path.join(serverRoot, '..', '..', 'homelab-panel')));
-  check('دستیار و مستندات کپی نشدند',
-        !exists(path.join(installDir, 'ai-support')) && !exists(path.join(installDir, 'README.md')));
+  check('مستندات کپی نشدند', !exists(path.join(installDir, 'README.md')));
 
   console.log('\n── چیزهایی که نباید دست بخورند ──');
   check('.env دست‌نخورده ماند', read(path.join(serverRoot, '.env')).includes('دست-نخورد'));

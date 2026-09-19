@@ -28,7 +28,7 @@ import settingsRoutes from './settings.js';
 import siteServerRoutes from './site-server.js';
 import messengerRoutes from './messenger.js';
 import notifyRoutes, { adminRouter as notifyAdminRoutes } from './notify.js';
-import aiRoutes from './ai.js';
+import agentRoutes from './agent.js';
 import backupsRoutes from './backups.js';
 import systemRoutes from './system.js';
 import { healthPayload, readyPayload } from '../platform/health.js';
@@ -61,7 +61,7 @@ export function createApiV1() {
   router.use('/messenger', messengerRoutes);
   router.use('/notify', notifyRoutes);
   router.use('/notify-admin', notifyAdminRoutes);
-  router.use('/ai', aiRoutes);
+  router.use('/agent', agentRoutes);
 
   router.use((req, res) => res.status(404).json({ error: 'not_found' }));
   return router;

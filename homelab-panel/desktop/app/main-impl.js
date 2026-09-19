@@ -254,8 +254,6 @@ async function startServer() {
   state.port = await pickPort(Number(readSettings().port) || 4700);
   state.url = `http://127.0.0.1:${state.port}`;
 
-  const hasAi = fs.existsSync(path.resolve(dir, '..', '..', 'ai-support', 'package.json'));
-
   pushLog(`راه‌اندازی سرور روی پورت ${state.port} …`);
   pushLog(`پوشهٔ داده: ${state.dataDir}${state.runFromHome ? ' (برنامه از داخلِ همین پوشه باز شده)' : ''}`);
   writeHomeMarker(state.dataDir);
@@ -270,7 +268,6 @@ async function startServer() {
       HLP_PORT: String(state.port),
       HLP_HOST: '127.0.0.1',
       HLP_DATA_DIR: state.dataDir,
-      HLP_AI_ENABLED: hasAi ? '1' : '0',
       // بدونِ این‌ها، به‌روزرسانی فایل‌ها را کنارِ برنامه می‌ریزد و چیزی که
       // واقعاً اجرا می‌شود عوض نمی‌شود.
       HLP_APP_LAYOUT: 'packaged',

@@ -411,7 +411,7 @@ adminRouter.get('/overview', (req, res) => {
     port: config.port,
     publicPort: config.siteSync.port || null,
     tunnel,
-    ai: { enabled: config.aiEnabled, port: config.aiPort },
+    agent: { enabled: config.agent.enabled },
     delivery: {
       smsReady: s.sms.provider !== 'none',
       smsProvider: s.sms.provider,

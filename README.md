@@ -13,7 +13,7 @@
 | `homelab-panel/desktop/` | برنامهٔ ویندوز (Electron): پنل + ترمینال در یک پنجره، **بی نیاز به Node** |
 | `homelab-panel/admin-android/` | اپِ مدیریت روی گوشی |
 | `homelab-panel/agent/` | Agent سبک برای سرورهای دیگر (VPS) |
-| `ai-support/` | دستیارِ پشتیبانیِ هوشمند (Ollama، محلی) |
+| `homelab-panel/server/src/agent/` | دستیارِ هوشمند داخلِ پنل (Ollama، محلی، بی هیچ سرویسِ ابری) |
 | `docs/` | معماری، API، پمپ‌بنزین‌ها |
 
 سرورِ حساب (ثبت‌نام، ورود، اشتراک، پلن، پشتیبانی، پنلِ `/admin/`) کدش در ریپوی
@@ -56,7 +56,6 @@ cd homelab-panel && chmod +x نصب.sh && ./نصب.sh
 ```bash
 cd homelab-panel/server && npm test          # پنل، درگاه، ناظرِ سرورِ حساب
 cd homelab-panel/desktop && npm test         # برنامهٔ ویندوز (xvfb روی لینوکس)
-cd ai-support && npm test                    # دستیار
 ```
 
 ## مستندات
@@ -65,9 +64,8 @@ cd ai-support && npm test                    # دستیار
 - [`docs/API.md`](docs/API.md) — مرجعِ API نسخهٔ ۱
 - [`docs/STATIONS-fa.md`](docs/STATIONS-fa.md) — پمپ‌بنزین‌ها: پوشه و رمزِ هر پمپ، اتصالِ برنامه‌ها
 - [`homelab-panel/مرکز-فرمان.md`](homelab-panel/مرکز-فرمان.md) — راهنمای مرکزِ فرمان
-- [`homelab-panel/README-fa.md`](homelab-panel/README-fa.md) — پنل: تنظیمات، توسعه، آزمون‌ها
+- [`homelab-panel/README-fa.md`](homelab-panel/README-fa.md) — پنل: تنظیمات، توسعه، آزمون‌ها، دستیارِ هوشمند
 - [`homelab-panel/desktop/README-fa.md`](homelab-panel/desktop/README-fa.md) — برنامهٔ ویندوز
-- [`ai-support/README-fa.md`](ai-support/README-fa.md) — دستیار
 - [`CLAUDE.md`](CLAUDE.md) — قاعده‌هایی که نباید برگردند
 
 پیکربندی از راهِ متغیرهای محیطی است؛ نمونه‌ها در `homelab-panel/server/.env.example`.

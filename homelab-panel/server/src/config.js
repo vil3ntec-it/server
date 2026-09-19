@@ -162,21 +162,16 @@ export const config = {
     redirectPort: num(process.env.HLP_TLS_REDIRECT_PORT, 0),
   },
 
-  // ── دستیارِ پشتیبانیِ هوشمند (پوشهٔ ai-support کنارِ همین پنل) ─────────────
-  // با بالا آمدنِ پنل خودش روشن می‌شود و اگر افتاد برمی‌گردد. روی 127.0.0.1
-  // گوش می‌دهد و تنها راهِ رسیدنِ سایت به آن، پراکسیِ /ai/support روی همین
-  // پورتِ عمومی است — پس پورتِ تازه‌ای لازم نیست تونل شود.
-  aiEnabled: (process.env.HLP_AI_ENABLED ?? '1') !== '0',
-  aiPort: num(process.env.HLP_AI_PORT, 8788),
-  aiDir: process.env.HLP_AI_DIR || '',
-  // پوشهٔ دادهٔ دستیار. پیش‌فرض: پوشهٔ خودِ سرویس (ai-support/data) — همان
-  // جایی که مرزِ امنیتیِ آن سرویس اجازه‌اش را می‌دهد. اگر جای دیگری
-  // می‌خواهید، باید بیرونِ درختِ پنل باشد وگرنه سرویس بالا نمی‌آید.
-  aiDataDir: process.env.HLP_AI_DATA_DIR || '',
-  // اگر بگذارید، دستیار می‌تواند نشستِ سطحِ مدیر بدهد (جست‌وجوی سراسری و مصارف)
-  aiAdminToken: process.env.HLP_AI_ADMIN_TOKEN || '',
-  aiModel: process.env.HLP_AI_MODEL || '',
-  aiOllamaUrl: process.env.HLP_AI_OLLAMA_URL || '',
+  // ── دستیارِ هوشمند (داخلِ خودِ پنل، src/agent) ─────────────────────────────
+  // مغزش Ollama است روی همین کامپیوتر؛ هیچ سرویسِ ابری و هیچ کلیدی در کار
+  // نیست. HLP_AGENT=0 کلِ دستیار را از پنل برمی‌دارد (نگهبان، گزارش، چت).
+  agent: {
+    enabled: (process.env.HLP_AGENT ?? '1') !== '0',
+    ollamaUrl: process.env.HLP_OLLAMA_URL || process.env.HLP_AI_OLLAMA_URL || 'http://127.0.0.1:11434',
+    keepAlive: process.env.HLP_AGENT_KEEP_ALIVE || '10m',
+    numCtx: num(process.env.HLP_AGENT_NUM_CTX, 8192),
+    timeoutMs: num(process.env.HLP_AGENT_TIMEOUT_MS, 180_000),
+  },
 
   // ── سرورِ حساب (shop/server) — یک در برای همهٔ برنامه‌ها ───────────────────
   // تونل «api.<دامنه>» را به پورتِ عمومیِ همین پنل می‌آورد، ولی حساب و اشتراکِ
