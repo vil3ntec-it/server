@@ -238,6 +238,29 @@ try {
       setup.status === 200 && !seen.some((s) => s.url === '/api/auth/setup'), `${setup.status} ${setup.text.slice(0, 80)}`);
   }
 
+  console.log('\n── رمزِ غلطِ یک نفر، بقیه را قفل نمی‌کند ──');
+  {
+    //  ⛔ شمارندهٔ درِ مدیر روی همهٔ پورتِ عمومی نشسته بود و هر ۴۰۱ را شکست
+    //  می‌شمرد: بیست رمزِ غلط در ده دقیقه = ۴۲۹ برای کلِ api.<دامنه>.
+    let last = 0;
+    for (let i = 0; i < 25; i++) {
+      const r = await hit(PUBLIC, '/api/auth/login', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+      last = r.status;
+    }
+    check('۲۵ رمزِ غلطِ پشتِ سرِ هم ⇒ همچنان ۴۰۱ از سرورِ حساب، نه ۴۲۹', last === 401, String(last));
+    const h = await hit(PUBLIC, '/api/v1/health');
+    check('و مسیرهای خودِ سرور هم قفل نشدند', h.status === 200, String(h.status));
+    const live = await hit(PUBLIC, '/api/stations/nope/live?token=x');
+    check('و دادهٔ زندهٔ پمپ هم', live.status !== 429, String(live.status));
+    //  ولی خودِ در همان‌قدر سخت‌گیر مانده: بیست کلیدِ غلط ⇒ ۴۲۹
+    let gate = 0;
+    for (let i = 0; i < 22; i++) {
+      const r = await hit(PUBLIC, '/api/admin-gate/control/overview', { headers: { 'x-admin-gate': 'kelide-ghalat-' + i } });
+      gate = r.status;
+    }
+    check('حدسِ کلیدِ درِ مدیر همچنان بعد از بیست تلاش ۴۲۹ می‌گیرد', gate === 429, String(gate));
+  }
+
   console.log('\n── سرورِ حساب خاموش ──');
   {
     await new Promise((r) => fake.close(r));
