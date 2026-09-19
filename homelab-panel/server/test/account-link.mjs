@@ -152,12 +152,14 @@ try {
   console.log('\n── سرورِ حساب خاموش شد ──');
   await new Promise((r) => fake.close(r));
   const down = await api('GET', '/api/stations-admin/cloud/stats', undefined, auth);
-  check('۵۰۳ِ account_server_down با راهِ روشن کردنش',
-    down.status === 503 && down.json?.error === 'account_server_down' && /docker compose/.test(down.json?.message || ''),
+  //  ⚠️ «docker compose» دیگر در پیام نیست (۱.۳۸.۰): ناظرِ سرورِ حساب می‌گوید
+  //  چرا — این‌جا «نصب نیست»، چون HLP_ACCOUNT_DIR داده نشده.
+  check('۵۰۳ِ account_server_down با راهِ درست کردنش',
+    down.status === 503 && down.json?.error === 'account_server_down' && /سرورِ حساب/.test(down.json?.message || '') && !/docker/.test(down.json?.message || ''),
     `${down.status} ${JSON.stringify(down.json)}`);
   const diag2 = await api('GET', '/api/diagnostics', undefined, auth);
   const acct2 = (diag2.json?.checks || []).find((c) => c.key === 'accountServer');
-  check('عیب‌یابی هم سرخ می‌شود و همان راه را می‌گوید', acct2?.state === 'bad' && /docker compose/.test(acct2?.hint || ''), JSON.stringify(acct2));
+  check('عیب‌یابی هم سرخ می‌شود و همان راه را می‌گوید', acct2?.state === 'bad' && /نصب نیست/.test(acct2?.hint || ''), JSON.stringify(acct2));
 } finally {
   server.kill('SIGTERM');
   await new Promise((r) => setTimeout(r, 400));

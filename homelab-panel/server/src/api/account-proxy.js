@@ -105,12 +105,26 @@ const TIMEOUT_MS = 120_000;
 const DOWN = new Set(['ECONNREFUSED', 'ECONNRESET', 'ECONNABORTED', 'EPIPE', 'EHOSTUNREACH', 'ENOTFOUND']);
 
 /** پیامِ «روشن نیست» — به شکلِ خطای خودِ سرورِ حساب، تا برنامه‌ها همان را نشان بدهند. */
+/**
+ * جملهٔ «چه کار کنم» وقتی سرورِ حساب روشن نیست.
+ *
+ * ⚠️ تا ۱.۳۷.۰ این‌جا «docker compose up -d» نوشته می‌شد و همان روی برنامهٔ
+ * پمپ، برنامهٔ دکان و اپِ مدیریتِ صاحب سامانه دیده شد — روی کامپیوترِ
+ * ویندوزی که نه داکر دارد نه PostgreSQL. حالا پنل خودش سرورِ حساب را بالا
+ * می‌آورد (account/supervisor.js) و آن ناظر این جمله را از حالِ واقعی‌اش
+ * می‌سازد (نصب نیست / دارد بالا می‌آید / افتاده). پیش‌فرض برای وقتی که ناظر
+ * وصل نشده (آزمون‌ها، HLP_ACCOUNT_AUTOSTART=0).
+ */
+let downHint = () => 'سرورِ حساب روی سرورِ خانگی روشن نیست — پنلِ سرورِ خانگی را به‌روز کنید تا خودش بالا بیاوردش.';
+export function setDownHint(fn) { if (typeof fn === 'function') downHint = fn; }
+
 export function downPayload() {
+  let hint = '';
+  try { hint = String(downHint() || ''); } catch { /* پیامِ پیش‌فرض */ }
   return {
     error: {
       code: 'account_server_down',
-      message: 'سرورِ حساب روی سرورِ خانگی روشن نیست. روی همان کامپیوتر: '
-        + 'cd shop/server && docker compose up -d — بعد دوباره امتحان کنید.',
+      message: hint || 'سرورِ حساب روی سرورِ خانگی روشن نیست.',
     },
   };
 }

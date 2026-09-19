@@ -25,6 +25,7 @@ import { queueStatus } from '../codes/queue.js';
 import { adminHostFor } from '../platform/domain.js';
 import { probeAccountServer } from '../api/account-proxy.js';
 import { cloudStatus } from '../stations/cloud.js';
+import { downHint } from '../account/supervisor.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -179,11 +180,10 @@ router.get('/', async (req, res) => {
         return { state: WARN, value: 'خاموش (HLP_ACCOUNT_API=0)', hint: 'ورودِ برنامه‌ها از این‌جا رد نمی‌شود.' };
       }
       if (!account.up) {
-        return {
-          state: BAD,
-          value: account.url || '—',
-          hint: 'سرورِ حساب روی همین کامپیوتر روشن نیست. همان‌جا: cd shop/server && docker compose up -d',
-        };
+        //  چرا روشن نیست را ناظرِ خودش می‌داند (نصب نیست / دارد بالا می‌آید / افتاده)
+        let hint = 'سرورِ حساب روی همین کامپیوتر روشن نیست.';
+        try { hint = downHint(); } catch { /* پیامِ پیش‌فرض */ }
+        return { state: BAD, value: account.url || '—', hint };
       }
       const st = cloudStatus();
       if (!st.linked) {

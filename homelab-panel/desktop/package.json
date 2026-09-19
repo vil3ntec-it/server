@@ -1,7 +1,7 @@
 {
   "name": "control-center-desktop",
   "productName": "Control Center",
-  "version": "1.37.0",
+  "version": "1.38.0",
   "private": true,
   "description": "Control Center — Windows desktop app for the home server panel",
   "type": "module",
@@ -31,6 +31,21 @@
       "assets/**/*"
     ],
     "extraResources": [
+      {
+        "from": "../account-server",
+        "to": "account-server",
+        "filter": [
+          "**/*",
+          "!data",
+          "!data/**/*",
+          "!.env",
+          "!*.log",
+          "!test/**/*",
+          "!node_modules/.package-lock.json",
+          "!node_modules/**/{test,tests,__tests__,example,examples,doc,docs}/**/*",
+          "!node_modules/**/*.{md,map,ts}"
+        ]
+      },
       {
         "from": "../server",
         "to": "server",

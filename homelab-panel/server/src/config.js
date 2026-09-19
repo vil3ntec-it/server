@@ -194,6 +194,12 @@ export const config = {
     // ساعت در پنل دوباره وارد شود (stations/cloud.js).
     adminUser: String(process.env.HLP_ACCOUNT_ADMIN_USER || '').trim(),
     adminPassword: String(process.env.HLP_ACCOUNT_ADMIN_PASSWORD || ''),
+    // پنل خودش سرورِ حساب را بالا بیاورد (account/supervisor.js) — روی
+    // PGlite، بی داکر و بی PostgreSQL. پیش‌فرض روشن؛ «0» خاموش. پوشهٔ کدِ
+    // سرورِ حساب: HLP_ACCOUNT_DIR، وگرنه کنارِ پنل (بستهٔ ویندوز) یا ریپوی
+    // خواهرِ shop/server کنارِ این ریپو.
+    autostart: (process.env.HLP_ACCOUNT_AUTOSTART ?? '1') !== '0',
+    dir: process.env.HLP_ACCOUNT_DIR || '',
   },
 };
 

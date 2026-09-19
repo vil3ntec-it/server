@@ -52,6 +52,24 @@ jobs:
           npm ci
           npm run build
 
+      # ── سرورِ حساب (shop/server) کنارِ پنل ────────────────────────────────
+      # حساب و اشتراکِ همهٔ برنامه‌ها روی shop/server است و پنل خودش آن را بالا
+      # می‌آورد (account/supervisor.js) — روی PGlite، بی داکر و بی PostgreSQL.
+      # ریپوی shop عمومی است؛ این‌جا کلون و بی dev نصب می‌شود و electron-builder
+      # آن را در resources/account-server می‌گذارد.
+      - name: سرورِ حساب — از ریپوی shop
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/vil3ntec-it/shop.git /tmp/shop
+          rm -rf homelab-panel/account-server
+          mkdir -p homelab-panel/account-server
+          cp -r /tmp/shop/server/. homelab-panel/account-server/
+          rm -rf homelab-panel/account-server/test homelab-panel/account-server/data homelab-panel/account-server/.env homelab-panel/account-server/node_modules
+          cd homelab-panel/account-server
+          npm ci --omit=dev
+          node -e "const p=require('./package.json'); console.log('سرورِ حساب نسخهٔ', p.version)"
+          node -e "require('@electric-sql/pglite'); console.log('PGlite بار شد')"
+
       - name: وابستگی‌های برنامهٔ ویندوز
         working-directory: homelab-panel/desktop
         run: npm ci

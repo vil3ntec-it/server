@@ -267,7 +267,7 @@ try {
     const r = await hit(PUBLIC, '/api/auth/login', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
     const j = JSON.parse(r.text);
     check('۵۰۳ با کدِ account_server_down و راهِ درست کردنش',
-      r.status === 503 && j.error?.code === 'account_server_down' && /docker compose/.test(j.error?.message || ''), r.text.slice(0, 160));
+      r.status === 503 && j.error?.code === 'account_server_down' && /سرورِ حساب/.test(j.error?.message || '') && !/docker/.test(j.error?.message || ''), r.text.slice(0, 160));
     const h = await hit(PUBLIC, '/api/v1/health');
     check('و سرورِ خانگی خودش سالم می‌ماند', h.status === 200, `${h.status}`);
   }
