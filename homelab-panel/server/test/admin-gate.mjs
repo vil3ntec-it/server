@@ -51,6 +51,8 @@ const child = spawn(
       HLP_SITES_ROOT: sitesRoot,
       HLP_TUNNEL: '0',
       HLP_AI_ENABLED: '0',
+         //  این آزمون مرزِ خودِ پنل را می‌سنجد؛ درِ سرورِ حساب (account-proxy) عمداً بسته است
+         HLP_ACCOUNT_API: '0',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   },

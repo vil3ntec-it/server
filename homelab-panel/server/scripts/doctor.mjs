@@ -138,6 +138,30 @@ if (cert || key) {
 
 /* -------------------------------- خلاصه --------------------------------- */
 
+// ── سرورِ حساب ─────────────────────────────────────────────────────────────
+//  هشدار است نه خطا: نصبی که فقط دفترِ پمپ را می‌خواهد، بی آن هم بالا می‌آید.
+//  ولی تا روشن نشود هیچ برنامه‌ای از راهِ api.<دامنه> وارد نمی‌شود.
+{
+  const raw = process.env.HLP_ACCOUNT_API ?? '';
+  if (raw === '0') {
+    warn('سرورِ حساب خاموش است (HLP_ACCOUNT_API=0) — ورودِ برنامه‌ها از این‌جا رد نمی‌شود');
+  } else {
+    const url = raw || 'http://127.0.0.1:3000';
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 2500);
+    try {
+      const res = await fetch(new URL('/api/health', url), { signal: ctrl.signal });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && body?.ok) ok(`سرورِ حساب وصل است (${url}${body.version ? `، نسخهٔ ${body.version}` : ''})`);
+      else warn(`سرورِ حساب جواب داد ولی سالم نیست (${url}: ${res.status})`);
+    } catch {
+      warn(`سرورِ حساب روشن نیست (${url}) — برنامه‌ها تا روشن شدنش وارد نمی‌شوند. روی همین کامپیوتر: cd shop/server && docker compose up -d`);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
 console.log('');
 if (problems) {
   console.log(`      ${problems} مشکل و ${warnings} هشدار پیدا شد.`);

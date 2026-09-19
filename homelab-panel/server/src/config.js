@@ -177,6 +177,19 @@ export const config = {
   aiAdminToken: process.env.HLP_AI_ADMIN_TOKEN || '',
   aiModel: process.env.HLP_AI_MODEL || '',
   aiOllamaUrl: process.env.HLP_AI_OLLAMA_URL || '',
+
+  // ── سرورِ حساب (shop/server) — یک در برای همهٔ برنامه‌ها ───────────────────
+  // تونل «api.<دامنه>» را به پورتِ عمومیِ همین پنل می‌آورد، ولی حساب و اشتراکِ
+  // هر چهار برنامه روی سرورِ shop/server است. این نشانی می‌گوید آن سرور روی
+  // همین کامپیوتر کجاست؛ پورتِ عمومی هرچه مالِ حساب است را همان‌جا می‌برد
+  // (api/account-proxy.js). پیش‌فرض همان پورتِ docker compose است.
+  // «0» یعنی خاموش — همان رفتارِ قدیم، بی هیچ پراکسی.
+  accountApi: {
+    enabled: (process.env.HLP_ACCOUNT_API ?? '') !== '0',
+    url: (process.env.HLP_ACCOUNT_API && process.env.HLP_ACCOUNT_API !== '0')
+      ? process.env.HLP_ACCOUNT_API
+      : 'http://127.0.0.1:3000',
+  },
 };
 
 export const paths = {

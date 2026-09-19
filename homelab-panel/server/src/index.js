@@ -77,6 +77,7 @@ import { createBackup } from './backup/index.js';
 import * as notify from './notify/index.js';
 import * as messenger from './messenger/index.js';
 import { aiProxy, AI_PREFIX } from './ai/proxy.js';
+import { accountProxy, probeAccountServer } from './api/account-proxy.js';
 import { autostartAi, stopAi } from './ai/supervisor.js';
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
@@ -562,7 +563,10 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
     // این پورت عمداً عمومی است (اپ‌ها از اینترنت می‌آیند) ولی بدونِ credentials
     res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
     res.setHeader('Vary', 'Origin');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Api-Key, X-Read-Key');
+    //  ⚠️ X-App-* را برنامه‌ها روی هر درخواست می‌فرستند (اپِ کارمندان از مرورگر
+    //  هم). بی این‌ها پیش‌پروازِ CORS رد می‌شد و ورودِ اپ بی هیچ پیامی می‌مرد.
+    res.setHeader('Access-Control-Allow-Headers',
+      'Content-Type, Authorization, X-Api-Key, X-Read-Key, X-App-Id, X-App-Version, X-App-Platform, X-Requested-With');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     if (req.method === 'OPTIONS') return res.status(204).end();
     next();
@@ -621,6 +625,13 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
 
   // ⚠️ پراکسیِ دستیار هم به همان دلیل پیش از express.json است
   publicApp.use(AI_PREFIX, aiProxy);
+  /*
+   *  🪪 درِ سرورِ حساب — همان حلقهٔ گم‌شده‌ای که «هیچ لاگینی کار نمی‌کند» را
+   *  ساخته بود. هرچه مالِ shop/server است (حساب، پمپ، دکان، پلن، پنلِ
+   *  مدیریت) از همین‌جا به آن سپرده می‌شود؛ مسیرهای خودِ این سرور دست
+   *  نمی‌خورند. پیش از express.json، چون بدنه جریانی می‌رود.
+   */
+  publicApp.use(accountProxy);
   publicApp.use(express.json({ limit: MSG_LIMIT }));
   /*
    *  «mode» می‌گوید این جواب از کدام پورت آمده.
@@ -848,6 +859,19 @@ async function main() {
       console.log('     مرورگر جلویش را می‌گیرد. آنجا باید wss:// داشته باشید (تونل).');
       console.log('');
     }
+    //  سرورِ حساب — همان اول بگو هست یا نه، نه بعد از یک ساعت گشتن
+    probeAccountServer().then((acct) => {
+      if (!acct.enabled) {
+        console.log('  🪪 سرورِ حساب: خاموش (HLP_ACCOUNT_API=0) — برنامه‌ها از این‌جا وارد نمی‌شوند');
+      } else if (acct.up) {
+        console.log(`  🪪 سرورِ حساب: وصل${acct.version ? ` (نسخهٔ ${acct.version})` : ''} — از api.<دامنه> رد می‌شود`);
+      } else {
+        console.log(`  ⚠️  سرورِ حساب روشن نیست (${acct.url}) — تا روشن نشود هیچ برنامه‌ای وارد نمی‌شود.`);
+        console.log('     روی همین کامپیوتر:  cd shop/server && docker compose up -d');
+        logEvent('warn', 'panel', `سرورِ حساب (${acct.url}) جواب نمی‌دهد — ورودِ برنامه‌ها تا روشن شدنش کار نمی‌کند`);
+      }
+      console.log('');
+    }).catch(() => {});
     if (stations) {
       const list = stations.list();
       console.log('  ⛽ پمپ‌بنزین‌ها — هر کدام پوشه و رمزِ خودش:');
