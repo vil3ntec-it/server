@@ -139,7 +139,7 @@ export default function Command() {
         </Card>
 
         {/* ──────────────── هشدارها ──────────────── */}
-        <Card title={t('ccOpenAlerts')} icon={<AlertTriangle className="h-4 w-4" />} action={<Link className="btn btn-sm" to="/control/monitoring">{t('ccMonitoring')}</Link>}>
+        <Card title={t('ccOpenAlerts')} icon={<AlertTriangle className="h-4 w-4" />} action={<Link className="btn btn-sm" to="/monitoring?tab=checks">{t('ccMonitoring')}</Link>}>
           {data.alerts.length === 0 ? (
             <p className="py-8 text-center text-sm text-ink-muted">{t('ccNoAlerts')}</p>
           ) : (
