@@ -18,6 +18,7 @@ import { sameSecret } from '../lib/secret-compare.js';
 import { allowAutoRegister } from '../lib/auto-register.js';
 import { linkApp } from '../appauth/registry-link.js';
 import { checkMailSettings, codeSettings, safeCodeSettings, saveCodeSettings } from '../codes/settings.js';
+import { onPanelMailChanged } from '../account/supervisor.js';
 import { issueCode, maskEmail, revealCode, verifyCode } from '../codes/service.js';
 import { awaitDelivery, drainQueue, queueStatus } from '../codes/queue.js';
 import { mailReady, sendCodeEmail } from '../codes/mail.js';
@@ -378,6 +379,9 @@ adminRouter.put('/settings', (req, res) => {
   }
 
   saveCodeSettings(patch);
+  //  سرورِ حساب همین SMTP را برای کدِ ثبت‌نامِ برنامه‌ها می‌گیرد — با
+  //  محیطِ تازه دوباره بالا می‌آید (فقط اگر خودِ پنل روشنش کرده باشد).
+  if (patch.email) { try { onPanelMailChanged(); } catch { /* ناظر خاموش */ } }
   res.json({ ok: true, settings: safeCodeSettings(), warning });
 });
 
