@@ -204,16 +204,24 @@ object Api {
 
   /* ----------------------------- حساب‌ها -------------------------------- */
 
-  /** حساب‌های فروشگاه (توحید) */
+  /*
+   *  حساب‌های فروشگاه — از **سرورِ حساب** (shop/server)، از راهِ پلِ
+   *  ‎/api/account-admin‎ی پنل، با همین نشستِ پنل.
+   *
+   *  ⚠️ تا ۱.۴۰.۰ پنل دفترِ حسابِ دومی داشت و این اپ از همان می‌خواند؛
+   *  برنامهٔ دکان اشتراکش را از جای دیگری می‌گرفت و مدیر «فعال» می‌دید در
+   *  حالی که مشتری «تمام شده». حالا یک دفتر است. شکلِ پاسخ‌ها همان است که
+   *  این اپ از قبل می‌خواند. «حساب» این‌جا یعنی دکان.
+   */
   fun shopAccounts(session: Session, q: String = ""): Reply =
-    call(session, "/api/control/tohid/accounts" + if (q.isBlank()) "" else "?q=$q")
+    call(session, "/api/account-admin/shop-accounts" + if (q.isBlank()) "" else "?q=$q")
 
   fun shopAccount(session: Session, id: String): Reply =
-    call(session, "/api/control/tohid/accounts/$id")
+    call(session, "/api/account-admin/shop-accounts/$id")
 
-  /** بستن یا باز کردنِ یک حسابِ فروشگاه */
+  /** بستن یا باز کردنِ یک حسابِ فروشگاه (صاحبِ دکان بسته می‌شود و از همه‌جا بیرون می‌افتد) */
   fun setShopAccountDisabled(session: Session, id: String, disabled: Boolean): Reply =
-    call(session, "/api/control/tohid/accounts/$id/disable", "POST", JSONObject().put("disabled", disabled))
+    call(session, "/api/account-admin/shop-accounts/$id/disable", "POST", JSONObject().put("disabled", disabled))
 
   /* ------------------------------ پمپ بنزین ----------------------------- */
 
@@ -319,7 +327,7 @@ object Api {
 
   /* ---------------------------- اشتراک‌ها ------------------------------- */
 
-  fun plans(session: Session): Reply = call(session, "/api/control/tohid/plans")
+  fun plans(session: Session): Reply = call(session, "/api/account-admin/shop-plans")
 
   /**
    * دادنِ اشتراک به یک حساب.
@@ -341,17 +349,17 @@ object Api {
       .put("amount", amount)
       .put("unit", unit)
     if (planTitle.isNotBlank()) body.put("planTitle", planTitle)
-    return call(session, "/api/control/tohid/accounts/$accountId/vip", "POST", body)
+    return call(session, "/api/account-admin/shop-accounts/$accountId/vip", "POST", body)
   }
 
   fun extendSubscription(session: Session, subscriptionId: String, amount: Int, unit: String): Reply {
     val body = JSONObject().put("amount", amount).put("unit", unit)
-    return call(session, "/api/control/tohid/subscriptions/$subscriptionId/extend", "POST", body)
+    return call(session, "/api/account-admin/subscriptions/$subscriptionId/extend", "POST", body)
   }
 
   fun setSubscriptionStatus(session: Session, subscriptionId: String, status: String): Reply {
     val body = JSONObject().put("status", status)
-    return call(session, "/api/control/tohid/subscriptions/$subscriptionId/status", "POST", body)
+    return call(session, "/api/account-admin/subscriptions/$subscriptionId/status", "POST", body)
   }
 
   /* --------------------------- اطلاعیه‌ها -------------------------------- */
@@ -393,7 +401,7 @@ object Api {
   /* ----------------------------- تخفیف ---------------------------------- */
 
   /** نرخ‌نامه با تخفیف‌های جاری — همان چیزی که مشتری هم می‌بیند */
-  fun adminPlans(session: Session): Reply = call(session, "/api/v1/admin/plans")
+  fun adminPlans(session: Session): Reply = call(session, "/api/account-admin/plans")
 
   /**
    * گذاشتنِ تخفیف روی یک نرخ.
@@ -410,16 +418,17 @@ object Api {
   ): Reply {
     val payload = JSONObject().put("percent", percent).put("label", label)
     if (until != null && until > 0) payload.put("until", until)
-    return call(session, "/api/v1/admin/plans/$code/discount", "PUT", payload)
+    return call(session, "/api/account-admin/plans/$code/discount", "PUT", payload)
   }
 
   fun clearDiscount(session: Session, code: String): Reply =
-    call(session, "/api/v1/admin/plans/$code/discount", "DELETE")
+    call(session, "/api/account-admin/plans/$code/discount", "DELETE")
 
   /* ---------------------------- پشتیبانی -------------------------------- */
 
   /**
-   * گفت‌وگوها. `app` بخش را جدا می‌کند: پمپ، فروشگاه، سایت‌ها.
+   * گفت‌وگوها. `app` بخش را جدا می‌کند: پمپ (‎pump‎) و فروشگاه (‎shop‎) —
+   * همان دو بخشی که سرورِ حساب دارد.
    */
   fun supportThreads(session: Session, app: String = "", status: String = ""): Reply {
     val query = buildString {
@@ -427,20 +436,20 @@ object Api {
       if (app.isNotBlank()) append("&app=").append(app)
       if (status.isNotBlank()) append("&status=").append(status)
     }
-    return call(session, "/api/v1/admin/support/threads$query")
+    return call(session, "/api/account-admin/support/threads$query")
   }
 
   fun supportThread(session: Session, threadId: String, after: Long = 0): Reply =
-    call(session, "/api/v1/admin/support/threads/$threadId?after=$after")
+    call(session, "/api/account-admin/support/threads/$threadId?after=$after")
 
   fun supportReply(session: Session, threadId: String, text: String): Reply {
     val body = JSONObject().put("body", text)
-    return call(session, "/api/v1/admin/support/threads/$threadId/messages", "POST", body)
+    return call(session, "/api/account-admin/support/threads/$threadId/messages", "POST", body)
   }
 
   fun supportStatus(session: Session, threadId: String, status: String): Reply {
     val body = JSONObject().put("status", status)
-    return call(session, "/api/v1/admin/support/threads/$threadId/status", "POST", body)
+    return call(session, "/api/account-admin/support/threads/$threadId/status", "POST", body)
   }
 
   /* ------------------------------ خانه ---------------------------------- */
@@ -450,11 +459,14 @@ object Api {
 
 data class SupportSection(val app: String, val title: String)
 
-/** سه بخشِ پشتیبانی — همان‌ها که در نوارِ بالای صفحهٔ پشتیبانی دیده می‌شوند */
+/**
+ *  دو بخشِ پشتیبانی — همان‌ها که در نوارِ بالای صفحهٔ پشتیبانی دیده می‌شوند.
+ *  ⚠️ «سایت‌ها» برداشته شد: آن بخش مالِ دفترِ حسابِ قدیمیِ پنل بود که دیگر
+ *  نیست؛ سرورِ حساب فقط پمپ و دکان را می‌شناسد.
+ */
 val SUPPORT_SECTIONS = listOf(
-  SupportSection("station", "پمپ بنزین"),
+  SupportSection("pump", "پمپ بنزین"),
   SupportSection("shop", "فروشگاه"),
-  SupportSection("site", "سایت‌ها"),
 )
 
 /** ثانیه/دقیقه/ساعتِ خوانا — همه‌جای برنامه یک شکل */

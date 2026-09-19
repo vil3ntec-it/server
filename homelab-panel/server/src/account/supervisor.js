@@ -350,7 +350,7 @@ export async function autostartAccountServer({ probe } = {}) {
 /** جملهٔ «چرا سرورِ حساب جواب نمی‌دهد» — از حالِ واقعیِ همین ناظر. */
 export function downHint() {
   if (!config.accountApi?.autostart) {
-    return 'سرورِ حساب روی سرورِ خانگی روشن نیست و راه‌اندازیِ خودکارش خاموش است (HLP_ACCOUNT_AUTOSTART=0) — روی همان کامپیوتر: cd shop/server && docker compose up -d.';
+    return 'سرورِ حساب روی سرورِ خانگی روشن نیست و راه‌اندازیِ خودکارش خاموش است (HLP_ACCOUNT_AUTOSTART=0) — آن را از .env بردارید تا پنل خودش بالا بیاوردش، یا سرورِ حساب را خودتان روی همان پورت روشن کنید.';
   }
   const dir = resolveAccountDir();
   if (!dir) {

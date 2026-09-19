@@ -62,33 +62,25 @@ try {
   });
   check('پنل بالا آمد', setup.status === 200, setup.text.slice(0, 120));
 
-  console.log('\n── از راهِ تونل، برنامه‌ها می‌رسند ──');
+  console.log('\n── حساب فقط روی سرورِ حساب است — این پنل دفترِ دومی ندارد ──');
 
-  // ۴۰۴ یعنی «این مسیر اینجا نیست» — همان چیزی که قبلاً می‌آمد و برنامه را
-  // از کار می‌انداخت. ۴۰۱ یعنی مسیر هست و فقط رمز می‌خواهد.
+  /*
+   *  تا ۱.۴۰.۰ این پنل خودش ‎/api/v1/auth‎ و ‎/api/v1/admin‎ را جواب می‌داد
+   *  (دفترِ حسابِ دوم، ‎src/tohid/‎). حالا آن مسیرها مالِ سرورِ حساب‌اند و
+   *  درگاهِ ‎account-proxy.js‎ می‌بردشان (‎test/account-gateway.mjs‎). با درگاهِ
+   *  خاموش باید «نبوده» باشند — نه این‌که یک دفترِ محلی بی‌صدا جواب بدهد.
+   */
   const custLogin = await hit(PUBLIC, '/api/v1/auth/login', {
     method: 'POST', body: { identifier: 'kasi@example.com', password: 'x' },
   });
-  check('ورودِ مشتری از تونل پیدا می‌شود', custLogin.status !== 404, `${custLogin.status} ${custLogin.text.slice(0, 60)}`);
-
+  check('ورودِ مشتری با درگاهِ خاموش «نبوده» است (JSON ۴۰۴)، نه دفترِ محلی', custLogin.status === 404, `${custLogin.status} ${custLogin.text.slice(0, 60)}`);
   const admLogin = await hit(PUBLIC, '/api/v1/admin/login', {
-    method: 'POST', body: { username: 'admin', password: 'غلط' },
-  });
-  check('ورودِ مدیر از تونل پیدا می‌شود', admLogin.status !== 404, `${admLogin.status} ${admLogin.text.slice(0, 60)}`);
-
-  const real = await hit(PUBLIC, '/api/v1/admin/login', {
     method: 'POST', body: { username: 'admin', password: ADMIN_PASSWORD },
   });
-  const token = JSON.parse(real.text || '{}').token;
-  check('مدیر از راهِ تونل واقعاً وارد می‌شود', Boolean(token), real.text.slice(0, 140));
-
-  const stats = await hit(PUBLIC, '/api/v1/admin/stats', { token });
-  check('و کارش را هم می‌کند', stats.status === 200, `${stats.status} ${stats.text.slice(0, 80)}`);
-
-  const register = await hit(PUBLIC, '/api/v1/auth/register', {
-    method: 'POST', body: { name: 'کریم', email: 'karim@example.com', phone: '0700999888', password: 'shop-pass-1' },
-  });
-  check('مشتری از راهِ تونل ثبت‌نام می‌کند', register.status === 200, register.text.slice(0, 120));
+  check('و رمزِ مدیرِ پنل هیچ حسابی را آن‌جا باز نمی‌کند', admLogin.status === 404 && !/token/.test(admLogin.text), `${admLogin.status} ${admLogin.text.slice(0, 60)}`);
+  const token = JSON.parse(setup.text || '{}').token;
+  const stats = await hit(PANEL, '/api/v1/admin/stats', { token });
+  check('روی پورتِ پنل هم دفترِ حسابی نیست', stats.status === 404, `${stats.status} ${stats.text.slice(0, 80)}`);
 
   console.log('\n── یک آدرس، یک فهرست ──');
 
@@ -135,7 +127,8 @@ try {
 
   console.log('\n── ولی پنل از اینترنت دیده نمی‌شود ──');
   for (const [label, p] of [
-    ['مرکز فرمان', '/api/control/tohid/overview'],
+    ['مرکز فرمان', '/api/control/overview'],
+    ['حساب‌های دکان', '/api/account-admin/shop-accounts'],
     ['فایل‌ها', '/api/files/list?path=/'],
     ['سایت‌ها', '/api/sites'],
     ['کاربرانِ پنل', '/api/auth/users'],
@@ -153,7 +146,7 @@ try {
 
   console.log('\n── و همان‌ها روی پنلِ خانگی سرِ جایشان هستند ──');
   const panelToken = JSON.parse(setup.text || '{}').token;
-  const overview = await hit(PANEL, '/api/control/tohid/overview', { token: panelToken });
+  const overview = await hit(PANEL, '/api/control/overview', { token: panelToken });
   check('مرکز فرمان روی پنل کار می‌کند', overview.status === 200, `${overview.status} ${overview.text.slice(0, 80)}`);
 } catch (e) {
   check('خطای غیرمنتظره', false, e.stack || e.message);

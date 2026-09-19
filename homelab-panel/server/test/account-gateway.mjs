@@ -62,7 +62,8 @@ for (const [p, want] of [
   ['/', false],
   ['/ai/support/health', false],
   //  خصوصیِ پنل — روی پورتِ عمومی «نبوده» است و به آن‌طرف هم نمی‌رود
-  ['/api/control/tohid/overview', false],
+  ['/api/control/overview', false],
+  ['/api/account-admin/shop-accounts', false],
   ['/api/files/list', false],
   ['/api/sites', false],
   ['/api/settings', false],
@@ -221,7 +222,7 @@ try {
     check('/api/v1/app/config مالِ همین سرور است', cfg.status !== 404 && cfg.status !== 503, `${cfg.status}`);
     const st = await hit(PUBLIC, '/api/stations/nope/live?token=x');
     check('/api/stations/… مالِ همین سرور است', st.status !== 503, `${st.status}`);
-    const ctl = await hit(PUBLIC, '/api/control/tohid/overview');
+    const ctl = await hit(PUBLIC, '/api/control/overview');
     check('مرکز فرمان روی پورتِ عمومی همچنان «نبوده» است', ctl.status === 404, `${ctl.status} ${ctl.text.slice(0, 60)}`);
     check('هیچ‌کدام به سرورِ حساب نرفتند', seen.length === before, seen.slice(before).map((s) => s.url).join(' '));
     const idx = JSON.parse((await hit(PUBLIC, '/api')).text);

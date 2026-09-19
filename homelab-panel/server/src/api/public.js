@@ -28,8 +28,7 @@ import appRoutes from '../routes/app.js';
 import messengerRoutes from '../routes/messenger.js';
 import notifyRoutes from '../routes/notify.js';
 import stationRoutes from '../routes/stations.js';
-import tohidPublicRoutes from '../routes/tohid.js';
-import tohidAdminApiRoutes from '../routes/tohid-admin.js';
+import { router as announceRoutes } from '../routes/announce.js';
 import { readyPayload } from '../platform/health.js';
 import { versionInfo } from '../version.js';
 import { config } from '../config.js';
@@ -47,12 +46,11 @@ export const PUBLIC_API_VERSION = 'v1';
 const ENDPOINTS = [
   { path: '/api/v1/health', what: 'زنده بودنِ سرور' },
   { path: '/api/v1/ready', what: 'آمادگیِ واقعی — دیتابیس و دیسک' },
-  { path: '/api/v1/auth', what: 'ثبت‌نام و ورودِ مشتری' },
-  { path: '/api/v1/admin', what: 'مدیریت — پشتِ نام کاربری و رمز' },
   { path: '/api/v1/app', what: 'ورودِ برنامه‌ها با کد' },
   { path: '/api/v1/messenger', what: 'پیام‌رسان (HTTP و WebSocket)' },
   { path: '/api/v1/notify', what: 'اعلان‌ها' },
   { path: '/api/v1/stations', what: 'پمپ‌بنزین‌ها — دادهٔ زندهٔ هر پمپ، با رمزِ خودِ همان پمپ' },
+  { path: '/api/v1/announce', what: 'اطلاعیه‌های مدیر برای برنامه‌ها (فقط‌خواندنی)' },
 ];
 
 /**
@@ -121,12 +119,6 @@ export function createPublicApi() {
     res.status(payload.ready ? 200 : 503).json(payload);
   });
 
-  /*
-   *  ترتیب مهم است: مسیرهای نام‌دار پیش از توحید می‌نشینند، چون روترِ
-   *  توحید روی ریشهٔ v1 سوار است و اگر اول بیاید مسیرهای زیرش را
-   *  می‌بلعد.
-   */
-  v1.use('/admin', tohidAdminApiRoutes);
   v1.use('/app', appRoutes);
   v1.use('/messenger', messengerRoutes);
   v1.use('/notify', notifyRoutes);
@@ -137,8 +129,10 @@ export function createPublicApi() {
    *  روترِ پنل (‎stations-admin‎) هرگز این‌جا نمی‌آید.
    */
   v1.use('/stations', stationRoutes);
-  // برنامهٔ مشتری: /api/v1/auth/login، /api/v1/sync و بقیه روی ریشهٔ v1
-  v1.use(tohidPublicRoutes);
+  //  اطلاعیه‌ها: تا ۱.۴۰.۰ روی پاسخ‌های دفترِ حسابِ قدیمی سوار می‌شدند؛ حالا درِ خودشان
+  v1.use('/announce', announceRoutes);
+  //  /api/v1/auth · /api/v1/admin · /api/v1/sync و بقیهٔ حساب مالِ سرورِ
+  //  حساب‌اند و درگاهِ account-proxy.js (پیش از این روتر) به آن می‌بردشان.
 
   router.use(`/${PUBLIC_API_VERSION}`, v1);
 
@@ -147,6 +141,7 @@ export function createPublicApi() {
   router.use('/messenger', messengerRoutes);
   router.use('/notify', notifyRoutes);
   router.use('/stations', stationRoutes);
+  router.use('/announce', announceRoutes);
 
   router.use((req, res) => res.status(404).json({ error: 'not_found' }));
   return router;

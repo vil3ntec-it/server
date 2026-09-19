@@ -138,7 +138,7 @@ app.use('/api',    apiV1)     ← همان روتر، برای UIِ فعلی؛ �
 سطحِ ریشهٔ v1:
 
 ```
-/api/v1/auth        ورود، خروج، تغییر رمز، نشست‌ها
+/api/v1/auth        ← مالِ سرورِ حساب (shop/server)؛ درگاهِ api/account-proxy.js می‌بردش. ورودِ خودِ پنل /api/auth است
 /api/v1/users       مدیریت کاربران و نقش‌ها            (فقط admin)
 /api/v1/system      وضعیتِ سرور، CPU/RAM/Disk/Net، نسخه
 /api/v1/services    سرویس‌ها/سایت‌ها: وضعیت، اجرا، توقف، ری‌استارت

@@ -115,91 +115,12 @@ try {
     || (await call('POST', '/api/auth/login', { username: 'admin', password: 'ControlCenter!2026' })).body?.token;
   check('مدیر وارد شد', Boolean(token));
 
-  console.log('\n── پشتیبانی: همان جایی که برنامه می‌افتاد ──');
-
-  // دو گفت‌وگو می‌سازیم؛ با یکی، کلیدِ تکراری اصلاً دیده نمی‌شود
-  for (const who of ['مشتریِ یک', 'مشتریِ دو']) {
-    const made = await call('POST', '/api/v1/support/message', {
-      app: 'shop',
-      who,
-      deviceUid: `dev-${who}`,
-      body: `سلام، من ${who} هستم`,
-    }, { noAuth: true });
-    if (made.status !== 200) {
-      // مسیرِ عمومی نامِ دیگری دارد؟ با مسیرِ جایگزین امتحان می‌کنیم
-      await call('POST', '/api/v1/support/messages', {
-        app: 'shop', who, deviceUid: `dev-${who}`, body: 'سلام',
-      }, { noAuth: true });
-    }
-  }
-
-  const threads = await call('GET', '/api/v1/admin/support/threads?limit=100&app=shop');
-  const rows = threads.body?.threads || [];
-  check('فهرستِ گفت‌وگوها می‌آید', Array.isArray(rows) && rows.length >= 2,
-    `${rows.length} ردیف — ${JSON.stringify(threads.body).slice(0, 200)}`);
-
-  if (rows.length >= 1) {
-    /*
-     *  ⚠️ نامِ فیلد صریح سنجیده می‌شود، نه «یک شناسه‌ای هست».
-     *  برنامه دقیقاً `id` را می‌خواند.
-     */
-    check('هر گفت‌وگو فیلدِ «id» دارد',
-      rows.every((r) => typeof r.id === 'string' && r.id.length > 0),
-      JSON.stringify(Object.keys(rows[0])));
-
-    const safe = keysAreSafe(rows, 'id');
-    check('شناسه‌ها پر و یکتا هستند (وگرنه فهرست برنامه را می‌اندازد)', safe.ok, safe.why);
-
-    for (const field of ['who', 'lastMessage', 'updatedAt', 'unreadAdmin', 'status']) {
-      check(`فیلدِ «${field}» هست`, rows[0][field] !== undefined,
-        JSON.stringify(Object.keys(rows[0])));
-    }
-
-    console.log('\n── پیام‌های داخلِ یک گفت‌وگو ──');
-    const one = await call('GET', `/api/v1/admin/support/threads/${rows[0].id}`);
-    const messages = one.body?.messages || [];
-    check('پیام‌ها می‌آیند', Array.isArray(messages) && messages.length >= 1,
-      JSON.stringify(one.body).slice(0, 200));
-
-    if (messages.length >= 1) {
-      check('شناسهٔ پیام «id» است و متن (نه عدد)',
-        typeof messages[0].id === 'string' && messages[0].id.length > 0,
-        JSON.stringify(messages[0]));
-      const safeMsg = keysAreSafe(messages, 'id');
-      check('شناسهٔ پیام‌ها هم یکتاست', safeMsg.ok, safeMsg.why);
-      for (const field of ['sender', 'body', 'createdAt']) {
-        check(`فیلدِ «${field}» در پیام هست`, messages[0][field] !== undefined,
-          JSON.stringify(Object.keys(messages[0])));
-      }
-
-      /*
-       *  ⚠️ «after» زمان است نه شناسه. برنامه اشتباهاً شناسه می‌فرستاد و
-       *  هر بار کلِ گفت‌وگو را از نو می‌کشید.
-       */
-      const newest = Math.max(...messages.map((m) => Number(m.createdAt) || 0));
-      const nothingNew = await call('GET', `/api/v1/admin/support/threads/${rows[0].id}?after=${newest}`);
-      check('after با زمان کار می‌کند', (nothingNew.body?.messages || []).length === 0,
-        JSON.stringify(nothingNew.body?.messages));
-    }
-  }
-
-  console.log('\n── بقیهٔ فهرست‌هایی که برنامه نشان می‌دهد ──');
-
-  const accounts = await call('GET', '/api/control/tohid/accounts');
-  check('حساب‌های فروشگاه «accountId» دارند',
-    (accounts.body?.items || []).every((r) => r.accountId !== undefined),
-    JSON.stringify(accounts.body).slice(0, 160));
-
-  const plans = await call('GET', '/api/v1/admin/plans');
-  const planRows = plans.body?.plans || [];
-  check('نرخ‌ها «code» دارند', planRows.every((p) => typeof p.code === 'string' && p.code),
-    JSON.stringify(planRows.slice(0, 2)));
-  if (planRows.length) {
-    const safePlans = keysAreSafe(planRows, 'code');
-    check('کدِ نرخ‌ها یکتاست', safePlans.ok, safePlans.why);
-    check('نرخ‌ها «fullPrice» هم دارند (برای نشان دادنِ تخفیف)',
-      planRows.every((p) => p.fullPrice !== undefined));
-  }
+  /*
+   *  پشتیبانی، حساب‌های دکان و نرخ‌ها از سرورِ حساب می‌آیند (پلِ
+   *  ‎/api/account-admin‎) و قراردادشان با اپ در ‎test/account-admin.mjs‎
+   *  با یک سرورِ حسابِ ساختگی سنجیده می‌شود. این‌جا فقط چیزهای خودِ پنل.
+   */
+  console.log('\n── فهرست‌هایی که برنامه از خودِ پنل می‌خواند ──');
 
   const codes = await call('GET', '/api/codes-admin/live');
   check('کدهای شش‌رقمی «id» دارند',

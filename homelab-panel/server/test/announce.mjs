@@ -45,7 +45,7 @@ const child = spawn(
       HLP_SITES_ROOT: sitesRoot,
       HLP_TUNNEL: '0',
       HLP_AI_ENABLED: '0',
-      HLP_SITESYNC: '0',
+      HLP_SITESYNC: '1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   },
@@ -168,19 +168,17 @@ try {
   const future = await call('GET', '/api/announce?audience=shop', undefined, { noAuth: true });
   check('اطلاعیهٔ آینده هنوز نمی‌آید', !future.body.notices?.some((n) => n.title === 'هفتهٔ بعد'));
 
-  console.log('\n── سوار بودن روی همان پاسخ‌هایی که برنامه‌ها می‌گیرند ──');
+  console.log('\n── درِ خودِ اطلاعیه‌ها روی پورتِ عمومی هم هست ──');
   /*
-   *  ⚠️ همین بند دلیلِ اصلیِ این طراحی است: اگر اطلاعیه فقط مسیرِ خودش را
-   *  داشت، تا روزی که هر برنامه به‌روز شود هیچ پیامی به هیچ‌کس نمی‌رسید.
+   *  تا ۱.۴۰.۰ اطلاعیه روی پاسخِ قیمت‌نامه و سلامتِ دفترِ حسابِ قدیمیِ پنل
+   *  (‎/api/v1/plans‎ · ‎/api/v1/health‎ی توحید) هم سوار می‌شد. آن دفتر رفت و
+   *  آن دو مسیر حالا مالِ سرورِ حساب‌اند؛ برنامه‌ها اطلاعیه را از درِ خودش
+   *  می‌گیرند — که باید از تونل هم باز باشد.
    */
-  const plans = await call('GET', '/api/v1/plans', undefined, { noAuth: true });
-  check('قیمت‌نامه اطلاعیه را با خودش می‌آورد', Array.isArray(plans.body.notices),
-    JSON.stringify(Object.keys(plans.body)));
-  check('و همان اطلاعیه‌های فروشگاه است',
-    plans.body.notices?.some((n) => n.title.includes('سرور فردا')),
-    JSON.stringify(plans.body.notices?.map((n) => n.title)));
-  const health = await call('GET', '/api/v1/health', undefined, { noAuth: true });
-  check('سلامتِ فروشگاه هم همین‌طور', Array.isArray(health.body.notices));
+  const pub = await fetch(`http://127.0.0.1:${PORT + 1}/api/announce?audience=shop`).then((r) => r.json()).catch(() => ({}));
+  check('‎/api/announce‎ روی پورتِ عمومی جواب می‌دهد', Array.isArray(pub.notices), JSON.stringify(pub).slice(0, 120));
+  check('و همان اطلاعیه‌های فروشگاه است', pub.notices?.some((n) => n.title.includes('سرور فردا')),
+    JSON.stringify(pub.notices?.map((n) => n.title)));
 
   console.log('\n── فهرستِ مدیر ──');
   const list = await call('GET', '/api/announce-admin');
