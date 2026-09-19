@@ -71,7 +71,7 @@ import { rateLimit, pruneRateLimits, clientIp } from './lib/rate-limit.js';
 import { codeSettings } from './codes/settings.js';
 import { pinSitesRoot } from './sites/portable.js';
 import { startQueue, stopQueue } from './codes/queue.js';
-import { adminEnrollRoute, adminGate, adminHostGate, GATE_ENROLL, GATE_PREFIX } from './api/admin-gate.js';
+import { adminEnrollRoute, adminGate, adminHostGate, isAdminHost, GATE_ENROLL, GATE_PREFIX } from './api/admin-gate.js';
 import { readyPayload } from './platform/health.js';
 import { createBackup } from './backup/index.js';
 import * as notify from './notify/index.js';
@@ -620,7 +620,17 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
     adminEnrollRoute,
   );
 
-  publicApp.use(gateLimiter, adminHostGate);
+  /*
+   *  ⛔ شمارندهٔ در فقط ترافیکِ **خودِ در** را می‌شمارد (میزبانِ admin. و
+   *  GATE_PREFIX) — نه هر درخواستِ این پورت را. تا پیش از این روی همه‌چیز
+   *  نشسته بود و هر پاسخِ ۴۰۰ به بالا (رمزِ غلطِ یک کاربر، ۴۰۴، سرورِ حسابِ
+   *  خاموش) یک شکست حساب می‌شد؛ بیست تا در ده دقیقه یعنی همان IP از کلِ
+   *  api.<دامنه> — حساب، پمپ، اپِ کارمندان، همه — ۴۲۹ می‌گرفت. با درِ سرورِ
+   *  حساب که ۴۰۱های واقعی می‌آورد، این تله دیگر نظری نبود. خواستهٔ صریحِ
+   *  صاحب ریپو (۱۴۰۵/۰۷/۰۲): «شمارنده را به درِ مدیر محدود کن.»
+   *  حدس زدنِ کلید همچنان همان بیست تلاش در ده دقیقه را دارد.
+   */
+  publicApp.use((req, res, next) => (isAdminHost(req) ? gateLimiter(req, res, next) : next()), adminHostGate);
   publicApp.use(GATE_PREFIX, gateLimiter, adminGate);
 
   // ⚠️ پراکسیِ دستیار هم به همان دلیل پیش از express.json است
