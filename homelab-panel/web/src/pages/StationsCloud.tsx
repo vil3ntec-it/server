@@ -1,11 +1,11 @@
 // ---------------------------------------------------------------------------
-//  💳 حساب‌ها و اشتراکِ پمپ — از سرورِ ابر
+//  💳 حساب‌ها و اشتراکِ پمپ — از سرورِ حساب (همان که تا دیروز «ابر» می‌گفتیم)
 //
 //  خواستهٔ صاحب ریپو: «بخشِ پمپ‌بنزین تو برنامهٔ سرور هیچی نداره که اشتراک
 //  بدم به اپ و ببینم افراد رو، اشتراک‌هاشون و غیره. بخشِ فروشگاه خیلی
 //  تکمیل است، شبیه همون باشه.»
 //
-//  ⚠️ این‌جا هیچ دفترِ اشتراکی ساخته نمی‌شود. اشتراکِ پمپ روی ابر زندگی
+//  ⚠️ این‌جا هیچ دفترِ اشتراکی ساخته نمی‌شود. اشتراکِ پمپ روی سرورِ حساب زندگی
 //  می‌کند — همان‌جا که برنامهٔ کامپیوتر مجوزش را می‌گیرد و کدِ شش‌رقمی
 //  خرج می‌شود. اگر این‌جا هم دفتری می‌بود، روزی یکی می‌گفت «فعال» و آن
 //  یکی «تمام شده».
@@ -20,7 +20,7 @@ import { Card, CopyButton, Field, Loading, Modal, toast } from '../components/ui
 import { useApp } from '../app-context';
 import { ActionButton, Cell, KV, Notice, Row, Select, Stat, Table, Tabs } from '../control/ui';
 
-type Status = { base: string; linked: boolean; vault: boolean; updatedAt: number | null };
+type Status = { base: string; target?: string; local?: boolean; linked: boolean; auto?: boolean; vault: boolean; updatedAt: number | null };
 
 type PumpUser = {
   id: string; name: string; email: string | null; phone: string | null;
@@ -163,7 +163,7 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
     }
   }, []);
 
-  //  آینهٔ ابر در پوشهٔ داده — «حساب‌ها از سرور به فولدرِ خودِ سرور ثبت می‌شه؟»
+  //  آینهٔ سرورِ حساب در پوشهٔ داده — «حساب‌ها از سرور به فولدرِ خودِ سرور ثبت می‌شه؟»
   const [mirror, setMirror] = useState<MirrorInfo | null>(null);
   const loadMirror = useCallback(async () => {
     try { setMirror(await api<MirrorInfo>('/api/stations-admin/cloud/mirror')); } catch { /* اختیاری */ }
@@ -174,7 +174,7 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
     try {
       await api('/api/stations-admin/cloud/mirror', { method: 'POST' });
       await loadMirror();
-      toast('آینهٔ ابر در پوشهٔ داده تازه شد');
+      toast('آینهٔ سرورِ حساب در پوشهٔ داده تازه شد');
     } catch (e) {
       toast(e instanceof Error ? e.message : 'نشد', 'bad');
     } finally { setBusy(false); }
@@ -192,7 +192,7 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
         body: JSON.stringify({ username: user.trim(), password: pass }),
       });
       setPass('');
-      toast('به سرورِ ابر وصل شد');
+      toast('به سرورِ حساب وصل شد');
       await loadStatus();
     } catch (e) {
       toast(e instanceof Error ? e.message : 'وصل نشد', 'bad');
@@ -204,21 +204,23 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
     try {
       await api('/api/stations-admin/cloud/forget', { method: 'POST' });
       setUsers([]); setSubs([]);
-      toast('توکنِ ابر پاک شد');
+      toast('توکنِ سرورِ حساب پاک شد');
       await loadStatus();
     } finally { setBusy(false); }
   }
 
   if (!status) return <Card title="حساب‌ها و اشتراک" icon={<CreditCard size={18} />}><Loading /></Card>;
 
-  //  ⚠️ بی گاوصندوق جایی برای نگه داشتنِ توکن نیست. رمزِ مدیرِ ابر
-  //  نباید روی دیسکِ خانه لخت بیفتد.
-  if (!status.vault) {
+  //  ⚠️ بی گاوصندوق جایی برای نگه داشتنِ توکن نیست. رمزِ مدیرِ سرورِ حساب
+  //  نباید روی دیسکِ خانه لخت بیفتد. (ورودِ خودکار از .env توکنش را فقط در
+  //  حافظه نگه می‌دارد و گاوصندوق نمی‌خواهد.)
+  if (!status.vault && !status.linked) {
     return (
       <Card title="حساب‌ها و اشتراک" icon={<CreditCard size={18} />}>
         <Notice>
-          اول گاوصندوق را راه بیندازید. توکنِ سرورِ ابر آن‌جا رمزگذاری‌شده می‌نشیند و
-          بی آن جایی برای نگه داشتنش نیست.
+          اول گاوصندوق را راه بیندازید. توکنِ سرورِ حساب آن‌جا رمزگذاری‌شده می‌نشیند و
+          بی آن جایی برای نگه داشتنش نیست — یا نام و رمزِ مدیر را در <code dir="ltr">.env</code> بگذارید
+          (<code dir="ltr">HLP_ACCOUNT_ADMIN_USER</code> / <code dir="ltr">HLP_ACCOUNT_ADMIN_PASSWORD</code>) تا پنل خودش وارد شود.
         </Notice>
       </Card>
     );
@@ -228,13 +230,17 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
     return (
       <Card title="حساب‌ها و اشتراک" icon={<CreditCard size={18} />}>
         <Notice>
-          اشتراکِ پمپ‌ها روی سرورِ ابر است (<code dir="ltr">{status.base}</code>). یک بار با حسابِ
-          مدیرِ همان‌جا وارد شوید تا افراد و اشتراک‌هایشان همین‌جا دیده شوند.
+          اشتراکِ پمپ‌ها روی <b>سرورِ حساب</b> است — {status.local
+            ? <>همان shop/server روی همین کامپیوتر (<code dir="ltr">{status.target}</code>)</>
+            : <>از راهِ تونل (<code dir="ltr">{status.base}</code>)</>}. یک بار با حسابِ
+          مدیرِ همان‌جا وارد شوید تا افراد و اشتراک‌هایشان همین‌جا و در اپِ مدیریت دیده شوند.
           <br />
-          رمز ذخیره نمی‌شود؛ فقط توکنی که برمی‌گردد در گاوصندوق می‌نشیند.
+          رمز ذخیره نمی‌شود؛ فقط توکنی که برمی‌گردد در گاوصندوق می‌نشیند. توکنِ مدیر دوازده ساعته
+          است؛ اگر نمی‌خواهید هر بار وارد شوید، نام و رمز را در <code dir="ltr">.env</code> بگذارید
+          (<code dir="ltr">HLP_ACCOUNT_ADMIN_USER</code> / <code dir="ltr">HLP_ACCOUNT_ADMIN_PASSWORD</code>).
         </Notice>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <Field label="نام کاربریِ مدیرِ ابر">
+          <Field label="نام کاربریِ مدیرِ سرورِ حساب">
             <input dir="ltr" value={user} onChange={(e) => setUser(e.target.value)} />
           </Field>
           <Field label="رمز">
@@ -305,18 +311,18 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
   );
 
   /*
-   *  ⚠️ نرخ‌ها تا امروز از ابر *گرفته* می‌شدند و هیچ‌جای پنل دیده
+   *  ⚠️ نرخ‌ها تا امروز از سرورِ حساب *گرفته* می‌شدند و هیچ‌جای پنل دیده
    *  نمی‌شدند — حالت‌شان ساخته شده بود ولی تبی نداشت. همان چیزی که
    *  «بخشِ پمپ خالی است» را می‌ساخت.
    *
-   *  ⚠️ و عمداً فقط خواندنی است: نوشتنِ نرخ روی ابر انجام می‌شود و
+   *  ⚠️ و عمداً فقط خواندنی است: نوشتنِ نرخ روی سرورِ حساب انجام می‌شود و
    *  مسیرش در پلِ این پنل باز نیست. دکمه‌ای که کار نمی‌کند نمی‌گذارم؛
    *  به‌جایش نوشته‌ام کجا باید انجام شود.
    */
   const plansCard = (
     <div className="space-y-3">
       {plans.length === 0 ? (
-        <Notice>نرخی از ابر نیامد. یا هنوز پلنی تعریف نشده، یا ابر جواب نداد.</Notice>
+        <Notice>نرخی از سرورِ حساب نیامد. یا هنوز پلنی تعریف نشده، یا سرورِ حساب جواب نداد.</Notice>
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -342,7 +348,7 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
             })}
           </div>
           <Notice tone="info">
-            نرخ‌ها روی سرورِ ابر (<code dir="ltr">{status?.base}</code>) تعریف می‌شوند و همین‌جا فقط
+            نرخ‌ها روی سرورِ حساب (<code dir="ltr">{status?.target || status?.base}</code>، پنلِ مدیریتش <code dir="ltr">{status?.base}/admin/</code>) تعریف می‌شوند و همین‌جا فقط
             نشان داده می‌شوند. تغییرِ قیمت و گذاشتنِ تخفیفِ پمپ هم همان‌جا انجام می‌شود —
             این پل عمداً فقط خواندن را باز گذاشته تا یک قیمت دو جا دو رقم نشود.
           </Notice>
@@ -353,19 +359,19 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
 
   const mirrorCard = (
     <Card
-      title="آینهٔ ابر در پوشهٔ داده"
+      title="آینهٔ سرورِ حساب در پوشهٔ داده"
       icon={<HardDriveDownload size={18} />}
       action={<ActionButton onClick={mirrorNow} disabled={busy}>همین حالا تازه کن</ActionButton>}
     >
       <Notice>
-        حساب‌ها، اشتراک‌ها و کدهای پمپ — و حساب‌ها و اشتراک‌های دکان — هر نیم ساعت از ابر
+        حساب‌ها، اشتراک‌ها و کدهای پمپ — و حساب‌ها و اشتراک‌های دکان — هر نیم ساعت از سرورِ حساب
         گرفته و داخلِ پوشهٔ داده نوشته می‌شوند (<code dir="ltr">{mirror?.dir || '…/cloud'}</code>).
-        پوشه را به هر کامپیوتری ببرید، این‌ها هم با آن می‌روند. فقط‌خواندنی است؛ منبعِ اصلی همچنان ابر است.
+        پوشه را به هر کامپیوتری ببرید، این‌ها هم با آن می‌روند. فقط‌خواندنی است؛ منبعِ اصلی همچنان سرورِ حساب است.
       </Notice>
       <div className="mt-2 text-sm">
         {mirror?.last
           ? mirror.last.skipped
-            ? <span>آخرین بار ({fmtDate(mirror.last.at)}) رد شد: به ابر وصل نبودیم.</span>
+            ? <span>آخرین بار ({fmtDate(mirror.last.at)}) رد شد: به سرورِ حساب وصل نبودیم.</span>
             : <span>
                 آخرین بار {fmtDate(mirror.last.at)} — {mirror.last.ok?.length ?? 0} فایل رفت
                 {mirror.last.failed?.length ? `، ${mirror.last.failed.length} نرفت (${mirror.last.failed.map((f) => f.file).join('، ')})` : ''}.
@@ -379,17 +385,17 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
     <>
       <Card
         title={
-          section === 'plans' ? 'نرخ‌های پمپ — روی ابر'
-          : section === 'data' ? 'اتصال به ابر و آینهٔ پوشهٔ داده'
-          : 'حساب‌ها و اشتراکِ پمپ‌ها — روی ابر'
+          section === 'plans' ? 'نرخ‌های پمپ — روی سرورِ حساب'
+          : section === 'data' ? 'اتصال به سرورِ حساب و آینهٔ پوشهٔ داده'
+          : 'حساب‌ها و اشتراکِ پمپ‌ها — روی سرورِ حساب'
         }
         icon={section === 'plans' ? <CreditCard size={18} /> : section === 'data' ? <HardDriveDownload size={18} /> : <CreditCard size={18} />}
         action={
           <div className="flex gap-2">
             <ActionButton onClick={() => { loadData(expiring); loadMore(); }} disabled={busy}>تازه‌سازی</ActionButton>
             {/* قطعِ اتصال فقط در بخشِ تنظیمات — نه کنارِ فهرستِ حساب‌ها که اشتباهی زده شود */}
-            {section === 'data' && (
-              <ActionButton onClick={unlink} disabled={busy}>قطعِ اتصال به ابر</ActionButton>
+            {section === 'data' && !status.auto && (
+              <ActionButton onClick={unlink} disabled={busy}>قطعِ اتصال به سرورِ حساب</ActionButton>
             )}
           </div>
         }
@@ -400,7 +406,7 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
             onChange={setTab}
             tabs={[
               { id: 'overview', label: 'نمای کلی' },
-              { id: 'stations', label: 'پمپ‌ها روی ابر', badge: cloudStations.length },
+              { id: 'stations', label: 'پمپ‌ها روی سرورِ حساب', badge: cloudStations.length },
               { id: 'users', label: 'افراد', badge: users.length },
               { id: 'subs', label: 'اشتراک‌ها', badge: subs.length },
               { id: 'codes', label: 'کدهای اشتراک', badge: codes.filter((c) => c.status === 'active').length },
@@ -411,7 +417,7 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
         {tab === 'overview' && (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              <Stat label="پمپ‌ها روی ابر" value={fa(stats?.stations)} icon={<Fuel size={16} />} tone="info"
+              <Stat label="پمپ‌ها روی سرورِ حساب" value={fa(stats?.stations)} icon={<Fuel size={16} />} tone="info"
                     sub={`${fa(stats?.active_stations)} فعال`} onClick={() => setTab('stations')} />
               <Stat label="اشتراکِ فعال" value={fa(stats?.active_subs)} tone="good" onClick={() => setTab('subs')} />
               <Stat label="کدِ خرج‌نشده" value={fa(stats?.open_codes)} tone={stats?.open_codes ? 'warn' : undefined}
@@ -420,7 +426,7 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
               <Stat label="فایل در پوشه‌های ابری" value={fa(stats?.files)} sub="عکسِ زنده، حساب‌های کیو‌آردار، صندوق" />
             </div>
             <Notice>
-              هر پمپ روی ابر پوشه، اشتراک و یک <b>کدِ پمپ</b> دارد. کارمندان با همان کد وارد اپِ اندروید/آیفون
+              هر پمپ روی سرورِ حساب پوشه، اشتراک و یک <b>کدِ پمپ</b> دارد. کارمندان با همان کد وارد اپِ اندروید/آیفون
               می‌شوند و فقط حساب‌های همان پمپ را می‌بینند. کدِ شش‌رقمیِ اشتراک را از تبِ «کدهای اشتراک» بسازید و به
               صاحبِ پمپ بدهید؛ برنامهٔ کامپیوترش با همان فعال می‌شود.
             </Notice>
@@ -441,7 +447,7 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
               <span className="text-xs opacity-60">{fa(cloudStations.length)} پمپ</span>
             </div>
             {cloudStations.length === 0 ? (
-              <Notice>هنوز پمپی روی ابر ثبت نشده. اولین فعال‌سازی با کدِ شش‌رقمی، پمپ را همین‌جا می‌آورد.</Notice>
+              <Notice>هنوز پمپی روی سرورِ حساب ثبت نشده. اولین فعال‌سازی با کدِ شش‌رقمی، پمپ را همین‌جا می‌آورد.</Notice>
             ) : (
               <Table head={['پمپ', 'وضعیت', 'صاحب', 'اعضا', 'بک‌آپ', 'اشتراک', 'پایان', 'سرورِ خانگی', '']}>
                 {cloudStations.map((s) => {
@@ -545,8 +551,8 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
         {tab === 'mirror' && mirrorCard}
       </Card>
 
-      {/* ── جزئیاتِ یک پمپ روی ابر — با کدِ پمپ برای اپِ کارمندان ── */}
-      <Modal open={Boolean(detail)} wide title={`پمپ «${detail?.station.name ?? ''}» روی ابر`} onClose={() => setDetail(null)}>
+      {/* ── جزئیاتِ یک پمپ روی سرورِ حساب — با کدِ پمپ برای اپِ کارمندان ── */}
+      <Modal open={Boolean(detail)} wide title={`پمپ «${detail?.station.name ?? ''}» روی سرورِ حساب`} onClose={() => setDetail(null)}>
         {detail && (
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="card p-3 sm:col-span-2">
@@ -688,7 +694,7 @@ function CodeModal({ station, plans, onClose, onMade }: {
         <Field label="یادداشت (اختیاری)">
           <input className="hlp-input" value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
-        {!station && <Notice>کدِ بی‌پمپ را هر برنامهٔ کامپیوتری می‌تواند خرج کند — برای پمپِ تازه‌ای که هنوز روی ابر نیست.</Notice>}
+        {!station && <Notice>کدِ بی‌پمپ را هر برنامهٔ کامپیوتری می‌تواند خرج کند — برای پمپِ تازه‌ای که هنوز روی سرورِ حساب نیست.</Notice>}
         <ActionButton className="btn btn-primary w-full" busyLabel="در حالِ ساخت…" onClick={async () => {
           try {
             const out = await api<{ code: string; plan: string; days: number | null }>('/api/stations-admin/cloud/vip-codes', {

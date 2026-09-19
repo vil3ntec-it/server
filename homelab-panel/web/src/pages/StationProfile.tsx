@@ -95,7 +95,7 @@ export default function StationProfile() {
     const t = setInterval(load, 20000);   // هم‌قدمِ حلقهٔ انتشارِ برنامه
     api<Connect>(`/api/stations-admin/${encodeURIComponent(code)}/connect?karBase=${encodeURIComponent('https://yaqobipump.top/kar')}`)
       .then(setConnect).catch(() => setConnect(null));
-    //  ابر اختیاری است: اگر وصل نباشد، کارتِ اپِ کارمندان فقط کیو‌آر را دارد
+    //  سرورِ حساب اختیاری است: اگر وصل نباشد، کارتِ اپِ کارمندان فقط کیو‌آر را دارد
     api<{ stations: CloudStation[] }>('/api/stations-admin/cloud/stations?limit=200')
       .then(async (r) => {
         const st = (r.stations || []).find((s) => s.code === code);
@@ -166,7 +166,7 @@ export default function StationProfile() {
           <KV label="رمزِ قفلِ اپ">{live ? (live.hasGate ? 'دارد' : 'برنامه هنوز رمز نساخته') : '—'}</KV>
           <KV label="پوشهٔ داده" mono>{d.dataDir}</KV>
           <KV label="حساب‌های کیو‌آردار">{fa(d.qrAccounts)}</KV>
-          {cloud?.detail && <KV label="آخرین اتصال به ابر">{fmtTime(cloud.detail.station.homeSeenAt)}</KV>}
+          {cloud?.detail && <KV label="آخرین اتصال به سرورِ حساب">{fmtTime(cloud.detail.station.homeSeenAt)}</KV>}
         </Card>
 
         <Card title="وضعیت" icon={<HardDrive size={16} />}>
@@ -211,7 +211,7 @@ export default function StationProfile() {
             { id: 'alerts', label: 'خبرها', badge: live?.alerts.length ?? 0 },
             { id: 'inbox', label: 'صندوقِ ورودی', badge: d.inboxCount },
             { id: 'sections', label: 'بخش‌ها', badge: live?.sections.length ?? 0 },
-            ...(cloud?.detail ? [{ id: 'members', label: 'اعضای ابر', badge: cloud.detail.members.length }] : []),
+            ...(cloud?.detail ? [{ id: 'members', label: 'اعضای سرورِ حساب', badge: cloud.detail.members.length }] : []),
           ]} />
           <div className="space-y-2">
             {tab === 'alerts' && ((live?.alerts.length ?? 0) === 0
@@ -265,7 +265,7 @@ export default function StationProfile() {
                 </div>
               </div>
             ) : (
-              <div className="mb-3 text-xs opacity-60">کدِ پمپ از ابر می‌آید؛ برنامهٔ کامپیوتر آن را در «پروفایل» نشان می‌دهد.</div>
+              <div className="mb-3 text-xs opacity-60">کدِ پمپ از سرورِ حساب می‌آید؛ برنامهٔ کامپیوتر آن را در «پروفایل» نشان می‌دهد.</div>
             )}
             {connect?.staff.qr
               ? <img src={connect.staff.qr} alt="کیو‌آرِ اپِ کارمندان" className="mx-auto h-40 w-40 rounded-xl bg-white p-2" />

@@ -18,14 +18,104 @@
 //  کامپیوتر دارند. اگر از تنظیمات خوانده می‌شد، هر کسی می‌توانست پنل را
 //  به سرورِ خودش ببرد و رمزِ مدیر را آن‌جا بفرستد.
 //
+//  ⚠️ «ابر» همان **سرورِ حساب** است، روی همین کامپیوترِ خانگی (از
+//  ۱۴۰۵/۰۷/۰۲): تونلِ api.<دامنه> به پورتِ عمومیِ همین پنل می‌رسد و
+//  درگاهِ ‎api/account-proxy.js‎ آن را به shop/server می‌برد. پس این پل
+//  وقتی درگاه روشن است **مستقیم** همان نشانیِ محلی را می‌زند
+//  (‎cloudTarget()‎) — نه این‌که از اینترنت بیرون برود، از تونل برگردد و
+//  به خودش برسد. تونلِ خاموش یا اینترنتِ قطع دیگر پل را نمی‌خواباند.
+//  نشانیِ عمومی فقط وقتی زده می‌شود که درگاه خاموش باشد (HLP_ACCOUNT_API=0).
+//
+//  ⚠️ و پل خودش وارد می‌شود اگر نام و رمزِ مدیرِ سرورِ حساب در ‎.env‎ باشد
+//  (‎HLP_ACCOUNT_ADMIN_USER‎ / ‎HLP_ACCOUNT_ADMIN_PASSWORD‎). تا پیش از این
+//  صاحبِ سامانه باید هر دوازده ساعت (عمرِ توکنِ مدیر) دوباره در پنل وارد
+//  می‌شد، وگرنه اپِ مدیریت «وصل نشده‌اید» می‌گفت. آن دو مقدار همان‌هایی‌اند
+//  که در ‎shop/server/.env‎ روی همین دیسک هست؛ توکنِ خودکار فقط در حافظه
+//  می‌ماند و با هر ۴۰۱ یک بار تازه می‌شود.
+//
 //  ⚠️ **فهرستِ سفیدِ مسیرها**: پنل فقط همین چند مسیر را می‌تواند صدا
 //  بزند. بی این، یک پروکسیِ باز می‌داشتیم که هر مسیرِ مدیریتیِ ابر —
 //  از جمله بخشِ دکان — را با توکنِ مدیر باز می‌کرد.
 // ---------------------------------------------------------------------------
 import { putSecret, listSecrets, readSecret, deleteSecret, vaultReady } from '../control/vault.js';
+import { config } from '../config.js';
+import { accountApiUrl, downPayload } from '../api/account-proxy.js';
 
-/** نشانیِ ابر — قفل، نه از تنظیمات. */
+/** نشانیِ عمومیِ سرورِ حساب — قفل، نه از تنظیمات. همان که برنامه‌ها می‌زنند. */
 export const CLOUD_BASE = 'https://api.vill3n.top';
+
+/**
+ * نشانی‌ای که این پل واقعاً زنگ می‌زند.
+ *
+ * درگاه روشن ⇒ سرورِ حساب روی همین کامپیوتر (‎config.accountApi.url‎)؛
+ * خاموش ⇒ راهِ تونل، همان ‎CLOUD_BASE‎. برای آزمون می‌شود با
+ * ‎HLP_ACCOUNT_API‎ به یک سرورِ ساختگی برد — همان کاری که
+ * ‎test/account-gateway.mjs‎ با درگاه می‌کند.
+ */
+export function cloudTarget() {
+  const local = accountApiUrl();
+  return local ? local.href.replace(/\/+$/, '') : CLOUD_BASE;
+}
+
+/** نام و رمزِ مدیرِ سرورِ حساب از ‎.env‎ — اگر هر دو باشند، پل خودش وارد می‌شود. */
+function autoCreds() {
+  const { adminUser, adminPassword } = config.accountApi || {};
+  return adminUser && adminPassword ? { username: adminUser, password: adminPassword } : null;
+}
+
+/**
+ * fetch که خطای شبکه را به خطای بادار برمی‌گرداند.
+ *
+ * ‎ECONNREFUSED‎ روی نشانیِ محلی یعنی سرورِ حساب روی همین کامپیوتر روشن
+ * نیست — و پیامش باید همان راهِ درست کردن را بگوید (‎downPayload‎)، نه
+ * «fetch failed».
+ */
+async function dial(url, init) {
+  try {
+    return await fetch(url, init);
+  } catch (e) {
+    const local = !!accountApiUrl();
+    const err = new Error(local
+      ? downPayload().error.message
+      : 'به سرورِ حساب نرسیدیم — اینترنت یا تونل قطع است');
+    err.code = local ? 'account_server_down' : 'account_server_unreachable';
+    err.status = 503;
+    err.cause = e;
+    throw err;
+  }
+}
+
+/** توکنِ خودکار — فقط در حافظه. */
+let auto = null; // { token, expiresAt }
+
+async function autoToken(force = false) {
+  const creds = autoCreds();
+  if (!creds) return null;
+  const fresh = auto?.token && (!auto.expiresAt || auto.expiresAt - Date.now() > 60_000);
+  if (!force && fresh) return auto.token;
+
+  const res = await dial(`${cloudTarget()}/api/admin/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(creds),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || !body?.token) {
+    auto = null;
+    const err = new Error(body?.error?.message
+      ? `ورودِ خودکار به سرورِ حساب نشد: ${body.error.message} — HLP_ACCOUNT_ADMIN_USER/PASSWORD را بسنجید`
+      : 'ورودِ خودکار به سرورِ حساب نشد — HLP_ACCOUNT_ADMIN_USER/PASSWORD را بسنجید');
+    err.code = body?.error?.code === 'bad_credentials' ? 'auto_login_rejected' : (body?.error?.code || 'auto_login_failed');
+    err.status = res.status === 401 ? 409 : res.status;
+    throw err;
+  }
+  const exp = body.expiresAt ? Number(new Date(body.expiresAt)) : NaN;
+  auto = { token: body.token, expiresAt: Number.isFinite(exp) ? exp : null };
+  return auto.token;
+}
+
+/** برای آزمون: توکنِ خودکار را دور بریز. */
+export function cloudResetAuto() { auto = null; }
 
 /** نامِ رازی که توکنِ مدیرِ ابر زیرش می‌نشیند. */
 const SECRET_NAME = 'pump_cloud_admin_token';
@@ -71,12 +161,24 @@ function token() {
   return row ? readSecret(row.id) : null;
 }
 
-/** آیا مرکز فرمان به ابر وصل است. */
+/**
+ * آیا مرکز فرمان به سرورِ حساب وصل است.
+ *
+ *   base     نشانیِ عمومی (قفل) — همان که برنامه‌ها می‌زنند
+ *   target   نشانی‌ای که این پل واقعاً می‌زند (محلی وقتی درگاه روشن است)
+ *   local    درگاه روشن است و پل از همین کامپیوتر می‌رود
+ *   linked   توکنی هست: یا از ورودِ دستی در گاوصندوق، یا خودکار از ‎.env‎
+ *   auto     ورودِ خودکار تنظیم است
+ */
 export function cloudStatus() {
   const row = tokenRow();
+  const creds = autoCreds();
   return {
     base: CLOUD_BASE,
-    linked: !!row,
+    target: cloudTarget(),
+    local: !!accountApiUrl(),
+    linked: !!row || !!creds,
+    auto: !!creds,
     vault: vaultReady(),
     updatedAt: row?.updated_at || null,
   };
@@ -95,7 +197,7 @@ export async function cloudLogin(username, password, actor = 'admin') {
     throw err;
   }
 
-  const res = await fetch(`${CLOUD_BASE}/api/admin/login`, {
+  const res = await dial(`${cloudTarget()}/api/admin/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ username, password }),
@@ -103,7 +205,7 @@ export async function cloudLogin(username, password, actor = 'admin') {
   const body = await res.json().catch(() => ({}));
 
   if (!res.ok || !body?.token) {
-    const err = new Error(body?.error?.message || 'ورود به سرورِ ابر نشد');
+    const err = new Error(body?.error?.message || 'ورود به سرورِ حساب نشد');
     err.code = body?.error?.code || 'cloud_login_failed';
     err.status = res.status;
     throw err;
@@ -114,7 +216,7 @@ export async function cloudLogin(username, password, actor = 'admin') {
     kind: 'api_key',
     scope: 'global',
     value: body.token,
-    note: 'توکنِ مدیرِ بخشِ پمپ روی سرورِ ابر',
+    note: 'توکنِ مدیرِ بخشِ پمپ روی سرورِ حساب',
     actor,
   });
 
@@ -154,9 +256,12 @@ export async function cloudCall(name, { query = {}, body = null, params = {} } =
     }
     entry = [entry[0], entry[1].replace(':id', encodeURIComponent(id))];
   }
-  const t = token();
+  //  ورودِ خودکار (اگر تنظیم است) همیشه جلوتر از توکنِ گاوصندوق: آن یکی
+  //  دوازده ساعته می‌میرد و کسی نیست دوباره وارد شود؛ این یکی خودش تازه می‌شود.
+  const creds = autoCreds();
+  let t = creds ? await autoToken() : token();
   if (!t) {
-    const err = new Error('هنوز به سرورِ ابر وصل نشده‌اید');
+    const err = new Error('هنوز با حسابِ مدیر به سرورِ حساب وارد نشده‌اید — از پنل ← پمپ‌ها ← تنظیمات و داده‌ها، یا از همین اپ');
     err.code = 'not_linked';
     err.status = 409;
     throw err;
@@ -166,28 +271,35 @@ export async function cloudCall(name, { query = {}, body = null, params = {} } =
   const qs = new URLSearchParams(
     Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== '')
   ).toString();
-
-  const res = await fetch(`${CLOUD_BASE}${path}${qs ? `?${qs}` : ''}`, {
+  const url = `${cloudTarget()}${path}${qs ? `?${qs}` : ''}`;
+  const send = (bearer) => dial(url, {
     method,
     headers: {
-      authorization: `Bearer ${t}`,
+      authorization: `Bearer ${bearer}`,
       ...(body ? { 'content-type': 'application/json' } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
+
+  let res = await send(t);
+  if (res.status === 401 && creds) {
+    //  توکنِ خودکار مرده — یک بار، و فقط یک بار، دوباره وارد شو
+    t = await autoToken(true);
+    res = await send(t);
+  }
 
   const out = await res.json().catch(() => ({}));
 
   if (res.status === 401) {
     //  توکنِ مدیر عمرِ کوتاهی دارد؛ «دوباره وارد شوید» بهتر از یک
     //  خطای گنگ است.
-    const err = new Error('نشستِ ابر تمام شده — دوباره وارد شوید');
+    const err = new Error('نشستِ مدیر روی سرورِ حساب تمام شده — دوباره وارد شوید');
     err.code = 'cloud_session_expired';
     err.status = 401;
     throw err;
   }
   if (!res.ok) {
-    const err = new Error(out?.error?.message || 'سرورِ ابر جواب نداد');
+    const err = new Error(out?.error?.message || 'سرورِ حساب جواب نداد');
     err.code = out?.error?.code || 'cloud_error';
     err.status = res.status;
     throw err;
