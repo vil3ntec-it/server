@@ -57,7 +57,6 @@ const dataDir = path.join(tmp, 'data');
 // نصبِ ساختگی: همان چیدمانِ واقعی، با چند فایلِ نشانه‌دار
 await fsp.mkdir(path.join(installRoot, 'homelab-panel', 'server', 'src'), { recursive: true });
 await fsp.mkdir(path.join(installRoot, 'homelab-panel', 'server', 'data', 'Projects', 'shop'), { recursive: true });
-await fsp.mkdir(path.join(installRoot, 'ai-support'), { recursive: true });
 await fsp.writeFile(path.join(installRoot, 'homelab-panel', 'server', 'package.json'), JSON.stringify({ name: 'homelab-panel-server', version: '0.0.1' }, null, 2));
 await fsp.writeFile(path.join(installRoot, 'homelab-panel', 'server', 'src', 'index.js'), '// نسخهٔ قدیمی\n');
 await fsp.writeFile(path.join(installRoot, 'homelab-panel', 'server', '.env'), 'HLP_PORT=4700\nSECRET=دست-نخورد\n');
@@ -120,7 +119,6 @@ try {
   const newIndex = await fsp.readFile(path.join(installRoot, 'homelab-panel', 'server', 'src', 'index.js'), 'utf8');
   check('کدِ سرور جایگزین شد', newIndex.length > 200 && !newIndex.includes('نسخهٔ قدیمی'), newIndex.slice(0, 80));
   check('پوشهٔ رابط کاربریِ ساخته‌شده آمد', fs.existsSync(path.join(installRoot, 'homelab-panel', 'server', 'public', 'index.html')));
-  check('پوشهٔ دستیار آمد', fs.existsSync(path.join(installRoot, 'ai-support', 'package.json')));
   const pkg = JSON.parse(await fsp.readFile(path.join(installRoot, 'homelab-panel', 'server', 'package.json'), 'utf8'));
   check('نسخهٔ package.json به‌روز شد', pkg.version !== '0.0.1', pkg.version);
 

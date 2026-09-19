@@ -29,6 +29,7 @@ import MonitoringPage from './pages/control/MonitoringPage';
 import Audit from './pages/control/Audit';
 import Updates from './pages/control/Updates';
 import PanelUsers from './pages/control/PanelUsers';
+import Assistant from './pages/Assistant';
 import DockerPage from './pages/Docker';
 import ProcessesPage from './pages/Processes';
 import DatabasesPage from './pages/Databases';
@@ -49,6 +50,7 @@ function Shell() {
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
+        <Route path="/assistant" element={<Assistant />} />
         <Route path="/sites" element={<Sites />} />
         <Route path="/domains" element={<Domains />} />
         {featureOn('files') && <Route path="/files" element={<Files />} />}

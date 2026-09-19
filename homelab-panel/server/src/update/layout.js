@@ -39,9 +39,6 @@ const PROTECTED = [
   'homelab-panel/server/.env',
   'homelab-panel/server/node_modules',
   'homelab-panel/web/node_modules',
-  'ai-support/node_modules',
-  'ai-support/.env',
-  'ai-support/data',
   '.git',
 ];
 

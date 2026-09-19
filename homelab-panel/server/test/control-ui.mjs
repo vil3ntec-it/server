@@ -110,7 +110,7 @@ try {
    */
   const navBox = page.locator('aside nav').first();
   const firstText = await navBox.innerText();
-  for (const label of ['مرکز فرمان', 'برنامه توحید', 'سایت‌ها', 'آدرس اینترنتی']) {
+  for (const label of ['مرکز فرمان', 'دستیار هوشمند', 'سایت‌ها', 'آدرس اینترنتی']) {
     check(`«${label}» بدونِ باز کردنِ گروه دیده می‌شود`, firstText.includes(label), firstText.slice(0, 200));
   }
 
@@ -126,13 +126,13 @@ try {
   }
   await page.waitForTimeout(300);
   const navText = await navBox.innerText();
-  for (const label of ['پروژه‌ها', 'سرورها', 'انبار', 'گاوصندوق', 'پایش', 'به‌روزرسانی', 'تنظیمات']) {
+  for (const label of ['پروژه‌ها', 'سرورها', 'انبار', 'گاوصندوق', 'پایش', 'به‌روزرسانی', 'ترمینال']) {
     check(`«${label}» با باز کردنِ گروه می‌آید`, navText.includes(label), navText.slice(0, 200));
   }
 
   console.log('\n── صفحه‌ها در تمِ تیره ──');
+  //  ‎/control‎ پشتِ کلیدِ commandCenter در features.ts خاموش است و به داشبورد برمی‌گردد
   const PAGES = [
-    ['/control', 'مرکز فرمان'],
     ['/control/projects', 'پروژه‌ها'],
     ['/control/servers', 'سرورها'],
     ['/control/networking', 'شبکه'],
@@ -143,6 +143,7 @@ try {
     ['/control/monitoring', 'پایش'],
     ['/control/audit', 'دفتر رخدادها'],
     ['/control/updates', 'به‌روزرسانی'],
+    ['/assistant', 'دستیار هوشمند'],
   ];
 
   for (const [route, heading] of PAGES) {
