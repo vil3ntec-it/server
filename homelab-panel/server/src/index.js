@@ -84,13 +84,9 @@ import accountServerRoutes from './routes/account-server.js';
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
 import { ensureControlSchema } from './control/schema.js';
-import { ensureTohidSchema } from './tohid/schema.js';
-import tohidPublicRoutes from './routes/tohid.js';
-import tohidAdminRoutes from './routes/control/tohid.js';
-import tohidAdminApiRoutes from './routes/tohid-admin.js';
+import accountAdminRoutes from './routes/account-admin.js';
 import { router as announceRoutes, adminRouter as announceAdminRoutes } from './routes/announce.js';
 import diagnosticsRoutes from './routes/diagnostics.js';
-import { createTohidWs } from './tohid/ws.js';
 import controlRoutes, { agentRouter, appConfigRouter } from './routes/control/index.js';
 import { ensureLocalServer } from './routes/control/servers.js';
 import { startMonitor, stopMonitor, syncMonitors } from './control/monitor.js';
@@ -124,7 +120,6 @@ if (migration.failed) {
 
 // جدول‌های مرکز فرمان پیش از هر پرس‌وجویی ساخته/به‌روز می‌شوند
 ensureControlSchema();
-ensureTohidSchema();
 // کلیدِ محلی همین اول ساخته می‌شود تا «برنامهٔ سرور خانگی» روی همین کامپیوتر
 // بتواند بدونِ ورودِ دستی، برنامه‌ها و تنظیمات را اداره کند.
 localKey();
@@ -321,14 +316,11 @@ app.use('/api/notify-admin', notifyAdminRoutes);
  *  یعنی امروز هر دو یک چیزند. فایدهٔ نسخه‌بندی روزی است که v2 بیاید:
  *  آن‌وقت v1 همین‌جا می‌ماند و برنامه‌های قدیمی سرِ جایشان کار می‌کنند.
  *
- *  ⚠️ و چرا /api/v1/app و نه /api/v1/auth: آن نشانی از قبل مالِ ورودِ
- *  فروشگاه است (رمز + refresh، در routes/tohid.js). آزمونِ فروشگاه همان
- *  لحظه قرمز شد و جلوی یک برخوردِ خاموش را گرفت — دو سیستمِ ورود روی یک
- *  نشانی، که هر کدام پاسخِ شکلِ دیگری می‌دهند.
- *
- *  یعنی این سرور امروز *دو* سیستمِ ورود دارد: ورود با کدِ ایمیلی (این‌جا)
- *  و ورود با رمزِ فروشگاه (/api/v1/auth). یکی کردنشان کارِ کوچکی نیست و
- *  بی اجازه انجام نمی‌شود.
+ *  ⚠️ و چرا /api/v1/app و نه /api/v1/auth: آن نشانی مالِ **سرورِ حساب**
+ *  است (shop/server — ثبت‌نام، ورود، نشستِ برنامه‌ها) و درگاهِ
+ *  api/account-proxy.js آن را از پورتِ عمومی به همان می‌برد. این پنل
+ *  فقط یک سیستمِ ورود دارد: ورود با کدِ ایمیلی برای برنامه‌ها (این‌جا)
+ *  و نام/رمزِ خودِ پنل برای مدیر. دفترِ حساب یکی است و این‌جا نیست.
  *
  *  برنامهٔ تازه باید /api/v1/app را بزند.
  */
@@ -357,18 +349,14 @@ app.use('/api/cron', cronRoutes);
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
 // Agentها و خودِ برنامه‌ها درِ ورودیِ خودشان را دارند (امضای HMAC / توکنِ پروژه)
-// API برنامهٔ توحید — احرازِ هویتش مالِ خودش است، نه ورودِ پنل
-// برنامهٔ مدیریتِ گوشی. پیش از مسیرهای عمومی می‌نشیند تا هیچ مسیرِ
-// عمومی‌ای نتواند /admin را بدزدد.
-app.use('/api/v1/admin', tohidAdminApiRoutes);
-app.use('/api/v1', tohidPublicRoutes);
-
 app.use('/api/control/agent', agentRouter);
 app.use('/api/app-config', appConfigRouter);
 // بقیهٔ مرکز فرمان فقط برای مدیرِ واردشده
 // خواندن برای همه، نوشتن دستِ‌کم برای operator، و کارهای حساس فقط برای admin
-app.use('/api/control/tohid', requireAuth, writeNeedsOperator, tohidAdminRoutes);
 app.use('/api/control', requireAuth, writeNeedsOperator, controlRoutes);
+// حساب‌ها، اشتراک‌ها، پلن‌ها و پشتیبانیِ دکان — از سرورِ حساب، با ورودِ پنل
+// (پلِ routes/account-admin.js؛ هیچ دفترِ حسابی این‌جا نیست)
+app.use('/api/account-admin', requireAuth, writeNeedsOperator, accountAdminRoutes);
 
 /*
  *  قراردادِ رسمیِ پنل، نسخه‌دار.
@@ -498,8 +486,6 @@ export const scheme = panelSecure ? 'https' : 'http';
 const io = attachRealtime(httpServer);
 setIo(io);
 
-const tohidWs = createTohidWs();
-
 // ۲) سرورِ سایت روی همان پورت — هر ارتقای WebSocket که مسیرش /socket.io نباشد
 // بخشِ پمپ‌بنزین‌ها — پیش از سرورِ سایت ساخته می‌شود چون مسیرِ ارتقایش
 // باید *قبل* از دفترِ همه‌کارهٔ site-sync سنجیده شود.
@@ -527,13 +513,12 @@ if (config.siteSync.enabled) {
     if (pathname.startsWith('/socket.io')) return; // مالِ Socket.IO است
     if (pathname.startsWith('/messenger')) return messenger.handleUpgrade(req, socket, head);
     if (pathname.startsWith('/notify')) return notify.handleUpgrade(req, socket, head);
-    if (pathname.startsWith('/tohid')) return tohidWs.handleUpgrade(req, socket, head);
     if (stations?.ownsPath(pathname)) return stations.handleUpgrade(req, socket, head);
     siteSync.handleUpgrade(req, socket, head);
   });
 }
 
-// ورودِ با کدِ برنامهٔ توحید. اگر سرورِ سایت خاموش باشد هیچ شنوندهٔ upgrade ای
+// پیام‌رسان، اعلان و پمپ‌ها. اگر سرورِ سایت خاموش باشد هیچ شنوندهٔ upgrade ای
 // وجود ندارد، پس اینجا خودمان یکی می‌گذاریم — وگرنه این قابلیت فقط در یک
 // پیکربندیِ خاص کار می‌کرد.
 if (!config.siteSync.enabled) {
@@ -545,7 +530,6 @@ if (!config.siteSync.enabled) {
     if (pathname.startsWith('/socket.io')) return;
     if (pathname.startsWith('/messenger')) return messenger.handleUpgrade(req, socket, head);
     if (pathname.startsWith('/notify')) return notify.handleUpgrade(req, socket, head);
-    if (pathname.startsWith('/tohid')) return tohidWs.handleUpgrade(req, socket, head);
     if (stations?.ownsPath(pathname)) return stations.handleUpgrade(req, socket, head);
     socket.destroy();
   });

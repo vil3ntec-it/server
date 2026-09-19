@@ -143,9 +143,10 @@ const ALLOWED = {
   revokeCode:   ['POST', '/api/admin/pump/vip-codes/:id/revoke'],
   subStatus:    ['POST', '/api/admin/pump/subscriptions/:id/status'],
 
-  //  ⚠️ فقط برای آینه (‎cloud-mirror.js‎) — پنل این‌ها را نشان نمی‌دهد.
-  //  خواستهٔ صاحب مخزن: «فولدرِ سرور همه‌چی رو داشته باشه، چه از این چه
-  //  از اپِ شاپ.» پس حساب‌ها و اشتراک‌های دکان هم به پوشه می‌آیند.
+  //  ⚠️ برای آینه (‎cloud-mirror.js‎). خواستهٔ صاحب مخزن: «فولدرِ سرور
+  //  همه‌چی رو داشته باشه، چه از این چه از اپِ شاپ.» پس حساب‌ها و
+  //  اشتراک‌های دکان هم به پوشه می‌آیند. پنل و اپِ مدیریت بخشِ دکان را از
+  //  ‎routes/account-admin.js‎ می‌بینند که ‎cloudRaw‎ را می‌زند.
   shopUsers:    ['GET',  '/api/admin/users'],
   shops:        ['GET',  '/api/admin/shops'],
   shopSubs:     ['GET',  '/api/admin/subscriptions'],
@@ -270,6 +271,45 @@ export async function cloudCall(name, { query = {}, body = null, params = {} } =
   }
 
   const [method, path] = entry;
+  return authedSend(method, path, { query, body, creds, token: t });
+}
+
+/**
+ * یک مسیرِ مدیریتیِ سرورِ حساب را با توکنِ مدیر می‌زند — و «مسیرِ مدیریتی»
+ * یعنی فقط زیرِ ‎/api/admin/‎.
+ *
+ * ⚠️ این در برای ‎routes/account-admin.js‎ است، که خودش فهرستِ سفیدِ
+ * خودش را دارد (پنل و اپِ مدیریت فقط همان چند مسیر را می‌بینند). هیچ
+ * مسیرِ دیگری این تابع را صدا نمی‌زند، وگرنه همان «پروکسیِ باز» می‌شود
+ * که بالا قدغن شده. مسیرِ بیرون از ‎/api/admin‎ همین‌جا رد می‌شود.
+ *
+ * @param {string} method GET/POST/PUT/PATCH/DELETE
+ * @param {string} path   مثلاً ‎/api/admin/shops‎
+ * @param {object} opts   { query, body }
+ */
+export async function cloudRaw(method, path, { query = {}, body = null } = {}) {
+  const m = String(method || 'GET').toUpperCase();
+  const p = String(path || '');
+  if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(m)
+      || !/^\/api\/admin\/[A-Za-z0-9_\-/]+$/.test(p) || p.includes('..')) {
+    const err = new Error('این مسیر از پنل باز نیست');
+    err.code = 'path_not_allowed';
+    err.status = 400;
+    throw err;
+  }
+  const creds = autoCreds();
+  const t = creds ? await autoToken() : token();
+  if (!t) {
+    const err = new Error('هنوز با حسابِ مدیر به سرورِ حساب وارد نشده‌اید — از پنل ← پمپ‌ها ← تنظیمات و داده‌ها، یا از همین اپ');
+    err.code = 'not_linked';
+    err.status = 409;
+    throw err;
+  }
+  return authedSend(m, p, { query, body, creds, token: t });
+}
+
+/** خودِ فرستادن — یک بار، و روی ۴۰۱ِ توکنِ خودکار فقط یک بار دیگر. */
+async function authedSend(method, path, { query = {}, body = null, creds, token: t }) {
   const qs = new URLSearchParams(
     Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== '')
   ).toString();

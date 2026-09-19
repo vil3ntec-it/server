@@ -13,7 +13,7 @@ import {
   Database,
   Layers,
   Command as CommandIcon,
-  Download, Store,
+  Download,
   FolderTree,
   Gauge,
   Globe,
@@ -76,7 +76,6 @@ const NAV_GROUPS: NavGroup[] = [
       // صفحه‌ای که بعد از ورود روی آن می‌نشینید — پس اولین چیزِ منو
       { to: '/', key: 'dashboard', icon: LayoutDashboard, end: true },
       { to: '/control', key: 'ccCommand', icon: CommandIcon, end: true, feature: 'commandCenter' },
-      { to: '/control/tohid', key: 'thTitle', icon: Store },
       { to: '/sites', key: 'websites', icon: Server },
       { to: '/site-server', key: 'siteServer', icon: Globe },
       { to: '/stations', key: 'stations', icon: Fuel },

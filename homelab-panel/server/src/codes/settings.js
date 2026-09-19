@@ -6,7 +6,6 @@
 //  نام‌های قبلی‌اند تا هر کسی که از قبل ایمیلش را تنظیم کرده، دوباره کار نکند.
 // ---------------------------------------------------------------------------
 import { getSetting, setSetting } from '../db.js';
-import { listSecrets, readSecret } from '../control/vault.js';
 
 const SETTING_KEY = 'codes_settings';
 
@@ -129,63 +128,9 @@ function merge(base, override) {
   return out;
 }
 
-/**
- *  سرورِ ایمیلی که از قبل جای دیگری تنظیم شده.
- *
- *  ⚠️ چرا لازم است: پیش از یکی‌شدنِ موتورها، بخشِ فروشگاه سرورِ ایمیلِ خودش
- *  را داشت و خیلی‌ها همان‌جا تنظیمش کرده‌اند. اگر این‌جا نادیده می‌گرفتیمش،
- *  روزِ به‌روزرسانی ایمیل‌ها بی‌صدا می‌ایستادند و کسی نمی‌فهمید چرا — تنظیمات
- *  سرِ جایش بود، فقط موتور جای دیگری را نگاه می‌کرد.
- *
- *  هر چه در همین بخش ذخیره شود، بر این مقدم است.
- */
-function inheritedMail() {
-  try {
-    /*
-     *  ⚠️ بخشِ فروشگاه تنظیماتش را به‌صورتِ رشتهٔ JSON ذخیره می‌کند، نه شیء.
-     *  بدونِ این parse، خواندنش بی‌صدا undefined می‌داد و نتیجه‌اش این بود که
-     *  سرورِ ایمیلِ تنظیم‌شده «تنظیم‌نشده» دیده می‌شد و هیچ کدی نمی‌رفت.
-     */
-    const raw = getSetting('tohid_settings', null);
-    const parsed = typeof raw === 'string' ? JSON.parse(raw || '{}') : raw;
-    const shop = parsed?.mail;
-    if (!shop?.host) return null;
-    return {
-      host: shop.host,
-      port: Number(shop.port) || 465,
-      secure: shop.secure !== false,
-      username: shop.user || '',
-      from: shop.from || shop.user || '',
-      fromName: shop.fromName || '',
-    };
-  } catch {
-    return null;
-  }
-}
-
-/** رمزِ ایمیلِ فروشگاه در گاوصندوق می‌ماند، نه در تنظیمات */
-function inheritedMailPassword() {
-  try {
-    const row = listSecrets({ scope: 'global' }).find((x) => x.name === 'tohid_smtp_password');
-    return row ? readSecret(row.id) : null;
-  } catch {
-    // گاوصندوق هنوز ساخته نشده — بدونِ رمز هم بعضی سرورهای ایمیل کار می‌کنند
-    return null;
-  }
-}
-
 export function codeSettings() {
   const base = fromEnv();
   const saved = getSetting(SETTING_KEY, {}) || {};
-
-  // اگر نه این‌جا و نه .env میزبانی ندارند، سراغِ تنظیماتِ قبلیِ فروشگاه
-  if (!base.email.host && !saved.email?.host) {
-    const borrowed = inheritedMail();
-    if (borrowed) base.email = { ...base.email, ...borrowed };
-    const pass = inheritedMailPassword();
-    if (pass) base.email.password = pass;
-  }
-
   return merge(base, saved);
 }
 

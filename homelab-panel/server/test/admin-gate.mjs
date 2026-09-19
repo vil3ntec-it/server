@@ -140,7 +140,7 @@ try {
   console.log('\n── پنل از پورتِ عمومی دیده نمی‌شود ──');
   const bare = await call(PUBLIC, '/api/dashboard', { token });
   check('داشبورد روی پورتِ عمومی نیست', bare.status === 404, `status ${bare.status}`);
-  const control = await call(PUBLIC, '/api/control/tohid/accounts', { token });
+  const control = await call(PUBLIC, '/api/control/overview', { token });
   check('مرکز فرمان روی پورتِ عمومی نیست', control.status === 404, `status ${control.status}`);
 
   console.log('\n── درِ بسته، از بیرون ──');
