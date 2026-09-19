@@ -166,6 +166,7 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
   //  خودِ سرورِ حساب — پنل بالا می‌آوردش (account/supervisor.js). این کارت
   //  می‌گوید نصب هست، روشن است، چه نسخه‌ای، و اگر افتاد چند بار برگشته.
   const [acct, setAcct] = useState<AccountServerInfo | null>(null);
+  const [showAdminPass, setShowAdminPass] = useState(false);
   const loadAcct = useCallback(async () => {
     try { setAcct(await api<AccountServerInfo>('/api/account-server/status')); } catch { /* اختیاری */ }
   }, []);
@@ -411,7 +412,30 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
             <KV label="بازگشت‌ها پس از افتادن">{fa(acct.restarts)}</KV>
             <KV label="پوشهٔ داده"><code dir="ltr">{acct.dataDir}</code></KV>
             <KV label="پلِ پمپ‌ها">{acct.bridge?.linked ? (acct.bridge.auto ? 'وصل — با مدیرِ خودساخته' : 'وصل') : 'وارد نشده'}</KV>
+            <KV label="ایمیلِ کدهای ثبت‌نام">{acct.mail ? 'از رباتِ ایمیلِ همین پنل' : 'تنظیم نشده — پنل ← کدهای شش‌رقمی ← تنظیمات'}</KV>
           </div>
+          {acct.admin && (
+            <div className="mt-3 rounded-lg border border-line/60 p-3">
+              <div className="mb-2 text-sm font-semibold">مدیرِ سرورِ حساب — برای اپِ مدیریت و <code dir="ltr">api.&lt;دامنه&gt;/admin/</code></div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <KV label="نامِ کاربری" mono>
+                  <span className="inline-flex items-center gap-2">{acct.admin.username}<CopyButton value={acct.admin.username} /></span>
+                </KV>
+                <KV label="رمز" mono>
+                  <span className="inline-flex items-center gap-2">
+                    {showAdminPass ? acct.admin.password : '••••••••••'}
+                    <button className="btn btn-sm" onClick={() => setShowAdminPass((v) => !v)}>{showAdminPass ? 'پنهان' : 'نشان بده'}</button>
+                    <CopyButton value={acct.admin.password} />
+                  </span>
+                </KV>
+              </div>
+              <p className="mt-2 text-xs text-ink-muted">
+                {acct.admin.source === 'managed'
+                  ? 'پنل خودش این را ساخته و در پوشهٔ داده (account-server/secrets.json) نگه می‌دارد؛ با همین در اپِ مدیریت و پنلِ مدیریتِ سرورِ حساب وارد شوید. با HLP_ACCOUNT_ADMIN_USER/PASSWORD در .env می‌شود عوضش کرد.'
+                  : 'از .env (HLP_ACCOUNT_ADMIN_USER/PASSWORD) آمده.'}
+              </p>
+            </div>
+          )}
         </>
       )}
     </Card>
@@ -779,6 +803,8 @@ type AccountServerInfo = {
   pid: number | null; port: number | null; version: string | null; driver: string;
   restarts: number; lastError: string | null; dataDir: string;
   bridge: null | { linked: boolean; auto?: boolean };
+  admin: null | { username: string; password: string; source: 'managed' | 'env' };
+  mail: boolean;
 };
 
 type MirrorInfo = {

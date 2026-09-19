@@ -100,6 +100,12 @@ try {
   const st = await hit(PANEL, '/api/account-server/status', { headers: auth });
   check('ناظر می‌گوید نصب هست، روشن است و بالاست', st.json?.installed && st.json?.running && st.json?.up, JSON.stringify(st.json));
   check('راه‌انداز PGlite است', st.json?.driver === 'pglite');
+  check('نام و رمزِ مدیرِ سرورِ حساب از همین‌جا دیده می‌شود (خودساخته)',
+    st.json?.admin?.username === 'admin' && (st.json?.admin?.password || '').length >= 12 && st.json?.admin?.source === 'managed', JSON.stringify(st.json?.admin));
+  //  و همان نام و رمز واقعاً درِ مدیرِ سرورِ حساب را باز می‌کند — از راهِ درگاه، مثلِ اپِ مدیریت
+  const adminLogin = await hit(PUBLIC, '/api/admin/login', { method: 'POST', body: { username: st.json?.admin?.username, password: st.json?.admin?.password } });
+  check('با همان نام و رمز، ورودِ مدیر به سرورِ حساب از پورتِ عمومی ۲۰۰ است', adminLogin.status === 200 && !!(adminLogin.json?.token || adminLogin.json?.accessToken), `${adminLogin.status} ${adminLogin.text.slice(0, 200)}`);
+  check('ایمیلِ کدها این‌جا تنظیم نیست، پس mail=false', st.json?.mail === false);
   const noAuth = await hit(PANEL, '/api/account-server/status');
   check('بی ورود بسته است', noAuth.status === 401);
   const pub = await hit(PUBLIC, '/api/account-server/status');

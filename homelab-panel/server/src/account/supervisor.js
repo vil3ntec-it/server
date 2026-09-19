@@ -27,6 +27,8 @@ import path from 'node:path';
 import { config, SERVER_ROOT } from '../config.js';
 import { logEvent } from '../db.js';
 import { accountApiUrl, setDownHint } from '../api/account-proxy.js';
+import { codeSettings } from '../codes/settings.js';
+import { mailReady } from '../codes/mail.js';
 
 const RING = 200;
 const ring = [];
@@ -125,6 +127,38 @@ export function managedAdminCreds() {
   return { username: s.adminUser, password: s.adminPassword };
 }
 
+/**
+ * SMTPِ رباتِ ایمیلِ خودِ پنل، به شکلی که سرورِ حساب می‌فهمد.
+ *
+ * ⛔ چرا لازم شد (۱۴۰۵/۰۷/۰۲): ثبت‌نامِ هر سه برنامه با کدِ ایمیل است و
+ * سرورِ حسابِ خودساخته هیچ ایمیلی نداشت — `register/start` همان‌جا
+ * `delivery_failed` می‌داد («سرویس ایمیل سرور تنظیم نیست») و صاحبِ سامانه
+ * باید یک بارِ دیگر، این بار در پنلِ مدیریتِ سرورِ حساب، همان SMTPی را
+ * می‌نوشت که در «کدهای شش‌رقمی»ِ همین پنل نوشته بود. یک سرور، یک ایمیل:
+ * همان تنظیمات به فرزند می‌رود.
+ *
+ * ⚠️ فقط پیش‌فرض است: آن‌چه در پنلِ مدیریتِ سرورِ حساب ذخیره شود (دیتابیسِ
+ * خودش) جلوتر است — سرورِ حساب مقدارِ ذخیره‌شده را به محیط ترجیح می‌دهد.
+ * ⚠️ رمزِ SMTP فقط در محیطِ همان پروسهٔ فرزند است؛ روی هیچ مسیری برنمی‌گردد.
+ */
+export function mailEnvForChild() {
+  let s;
+  try { s = codeSettings(); } catch { return {}; }
+  if (!mailReady(s)) return {};
+  const e = s.email || {};
+  const port = Number(e.port) || (e.secure ? 465 : 587);
+  return {
+    SMTP_HOST: String(e.host),
+    SMTP_PORT: String(port),
+    SMTP_USER: String(e.username || ''),
+    SMTP_PASS: String(e.password || ''),
+    //  ssl = از همان اول TLS (۴۶۵) | starttls = ساده شروع و بعد رمز (۵۸۷)
+    SMTP_SECURE: e.secure || port === 465 ? 'ssl' : 'starttls',
+    EMAIL_FROM: String(e.from),
+    EMAIL_FROM_NAME: String(e.fromName || ''),
+  };
+}
+
 /** متغیرهای محیطیِ پروسهٔ فرزند — عمداً محدود؛ هیچ رازِ پنل رد نمی‌شود. */
 export function accountChildEnv(dir = resolveAccountDir()) {
   const s = ensureSecrets();
@@ -148,10 +182,23 @@ export function accountChildEnv(dir = resolveAccountDir()) {
     DOMAIN: '',
     ADMIN_BOOTSTRAP_USER: creds.username,
     ADMIN_BOOTSTRAP_PASSWORD: creds.password,
+    //  ایمیلِ کدهای ثبت‌نام — همان رباتِ ایمیلِ پنل، اگر تنظیم شده باشد
+    ...mailEnvForChild(),
     //  .envِ خودِ پوشهٔ کد خوانده نشود — همه‌چیز از همین‌جا می‌آید
     ENV_FILE: path.join(data, 'env.none'),
     ...(dir ? {} : {}),
   };
+}
+
+/**
+ * تنظیماتِ ایمیلِ پنل عوض شد ⇒ فرزند با محیطِ تازه دوباره بالا می‌آید.
+ * فقط اگر خودِ ناظر روشنش کرده باشد؛ سرورِ بیرونی به ما ربطی ندارد.
+ */
+export function onPanelMailChanged() {
+  if (!child) return { ok: false, reason: 'روشن نبود' };
+  push('info', 'تنظیماتِ ایمیلِ پنل عوض شد — سرورِ حساب با همان دوباره بالا می‌آید');
+  restartAccountServer().catch(() => {});
+  return { ok: true };
 }
 
 export function accountLogs(limit = 100) {
@@ -174,7 +221,22 @@ export function accountStatus() {
     restarts,
     lastError: lastError || null,
     driver: 'pglite',
+    //  مدیرِ سرورِ حساب — همانی که اپِ مدیریت و /admin/ با آن وارد می‌شوند.
+    //  ⚠️ فقط از این مسیر (پورتِ پنل، پشتِ ورودِ مدیر) دیده می‌شود. تا پیش
+    //  از این نام و رمزِ خودساخته فقط در secrets.json بود و صاحبِ سامانه
+    //  هیچ راهی نداشت با اپِ مدیریت وارد سرورِ حسابِ خودش شود.
+    admin: adminInfo(),
+    //  کدهای ثبت‌نام از رباتِ ایمیلِ پنل می‌روند؟
+    mail: Object.keys(mailEnvForChild()).length > 0,
   };
+}
+
+/** نام و رمزِ مدیرِ سرورِ حساب، و این‌که از کجا آمده — یا null اگر ناظر خاموش است. */
+function adminInfo() {
+  const creds = managedAdminCreds();
+  if (!creds) return null;
+  const explicit = !!(config.accountApi?.adminUser && config.accountApi?.adminPassword);
+  return { username: creds.username, password: creds.password, source: explicit ? 'env' : 'managed' };
 }
 
 export function startAccountServer() {
