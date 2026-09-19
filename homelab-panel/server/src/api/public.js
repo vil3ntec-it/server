@@ -28,6 +28,7 @@ import appRoutes from '../routes/app.js';
 import messengerRoutes from '../routes/messenger.js';
 import notifyRoutes from '../routes/notify.js';
 import stationRoutes from '../routes/stations.js';
+import { router as announceRoutes } from '../routes/announce.js';
 import { readyPayload } from '../platform/health.js';
 import { versionInfo } from '../version.js';
 import { config } from '../config.js';
@@ -49,6 +50,7 @@ const ENDPOINTS = [
   { path: '/api/v1/messenger', what: 'پیام‌رسان (HTTP و WebSocket)' },
   { path: '/api/v1/notify', what: 'اعلان‌ها' },
   { path: '/api/v1/stations', what: 'پمپ‌بنزین‌ها — دادهٔ زندهٔ هر پمپ، با رمزِ خودِ همان پمپ' },
+  { path: '/api/v1/announce', what: 'اطلاعیه‌های مدیر برای برنامه‌ها (فقط‌خواندنی)' },
 ];
 
 /**
@@ -127,6 +129,8 @@ export function createPublicApi() {
    *  روترِ پنل (‎stations-admin‎) هرگز این‌جا نمی‌آید.
    */
   v1.use('/stations', stationRoutes);
+  //  اطلاعیه‌ها: تا ۱.۴۰.۰ روی پاسخ‌های دفترِ حسابِ قدیمی سوار می‌شدند؛ حالا درِ خودشان
+  v1.use('/announce', announceRoutes);
   //  /api/v1/auth · /api/v1/admin · /api/v1/sync و بقیهٔ حساب مالِ سرورِ
   //  حساب‌اند و درگاهِ account-proxy.js (پیش از این روتر) به آن می‌بردشان.
 
@@ -137,6 +141,7 @@ export function createPublicApi() {
   router.use('/messenger', messengerRoutes);
   router.use('/notify', notifyRoutes);
   router.use('/stations', stationRoutes);
+  router.use('/announce', announceRoutes);
 
   router.use((req, res) => res.status(404).json({ error: 'not_found' }));
   return router;

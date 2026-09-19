@@ -59,9 +59,9 @@ export const ACCOUNT_PREFIXES = Object.freeze([
 ]);
 
 /** زیرِ ‎/api/v1‎ این‌ها مالِ خودِ این سرورند و هرگز رد نمی‌شوند. */
-const HOME_V1 = new Set(['health', 'ready', 'app', 'messenger', 'notify', 'stations']);
+const HOME_V1 = new Set(['health', 'ready', 'app', 'messenger', 'notify', 'stations', 'announce']);
 /** زیرِ ‎/api‎ این‌ها مالِ خودِ این سرورند. */
-const HOME_ANY = new Set(['v1', 'app', 'messenger', 'notify', 'stations', 'admin-gate']);
+const HOME_ANY = new Set(['v1', 'app', 'messenger', 'notify', 'stations', 'announce', 'admin-gate']);
 
 /** آیا این مسیر مالِ سرورِ حساب است؟ (بی توجه به روشن/خاموش بودنِ در) */
 export function accountRoute(urlPath) {
