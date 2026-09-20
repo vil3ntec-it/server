@@ -31,6 +31,7 @@ import {
   backupSchedule,
   setBackupSchedule,
 } from '../storage/backup.js';
+import { backupStatus, restoreTest } from '../backup/rotation.js';
 
 const router = Router();
 router.use(requireLocalOrAuth);
@@ -107,7 +108,15 @@ router.post('/organize/apply', async (req, res) => {
 
 // --------------------------- پشتیبان‌گیری -----------------------------------
 router.get('/backups', async (req, res) => {
-  res.json({ ok: true, backups: await listBackups(), schedule: backupSchedule() });
+  //  status: رمزنگاری، نتیجهٔ تستِ بازیابی، چرخش و صفِ offsite (بندِ ۷)
+  res.json({ ok: true, backups: await listBackups(), schedule: backupSchedule(), status: await backupStatus() });
+});
+
+/* تستِ بازیابی همین حالا — همان کاری که هفته‌ای یک بار خودکار می‌شود */
+router.post('/backups/restore-test', async (req, res) => {
+  const result = await restoreTest();
+  audit(req, 'backup.restoreTest', { ok: result.ok, target: result.backup });
+  res.json({ ok: true, result });
 });
 
 router.post('/backups', async (req, res) => {

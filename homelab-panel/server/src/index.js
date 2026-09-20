@@ -53,6 +53,7 @@ import notifyRoutes, { adminRouter as notifyAdminRoutes } from './routes/notify.
 import appRoutes, { adminRouter as appAdminRoutes } from './routes/app.js';
 import codeRoutes, { adminRouter as codeAdminRoutes } from './routes/codes.js';
 import storageRoutes from './routes/storage.js';
+import platformRoutes from './routes/platform.js';
 import agentRoutes from './routes/agent.js';
 import dockerRoutes from './routes/docker.js';
 import processRoutes from './routes/processes.js';
@@ -93,7 +94,7 @@ import { pruneAudit as pruneControlAudit } from './control/audit.js';
 import { pruneAlerts, alertEvents } from './control/alerts.js';
 import { monitorEvents } from './control/monitor.js';
 import { startUpdateWatcher, stopUpdateWatcher } from './update/github.js';
-import { requireAuth } from './auth.js';
+import { requireAuth, isInitialized, createUser } from './auth.js';
 import { writeNeedsOperator } from './control/roles.js';
 
 const PUBLIC_DIR = path.join(SERVER_ROOT, 'public');
@@ -104,6 +105,15 @@ const CONNECT_PAGE = path.join(SERVER_ROOT, 'src', 'appauth', 'connect.html');
 function serveConnectPage(req, res) {
   res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(CONNECT_PAGE);
+}
+
+/** install.sh از ریشهٔ مخزن — تنها فایلی که پورتِ عمومی از خودِ کد سرو می‌کند */
+function serveInstaller(req, res) {
+  const file = path.resolve(SERVER_ROOT, '..', '..', 'install.sh');
+  if (!fs.existsSync(file)) return res.status(404).type('text/plain; charset=utf-8').send('not found');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Content-Disposition', 'inline; filename="install.sh"');
+  res.type('text/x-shellscript; charset=utf-8').sendFile(file);
 }
 
 ensureDirs();
@@ -122,6 +132,24 @@ ensureControlSchema();
 // کلیدِ محلی همین اول ساخته می‌شود تا «برنامهٔ سرور خانگی» روی همین کامپیوتر
 // بتواند بدونِ ورودِ دستی، برنامه‌ها و تنظیمات را اداره کند.
 localKey();
+
+/*
+ *  کاربرِ مدیرِ اولیه از محیط — بندِ ۱۰.۳: «کاربر مدیر اولیه» را نصب‌کننده
+ *  می‌سازد، نه یک فرمِ مرورگری که کسی باید پیدایش کند. همان قراردادِ
+ *  ADMIN_BOOTSTRAP_*ِ سرورِ حساب: فقط وقتی هنوز هیچ کاربری نیست؛ نصبِ
+ *  موجود دست نمی‌خورد و رمزِ عوض‌شده در پنل برنمی‌گردد.
+ */
+try {
+  const bootUser = String(process.env.HLP_ADMIN_USER || '').trim();
+  const bootPass = String(process.env.HLP_ADMIN_PASSWORD || '');
+  if (bootUser.length >= 3 && bootPass.length >= 8 && !isInitialized()) {
+    createUser(bootUser, bootPass, 'admin');
+    logEvent('info', 'panel', `حسابِ مدیرِ اولیه «${bootUser}» از محیطِ نصب ساخته شد`);
+    console.log(`  👤 حسابِ مدیرِ اولیه «${bootUser}» ساخته شد`);
+  }
+} catch (e) {
+  console.warn(`⚠️  ساختِ مدیرِ اولیه ناموفق بود: ${e.message}`);
+}
 
 // نصبِ قدیمی نباید با عوض‌شدنِ پیش‌فرضِ «ریشهٔ سایت‌ها» تکان بخورد — اگر
 // سایت‌هایش بیرونِ پوشهٔ داده‌اند، همان‌جا ثبت می‌شوند و جابه‌جایی وقتی
@@ -330,6 +358,8 @@ app.use('/api/codes', codeRoutes);
 app.use('/api/codes-admin', codeAdminRoutes);
 // کتابخانه: یک جای مرتب برای سایت‌ها، برنامه‌ها، پشتیبان‌ها و فایل‌های موقت
 app.use('/api/storage', storageRoutes);
+// زیرساخت: خودترمیمی، وضعیت، پشتیبان و دستیار — همان چیزی که «vill3n» صدا می‌زند
+app.use('/api/platform', platformRoutes);
 // دستیارِ هوشمند — فقط پورتِ پنل؛ خواندن برای همه، گفت‌وگو و تأیید دستِ‌کم operator
 app.use('/api/agent', requireAuth, writeNeedsOperator, agentRoutes);
 app.use('/api/account-server', accountServerRoutes);
@@ -652,6 +682,11 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
    */
   publicApp.use('/api', createPublicApi());
   publicApp.get(['/connect', '/اتصال'], serveConnectPage);
+  /*
+   *  نصب‌کنندهٔ یک‌دستوره (بندِ ۱۰.۳): «curl -fsSL https://api.<دامنه>/install.sh | sudo bash».
+   *  همان فایلِ ریشهٔ مخزن، بی هیچ تغییری؛ نبودش ۴۰۴ است نه یک اسکریپتِ خالی.
+   */
+  publicApp.get('/install.sh', serveInstaller);
   publicApp.use((req, res) => res.status(404).type('text/plain; charset=utf-8').send('not found'));
 
   syncOnlyServer = http.createServer(publicApp);
