@@ -37,7 +37,9 @@ export function settings() {
   const num = (k, d) => { const v = Number(getSetting(k, '')); return Number.isFinite(v) && v > 0 ? v : d; };
   return {
     enabled: getSetting('agent_enabled', DEFAULTS.enabled ? '1' : '0') !== '0',
-    model: String(getSetting('agent_model', '') || ''),
+    //  نصب‌کننده مدل را از روی سخت‌افزار برمی‌گزیند و در HLP_AGENT_MODEL می‌گذارد؛
+    //  انتخابِ کاربر در پنل (agent_model) همیشه جلوتر است.
+    model: String(getSetting('agent_model', '') || process.env.HLP_AGENT_MODEL || ''),
     idleMinutes: num('agent_idle_minutes', DEFAULTS.idleMinutes),
     pauseAtC: num('agent_pause_c', DEFAULTS.pauseAtC),
     stopAtC: num('agent_stop_c', DEFAULTS.stopAtC),
