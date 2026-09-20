@@ -184,9 +184,25 @@ detect_system() {
   else MODEL="qwen2.5:1.5b"; fi
   #  محدودیتِ منابع: پنل حداکثر یک‌چهارمِ رَم (دستِ‌کم ۵۱۲ مگ)، Ollama یک مدل و یک درخواست
   NODE_HEAP_MB=$(( RAM_GB * 1024 / 4 )); [ "$NODE_HEAP_MB" -lt 512 ] && NODE_HEAP_MB=512; [ "$NODE_HEAP_MB" -gt 4096 ] && NODE_HEAP_MB=4096
+  #  پورتِ SSH — پیش از باز کردنِ فایروال لازم است، وگرنه در روی خودمان بسته می‌شود.
+  #
+  #  ⚠️ دو تلهٔ واقعی این‌جا هست:
+  #   ۱) `p="$(grep …)"` وقتی هیچ خطِ `Port` نباشد کدِ ۱ برمی‌گرداند و زیرِ
+  #      `set -e` **کلِ نصب** را می‌کشد. روی رانرِ گیت‌هاب دقیقاً همین شد:
+  #      `sshd_config` هست ولی خطش `#Port 22`ِ کامنت‌شده است. `|| true`
+  #      لازم است، نه تزئین.
+  #   ۲) بسیاری از سیستم‌ها پورت را در `sshd_config.d/*.conf` عوض می‌کنند،
+  #      نه در فایلِ اصلی. اگر آن‌ها خوانده نشوند، فایروال پورتِ ۲۲ را باز
+  #      می‌کند و کاربر از سرورِ خودش بیرون می‌ماند.
   SSH_PORT=22
-  if [ -r /etc/ssh/sshd_config ]; then
-    local p; p="$(grep -iE '^\s*Port\s+[0-9]+' /etc/ssh/sshd_config | tail -1 | awk '{print $2}')"
+  local sshd_files="" p=""
+  [ -r /etc/ssh/sshd_config ] && sshd_files="/etc/ssh/sshd_config"
+  if [ -d /etc/ssh/sshd_config.d ]; then
+    for f in /etc/ssh/sshd_config.d/*.conf; do [ -r "$f" ] && sshd_files="$sshd_files $f"; done
+  fi
+  if [ -n "$sshd_files" ]; then
+    #  آخرین مقدارِ واقعی برنده است؛ خطِ کامنت‌شده مقدار نیست
+    p="$(grep -hiE '^[[:space:]]*Port[[:space:]]+[0-9]+' $sshd_files 2>/dev/null | tail -1 | awk '{print $2}' || true)"
     [ -n "$p" ] && SSH_PORT="$p"
   fi
   SUPPORTED=0
@@ -282,7 +298,7 @@ install_node_tarball() {
   case "$ARCH" in x86_64) arch=x64 ;; aarch64) arch=arm64 ;; *) return 1 ;; esac
   tmp="$(mktemp -d)"
   download "$base/SHASUMS256.txt" "$tmp/sums" || { rm -rf "$tmp"; return 1; }
-  file="$(grep -oE "node-v22\.[0-9]+\.[0-9]+-linux-$arch\.tar\.xz" "$tmp/sums" | head -1)"
+  file="$(grep -oE "node-v22\.[0-9]+\.[0-9]+-linux-$arch\.tar\.xz" "$tmp/sums" | head -1 || true)"
   [ -n "$file" ] || { rm -rf "$tmp"; return 1; }
   download "$base/$file" "$tmp/$file" || { rm -rf "$tmp"; return 1; }
   ( cd "$tmp" && grep " $file\$" sums | sha256sum -c --quiet ) || { rm -rf "$tmp"; return 1; }

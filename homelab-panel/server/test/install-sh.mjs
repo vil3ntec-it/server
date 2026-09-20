@@ -92,6 +92,42 @@ try {
   const STEPS = list.stdout.trim().split(/\s+/);
   check('--list-steps فهرستِ مرحله‌ها را می‌دهد', STEPS.length >= 20 && STEPS[0] === 'detect_system', list.stdout);
   check('install.sh سرِ پرسش‌ها از /dev/tty می‌خواند، نه stdin (curl | bash)', /\/dev\/tty/.test(fs.readFileSync(INSTALLER, 'utf8')));
+/*
+ *  ⚠️ این سنجه از یک شکستِ واقعیِ CI آمد: `detect_system` روی رانرِ
+ *  گیت‌هاب با کدِ ۱ بیرون می‌آمد و نصب همان اولین مرحله می‌مرد، در حالی
+ *  که محلی سبز بود. دلیلش این بود که آن‌جا `sshd_config` **هست** ولی
+ *  خطِ پورتش کامنت است، پس `grep` چیزی پیدا نمی‌کرد و زیرِ `set -e`
+ *  کلِ اسکریپت را می‌کشت. این‌جا هر سه حالت سنجیده می‌شود.
+ */
+console.log('\n۱ب) خواندنِ پورتِ SSH — هیچ حالتی نباید نصب را بکشد');
+{
+  const read = (files) => {
+    const r = spawnSync('bash', ['-c',
+      `set -euo pipefail; p="$(grep -hiE '^[[:space:]]*Port[[:space:]]+[0-9]+' ${files} 2>/dev/null | tail -1 | awk '{print $2}' || true)"; echo "\${p:-22}"`,
+    ], { encoding: 'utf8' });
+    return { code: r.status, port: (r.stdout || '').trim() };
+  };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sshd-'));
+  fs.writeFileSync(path.join(dir, 'commented'), '#Port 22\n');
+  fs.writeFileSync(path.join(dir, 'explicit'), 'Port 2022\n');
+  fs.writeFileSync(path.join(dir, 'dropin.conf'), 'Port 2222\n');
+
+  const only = read(`${dir}/commented`);
+  check('فایلی که فقط خطِ کامنت دارد نصب را نمی‌کشد', only.code === 0, `code=${only.code}`);
+  check('و پورت همان ۲۲ می‌ماند', only.port === '22', only.port);
+
+  const explicit = read(`${dir}/explicit`);
+  check('پورتِ صریح خوانده می‌شود', explicit.code === 0 && explicit.port === '2022', explicit.port);
+
+  const dropin = read(`${dir}/commented ${dir}/dropin.conf`);
+  check('پورتِ sshd_config.d هم خوانده می‌شود (وگرنه در روی کاربر بسته می‌شود)',
+    dropin.code === 0 && dropin.port === '2222', dropin.port);
+
+  const missing = read(`${dir}/nothing-here`);
+  check('فایلِ نبوده هم نصب را نمی‌کشد', missing.code === 0 && missing.port === '22', `code=${missing.code} port=${missing.port}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
 
   console.log('\n۲) قطع وسطِ کار و ادامه (ریشهٔ جدا، نصبِ دست‌نخورده)');
   const resumeEnv = { VILL3N_ROOT: ROOT_RESUME };
