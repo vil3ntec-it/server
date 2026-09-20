@@ -262,6 +262,44 @@ try {
    *  `ACCOUNT_PREFIXES` نباشد از تونل «not found» می‌گیرد و **هیچ
    *  آزمونی در ریپوی shop آن را نمی‌بیند** — چون آن‌جا سالم است.
    */
+  /*
+   *  ⛔ و این بند **خودنگهدار** است: فهرستِ سرآیندها را از خودِ پاسخِ
+   *  پیش‌پرواز می‌خواند، نه از یک کپیِ دستی. پس هر سرآیندی که فردا به
+   *  `Access-Control-Allow-Headers`ِ `src/index.js` اضافه شود، همین‌جا
+   *  خودش خواسته می‌شود که به سرورِ حساب هم برسد — و اگر به
+   *  `PASS_HEADERS`ِ درگاه اضافه نشده باشد، همین‌جا سرخ می‌شود.
+   *
+   *  ⚠️ سه‌تا عمداً استثنا هستند: کلیدهای خودِ پنل. این‌ها رازِ همین
+   *  سرورند و **نباید** به سرورِ حساب برسند — همان قاعدهٔ کوکی.
+   */
+  console.log('\n── هر سرآیندی که به مرورگر اعلام می‌شود، واقعاً هم می‌رسد ──');
+  {
+    const KELIDE_PANEL = ['x-api-key', 'x-read-key', 'x-local-key', 'x-admin-gate'];
+    const res = await fetch(`http://127.0.0.1:${PUBLIC}/api/auth/register/start`, {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'https://yaqobipump.top',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'content-type',
+      },
+    });
+    const elan = String(res.headers.get('access-control-allow-headers') || '')
+      .split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
+    check('پیش‌پرواز فهرستی می‌دهد', elan.length > 0, String(elan));
+
+    for (const h of elan) {
+      if (h === 'content-type' || h === 'authorization') continue;
+      const sent = { 'content-type': 'application/json', [h]: 'mehr-' + h };
+      await hit(PUBLIC, '/api/auth/register/start', { method: 'POST', body: '{}', headers: sent });
+      const got = ((seen.at(-1) || {}).headers || {})[h];
+      if (KELIDE_PANEL.includes(h)) {
+        check(`${h} کلیدِ خودِ پنل است و درز نمی‌کند`, got === undefined, String(got));
+      } else {
+        check(`${h} به سرورِ حساب می‌رسد`, got === sent[h], got === undefined ? 'نرسید' : String(got));
+      }
+    }
+  }
+
   console.log('\n── هر پیشوندِ سرورِ حساب از در رد می‌شود ──');
   {
     const PISHVAND = [
