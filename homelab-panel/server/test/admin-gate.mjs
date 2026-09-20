@@ -361,6 +361,60 @@ try {
   check('پسوندِ دوتکه‌ای هم درست می‌شود',
     adminHostFor('a.b.yaqobi.co.ir') === 'admin.yaqobi.co.ir', adminHostFor('a.b.yaqobi.co.ir'));
 
+  console.log('\n── گوشی‌ای که کلیدش کهنه شده ──');
+  /*
+   *  همان حالتی که در گوشی دیده شد: سرور روشن، آدرس درست، و برنامه
+   *  می‌گفت «این آدرس روی سرور نیست».
+   *
+   *  ریشه‌اش این بود که گوشی کلیدِ کهنه‌ای همراه داشت (باطل‌شده، یا پنلی
+   *  که از نو نصب شده و دفترِ کلیدهایش خالی است). در به آن کلید ۴۰۴
+   *  می‌دهد — درست — ولی نبضِ برنامه هر شش ثانیه همان کلیدِ مرده را
+   *  دوباره می‌زد، و شمارندهٔ در آن را «حدسِ تازه» می‌شمرد. بیست تا در دو
+   *  دقیقه، و چون نبض هرگز نمی‌ایستاد پنجره هیچ‌وقت خالی نمی‌شد: کلیدِ
+   *  تازه هم دیگر رد نمی‌شد. یعنی برنامه خودش را برای همیشه بیرون
+   *  می‌گذاشت.
+   *
+   *  ⛔ یک کلیدِ غلط، هرچند بار تکرار شود، *یک* حدس است. شمارنده فقط
+   *  حدسِ تازه را می‌شمارد — وگرنه از این در هیچ برنامه‌ای برنمی‌گردد.
+   */
+  const deadKey = awayKey; // در بندِ ۵ باطل شد
+  for (let i = 0; i < 30; i++) {
+    await withHost(PUBLIC_PORT, '/health', AWAY, { 'x-admin-gate': deadKey });
+  }
+  const afterDead = await withHost(PUBLIC_PORT, '/health', AWAY, { 'x-admin-gate': deadKey });
+  check('کلیدِ مرده همچنان not found است', afterDead.status === 404, `status ${afterDead.status}`);
+
+  const reEnroll = await withHost(PUBLIC_PORT, '/api/admin-gate/enroll', AWAY, {}, {
+    method: 'POST',
+    body: { username: 'admin', password: 'ControlCenter!2026', deviceId: 'phone-away', name: 'ویلن ادمین' },
+  });
+  const freshKey = reEnroll.body?.key || '';
+  check('با نام و رمز، کلیدِ تازه صادر می‌شود', freshKey.length > 20, reEnroll.text.slice(0, 160));
+
+  const withFresh = await withHost(PUBLIC_PORT, '/health', AWAY, { 'x-admin-gate': freshKey });
+  check('و همان لحظه کار می‌کند — نبضِ کلیدِ مرده قفلش نکرده بود',
+    withFresh.status === 200, `status ${withFresh.status}`);
+
+  // نبضِ بی‌کلید هم حدس نیست و نباید شمرده شود
+  for (let i = 0; i < 30; i++) await withHost(PUBLIC_PORT, '/health', AWAY);
+  const stillOk = await withHost(PUBLIC_PORT, '/health', AWAY, { 'x-admin-gate': freshKey });
+  check('نبضِ بی‌کلید هم در را نمی‌بندد', stillOk.status === 200, `status ${stillOk.status}`);
+
+  /*
+   *  ⚠️ و آن‌طرفِ سکه: کسی که کلیدهای *متفاوت* می‌زند واقعاً دارد حدس
+   *  می‌زند و باید پشتِ در بماند. بی این بند، اصلاحِ بالا یعنی برداشتنِ
+   *  شمارنده.
+   *
+   *  ⚠️ این بند عمداً آخرِ فایل است: بعدش IPِ آزمون ده دقیقه پشتِ در
+   *  می‌ماند و هر سنجهٔ دیگری روی میزبانِ admin قرمزِ دروغ می‌داد.
+   */
+  let guessStatus = 0;
+  for (let i = 0; i < 25; i++) {
+    const guess = `guess-${i}-${'k'.repeat(32)}`;
+    guessStatus = (await withHost(PUBLIC_PORT, '/health', AWAY, { 'x-admin-gate': guess })).status;
+  }
+  check('حدس‌های متفاوت همچنان قفل می‌شوند', guessStatus === 429, `status ${guessStatus}`);
+
   console.log('\n── کلید در جای دیگری درز نمی‌کند ──');
   const index = await call(PUBLIC, '/');
   check('فهرستِ عمومی نامی از در نمی‌برد', !/admin-gate/i.test(index.text), index.text.slice(0, 200));

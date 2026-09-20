@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import ir.vil3ntec.admin.data.Api
+import ir.vil3ntec.admin.data.ApiError
 import ir.vil3ntec.admin.data.Discovery
 import ir.vil3ntec.admin.data.FoundServer
 import ir.vil3ntec.admin.data.Remote
@@ -153,14 +154,46 @@ fun LoginScreen(
          *  یک درخواستِ بی‌فایده است. در خانه کلید بعدِ ورود صادر می‌شود،
          *  همان‌طور که بود.
          */
-        var gate = remote?.takeIf { it.usable }
-        if (gate == null && address.startsWith("https://")) {
-          gate = withContext(Dispatchers.IO) {
-            Remote.enroll(address, username.trim(), password, onDeviceId(), "ویلن ادمین")
-          }
+        suspend fun freshKey(): RemoteAccess? = withContext(Dispatchers.IO) {
+          Remote.enroll(address, username.trim(), password, onDeviceId(), "ویلن ادمین")
         }
 
-        withContext(Dispatchers.IO) { Api.health(address, gate) }
+        var gate = remote?.takeIf { it.usable }
+        if (gate == null && address.startsWith("https://")) gate = freshKey()
+
+        /*
+         *  کلیدی که دیگر معتبر نیست، همین‌جا تازه می‌شود.
+         *
+         *  ⚠️ چرا لازم شد — و چرا بدونش بن‌بستِ کامل بود: کلیدِ این گوشی
+         *  ممکن است بمیرد (پنل از نو نصب شده، یا کلید از پنل باطل شده).
+         *  در به کلیدِ مرده همان «not found» را می‌دهد، ولی چون `remote`
+         *  خالی نبود برنامه هیچ‌وقت سراغِ کلیدِ تازه نمی‌رفت: همان کلیدِ
+         *  مرده را تا ابد تکرار می‌کرد و کاربر فقط «این آدرس روی سرور
+         *  نیست» می‌دید. تنها راهِ نجات پاک کردنِ دادهٔ برنامه بود.
+         *
+         *  ⚠️ و فقط روی ۴۰۴ی خودِ در: خطای شبکه یا ۵۰۰ کلید را دور
+         *  نمی‌اندازد — کلیدِ سالم نباید قربانیِ یک قطعیِ گذرا شود.
+         */
+        try {
+          withContext(Dispatchers.IO) { Api.health(address, gate) }
+        } catch (e: ApiError) {
+          if (e.status != 404 || !address.startsWith("https://")) throw e
+          /*
+           *  ⚠️ و اگر کلیدِ تازه هم نشد، پیام باید بگوید کجا را نگاه کنیم.
+           *  «این آدرس روی سرور نیست» دو حالتِ کاملاً متفاوت را یک شکل
+           *  نشان می‌داد و هر بار ساعت‌ها وقت گرفت: نام و رمزِ غلط، یا
+           *  زیردامنه‌ای که اصلاً به این سرور نمی‌رسد. در از بیرون به هر
+           *  دو همان «not found» را می‌دهد — عمداً — پس فرقشان را فقط
+           *  می‌شود *گفت*، نه حدس زد.
+           */
+          gate = freshKey() ?: throw ApiError(
+            e.status,
+            e.code,
+            "نام یا رمزِ مدیر درست نیست — یا این آدرس به سرورِ شما نمی‌رسد. " +
+              "در پنل، بخشِ «دامنه‌ها» ببینید زیردامنهٔ admin ساخته شده باشد.",
+          )
+          withContext(Dispatchers.IO) { Api.health(address, gate) }
+        }
         val reply = withContext(Dispatchers.IO) {
           Api.login(address, username.trim(), password, gate)
         }

@@ -70,6 +70,8 @@ export function pruneRateLimits(windowMs = 3600_000) {
  * @param {string} opts.name       نامِ سطل تا محدودیت‌های مختلف قاطی نشوند
  * @param {(req)=>string} [opts.key] کلیدِ سفارشی (پیش‌فرض: IP)
  * @param {boolean} [opts.skipSuccess] فقط پاسخ‌های ناموفق شمرده شوند
+ * @param {(req,res)=>boolean} [opts.countIf] جای قاعدهٔ پیش‌فرضِ skipSuccess —
+ *   «این درخواست باید شمرده شود؟». فقط با skipSuccess معنی دارد.
  */
 export function rateLimit(opts) {
   const { max, windowMs, name } = opts;
@@ -98,9 +100,19 @@ export function rateLimit(opts) {
 
     // در حالتِ skipSuccess فقط شکست‌ها شمرده می‌شوند: کاربری که رمزش را درست
     // می‌زند نباید به‌خاطر ورود و خروجِ مکرر قفل شود.
+    /*
+     *  ⚠️ و گاهی «شکست» هم حدس نیست.
+     *
+     *  countIf جای همین قاعده را می‌گیرد: برنامه‌ای که یک کلیدِ کهنه را هر
+     *  شش ثانیه دوباره می‌زند صد شکست می‌سازد ولی *یک* حدس است، و شمردنِ
+     *  هر کدام یعنی همان برنامه خودش را برای همیشه بیرون می‌گذارد — پنجره
+     *  با نبضِ خودش پر می‌ماند و کلیدِ تازه هم دیگر رد نمی‌شود.
+     *  (شرحِ کامل و سنجه‌اش: src/api/admin-gate.js و test/admin-gate.mjs)
+     */
     if (opts.skipSuccess) {
+      const countable = opts.countIf || ((_req, response) => response.statusCode >= 400);
       res.on('finish', () => {
-        if (res.statusCode >= 400) bucketOf(key, windowMs, Date.now()).push(Date.now());
+        if (countable(req, res)) bucketOf(key, windowMs, Date.now()).push(Date.now());
       });
     } else {
       hits.push(now);

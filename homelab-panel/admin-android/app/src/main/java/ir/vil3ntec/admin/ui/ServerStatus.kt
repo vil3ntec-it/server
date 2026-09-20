@@ -100,14 +100,23 @@ fun rememberServerHealth(
          *
          *  حالا همان حالت را می‌شناسیم و می‌گوییم کارِ بعدی چیست: ورود.
          */
-        val locked = e is ApiError
+        /*
+         *  ⚠️ و یک حالتِ سومی که یک بار برنامه را کاملاً از کار انداخت:
+         *  گوشی کلید *دارد*، ولی آن کلید دیگر معتبر نیست — پنل از نو نصب
+         *  شده یا کلید از پنل باطل شده. در به کلیدِ مرده هم همان
+         *  «not found» را می‌دهد، پس برنامه می‌گفت «این آدرس روی سرور
+         *  نیست» و چراغ سرخ می‌شد، با سرورِ روشن و آدرسِ کاملاً درست.
+         *  حالا حقیقت گفته می‌شود و کارِ بعدی هم: ورودِ دوباره، که خودش
+         *  کلیدِ تازه می‌گیرد (LoginScreen.submit).
+         */
+        val gateShut = e is ApiError
           && e.status == 404
-          && remote == null
           && serverUrl.startsWith("https://")
-        if (locked) {
+        if (gateShut) {
           ServerHealth(
             ServerState.Unknown,
-            "این آدرس تا ورودِ شما بسته است — نام و رمزتان را بزنید",
+            if (remote == null) "این آدرس تا ورودِ شما بسته است — نام و رمزتان را بزنید"
+            else "کلیدِ این گوشی دیگر معتبر نیست — نام و رمزتان را بزنید تا کلیدِ تازه بگیرد",
           )
         } else {
           ServerHealth(ServerState.Offline, e.message.orEmpty().ifBlank { e.javaClass.simpleName })
