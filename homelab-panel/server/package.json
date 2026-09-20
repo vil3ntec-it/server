@@ -7,7 +7,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/index.js",
-    "test": "node test/smoke.mjs && node test/multisite.mjs && node test/stations.mjs && node test/stations-load.mjs && node test/cloud-mirror.mjs && node test/sitesync-load.mjs && node test/protected-domains.mjs && node test/tunnel-recovery.mjs && node test/tunnel-retry.mjs && node test/messenger.mjs && node test/notify.mjs && node test/notify-readkey.mjs && node test/control.mjs && node test/agent.mjs && node test/update.mjs && node test/update-packaged.mjs && node test/api-domain.mjs && node test/roles-logs.mjs && node test/public-port.mjs && node test/clients.mjs && node test/app-auth.mjs && node test/storage.mjs && node test/security.mjs && node test/auth-abuse.mjs && node test/refresh-token.mjs && node test/auth-e2e.mjs && node test/app-logins.mjs && node test/backup-restore.mjs && node test/platform.mjs && node test/docker.mjs && node test/processes.mjs && node test/platform-tools.mjs && node test/cron.mjs && node test/domains-tunnel.mjs && node test/otp-email.mjs && node test/smtp-client.mjs && node test/mail-settings.mjs && node test/portable-folder.mjs && node test/codes.mjs && node test/codes-api.mjs && node test/codes-delivery.mjs && node test/announce.mjs && node test/admin-app-contract.mjs && node test/admin-gate.mjs && node test/account-gateway.mjs && node test/account-link.mjs && node test/account-supervisor.mjs && node test/account-mail-env.mjs && node test/account-admin.mjs && node test/agent.mjs",
+    "test": "node test/smoke.mjs && node test/multisite.mjs && node test/stations.mjs && node test/stations-load.mjs && node test/cloud-mirror.mjs && node test/sitesync-load.mjs && node test/protected-domains.mjs && node test/tunnel-recovery.mjs && node test/tunnel-retry.mjs && node test/messenger.mjs && node test/notify.mjs && node test/notify-readkey.mjs && node test/control.mjs && node test/agent.mjs && node test/update.mjs && node test/update-packaged.mjs && node test/api-domain.mjs && node test/roles-logs.mjs && node test/public-port.mjs && node test/clients.mjs && node test/app-auth.mjs && node test/storage.mjs && node test/security.mjs && node test/auth-abuse.mjs && node test/refresh-token.mjs && node test/auth-e2e.mjs && node test/app-logins.mjs && node test/backup-restore.mjs && node test/platform.mjs && node test/docker.mjs && node test/processes.mjs && node test/platform-tools.mjs && node test/cron.mjs && node test/domains-tunnel.mjs && node test/otp-email.mjs && node test/smtp-client.mjs && node test/mail-settings.mjs && node test/portable-folder.mjs && node test/codes.mjs && node test/codes-api.mjs && node test/codes-delivery.mjs && node test/announce.mjs && node test/admin-app-contract.mjs && node test/admin-gate.mjs && node test/account-gateway.mjs && node test/account-link.mjs && node test/account-supervisor.mjs && node test/account-mail-env.mjs && node test/account-admin.mjs && node test/agent.mjs && node test/totp.mjs",
     "test:multisite": "node test/multisite.mjs",
     "test:stations": "node test/stations.mjs",
     "test:stations-load": "node test/stations-load.mjs",
@@ -29,7 +29,9 @@
     "test:update": "node test/update.mjs",
     "test:update-packaged": "node test/update-packaged.mjs",
     "test:agent": "node test/agent.mjs",
+    "test:totp": "node test/totp.mjs",
     "test:agent": "node test/agent.mjs",
+    "test:totp": "node test/totp.mjs",
     "doctor": "node --disable-warning=ExperimentalWarning scripts/doctor.mjs",
     "test:roles": "node test/roles-logs.mjs",
     "test:app-auth": "node test/app-auth.mjs",

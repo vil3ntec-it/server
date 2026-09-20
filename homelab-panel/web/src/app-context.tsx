@@ -38,7 +38,8 @@ type AppState = {
   t: (key: keyof Dict, vars?: Record<string, string | number>) => string;
   setLang: (l: Lang) => void;
   setTheme: (t: Theme) => void;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<{ totpRequired: true; ticket: string } | void>;
+  loginTotp: (ticket: string, code: string) => Promise<void>;
   setup: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshPublic: () => Promise<void>;
@@ -191,8 +192,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (u: string, p: string) => {
-    const res = await api<{ token: string; user: { username: string; role: PanelRole } }>('/api/auth/login', {
+    const res = await api<{ ok: boolean; totpRequired?: boolean; ticket?: string; token?: string; user?: { username: string; role: PanelRole } }>('/api/auth/login', {
       body: { username: u, password: p },
+    });
+    // ورودِ دوعاملی: رمز درست بود، حالا کدِ اپ لازم است
+    if (res.totpRequired && res.ticket) return { totpRequired: true as const, ticket: res.ticket };
+    setToken(res.token || null);
+    setUsername(res.user?.username || null);
+    setRole(res.user?.role || 'viewer');
+    setAuthed(true);
+  }, []);
+
+  const loginTotp = useCallback(async (ticket: string, code: string) => {
+    const res = await api<{ token: string; user: { username: string; role: PanelRole } }>('/api/auth/login/totp', {
+      body: { ticket, code },
     });
     setToken(res.token);
     setUsername(res.user.username);
@@ -248,6 +261,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setLang,
       setTheme,
       login,
+      loginTotp,
       setup,
       logout,
       refreshPublic,
