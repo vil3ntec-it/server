@@ -183,6 +183,9 @@ try {
     ['/discounts', 'تخفیف‌ها و کمپین'],
   ];
 
+  /*  صفحه‌هایی که از سرورِ حساب می‌خوانند — فقط این‌ها حق دارند ۴۰۹/۵۰۳ بدهند.  */
+  const ACCOUNT_PAGES = new Set(['/customers', '/sales', '/plans', '/plans?tab=discounts', '/notices', '/support', '/sync', '/logins', '/discounts']);
+
   for (const [route, heading] of PAGES) {
     consoleErrors.length = 0;
     await page.goto(`${BASE}${route}`, { waitUntil: 'networkidle' });
@@ -198,7 +201,11 @@ try {
      *  باید آرام نشانش بدهند. هر چیزِ دیگری — از جمله ۵۰۰ و استثنای
      *  واقعی — همچنان سنجه را می‌شکند.
      */
-    const jsErrors = consoleErrors.filter((line) => !/Failed to load resource.*\b(409|503)\b/.test(line));
+    //  و فقط برای همان صفحه‌ها، نه برای همهٔ پنل: اگر روزی صفحهٔ دیگری
+    //  ۴۰۹ بدهد باید دیده شود.
+    const fromAccount = ACCOUNT_PAGES.has(route);
+    const jsErrors = consoleErrors.filter((line) =>
+      !(fromAccount && /Failed to load resource.*\b(409|503)\b/.test(line)));
     check(`${route} بدونِ خطای جاوااسکریپت`, jsErrors.length === 0, jsErrors.join(' | '));
   }
 
