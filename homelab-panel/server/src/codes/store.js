@@ -20,6 +20,20 @@
 //  یک فایلِ جدا داخلِ پوشهٔ داده است.
 // ---------------------------------------------------------------------------
 import crypto from 'node:crypto';
+import { bumpSoon } from '../live/bus.js';
+
+/*
+ *  صفحهٔ «کدهای زنده» بی رفتن و برگشتن تازه می‌شود.
+ *
+ *  ⚠️ `bumpSoon` است نه `bump`: ساختنِ یک کد پشتِ سرِ هم چند ردیف را دست
+ *  می‌زند (باطل کردنِ کدِ قبلی، ردیفِ تازه، مهرِ صف)، و هر کدام یک پیام
+ *  یعنی چند بار خواندنِ همان صفحه.
+ *
+ *  ⚠️ و هیچ‌وقت نباید نوشتن را بخواباند — پس داخلِ try.
+ */
+function liveBump() {
+  try { bumpSoon('codes', 300); } catch { /* گذرگاه رفاه است، نه دفتر */ }
+}
 import { db } from '../db.js';
 
 db.exec(`
@@ -182,6 +196,7 @@ export function touchApp(slug) {
 /* ------------------------------ درخواست‌ها ------------------------------- */
 
 export function insertRequest(row) {
+  liveBump();
   return db
     .prepare(
       `INSERT INTO code_requests
@@ -264,6 +279,7 @@ export function countForIp(ip, sinceMs) {
 
 /** کدهای قبلیِ همین ایمیل باطل می‌شوند — همیشه فقط یک کدِ زنده */
 export function cancelLive(app, email, at = Date.now()) {
+  liveBump();
   return db
     .prepare(
       `UPDATE code_requests SET cancelled_at = ?
@@ -273,10 +289,12 @@ export function cancelLive(app, email, at = Date.now()) {
 }
 
 export function markUsed(id, at = Date.now()) {
+  liveBump();
   db.prepare('UPDATE code_requests SET used_at = ? WHERE id = ?').run(at, id);
 }
 
 export function bumpTries(id) {
+  liveBump();
   db.prepare('UPDATE code_requests SET tries = tries + 1 WHERE id = ?').run(id);
 }
 
@@ -305,6 +323,7 @@ export function claimNext(now = Date.now()) {
 }
 
 export function markSent(id, at = Date.now(), response = '') {
+  liveBump();
   db.prepare(
     `UPDATE code_requests
         SET send_state = 'sent', sent_at = ?, send_error = NULL, send_response = ?
@@ -329,6 +348,7 @@ export function deliveryOf(id) {
 
 /** ارسال نشد: یا دوباره در صف می‌نشیند، یا شکست‌خورده می‌ماند */
 export function markSendFailed(id, error, { retryAt = null } = {}) {
+  liveBump();
   db.prepare(
     `UPDATE code_requests
         SET send_state = ?, send_tries = send_tries + 1,

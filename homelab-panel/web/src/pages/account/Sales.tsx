@@ -34,7 +34,7 @@ export default function Sales() {
   const [tab, setTab] = useState('overview');
   const [app, setApp] = useState<Scope>('both');
 
-  const summary = useLoad<SalesSummary>('/api/account-admin/sales/summary');
+  const summary = useLoad<SalesSummary>('/api/account-admin/sales/summary', [], 'sales');
   const expiring = useLoad<{ expiring: Expiring[]; days: number }>(
     `/api/account-admin/sales/expiring?days=30${app === 'both' ? '' : `&app=${app}`}`, [app]);
   const debts = useLoad<{ debts: Debt[] }>(

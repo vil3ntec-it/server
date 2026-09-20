@@ -30,7 +30,7 @@ export default function Plans() {
   const [edit, setEdit] = useState<Plan | null>(null);
   const [discount, setDiscount] = useState<Plan | null>(null);
 
-  const plans = useLoad<PlansOut>(`/api/account-admin/plans?app=${app}`, [app]);
+  const plans = useLoad<PlansOut>(`/api/account-admin/plans?app=${app}`, [app], 'plans');
   const history = useLoad<{ history: PriceChange[] }>(`/api/account-admin/price-history?app=${app}`, [app]);
   const currency = app === 'pump' ? (plans.data?.config?.pump_currency || 'USD') : (plans.data?.config?.currency || 'AFN');
 

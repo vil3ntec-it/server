@@ -10,6 +10,7 @@
 //     می‌آید، که خودش پلِ فهرست‌سفید به سرورِ حساب است.
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useLive, type LiveTopic } from '../../useLive';
 import { ApiError, api } from '../../api';
 import { Notice } from '../../control/ui';
 
@@ -92,7 +93,18 @@ export type Load<T> = { data: T | null; error: string | null; code: string; busy
  * ⚠️ پیامِ خطا همانی است که پل داده (`account_server_down` و مانندش) —
  * این‌جا بازنویسی نمی‌شود، وگرنه کاربر می‌بیند «نشد» و نمی‌داند چه کند.
  */
-export function useLoad<T>(path: string | null, deps: unknown[] = []): Load<T> {
+/**
+ * خواندن از سرورِ حساب — و از امروز، **زنده**.
+ *
+ * ⚠️ `live` یک موضوعِ گذرگاه است. تا پیش از این این صفحه‌ها فقط یک بار
+ * سرِ باز شدن خوانده می‌شدند و **هیچ‌وقت** تازه نمی‌شدند: گزارشِ صاحب
+ * سامانه دقیقاً همین بود — «توی همون بخش استم و هیچی نمیاد؛ باید بیرون
+ * بشم و دوباره بیام». با یک واژه، هر صفحه‌ای که بخواهد زنده می‌شود.
+ *
+ * ⛔ و نبضِ کور نیست: تا سرورِ حساب نگوید چیزی عوض شده، هیچ درخواستی
+ * زده نمی‌شود.
+ */
+export function useLoad<T>(path: string | null, deps: unknown[] = [], live?: LiveTopic | LiveTopic[]): Load<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState('');
@@ -124,6 +136,12 @@ export function useLoad<T>(path: string | null, deps: unknown[] = []): Load<T> {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void reload(); }, [path, ...deps]);
+
+  /*
+   *  ⚠️ `useLive` بی‌قید صدا زده می‌شود و با موضوعِ خالی هیچ کاری نمی‌کند —
+   *  چون هوکِ React را نمی‌شود شرطی صدا زد.
+   */
+  useLive(live ?? [], () => { void reload(); });
 
   return { data, error, code, busy, reload };
 }

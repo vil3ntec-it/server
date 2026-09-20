@@ -72,7 +72,7 @@ export default function Customers() {
     return p.toString();
   }, [app, status, kind, city]);
 
-  const list = useLoad<ListOut>(`/api/account-admin/customers?${query}`, [query]);
+  const list = useLoad<ListOut>(`/api/account-admin/customers?${query}`, [query], 'customers');
   const rows = useMemo(() => {
     const all = list.data?.subscriptions || [];
     const needle = q.trim().toLowerCase();

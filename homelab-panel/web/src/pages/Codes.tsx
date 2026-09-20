@@ -11,6 +11,7 @@
 //  نمی‌کند و صفحه‌ای که باید دستی نو شود، همیشه کدِ مرده نشان می‌دهد.
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLive } from '../useLive';
 import {
   Bot,
   KeyRound,
@@ -183,14 +184,23 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
   useEffect(() => {
     alive.current = true;
     load();
-    const poll = setInterval(load, 2500);
+    //  ⚠️ این یکی نبضِ داده نیست، ساعتِ شمارشِ معکوسِ روی صفحه است و می‌ماند
     const clock = setInterval(() => setTick(Date.now()), 1000);
     return () => {
       alive.current = false;
-      clearInterval(poll);
       clearInterval(clock);
     };
   }, [load]);
+
+  /*
+   *  زنده — نبضِ دو‌ونیم‌ثانیه‌ایِ قدیمی برداشته شد.
+   *
+   *  دو سرچشمه، یک موضوع: کدهای خودِ پنل (`codes/store.js`) و کدهای
+   *  ورودِ سرورِ حساب که خودش همان لحظه خبر می‌دهد
+   *  (`POST /api/live/bump`). پس کدی که همین حالا ساخته شده روی صفحه
+   *  می‌نشیند، بی این‌که کسی جایی برود و برگردد.
+   */
+  useLive('codes', load);
 
   useEffect(() => {
     api<{ apps: CodeApp[] }>('/api/codes-admin/apps')

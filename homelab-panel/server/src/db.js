@@ -2,6 +2,8 @@
 // دیتابیس SQLite پنل (با SQLite داخلی خود Node — بدون کامپایل و بدون وابستگی)
 // ---------------------------------------------------------------------------
 import fs from 'node:fs';
+//  گذرگاهِ زنده — bus.js هیچ چیزی وارد نمی‌کند، پس حلقهٔ وابستگی نمی‌سازد
+import { bumpSoon } from './live/bus.js';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { paths } from './config.js';
@@ -150,6 +152,15 @@ const insEvent = db.prepare(
 export function logEvent(level, source, message, siteId = null) {
   try {
     insEvent.run(siteId, level, source, String(message).slice(0, 2000), Date.now());
+    /*
+     *  صفحهٔ «لاگ‌ها» همین حالا خبردار می‌شود.
+     *
+     *  ⚠️ `bumpSoon` است نه `bump`: یک کارِ اتوماسیون ده سطر می‌نویسد و
+     *  ده پیام یعنی ده بار خواندنِ همان صفحه. یک ثانیه جمع می‌شود.
+     *
+     *  ⚠️ و داخلِ همان `try`: گذرگاه حق ندارد نوشتنِ لاگ را بخواباند.
+     */
+    bumpSoon('logs', 1000);
   } catch { /* لاگ نباید برنامه را بخواباند */ }
 }
 

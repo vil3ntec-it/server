@@ -17,6 +17,7 @@
 //  بار می‌دوید و هیچ‌کدام در دفتر نبود.
 // ---------------------------------------------------------------------------
 import { db, logEvent } from '../db.js';
+import { bumpSoon } from '../live/bus.js';
 import { parseSchedule, nextRunAt } from '../system/cron.js';
 import { automationEvents, emit as emitEvent } from './events.js';
 import { raiseAlert } from '../control/alerts.js';
@@ -286,6 +287,8 @@ export async function runJob(name, { trigger = 'manual', payload = null } = {}) 
 
   const startedAt = Date.now();
   const info = q.insertRun().run(def.name, trig, startedAt, 'running', 0, payload == null ? null : JSON.stringify(payload).slice(0, 4000));
+  //  صفحهٔ «اتوماسیون» بی رفتن و برگشتن می‌بیند که کار شروع شد
+  bumpSoon('automation', 300);
   const runId = Number(info.lastInsertRowid);
   running.set(def.name, { runId, startedAt, trigger: trig });
 
@@ -342,6 +345,7 @@ export async function runJob(name, { trigger = 'manual', payload = null } = {}) 
   const errorText = lastError ? String(lastError?.message || lastError).slice(0, 2000) : null;
   try {
     q.finishRun().run(finishedAt, durationMs, status, attempt, errorText, output.slice(0, MAX_OUTPUT) || null, runId);
+    bumpSoon('automation', 300);
     q.afterRun().run(startedAt, status, durationMs, finishedAt, def.name);
     q.pruneRuns().run(def.name, def.name, def.quiet ? KEEP_RUNS_QUIET : KEEP_RUNS);
   } catch (e) {
