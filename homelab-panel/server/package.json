@@ -1,6 +1,6 @@
 {
   "name": "homelab-panel-server",
-  "version": "1.43.0",
+  "version": "1.44.0",
   "private": true,
   "description": "Backend of the home server management panel (Express + Socket.IO + SQLite)",
   "type": "module",
@@ -28,8 +28,6 @@
     "update": "node scripts/update.mjs",
     "test:update": "node test/update.mjs",
     "test:update-packaged": "node test/update-packaged.mjs",
-    "test:agent": "node test/agent.mjs",
-    "test:totp": "node test/totp.mjs",
     "test:agent": "node test/agent.mjs",
     "test:totp": "node test/totp.mjs",
     "doctor": "node --disable-warning=ExperimentalWarning scripts/doctor.mjs",
