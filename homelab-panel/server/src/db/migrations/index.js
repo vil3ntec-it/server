@@ -14,6 +14,7 @@ import { up as up002 } from './002_user_roles.js';
 import { up as up003 } from './003_backups.js';
 import { up as up004 } from './004_cron.js';
 import { up as up005 } from './005_automation.js';
+import { up as up006 } from './006_totp_sessions.js';
 
 export const migrations = [
   { version: 1, name: 'initial', up: up001 },
@@ -21,4 +22,5 @@ export const migrations = [
   { version: 3, name: 'backups', up: up003 },
   { version: 4, name: 'cron', up: up004 },
   { version: 5, name: 'automation', up: up005 },
+  { version: 6, name: 'totp_sessions', up: up006 },
 ];
