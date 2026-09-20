@@ -583,8 +583,19 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
     res.setHeader('Vary', 'Origin');
     //  ⚠️ X-App-* را برنامه‌ها روی هر درخواست می‌فرستند (اپِ کارمندان از مرورگر
     //  هم). بی این‌ها پیش‌پروازِ CORS رد می‌شد و ورودِ اپ بی هیچ پیامی می‌مرد.
+    //
+    //  ⛔ **این فهرست تنها فهرستی است که به مرورگر می‌رسد.** درگاه هر
+    //  `access-control-*`ی را که سرورِ حساب بفرستد دور می‌ریزد
+    //  (`account-proxy.js`)، پس اضافه کردنِ یک سرآیند در `shop/server`
+    //  از تونل **دیده نمی‌شود**. سرآیندِ تازه‌ای که هر برنامه‌ای بفرستد
+    //  باید همین‌جا هم نوشته شود، وگرنه فقط «net::ERR_FAILED» می‌گیرد —
+    //  نه ۴۰۰، نه ۴۰۳، هیچ.
+    //
+    //  `X-App` · `X-Device` · `X-Request-Id`: قراردادِ ورودِ کدِ ایمیلی و
+    //  Sync v1؛ نسخهٔ وبِ دکان روی هر درخواست می‌فرستدشان.
     res.setHeader('Access-Control-Allow-Headers',
-      'Content-Type, Authorization, X-Api-Key, X-Read-Key, X-App-Id, X-App-Version, X-App-Platform, X-Requested-With');
+      'Content-Type, Authorization, X-Api-Key, X-Read-Key, X-App, X-App-Id, '
+      + 'X-App-Version, X-App-Platform, X-Device, X-Request-Id, Idempotency-Key, X-Requested-With');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     if (req.method === 'OPTIONS') return res.status(204).end();
     next();
