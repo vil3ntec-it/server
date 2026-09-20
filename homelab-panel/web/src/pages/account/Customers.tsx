@@ -9,7 +9,8 @@
 //  ⛔ هر کارِ اثرگذار پشتِ یک پنجرهٔ تأیید است که **پیامدش** را می‌گوید، نه
 //     فقط «مطمئنید؟» — بندِ ۱۶ پرامپت.
 // ---------------------------------------------------------------------------
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { CreditCard, Search, Smartphone, Users } from 'lucide-react';
 
 import { api } from '../../api';
@@ -33,7 +34,27 @@ type Deed = {
 };
 
 export default function Customers() {
-  const [app, setApp] = useState<Scope>('both');
+  /*
+   *  دامنه از خودِ نشانی می‌آید تا منو بتواند مستقیم به «فروشگاه‌ها» یا
+   *  «پمپ‌بنزین‌ها» باز کند.
+   *
+   *  ⚠️ چرا لازم شد: در منو «پمپ‌بنزین‌ها» بود ولی هیچ دری به نامِ فروشگاه
+   *  نبود، و صاحبِ سامانه پرسید «کو بخشِ فروشگاه؟». حسابِ فروشگاه از روزِ
+   *  اول همین‌جا بود — فقط دیده نمی‌شد. پس صفحهٔ تازه‌ای ساخته نشد و همین
+   *  صفحه از نشانی فیلترِ اولش را می‌گیرد.
+   *
+   *  ⚠️ و `setApp` همچنان آزاد است: کاربری که کادر را عوض کند، نشانی
+   *  جلویش را نمی‌گیرد.
+   */
+  const [params] = useSearchParams();
+  const fromUrl = params.get('app');
+  const [app, setApp] = useState<Scope>(fromUrl === 'shop' || fromUrl === 'pump' ? fromUrl : 'both');
+
+  //  رفتن از «فروشگاه‌ها» به «پمپ‌بنزین‌ها» همان صفحه است؛ بی این، فیلتر عوض نمی‌شد
+  useEffect(() => {
+    if (fromUrl === 'shop' || fromUrl === 'pump') setApp(fromUrl);
+  }, [fromUrl]);
+
   const [status, setStatus] = useState('');
   const [kind, setKind] = useState('');
   const [city, setCity] = useState('');
