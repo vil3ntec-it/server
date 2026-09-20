@@ -72,7 +72,7 @@ import { rateLimit, pruneRateLimits, clientIp } from './lib/rate-limit.js';
 import { codeSettings } from './codes/settings.js';
 import { pinSitesRoot } from './sites/portable.js';
 import { startQueue, stopQueue } from './codes/queue.js';
-import { adminEnrollRoute, adminGate, adminHostGate, isAdminHost, GATE_ENROLL, GATE_PREFIX } from './api/admin-gate.js';
+import { adminEnrollRoute, adminGate, adminHostGate, isAdminHost, gateGuessIsNew, GATE_ENROLL, GATE_PREFIX } from './api/admin-gate.js';
 import { readyPayload } from './platform/health.js';
 import { createBackup } from './backup/index.js';
 import * as notify from './notify/index.js';
@@ -615,8 +615,18 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
    *  ⚠️ و **پیش از** express.json می‌نشیند: آن میان‌افزار جریانِ بدنه را
    *  می‌خورد و بعدش دیگر چیزی برای لوله کردن نمی‌ماند.
    */
+  /*
+   *  ⛔ countIf: فقط «حدسِ تازه» شمرده می‌شود، نه هر ۴۰۴.
+   *
+   *  بی این، نبضِ خودِ برنامهٔ مدیر — که هر شش ثانیه چراغِ وضعیت را
+   *  می‌سنجد — با یک کلیدِ کهنه بیست شکست در دو دقیقه می‌ساخت و چون
+   *  هیچ‌وقت نمی‌ایستاد، پنجره خالی نمی‌شد: از آن به بعد کلیدِ **تازه و
+   *  درست** هم ۴۲۹ می‌گرفت و گوشی برای همیشه بیرون می‌ماند، با سرورِ
+   *  روشن و آدرسِ درست. شرحش در src/api/admin-gate.js.
+   */
   const gateLimiter = rateLimitCfg({
     name: 'admin-gate', max: 20, windowMs: 10 * 60 * 1000, skipSuccess: true,
+    countIf: gateGuessIsNew,
   });
 
   /*
