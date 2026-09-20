@@ -181,10 +181,25 @@ try {
     ['/logins', 'کدِ ایمیلیِ مشتری‌ها'],
     //  نشانیِ حدسی که هیچ‌وقت صفحهٔ جدا نداشت، به تبِ خودش می‌رود
     ['/discounts', 'تخفیف‌ها و کمپین'],
+    /*
+     *  ⛔ دسترسی‌هایی که در ۱.۴۱.۰ با دفترِ قدیمی از پنل افتادند و در
+     *     ۱.۴۷.۰ برگشتند. بی این چهار خط، همان اتفاق بی‌صدا دوباره
+     *     می‌افتد: صفحه‌ای که در منو نیست، برای کاربر وجود ندارد.
+     */
+    ['/plans?tab=codes', 'کدهای اشتراک'],
+    ['/plans?tab=requests', 'درخواست‌های خرید'],
+    ['/customers?tab=visitors', 'بازدیدکننده‌ها'],
+    ['/account-server', 'برنامه‌های زیرِ مدیریت'],
+    ['/account-server?tab=email', 'ایمیلِ سرورِ حساب'],
+    //  نشانی‌های قدیمی نباید بشکنند
+    ['/vip-codes', 'کدهای اشتراک'],
+    ['/visitors', 'بازدیدکننده‌ها'],
   ];
 
   /*  صفحه‌هایی که از سرورِ حساب می‌خوانند — فقط این‌ها حق دارند ۴۰۹/۵۰۳ بدهند.  */
-  const ACCOUNT_PAGES = new Set(['/customers', '/sales', '/plans', '/plans?tab=discounts', '/notices', '/support', '/sync', '/logins', '/discounts']);
+  const ACCOUNT_PAGES = new Set(['/customers', '/sales', '/plans', '/plans?tab=discounts', '/notices', '/support', '/sync', '/logins', '/discounts',
+    '/plans?tab=codes', '/plans?tab=requests', '/customers?tab=visitors', '/account-server', '/account-server?tab=email',
+    '/vip-codes', '/visitors']);
 
   for (const [route, heading] of PAGES) {
     consoleErrors.length = 0;

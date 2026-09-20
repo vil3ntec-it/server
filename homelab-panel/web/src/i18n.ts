@@ -1016,6 +1016,7 @@ const fa = {
   /* ---------------------- مشتری‌ها، پول و پیام (سرورِ حساب) ---------------------- */
   navMoney: 'مشتری‌ها و فروش',
   acCustomers: 'مشتری‌ها و اشتراک‌ها',
+  acServer: 'سرورِ حساب',
   acSales: 'فروش',
   acPlans: 'پلن‌ها و تخفیف‌ها',
   acNotices: 'مرکز اعلان',
@@ -2032,6 +2033,7 @@ const en: Dict = {
   /* ------------------ customers, money and messages (account server) ------------------ */
   navMoney: 'Customers & sales',
   acCustomers: 'Customers & subscriptions',
+  acServer: 'Account server',
   acSales: 'Sales',
   acPlans: 'Plans & discounts',
   acNotices: 'Notification centre',
