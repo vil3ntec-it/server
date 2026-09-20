@@ -53,9 +53,10 @@ import { clientIp } from '../platform/security.js';
  * باید بیاید؛ وگرنه از تونل «not found» می‌گیرد و هیچ‌کس نمی‌فهمد چرا.
  */
 export const ACCOUNT_PREFIXES = Object.freeze([
-  'health', 'config', 'plans', 'terms',
-  'auth', 'location', 'me', 'shop', 'pump', 'events', 'sync',
+  'health', 'ready', 'config', 'plans', 'terms',
+  'auth', 'location', 'me', 'shop', 'pump', 'events', 'sync', 'errors',
   'admin', 'license', 'support', 'visit', 'vip', 'billing', 'sales',
+  'portal', 'downloads',
 ]);
 
 /** زیرِ ‎/api/v1‎ این‌ها مالِ خودِ این سرورند و هرگز رد نمی‌شوند. */
@@ -85,11 +86,24 @@ export function accountApiUrl() {
 const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
 
 /** سرآیندهایی که عبور می‌کنند — فهرستِ سفید. کوکی عمداً نیست. */
+/*
+ *  ⛔ این فهرست باید با `Access-Control-Allow-Headers`ِ پورتِ عمومی
+ *  (`src/index.js`) **یکی** بماند. سرآیندی که آن‌جا به مرورگر اعلام شود و
+ *  این‌جا نباشد، بی‌صدا دور ریخته می‌شود: درخواست ۲۰۰ می‌گیرد و سرورِ
+ *  حساب هویتِ دستگاه را اصلاً نمی‌بیند — و هیچ خطایی هیچ‌جا نیست.
+ *
+ *  چهار تای آخر را خودِ سرورِ حساب می‌خواند:
+ *    x-app · x-device · x-request-id ⇒ routes/app-auth.js (ورودِ کدِ ایمیلی)
+ *    x-app · x-device               ⇒ routes/errors.js · lib/sync-v1-live.js
+ *    x-app                          ⇒ lib/sync-v1-auth.js
+ *    idempotency-key                ⇒ routes/data.js (شناسهٔ عملیات)
+ */
 const PASS_HEADERS = [
   'content-type', 'content-length', 'authorization', 'accept', 'accept-language',
   'accept-encoding', 'origin', 'user-agent', 'x-app-id', 'x-app-version',
   'x-app-platform', 'x-requested-with', 'if-none-match', 'if-modified-since',
   'cache-control', 'range',
+  'x-app', 'x-device', 'x-request-id', 'idempotency-key',
 ];
 
 /** سرآیندهای اتصال — مالِ همین یک پرش‌اند و رد نمی‌شوند. */

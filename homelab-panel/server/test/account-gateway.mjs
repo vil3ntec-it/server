@@ -221,6 +221,61 @@ try {
     }
   }
 
+  /*
+   *  ⛔ و «پیش‌پرواز پذیرفت» با «به سرورِ حساب رسید» یکی نیست.
+   *
+   *  بندِ بالا فقط `Access-Control-Allow-Headers` را می‌سنجد — یعنی آن‌چه
+   *  به **مرورگر** گفته می‌شود. ولی درگاه سرآیندها را با یک فهرستِ سفیدِ
+   *  جدا (`PASS_HEADERS`) رد می‌کند، و سرآیندی که آن‌جا نباشد بی‌صدا
+   *  **دور ریخته می‌شود**: درخواست ۲۰۰ می‌گیرد و سرورِ حساب هویتِ دستگاه
+   *  را اصلاً نمی‌بیند. بدترین شکلِ خرابی، چون هیچ خطایی هیچ‌جا نیست.
+   *
+   *  این‌ها را خودِ سرورِ حساب می‌خواند:
+   *    x-app · x-device · x-request-id ⇒ routes/app-auth.js (ورودِ کدِ ایمیلی)
+   *    x-app · x-device               ⇒ routes/errors.js · lib/sync-v1-live.js
+   *    x-app                          ⇒ lib/sync-v1-auth.js
+   *    idempotency-key                ⇒ routes/data.js (شناسهٔ عملیات)
+   */
+  console.log('\n── سرآیندهای قرارداد واقعاً می‌رسند، نه فقط اعلام می‌شوند ──');
+  {
+    const sent = {
+      'content-type': 'application/json',
+      'x-app': 'shop',
+      'x-app-id': 'tohid-shop-app',
+      'x-device': 'dastgah-e-azmoon',
+      'x-app-version': '2.8.1',
+      'x-app-platform': 'web',
+      'x-request-id': 'req-42',
+      'idempotency-key': 'op-42',
+    };
+    await hit(PUBLIC, '/api/auth/register/start', { method: 'POST', body: '{}', headers: sent });
+    const got = (seen.at(-1) || {}).headers || {};
+    for (const h of Object.keys(sent)) {
+      if (h === 'content-type') continue;
+      check(`${h} به سرورِ حساب می‌رسد`, got[h] === sent[h], `${h}=${got[h] === undefined ? 'نرسید' : got[h]}`);
+    }
+  }
+
+  /*
+   *  ⛔ هر پیشوندی که `apiRouter`ِ سرورِ حساب سوار می‌کند
+   *  (`shop/server/src/app.js`) باید از این در رد شود. پیشوندی که در
+   *  `ACCOUNT_PREFIXES` نباشد از تونل «not found» می‌گیرد و **هیچ
+   *  آزمونی در ریپوی shop آن را نمی‌بیند** — چون آن‌جا سالم است.
+   */
+  console.log('\n── هر پیشوندِ سرورِ حساب از در رد می‌شود ──');
+  {
+    const PISHVAND = [
+      'health', 'ready', 'config', 'plans', 'terms', 'auth', 'sync', 'errors',
+      'location', 'me', 'shop', 'pump', 'events', 'admin', 'license',
+      'support', 'visit', 'vip', 'billing', 'portal', 'downloads',
+    ];
+    for (const pre of PISHVAND) {
+      const before = seen.length;
+      await hit(PUBLIC, `/api/${pre}/__probe`);
+      check(`/api/${pre} به سرورِ حساب می‌رود`, seen.length > before, 'به سرورِ حساب نرفت');
+    }
+  }
+
   console.log('\n── مسیرهای خودِ این سرور دست‌نخورده‌اند ──');
   {
     const before = seen.length;
