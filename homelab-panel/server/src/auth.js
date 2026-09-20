@@ -144,6 +144,26 @@ export function createSession(user, req) {
   return { token, sessionId: id, expiresAt: expires };
 }
 
+/**
+ * «آخرین فعالیت» هر نشست — تا در فهرستِ دستگاه‌ها معلوم باشد کدام زنده است.
+ * هر درخواست یک نوشتن نمی‌شود: فقط اگر از آخرین مهر یک دقیقه گذشته باشد.
+ */
+function touchSession(session) {
+  const now = Date.now();
+  if (session.last_seen_at && now - session.last_seen_at < 60_000) return;
+  try { q('UPDATE sessions SET last_seen_at = ? WHERE id = ?').run(now, session.id); } catch { /* ستونِ نبوده روی دیتابیسِ کهنه */ }
+}
+
+/** یک نشستِ مشخصِ همین کاربر را می‌بندد (خروجِ یک دستگاه از فهرست) */
+export function revokeSession(userId, sessionId) {
+  return q('DELETE FROM sessions WHERE id = ? AND user_id = ?').run(sessionId, userId).changes > 0;
+}
+
+/** خروج از همهٔ دستگاه‌های دیگر — نشستِ همین دستگاه می‌ماند تا کاربر بیرون نیفتد */
+export function revokeOtherSessions(userId, keepSessionId) {
+  return q('DELETE FROM sessions WHERE user_id = ? AND id <> ?').run(userId, keepSessionId).changes;
+}
+
 export function destroySession(sessionId) {
   q('DELETE FROM sessions WHERE id = ?').run(sessionId);
 }
@@ -162,6 +182,7 @@ export function verifyToken(token) {
     // حسابِ بسته‌شده باید همان لحظه بی‌اثر شود، نه وقتی توکنش منقضی شد
     const user = q('SELECT role, disabled FROM users WHERE id = ?').get(payload.uid);
     if (!user || user.disabled) return null;
+    touchSession(session);
     return { id: payload.uid, username: payload.username, sessionId: payload.sid, role: user.role };
   } catch {
     return null;
@@ -208,7 +229,7 @@ export function userRole(userId) {
 }
 
 export function listSessions(userId) {
-  return q('SELECT id, created_at, expires_at, user_agent, ip FROM sessions WHERE user_id = ? ORDER BY created_at DESC')
+  return q('SELECT id, created_at, expires_at, user_agent, ip, last_seen_at FROM sessions WHERE user_id = ? ORDER BY COALESCE(last_seen_at, created_at) DESC')
     .all(userId);
 }
 

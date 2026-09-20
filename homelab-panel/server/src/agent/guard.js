@@ -37,7 +37,9 @@ export function settings() {
   const num = (k, d) => { const v = Number(getSetting(k, '')); return Number.isFinite(v) && v > 0 ? v : d; };
   return {
     enabled: getSetting('agent_enabled', DEFAULTS.enabled ? '1' : '0') !== '0',
-    model: String(getSetting('agent_model', '') || ''),
+    //  نصب‌کننده مدل را از روی سخت‌افزار برمی‌گزیند و در HLP_AGENT_MODEL می‌گذارد؛
+    //  انتخابِ کاربر در پنل (agent_model) همیشه جلوتر است.
+    model: String(getSetting('agent_model', '') || process.env.HLP_AGENT_MODEL || ''),
     idleMinutes: num('agent_idle_minutes', DEFAULTS.idleMinutes),
     pauseAtC: num('agent_pause_c', DEFAULTS.pauseAtC),
     stopAtC: num('agent_stop_c', DEFAULTS.stopAtC),
@@ -100,8 +102,23 @@ export function guardStatus() {
   };
 }
 
+/**
+ * بی‌کاری ⇒ مدل از رَم بیرون. جدا از تیکِ حرارتی، چون موتورِ اتوماسیون این
+ * دو را دو کارِ جدا می‌داند (thermal-guard هر ۳۰ ثانیه، agent-idle-off هر
+ * دقیقه)؛ tick() خودش هر دو را می‌زند تا رفتارِ قدیمی و آزمون‌ها دست نخورد.
+ */
+export async function idleCheck() {
+  const cfg = settings();
+  const idle = state.modelLoaded && !state.busy && cfg.model && state.lastActivityAt && Date.now() - state.lastActivityAt > cfg.idleMinutes * 60e3;
+  if (!idle) return { unloaded: false, modelLoaded: state.modelLoaded, idleMinutes: cfg.idleMinutes };
+  await unload(cfg.model);
+  state.modelLoaded = false;
+  logEvent('info', 'agent', `مدل بعد از ${cfg.idleMinutes} دقیقه بی‌کاری از حافظه بیرون رفت`);
+  return { unloaded: true, modelLoaded: false, idleMinutes: cfg.idleMinutes };
+}
+
 /** یک تیک — جداست تا آزمون بتواند با دمای ساختگی صدایش بزند */
-export async function tick({ tempC: forced, notify } = {}) {
+export async function tick({ tempC: forced, notify, idle = true } = {}) {
   state.ticks++;
   const cfg = settings();
   let tempC = forced;
@@ -129,11 +146,7 @@ export async function tick({ tempC: forced, notify } = {}) {
   }
 
   // بی‌کاری ⇒ مدل از رَم بیرون
-  if (state.modelLoaded && !state.busy && cfg.model && state.lastActivityAt && Date.now() - state.lastActivityAt > cfg.idleMinutes * 60e3) {
-    await unload(cfg.model);
-    state.modelLoaded = false;
-    logEvent('info', 'agent', `مدل بعد از ${cfg.idleMinutes} دقیقه بی‌کاری از حافظه بیرون رفت`);
-  }
+  if (idle) await idleCheck();
   return guardStatus();
 }
 

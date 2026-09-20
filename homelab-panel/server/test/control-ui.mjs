@@ -126,7 +126,7 @@ try {
   }
   await page.waitForTimeout(300);
   const navText = await navBox.innerText();
-  for (const label of ['پروژه‌ها', 'سرورها', 'انبار', 'گاوصندوق', 'مانیتورینگ', 'لاگ‌ها', 'به‌روزرسانی', 'ترمینال']) {
+  for (const label of ['پروژه‌ها', 'سرورها', 'انبار', 'گاوصندوق', 'مانیتورینگ', 'لاگ‌ها', 'زمان‌بندی', 'اتوماسیون', 'به‌روزرسانی', 'ترمینال']) {
     check(`«${label}» با باز کردنِ گروه می‌آید`, navText.includes(label), navText.slice(0, 200));
   }
 
@@ -149,6 +149,9 @@ try {
     ['/logs', 'لاگ'],
     ['/control/updates', 'به‌روزرسانی'],
     ['/assistant', 'دستیار هوشمند'],
+    ['/cron', 'زمان‌بندی'],
+    //  موتورِ اتوماسیون (بخشِ ۱۰): جدولِ کارها باید با نامِ کارهای واقعی بیاید
+    ['/automation', 'پشتیبانِ روزانه'],
   ];
 
   for (const [route, heading] of PAGES) {

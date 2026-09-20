@@ -447,9 +447,17 @@ export async function applyUpdate(info, downloaded, { actor = 'admin', restart =
   }
   step('validate', 'ok', { version: newPkg.version });
 
-  // ۳) بکاپ از نصبِ فعلی
+  // ۳) بکاپ از نصبِ فعلی — و از **داده** (بندِ ۷: «بکاپ خودکار قبل از هر آپدیت»).
+  //    تا پیش از این فقط فایل‌های کد بکاپ می‌شد؛ دیتابیس و دفترِ سایت‌ها نه.
   let backup = null;
   try {
+    try {
+      const { createBackup: dataBackup } = await import('../storage/backup.js');
+      const data = await dataBackup({ kind: 'Manual', note: 'خودکار — پیش از به‌روزرسانی' });
+      step('backup-data', data.ok ? 'ok' : 'warn', data.ok ? { path: data.path } : data.error);
+    } catch (e) {
+      step('backup-data', 'warn', e.message);
+    }
     backup = await backupInstall('pre-update');
     step('backup', 'ok', { path: backup.path, files: backup.files, size: backup.size });
   } catch (e) {

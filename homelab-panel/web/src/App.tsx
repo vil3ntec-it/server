@@ -28,6 +28,7 @@ import DatabasesPage from './pages/Databases';
 import RuntimesPage from './pages/Runtimes';
 import TerminalPage from './pages/Terminal';
 import CronPage from './pages/Cron';
+import AutomationPage from './pages/Automation';
 import StationsPage from './pages/Stations';
 import AppLoginsPage from './pages/AppLogins';
 import StationProfile from './pages/StationProfile';
@@ -51,6 +52,7 @@ function Shell() {
         <Route path="/runtimes" element={<RuntimesPage />} />
         <Route path="/terminal" element={<TerminalPage />} />
         <Route path="/cron" element={<CronPage />} />
+        <Route path="/automation" element={<AutomationPage />} />
         <Route path="/tunnel-domains" element={<Navigate to="/domains?tab=tunnel" replace />} />
         <Route path="/monitoring" element={<MonitoringHub />} />
         <Route path="/network" element={<NetworkHub />} />

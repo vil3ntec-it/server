@@ -3,9 +3,12 @@ import { KeyRound, Loader2, Server, User } from 'lucide-react';
 import { useApp } from '../app-context';
 import { ApiError, logoUrl } from '../api';
 import { LANGUAGES } from '../i18n';
+import CodeInput from '../components/CodeInput';
 
 export default function Login() {
-  const { t, initialized, login, setup, serverName, hasLogo, lang, setLang, resolvedTheme, setTheme } = useApp();
+  const { t, initialized, login, loginTotp, setup, serverName, hasLogo, lang, setLang, resolvedTheme, setTheme } = useApp();
+  const [ticket, setTicket] = useState<string | null>(null);
+  const [codeReset, setCodeReset] = useState(0);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -16,8 +19,10 @@ export default function Login() {
     setError(null);
     setBusy(true);
     try {
-      if (initialized) await login(username, password);
-      else await setup(username, password);
+      if (initialized) {
+        const r = await login(username, password);
+        if (r?.totpRequired) setTicket(r.ticket);
+      } else await setup(username, password);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === 'invalid_credentials') setError(t('wrongCredentials'));
@@ -52,6 +57,39 @@ export default function Login() {
           </div>
         </div>
 
+        {ticket ? (
+          <div className="card rise p-5">
+            <h2 className="mb-1 text-sm font-semibold">{t('totpTitle')}</h2>
+            <p className="mb-4 text-xs text-ink-muted">{t('totpLoginHint')}</p>
+            <CodeInput
+              resetKey={codeReset}
+              disabled={busy}
+              onComplete={async (code) => {
+                setError(null);
+                setBusy(true);
+                try {
+                  await loginTotp(ticket, code);
+                } catch (err) {
+                  if (err instanceof ApiError && err.code === 'ticket_invalid') {
+                    setTicket(null);
+                    setError(t('sessionExpired'));
+                  } else setError(err instanceof ApiError ? t('totpWrong') : t('connectionLost'));
+                  setCodeReset((n) => n + 1);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            />
+            {error && (
+              <p className="mt-3 rounded-xl px-3 py-2 text-xs" style={{ background: 'color-mix(in srgb, var(--status-critical) 12%, transparent)', color: 'var(--status-critical)' }}>
+                {error}
+              </p>
+            )}
+            <button type="button" className="btn mt-4 w-full" onClick={() => { setTicket(null); setError(null); }}>
+              {t('back')}
+            </button>
+          </div>
+        ) : (
         <form onSubmit={submit} className="card rise p-5">
           <h2 className="mb-1 text-sm font-semibold">{initialized ? t('login') : t('createAdmin')}</h2>
           {!initialized && <p className="mb-4 text-xs text-ink-muted">{t('firstRunHint')}</p>}
@@ -99,6 +137,7 @@ export default function Login() {
             {initialized ? t('login') : t('createAdmin')}
           </button>
         </form>
+        )}
 
         <div className="mt-4 flex items-center justify-center gap-2">
           <select
