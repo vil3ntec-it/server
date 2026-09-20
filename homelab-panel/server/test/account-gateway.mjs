@@ -208,6 +208,17 @@ try {
     });
     const allow = String(res.headers.get('access-control-allow-headers') || '');
     check('پیش‌پروازِ CORS با X-App-Id پذیرفته می‌شود', res.status === 204 && /x-app-id/i.test(allow), `${res.status} ${allow}`);
+    /*
+     *  ⛔ و بقیهٔ سرآیندهای قراردادِ ورود و Sync v1. درگاه هر
+     *  `access-control-*`ی را که سرورِ حساب بدهد دور می‌ریزد، پس این
+     *  فهرست **تنها** چیزی است که مرورگر می‌بیند: سرآیندی که این‌جا
+     *  نباشد، هرچقدر هم در `shop/server` مجاز شده باشد، از تونل
+     *  «net::ERR_FAILED» می‌گیرد.
+     */
+    for (const h of ['x-app', 'x-device', 'x-app-version', 'x-request-id', 'idempotency-key']) {
+      check(`پیش‌پرواز ${h} را هم می‌پذیرد`,
+        new RegExp(`(^|,\\s*)${h}(\\s*,|$)`, 'i').test(allow), allow);
+    }
   }
 
   console.log('\n── مسیرهای خودِ این سرور دست‌نخورده‌اند ──');
