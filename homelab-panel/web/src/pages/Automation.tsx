@@ -7,6 +7,7 @@
 //  اجرای تمام‌شده هم از راه سوکت خبر می‌دهد.
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from 'react';
+import { useLive } from '../useLive';
 import { ChevronDown, ChevronUp, Play, RefreshCw, Workflow } from 'lucide-react';
 
 import { api } from '../api';
@@ -50,7 +51,6 @@ type RunRow = {
 
 type EventRow = { id: number; name: string; source: string; payload: Record<string, unknown>; at: number };
 
-const REFRESH_MS = 15_000;
 const fmt = (ms: number | null | undefined) => (ms ? new Date(ms).toLocaleString('fa-IR') : '—');
 const dur = (ms: number | null | undefined) => (ms == null ? '—' : ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`);
 
@@ -116,9 +116,15 @@ export default function AutomationPage() {
 
   useEffect(() => {
     void load();
-    const timer = setInterval(() => void load(true), REFRESH_MS);
-    return () => clearInterval(timer);
   }, [load]);
+
+  /*
+   *  زنده — نبضِ پانزده‌ثانیه‌ایِ قدیمی برداشته شد.
+   *
+   *  موتور سرِ **شروع و پایانِ** هر اجرا خبر می‌دهد، پس «دارد می‌دود» و
+   *  «تمام شد» همان لحظه دیده می‌شوند، نه با تأخیرِ تا پانزده ثانیه.
+   */
+  useLive('automation', () => { void load(true); });
 
   useEffect(() => {
     if (!socket) return;

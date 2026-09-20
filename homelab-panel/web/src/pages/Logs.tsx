@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useLive } from '../useLive';
 import { RefreshCw, ScrollText, Trash2 } from 'lucide-react';
 import { useApp } from '../app-context';
 import { api } from '../api';
@@ -23,9 +24,16 @@ export default function Logs() {
 
   useEffect(() => {
     load().catch(() => setEvents([]));
-    const timer = setInterval(() => load().catch(() => {}), 10000);
-    return () => clearInterval(timer);
   }, [load]);
+
+  /*
+   *  زنده — نبضِ ده‌ثانیه‌ایِ قدیمی برداشته شد.
+   *
+   *  هر `logEvent`ِ سرور همین‌جا دیده می‌شود، و تا سطرِ تازه‌ای نوشته نشود
+   *  هیچ درخواستی زده نمی‌شود. (پیش از این: هر ده ثانیه، حتی روی صفحه‌ای
+   *  که ساعت‌ها باز مانده و هیچ اتفاقی نیفتاده.)
+   */
+  useLive('logs', () => { load().catch(() => {}); });
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-4">

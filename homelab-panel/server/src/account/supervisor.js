@@ -29,6 +29,7 @@ import { logEvent } from '../db.js';
 import { accountApiUrl, setDownHint } from '../api/account-proxy.js';
 import { codeSettings } from '../codes/settings.js';
 import { mailReady } from '../codes/mail.js';
+import { livePushSecret } from '../routes/live.js';
 
 const RING = 200;
 const ring = [];
@@ -184,6 +185,17 @@ export function accountChildEnv(dir = resolveAccountDir()) {
     ADMIN_BOOTSTRAP_PASSWORD: creds.password,
     //  ایمیلِ کدهای ثبت‌نام — همان رباتِ ایمیلِ پنل، اگر تنظیم شده باشد
     ...mailEnvForChild(),
+    /*
+     *  🔴 در پشتیِ «زنده بودن» — فرزند می‌گوید کِی چیزی در دفترش عوض شد.
+     *
+     *  بی این، پنل فقط از راهِ دیدبانِ ده‌ثانیه‌ای می‌فهمید. با این، کدِ
+     *  ورودی که همین حالا ساخته شده **همان لحظه** روی صفحه می‌نشیند.
+     *
+     *  ⚠️ راز در حافظه ساخته می‌شود و با هر بالا آمدنِ پنل تازه است — روی
+     *  دیسک نمی‌نشیند و در پاسخِ هیچ مسیری هم برنمی‌گردد.
+     */
+    PANEL_LIVE_URL: `http://127.0.0.1:${config.port}/api/live/bump`,
+    PANEL_LIVE_KEY: livePushSecret(),
     //  .envِ خودِ پوشهٔ کد خوانده نشود — همه‌چیز از همین‌جا می‌آید
     ENV_FILE: path.join(data, 'env.none'),
     ...(dir ? {} : {}),

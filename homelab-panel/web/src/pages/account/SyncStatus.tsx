@@ -28,12 +28,12 @@ export default function SyncStatus() {
 
   const devices = useLoad<{ app: string; devices: SyncDevice[] }>(
     `/api/account-admin/sync/status?app=${app}${account.trim() ? `&account=${encodeURIComponent(account.trim())}` : ''}`,
-    [app, account]);
+    [app, account], 'sync');
   const conflicts = useLoad<{ conflicts: SyncConflict[] }>(
     account.trim() ? `/api/account-admin/sync/conflicts?app=${app}&account=${encodeURIComponent(account.trim())}` : null,
     [app, account]);
   const errors = useLoad<{ errors: ClientError[] }>(
-    `/api/account-admin/sync/errors?limit=200${errApp === 'both' ? '' : `&app=${errApp}`}`, [errApp]);
+    `/api/account-admin/sync/errors?limit=200${errApp === 'both' ? '' : `&app=${errApp}`}`, [errApp], 'sync');
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-2">

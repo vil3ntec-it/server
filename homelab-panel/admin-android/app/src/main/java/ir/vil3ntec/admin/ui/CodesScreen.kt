@@ -34,6 +34,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ir.vil3ntec.admin.data.Api
+import ir.vil3ntec.admin.data.Live
+import ir.vil3ntec.admin.data.LiveWatch
 import ir.vil3ntec.admin.data.Session
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -67,8 +69,28 @@ fun CodesScreen(session: Session) {
   var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
   val context = LocalContext.current
 
+  /*
+   *  ساعتِ شمارشِ معکوس — **فقط** برای عددِ روی صفحه، نه گرفتنِ داده.
+   *
+   *  ⚠️ این دو یکی نیستند و یکی کردنشان همان اشتباهِ قبلی بود: چون کد
+   *  ثانیه‌شمار دارد، حلقهٔ ساعت حلقهٔ خواندن هم شده بود و هر دو و نیم
+   *  ثانیه یک درخواست می‌رفت، تمامِ روز.
+   */
   LaunchedEffect(Unit) {
     while (true) {
+      delay(500)
+      now = System.currentTimeMillis()
+    }
+  }
+
+  /*
+   *  زنده — نبضِ خواندنِ قدیمی برداشته شد.
+   *
+   *  کدِ ورودی که همین حالا ساخته شده، از راهِ `notifyPanel('codes')`ِ
+   *  سرورِ حساب همان لحظه روی گوشی می‌نشیند. و تا کدی ساخته نشود، گوشی
+   *  هیچ درخواستی نمی‌زند.
+   */
+  LiveWatch(session, Live.CODES, Live.LOGINS) {
       try {
         val reply = withContext(Dispatchers.IO) { Api.liveCodes(session) }
         val array = reply.items("items")
@@ -90,12 +112,6 @@ fun CodesScreen(session: Session) {
       } catch (e: Exception) {
         error = e.message ?: "وصل نشد"
       }
-      // شمارشِ معکوس بینِ دو بار گرفتنِ داده هم باید جلو برود
-      repeat(5) {
-        delay(500)
-        now = System.currentTimeMillis()
-      }
-    }
   }
 
   if (codes == null && error.isNotBlank()) {

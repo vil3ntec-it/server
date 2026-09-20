@@ -36,7 +36,7 @@ export default function Support() {
   if (app !== 'both') qs.set('app', app);
   if (status) qs.set('status', status);
   qs.set('limit', '200');
-  const list = useLoad<{ threads: Thread[]; unread: number }>(`/api/account-admin/support/threads?${qs}`, [app, status]);
+  const list = useLoad<{ threads: Thread[]; unread: number }>(`/api/account-admin/support/threads?${qs}`, [app, status], 'support');
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -100,7 +100,8 @@ export default function Support() {
 function ThreadView({ thread, onClose, onChanged }: { thread: Thread; onClose: () => void; onChanged: () => Promise<void> }) {
   const [text, setText] = useState('');
   const [close, setClose] = useState(false);
-  const conv = useLoad<{ thread: Thread; messages: Message[] }>(`/api/account-admin/support/threads/${thread.id}?after=0`);
+  //  ⚠️ خودِ گفت‌وگو هم زنده است: پیامِ تازهٔ مشتری وسطِ باز بودنِ پنجره می‌نشیند
+  const conv = useLoad<{ thread: Thread; messages: Message[] }>(`/api/account-admin/support/threads/${thread.id}?after=0`, [], 'support');
   const bottom = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => { bottom.current?.scrollIntoView({ block: 'end' }); }, [conv.data]);

@@ -43,11 +43,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ir.vil3ntec.admin.data.Ago
+import ir.vil3ntec.admin.data.Live
+import ir.vil3ntec.admin.data.LiveWatch
 import ir.vil3ntec.admin.data.Api
 import ir.vil3ntec.admin.data.SUPPORT_SECTIONS
 import ir.vil3ntec.admin.data.Session
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -122,8 +123,14 @@ private fun ThreadList(
   var threads by remember(app) { mutableStateOf<List<Thread>?>(null) }
   var error by remember(app) { mutableStateOf("") }
 
-  LaunchedEffect(app) {
-    while (true) {
+  /*
+   *  زنده — نبضِ پنج‌ثانیه‌ایِ قدیمی برداشته شد.
+   *
+   *  سرورِ حساب سرِ هر پیامِ تازه خبر می‌دهد (`notifyPanel('support')`)، پس
+   *  پیامِ مشتری همان لحظه در فهرست می‌نشیند — و تا پیامی نیاید، گوشی
+   *  هیچ درخواستی نمی‌زند. پیش از این هر پنج ثانیه، تمامِ روز.
+   */
+  LiveWatch(session, Live.SUPPORT, key = app) {
       try {
         val reply = withContext(Dispatchers.IO) { Api.supportThreads(session, app) }
         val array = reply.items("threads")
@@ -154,8 +161,6 @@ private fun ThreadList(
       } catch (e: Exception) {
         error = e.message ?: "وصل نشد"
       }
-      delay(5_000)
-    }
   }
 
   when {
@@ -235,8 +240,11 @@ private fun ChatScreen(session: Session, thread: Thread, onBack: () -> Unit) {
     messages = messages + fresh.filter { it.id !in known }
   }
 
-  LaunchedEffect(thread.id) {
-    while (true) {
+  /*
+   *  زنده — نبضِ سه‌ثانیه‌ایِ قدیمی برداشته شد. پیامِ تازهٔ مشتری وسطِ باز
+   *  بودنِ همین گفت‌وگو می‌نشیند، بی این‌که کسی جایی برود و برگردد.
+   */
+  LiveWatch(session, Live.SUPPORT, key = thread.id) {
       try {
         /*
          *  ⚠️ سرور «after» را با زمانِ ساخت می‌سنجد (created_at > ?), نه
@@ -250,8 +258,6 @@ private fun ChatScreen(session: Session, thread: Thread, onBack: () -> Unit) {
       } catch (e: Exception) {
         error = e.message ?: "وصل نشد"
       }
-      delay(3_000)
-    }
   }
 
   LaunchedEffect(messages.size) {

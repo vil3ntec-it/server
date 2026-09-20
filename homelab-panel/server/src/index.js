@@ -20,6 +20,10 @@ import { createStations } from './stations/index.js';
 import { startMirror } from './stations/cloud-mirror.js';
 import { setMirror } from './state.js';
 import { attachRealtime, broadcastMetrics } from './realtime.js';
+import { attachIo as attachLiveIo, liveStats } from './live/bus.js';
+import { startAccountWatch } from './live/watch.js';
+import liveRoutes from './routes/live.js';
+import { cloudRaw } from './stations/cloud.js';
 import { startCollector, stopCollector } from './metrics/index.js';
 import { startWinSampler, stopWinSampler } from './metrics/win-sampler.js';
 import { readInterfaces } from './metrics/network.js';
@@ -377,6 +381,13 @@ app.use('/api/runtimes', runtimeRoutes);
 app.use('/api/cron', cronRoutes);
 // موتورِ اتوماسیون — کارهای داخلیِ پنل (پشتیبان، پایش، نگهداری) با دفترِ اجرا
 app.use('/api/automation', automationRoutes);
+/*
+ *  🔴 گذرگاهِ زنده — «چه چیزی عوض شد»، نه «این هم کلِ داده».
+ *
+ *  ⛔ فقط پورتِ پنل. جریانِ زنده یعنی دانستنِ این‌که همین حالا چه کسی چه
+ *  کاری کرد، و آن از اینترنت درز نمی‌کند. شرحش در src/live/bus.js.
+ */
+app.use('/api/live', liveRoutes);
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
 // Agentها و خودِ برنامه‌ها درِ ورودیِ خودشان را دارند (امضای HMAC / توکنِ پروژه)
@@ -516,6 +527,24 @@ export const scheme = panelSecure ? 'https' : 'http';
 // ۱) Socket.IO (روی مسیر /socket.io/)
 const io = attachRealtime(httpServer);
 setIo(io);
+attachLiveIo(io);
+
+/*
+ *  دیدبانِ سرورِ حساب — تورِ ایمنیِ گذرگاه.
+ *
+ *  راهِ اصلی pushِ خودِ سرورِ حساب است؛ این برای سرورِ حسابِ قدیمی است و
+ *  برای لحظه‌ای که آن درخواست گم شود.
+ *
+ *  ⛔ و فقط وقتی می‌دود که کسی نگاه کند: `clientsCount` صفر یعنی صفرِ
+ *  مطلق. همان خواستهٔ «روی کامپیوتر فشاری نیاره».
+ */
+startAccountWatch({
+  viewerCount: () => (io?.engine?.clientsCount || 0) + liveStats().sse,
+  stamps: async () => {
+    const out = await cloudRaw('GET', '/api/admin/stamps');
+    return out && typeof out === 'object' ? out.stamps || out : null;
+  },
+});
 
 // ۲) سرورِ سایت روی همان پورت — هر ارتقای WebSocket که مسیرش /socket.io نباشد
 // بخشِ پمپ‌بنزین‌ها — پیش از سرورِ سایت ساخته می‌شود چون مسیرِ ارتقایش

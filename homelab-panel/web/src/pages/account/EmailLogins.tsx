@@ -43,8 +43,8 @@ export default function EmailLogins() {
   if (app !== 'both') qs.set('app', app);
   if (email.trim()) qs.set('email', email.trim());
   qs.set('limit', '100');
-  const list = useLoad<ListOut>(`/api/account-admin/logins?${qs}`, [app, email]);
-  const stats = useLoad<StatsOut>('/api/account-admin/logins/stats?hours=24');
+  const list = useLoad<ListOut>(`/api/account-admin/logins?${qs}`, [app, email], 'logins');
+  const stats = useLoad<StatsOut>('/api/account-admin/logins/stats?hours=24', [], 'logins');
 
   return (
     <div className="flex flex-col gap-4">

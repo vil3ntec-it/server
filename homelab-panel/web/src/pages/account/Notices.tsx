@@ -106,7 +106,7 @@ export default function Notices() {
   const [report, setReport] = useState<string | null>(null);
   const [remove, setRemove] = useState<Notice | null>(null);
 
-  const list = useLoad<{ notices: Notice[] }>('/api/account-admin/notices?limit=200');
+  const list = useLoad<{ notices: Notice[] }>('/api/account-admin/notices?limit=200', [], 'notices');
   const templates = useLoad<{ templates: NoticeTemplate[]; variables: string[] }>('/api/account-admin/notice-templates');
 
   return (
