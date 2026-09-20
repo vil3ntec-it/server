@@ -195,30 +195,50 @@ try {
 
   /* ─────────────────────── روشن/خاموش و زمان‌بند ────────────────────────── */
   console.log('\n── روشن/خاموش و زمان‌بند ──');
-  const off = await api('PATCH', '/api/automation/jobs/test-minutely', { enabled: false });
-  check('خاموش شد و next_run_at خالی', off.status === 200 && off.json?.job?.enabled === false && off.json?.job?.next_run_at == null, JSON.stringify(off.json));
-  {
-    // وقتش را دستی به گذشته می‌بریم — کارِ خاموش نباید بدود
+  /*
+   *  ⚠️ `test-minutely` واقعاً دقیقه‌ای است و زمان‌بند از لحظهٔ بالا آمدنِ
+   *  سرور رویش کار می‌کند. پس «تا حالا هیچ‌وقت نباید دویده باشد» ادعای
+   *  غلطی بود: اگر آزمون از مرزِ یک دقیقه رد می‌شد — روی رانرِ کندِ CI
+   *  همین شد (اجرای #۱۵۴) — یک اجرای کاملاً **سالم** آن‌جا بود و سنجه
+   *  سرخ می‌شد در حالی که هیچ چیزی خراب نبود. و برعکسش هم بود: سنجهٔ
+   *  «کارِ روشن دوید» می‌توانست با همان اجرای قدیمی سبزِ دروغ بدهد.
+   *
+   *  پس ترتیب عوض شد تا به ساعتِ دیوار بند نباشد: اول عمداً یک اجرای
+   *  زمان‌بندی‌شده می‌سازیم (همان شرطی که CI را سرخ کرد)، بعد خاموش
+   *  می‌کنیم و می‌پرسیم «اجرای **تازه‌ای** اضافه شد؟». مرز، شناسهٔ آخرین
+   *  اجراست، نه صفر بودنِ فهرست.
+   */
+  const runsOf = async () => (await api('GET', '/api/automation/jobs/test-minutely/runs')).json?.items || [];
+  const maxId = (rows) => rows.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
+  const pushToPast = () => {
     const db = openDb();
     db.prepare("UPDATE automation_jobs SET next_run_at = ? WHERE name = 'test-minutely'").run(Date.now() - 1000);
     db.close();
-  }
+  };
+
+  //  ۱) کارِ روشن با وقتِ گذشته باید در تیکِ بعدی بدود
+  let mark = maxId(await runsOf());
+  pushToPast();
   await wait(TICK_MS * 2 + 500);
-  let mRuns = (await api('GET', '/api/automation/jobs/test-minutely/runs')).json?.items || [];
-  check('کارِ خاموش با وقتِ گذشته هم اجرا نشد', mRuns.length === 0, JSON.stringify(mRuns));
+  let fresh = (await runsOf()).filter((r) => Number(r.id) > mark);
+  check('کارِ روشن با وقتِ گذشته در تیکِ بعدی اجرا شد (trigger=scheduled)', fresh.some((r) => r.trigger === 'scheduled' && r.status === 'ok'), JSON.stringify(fresh));
+  const after = (await api('GET', '/api/automation/jobs/test-minutely')).json?.job;
+  check('و next_run_at دوباره به آینده رفت', after?.next_run_at > Date.now() && after?.last_status === 'ok', String(after?.next_run_at));
+
+  //  ۲) حالا که یک اجرای واقعی در دفتر هست، خاموشش می‌کنیم
+  mark = maxId(await runsOf());
+  const off = await api('PATCH', '/api/automation/jobs/test-minutely', { enabled: false });
+  check('خاموش شد و next_run_at خالی', off.status === 200 && off.json?.job?.enabled === false && off.json?.job?.next_run_at == null, JSON.stringify(off.json));
+  pushToPast();   // وقتش را دستی به گذشته می‌بریم — کارِ خاموش نباید بدود
+  await wait(TICK_MS * 2 + 500);
+  fresh = (await runsOf()).filter((r) => Number(r.id) > mark);
+  check('کارِ خاموش با وقتِ گذشته هم اجرا نشد', fresh.length === 0, JSON.stringify(fresh));
+
+  //  ۳) و روشن کردنِ دوباره، وقتِ بعدی را سرِ دقیقه می‌گذارد
   const on = await api('PATCH', '/api/automation/jobs/test-minutely', { enabled: true });
   const next = on.json?.job?.next_run_at;
   check('روشن شد و next_run_at سرِ دقیقهٔ بعد است', on.json?.job?.enabled === true && next > Date.now() && new Date(next).getSeconds() === 0 && next - Date.now() <= 60_000, String(next));
-  {
-    const db = openDb();
-    db.prepare("UPDATE automation_jobs SET next_run_at = ? WHERE name = 'test-minutely'").run(Date.now() - 1000);
-    db.close();
-  }
-  await wait(TICK_MS * 2 + 500);
-  mRuns = (await api('GET', '/api/automation/jobs/test-minutely/runs')).json?.items || [];
-  check('کارِ روشن با وقتِ گذشته در تیکِ بعدی اجرا شد (trigger=scheduled)', mRuns.some((r) => r.trigger === 'scheduled' && r.status === 'ok'), JSON.stringify(mRuns));
-  const after = (await api('GET', '/api/automation/jobs/test-minutely')).json?.job;
-  check('و next_run_at دوباره به آینده رفت', after?.next_run_at > Date.now() && after?.last_status === 'ok', String(after?.next_run_at));
+
   const audT = (await api('GET', '/api/app-admin/audit?action=automation.toggle')).json?.entries || [];
   check('روشن/خاموش در دفترِ حسابرسی است', audT.length >= 2 && audT.every((e) => e.target === 'test-minutely'));
 

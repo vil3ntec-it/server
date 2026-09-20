@@ -100,7 +100,7 @@ sudo VILL3N_ADMIN_EMAIL=owner@example.com \
 | ۱۵ | `install_cli` | دستورِ `vill3n` در `/usr/local/bin` (پوسته‌ای روی `homelab-panel/server/bin/vill3n.mjs` که `VILL3N_ROOT` را هم می‌برد) |
 | ۱۶ | `setup_systemd` | سرویسِ `vill3n-panel` با `EnvironmentFile=secrets/core.env`، `Restart=always` — یعنی **بعد از هر ری‌استارت و هر قطعِ برق خودش بالا می‌آید** |
 | ۱۷ | `setup_caddy` | با دامنه: `<دامنه>`، `api.`، `admin.` ⇒ پورتِ عمومی، و `www.` تغییرِ مسیر. بی دامنه: `http://:80` ⇒ پورتِ عمومی. پیش از نوشتن `caddy validate` می‌شود |
-| ۱۸ | `setup_firewall` | `deny incoming`، باز: SSH (پورتِ واقعی از `sshd_config`)، ۸۰، ۴۴۳. **پورتِ پنل فقط از ۱۰/۸، ۱۷۲.۱۶/۱۲، ۱۹۲.۱۶۸/۱۶ و `tailscale0`** — هرگز از اینترنت |
+| ۱۸ | `setup_firewall` | `deny incoming`، باز: SSH (پورتِ واقعی از `sshd_config` و `sshd_config.d/*.conf`)، ۸۰، ۴۴۳. **پورتِ پنل فقط از ۱۰/۸، ۱۷۲.۱۶/۱۲، ۱۹۲.۱۶۸/۱۶ و `tailscale0`** — هرگز از اینترنت |
 | ۱۹ | `setup_fail2ban` | jailِ `sshd`: ۵ تلاش، ۱۰ دقیقه، بانِ یک‌ساعته |
 | ۲۰ | `setup_unattended` | به‌روزرسانیِ امنیتیِ خودکارِ apt |
 | ۲۱ | `setup_cloudflared` | اگر توکن داده شده: `cloudflared service install` و سرویسِ دائمی |
