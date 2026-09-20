@@ -348,3 +348,61 @@ async function authedSend(method, path, { query = {}, body = null, creds, token:
   }
   return out;
 }
+
+/**
+ * همان در، ولی پاسخ **متن** است نه JSON.
+ *
+ * ⚠️ یک مصرف بیشتر ندارد و باید همان بماند: رسید و فاکتورِ سرورِ حساب
+ * یک صفحهٔ HTMLِ چاپیِ فارسی است، نه PDF — مرورگر خودش «چاپ ⇒ ذخیره به
+ * PDF» دارد و هیچ کتابخانهٔ PDFی نه این‌جا هست نه آن‌جا. اگر این تابع
+ * JSON می‌خواست، آن صفحه را باید دوباره در پنل می‌ساختیم و همان لحظه
+ * دو حقیقتِ جدا برای یک رسید می‌داشتیم.
+ *
+ * ⛔ همان فهرستِ سفید و همان قفلِ ‎/api/admin/‎؛ این تابع دری تازه باز
+ * نمی‌کند، فقط شکلِ خواندنِ پاسخ فرق دارد.
+ */
+export async function cloudRawText(method, path, { query = {} } = {}) {
+  const m = String(method || 'GET').toUpperCase();
+  const p = String(path || '');
+  if (m !== 'GET' || !/^\/api\/admin\/[A-Za-z0-9_\-/]+$/.test(p) || p.includes('..')) {
+    const err = new Error('این مسیر از پنل باز نیست');
+    err.code = 'path_not_allowed';
+    err.status = 400;
+    throw err;
+  }
+  const creds = autoCreds();
+  let t = creds ? await autoToken() : token();
+  if (!t) {
+    const err = new Error('هنوز با حسابِ مدیر به سرورِ حساب وارد نشده‌اید — از پنل ← پمپ‌ها ← تنظیمات و داده‌ها، یا از همین اپ');
+    err.code = 'not_linked';
+    err.status = 409;
+    throw err;
+  }
+  const qs = new URLSearchParams(
+    Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== '')
+  ).toString();
+  const url = `${cloudTarget()}${p}${qs ? `?${qs}` : ''}`;
+  const send = (bearer) => dial(url, { method: m, headers: { authorization: `Bearer ${bearer}` } });
+
+  let res = await send(t);
+  if (res.status === 401 && creds) {
+    t = await autoToken(true);
+    res = await send(t);
+  }
+  const text = await res.text().catch(() => '');
+  if (res.status === 401) {
+    const err = new Error('نشستِ مدیر روی سرورِ حساب تمام شده — دوباره وارد شوید');
+    err.code = 'cloud_session_expired';
+    err.status = 401;
+    throw err;
+  }
+  if (!res.ok) {
+    let payload = null;
+    try { payload = JSON.parse(text); } catch { /* متنِ ساده */ }
+    const err = new Error(payload?.error?.message || 'سرورِ حساب جواب نداد');
+    err.code = payload?.error?.code || 'cloud_error';
+    err.status = res.status;
+    throw err;
+  }
+  return { text, contentType: res.headers.get('content-type') || 'text/html; charset=utf-8' };
+}

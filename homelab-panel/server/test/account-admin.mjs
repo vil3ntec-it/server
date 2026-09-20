@@ -71,6 +71,44 @@ const threads = [
   { id: 'th1', app: 'shop', userId: 'u1', shopId: 's1', stationId: '', who: 'کریم', status: 'open', unreadAdmin: 1, unreadUser: 0, lastMessage: 'سلام', lastSender: 'user', createdAt: NOW - DAY, updatedAt: NOW - 3600e3, accountName: 'کریم', shopName: 'دکانِ کریم' },
   { id: 'th2', app: 'pump', userId: '', shopId: '', stationId: 'st1', who: 'پمپِ یک', status: 'open', unreadAdmin: 0, unreadUser: 0, lastMessage: 'تیل', lastSender: 'user', createdAt: NOW - 2 * DAY, updatedAt: NOW - 7200e3, stationName: 'پمپِ یک' },
 ];
+const salesSubs = [
+  { id: 7, app: 'shop', tenantId: 's1', tenantName: 'دکانِ کریم', ownerUserId: 'u1', ownerName: 'کریم', ownerEmail: 'karim@x.com',
+    ownerPhone: '0700', city: 'کابل', plan: 'm1', planTitle: 'یک‌ماهه', status: 'active', active: true,
+    startsAt: NOW - 10 * DAY, endsAt: NOW + 20 * DAY, daysLeft: 20, permanent: false, price: 500, currency: 'AFN',
+    paid: 300, features: ['sync'], note: 'مشتریِ قدیمی' },
+  { id: 90, app: 'pump', tenantId: 'st1', tenantName: 'پمپِ یعقوبی', ownerUserId: 'u2', ownerName: 'زهرا', ownerEmail: 'z@x.com',
+    ownerPhone: '0711', city: 'هرات', plan: 'perm', planTitle: 'دائمی', status: 'active', active: true,
+    startsAt: NOW - 5 * DAY, endsAt: NOW + 3650 * DAY, daysLeft: 3650, permanent: true, price: 600, currency: 'USD',
+    paid: 600, features: [], note: '' },
+];
+const pumpSubs = [
+  { id: 90, station_id: 'st1', plan: 'perm', status: 'active', starts_at: NOW - 5 * DAY, ends_at: NOW + 3650 * DAY,
+    max_devices: 5, grace_days: 2, note: 'یادداشتِ پمپ' },
+];
+const payments = [
+  { id: 'pay1', app: 'shop', tenantId: 's1', subscriptionId: '7', amount: 300, currency: 'AFN', method: 'cash',
+    receiptNo: '2026-00001', note: '', paidAt: NOW - 3 * DAY, createdAt: NOW - 3 * DAY, tenantName: 'دکانِ کریم', ownerName: 'کریم' },
+];
+const addons = [
+  { id: 'adn1', app: 'shop', subscriptionId: '7', tenantId: 's1', feature: 'cloud', price: 100, currency: 'AFN', note: '', createdBy: 'a1', createdAt: NOW, removedAt: null },
+];
+const priceHistory = [
+  { id: 'pph1', app: 'shop', plan: 'm1', prevPrice: 400, price: 500, currency: 'AFN', changedAt: NOW - 10 * DAY, changedBy: 'a1' },
+];
+const codes = [
+  { id: 'dsc1', code: 'NOWRUZ', app: 'shop', plan: '', kind: 'percent', value: 20, currency: 'AFN', userId: '',
+    expiresAt: NOW + 30 * DAY, maxUses: 100, oncePerCustomer: true, uses: 3, note: '', status: 'active', createdBy: 'a1', createdAt: NOW - DAY },
+];
+const campaigns = [
+  { id: 'cmp1', name: 'عید', app: 'shop', filter: { kind: 'all' }, discountCodeId: 'dsc1', noticeId: 'ntc1', status: 'active', createdBy: 'a1', createdAt: NOW - DAY },
+];
+const notices = [
+  { id: 'ntc1', app: 'shop', audience: { kind: 'all' }, channels: ['inapp', 'email'], title: 'سلام', body: 'متن',
+    templateKey: '', variables: {}, scheduleAt: null, repeat: 'none', status: 'sent', system: false,
+    createdBy: 'a1', createdAt: NOW - DAY, updatedAt: NOW - DAY, sentAt: NOW - DAY, runs: 1, counts: { sent: 2 } },
+];
+const previewCalls = [];
+const testCalls = [];
 let nextSubId = 8;
 const fake = http.createServer((req, res) => {
   let raw = '';
@@ -175,6 +213,207 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/subscriptions/expiring') return j(200, { expiring: [{ id: 7, shopId: 's1', daysLeft: 20 }], serverTime: NOW });
     if (p === '/api/admin/stats') return j(200, { users: 2, shops: 2 });
     if (p === '/api/admin/overview') return j(200, { expiringCount: 1, supportUnread: 1 });
+    /* ─── مشتری‌ها، پول و پیام — همان شکلِ shop/server ─────────────── */
+    if (p === '/api/admin/sales/subscriptions' && req.method === 'GET') {
+      const want = u.searchParams.get('app') || '';
+      const rows = salesSubs.filter((s) => !want || s.app === want)
+        .filter((s) => !u.searchParams.get('status') || s.status === u.searchParams.get('status'))
+        .filter((s) => !u.searchParams.get('kind') || (u.searchParams.get('kind') === 'permanent' ? s.permanent : s.plan === u.searchParams.get('kind')))
+        .filter((s) => !u.searchParams.get('city') || String(s.city).includes(u.searchParams.get('city')));
+      return j(200, { subscriptions: rows, serverTime: NOW });
+    }
+    if (p === '/api/admin/sales/summary') {
+      return j(200, {
+        revenue: { today: { shop: { AFN: 500 }, pump: {} }, month: { shop: { AFN: 1500 }, pump: { USD: 120 } }, year: { shop: { AFN: 9000 }, pump: { USD: 600 } } },
+        series: [{ month: '2026-08', from: NOW - 30 * DAY, to: NOW, shop: { AFN: 1500 }, pump: { USD: 120 }, payments: 2 }],
+        counts: { shop: { active: 1, expired: 0, suspended: 0, tenants: 2 }, pump: { active: 1, expired: 0, suspended: 0, tenants: 1 } },
+        serverTime: NOW,
+      });
+    }
+    if (p === '/api/admin/sales/expiring') {
+      return j(200, { expiring: [{ subscriptionId: 7, app: 'shop', tenantId: 's1', tenantName: 'دکانِ کریم', ownerName: 'کریم', ownerEmail: 'karim@x.com', ownerPhone: '0700', plan: 'm1', status: 'active', endsAt: NOW + 20 * DAY, graceEndsAt: NOW + 20 * DAY, daysLeft: 20, note: '' }], days: Number(u.searchParams.get('days')) || 7, serverTime: NOW });
+    }
+    if (p === '/api/admin/sales/expiring/remind' && req.method === 'POST') return j(200, { noticeId: 'ntc9', sent: 3, failed: 0 });
+    if (p === '/api/admin/sales/debts') return j(200, { debts: [{ ...salesSubs[0], price: 500, debt: 200 }], serverTime: NOW });
+
+    if (p === '/api/admin/payments' && req.method === 'GET') {
+      const want = u.searchParams.get('app') || '';
+      const tid = u.searchParams.get('tenantId') || '';
+      return j(200, { payments: payments.filter((x) => (!want || x.app === want) && (!tid || x.tenantId === tid)) });
+    }
+    if (p === '/api/admin/payments' && req.method === 'POST') {
+      const row = { id: `pay${payments.length + 1}`, app: body.app, tenantId: body.tenantId, subscriptionId: '', amount: body.amount, currency: body.currency, method: body.method, receiptNo: body.receiptNo || '2026-00002', note: body.note || '', paidAt: body.paidAt || NOW, createdAt: NOW, tenantName: 'دکانِ کریم' };
+      payments.push(row);
+      return j(201, { payment: row });
+    }
+    if ((m = /^\/api\/admin\/payments\/([^/]+)$/.exec(p)) && req.method === 'PUT') {
+      const row = payments.find((x) => x.id === m[1]);
+      if (!row) return j(404, { error: { code: 'payment_not_found', message: 'پرداخت پیدا نشد' } });
+      Object.assign(row, { amount: body.amount ?? row.amount, note: body.note ?? row.note });
+      return j(200, { payment: row });
+    }
+    if ((m = /^\/api\/admin\/payments\/([^/]+)$/.exec(p)) && req.method === 'DELETE') {
+      const i = payments.findIndex((x) => x.id === m[1]);
+      if (i < 0) return j(404, { error: { code: 'payment_not_found', message: 'پرداخت پیدا نشد' } });
+      payments.splice(i, 1);
+      return j(200, { ok: true });
+    }
+    if ((m = /^\/api\/admin\/payments\/([^/]+)\/receipt$/.exec(p))) {
+      if (!payments.some((x) => x.id === m[1])) return j(404, { error: { code: 'payment_not_found', message: 'پرداخت پیدا نشد' } });
+      res.statusCode = 200;
+      res.setHeader('content-type', 'text/html; charset=utf-8');
+      return res.end('<!DOCTYPE html><html lang="fa" dir="rtl"><body><h1>رسیدِ پرداخت</h1></body></html>');
+    }
+
+    //  کارهای روی یک اشتراک — دکان و پمپ، همان دو پیشوندِ سرورِ حساب
+    if ((m = /^\/api\/admin(\/pump)?\/subscriptions\/([^/]+)\/permanent$/.exec(p)) && req.method === 'POST') {
+      return j(200, { subscription: { id: m[2], plan: 'perm', app: m[1] ? 'pump' : 'shop' }, state: { active: true }, permanent: true });
+    }
+    if ((m = /^\/api\/admin(\/pump)?\/subscriptions\/([^/]+)\/discount$/.exec(p)) && req.method === 'POST') {
+      return j(200, { subscription: { id: m[2] }, price: 500, finalPrice: 400, savings: 100, state: { active: true } });
+    }
+    if ((m = /^\/api\/admin(\/pump)?\/subscriptions\/([^/]+)\/addons$/.exec(p))) {
+      if (req.method === 'GET') return j(200, { addons: addons.filter((a) => String(a.subscriptionId) === m[2]) });
+      if (req.method === 'POST') {
+        const row = { id: `adn${addons.length + 1}`, app: m[1] ? 'pump' : 'shop', subscriptionId: m[2], tenantId: 's1', feature: body.feature, price: body.price || 0, currency: 'AFN', note: body.note || '', createdBy: 'a1', createdAt: NOW, removedAt: null };
+        addons.push(row);
+        return j(201, { addon: row });
+      }
+    }
+    if ((m = /^\/api\/admin(\/pump)?\/subscriptions\/([^/]+)\/addons\/([^/]+)$/.exec(p)) && req.method === 'DELETE') {
+      const i = addons.findIndex((a) => a.id === m[3]);
+      const row = i < 0 ? { id: m[3], feature: 'gone' } : addons.splice(i, 1)[0];
+      return j(200, { addon: row });
+    }
+
+    //  بخشِ پمپ
+    if (p === '/api/admin/pump/subscriptions' && req.method === 'GET') return j(200, { subscriptions: pumpSubs.map((s) => ({ ...s, state: { active: s.status === 'active' } })) });
+    if (p === '/api/admin/pump/subscriptions' && req.method === 'POST') {
+      const row = { id: 91, station_id: body.stationId, plan: body.plan, status: 'active', starts_at: NOW, ends_at: body.endsAt || NOW + 30 * DAY, max_devices: body.maxDevices || 10, grace_days: body.graceDays || 0, note: body.note || '' };
+      pumpSubs.push(row);
+      return j(201, { subscription: row, state: { active: true } });
+    }
+    if ((m = /^\/api\/admin\/pump\/subscriptions\/([^/]+)\/status$/.exec(p)) && req.method === 'POST') {
+      const row = pumpSubs.find((x) => String(x.id) === m[1]);
+      if (!row) return j(404, { error: { code: 'not_found', message: 'اشتراک پیدا نشد' } });
+      row.status = body.status;
+      return j(200, { subscription: row, state: { active: row.status === 'active' } });
+    }
+    if ((m = /^\/api\/admin\/pump\/stations\/([^/]+)$/.exec(p)) && req.method === 'GET') {
+      if (m[1] !== 'st1') return j(404, { error: { code: 'station_not_found', message: 'پمپ پیدا نشد' } });
+      return j(200, {
+        station: { id: 'st1', code: 'PUMP1', name: 'پمپِ یعقوبی', status: 'active', createdAt: NOW - 50 * DAY, ownerUserId: 'u2' },
+        accessCode: 'K7PM-3XQ2',
+        owner: { id: 'u2', name: 'زهرا', email: 'z@x.com', phone: '0711', status: 'active' },
+        members: [], entitlement: { source: 'subscription', features: ['dashboard'] },
+        subscription: { id: 90, active: true }, files: [{ path: 'acct-1', rev: 2, size: 120, updatedAt: NOW }],
+        serverTime: NOW,
+      });
+    }
+    if ((m = /^\/api\/admin\/pump\/stations\/([^/]+)\/history$/.exec(p))) return j(200, { history: [{ action: 'grant', prev_status: 'none', new_status: 'active', actor: 'a1', created_at: NOW - DAY }] });
+    if ((m = /^\/api\/admin\/shops\/([^/]+)\/history$/.exec(p))) return j(200, { history: [{ action: 'renew', prev_status: 'active', new_status: 'active', actor: 'a1', created_at: NOW - DAY }] });
+
+    //  پلن و قیمت
+    if ((m = /^\/api\/admin\/plans\/([^/]+)$/.exec(p)) && req.method === 'PATCH') {
+      const plan = plans.find((x) => x.code === m[1]);
+      if (!plan) return j(404, { error: { code: 'not_found', message: 'پلن پیدا نشد' } });
+      if (body.title) plan.title = body.title;
+      if (body.price !== undefined) { plan.price = body.price; plan.fullPrice = body.price; }
+      return j(200, { plan });
+    }
+    if ((m = /^\/api\/admin\/plans\/([^/]+)\/price-history$/.exec(p))) return j(200, { history: priceHistory.filter((h) => h.plan === m[1]) });
+    if (p === '/api/admin/price-history') return j(200, { history: priceHistory });
+
+    //  تخفیف و کمپین
+    if (p === '/api/admin/discount-codes' && req.method === 'GET') {
+      const want = u.searchParams.get('app') || '';
+      return j(200, { codes: codes.filter((c) => !want || c.app === want) });
+    }
+    if (p === '/api/admin/discount-codes' && req.method === 'POST') {
+      const row = { id: `dsc${codes.length + 1}`, code: body.code || 'AUTO-1', app: body.app, plan: body.plan || '', kind: body.kind, value: body.value, currency: body.app === 'pump' ? 'USD' : 'AFN', userId: body.userId || '', expiresAt: body.expiresAt || null, maxUses: body.maxUses, oncePerCustomer: body.oncePerCustomer, uses: 0, note: body.note || '', status: 'active', createdBy: 'a1', createdAt: NOW };
+      codes.push(row);
+      return j(201, { code: row });
+    }
+    if ((m = /^\/api\/admin\/discount-codes\/([^/]+)\/revoke$/.exec(p)) && req.method === 'POST') {
+      const row = codes.find((c) => c.id === m[1]);
+      if (!row) return j(404, { error: { code: 'code_not_found', message: 'کد پیدا نشد' } });
+      row.status = 'revoked';
+      return j(200, { code: row });
+    }
+    if (p === '/api/admin/discount-codes/quote' && req.method === 'POST') return j(200, { code: codes[0], currency: 'AFN', plan: body.plan, price: 500, finalPrice: 450, savings: 50, prices: [] });
+    if (p === '/api/admin/campaigns' && req.method === 'GET') return j(200, { campaigns });
+    if (p === '/api/admin/campaigns' && req.method === 'POST') {
+      const row = { id: `cmp${campaigns.length + 1}`, name: body.name, app: body.app, filter: body.filter, discountCodeId: 'dsc1', noticeId: 'ntc1', status: 'active', createdBy: 'a1', createdAt: NOW };
+      campaigns.push(row);
+      return j(201, { campaign: row, codes: [codes[0]], notice: notices[0], sent: { sent: 3, failed: 0 } });
+    }
+    if ((m = /^\/api\/admin\/campaigns\/([^/]+)\/stats$/.exec(p))) {
+      const row = campaigns.find((c) => c.id === m[1]);
+      if (!row) return j(404, { error: { code: 'campaign_not_found', message: 'کمپین پیدا نشد' } });
+      return j(200, { campaign: row, codes: [codes[0]], recipients: 4, sent: 4, seen: 2, codeUses: 1, renewed: 1 });
+    }
+
+    //  مرکزِ اعلان
+    if (p === '/api/admin/notice-templates' && req.method === 'GET') {
+      return j(200, { templates: [{ key: 'expiring', app: 'both', title: 'اشتراک رو به پایان است', body: 'سلام {نام}', channels: ['inapp', 'email'], editable: true, updatedAt: NOW }], variables: ['{نام}', '{برنامه}', '{روز-مانده}'] });
+    }
+    if ((m = /^\/api\/admin\/notice-templates\/([^/]+)$/.exec(p)) && req.method === 'PUT') {
+      return j(200, { template: { key: m[1], app: body.app, title: body.title, body: body.body, channels: body.channels || ['inapp'] } });
+    }
+    if (p === '/api/admin/notices' && req.method === 'GET') return j(200, { notices });
+    if (p === '/api/admin/notices' && req.method === 'POST') {
+      const row = { id: `ntc${notices.length + 1}`, app: body.app, audience: body.audience, channels: body.channels, title: body.title, body: body.body, templateKey: body.templateKey || '', variables: {}, scheduleAt: null, repeat: 'none', status: 'draft', system: false, createdBy: 'a1', createdAt: NOW, updatedAt: NOW, sentAt: null, runs: 0, counts: {} };
+      notices.push(row);
+      return j(201, { notice: row, sent: body.send ? { sent: 2, failed: 0 } : null });
+    }
+    if (p === '/api/admin/notices/audience' && req.method === 'POST') {
+      return j(200, { count: body.audience?.kind === 'user' ? 1 : 4, recipients: [{ app: body.app === 'pump' ? 'pump' : 'shop', userId: 'u1', tenantId: 's1', name: 'کریم', tenantName: 'دکانِ کریم', email: 'karim@x.com', city: 'کابل', plan: 'm1', status: 'active', daysLeft: 20, permanent: false }] });
+    }
+    if (p === '/api/admin/notices/run-system' && req.method === 'POST') return j(200, { checked: 2, created: 1 });
+    if ((m = /^\/api\/admin\/notices\/([^/]+)$/.exec(p))) {
+      const row = notices.find((n) => n.id === m[1]);
+      if (!row) return j(404, { error: { code: 'notice_not_found', message: 'اعلان پیدا نشد' } });
+      if (req.method === 'GET') return j(200, { notice: row });
+      if (req.method === 'PUT') { Object.assign(row, { title: body.title, body: body.body, channels: body.channels, audience: body.audience, app: body.app }); return j(200, { notice: row }); }
+      if (req.method === 'DELETE') { notices.splice(notices.indexOf(row), 1); return j(200, { ok: true }); }
+    }
+    if ((m = /^\/api\/admin\/notices\/([^/]+)\/preview$/.exec(p)) && req.method === 'POST') {
+      previewCalls.push(m[1]);
+      return j(200, { notice: notices.find((n) => n.id === m[1]) || null, recipients: 4, sample: [{ app: 'shop', userId: 'u1', tenantId: 's1', name: 'کریم', tenantName: 'دکانِ کریم', email: 'karim@x.com', daysLeft: 20, plan: 'm1', title: 'سلام کریم', body: 'بیست روز مانده' }], emailHtml: '<html></html>' });
+    }
+    if ((m = /^\/api\/admin\/notices\/([^/]+)\/test$/.exec(p)) && req.method === 'POST') { testCalls.push(body.to || ''); return j(200, { ok: true, to: body.to }); }
+    if ((m = /^\/api\/admin\/notices\/([^/]+)\/send$/.exec(p)) && req.method === 'POST') return j(200, { ok: true, sent: 2, failed: 1, recipients: 3 });
+    if ((m = /^\/api\/admin\/notices\/([^/]+)\/schedule$/.exec(p)) && req.method === 'POST') {
+      const row = notices.find((n) => n.id === m[1]);
+      if (row) { row.scheduleAt = body.scheduleAt; row.repeat = body.repeat; row.status = body.scheduleAt ? 'scheduled' : 'draft'; }
+      return j(200, { notice: row });
+    }
+    if ((m = /^\/api\/admin\/notices\/([^/]+)\/report$/.exec(p))) {
+      return j(200, { notice: notices.find((n) => n.id === m[1]) || null, summary: { total: 2, queued: 0, sent: 1, delivered: 0, read: 1, error: 0 },
+        deliveries: [
+          { id: 'dlv1', noticeId: m[1], app: 'shop', userId: 'u1', tenantId: 's1', channel: 'email', status: 'sent', who: 'کریم', address: 'karim@x.com', title: 'سلام', body: 'متن', error: null, run: 1, createdAt: NOW, sentAt: NOW, deliveredAt: null, readAt: null },
+          { id: 'dlv2', noticeId: m[1], app: 'shop', userId: 'u1', tenantId: 's1', channel: 'inapp', status: 'read', who: 'کریم', address: '', title: 'سلام', body: 'متن', error: null, run: 1, createdAt: NOW, sentAt: NOW, deliveredAt: NOW, readAt: NOW },
+        ] });
+    }
+
+    //  Sync
+    if (p === '/api/admin/sync/status') {
+      return j(200, { app: u.searchParams.get('app'), devices: [{ account: { kind: 'shop', id: 's1' }, device_id: 'dev-1', cursor: 8, last_push_at: NOW - 600e3, last_pull_at: NOW - 300e3, last_op_at: NOW - 600e3, queued_count: 2, app_version: '2.1.0', schema_version: 3, last_seen_at: NOW - 300e3, head: 10, behind: 2, conflicts: 1, deleted: 0 }] });
+    }
+    if (p === '/api/admin/sync/conflicts') {
+      if (!u.searchParams.get('account')) return j(400, { error: { code: 'account_required', message: 'شناسهٔ حساب لازم است' } });
+      return j(200, { conflicts: [{ id: 5, app: 'shop', account: { kind: 'shop', id: 's1' }, table: 'products', row_id: 'p1', field: 'price', loser_value: 1, winner_value: 2, loser_op_id: 'o1', winner_op_id: 'o2', loser_device: 'dev-1', winner_device: 'dev-2', at: NOW - 3600e3, restored_at: null }] });
+    }
+    if ((m = /^\/api\/admin\/sync\/conflicts\/([^/]+)\/restore$/.exec(p)) && req.method === 'POST') return j(200, { ok: true, head: 11 });
+    if (p === '/api/admin/sync/errors') return j(200, { errors: [{ id: 'err1', app: 'shop', account_kind: 'shop', account_id: 's1', device_id: 'dev-1', user_id: 'u1', tenant_id: 's1', app_version: '2.1.0', version: '', platform: 'android', message: 'خطای آزمایشی', stack: '', at: NOW - 60e3, created_at: NOW - 60e3 }] });
+
+    //  ورودها
+    if (p === '/api/admin/logins' && req.method === 'GET') return j(200, { requests: [{ request_id: 'req1', app: 'shop', masked_email: 'k***@x.com', status: 'sent', created_at: NOW - 120e3, tries: 1 }], worker: { alive: true } });
+    if (p === '/api/admin/logins/stats') return j(200, { sent: 12, failed: 1, queued: 0, p50: 120, p95: 400, worker: { alive: true }, alerts: [] });
+    if ((m = /^\/api\/admin\/logins\/([^/]+)\/resend$/.exec(p)) && req.method === 'POST') return j(200, { ok: true, result: 'sent', status: 'sent' });
+    if (p === '/api/admin/logins/unlock' && req.method === 'POST') return j(200, { ok: true });
+    if ((m = /^\/api\/admin\/logins\/([^/]+)\/reveal$/.exec(p))) return j(200, { ok: true, code: '999111' });
+
     if (p === '/api/admin/admins') return j(200, { admins: ['NEVER'] });
     if (p === '/api/admin/backups') return j(200, { backups: ['NEVER'] });
     return j(404, { error: { code: 'not_found', message: 'این مسیر وجود ندارد' } });
@@ -336,14 +575,207 @@ try {
     check(`GET ${p}`, r.status === 200, `${r.status} ${JSON.stringify(r.json).slice(0, 80)}`);
   }
 
+  console.log('\n── مشتری‌ها: یک فهرست برای هر دو بخش ──');
+  const cust = await api('GET', '/api/account-admin/customers', undefined, auth);
+  check('فهرستِ مشتری‌ها از ‎/api/admin/sales/subscriptions‎ می‌آید',
+    cust.status === 200 && cust.json?.subscriptions?.length === 2 && last()?.path === '/api/admin/sales/subscriptions',
+    `${cust.status} ${JSON.stringify(last()?.path)}`);
+  const shopRow = (cust.json?.subscriptions || []).find((r) => r.app === 'shop');
+  for (const f of ['tenantName', 'ownerEmail', 'city', 'planTitle', 'status', 'daysLeft', 'permanent', 'price', 'paid']) {
+    check(`فیلدِ «${f}» در ردیفِ مشتری هست`, shopRow?.[f] !== undefined, JSON.stringify(shopRow));
+  }
+  const filtered = await api('GET', '/api/account-admin/customers?app=pump&status=active&kind=permanent&city=هرات', undefined, auth);
+  check('چهار فیلتر یک‌به‌یک به سرورِ حساب می‌روند',
+    filtered.json?.subscriptions?.length === 1 && last()?.query?.app === 'pump' && last()?.query?.status === 'active'
+      && last()?.query?.kind === 'permanent' && last()?.query?.city === 'هرات', JSON.stringify(last()?.query));
+  const bothQ = await api('GET', '/api/account-admin/customers?app=both', undefined, auth);
+  check('«هر دو» یعنی بی فیلترِ بخش، نه app=both', bothQ.status === 200 && last()?.query?.app === undefined, JSON.stringify(last()?.query));
+
+  const pumpProfile = await api('GET', '/api/account-admin/pump-accounts/st1', undefined, auth);
+  check('پروندهٔ پمپ: نام، کدِ اپِ کارمندان، صاحب و دستگاه‌ها',
+    pumpProfile.status === 200 && pumpProfile.json?.station?.name === 'پمپِ یعقوبی'
+      && pumpProfile.json?.accessCode === 'K7PM-3XQ2' && pumpProfile.json?.owner?.email === 'z@x.com'
+      && pumpProfile.json?.devices?.[0]?.uid === 'dev-abc', JSON.stringify(pumpProfile.json).slice(0, 260));
+  const noPump = await api('GET', '/api/account-admin/pump-accounts/nope', undefined, auth);
+  check('پمپِ نبوده ۴۰۴', noPump.status === 404, `${noPump.status}`);
+
+  const hist = await api('GET', '/api/account-admin/customers/shop/s1/history', undefined, auth);
+  check('تاریخچهٔ دکان', hist.status === 200 && hist.json?.history?.[0]?.action === 'renew');
+  const histPump = await api('GET', '/api/account-admin/customers/pump/st1/history', undefined, auth);
+  check('تاریخچهٔ پمپ از مسیرِ پمپ می‌آید', histPump.status === 200 && last()?.path === '/api/admin/pump/stations/st1/history');
+  const badApp = await api('GET', '/api/account-admin/customers/site/s1/history', undefined, auth);
+  check('بخشِ ناشناخته ۴۰۰ می‌گیرد و به سرورِ حساب نمی‌رسد', badApp.status === 400 && badApp.json?.error === 'bad_app', `${badApp.status}`);
+
+  console.log('\n── کارها روی یک اشتراک، در هر دو بخش ──');
+  const grantPump = await api('POST', '/api/account-admin/subs/pump/grant', { tenantId: 'st1', plan: 'std', maxDevices: 5 }, auth);
+  check('اشتراکِ پمپ با ‎stationId‎ می‌رود، نه ‎shopId‎',
+    grantPump.status === 200 && last()?.path === '/api/admin/pump/subscriptions'
+      && last()?.body?.stationId === 'st1' && last()?.body?.shopId === undefined, JSON.stringify(last()?.body));
+  const grantShop = await api('POST', '/api/account-admin/subs/shop/grant', { tenantId: 's2', plan: 'm1' }, auth);
+  check('اشتراکِ دکان با ‎shopId‎', grantShop.status === 200 && last()?.path === '/api/admin/subscriptions' && last()?.body?.shopId === 's2');
+
+  const { addPeriod } = await import('../src/routes/account-admin.js');
+  const pumpEnd = pumpSubs.find((s) => s.id === 90).ends_at;
+  const extPump = await api('POST', '/api/account-admin/subs/pump/90/extend', { amount: 2, unit: 'month' }, auth);
+  check('تمدیدِ پمپ ⇒ grant با endsAtِ تقویمی، و پلن/دستگاه/مهلتِ فعلی حفظ می‌شود',
+    extPump.status === 200 && last()?.path === '/api/admin/pump/subscriptions'
+      && last()?.body?.endsAt === addPeriod(pumpEnd, 2, 'month')
+      && last()?.body?.plan === 'perm' && last()?.body?.maxDevices === 5 && last()?.body?.graceDays === 2,
+    JSON.stringify(last()?.body));
+  const extShop = await api('POST', '/api/account-admin/subs/shop/7/extend', { amount: 1, unit: 'month' }, auth);
+  check('تمدیدِ دکان ⇒ PUT روی همان اشتراک', extShop.status === 200 && last()?.method === 'PUT' && last()?.path === '/api/admin/subscriptions/7');
+  const extGone = await api('POST', '/api/account-admin/subs/shop/999/extend', { amount: 1, unit: 'month' }, auth);
+  check('اشتراکِ نبوده ۴۰۴', extGone.status === 404, `${extGone.status}`);
+
+  const susp = await api('POST', '/api/account-admin/subs/pump/90/status', { status: 'suspended' }, auth);
+  check('تعلیقِ پمپ روی مسیرِ پمپ', susp.status === 200 && last()?.path === '/api/admin/pump/subscriptions/90/status' && last()?.body?.status === 'suspended');
+  await api('POST', '/api/account-admin/subs/pump/90/status', { status: 'active' }, auth);
+  const perm = await api('POST', '/api/account-admin/subs/shop/7/permanent', {}, auth);
+  check('دائمی', perm.status === 200 && perm.json?.permanent === true && last()?.path === '/api/admin/subscriptions/7/permanent');
+  const dsc = await api('POST', '/api/account-admin/subs/shop/7/discount', { percent: 30, reason: 'مشتریِ قدیمی' }, auth);
+  check('تخفیفِ مستقیم با دلیل', dsc.status === 200 && dsc.json?.finalPrice === 400 && last()?.body?.reason === 'مشتریِ قدیمی', JSON.stringify(last()?.body));
+
+  const addonsGet = await api('GET', '/api/account-admin/subs/shop/7/addons', undefined, auth);
+  check('افزونه‌ها خوانده می‌شوند', addonsGet.status === 200 && addonsGet.json?.addons?.[0]?.feature === 'cloud');
+  const addonAdd = await api('POST', '/api/account-admin/subs/shop/7/addons', { feature: 'reports', price: 50 }, auth);
+  check('افزونه اضافه می‌شود', addonAdd.status === 200 && addonAdd.json?.addon?.feature === 'reports');
+  const addonDel = await api('DELETE', `/api/account-admin/subs/shop/7/addons/${addonAdd.json?.addon?.id}`, undefined, auth);
+  check('افزونه برداشته می‌شود', addonDel.status === 200 && last()?.method === 'DELETE');
+
+  console.log('\n── پلن، قیمت و تاریخچه ──');
+  const patch = await api('PATCH', '/api/account-admin/plans/m1?app=shop', { title: 'یک‌ماههٔ تازه', price: 550 }, auth);
+  check('ویرایشِ پلن ⇒ PATCH با app',
+    patch.status === 200 && last()?.method === 'PATCH' && last()?.path === '/api/admin/plans/m1'
+      && last()?.query?.app === 'shop' && last()?.body?.app === 'shop' && last()?.body?.price === 550, JSON.stringify(last()));
+  const patchPump = await api('PATCH', '/api/account-admin/plans/m1?app=pump', { price: 120 }, auth);
+  check('همان کد در بخشِ پمپ با app=pump می‌رود — دو ردیفِ جدا',
+    patchPump.status === 200 && last()?.query?.app === 'pump', JSON.stringify(last()?.query));
+  const ph = await api('GET', '/api/account-admin/plans/m1/price-history?app=shop', undefined, auth);
+  check('تاریخچهٔ قیمتِ یک پلن', ph.status === 200 && ph.json?.history?.[0]?.prevPrice === 400);
+  const phAll = await api('GET', '/api/account-admin/price-history?app=shop', undefined, auth);
+  check('تاریخچهٔ قیمتِ همهٔ پلن‌ها', phAll.status === 200 && phAll.json?.history?.length === 1 && last()?.query?.app === 'shop');
+
+  console.log('\n── تخفیف و کمپین ──');
+  const codeList = await api('GET', '/api/account-admin/discount-codes?app=shop', undefined, auth);
+  check('فهرستِ کدها', codeList.status === 200 && codeList.json?.codes?.[0]?.code === 'NOWRUZ' && last()?.query?.app === 'shop');
+  const codeNew = await api('POST', '/api/account-admin/discount-codes', { app: 'pump', kind: 'percent', value: 15, code: 'EID', maxUses: 50 }, auth);
+  check('کدِ تازه با بخشِ خودش ساخته می‌شود',
+    codeNew.status === 200 && codeNew.json?.code?.app === 'pump' && last()?.body?.app === 'pump' && last()?.body?.value === 15, JSON.stringify(last()?.body));
+  const quote = await api('POST', '/api/account-admin/discount-codes/quote', { code: 'NOWRUZ', app: 'shop', plan: 'm1' }, auth);
+  check('سنجیدنِ کد از خودِ سرورِ حساب می‌آید — هیچ عددی در پنل حساب نمی‌شود', quote.status === 200 && quote.json?.finalPrice === 450);
+  const rev = await api('POST', `/api/account-admin/discount-codes/${codeNew.json?.code?.id}/revoke`, {}, auth);
+  check('باطل کردنِ کد', rev.status === 200 && rev.json?.code?.status === 'revoked');
+  const campList = await api('GET', '/api/account-admin/campaigns', undefined, auth);
+  check('فهرستِ کمپین‌ها', campList.status === 200 && campList.json?.campaigns?.[0]?.name === 'عید');
+  const campNew = await api('POST', '/api/account-admin/campaigns', { name: 'تخفیفِ عید', app: 'both', filter: { kind: 'filter', expiring_days: 30 }, discount: { kind: 'percent', value: 20 }, notice: { title: 'سلام' } }, auth);
+  check('کمپینِ تازه: فیلتر و تخفیف و اعلان با هم می‌روند',
+    campNew.status === 200 && last()?.body?.name === 'تخفیفِ عید' && last()?.body?.filter?.expiring_days === 30
+      && last()?.body?.discount?.value === 20, JSON.stringify(last()?.body));
+  const campStats = await api('GET', `/api/account-admin/campaigns/${campNew.json?.campaign?.id}/stats`, undefined, auth);
+  check('گزارشِ کمپین عدد می‌دهد، نه حدس', campStats.status === 200 && campStats.json?.codeUses === 1 && campStats.json?.renewed === 1);
+
+  console.log('\n── مرکزِ اعلان ──');
+  const tpl = await api('GET', '/api/account-admin/notice-templates', undefined, auth);
+  check('قالب‌ها با فهرستِ متغیرها', tpl.status === 200 && tpl.json?.templates?.[0]?.key === 'expiring' && (tpl.json?.variables || []).includes('{نام}'));
+  const tplSave = await api('PUT', '/api/account-admin/notice-templates/expiring', { app: 'both', title: 'ت', body: 'م' }, auth);
+  check('ذخیرهٔ قالب', tplSave.status === 200 && last()?.method === 'PUT' && last()?.path === '/api/admin/notice-templates/expiring');
+  const nList = await api('GET', '/api/account-admin/notices?limit=200', undefined, auth);
+  check('فهرستِ اعلان‌ها', nList.status === 200 && nList.json?.notices?.[0]?.id === 'ntc1');
+  const nNew = await api('POST', '/api/account-admin/notices', { app: 'both', audience: { kind: 'filter', expiring_days: 7 }, channels: ['inapp', 'email'], title: 'یادآوری', body: 'سلام {نام}' }, auth);
+  check('ساختنِ اعلان با گیرندهٔ فیلترشده و دو کانال',
+    nNew.status === 200 && last()?.body?.app === 'both' && last()?.body?.audience?.expiring_days === 7
+      && JSON.stringify(last()?.body?.channels) === JSON.stringify(['inapp', 'email']), JSON.stringify(last()?.body));
+  const nId = nNew.json?.notice?.id;
+  const aud = await api('POST', '/api/account-admin/notices/audience', { app: 'shop', audience: { kind: 'user', user_id: 'u1' } }, auth);
+  check('«چند نفر می‌شود؟» بی ساختنِ اعلان', aud.status === 200 && aud.json?.count === 1 && last()?.path === '/api/admin/notices/audience');
+  const prevCount = previewCalls.length;
+  const pv = await api('POST', `/api/account-admin/notices/${nId}/preview`, { limit: 10 }, auth);
+  check('پیش‌نمایش متنِ پرشده می‌دهد', pv.status === 200 && pv.json?.sample?.[0]?.title === 'سلام کریم' && previewCalls.length === prevCount + 1);
+  const tst = await api('POST', `/api/account-admin/notices/${nId}/test`, { to: 'me@x.com' }, auth);
+  check('ارسالِ آزمایشی به نشانیِ خودِ مدیر', tst.status === 200 && testCalls.at(-1) === 'me@x.com');
+  const sch = await api('POST', `/api/account-admin/notices/${nId}/schedule`, { scheduleAt: NOW + 3 * DAY, repeat: 'monthly' }, auth);
+  check('زمان‌بندی با تکرار', sch.status === 200 && last()?.body?.scheduleAt === NOW + 3 * DAY && last()?.body?.repeat === 'monthly');
+  const unsch = await api('POST', `/api/account-admin/notices/${nId}/schedule`, { scheduleAt: null }, auth);
+  check('برداشتنِ زمان‌بندی', unsch.status === 200 && last()?.body?.scheduleAt === null);
+  const snd = await api('POST', `/api/account-admin/notices/${nId}/send`, {}, auth);
+  check('فرستادن — و پاسخ ناموفق‌ها را هم می‌گوید', snd.status === 200 && snd.json?.sent === 2 && snd.json?.failed === 1);
+  const noticeReport = await api('GET', `/api/account-admin/notices/${nId}/report`, undefined, auth);
+  check('گزارش یک ردیف برای هر گیرنده در هر کانال است، نه یک عدد',
+    noticeReport.status === 200 && noticeReport.json?.deliveries?.length === 2
+      && noticeReport.json.deliveries.some((d) => d.channel === 'email')
+      && noticeReport.json.deliveries.some((d) => d.channel === 'inapp'),
+    JSON.stringify(noticeReport.json?.summary));
+  const sys = await api('POST', '/api/account-admin/notices/run-system', {}, auth);
+  check('اجرای دستیِ اعلان‌های خودکار', sys.status === 200 && sys.json?.created === 1);
+  const nDel = await api('DELETE', `/api/account-admin/notices/${nId}`, undefined, auth);
+  check('حذفِ اعلان', nDel.status === 200 && last()?.method === 'DELETE');
+
+  console.log('\n── فروش، پرداخت و رسید ──');
+  const sum = await api('GET', '/api/account-admin/sales/summary', undefined, auth);
+  check('درآمدِ امروز/ماه/سال به تفکیکِ بخش و ارز',
+    sum.status === 200 && sum.json?.revenue?.month?.shop?.AFN === 1500 && sum.json?.revenue?.year?.pump?.USD === 600, JSON.stringify(sum.json?.revenue));
+  check('نمودارِ دوازده ماه از سرور می‌آید', (sum.json?.series || []).length === 1 && sum.json.series[0].month === '2026-08');
+  const exp = await api('GET', '/api/account-admin/sales/expiring?days=30&app=shop', undefined, auth);
+  check('رو به پایان با روزِ خواسته‌شده', exp.status === 200 && last()?.query?.days === '30' && last()?.query?.app === 'shop');
+  const remind = await api('POST', '/api/account-admin/sales/expiring/remind', { days: 30, app: 'both' }, auth);
+  check('یادآوریِ ایمیلی از مرکزِ اعلان می‌رود', remind.status === 200 && remind.json?.sent === 3 && last()?.body?.app === 'both');
+  const debts = await api('GET', '/api/account-admin/sales/debts', undefined, auth);
+  check('بدهی‌ها: اشتراکِ داده‌شده، پرداخت‌نشده', debts.status === 200 && debts.json?.debts?.[0]?.debt === 200);
+
+  const payList = await api('GET', '/api/account-admin/payments?app=shop&tenantId=s1', undefined, auth);
+  check('پرداخت‌های یک حساب', payList.status === 200 && payList.json?.payments?.length === 1 && last()?.query?.tenantId === 's1');
+  const payNew = await api('POST', '/api/account-admin/payments', { app: 'shop', tenantId: 's1', amount: 200, currency: 'AFN', method: 'hawala' }, auth);
+  check('ثبتِ پرداخت', payNew.status === 200 && payNew.json?.payment?.amount === 200 && last()?.body?.method === 'hawala');
+  const payEdit = await api('PUT', `/api/account-admin/payments/${payNew.json?.payment?.id}`, { amount: 250 }, auth);
+  check('ویرایشِ پرداخت', payEdit.status === 200 && payEdit.json?.payment?.amount === 250);
+  const payDel = await api('DELETE', `/api/account-admin/payments/${payNew.json?.payment?.id}`, undefined, auth);
+  check('حذفِ پرداخت', payDel.status === 200 && payDel.json?.ok === true);
+  const receipt = await fetch(`${BASE}/api/account-admin/payments/pay1/receipt`, { headers: auth });
+  const receiptHtml = await receipt.text();
+  check('رسید صفحهٔ HTMLِ فارسیِ خودِ سرورِ حساب است، نه PDF و نه JSON',
+    receipt.status === 200 && (receipt.headers.get('content-type') || '').includes('text/html')
+      && receiptHtml.includes('dir="rtl"') && receiptHtml.includes('رسیدِ پرداخت'), `${receipt.status} ${receiptHtml.slice(0, 120)}`);
+  const noReceipt = await fetch(`${BASE}/api/account-admin/payments/nope/receipt`, { headers: auth });
+  check('رسیدِ نبوده ۴۰۴', noReceipt.status === 404, `${noReceipt.status}`);
+
+  console.log('\n── وضعیتِ Sync: فقط حال، نه محتوا ──');
+  const syncSt = await api('GET', '/api/account-admin/sync/status?app=shop', undefined, auth);
+  check('دستگاه‌ها با عقب‌ماندگی و صف', syncSt.status === 200 && syncSt.json?.devices?.[0]?.behind === 2 && syncSt.json?.devices?.[0]?.queued_count === 2);
+  const syncNoAcc = await api('GET', '/api/account-admin/sync/conflicts?app=shop', undefined, auth);
+  check('تعارض بی شناسهٔ حساب، همان ۴۰۰ی خودِ سرورِ حساب', syncNoAcc.status === 400 && syncNoAcc.json?.error === 'account_required', `${syncNoAcc.status}`);
+  const syncCf = await api('GET', '/api/account-admin/sync/conflicts?app=shop&account=s1', undefined, auth);
+  check('تعارض‌ها با جدول، ردیف و خانه', syncCf.status === 200 && syncCf.json?.conflicts?.[0]?.field === 'price');
+  const syncRestore = await api('POST', '/api/account-admin/sync/conflicts/5/restore', {}, auth);
+  check('بازگرداندنِ تعارض', syncRestore.status === 200 && last()?.path === '/api/admin/sync/conflicts/5/restore');
+  const syncErr = await api('GET', '/api/account-admin/sync/errors?app=shop', undefined, auth);
+  check('خطاهای گزارش‌شدهٔ برنامه', syncErr.status === 200 && syncErr.json?.errors?.[0]?.message === 'خطای آزمایشی');
+
+  console.log('\n── ورود با کدِ ایمیلی ──');
+  const lg = await api('GET', '/api/account-admin/logins?app=shop', undefined, auth);
+  check('درخواست‌های ورود با ایمیلِ ماسک‌شده', lg.status === 200 && lg.json?.requests?.[0]?.masked_email === 'k***@x.com');
+  check('⛔ کدِ خام در فهرست نیست', !JSON.stringify(lg.json).includes('999111'), JSON.stringify(lg.json).slice(0, 160));
+  const lgStats = await api('GET', '/api/account-admin/logins/stats', undefined, auth);
+  check('آمارِ بیست‌وچهار ساعت', lgStats.status === 200 && lgStats.json?.sent === 12);
+  const lgRe = await api('POST', '/api/account-admin/logins/req1/resend', {}, auth);
+  check('دوباره فرستادنِ همان کد', lgRe.status === 200 && last()?.path === '/api/admin/logins/req1/resend');
+  const lgUn = await api('POST', '/api/account-admin/logins/unlock', { app: 'shop', email: 'k@x.com' }, auth);
+  check('برداشتنِ قفلِ تلاشِ زیاد', lgUn.status === 200 && last()?.body?.email === 'k@x.com');
+  const beforeReveal = seen.length;
+  const reveal = await api('POST', '/api/account-admin/logins/req1/reveal', {}, auth);
+  check('⛔ «نشان دادنِ کد» از پنل باز نیست و به سرورِ حساب هم نمی‌رسد',
+    reveal.status === 404 && seen.length === beforeReveal, `${reveal.status} ${JSON.stringify(reveal.json)}`);
+
   console.log('\n── در بسته است ──');
   const beforeSneak = seen.length;
   const sneak = await api('GET', '/api/account-admin/admins', undefined, auth);
   const sneak2 = await api('GET', '/api/account-admin/backups', undefined, auth);
   const sneak3 = await api('POST', '/api/account-admin/shops', {}, auth);
+  const sneak4 = await api('GET', '/api/account-admin/sync/deleted', undefined, auth);
+  const sneak5 = await api('GET', '/api/account-admin/notices/ntc1/anything', undefined, auth);
   check('مسیرِ بیرون از فهرستِ سفید ۴۰۴ است و به سرورِ حساب نمی‌رسد',
-    sneak.status === 404 && sneak2.status === 404 && sneak3.status === 404 && seen.length === beforeSneak,
-    `${sneak.status} ${sneak2.status} ${sneak3.status} ${seen.slice(beforeSneak).map((s) => s.path).join(' ')}`);
+    sneak.status === 404 && sneak2.status === 404 && sneak3.status === 404 && sneak4.status === 404
+      && sneak5.status === 404 && seen.length === beforeSneak,
+    `${sneak.status} ${sneak2.status} ${sneak3.status} ${sneak4.status} ${sneak5.status} ${seen.slice(beforeSneak).map((s) => s.path).join(' ')}`);
   const noAuth = await api('GET', '/api/account-admin/shop-accounts');
   check('بی نشستِ پنل ۴۰۱', noAuth.status === 401, `${noAuth.status}`);
   const pub = await api('GET', '/api/account-admin/shop-accounts', undefined, auth, `http://127.0.0.1:${PUBLIC}`);
