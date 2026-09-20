@@ -1003,6 +1003,20 @@ const fa = {
   agNoModelYet: 'هنوز مدلی انتخاب نشده — دستیار بی مدل هم از روی داده‌های سرور جواب می‌دهد؛ برای «فکر کردن» از تبِ «مدل و تنظیمات» یکی را دانلود کنید.',
   agKnowledge: 'دانشِ برنامه‌ها',
   agDocs: 'سند',
+
+  /* ---------------------- مشتری‌ها، پول و پیام (سرورِ حساب) ---------------------- */
+  navMoney: 'مشتری‌ها و فروش',
+  acCustomers: 'مشتری‌ها و اشتراک‌ها',
+  acSales: 'فروش',
+  acPlans: 'پلن‌ها و تخفیف‌ها',
+  acNotices: 'مرکز اعلان',
+  acSupport: 'پشتیبانی',
+  acSync: 'وضعیت Sync',
+  /* ------------------------------ جست‌وجوی سراسری ------------------------------ */
+  searchOpen: 'جست‌وجو',
+  searchGoto: 'کجا بروم؟ نامِ بخش را بنویسید…',
+  searchNothing: 'چیزی پیدا نشد',
+  searchHint: 'Ctrl+K برای باز کردن · ↑↓ برای انتخاب · Enter برای رفتن · Esc برای بستن',
 };
 
 export type Dict = typeof fa;
@@ -1997,6 +2011,20 @@ const en: Dict = {
   agNoModelYet: 'No model selected yet — the assistant still answers from server data; download one in “Model & settings” so it can reason.',
   agKnowledge: 'App knowledge',
   agDocs: 'docs',
+
+  /* ------------------ customers, money and messages (account server) ------------------ */
+  navMoney: 'Customers & sales',
+  acCustomers: 'Customers & subscriptions',
+  acSales: 'Sales',
+  acPlans: 'Plans & discounts',
+  acNotices: 'Notification centre',
+  acSupport: 'Support',
+  acSync: 'Sync status',
+  /* ------------------------------- global search ------------------------------- */
+  searchOpen: 'Search',
+  searchGoto: 'Where to? Type a section name…',
+  searchNothing: 'Nothing found',
+  searchHint: 'Ctrl+K to open · ↑↓ to pick · Enter to go · Esc to close',
 };
 
 const ar: Dict = {

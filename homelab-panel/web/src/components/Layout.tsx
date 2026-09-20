@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   Activity,
@@ -34,11 +34,19 @@ import {
   Fuel,
   Hash,
   LogIn,
+  Megaphone,
+  MessagesSquare,
+  RefreshCw,
+  Search,
+  Tag,
+  Users,
+  Wallet,
 } from 'lucide-react';
 import { useApp } from '../app-context';
 import { LANGUAGES, type Dict } from '../i18n';
 import { featureOn, type FeatureKey } from '../features';
 import { logoUrl } from '../api';
+import CommandPalette, { usePaletteKey, type PaletteItem } from './CommandPalette';
 
 type NavItem = {
   to: string;
@@ -79,8 +87,25 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/sites', key: 'websites', icon: Server },
       { to: '/site-server', key: 'siteServer', icon: Globe },
       { to: '/stations', key: 'stations', icon: Fuel },
-      { to: '/logins', key: 'logins', icon: LogIn },
       { to: '/codes', key: 'codesTitle', icon: Hash },
+    ],
+  },
+  /*
+   *  مشتری، پول و پیام — هر شش‌تا از **سرورِ حساب** می‌آیند و هیچ دفترِ
+   *  دومی در این پنل ندارند. باز است چون کارِ هر روزِ صاحبِ سامانه است:
+   *  اشتراک دادن، رسید بریدن، جوابِ پشتیبانی.
+   */
+  {
+    id: 'money',
+    key: 'navMoney',
+    items: [
+      { to: '/customers', key: 'acCustomers', icon: Users },
+      { to: '/sales', key: 'acSales', icon: Wallet },
+      { to: '/plans', key: 'acPlans', icon: Tag },
+      { to: '/notices', key: 'acNotices', icon: Megaphone },
+      { to: '/support', key: 'acSupport', icon: MessagesSquare },
+      { to: '/sync', key: 'acSync', icon: RefreshCw },
+      { to: '/logins', key: 'logins', icon: LogIn },
     ],
   },
   {
@@ -141,6 +166,7 @@ export default function Layout() {
   const { t, serverName, hasLogo, resolvedTheme, setTheme, lang, setLang, logout, connected, username, role, can } = useApp();
   const [open, setOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem(COLLAPSE_KEY);
@@ -152,6 +178,19 @@ export default function Layout() {
   const location = useLocation();
 
   useEffect(() => setOpen(false), [location.pathname]);
+
+  /*
+   *  فهرستِ جست‌وجو از همان منو ساخته می‌شود، با همان فیلترِ نقش و ویژگی —
+   *  پس هیچ دری از این‌جا باز نمی‌شود که در منو بسته باشد.
+   */
+  const paletteItems: PaletteItem[] = useMemo(
+    () => NAV_GROUPS.flatMap((group) =>
+      group.items
+        .filter((item) => (!item.feature || featureOn(item.feature)) && (!item.needs || can(item.needs)))
+        .map((item) => ({ to: item.to, label: t(item.key), group: t(group.key) }))),
+    [t, can]
+  );
+  usePaletteKey(useCallback(() => setPaletteOpen(true), []));
 
   const toggleGroup = (id: string) => {
     setCollapsed((prev) => {
@@ -270,6 +309,11 @@ export default function Layout() {
             <span className="hidden sm:inline">{connected ? t('online') : t('reconnecting')}</span>
           </span>
 
+          <button className="btn btn-sm" onClick={() => setPaletteOpen(true)} aria-label={t('searchOpen')} title="Ctrl+K">
+            <Search className="h-4 w-4" />
+            <span className="hidden sm:inline">{t('searchOpen')}</span>
+          </button>
+
           <div className="relative">
             <button className="btn btn-sm" onClick={() => setLangOpen((v) => !v)} aria-label={t('language')}>
               <Languages className="h-4 w-4" />
@@ -315,6 +359,8 @@ export default function Layout() {
             <span className="hidden sm:inline">{t('logout')}</span>
           </button>
         </header>
+
+        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} items={paletteItems} />
 
         <main className="min-h-0 flex-1 overflow-y-auto bg-surface-sunken p-3 sm:p-5">
           <Outlet />

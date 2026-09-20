@@ -21,7 +21,7 @@ import Vault from './pages/control/Vault';
 import Updates from './pages/control/Updates';
 import PanelUsers from './pages/control/PanelUsers';
 import Assistant from './pages/Assistant';
-import { DomainsHub, LogsHub, MonitoringHub, NetworkHub } from './pages/hubs';
+import { DomainsHub, LoginsHub, LogsHub, MonitoringHub, NetworkHub, PlansHub } from './pages/hubs';
 import DockerPage from './pages/Docker';
 import ProcessesPage from './pages/Processes';
 import DatabasesPage from './pages/Databases';
@@ -30,8 +30,14 @@ import TerminalPage from './pages/Terminal';
 import CronPage from './pages/Cron';
 import AutomationPage from './pages/Automation';
 import StationsPage from './pages/Stations';
-import AppLoginsPage from './pages/AppLogins';
 import StationProfile from './pages/StationProfile';
+
+// ── مشتری‌ها، پول و پیام — همه از سرورِ حساب (routes/account-admin.js) ────
+import Customers from './pages/account/Customers';
+import SalesPage from './pages/account/Sales';
+import NoticesPage from './pages/account/Notices';
+import SupportPage from './pages/account/Support';
+import SyncStatusPage from './pages/account/SyncStatus';
 
 function Shell() {
   const { ready, authed } = useApp();
@@ -58,7 +64,17 @@ function Shell() {
         <Route path="/network" element={<NetworkHub />} />
         <Route path="/logs" element={<LogsHub />} />
         <Route path="/site-server" element={<SiteServer />} />
-        <Route path="/logins" element={<AppLoginsPage />} />
+        <Route path="/logins" element={<LoginsHub />} />
+
+        {/* مشتری‌ها و فروش — پلِ سرورِ حساب */}
+        <Route path="/customers" element={<Customers />} />
+        <Route path="/sales" element={<SalesPage />} />
+        <Route path="/plans" element={<PlansHub />} />
+        {/* نشانیِ جدا برای تخفیف‌ها هیچ‌وقت نبود، ولی لینکِ حدسی نباید بشکند */}
+        <Route path="/discounts" element={<Navigate to="/plans?tab=discounts" replace />} />
+        <Route path="/notices" element={<NoticesPage />} />
+        <Route path="/support" element={<SupportPage />} />
+        <Route path="/sync" element={<SyncStatusPage />} />
         <Route path="/stations" element={<StationsPage />} />
         <Route path="/stations/:code" element={<StationProfile />} />
         <Route path="/codes" element={<CodesPage />} />

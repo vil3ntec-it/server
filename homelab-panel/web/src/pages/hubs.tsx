@@ -23,6 +23,10 @@ import TunnelDomains from './TunnelDomains';
 import Domains from './Domains';
 import Routing from './control/Routing';
 import CloudflarePage from './control/CloudflarePage';
+import AppLogins from './AppLogins';
+import EmailLogins from './account/EmailLogins';
+import Plans from './account/Plans';
+import Discounts from './account/Discounts';
 
 type Tab = { id: string; label: string; body: ReactNode };
 
@@ -66,6 +70,41 @@ export function DomainsHub() {
         { id: 'sites', label: t('domains'), body: <Domains /> },
         { id: 'routing', label: t('ccRouting'), body: <Routing /> },
         { id: 'cloudflare', label: t('ccCloudflare'), body: <CloudflarePage /> },
+      ]}
+    />
+  );
+}
+
+/**
+ * پلن و قیمت + تخفیف و کمپین — یک موضوع: پول.
+ *
+ * دو صفحهٔ جدا در منو یعنی مدیر نمی‌داند «تخفیفِ پلن» را کجا بزند و
+ * «کدِ تخفیف» را کجا؛ هر دو هم روی همان `plans`ِ سرورِ حساب می‌نشینند.
+ */
+export function PlansHub() {
+  return (
+    <Hub
+      tabs={[
+        { id: 'plans', label: 'پلن‌ها و قیمت‌ها', body: <Plans /> },
+        { id: 'discounts', label: 'تخفیف‌ها و کمپین', body: <Discounts /> },
+      ]}
+    />
+  );
+}
+
+/**
+ * ورودها — دو دفترِ جدا، یک موضوع.
+ *
+ * ⚠️ «برنامه‌های این سرور» ورودِ برنامه‌هایی است که خودِ پنل ثبتشان کرده؛
+ * «کدِ ایمیلی» ورودِ مشتری‌ها به دکان و پمپ روی **سرورِ حساب** است. دو
+ * دفترِ واقعاً جدا، و یکی کردنشان همان «دو دفترِ حساب» می‌شد.
+ */
+export function LoginsHub() {
+  return (
+    <Hub
+      tabs={[
+        { id: 'apps', label: 'برنامه‌های این سرور', body: <AppLogins /> },
+        { id: 'email', label: 'کدِ ایمیلیِ مشتری‌ها', body: <EmailLogins /> },
       ]}
     />
   );

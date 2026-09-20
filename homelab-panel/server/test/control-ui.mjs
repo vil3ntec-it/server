@@ -114,6 +114,18 @@ try {
     check(`«${label}» بدونِ باز کردنِ گروه دیده می‌شود`, firstText.includes(label), firstText.slice(0, 200));
   }
 
+
+  /*
+   *  «مشتری‌ها و فروش» گروهِ بازِ منوست: اشتراک دادن، رسید بریدن و جوابِ
+   *  پشتیبانی کارِ هر روزِ صاحبِ سامانه است. پس مثلِ بقیهٔ کارهای هر روز
+   *  باید بی باز کردنِ هیچ گروهی دیده شود — و این سنجه **پیش از** باز
+   *  کردنِ گروه‌های دیگر می‌دود، چون آن‌ها حالشان را در حافظهٔ مرورگر
+   *  نگه می‌دارند و بعدش دیگر «حالتِ پیش‌فرض» نیست.
+   */
+  for (const label of ['مشتری‌ها و اشتراک‌ها', 'فروش', 'پلن‌ها و تخفیف‌ها', 'مرکز اعلان', 'پشتیبانی', 'وضعیت Sync']) {
+    check(`«${label}» بدونِ باز کردنِ گروه دیده می‌شود`, firstText.includes(label), firstText.slice(0, 300));
+  }
+
   const fits = await page.evaluate(() => {
     const box = document.querySelector('aside nav')?.parentElement;
     return box ? box.scrollHeight <= box.clientHeight : false;
@@ -152,6 +164,23 @@ try {
     ['/cron', 'زمان‌بندی'],
     //  موتورِ اتوماسیون (بخشِ ۱۰): جدولِ کارها باید با نامِ کارهای واقعی بیاید
     ['/automation', 'پشتیبانِ روزانه'],
+    /*
+     *  مشتری، پول و پیام — بندهای ۱۱.۳ تا ۱۱.۵ و ۱۲ و ۱۶.
+     *  ⚠️ این صفحه‌ها همه از **سرورِ حساب** می‌خوانند و در این آزمون هیچ
+     *  سرورِ حسابی بالا نیست. پس عمداً سنجیده می‌شود که عنوان و قابِ صفحه
+     *  بی داده هم بیاید و صفحه سفید نماند — همان چیزی که کاربر با مودمِ
+     *  خاموش می‌بیند.
+     */
+    ['/customers', 'مشتری‌ها و اشتراک‌ها'],
+    ['/sales', 'فروش'],
+    ['/plans', 'پلن‌ها و قیمت‌ها'],
+    ['/plans?tab=discounts', 'تخفیف‌ها و کمپین'],
+    ['/notices', 'مرکز اعلان'],
+    ['/support', 'پشتیبانی'],
+    ['/sync', 'وضعیت Sync'],
+    ['/logins', 'کدِ ایمیلیِ مشتری‌ها'],
+    //  نشانیِ حدسی که هیچ‌وقت صفحهٔ جدا نداشت، به تبِ خودش می‌رود
+    ['/discounts', 'تخفیف‌ها و کمپین'],
   ];
 
   for (const [route, heading] of PAGES) {
@@ -161,8 +190,35 @@ try {
     const body = await page.locator('main').innerText();
     const ok = body.includes(heading) && !body.includes('undefined');
     check(`صفحهٔ ${route}`, ok, body.slice(0, 160));
-    check(`${route} بدونِ خطای جاوااسکریپت`, consoleErrors.length === 0, consoleErrors.join(' | '));
+    /*
+     *  ⚠️ صفحه‌های «مشتری و پول» از سرورِ حساب می‌خوانند و این‌جا هیچ
+     *  سرورِ حسابی بالا نیست، پس مرورگر برای هر خواندن یک سطرِ
+     *  «Failed to load resource … 409» در کنسول می‌گذارد. آن **جوابِ
+     *  سرور** است، نه خطای جاوااسکریپت، و همان چیزی است که این صفحه‌ها
+     *  باید آرام نشانش بدهند. هر چیزِ دیگری — از جمله ۵۰۰ و استثنای
+     *  واقعی — همچنان سنجه را می‌شکند.
+     */
+    const jsErrors = consoleErrors.filter((line) => !/Failed to load resource.*\b(409|503)\b/.test(line));
+    check(`${route} بدونِ خطای جاوااسکریپت`, jsErrors.length === 0, jsErrors.join(' | '));
   }
+
+
+  console.log('\n── جست‌وجوی سراسری (Ctrl+K) ──');
+  await page.keyboard.press('Control+KeyK');
+  await page.waitForTimeout(300);
+  const paletteOpen = await page.locator('input[placeholder]').count();
+  check('پنجرهٔ جست‌وجو با Ctrl+K باز می‌شود', paletteOpen > 0);
+  await page.keyboard.type('اعلان');
+  await page.waitForTimeout(250);
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => location.pathname === '/notices', null, { timeout: 8000 });
+  check('تایپ و Enter مستقیم به همان بخش می‌برد', page.url().endsWith('/notices'), page.url());
+  await page.keyboard.press('Control+KeyK');
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  const closed = await page.evaluate(() => !document.querySelector('.fixed.inset-0.z-\\[70\\]'));
+  check('Esc پنجره را می‌بندد', closed);
 
   console.log('\n── ساختِ پروژه از خودِ رابط ──');
   await page.goto(`${BASE}/control/storage`, { waitUntil: 'networkidle' });

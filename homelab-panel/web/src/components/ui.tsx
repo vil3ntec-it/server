@@ -45,6 +45,26 @@ export function Loading({ label }: { label?: string }) {
   );
 }
 
+/**
+ * اسکلتِ بارگذاری — جای همان چیزی که دارد می‌آید.
+ *
+ * ⚠️ چرخانِ وسطِ صفحه جای خالی می‌سازد و با آمدنِ داده همه‌چیز می‌پرد؛
+ * اسکلت همان قابِ نهایی را از اول نگه می‌دارد (بندِ ۱۶ پرامپت).
+ */
+export function Skeleton({ rows = 3, className = '' }: { rows?: number; className?: string }) {
+  return (
+    <div className={`flex flex-col gap-2 ${className}`} aria-hidden>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div
+          key={i}
+          className="h-9 animate-pulse rounded-lg"
+          style={{ background: 'color-mix(in srgb, var(--text-muted) 12%, transparent)', animationDelay: `${i * 70}ms` }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function Empty({ icon, title, hint }: { icon?: ReactNode; title: string; hint?: string }) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 py-14 text-center">
