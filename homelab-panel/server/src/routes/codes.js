@@ -19,6 +19,7 @@ import { allowAutoRegister } from '../lib/auto-register.js';
 import { linkApp } from '../appauth/registry-link.js';
 import { checkMailSettings, codeSettings, safeCodeSettings, saveCodeSettings } from '../codes/settings.js';
 import { onPanelMailChanged } from '../account/supervisor.js';
+import { cloudRaw } from '../stations/cloud.js';
 import { issueCode, maskEmail, revealCode, verifyCode } from '../codes/service.js';
 import { awaitDelivery, drainQueue, queueStatus } from '../codes/queue.js';
 import { mailReady, sendCodeEmail } from '../codes/mail.js';
@@ -220,7 +221,66 @@ const publicApp = (row) => ({
  * ببیند و کپی کند. ولی فقط تا وقتی کد زنده است؛ کدِ مصرف‌شده یا منقضی دیگر
  * نشان داده نمی‌شود، چون به درد نمی‌خورد و ماندنش فقط ریسک است.
  */
-adminRouter.get('/live', (req, res) => {
+/*
+ *  کدهای ورودِ **سرورِ حساب**، به همان شکلِ کدهای خودِ پنل.
+ *
+ *  ⛔ دو دفترِ کد هست و این یک بار کاربر را کاملاً گیج کرد: کدی که برنامهٔ
+ *  دکان یا پمپ می‌خواهد در دفترِ **سرورِ حساب** می‌نشیند (`login_requests`)،
+ *  نه در دفترِ این پنل. پس صفحهٔ «کدهای زنده» می‌گفت «هنوز کسی کد نخواسته»
+ *  در حالی که روی گوشی نوشته بود «کد شش‌رقمی فرستاده شد». همان درسِ همیشگیِ
+ *  این ریپو: دو دفتر یعنی دو حقیقت.
+ *
+ *  ⛔ **دفترِ دومی ساخته نشد** — این فقط می‌خواند و نگه نمی‌دارد.
+ *
+ *  ⚠️ و کد این‌جا **نمی‌آید**: خودِ سرورِ حساب هم در فهرست کد نمی‌دهد. نمایشِ
+ *  کد یک کارِ جدا و ثبت‌شده است (`POST /api/account-admin/logins/:id/reveal`).
+ *
+ *  ⚠️ نرسیدن به سرورِ حساب صفحه را نمی‌شکند: کدهای خودِ پنل سرِ جایشان
+ *  می‌مانند و `accountError` می‌گوید چرا آن یکی نیامد.
+ */
+async function accountCodes(app, limit) {
+  const out = await cloudRaw('GET', '/api/admin/logins', {
+    query: { app: app || '', limit },
+  });
+  const rows = Array.isArray(out?.requests) ? out.requests : [];
+  return rows.map((r) => ({
+    id: r.request_id,
+    //  ⚠️ نشانِ سرچشمه — صفحه باید بگوید این ردیف مالِ کدام دفتر است
+    source: 'account',
+    app: r.app,
+    appName: r.app === 'pump' ? 'پمپ‌بنزین' : 'فروشگاه',
+    email: r.email,
+    emailMasked: r.masked_email,
+    subjectId: r.device_id || '',
+    purpose: 'login',
+    //  فهرست هیچ‌وقت کد نمی‌دهد؛ «نمایشِ کد» مسیرِ جداست
+    code: null,
+    canReveal: Boolean(r.active),
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+    expiresIn: r.active ? Math.max(0, Math.round((r.expires_at - Date.now()) / 1000)) : 0,
+    usedAt: r.consumed_at,
+    cancelledAt: r.superseded_at,
+    tries: r.code_attempts,
+    status: r.consumed_at ? 'used' : r.superseded_at ? 'replaced' : r.active ? 'live' : 'expired',
+    sendState: r.state,
+    /*
+     *  ⛔ «رفت» با «در لاگ چاپ شد» یکی نیست و این یک بار کاربر را ساعت‌ها
+     *  دنبالِ ایمیلی فرستاد که هیچ‌وقت فرستاده نشده بود: با راهِ ارسالِ
+     *  «log» ردیف `sent` مهر می‌خورد و میز سبزِ پررنگ نشان می‌داد.
+     *  سرورِ حساب از ۲.۷.۳ دلیلش را `log_only` می‌گذارد و این‌جا هم
+     *  دیده می‌شود.
+     */
+    logOnly: r.reason === 'log_only',
+    sendError: r.last_error || '',
+    sendResponse: r.reason || null,
+    sentAt: r.sent_at,
+    autoResend: Number(r.send_attempts || 0) > 1,
+    locked: Boolean(r.locked),
+  }));
+}
+
+adminRouter.get('/live', async (req, res) => {
   const now = Date.now();
   const rows = recentRequests({
     app: req.query.app ? cleanSlug(req.query.app) : null,
@@ -256,7 +316,27 @@ adminRouter.get('/live', (req, res) => {
     };
   });
 
-  res.json({ ok: true, items, queue: queueStatus(), now });
+  /*
+   *  کدهای سرورِ حساب کنارِ کدهای خودِ پنل، مرتب‌شده بر اساسِ زمان — چون از
+   *  دیدِ صاحبِ سامانه اینها یک چیزند: «کسی کد خواست».
+   */
+  const wanted = req.query.app ? cleanSlug(req.query.app) : null;
+  let account = [];
+  let accountError = '';
+  //  بخشِ سرورِ حساب فقط دو نام دارد؛ فیلترِ برنامهٔ خودِ پنل به آن نمی‌خورد
+  const accountApp = wanted === 'shop' || wanted === 'pump' ? wanted : null;
+  if (!wanted || accountApp) {
+    try {
+      account = await accountCodes(accountApp, Math.min(200, Number(req.query.limit) || 60));
+    } catch (err) {
+      accountError = err?.message || 'به سرورِ حساب نرسیدیم';
+    }
+  }
+
+  const all = [...items.map((r) => ({ ...r, source: 'panel' })), ...account]
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+
+  res.json({ ok: true, items: all, queue: queueStatus(), accountError, now });
 });
 
 /**

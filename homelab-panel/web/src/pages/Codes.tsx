@@ -30,7 +30,21 @@ import { ActionButton, Cell, Notice, Row, Select, Stat, Table, Tabs } from '../c
 /* ------------------------------- انواع ---------------------------------- */
 
 type LiveItem = {
-  id: number;
+  id: number | string;
+  /**
+   *  کدام دفتر: `panel` مالِ موتورِ کدِ خودِ این پنل است و `account` مالِ
+   *  سرورِ حساب (ورودِ برنامه‌های دکان و پمپ).
+   *
+   *  ⚠️ یک بار همین تفاوت کاربر را کاملاً گیج کرد: کدی که روی گوشی «فرستاده
+   *  شد» می‌گفت در دفترِ سرورِ حساب نشسته بود و این صفحه — که فقط دفترِ خودش
+   *  را می‌خواند — می‌گفت «هنوز کسی کد نخواسته».
+   */
+  source?: 'panel' | 'account';
+  /** ردیفِ سرورِ حساب کدش در فهرست نمی‌آید؛ با دکمه و با ثبت نشان داده می‌شود */
+  canReveal?: boolean;
+  /** ⛔ «رفت» نیست: فقط در لاگِ سرور چاپ شده و هیچ ایمیلی بیرون نرفته */
+  logOnly?: boolean;
+  locked?: boolean;
   app: string;
   appName: string;
   email: string;
@@ -134,6 +148,16 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
   const { t } = useApp();
   const [items, setItems] = useState<LiveItem[] | null>(null);
   const [queue, setQueue] = useState<QueueState | null>(null);
+  const [accountError, setAccountError] = useState('');
+  /**
+   *  راهِ ارسالِ **سرورِ حساب**، که با رباتِ ایمیلِ خودِ پنل یکی نیست.
+   *
+   *  ⛔ با `log`، کدِ ورودِ برنامه‌ها فقط در لاگ چاپ می‌شود و هیچ ایمیلی
+   *  نمی‌رود — ولی چون `request-code` عمداً همیشه ۲۰۰ است، برنامه می‌گوید
+   *  «کد فرستاده شد». این صفحه باید همین را بلند بگوید، وگرنه کاربر ساعت‌ها
+   *  دنبالِ ایمیلی می‌گردد که هیچ‌وقت فرستاده نشده.
+   */
+  const [mailProvider, setMailProvider] = useState('');
   const [onlyLive, setOnlyLive] = useState(true);
   const [app, setApp] = useState('');
   const [apps, setApps] = useState<CodeApp[]>([]);
@@ -143,12 +167,13 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
 
   const load = useCallback(async () => {
     try {
-      const res = await api<{ items: LiveItem[]; queue: QueueState }>(
+      const res = await api<{ items: LiveItem[]; queue: QueueState; accountError?: string }>(
         `/api/codes-admin/live${app ? `?app=${encodeURIComponent(app)}` : ''}`
       );
       if (!alive.current) return;
       setItems(res.items);
       setQueue(res.queue);
+      setAccountError(res.accountError || '');
       onQueue(res.queue);
     } catch {
       if (alive.current) setItems([]);
@@ -171,6 +196,9 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
     api<{ apps: CodeApp[] }>('/api/codes-admin/apps')
       .then((r) => setApps(r.apps))
       .catch(() => {});
+    api<{ email?: { provider?: string } }>('/api/account-admin/mail')
+      .then((r) => setMailProvider(String(r.email?.provider || '')))
+      .catch(() => setMailProvider(''));
   }, []);
 
   const shown = useMemo(
@@ -187,6 +215,16 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
           {t('codesNoMail')}
         </Notice>
       )}
+
+      {/*
+        ⛔ بلندترین حرفِ این صفحه: سرورِ حساب هیچ ایمیلی نمی‌فرستد.
+        «کد نیامد» با این یک خط از یک معما به یک کارِ پنج‌دقیقه‌ای تبدیل می‌شود.
+      */}
+      {mailProvider === 'log' && (
+        <Notice tone="bad">{t('codesAccountLogOnly')}</Notice>
+      )}
+
+      {accountError && <Notice tone="warn">{t('codesAccountDown')} — {accountError}</Notice>}
 
       {queue && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -253,13 +291,42 @@ function CodeRow({ item, now }: { item: LiveItem; now: number }) {
   const left = Math.max(0, Math.round((item.expiresAt - now) / 1000));
   const live = item.status === 'live' && left > 0;
 
+  /*
+   *  کدِ ردیفِ سرورِ حساب فقط با درخواستِ صریح می‌آید — نه با باز شدنِ صفحه.
+   *
+   *  ⛔ چرا نه خودکار: هر نمایش در دفترِ خودِ سرورِ حساب ثبت می‌شود
+   *  (`login.code_revealed`). اگر فهرست خودش نشانشان می‌داد، هر بار تازه
+   *  شدنِ صفحه — هر دو و نیم ثانیه — یک ردیفِ «کد دیده شد» برای هر مشتری
+   *  می‌ساخت و آن دفتر را بی‌معنا می‌کرد.
+   */
+  const [shown, setShown] = useState('');
+  const [revealing, setRevealing] = useState(false);
+  const [revealError, setRevealError] = useState('');
+  const code = item.code || shown;
+
+  const reveal = async () => {
+    if (revealing) return;
+    setRevealing(true);
+    setRevealError('');
+    try {
+      const r = await api<{ code?: string }>(`/api/account-admin/logins/${encodeURIComponent(String(item.id))}/reveal`, { body: {} });
+      setShown(String(r.code || ''));
+    } catch (e) {
+      setRevealError(e instanceof Error ? e.message : t('codesRevealFailed'));
+    } finally {
+      setRevealing(false);
+    }
+  };
+
   const stateColor =
-    item.sendState === 'sent' ? 'var(--status-good)'
+    item.logOnly ? 'var(--status-warning)'
+    : item.sendState === 'sent' ? 'var(--status-good)'
     : item.sendState === 'failed' ? 'var(--status-critical)'
     : 'var(--status-warning)';
 
   const stateLabel =
-    item.sendState === 'sent' ? t('codesSent')
+    item.logOnly ? t('codesLogOnly')
+    : item.sendState === 'sent' ? t('codesSent')
     : item.sendState === 'failed' ? t('codesFailed')
     : item.sendState === 'sending' ? t('codesSending')
     : t('codesQueued');
@@ -279,18 +346,30 @@ function CodeRow({ item, now }: { item: LiveItem; now: number }) {
         <div className="min-w-0">
           <p className="truncate text-sm">{item.appName}</p>
           <p className="truncate text-[10px] text-ink-muted">
-            {item.purpose}
+            {item.source === 'account' ? t('codesFromAccount') : item.purpose}
             {item.autoResend ? ` · ${t('codesAuto')}` : ''}
+            {item.locked ? ` · ${t('codesLocked')}` : ''}
           </p>
         </div>
       </Cell>
 
       {/* خودِ کد — بزرگ و خوانا، چون ممکن است تلفنی بخوانیدش */}
       <Cell>
-        {item.code ? (
+        {code ? (
           <span className="tnum font-mono text-base font-semibold tracking-[0.2em]" dir="ltr">
-            {item.code}
+            {code}
           </span>
+        ) : live && item.canReveal ? (
+          <>
+            <ActionButton onClick={reveal} disabled={revealing}>
+              {revealing ? '…' : t('codesReveal')}
+            </ActionButton>
+            {revealError && (
+              <p className="mt-1 text-[10px] leading-snug" style={{ color: 'var(--status-critical)' }} dir="auto">
+                {revealError}
+              </p>
+            )}
+          </>
         ) : (
           <span className="text-xs text-ink-muted">
             {item.status === 'used' ? t('codesUsed')
@@ -336,7 +415,7 @@ function CodeRow({ item, now }: { item: LiveItem; now: number }) {
       </Cell>
 
       <Cell className="text-end">
-        {item.code && <CopyButton value={item.code} />}
+        {code && <CopyButton value={code} />}
       </Cell>
     </Row>
   );

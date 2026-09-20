@@ -409,6 +409,7 @@ const fake = http.createServer((req, res) => {
 
     //  ورودها
     if (p === '/api/admin/logins' && req.method === 'GET') return j(200, { requests: [{ request_id: 'req1', app: 'shop', masked_email: 'k***@x.com', status: 'sent', created_at: NOW - 120e3, tries: 1 }], worker: { alive: true } });
+    if (p === '/api/admin/email' && req.method === 'GET') return j(200, { email: { provider: 'log', from: 'a@b.c', host: '' } });
     if (p === '/api/admin/logins/stats') return j(200, { sent: 12, failed: 1, queued: 0, p50: 120, p95: 400, worker: { alive: true }, alerts: [] });
     if ((m = /^\/api\/admin\/logins\/([^/]+)\/resend$/.exec(p)) && req.method === 'POST') return j(200, { ok: true, result: 'sent', status: 'sent' });
     if (p === '/api/admin/logins/unlock' && req.method === 'POST') return j(200, { ok: true });
@@ -760,10 +761,45 @@ try {
   check('دوباره فرستادنِ همان کد', lgRe.status === 200 && last()?.path === '/api/admin/logins/req1/resend');
   const lgUn = await api('POST', '/api/account-admin/logins/unlock', { app: 'shop', email: 'k@x.com' }, auth);
   check('برداشتنِ قفلِ تلاشِ زیاد', lgUn.status === 200 && last()?.body?.email === 'k@x.com');
-  const beforeReveal = seen.length;
+  /*
+   *  «نشان دادنِ کد» از ۱.۴۵.۳ باز است — و پیش از آن عمداً بسته بود.
+   *  خواستهٔ صریحِ صاحب سامانه آن را پس گرفت («کد ساخته می‌شه، من
+   *  نمی‌بینمش»)، و وقتی رباتِ ایمیل تنظیم نشده باشد این تنها راهِ رسیدنِ
+   *  کد به دستِ کاربر است. سه نگهبانش پایین سنجیده می‌شود.
+   */
   const reveal = await api('POST', '/api/account-admin/logins/req1/reveal', {}, auth);
-  check('⛔ «نشان دادنِ کد» از پنل باز نیست و به سرورِ حساب هم نمی‌رسد',
-    reveal.status === 404 && seen.length === beforeReveal, `${reveal.status} ${JSON.stringify(reveal.json)}`);
+  check('مدیر می‌تواند کدِ زنده را ببیند',
+    reveal.status === 200 && reveal.json?.code === '999111'
+      && last()?.path === '/api/admin/logins/req1/reveal',
+    `${reveal.status} ${JSON.stringify(reveal.json)}`);
+
+  //  ⛔ و در دفترِ خودِ پنل هم می‌نشیند — نمایشِ بی‌ردپا همان چیزی است که قدغن بود
+  const auditRows = await api('GET', '/api/control/audit?limit=50', undefined, auth);
+  check('و نمایشِ کد در دفترِ کارهای حساس ثبت شد',
+    JSON.stringify(auditRows.json || {}).includes('account.login.reveal'),
+    String(auditRows.status));
+
+  //  حالِ رباتِ ایمیلِ سرورِ حساب — «log» یعنی هیچ ایمیلی نمی‌رود
+  const mail = await api('GET', '/api/account-admin/mail', undefined, auth);
+  check('حالِ رباتِ ایمیلِ سرورِ حساب خوانده می‌شود',
+    mail.status === 200 && mail.json?.email?.provider === 'log',
+    `${mail.status} ${JSON.stringify(mail.json)}`);
+
+  /*
+   *  ⛔ کدهای سرورِ حساب باید در «کدهای زنده» دیده شوند.
+   *
+   *  دو دفترِ کد هست و این یک بار کاربر را کاملاً گیج کرد: روی گوشی نوشته
+   *  بود «کد شش‌رقمی فرستاده شد» و این صفحه می‌گفت «هنوز کسی کد نخواسته»،
+   *  چون فقط دفترِ خودِ پنل را می‌خواند.
+   */
+  const live = await api('GET', '/api/codes-admin/live', undefined, auth);
+  const fromAccount = (live.json?.items || []).filter((r) => r.source === 'account');
+  check('کدهای ورودِ سرورِ حساب در «کدهای زنده» می‌آیند',
+    live.status === 200 && fromAccount.length === 1 && fromAccount[0].id === 'req1',
+    `${live.status} ${JSON.stringify(live.json?.items || [])}`);
+  //  ⛔ و خودِ کد در فهرست نیست — نمایش همیشه یک کارِ جدا و ثبت‌شده است
+  check('⛔ ولی خودِ کد در فهرست نمی‌آید',
+    fromAccount.every((r) => r.code === null), JSON.stringify(fromAccount));
 
   console.log('\n── در بسته است ──');
   const beforeSneak = seen.length;
@@ -795,6 +831,9 @@ try {
     const oWrite = await api('POST', '/api/account-admin/subscriptions/7/status', { status: 'active' }, oAuth);
     const oDisable = await api('POST', '/api/account-admin/shop-accounts/s1/disable', { disabled: true }, oAuth);
     check('operator اشتراک می‌دهد ولی حساب نمی‌بندد (فقط admin)', oWrite.status === 200 && oDisable.status === 403, `${oWrite.status} ${oDisable.status}`);
+    //  ⛔ نمایشِ کد هم فقط admin — operator با همان نشستِ سالم رد می‌شود
+    const oReveal = await api('POST', '/api/account-admin/logins/req1/reveal', {}, oAuth);
+    check('⛔ نمایشِ کد فقط برای admin است', oReveal.status === 403, String(oReveal.status));
   } else {
     check('ساختنِ کاربرِ آزمون', false, `${mk.status} ${JSON.stringify(mk.json)} / ${mk2.status}`);
   }
