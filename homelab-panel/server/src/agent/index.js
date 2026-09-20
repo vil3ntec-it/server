@@ -16,14 +16,23 @@ import { config } from '../config.js';
 let onAlert = null;
 let analyzing = false;
 
-export function startAgent() {
+/**
+ * @param {{ ownTimers?: boolean }} opts
+ *   ownTimers:false ⇒ نگهبانِ حرارتی و گزارشِ صبحگاهی را **موتورِ اتوماسیون**
+ *   زمان‌بندی می‌کند (automation/jobs/agent.js و health.js)؛ این‌جا فقط
+ *   اسکیما، انقضای پیشنهادها و شنوندهٔ هشدار بالا می‌آید. وگرنه یک کار دو بار
+ *   می‌دوید و هیچ‌کدام در دفترِ اجراها نبود.
+ */
+export function startAgent({ ownTimers = true } = {}) {
   ensureAgentSchema();
   expireActions();
   if (!config.agent?.enabled) return false;
-  guard.startGuard({
-    notify: (n) => getIo()?.emit('agent:notice', { ...n, at: Date.now() }),
-  });
-  startScheduler();
+  if (ownTimers) {
+    guard.startGuard({
+      notify: (n) => getIo()?.emit('agent:notice', { ...n, at: Date.now() }),
+    });
+    startScheduler();
+  }
   onAlert = (alert) => {
     // یک تحلیل در یک زمان — هشدارِ رگباری نباید مدل را رگباری صدا بزند
     if (analyzing || !guard.settings().enabled) return;

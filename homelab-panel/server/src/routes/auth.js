@@ -15,6 +15,8 @@ import {
 import { db, logEvent } from '../db.js';
 import { roleOf, listPanelUsers, setRole, setDisabled, deletePanelUser, ROLES, ROLE_ABILITIES, requireRole } from '../control/roles.js';
 import { audit } from '../lib/audit.js';
+import { noteLogin } from '../automation/sources.js';
+import { clientIp } from '../platform/security.js';
 
 const router = Router();
 
@@ -49,6 +51,8 @@ router.post('/login', (req, res) => {
   if (!user || !verifyPassword(String(password || ''), user.password_hash)) {
     logEvent('warn', 'panel', `ورود ناموفق با نام کاربری «${String(username || '').slice(0, 40)}»`);
     audit(req, 'panel.login', { target: String(username || '').slice(0, 40), ok: false });
+    // رگبارِ ورودِ ناموفق ⇒ رویدادِ login.suspicious برای موتورِ اتوماسیون
+    noteLogin({ ok: false, username, ip: clientIp(req), userAgent: req.headers['user-agent'] });
     return res.status(401).json({ error: 'invalid_credentials' });
   }
   if (user.disabled) {
@@ -62,6 +66,8 @@ router.post('/login', (req, res) => {
   db.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').run(now, user.id);
   logEvent('info', 'panel', `کاربر «${user.username}» وارد شد`);
   audit(req, 'panel.login', { target: user.username });
+  // ورودِ موفق از IPِ تازه هم به موتورِ اتوماسیون گفته می‌شود
+  noteLogin({ ok: true, username: user.username, userId: user.id, ip: clientIp(req), userAgent: req.headers['user-agent'] });
   res.json({ ok: true, user: { id: user.id, username: user.username, role: user.role || 'admin' }, ...session });
 });
 
