@@ -415,6 +415,34 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/logins/unlock' && req.method === 'POST') return j(200, { ok: true });
     if ((m = /^\/api\/admin\/logins\/([^/]+)\/reveal$/.exec(p))) return j(200, { ok: true, code: '999111' });
 
+    //  ── دسترسی‌هایی که در ۱.۴۱.۰ از پنل افتادند و در ۱.۴۷.۰ برگشتند ──
+    if (p === '/api/admin/vip-codes' && req.method === 'GET') {
+      return j(200, { codes: [{ id: 'v1', app: 'shop', hint: 'A1••••', plan: 'm1', days: null, maxDevices: 10, note: '', email: 'k@x.com', emailStatus: 'sent', emailError: '', phone: '', smsStatus: 'none', status: 'active', createdAt: NOW - 60e3, expiresAt: NOW + 30 * 86400e3, usedAt: null, shopId: '' }] });
+    }
+    if (p === '/api/admin/vip-codes' && req.method === 'POST') {
+      return j(201, { code: 'A1B2C3', vipCode: { id: 'v2', hint: 'A1••••', email: '', phone: '' }, emailStatus: 'none' });
+    }
+    if (/^\/api\/admin\/vip-codes\/[^/]+\/revoke$/.test(p)) return j(200, { vipCode: { id: 'v1', status: 'revoked' } });
+    //  ⚠️ پمپ دفترِ **جدا** دارد؛ اگر پل `app` را نبرد، این هیچ‌وقت صدا نمی‌خورد
+    if (p === '/api/admin/pump/vip-codes' && req.method === 'GET') return j(200, { codes: [{ id: 'pv1', app: 'pump', hint: 'P9••••', plan: 'std', status: 'active', createdAt: NOW }] });
+    if (p === '/api/admin/pump/vip-codes' && req.method === 'POST') return j(201, { code: 'PUMP01', vipCode: { id: 'pv2', hint: 'PU••••' } });
+
+    if (p === '/api/admin/purchase-requests') return j(200, { requests: [{ id: 'pr1', shop_id: 's1', user_id: 'u1', plan_code: 'm1', note: '', status: 'pending', created_at: NOW - 3600e3, shop_name: 'دکانِ یک', user_name: 'کریم', phone: '' }] });
+    if (/^\/api\/admin\/purchase-requests\/[^/]+\/approve$/.test(p)) return j(200, { subscription: { id: 'sub9' } });
+    if (/^\/api\/admin\/purchase-requests\/[^/]+\/reject$/.test(p)) return j(200, { ok: true });
+
+    if (p === '/api/admin/visitors') return j(200, { visitors: [{ id: 'vi1', app: 'shop', platform: 'android', appVersion: '3.2', userId: '', name: 'مهمان', ip: '1.2.3.4', accountName: '', accountEmail: '', shopName: '', stationName: '', stationCode: '', location: null, lastSeenAt: NOW }], summary: {} });
+
+    if (p === '/api/admin/apps' && req.method === 'GET') return j(200, { apps: [{ id: 'a1', slug: 'shop', title: 'دکان', kind: 'app', url: '', healthUrl: '', status: 'active', keySet: true, keyHint: '••1234', lastCheckAt: NOW, lastOk: true, lastStatus: 200, lastMs: 12, lastError: '' }] });
+    if (/^\/api\/admin\/apps\/[^/]+\/key$/.test(p)) return j(200, { key: 'KEY-NEW-1' });
+    if (p === '/api/admin/apps/health' && req.method === 'POST') return j(200, { ok: true });
+
+    if (p === '/api/admin/email' && req.method === 'PUT') return j(200, { email: { provider: 'smtp', ready: true } });
+    if (p === '/api/admin/email/test' && req.method === 'POST') return j(200, { ok: true });
+    if (p === '/api/admin/push') return j(200, { push: { enabled: false, project: '', tokens: 0 } });
+    if (p === '/api/admin/sms') return j(200, { sms: { provider: 'none', ready: false, keySet: false } });
+    if (p === '/api/admin/audit') return j(200, { entries: [{ id: 1, action: 'admin.vip_code_created', target_id: 'v1', created_at: NOW }] });
+
     if (p === '/api/admin/admins') return j(200, { admins: ['NEVER'] });
     if (p === '/api/admin/backups') return j(200, { backups: ['NEVER'] });
     return j(404, { error: { code: 'not_found', message: 'این مسیر وجود ندارد' } });
@@ -837,6 +865,69 @@ try {
   } else {
     check('ساختنِ کاربرِ آزمون', false, `${mk.status} ${JSON.stringify(mk.json)} / ${mk2.status}`);
   }
+
+  /* ===================================================================
+     دسترسی‌هایی که با دفترِ قدیمی افتادند — و نباید دوباره بیفتند
+
+     ⛔ این‌ها در ۱.۴۱.۰ از پنل رفتند چون پل یک **فهرستِ سفید** است و
+        خطشان نوشته نشد. سرورِ حساب همان مسیرها را داشت، ولی صاحبِ
+        سامانه از پنل دیگر کدِ اشتراک نمی‌توانست بسازد و درخواست‌های
+        خریدِ مشتری‌ها را اصلاً نمی‌دید. گزارشِ خودش: «اون دسترسی‌های
+        قدیم رو ندارم روش».
+     =================================================================== */
+  console.log('\n── دسترسی‌های برگشته ──');
+
+  const vipList = await api('GET', '/api/account-admin/vip-codes?app=shop', undefined, auth);
+  check('کدهای اشتراکِ دکان از پنل دیده می‌شوند',
+    vipList.status === 200 && vipList.json?.codes?.[0]?.hint === 'A1••••', `${vipList.status} ${JSON.stringify(vipList.json)}`);
+
+  //  ⚠️ اگر پل `app` را نبرد، این به دفترِ **دکان** می‌رود و کدِ پمپ گم می‌شود
+  const vipPump = await api('GET', '/api/account-admin/vip-codes?app=pump', undefined, auth);
+  check('⛔ کدِ پمپ از دفترِ خودش می‌آید، نه از دفترِ دکان',
+    vipPump.status === 200 && vipPump.json?.codes?.[0]?.id === 'pv1', `${vipPump.status} ${JSON.stringify(vipPump.json)}`);
+
+  const vipMake = await api('POST', '/api/account-admin/vip-codes', { app: 'shop', plan: 'm1' }, auth);
+  check('کدِ اشتراکِ تازه ساخته می‌شود و کدِ خام یک بار برمی‌گردد',
+    (vipMake.status === 200 || vipMake.status === 201) && vipMake.json?.code === 'A1B2C3', `${vipMake.status} ${JSON.stringify(vipMake.json)}`);
+
+  const vipMakePump = await api('POST', '/api/account-admin/vip-codes', { app: 'pump', plan: 'std' }, auth);
+  check('کدِ پمپ هم از همان در ساخته می‌شود',
+    (vipMakePump.status === 200 || vipMakePump.status === 201) && vipMakePump.json?.code === 'PUMP01', `${vipMakePump.status} ${JSON.stringify(vipMakePump.json)}`);
+
+  const vipRevoke = await api('POST', '/api/account-admin/vip-codes/v1/revoke', { app: 'shop' }, auth);
+  check('کدِ اشتراک باطل می‌شود', vipRevoke.status === 200, String(vipRevoke.status));
+
+  const prs = await api('GET', '/api/account-admin/purchase-requests?status=pending', undefined, auth);
+  check('درخواست‌های خرید دیده می‌شوند',
+    prs.status === 200 && prs.json?.requests?.[0]?.shop_name === 'دکانِ یک', `${prs.status} ${JSON.stringify(prs.json)}`);
+
+  const prOk = await api('POST', '/api/account-admin/purchase-requests/pr1/approve', { days: null }, auth);
+  const prNo = await api('POST', '/api/account-admin/purchase-requests/pr1/reject', {}, auth);
+  check('تایید و ردِ درخواستِ خرید کار می‌کند', prOk.status === 200 && prNo.status === 200, `${prOk.status} ${prNo.status}`);
+
+  const vis = await api('GET', '/api/account-admin/visitors?guests=1', undefined, auth);
+  check('بازدیدکننده‌ها برگشتند', vis.status === 200 && vis.json?.visitors?.[0]?.id === 'vi1', String(vis.status));
+
+  const appsList = await api('GET', '/api/account-admin/apps', undefined, auth);
+  check('برنامه‌های زیرِ مدیریت دیده می‌شوند',
+    appsList.status === 200 && appsList.json?.apps?.[0]?.slug === 'shop', String(appsList.status));
+
+  const health = await api('POST', '/api/account-admin/apps/health', {}, auth);
+  check('سنجشِ سلامتِ برنامه‌ها از پنل زده می‌شود', health.status === 200, String(health.status));
+
+  const mailPut = await api('PUT', '/api/account-admin/email', { provider: 'smtp', host: 'smtp.x.com' }, auth);
+  check('تنظیماتِ ایمیلِ سرورِ حساب از پنل نوشته می‌شود', mailPut.status === 200, String(mailPut.status));
+
+  const mailTest = await api('POST', '/api/account-admin/email/test', { to: 'k@x.com' }, auth);
+  check('ارسالِ آزمایشیِ ایمیل از پنل زده می‌شود', mailTest.status === 200, String(mailTest.status));
+
+  const pushGet = await api('GET', '/api/account-admin/push', undefined, auth);
+  const smsGet = await api('GET', '/api/account-admin/sms', undefined, auth);
+  check('حالِ پوش و پیامک خوانده می‌شود', pushGet.status === 200 && smsGet.status === 200, `${pushGet.status} ${smsGet.status}`);
+
+  const accAudit = await api('GET', '/api/account-admin/account-audit', undefined, auth);
+  check('دفترِ ممیزیِ خودِ سرورِ حساب دیده می‌شود',
+    accAudit.status === 200 && accAudit.json?.entries?.[0]?.action === 'admin.vip_code_created', String(accAudit.status));
 
   console.log('\n── سرورِ حساب خاموش ──');
   fake.close();

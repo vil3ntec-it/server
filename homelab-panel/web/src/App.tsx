@@ -21,7 +21,7 @@ import Vault from './pages/control/Vault';
 import Updates from './pages/control/Updates';
 import PanelUsers from './pages/control/PanelUsers';
 import Assistant from './pages/Assistant';
-import { DomainsHub, LoginsHub, LogsHub, MonitoringHub, NetworkHub, PlansHub } from './pages/hubs';
+import { AccountServerHub, CustomersHub, DomainsHub, LoginsHub, LogsHub, MonitoringHub, NetworkHub, PlansHub } from './pages/hubs';
 import DockerPage from './pages/Docker';
 import ProcessesPage from './pages/Processes';
 import DatabasesPage from './pages/Databases';
@@ -33,7 +33,6 @@ import StationsPage from './pages/Stations';
 import StationProfile from './pages/StationProfile';
 
 // ── مشتری‌ها، پول و پیام — همه از سرورِ حساب (routes/account-admin.js) ────
-import Customers from './pages/account/Customers';
 import SalesPage from './pages/account/Sales';
 import NoticesPage from './pages/account/Notices';
 import SupportPage from './pages/account/Support';
@@ -67,7 +66,11 @@ function Shell() {
         <Route path="/logins" element={<LoginsHub />} />
 
         {/* مشتری‌ها و فروش — پلِ سرورِ حساب */}
-        <Route path="/customers" element={<Customers />} />
+        <Route path="/customers" element={<CustomersHub />} />
+        <Route path="/account-server" element={<AccountServerHub />} />
+        {/* نشانی‌های قدیمی نباید بشکنند — همان قاعدهٔ گامِ ۴ی ریمیک */}
+        <Route path="/visitors" element={<Navigate to="/customers?tab=visitors" replace />} />
+        <Route path="/vip-codes" element={<Navigate to="/plans?tab=codes" replace />} />
         <Route path="/sales" element={<SalesPage />} />
         <Route path="/plans" element={<PlansHub />} />
         {/* نشانیِ جدا برای تخفیف‌ها هیچ‌وقت نبود، ولی لینکِ حدسی نباید بشکند */}

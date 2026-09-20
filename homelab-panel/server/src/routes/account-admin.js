@@ -1058,6 +1058,194 @@ router.post('/logins/unlock', guard(async (req, res) => {
   res.json(out);
 }));
 
+/* ------------------- کدهای اشتراک (VIP) — دکان و پمپ ------------------- */
+
+/*
+ *  ⛔ این‌ها در ۱.۴۱.۰ با دفترِ قدیمی رفتند و جایشان در پل نوشته نشد —
+ *     یعنی صاحبِ سامانه از پنل دیگر **کدِ اشتراک نمی‌توانست بسازد**، در
+ *     حالی که سرورِ حساب همان مسیر را داشت. گزارشِ خودش: «اون دسترسی‌های
+ *     قدیم رو ندارم روش». فهرستِ سفید بودن یعنی هر چه نوشته نشود، نیست.
+ *
+ *  ⚠️ کدِ پمپ و کدِ دکان دو دفترِ جدا هستند (`vip_codes` و
+ *     `station_vip_codes`)، پس `app` همراهِ هر سه مسیر می‌رود — همان
+ *     قاعدهٔ «هر پرس‌وجوی پول `app` را شرط می‌کند».
+ */
+router.get('/vip-codes', guard(async (req, res) => {
+  const section = SECTION[sectionOf(req.query.app || 'shop')];
+  res.json(await cloudRaw('GET', `/api/admin${section}/vip-codes`, {
+    query: {
+      status: String(req.query.status || '').slice(0, 20),
+      limit: Math.min(200, Math.max(1, Number(req.query.limit) || 50)),
+    },
+  }));
+}));
+
+router.post('/vip-codes', guard(async (req, res) => {
+  const app = sectionOf(req.body?.app || 'shop');
+  const out = await cloudRaw('POST', `/api/admin${SECTION[app]}/vip-codes`, { body: req.body || {} });
+  //  ⛔ خودِ کد در دفترِ ممیزی نمی‌نشیند — کدی که در لاگ بنشیند دیگر راز نیست.
+  audit({
+    actor: actorOf(req),
+    action: 'account.vip_code.create',
+    entity: 'vip_code',
+    detail: { app, plan: String(req.body?.plan || '') },
+  });
+  res.json(out);
+}));
+
+router.post('/vip-codes/:id/revoke', guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const app = sectionOf(req.body?.app || req.query.app || 'shop');
+  const out = await cloudRaw('POST', `/api/admin${SECTION[app]}/vip-codes/${id}/revoke`);
+  audit({ actor: actorOf(req), action: 'account.vip_code.revoke', entity: 'vip_code', entityId: id, detail: { app } });
+  res.json(out);
+}));
+
+/* -------------------------- درخواست‌های خرید -------------------------- */
+
+/*
+ *  ⚠️ «تایید» یک اشتراکِ واقعی می‌دهد، پس عملاً همان کارِ پول است و
+ *     نقشِ operator می‌خواهد (از `writeNeedsOperator` در `index.js`).
+ */
+router.get('/purchase-requests', guard(async (req, res) => {
+  res.json(await cloudRaw('GET', '/api/admin/purchase-requests', {
+    query: {
+      status: String(req.query.status || '').slice(0, 20),
+      limit: Math.min(200, Math.max(1, Number(req.query.limit) || 50)),
+    },
+  }));
+}));
+
+router.post('/purchase-requests/:id/approve', guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const out = await cloudRaw('POST', `/api/admin/purchase-requests/${id}/approve`, { body: req.body || {} });
+  audit({ actor: actorOf(req), action: 'account.purchase.approve', entity: 'purchase_request', entityId: id });
+  res.json(out);
+}));
+
+router.post('/purchase-requests/:id/reject', guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const out = await cloudRaw('POST', `/api/admin/purchase-requests/${id}/reject`, { body: req.body || {} });
+  audit({ actor: actorOf(req), action: 'account.purchase.reject', entity: 'purchase_request', entityId: id });
+  res.json(out);
+}));
+
+/* ---------------------------- بازدیدکننده‌ها ---------------------------- */
+
+/** کسانی که برنامه را باز کرده‌اند ولی هنوز حساب نساخته‌اند. فقط دیدنی. */
+router.get('/visitors', guard(async (req, res) => {
+  res.json(await cloudRaw('GET', '/api/admin/visitors', {
+    query: {
+      app: scopeOf(req.query.app) === 'both' ? '' : scopeOf(req.query.app),
+      limit: Math.min(200, Math.max(1, Number(req.query.limit) || 50)),
+    },
+  }));
+}));
+
+/* ------------------------ برنامه‌های زیرِ مدیریت ------------------------ */
+
+router.get('/apps', guard(async (req, res) => {
+  res.json(await cloudRaw('GET', '/api/admin/apps'));
+}));
+
+router.post('/apps', guard(async (req, res) => {
+  const out = await cloudRaw('POST', '/api/admin/apps', { body: req.body || {} });
+  audit({ actor: actorOf(req), action: 'account.app.create', entity: 'app', detail: { name: String(req.body?.name || '') } });
+  res.json(out);
+}));
+
+router.put('/apps/:id', guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const out = await cloudRaw('PUT', `/api/admin/apps/${id}`, { body: req.body || {} });
+  audit({ actor: actorOf(req), action: 'account.app.update', entity: 'app', entityId: id });
+  res.json(out);
+}));
+
+router.delete('/apps/:id', guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const out = await cloudRaw('DELETE', `/api/admin/apps/${id}`);
+  audit({ actor: actorOf(req), action: 'account.app.delete', entity: 'app', entityId: id });
+  res.json(out);
+}));
+
+/*
+ *  ⛔ کلیدِ تازه فقط دستِ admin — همان نقش‌بندیِ دفترِ قدیم
+ *     (`needs('admin')`). کلید یعنی هر که دارد می‌تواند به جای آن برنامه
+ *     حرف بزند؛ operator نباید بتواند یکی برای خودش بسازد.
+ */
+router.post('/apps/:id/key', requireRole('admin'), guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const out = await cloudRaw('POST', `/api/admin/apps/${id}/key`);
+  audit({ actor: actorOf(req), action: 'account.app.rotate_key', entity: 'app', entityId: id });
+  res.json(out);
+}));
+
+/** سنجشِ سلامت — می‌نویسد نه، فقط می‌پرسد؛ ولی POST است چون کار می‌کند. */
+router.post('/apps/health', guard(async (req, res) => {
+  res.json(await cloudRaw('POST', '/api/admin/apps/health'));
+}));
+
+/* ------------------- ایمیل، پوش و پیامکِ سرورِ حساب ------------------- */
+
+/*
+ *  ⚠️ این‌ها تنظیماتِ **سرورِ حساب** هستند، نه رباتِ ایمیلِ خودِ پنل. آن یکی
+ *     در «کدهای شش‌رقمی» است و دو تا بودنشان عمدی است (بخشِ «دو رباتِ
+ *     ایمیل» در CLAUDE.md). ⛔ یکی‌شان نکنید.
+ *  ⚠️ `GET /mail` بالاتر همین را می‌دهد و صفحهٔ کدها از آن می‌خواند؛
+ *     این‌جا همان است با نامِ خودِ سرورِ حساب، به‌علاوهٔ نوشتن و تست.
+ */
+router.get('/email', guard(async (req, res) => {
+  res.json(await cloudRaw('GET', '/api/admin/email'));
+}));
+
+router.put('/email', requireRole('admin'), guard(async (req, res) => {
+  const out = await cloudRaw('PUT', '/api/admin/email', { body: req.body || {} });
+  //  ⛔ رمزِ SMTP در دفترِ ممیزی نمی‌نشیند؛ فقط این‌که چه کسی و کِی عوضش کرد.
+  audit({ actor: actorOf(req), action: 'account.email.update', detail: { provider: String(req.body?.provider || '') } });
+  res.json(out);
+}));
+
+router.post('/email/test', guard(async (req, res) => {
+  res.json(await cloudRaw('POST', '/api/admin/email/test', { body: req.body || {} }));
+}));
+
+router.get('/push', guard(async (req, res) => {
+  res.json(await cloudRaw('GET', '/api/admin/push'));
+}));
+
+router.put('/push', requireRole('admin'), guard(async (req, res) => {
+  const out = await cloudRaw('PUT', '/api/admin/push', { body: req.body || {} });
+  audit({ actor: actorOf(req), action: 'account.push.update' });
+  res.json(out);
+}));
+
+router.get('/sms', guard(async (req, res) => {
+  res.json(await cloudRaw('GET', '/api/admin/sms'));
+}));
+
+router.put('/sms', requireRole('admin'), guard(async (req, res) => {
+  const out = await cloudRaw('PUT', '/api/admin/sms', { body: req.body || {} });
+  audit({ actor: actorOf(req), action: 'account.sms.update', detail: { provider: String(req.body?.provider || '') } });
+  res.json(out);
+}));
+
+router.post('/sms/test', guard(async (req, res) => {
+  res.json(await cloudRaw('POST', '/api/admin/sms/test', { body: req.body || {} }));
+}));
+
+/* ------------------- دفترِ ممیزیِ خودِ سرورِ حساب ------------------- */
+
+/*
+ *  ⚠️ با `/logs?tab=audit`ِ پنل یکی **نیست**: آن یکی کارهای خودِ این پنل را
+ *     می‌گوید و این یکی کارهایی که روی سرورِ حساب شده — از جمله کارهایی که
+ *     از `api.<دامنه>/admin/` انجام شده‌اند و پنل اصلاً ندیدشان.
+ */
+router.get('/account-audit', guard(async (req, res) => {
+  res.json(await cloudRaw('GET', '/api/admin/audit', {
+    query: { limit: Math.min(200, Math.max(1, Number(req.query.limit) || 50)) },
+  }));
+}));
+
 /* --------------------------- خواندنی‌های دیگر -------------------------- */
 
 /** فقط‌خواندنی — یک‌به‌یک، نه «هر چه زیرِ /api/admin بود». */

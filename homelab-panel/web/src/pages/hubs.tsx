@@ -27,6 +27,11 @@ import AppLogins from './AppLogins';
 import EmailLogins from './account/EmailLogins';
 import Plans from './account/Plans';
 import Discounts from './account/Discounts';
+import VipCodes from './account/VipCodes';
+import PurchaseRequests from './account/PurchaseRequests';
+import Customers from './account/Customers';
+import Visitors from './account/Visitors';
+import { AccountAudit, AccountEmail, AccountSmsPush, ManagedApps } from './account/AccountServerSettings';
 
 type Tab = { id: string; label: string; body: ReactNode };
 
@@ -87,6 +92,50 @@ export function PlansHub() {
       tabs={[
         { id: 'plans', label: 'پلن‌ها و قیمت‌ها', body: <Plans /> },
         { id: 'discounts', label: 'تخفیف‌ها و کمپین', body: <Discounts /> },
+        /*
+         *  ⛔ این دو در ۱.۴۱.۰ با دفترِ قدیمی رفتند و جایشان در پل نوشته
+         *     نشد — گزارشِ صاحبِ سامانه: «اون دسترسی‌های قدیم رو ندارم».
+         *     همین‌جا برگشتند، نه در یک صفحهٔ تازهٔ منو: هر سه یک موضوعند —
+         *     «مشتری چطور صاحبِ اشتراک می‌شود».
+         */
+        { id: 'codes', label: 'کدهای اشتراک', body: <VipCodes /> },
+        { id: 'requests', label: 'درخواست‌های خرید', body: <PurchaseRequests /> },
+      ]}
+    />
+  );
+}
+
+/**
+ * مشتری‌ها + بازدیدکننده‌ها — «چه کسی خرید» و «چه کسی فقط نگاه کرد».
+ *
+ * ⚠️ بازدیدکننده‌ها هم با دفترِ قدیمی رفته بود. ارزشش دقیقاً در مهمان‌هاست:
+ * کسی که نصب کرده و حساب نساخته، همان کسی است که باید دنبالش رفت.
+ */
+export function CustomersHub() {
+  return (
+    <Hub
+      tabs={[
+        { id: 'customers', label: 'مشتری‌ها و اشتراک‌ها', body: <Customers /> },
+        { id: 'visitors', label: 'بازدیدکننده‌ها', body: <Visitors /> },
+      ]}
+    />
+  );
+}
+
+/**
+ * تنظیماتِ خودِ سرورِ حساب — برنامه‌ها، ایمیل، پیامک و پوش، و دفترِ ممیزی‌اش.
+ *
+ * ⛔ تا دیروز تنها راهِ رسیدن به این‌ها `api.<دامنه>/admin/` بود، یعنی یک
+ *    پنلِ دوم با یک ورودِ دوم — همان سردرگمی‌ای که قرار بود برداشته شود.
+ */
+export function AccountServerHub() {
+  return (
+    <Hub
+      tabs={[
+        { id: 'apps', label: 'برنامه‌ها', body: <ManagedApps /> },
+        { id: 'email', label: 'ایمیل', body: <AccountEmail /> },
+        { id: 'smspush', label: 'پیامک و پوش', body: <AccountSmsPush /> },
+        { id: 'audit', label: 'دفترِ ممیزی', body: <AccountAudit /> },
       ]}
     />
   );

@@ -26,6 +26,7 @@ import {
   Network,
   ScrollText,
   Server,
+  ServerCog,
   Settings as SettingsIcon,
   Sun,
   TerminalSquare,
@@ -163,6 +164,14 @@ const NAV_GROUPS: NavGroup[] = [
     key: 'navSetup',
     collapsed: true,
     items: [
+      /*
+       *  ⛔ تنظیماتِ سرورِ حساب (برنامه‌ها، ایمیل، پیامک، پوش، ممیزی) در
+       *     ۱.۴۱.۰ از پنل رفت و تنها راهش `api.<دامنه>/admin/` شد — یعنی
+       *     پنلِ دوم با ورودِ دوم. این‌جا در گروهِ **بسته** می‌نشیند، پس
+       *     بلندیِ پیش‌فرضِ منو عوض نمی‌شود و سنجهٔ «منو در قاب جا می‌شود»
+       *     دست‌نخورده می‌ماند.
+       */
+      { to: '/account-server', key: 'acServer', icon: ServerCog, needs: 'admin' },
       { to: '/control/updates', key: 'ccUpdates', icon: Download },
       { to: '/control/panel-users', key: 'ccPanelUsers', icon: UserCog, needs: 'admin', feature: 'panelUsers' },
       { to: '/files', key: 'files', icon: FolderTree, feature: 'files' },
