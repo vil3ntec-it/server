@@ -51,11 +51,17 @@ import { clientIp } from '../platform/security.js';
  * پیشوندهای سطحِ اولِ سرورِ حساب — همان فهرستِ ‎apiRouter‎ در
  * ‎shop/server/src/app.js‎. اگر آن‌جا پیشوندِ تازه‌ای سوار شد، این‌جا هم
  * باید بیاید؛ وگرنه از تونل «not found» می‌گیرد و هیچ‌کس نمی‌فهمد چرا.
+ *
+ * ⛔ **دستی نگه داشته نمی‌شود.** بندِ ۹ی ‎test/pump-e2e.mjs‎ این فهرست را با
+ * خودِ ‎shop/server/src/app.js‎ می‌سنجد — هم «جا افتاده» و هم «بی‌صاحب». یک
+ * بار همین فهرست عقب افتاد و ‎/api/errors‎ از تونل ۴۰۴ می‌گرفت در حالی که
+ * سرورِ حساب سالم بود و هیچ آزمونی در هیچ‌کدام از دو ریپو نمی‌دیدش.
+ * ⚠️ ‎sales‎ همین‌طور آمده بود و هیچ‌وقت روی سرورِ حساب وجود نداشت.
  */
 export const ACCOUNT_PREFIXES = Object.freeze([
   'health', 'ready', 'config', 'plans', 'terms',
   'auth', 'location', 'me', 'shop', 'pump', 'events', 'sync', 'errors',
-  'admin', 'license', 'support', 'visit', 'vip', 'billing', 'sales',
+  'admin', 'license', 'support', 'visit', 'vip', 'billing',
   'portal', 'downloads',
 ]);
 

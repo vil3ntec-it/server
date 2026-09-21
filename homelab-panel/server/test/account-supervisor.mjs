@@ -133,7 +133,21 @@ try {
   console.log('\n── عیب‌یابی ──');
   const diag = await hit(PANEL, '/api/diagnostics', { headers: auth });
   const row = (diag.json?.checks || []).find((c) => c.key === 'accountServer');
-  check('ردیفِ سرورِ حساب سبز است، با نسخه', row?.state === 'good' && /نسخهٔ/.test(row?.value || ''), JSON.stringify(row));
+  /*
+   *  ⛔ **«روشن است» سبز نیست** (از ۱۴۰۵/۰۷/۰۷). این سنجه تا دیروز `good`
+   *  می‌خواست — و همان یک حرفِ سبز، بزرگ‌ترین بن‌بستِ این سامانه را پنهان
+   *  می‌کرد: بی رباتِ ایمیل، کدِ شش‌رقمیِ ثبت‌نام و ورود ساخته می‌شود و به
+   *  دستِ هیچ‌کس نمی‌رسد (نه ایمیل، نه در پاسخ، نه در لاگ)، ولی
+   *  `register/start` همچنان ۲۰۰ می‌دهد. شرحِ کامل در `routes/diagnostics.js`.
+   *
+   *  ⚠️ این‌جا SMTP تنظیم نیست، پس حالِ **درست** همان `warn` است — با نسخه،
+   *  و با دلیلی که کارِ بعدیِ صاحبِ سرور را می‌گوید.
+   */
+  check('ردیفِ سرورِ حساب: بی رباتِ ایمیل هشدار می‌دهد، نه سبزِ دروغ',
+    row?.state === 'warn' && /نسخهٔ/.test(row?.value || '') && /ایمیل/.test(row?.value || ''),
+    JSON.stringify(row));
+  check('و دلیلش می‌گوید کد به دستِ کسی نمی‌رسد',
+    /به دستِ هیچ‌کس نمی‌رسد/.test(row?.hint || ''), String(row?.hint).slice(0, 140));
 
   console.log('\n── سرورِ حساب می‌افتد و پنل برش می‌گرداند ──');
   const pid = st.json?.pid;

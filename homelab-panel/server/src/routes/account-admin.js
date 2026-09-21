@@ -470,6 +470,119 @@ router.get('/customers/:app/:id/history', guard(async (req, res) => {
   res.json(await cloudRaw('GET', path));
 }));
 
+/* ------------------------ «اشتراک بده» — یک دکمه ----------------------- */
+
+/**
+ * ══ گیرنده‌های ممکن، با نام یا **ایمیل** ═════════════════════════════════
+ *
+ * خواستهٔ صریحِ صاحب سامانه (۱۴۰۵/۰۷/۰۸): «از سرورِ سری به حسابِ مورد نظر
+ * یا **ایمیلِ مد نظر** اشتراک بدم و ثبت هم بشه، و با آسانی دکمهٔ دادنِ
+ * اشتراک داشته باشه که بزنم، اشتراک‌ها رو نشونم بده، و یکی رو بزنم و
+ * برای حساب بفرستم.»
+ *
+ * ⛔ **و چرا `/customers` جوابش نبود**: آن فهرست از
+ * `‎/api/admin/sales/subscriptions‎` می‌آید، یعنی فقط حساب‌هایی که
+ * **ردیفِ اشتراک دارند**. حسابِ تازه‌ای که هنوز چیزی نخریده — همان کسی که
+ * می‌خواهیم اشتراک بدهیم — در آن **نیست**. پس تنها راهِ رسیدن به او
+ * فهرستِ خودِ پمپ‌ها/دکان‌هاست.
+ *
+ * ⚠️ و ایمیل تا ۱۴۰۵/۰۷/۰۸ در آن فهرست **گشته نمی‌شد** (فقط نام و کد و
+ * شماره). آن هم سمتِ سرورِ حساب درست شد؛ این‌جا فقط خوانده می‌شود.
+ *
+ * ⛔ هیچ چیزی این‌جا فیلتر یا حساب نمی‌شود — همان قاعدهٔ «یک دفترِ حساب».
+ */
+router.get('/grant-targets', guard(async (req, res) => {
+  const app = appOf(req);
+  const q = String(req.query.q || '').slice(0, 60);
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+
+  if (app === 'pump') {
+    const out = await cloudRaw('GET', '/api/admin/pump/stations', { query: { q, limit } });
+    return res.json({
+      app,
+      items: (out.stations || []).map((s) => ({
+        app,
+        tenantId: s.id,
+        tenantName: s.name || '',
+        code: s.code || '',
+        ownerName: s.owner_name || '',
+        ownerEmail: s.owner_email || '',
+        ownerPhone: s.owner_phone || '',
+        createdAt: Number(s.created_at) || 0,
+        subscriptionId: s.subscription_id || '',
+        plan: s.plan || '',
+        status: s.sub_status || 'none',
+        endsAt: Number(s.ends_at) || 0,
+      })),
+      total: Number(out.total) || 0,
+    });
+  }
+
+  const out = await cloudRaw('GET', '/api/admin/shops', { query: { q, limit } });
+  res.json({
+    app,
+    items: (out.shops || []).map((s) => ({
+      app,
+      tenantId: s.id,
+      tenantName: s.name || '',
+      code: '',
+      ownerName: s.owner_name || '',
+      ownerEmail: s.owner_email || '',
+      ownerPhone: s.owner_phone || '',
+      createdAt: Number(s.created_at) || 0,
+      subscriptionId: s.subscription_id || '',
+      plan: s.plan || '',
+      status: s.sub_status || 'none',
+      endsAt: Number(s.ends_at) || 0,
+    })),
+    total: Number(out.total) || 0,
+  });
+}));
+
+/**
+ * ══ دورهٔ آزمایشیِ حسابِ تازه — «یک ماه رایگان» ═══════════════════════════
+ *
+ * خواستهٔ صریحِ صاحب سامانه: «برای کسایی که تازه حساب افتتاح می‌کنن هم یک
+ * ماه رایگان داده بشه.» خودِ قاعده روی سرورِ حساب است
+ * (`plans.trialConfig`، پیش‌فرضِ پمپ ۳۰ روز)؛ این‌جا فقط **دیده و عوض**
+ * می‌شود، تا صاحبِ سامانه برای یک عدد مجبور نشود پنلِ دیگری باز کند.
+ *
+ * ⛔ فهرستِ سفید است، نه پروکسی: فقط همین چند کلید می‌روند. مسیرِ
+ * `PATCH /api/admin/config` آن‌طرف کلیدهای دیگری هم دارد (شمارهٔ واتساپ،
+ * واحدِ پول) و آن‌ها جای خودشان را دارند.
+ */
+const CONFIG_KEYS = ['pump_trial_days', 'trial_days'];
+
+router.get('/account-config', guard(async (req, res) => {
+  //  ⚠️ **از `‎/api/admin/plans‎` خوانده می‌شود، نه از مسیرِ `config`.**
+  //  سرورِ حساب برای `config` فقط `PATCH` دارد و هیچ `GET`ی؛ تنظیمات را
+  //  همان پاسخِ پلن‌ها همراه خودش می‌آورد (`admin.js`، `allConfig()`).
+  //  بارِ اول `‎/api/admin/overview‎` نوشتم و آن مسیر روی این روتر اصلاً
+  //  وجود ندارد (مالِ `admin-platform.js` است) — یعنی ۴۰۴ِ خاموش.
+  const out = await cloudRaw('GET', '/api/admin/plans');
+  const cfg = out.config || {};
+  res.json({ config: Object.fromEntries(CONFIG_KEYS.map((k) => [k, cfg[k] ?? ''])) });
+}));
+
+router.patch('/account-config', requireRole('admin'), guard(async (req, res) => {
+  const body = {};
+  for (const key of CONFIG_KEYS) {
+    if (req.body?.[key] === undefined) continue;
+    //  ⚠️ عددِ روز است و منفی معنا ندارد؛ صفر یعنی «دوره‌ای نیست».
+    const n = Number(req.body[key]);
+    if (!Number.isFinite(n) || n < 0 || n > 3650) {
+      return res.status(400).json({ error: 'bad_days', message: 'روزِ دورهٔ آزمایشی بین ۰ تا ۳۶۵۰ است' });
+    }
+    body[key] = String(Math.floor(n));
+  }
+  if (!Object.keys(body).length) {
+    return res.status(400).json({ error: 'nothing', message: 'چیزی برای نوشتن نبود' });
+  }
+  const out = await cloudRaw('PATCH', '/api/admin/config', { body });
+  audit({ actor: actorOf(req), action: 'account.trial.update', detail: body });
+  res.json({ config: Object.fromEntries(CONFIG_KEYS.map((k) => [k, out.config?.[k] ?? ''])) });
+}));
+
 /* ------------------------- کارها روی یک اشتراک ------------------------- */
 
 /** اشتراکِ یک حساب را از فهرستِ همان بخش پیدا کن (برای تمدید). */

@@ -167,8 +167,18 @@ for (let i = 0; i < 500; i++) {
   many.push(issueCode({ app: 'app-shop', email: `user${i}@example.com` }));
 }
 const tookIssue = Date.now() - started;
+//  ⚠️ **ساعتِ دیوار از این سنجه بیرون رفت** (۱۴۰۵/۰۷/۰۷). سقفِ «زیر سه
+//  ثانیه» روی رانرِ کندِ CI ۹٬۰۵۷ms داد و سرخ شد، در حالی که رفتار کاملاً
+//  سالم بود: پانصد هشِ رمز و پانصد درجِ SQLite روی ماشینِ مشترک همین‌قدر
+//  طول می‌کشد. آن‌چه واقعاً باید ثابت شود «سریع بود» نیست، **«منتظرِ
+//  ایمیل نماند»** است — و آن یک حقیقتِ ساختاری است: تا این لحظه هنوز
+//  **هیچ** ایمیلی نرفته و هر پانصدتا در صف نشسته‌اند.
+//  ⛔ سقف را بالا نبرید و «چند ثانیه بیشتر صبر کن» ننویسید؛ عددِ ساختاری
+//  دروغ نمی‌گوید و وقت روی ماشینِ CI نوسان دارد.
+const sentWhileIssuing = delivered.length;
 check('همهٔ ۵۰۰ کد ساخته شد', many.every((r) => r.ok), JSON.stringify(many.find((r) => !r.ok)));
-check('ساختِ کدها منتظرِ ایمیل نماند (زیر ۳ ثانیه)', tookIssue < 3000, `${tookIssue}ms`);
+check('ساختِ کدها منتظرِ ایمیل نماند', sentWhileIssuing === 0,
+  `${sentWhileIssuing} ایمیل وسطِ ساخت رفته بود · ${tookIssue}ms`);
 
 const uniqueCodes = new Set(
   recentRequests({ app: 'app-shop', limit: 500 }).map((row) => revealCode(row))
