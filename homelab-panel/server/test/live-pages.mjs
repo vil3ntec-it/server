@@ -172,6 +172,29 @@ check('⛔ هر دفترِ کد درِ خودش را دارد',
   'یکی کردنشان یعنی ۴۰۴ برای نیمی از ردیف‌ها');
 
 /*
+ *  ══ بندِ ۱.۵-الف — دو نبضِ باقی‌مانده هم رفتند ═══════════════════════════
+ *
+ *  ⛔ این دو تا از گامِ ۱ باقی مانده بودند و **پنهان نشدند**: با خطِ
+ *  «نبضِ آگاهانه» اعلام شده بودند و در سند «نشد» نوشته بودیم. حالا
+ *  دفترِ خودشان به گذرگاه وصل است.
+ */
+const siteServer = read('pages/SiteServer.tsx');
+check('۱.۵-الف کدهای پیام‌رسان زنده شد', /useLive\('messenger'/.test(siteServer));
+check('۱.۵-الف اعلان‌ها زنده شدند', /useLive\('notify'/.test(siteServer));
+//  ⛔ و نبضِ پنج و شش ثانیه‌ای واقعاً رفت — وگرنه «زنده شد» فقط یک واژه است
+check('⛔ و نبضِ ۵ و ۶ ثانیه‌ای برداشته شد',
+  !/setInterval\(load, 5000\)/.test(siteServer) && !/setInterval\(load, 6000\)/.test(siteServer));
+
+const messengerSrc = fs.readFileSync(path.join(here, '..', 'src', 'messenger', 'index.js'), 'utf8');
+const notifySrc = fs.readFileSync(path.join(here, '..', 'src', 'notify', 'index.js'), 'utf8');
+//  ⛔ و نوشتنِ واقعی خبر می‌دهد، وگرنه صفحه‌ای که به موضوعِ بیدارنشدنی
+//  وصل شود از نبضِ کورِ قبلی **بدتر** است.
+check('⛔ دفترِ پیام‌رسان با نوشتن خبر می‌دهد',
+  /bumpSoon\('messenger'/.test(messengerSrc) && /codes\.set\([\s\S]{0,80}touched\(\)/.test(messengerSrc));
+check('⛔ دفترِ اعلان‌ها هم', /bumpSoon\('notify'/.test(notifySrc)
+  && (notifySrc.match(/\n\s*touched\(\);/g) || []).length >= 5);
+
+/*
  *  ══ گامِ ۳ — پوشهٔ هر حساب، پشتیبان‌ها، و دادهٔ درجا ═════════════════════
  *
  *  صفحهٔ «پمپ‌بنزین‌ها» در فهرستِ بالا زنده شده بود، ولی صفحهٔ **پروفایلِ

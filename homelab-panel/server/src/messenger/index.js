@@ -13,6 +13,7 @@ import { WebSocketServer } from 'ws';
 import { attachHeartbeat } from '../lib/ws-heartbeat.js';
 import { config } from '../config.js';
 import { logEvent, getSetting, setSetting } from '../db.js';
+import { bumpSoon } from '../live/bus.js';
 import * as store from './store.js';
 import { pushToDevices, vapidPublicKey } from './push.js';
 
@@ -60,6 +61,21 @@ export function readToken(token) {
  */
 const codes = new Map(); // phone → { code, at, tries }
 
+/*
+ *  ⛔ **تنها جای خبر دادنِ این ماژول** — بندِ ۱.۵-الف سندِ ریمیک.
+ *
+ *  تا ۱.۵۰.۰ صفحهٔ «سرورِ سایت» هر **پنج ثانیه** این فهرست را می‌خواند،
+ *  چه چیزی عوض شده بود چه نه. حالا نوشتن خبر می‌دهد و صفحه تا چیزی عوض
+ *  نشود **صفر** درخواست می‌زند.
+ *
+ *  ⚠️ همان الگوی `stations/index.js`: نامِ موضوع را صاحبِ دفتر می‌گوید،
+ *  و `bumpSoon` نه `bump` — یک رگبارِ کد نباید ده بار صفحه را بخواند.
+ *  ⛔ و خبر دادن هیچ‌وقت نوشتن را نمی‌خواباند: دفتر اصل است، نبض رفاه.
+ */
+function touched() {
+  try { bumpSoon('messenger', 400); } catch { /* گذرگاه کسی را نمی‌خواباند */ }
+}
+
 /** کدهای منتظرِ تایید — فقط صاحبِ سرور در پنل می‌بیندشان */
 export function pendingCodes() {
   const now = Date.now();
@@ -80,6 +96,7 @@ export function requestCode(phoneInput) {
 
   const code = String(crypto.randomInt(100000, 999999));
   codes.set(phone, { code, at: Date.now(), tries: 0 });
+  touched();
   logEvent('warn', 'panel', `کد ورودِ پیام‌رسان برای ${phone}: ${code}`);
   return { ok: true, phone, expiresInSeconds: 600 };
 }
@@ -90,6 +107,8 @@ export function verifyCode({ phone: phoneInput, code, name, password }) {
 
   const entry = codes.get(phone);
   if (!entry) return { ok: false, error: 'no_code' };
+  //  ⚠️ هر سه راهِ خروجِ زیر فهرست را عوض می‌کنند (مصرف، انقضا، سقفِ تلاش)
+  try { queueMicrotask(touched); } catch { /* بی‌اهمیت */ }
   if (Date.now() - entry.at > 600000) {
     codes.delete(phone);
     return { ok: false, error: 'code_expired' };

@@ -35,6 +35,8 @@
 export const TOPICS = Object.freeze([
   //  دادهٔ خودِ پنل
   'sites', 'automation', 'logs', 'stations', 'agent', 'backups', 'cron', 'settings',
+  //  بندِ ۱.۵-الف: دفترِ پیام‌رسان و اعلان‌ها هم به گذرگاه وصل شد
+  'messenger', 'notify',
   //  دادهٔ سرورِ حساب (از راهِ pushِ خودش یا دیدبانِ مشترک)
   'codes', 'logins', 'support', 'customers', 'plans', 'notices', 'sales', 'sync',
 ]);

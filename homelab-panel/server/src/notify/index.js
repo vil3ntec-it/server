@@ -19,9 +19,25 @@ import { EventEmitter } from 'node:events';
 import { WebSocketServer } from 'ws';
 import { attachHeartbeat } from '../lib/ws-heartbeat.js';
 import { db, q, logEvent, getSetting, setSetting } from '../db.js';
+import { bumpSoon } from '../live/bus.js';
 import { pushToDevices, vapidPublicKey } from '../messenger/push.js';
 
 export const notifyEvents = new EventEmitter();
+
+/*
+ *  ⛔ **تنها جای خبر دادنِ این ماژول** — بندِ ۱.۵-الف سندِ ریمیک.
+ *
+ *  تا ۱.۵۰.۰ صفحهٔ «سرورِ سایت» هر **شش ثانیه** فهرستِ موضوع‌ها را
+ *  می‌خواند، چه چیزی عوض شده بود چه نه. حالا نوشتن خبر می‌دهد.
+ *
+ *  ⚠️ **چرا این‌جا و نه در `q()`**: آن کمکیِ مشترکِ کلِ دیتابیس است و
+ *  قلاب زدن به آن یعنی هر نوشتنِ هر جدولی این موضوع را بیدار کند.
+ *  پس مثلِ `stations/index.js`، صاحبِ دفتر نامِ موضوعِ خودش را می‌گوید.
+ *  ⛔ و خبر دادن هیچ‌وقت نوشتن را نمی‌خواباند.
+ */
+function touched() {
+  try { bumpSoon('notify', 400); } catch { /* گذرگاه کسی را نمی‌خواباند */ }
+}
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS ntf_topics (
@@ -84,6 +100,7 @@ export function ensureTopic(name, { title = null } = {}) {
   const found = q('SELECT * FROM ntf_topics WHERE name = ?').get(topic);
   if (found) return found;
   q('INSERT INTO ntf_topics(name, title, created_at) VALUES(?, ?, ?)').run(topic, title, Date.now());
+  touched();
   return q('SELECT * FROM ntf_topics WHERE name = ?').get(topic);
 }
 
@@ -118,6 +135,7 @@ export function setWriteToken(name, token) {
   if (!topic) return { ok: false, error: 'invalid_topic' };
   const value = token === null || token === '' ? null : String(token);
   q('UPDATE ntf_topics SET write_token = ? WHERE name = ?').run(value, topic.name);
+  touched();
   return { ok: true, hasToken: Boolean(value) };
 }
 
@@ -169,6 +187,7 @@ export function setReadToken(name, token) {
   if (!topic) return { ok: false, error: 'invalid_topic' };
   const value = token === null || token === '' ? null : String(token);
   q('UPDATE ntf_topics SET read_token = ? WHERE name = ?').run(value, topic.name);
+  touched();
   return { ok: true, hasReadToken: Boolean(value) };
 }
 
@@ -237,6 +256,7 @@ export async function publish(name, { title, body, priority, tags, click, token 
   ).run(topicRow.name, title ? String(title).slice(0, 120) : null, text, prio, tagList, click || null, now);
   const row = q('SELECT * FROM ntf_messages WHERE id = last_insert_rowid()').get();
   q('UPDATE ntf_topics SET last_at = ? WHERE name = ?').run(now, topicRow.name);
+  touched();
 
   // پیام‌های خیلی قدیمی پاک می‌شوند تا دیسک پر نشود.
   // این پاک‌سازی با *هر* اعلان اجرا می‌شد؛ یعنی برای هر خبرِ کوچک، یک‌بار
@@ -310,6 +330,7 @@ export function subscribeDevice(name, { label, endpoint, p256dh, auth }) {
      ON CONFLICT(topic, push_endpoint) DO UPDATE SET
        push_p256dh = excluded.push_p256dh, push_auth = excluded.push_auth, label = excluded.label`
   ).run(topicRow.name, label ?? null, endpoint, p256dh ?? null, auth ?? null, Date.now());
+  touched();
   return { ok: true, topic: topicRow.name };
 }
 
@@ -317,6 +338,7 @@ export function unsubscribeDevice(name, endpoint) {
   const topic = cleanTopic(name);
   if (!topic || !endpoint) return { ok: false };
   q('DELETE FROM ntf_devices WHERE topic = ? AND push_endpoint = ?').run(topic, String(endpoint));
+  touched();
   return { ok: true };
 }
 
