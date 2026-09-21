@@ -42,6 +42,8 @@ console.log('\n── نشانی‌ای که پل می‌زند ──');
 const seen = { logins: [], calls: [] };
 let valid = new Set();     // توکن‌های زنده
 let rejectLogin = false;   // رمز را رد کن
+let limitLogin = false;    // سقفِ نرخ را پر کن (۴۲۹)
+let limitRetryAfter = 1;   // ثانیه‌ای که سرور می‌گوید
 let n = 0;
 const fake = http.createServer((req, res) => {
   let body = '';
@@ -53,6 +55,12 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/login' && req.method === 'POST') {
       const b = JSON.parse(body || '{}');
       seen.logins.push(b);
+      //  سقفِ نرخِ واقعیِ سرورِ حساب: ۴۲۹ با `rate_limited` و `Retry-After`
+      if (limitLogin) {
+        res.statusCode = 429;
+        res.setHeader('Retry-After', String(limitRetryAfter));
+        return res.end(JSON.stringify({ error: { code: 'rate_limited', message: 'تعداد درخواست بیش از حد مجاز است' } }));
+      }
       if (rejectLogin || b.username !== 'boss' || b.password !== 'top-secret') {
         res.statusCode = 401;
         return res.end(JSON.stringify({ error: { code: 'bad_credentials', message: 'نام کاربری یا رمز درست نیست' } }));
@@ -145,6 +153,50 @@ try {
   rejectLogin = false;
   const back = await api('GET', '/api/stations-admin/cloud/stats', undefined, auth);
   check('رمز که درست شد، بی راه‌اندازیِ دوباره وصل می‌شود', back.status === 200, String(back.status));
+
+  // ── سقفِ نرخ: پنل نباید خودش را بیرون بگذارد ───────────────────────────
+  //  گزارشِ صاحب سامانه با عکس: «ورود خودکار به سرور حساب نشد: تعداد
+  //  درخواست بیش از حد مجاز است» و هر چهار شمارندهٔ کدها صفر.
+  //
+  //  زنجیرهٔ مرگ: هر خطا کَشِ توکن را پاک می‌کرد ⇒ درخواستِ بعدی لاگینِ
+  //  تازه می‌زد ⇒ ۴۲۹ ⇒ کَش پاک… و پنجرهٔ ربع‌ساعته هیچ‌وقت خالی نمی‌شد.
+  console.log('\n── سقفِ نرخِ سرورِ حساب ──');
+
+  //  توکنِ سالمی در حافظه هست (بندهای بالا). حالا سقف پر می‌شود و
+  //  توکن هم باطل — پس پل مجبور است دوباره وارد شود.
+  valid.clear();
+  limitLogin = true;
+  limitRetryAfter = 1;
+  const before = seen.logins.length;
+  const r1 = await api('GET', '/api/stations-admin/cloud/stats', undefined, auth);
+  check('۴۲۹ِ سقفِ نرخ «رمز را بسنج» نمی‌گوید — آدم را گمراه نکند',
+    !/HLP_ACCOUNT_ADMIN/.test(r1.json?.message || '') && /سقفِ نرخ/.test(r1.json?.message || ''),
+    `${r1.status} ${JSON.stringify(r1.json)}`);
+
+  //  ⛔ قلبِ ماجرا: ده درخواستِ پشتِ سرِ هم داخلِ مهلت **یک** لاگین هم
+  //  اضافه نمی‌کند. پیش از اصلاح، هر کدام یک لاگینِ تازه می‌زد و سقف
+  //  هیچ‌وقت خالی نمی‌شد.
+  for (let i = 0; i < 10; i++) {
+    await api('GET', '/api/stations-admin/cloud/stats', undefined, auth);
+  }
+  const added = seen.logins.length - before;
+  check('⛔ داخلِ مهلت، ده درخواست حتی یک لاگینِ تازه نمی‌زند',
+    added <= 1, `${added} لاگین در ۱۱ درخواست`);
+
+  //  و مهلت از حرفِ خودِ سرور می‌آید: Retry-After یک ثانیه بود، پس
+  //  کمی بعد باید دوباره تلاش کند — نه دو دقیقهٔ پیش‌فرض.
+  limitLogin = false;
+  await new Promise((r) => setTimeout(r, 2200));
+  const r2 = await api('GET', '/api/stations-admin/cloud/stats', undefined, auth);
+  check('Retry-Afterِ سرور محترم است — پس از آن خودش وصل می‌شود',
+    r2.status === 200 && r2.json?.stations === 3, `${r2.status} ${JSON.stringify(r2.json)}`);
+
+  //  ⛔ و ۴۲۹ توکنِ سالمِ حافظه را نمی‌سوزاند: سقف که پر شود ولی توکن
+  //  زنده باشد، درخواست باید همان‌طور جواب بگیرد.
+  limitLogin = true;
+  const r3 = await api('GET', '/api/stations-admin/cloud/users', undefined, auth);
+  check('۴۲۹ توکنِ زندهٔ حافظه را پاک نمی‌کند', r3.status === 200, `${r3.status} ${JSON.stringify(r3.json)}`);
+  limitLogin = false;
 
   console.log('\n── سنجهٔ «چرا کار نمی‌کند» ──');
   const row = async () => {
