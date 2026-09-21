@@ -25,7 +25,7 @@ import { queueStatus } from '../codes/queue.js';
 import { adminHostFor } from '../platform/domain.js';
 import { probeAccountServer } from '../api/account-proxy.js';
 import { cloudStatus } from '../stations/cloud.js';
-import { downHint } from '../account/supervisor.js';
+import { downHint, mailEnvForChild } from '../account/supervisor.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -64,6 +64,9 @@ router.get('/', async (req, res) => {
   const codes = codeSettings();
   //  سرورِ حساب واقعاً زده می‌شود (سه ثانیه سقف) — نه از روی تنظیمات حدس زده شود
   const account = await probeAccountServer().catch((e) => ({ enabled: true, up: false, error: e.message }));
+  //  رباتِ ایمیلی که پنل به فرزندش می‌دهد — بی آن هیچ کدی به دستِ کسی
+  //  نمی‌رسد. چرایی‌اش پایین، در ردیفِ «سرورِ حساب».
+  const accountMail = (() => { try { return Object.keys(mailEnvForChild()).length > 0; } catch { return false; } })();
   const tunnel = tunnelState();
   const ips = localAddresses();
 
@@ -191,6 +194,36 @@ router.get('/', async (req, res) => {
           state: WARN,
           value: account.version ? `نسخهٔ ${account.version} — وارد نشده‌اید` : 'وارد نشده‌اید',
           hint: 'سرور بالاست ولی مدیر هنوز واردش نشده. از پنل ← پمپ‌ها ← تنظیمات و داده‌ها، یا HLP_ACCOUNT_ADMIN_USER/PASSWORD در .env تا خودش وارد شود.',
+        };
+      }
+      /*
+       *  ⛔ «روشن است» با «کار می‌کند» یکی نیست ═══════════════════════════
+       *
+       *  سنجیده شد، حدس زده نشد (‎test/pump-e2e.mjs‎، ۱۴۰۵/۰۷/۰۷): با
+       *  رباتِ ایمیلِ تنظیم‌نشده، زنجیرهٔ ورودِ **هر سه برنامه** بن‌بستِ
+       *  کامل است و هیچ‌جا هم نمی‌گوید چرا:
+       *
+       *    • ناظر فرزند را با ‎NODE_ENV=production‎ بالا می‌آورد (درست)
+       *    • پس کد در پاسخِ HTTP برنمی‌گردد (درست — از تونل درز می‌کرد)
+       *    • و رباتِ ایمیلِ سرورِ حساب روی ‎log‎ می‌ماند، که در production
+       *      کد را **حتی در لاگ هم نمی‌نویسد** («لاگ جای راز نیست»)
+       *    • ولی ‎register/start‎ همچنان ۲۰۰ می‌دهد (عمدی: وجودِ حساب لو نرود)
+       *
+       *  یعنی کاربر «کد فرستاده شد» می‌بیند و هیچ کدی هیچ‌وقت نمی‌رسد. و
+       *  این ردیف تا امروز در همان حال **سبز** بود — همان «کلکِ دروغ»ی که
+       *  در این ریپو قدغن است.
+       *
+       *  ⚠️ سرورِ حساب می‌تواند SMTPِ خودش را هم در دیتابیسش داشته باشد و
+       *  آن جلوتر است، پس این هشدار است نه حکم — و خودش همین را می‌گوید.
+       */
+      if (!accountMail) {
+        return {
+          state: WARN,
+          value: account.version ? `نسخهٔ ${account.version} — رباتِ ایمیل تنظیم نیست` : 'رباتِ ایمیل تنظیم نیست',
+          hint: 'سرورِ حساب بالاست ولی هیچ راهِ ارسالی ندارد: کدِ شش‌رقمیِ ثبت‌نام و ورود '
+              + 'ساخته می‌شود و به دستِ هیچ‌کس نمی‌رسد — نه ایمیل، نه در پاسخ، نه در لاگ. '
+              + 'SMTP را در «کدهای شش‌رقمی ← ربات و تنظیمات» بنویسید. '
+              + '(اگر خودِ سرورِ حساب SMTPِ جداگانه‌ای در پنلِ مدیریتش دارد، همان جلوتر است.)',
         };
       }
       return {
