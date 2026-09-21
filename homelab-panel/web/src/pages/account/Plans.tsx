@@ -13,7 +13,7 @@
 //     در تاریخچهٔ قیمت می‌گذارد.
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
-import { History, Tag } from 'lucide-react';
+import { Gift, History, Tag } from 'lucide-react';
 
 import { api } from '../../api';
 import { Badge, Card, Empty, Modal, Skeleton, toast } from '../../components/ui';
@@ -110,9 +110,91 @@ export default function Plans() {
         )}
       </Card>
 
+      <FreeTrial app={app} />
+
       {edit && <EditPlan app={app} plan={edit} onClose={() => setEdit(null)} onDone={reload} />}
       {discount && <EditDiscount app={app} plan={discount} onClose={() => setDiscount(null)} onDone={reload} />}
     </div>
+  );
+}
+
+/* ----------------------- دورهٔ آزمایشیِ حسابِ تازه ---------------------- */
+
+/**
+ * ⏳ «یک ماه رایگان برای حسابِ تازه» — خواستهٔ صریحِ صاحب سامانه
+ * (۱۴۰۵/۰۷/۰۸): «یک کاری هم بکن برای کسایی که تازه حساب افتتاح می‌کنن هم
+ * یک ماه رایگان داده بشه.»
+ *
+ * ⛔ **عددِ پیش‌فرض این‌جا نوشته نشده** و کادر با مقدارِ خودِ سرور پر
+ * می‌شود. قاعده‌اش روی سرورِ حساب است (`plans.trialConfig`: پمپ ۳۰ روز،
+ * دکان ۱۴) و این‌جا فقط دیده و عوض می‌شود — همان «یک دفترِ حساب، نه دو».
+ *
+ * ⚠️ دو بخش دو کلیدِ جدا دارند (`pump_trial_days` · `trial_days`) و این
+ * عمدی است: عوض کردنِ دورهٔ پمپ نباید دکان‌ها را هم عوض کند.
+ */
+function FreeTrial({ app }: { app: AppId }) {
+  const key = app === 'pump' ? 'pump_trial_days' : 'trial_days';
+  const cfg = useLoad<{ config: Record<string, string> }>('/api/account-admin/account-config', []);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const saved = cfg.data?.config?.[key] ?? '';
+  //  ⚠️ کادر تا دست‌نخورده است مقدارِ سرور را نشان می‌دهد؛ `null` یعنی
+  //  «کاربر چیزی تایپ نکرده»، نه «خالی».
+  const value = draft ?? saved;
+  const days = Number(value);
+  const ok = Number.isFinite(days) && days >= 0 && days <= 3650;
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await api('/api/account-admin/account-config', { method: 'PATCH', body: { [key]: String(Math.floor(days)) } });
+      toast('دورهٔ آزمایشی ذخیره شد');
+      setDraft(null);
+      await cfg.reload();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'نشد', 'bad');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <Card title="دورهٔ آزمایشیِ حسابِ تازه" icon={<Gift className="h-4 w-4" />}>
+      {cfg.error && <CloudProblem code={cfg.code} message={cfg.error} />}
+
+      <Notice tone="info">
+        حسابِ تازه‌ای که در این بخش ساخته می‌شود، این تعداد روز <b>همهٔ</b> قابلیت‌های پولی را دارد —
+        بی اشتراک و بی هیچ کدی. شمارش از روزِ ساختِ خودِ {app === 'pump' ? 'پمپ' : 'دکان'} است، نه از روزِ
+        ساختِ حساب. <b>صفر</b> یعنی «دوره‌ای نیست»، نه «بی‌نهایت».
+      </Notice>
+
+      {cfg.busy && !cfg.data ? (
+        <Skeleton rows={1} />
+      ) : (
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <label className="block">
+            <span className="mb-1 block text-xs text-ink-muted">روز</span>
+            <input
+              className="input w-28 tnum"
+              inputMode="numeric"
+              value={value}
+              onChange={(e) => setDraft(e.target.value)}
+            />
+          </label>
+          <button className="btn btn-primary" disabled={!ok || busy || value === saved} onClick={save}>
+            {busy ? 'در حال ذخیره…' : 'ذخیره'}
+          </button>
+          {draft != null && draft !== saved && (
+            <button className="btn" onClick={() => setDraft(null)}>برگرداندن</button>
+          )}
+          {!ok && <p className="text-xs text-danger">عدد باید بین ۰ تا ۳۶۵۰ باشد.</p>}
+          {ok && days > 0 && (
+            <p className="text-xs text-ink-muted">
+              یعنی {fa(days)} روز — نزدیکِ {fa(Math.round((days / 30) * 10) / 10)} ماه.
+            </p>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 

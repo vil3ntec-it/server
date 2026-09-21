@@ -20,6 +20,7 @@ import {
   APP_LABEL, AppPicker, CloudProblem, PageHead, STATUS_LABEL,
   day, daysTone, fa, moment, money, useLoad, type AppId, type Scope,
 } from './shared';
+import GrantSub from './GrantSub';
 import type { Addon, Payment, PumpProfile, ShopProfile, SubRow } from './types';
 
 type ListOut = { subscriptions: SubRow[]; serverTime: number };
@@ -61,6 +62,11 @@ export default function Customers() {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState<SubRow | null>(null);
   const [ask, setAsk] = useState<{ deed: Deed; row: SubRow } | null>(null);
+  //  ⛔ «اشتراک بده» — تا ۱۴۰۵/۰۷/۰۸ این صفحه فقط کارهای روی اشتراکِ
+  //  **موجود** را داشت (تمدید، تعلیق، لغو…). دادنِ اشتراکِ **اول** هیچ دری
+  //  نداشت، چون این فهرست از `sales/subscriptions` می‌آید و حسابِ تازه‌ای
+  //  که چیزی نخریده در آن نیست. شرحش در `GrantSub.tsx`.
+  const [grant, setGrant] = useState(false);
 
   const query = useMemo(() => {
     const p = new URLSearchParams();
@@ -135,7 +141,14 @@ export default function Customers() {
       <PageHead
         title="مشتری‌ها و اشتراک‌ها"
         sub="همهٔ اشتراک‌های دکان و پمپ، از سرورِ حساب — با فیلترِ بخش، وضعیت، شهر و نوعِ پلن"
-        actions={<AppPicker value={app} onChange={setApp} withBoth />}
+        actions={(
+          <div className="flex flex-wrap items-center gap-2">
+            <button className="btn btn-primary btn-sm" onClick={() => setGrant(true)}>
+              <CreditCard className="h-4 w-4" /> دادنِ اشتراک
+            </button>
+            <AppPicker value={app} onChange={setApp} withBoth />
+          </div>
+        )}
       />
 
       {list.error && <CloudProblem code={list.code} message={list.error} />}
@@ -218,6 +231,13 @@ export default function Customers() {
           onChanged={after}
         />
       )}
+
+      <GrantSub
+        open={grant}
+        onClose={() => setGrant(false)}
+        onDone={after}
+        startApp={app === 'both' ? 'pump' : app}
+      />
 
       <ConfirmDialog
         open={Boolean(ask)}

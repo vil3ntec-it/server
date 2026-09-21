@@ -59,6 +59,24 @@ const shops = [
     owner_name: 'زهرا', owner_phone: '0711', owner_email: 'z@x.com', members: 1,
     subscription_id: null, plan: null, sub_status: 'trial', starts_at: null, ends_at: NOW + 11 * DAY },
 ];
+/*
+ *  فهرستِ پمپ‌ها — برای «دادنِ اشتراک» لازم شد.
+ *
+ *  ⚠️ `st2` عمداً **هیچ اشتراکی ندارد**: همان حالتی که در فهرستِ
+ *  «مشتری‌ها» (که از `sales/subscriptions` می‌آید) اصلاً دیده نمی‌شود، و
+ *  همان کسی که می‌خواهیم اشتراک بدهیم.
+ */
+const stations = [
+  { id: 'st1', code: 'PUMP1', name: 'پمپِ یعقوبی', status: 'active', created_at: NOW - 50 * DAY,
+    owner_user_id: 'u2', owner_name: 'زهرا', owner_phone: '0711', owner_email: 'z@x.com',
+    members: 1, files: 1, subscription_id: 90, plan: 'perm', sub_status: 'active',
+    starts_at: NOW - 5 * DAY, ends_at: NOW + 100 * DAY },
+  { id: 'st2', code: 'PUMP2', name: 'پمپِ تازه', status: 'active', created_at: NOW - 2 * DAY,
+    owner_user_id: 'u3', owner_name: 'هارون', owner_phone: '0722', owner_email: 'haroon@x.com',
+    members: 1, files: 0, subscription_id: null, plan: null, sub_status: null,
+    starts_at: null, ends_at: null },
+];
+const accountConfig = { pump_trial_days: '30', trial_days: '14', currency: 'AFN', pump_currency: 'USD' };
 const subs = [
   { id: 7, shop_id: 's1', plan: 'm1', status: 'active', starts_at: NOW - 10 * DAY, ends_at: NOW + 20 * DAY,
     features: [], max_devices: 10, grace_days: 0, note: '', shop_name: 'دکانِ کریم', owner_name: 'کریم' },
@@ -129,7 +147,11 @@ const fake = http.createServer((req, res) => {
     let m;
     if (p === '/api/admin/shops' && req.method === 'GET') {
       const q = (u.searchParams.get('q') || '').toLowerCase();
-      return j(200, { shops: shops.filter((s) => !q || s.name.toLowerCase().includes(q) || s.owner_name.includes(q)), total: shops.length, limit: 200, offset: 0 });
+      //  ⚠️ **ایمیل هم**، مثلِ خودِ سرورِ حساب از ۱۴۰۵/۰۷/۰۸. بی این،
+      //  سنجهٔ «دادنِ اشتراک با ایمیل» روی دکان سبزِ دروغ می‌داد.
+      const hit = (x) => !q || [x.name, x.owner_name, x.owner_email, x.owner_phone]
+        .some((v) => String(v || '').toLowerCase().includes(q));
+      return j(200, { shops: shops.filter(hit), total: shops.length, limit: 200, offset: 0 });
     }
     if ((m = /^\/api\/admin\/shops\/([^/]+)$/.exec(p)) && req.method === 'GET') {
       const s = shops.find((x) => x.id === m[1]);
@@ -182,7 +204,10 @@ const fake = http.createServer((req, res) => {
       row.status = body.status;
       return j(200, { subscription: row, state: { active: row.status === 'active' } });
     }
-    if (p === '/api/admin/plans' && req.method === 'GET') return j(200, { plans, app: u.searchParams.get('app') || 'shop', config: {} });
+    //  ⚠️ `config` واقعاً همراهِ پاسخِ پلن‌ها می‌آید (‎admin.js‎، ‎allConfig()‎)
+    //  و `‎/account-config‎` از همین‌جا می‌خواندش — سرورِ حساب هیچ `GET`ی
+    //  برای `config` ندارد.
+    if (p === '/api/admin/plans' && req.method === 'GET') return j(200, { plans, app: u.searchParams.get('app') || 'shop', config: { ...accountConfig } });
     if ((m = /^\/api\/admin\/plans\/([^/]+)\/discount$/.exec(p))) {
       const plan = plans.find((x) => x.code === m[1]);
       if (!plan) return j(404, { error: { code: 'not_found', message: 'پلن پیدا نشد' } });
@@ -299,6 +324,14 @@ const fake = http.createServer((req, res) => {
       row.status = body.status;
       return j(200, { subscription: row, state: { active: row.status === 'active' } });
     }
+    if (p === '/api/admin/pump/stations' && req.method === 'GET') {
+      const q = (u.searchParams.get('q') || '').toLowerCase();
+      //  ⚠️ **ایمیل هم گشته می‌شود** — همان چیزی که از ۱۴۰۵/۰۷/۰۸ سمتِ
+      //  سرورِ حساب اضافه شد. سنجهٔ زیر روی همین حساب می‌کند.
+      const hit = (x) => !q || [x.name, x.code, x.owner_name, x.owner_email, x.owner_phone]
+        .some((v) => String(v || '').toLowerCase().includes(q));
+      return j(200, { stations: stations.filter(hit), total: stations.length, limit: 50, offset: 0 });
+    }
     if ((m = /^\/api\/admin\/pump\/stations\/([^/]+)$/.exec(p)) && req.method === 'GET') {
       if (m[1] !== 'st1') return j(404, { error: { code: 'station_not_found', message: 'پمپ پیدا نشد' } });
       return j(200, {
@@ -320,6 +353,10 @@ const fake = http.createServer((req, res) => {
       if (body.title) plan.title = body.title;
       if (body.price !== undefined) { plan.price = body.price; plan.fullPrice = body.price; }
       return j(200, { plan });
+    }
+    if (p === '/api/admin/config' && req.method === 'PATCH') {
+      for (const [k, val] of Object.entries(body || {})) accountConfig[k] = String(val);
+      return j(200, { config: { ...accountConfig } });
     }
     if ((m = /^\/api\/admin\/plans\/([^/]+)\/price-history$/.exec(p))) return j(200, { history: priceHistory.filter((h) => h.plan === m[1]) });
     if (p === '/api/admin/price-history') return j(200, { history: priceHistory });
@@ -634,6 +671,90 @@ try {
   check('تاریخچهٔ پمپ از مسیرِ پمپ می‌آید', histPump.status === 200 && last()?.path === '/api/admin/pump/stations/st1/history');
   const badApp = await api('GET', '/api/account-admin/customers/site/s1/history', undefined, auth);
   check('بخشِ ناشناخته ۴۰۰ می‌گیرد و به سرورِ حساب نمی‌رسد', badApp.status === 400 && badApp.json?.error === 'bad_app', `${badApp.status}`);
+
+  console.log('\n── «اشتراک بده» — گیرنده با ایمیل، و دورهٔ رایگان ──');
+  {
+    /*
+     *  خواستهٔ صریحِ صاحب سامانه (۱۴۰۵/۰۷/۰۸): «به حسابِ مورد نظر یا
+     *  ایمیلِ مد نظر اشتراک بدم… با آسانی دکمهٔ دادنِ اشتراک… و برای
+     *  کسایی که تازه حساب افتتاح می‌کنن هم یک ماه رایگان.»
+     */
+    const all = await api('GET', '/api/account-admin/grant-targets?app=pump', undefined, auth);
+    check('فهرستِ گیرنده‌ها از ‎/api/admin/pump/stations‎ می‌آید',
+      all.status === 200 && last()?.path === '/api/admin/pump/stations', `${all.status} ${last()?.path}`);
+    check('هر ردیف ایمیلِ صاحب را دارد — همان چیزی که با آن می‌گردیم',
+      all.json?.items?.some((x) => x.ownerEmail === 'haroon@x.com'), JSON.stringify(all.json?.items?.[1]));
+
+    /*
+     *  ⛔ **این بندِ مرکزی است.** `st2` هیچ اشتراکی ندارد، پس در فهرستِ
+     *  «مشتری‌ها» (که از `sales/subscriptions` می‌آید) **نیست** — و
+     *  دقیقاً همان کسی است که می‌خواهیم اشتراک بدهیم. بی این مسیر، هیچ
+     *  راهی به او نبود.
+     */
+    const fresh = all.json?.items?.find((x) => x.tenantId === 'st2');
+    check('حسابِ بی‌اشتراک هم در فهرست است (در «مشتری‌ها» نبود)',
+      Boolean(fresh) && fresh.status === 'none' && !fresh.subscriptionId, JSON.stringify(fresh));
+
+    const byMail = await api('GET', '/api/account-admin/grant-targets?app=pump&q=haroon%40x.com', undefined, auth);
+    check('جست‌وجو با ایمیلِ کامل همان یکی را می‌دهد',
+      byMail.json?.items?.length === 1 && byMail.json.items[0].tenantId === 'st2', JSON.stringify(byMail.json?.items));
+    const byPart = await api('GET', '/api/account-admin/grant-targets?app=pump&q=haroon', undefined, auth);
+    check('و با بخشی از ایمیل هم', byPart.json?.items?.length === 1, JSON.stringify(byPart.json?.items));
+    check('جست‌وجو به خودِ سرورِ حساب می‌رود، نه فیلترِ محلی', last()?.query?.q === 'haroon', JSON.stringify(last()?.query));
+
+    const shopSide = await api('GET', '/api/account-admin/grant-targets?app=shop&q=karim%40x.com', undefined, auth);
+    check('همان در برای دکان، از ‎/api/admin/shops‎',
+      shopSide.status === 200 && last()?.path === '/api/admin/shops'
+        && shopSide.json?.items?.[0]?.tenantId === 's1', `${last()?.path}`);
+
+    //  ⛔ دادنِ اشتراک به همان حسابِ تازه — بی هیچ کدی
+    const before = seen.length;
+    const gave = await api('POST', '/api/account-admin/subs/pump/grant', { tenantId: 'st2', plan: 'std' }, auth);
+    const sent = seen.slice(before).find((x) => x.method === 'POST' && x.path === '/api/admin/pump/subscriptions');
+    check('اشتراک به حسابِ بی‌اشتراک می‌نشیند', gave.status === 200 && sent?.body?.stationId === 'st2');
+    /*
+     *  ⛔ **نه `days`، نه `features`.** `subs.grant` روی سرورِ حساب با
+     *  داشتنِ `plan` خودش مدت را از `amount`/`unit`ِ پلن و فهرستِ
+     *  قابلیت‌ها را از خودِ پلن برمی‌دارد. فرستادنِ `days`ِ دستی همان
+     *  باگی بود که «استاندارد دادم، وی‌آی‌پی گرفت» می‌ساخت.
+     */
+    check('مدت و قابلیت‌ها فرستاده نمی‌شوند — از خودِ پلن درمی‌آیند',
+      sent && sent.body.days === undefined && sent.body.features === undefined, JSON.stringify(sent?.body));
+
+    //  ── دورهٔ آزمایشی: «یک ماه رایگان» ──
+    const cfg = await api('GET', '/api/account-admin/account-config', undefined, auth);
+    check('دورهٔ آزمایشی خوانده می‌شود، و پمپ یک ماه است',
+      cfg.status === 200 && cfg.json?.config?.pump_trial_days === '30', JSON.stringify(cfg.json));
+    check('و از ‎/api/admin/plans‎ خوانده شد — سرورِ حساب ‎GET /config‎ ندارد',
+      last()?.path === '/api/admin/plans', `${last()?.path}`);
+    check('⛔ و هیچ کلیدِ دیگری از تنظیمات درز نمی‌کند',
+      Object.keys(cfg.json?.config || {}).every((k) => ['pump_trial_days', 'trial_days'].includes(k)),
+      Object.keys(cfg.json?.config || {}).join(','));
+
+    const setTrial = await api('PATCH', '/api/account-admin/account-config', { pump_trial_days: 45 }, auth);
+    check('عوض کردنش ⇒ PATCH روی سرورِ حساب',
+      setTrial.status === 200 && last()?.method === 'PATCH' && last()?.path === '/api/admin/config'
+        && last()?.body?.pump_trial_days === '45', JSON.stringify(last()));
+    check('صفر یعنی «دوره‌ای نیست» و پذیرفته می‌شود',
+      (await api('PATCH', '/api/account-admin/account-config', { pump_trial_days: 0 }, auth)).status === 200);
+    /*
+     *  ⚠️ «به سرورِ حساب نرسید» با `last()` سنجیده نمی‌شود: وقتی چیزی
+     *  فرستاده **نشود**، `last()` همان درخواستِ موفقِ قبلی را نشان
+     *  می‌دهد و سنجه سرخِ دروغ می‌دهد (خودِ همین سنجه گرفتش). ملاک
+     *  **شمارِ** درخواست‌هاست.
+     */
+    const quiet = seen.length;
+    const badDays = await api('PATCH', '/api/account-admin/account-config', { pump_trial_days: -3 }, auth);
+    check('روزِ منفی ۴۰۰ می‌گیرد و به سرورِ حساب نمی‌رسد',
+      badDays.status === 400 && badDays.json?.error === 'bad_days' && seen.length === quiet,
+      `${badDays.status} · ${seen.length - quiet} درخواست`);
+    const quiet2 = seen.length;
+    const emptyPatch = await api('PATCH', '/api/account-admin/account-config', { currency: 'x' }, auth);
+    check('⛔ کلیدِ بیرونِ فهرستِ سفید نوشته نمی‌شود و درخواستی هم نمی‌سازد',
+      emptyPatch.status === 400 && emptyPatch.json?.error === 'nothing' && seen.length === quiet2,
+      `${emptyPatch.status} · ${seen.length - quiet2} درخواست`);
+    await api('PATCH', '/api/account-admin/account-config', { pump_trial_days: 30 }, auth);
+  }
 
   console.log('\n── کارها روی یک اشتراک، در هر دو بخش ──');
   const grantPump = await api('POST', '/api/account-admin/subs/pump/grant', { tenantId: 'st1', plan: 'std', maxDevices: 5 }, auth);
