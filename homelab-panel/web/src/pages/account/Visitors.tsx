@@ -71,7 +71,7 @@ export default function Visitors() {
         }
       />
 
-      {list.error && <CloudProblem code={list.code} message={list.error} />}
+      {list.error && <CloudProblem code={list.code} message={list.error} onRetry={list.reload} />}
 
       <Card title="آخرین بازدیدها" icon={<Footprints className="h-4 w-4" />}>
         {list.busy && !list.data ? (

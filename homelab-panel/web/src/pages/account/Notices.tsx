@@ -117,7 +117,7 @@ export default function Notices() {
         actions={<button className="btn btn-sm btn-primary" onClick={() => setDraft({ ...EMPTY })}>اعلانِ تازه</button>}
       />
 
-      {list.error && <CloudProblem code={list.code} message={list.error} />}
+      {list.error && <CloudProblem code={list.code} message={list.error} onRetry={list.reload} />}
 
       <Tabs
         active={tab}

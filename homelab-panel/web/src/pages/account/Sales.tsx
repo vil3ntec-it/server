@@ -58,7 +58,7 @@ export default function Sales() {
         actions={<AppPicker value={app} onChange={setApp} withBoth />}
       />
 
-      {summary.error && <CloudProblem code={summary.code} message={summary.error} />}
+      {summary.error && <CloudProblem code={summary.code} message={summary.error} onRetry={summary.reload} />}
 
       <Tabs
         active={tab}

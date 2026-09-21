@@ -151,7 +151,7 @@ export default function Customers() {
         )}
       />
 
-      {list.error && <CloudProblem code={list.code} message={list.error} />}
+      {list.error && <CloudProblem code={list.code} message={list.error} onRetry={list.reload} />}
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="فعال" value={fa(counts.active)} tone="good" icon={<Users className="h-4 w-4" />} />

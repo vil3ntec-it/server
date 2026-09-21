@@ -44,6 +44,18 @@ let valid = new Set();     // توکن‌های زنده
 let rejectLogin = false;   // رمز را رد کن
 let limitLogin = false;    // سقفِ نرخ را پر کن (۴۲۹)
 let limitRetryAfter = 1;   // ثانیه‌ای که سرور می‌گوید
+/*
+ *  ⛔ **ورودِ ساختگی عمداً مکث می‌کند** — وگرنه پنجرهٔ هم‌زمانی هیچ‌وقت
+ *  دیده نمی‌شود و بندِ «ازدحامِ سرد» سبزِ دروغ می‌دهد.
+ *
+ *  سنجیده شد، فرض نشد: با ورودِ آنی، همان شش درخواست بی هیچ مهاری گاهی
+ *  ۲ ورود می‌زدند و گاهی ۳ — یعنی نتیجه به سرعتِ ماشین بند بود و روی
+ *  رانرِ CI می‌توانست ۱ بشود. با مکث، بی مهار همیشه ۶ است و با مهار
+ *  همیشه ۱. همان درسِ `_slowMs`ِ ابرِ ساختگی در ریپوی پمپ.
+ */
+let loginDelayMs = 0;
+/*  ۴۰۱ِ دیررس — فقط برای مسیرِ `users`، تا بندِ «۴۰۱ِ دیررس» قطعی باشد. */
+let slow401Ms = 0;
 let n = 0;
 const fake = http.createServer((req, res) => {
   let body = '';
@@ -67,13 +79,15 @@ const fake = http.createServer((req, res) => {
       }
       const token = `tok-${++n}`;
       valid.add(token);
-      return res.end(JSON.stringify({ token, expiresAt: Date.now() + 12 * 3600e3, admin: { username: 'boss' } }));
+      const done = () => res.end(JSON.stringify({ token, expiresAt: Date.now() + 12 * 3600e3, admin: { username: 'boss' } }));
+      return loginDelayMs ? setTimeout(done, loginDelayMs) : done();
     }
     const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
     seen.calls.push({ path: p, bearer });
     if (!valid.has(bearer)) {
       res.statusCode = 401;
-      return res.end(JSON.stringify({ error: { code: 'unauthorized', message: 'احراز هویت لازم است' } }));
+      const deny = () => res.end(JSON.stringify({ error: { code: 'unauthorized', message: 'احراز هویت لازم است' } }));
+      return slow401Ms && p === '/api/admin/pump/users' ? setTimeout(deny, slow401Ms) : deny();
     }
     if (p === '/api/admin/pump/stats') return res.end(JSON.stringify({ stations: 3, users: 5, files: 7 }));
     if (p === '/api/admin/pump/users') return res.end(JSON.stringify({ users: [{ id: 'u1', name: 'کریم' }] }));
@@ -197,6 +211,78 @@ try {
   const r3 = await api('GET', '/api/stations-admin/cloud/users', undefined, auth);
   check('۴۲۹ توکنِ زندهٔ حافظه را پاک نمی‌کند', r3.status === 200, `${r3.status} ${JSON.stringify(r3.json)}`);
   limitLogin = false;
+
+  // ── ازدحامِ سرد: چند درخواستِ هم‌زمان، یک ورود ────────────────────────
+  /*
+   *  گزارشِ صاحب سامانه با عکس (۱۴۰۵/۰۷/۱۰): «کدها لایو آپدیت نمی‌شوند»
+   *  و «فروشگاه هر سه تا بخشش را نشان نمی‌دهد» — و روی **هر دو** صفحه
+   *  همان نوارِ «تعداد درخواست بیش از حد مجاز است».
+   *
+   *  ⛔ مهلتِ بالا تلاش‌های **پشتِ سرِ هم** را مهار می‌کرد و تلاش‌های
+   *  **هم‌زمان** را نه. با توکنِ مرده، هر درخواستی که همان لحظه در راه
+   *  بود خودش یک ورود می‌زد — و پنل با باز شدنِ یک صفحه چند درخواست
+   *  هم‌زمان دارد (دو دفترِ کد، حالِ رباتِ ایمیل، میزِ فروشگاه، دیدبانِ
+   *  ده‌ثانیه‌ای، سه ربات). سقفِ سرورِ حساب ده در ربع ساعت است، پس یک
+   *  ازدحام آن را پر می‌کرد و پنجره هیچ‌وقت خالی نمی‌شد.
+   *
+   *  ⚠️ و این با **آهنگِ واقعیِ همان مشتری** سنجیده می‌شود، نه با یک
+   *  حلقهٔ دستی: درخواست‌ها با `Promise.all` هم‌زمان می‌روند، همان‌طور
+   *  که مرورگر و ربات‌ها می‌فرستند. همان درسِ «نبضِ کلیدِ مرده».
+   */
+  console.log('\n── ازدحامِ سرد ──');
+  valid.clear();                       //  توکنِ حافظه مرد (دوازده ساعت گذشت)
+  loginDelayMs = 300;                  //  ⛔ پنجره واقعاً باز باشد، وگرنه سبزِ دروغ
+  const beforeRush = seen.logins.length;
+  const rush = await Promise.all([
+    api('GET', '/api/stations-admin/cloud/stats', undefined, auth),
+    api('GET', '/api/stations-admin/cloud/users', undefined, auth),
+    api('GET', '/api/stations-admin/cloud/stats', undefined, auth),
+    api('GET', '/api/stations-admin/cloud/users', undefined, auth),
+    api('GET', '/api/stations-admin/cloud/stats', undefined, auth),
+    api('GET', '/api/stations-admin/cloud/users', undefined, auth),
+  ]);
+  const rushLogins = seen.logins.length - beforeRush;
+  check('⛔ شش درخواستِ هم‌زمان با توکنِ مرده ⇒ فقط **یک** ورود',
+    rushLogins === 1, `${rushLogins} ورود در ۶ درخواستِ هم‌زمان`);
+  check('و هر شش‌تا جواب گرفتند — تک‌پروازی چیزی را نخواباند',
+    rush.every((r) => r.status === 200), rush.map((r) => r.status).join(','));
+
+  //  ⛔ و ازدحامِ دوم هم همان یک ورود را بس می‌داند: توکنِ تازه در حافظه
+  //  است و هیچ‌کس دوباره وارد نمی‌شود.
+  loginDelayMs = 0;
+  const beforeRush2 = seen.logins.length;
+  await Promise.all([
+    api('GET', '/api/stations-admin/cloud/stats', undefined, auth),
+    api('GET', '/api/stations-admin/cloud/users', undefined, auth),
+    api('GET', '/api/stations-admin/cloud/stats', undefined, auth),
+  ]);
+  check('ازدحامِ دوم هیچ ورودی نمی‌زند — توکن در حافظه است',
+    seen.logins.length === beforeRush2, `${seen.logins.length - beforeRush2} ورود`);
+
+  /*
+   *  ⛔ **۴۰۱ِ دیررس هم ورودِ دوم نمی‌سازد.**
+   *
+   *  تک‌پروازیِ بالا فقط درخواست‌هایی را جمع می‌کند که **وسطِ** یک ورود
+   *  برسند. ولی `force` سنجشِ تازگی را دور می‌زند، پس درخواستی که ۴۰۱ش
+   *  **پس از** پایانِ آن ورود برسد، برای توکنی که چند میلی‌ثانیه پیش
+   *  ساخته شده باز هم وارد می‌شد. (سنجیده شد: پیش از نگهبانِ `stale`،
+   *  همین بند دو ورود می‌داد.)
+   *
+   *  ⚠️ این‌جا ۴۰۱ِ مسیرِ `users` عمداً دیر می‌آید، وگرنه این پنجره به
+   *  سرعتِ ماشین بند می‌شد — همان قاعدهٔ «ساعتِ دیوار را از سنجه بیرون
+   *  کنید».
+   */
+  valid.clear();
+  slow401Ms = 400;
+  const beforeLate = seen.logins.length;
+  const late = await Promise.all([
+    api('GET', '/api/stations-admin/cloud/stats', undefined, auth),  // ۴۰۱ِ فوری ⇒ ورود
+    api('GET', '/api/stations-admin/cloud/users', undefined, auth),  // ۴۰۱ِ دیررس
+  ]);
+  slow401Ms = 0;
+  check('⛔ ۴۰۱ِ دیررس توکنِ تازه را دور نمی‌ریزد — باز هم یک ورود',
+    seen.logins.length - beforeLate === 1, `${seen.logins.length - beforeLate} ورود`);
+  check('و هر دو جواب گرفتند', late.every((r) => r.status === 200), late.map((r) => r.status).join(','));
 
   console.log('\n── سنجهٔ «چرا کار نمی‌کند» ──');
   const row = async () => {

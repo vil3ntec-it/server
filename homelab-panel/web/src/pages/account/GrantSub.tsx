@@ -174,7 +174,7 @@ export default function GrantSub({ open, onClose, onDone, startApp }: {
             />
           </label>
 
-          {targets.error && <CloudProblem code={targets.code} message={targets.error} />}
+          {targets.error && <CloudProblem code={targets.code} message={targets.error} onRetry={targets.reload} />}
 
           {targets.busy && !targets.data ? (
             <Skeleton rows={3} />
@@ -226,7 +226,7 @@ export default function GrantSub({ open, onClose, onDone, startApp }: {
         <div>
           <p className="mb-2 text-xs font-medium text-ink">۲) پلن</p>
 
-          {plans.error && <CloudProblem code={plans.code} message={plans.error} />}
+          {plans.error && <CloudProblem code={plans.code} message={plans.error} onRetry={plans.reload} />}
 
           {plans.busy && !plans.data ? (
             <Skeleton rows={2} />

@@ -65,7 +65,7 @@ export default function PurchaseRequests() {
         }
       />
 
-      {list.error && <CloudProblem code={list.code} message={list.error} />}
+      {list.error && <CloudProblem code={list.code} message={list.error} onRetry={list.reload} />}
 
       <Card title="درخواست‌ها" icon={<ShoppingCart className="h-4 w-4" />}>
         {list.busy && !list.data ? (
