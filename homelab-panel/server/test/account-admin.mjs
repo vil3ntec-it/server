@@ -47,6 +47,8 @@ console.log('\n── یک ماه یعنی یک ماه ──');
 const NOW = Date.now();
 const DAY = 86400e3;
 const seen = [];                 // { method, path, query, body, bearer }
+//  کلیدِ «سرورِ حسابِ کهنه است و دفترِ دومِ کدها را ندارد» — فقط برای یک بند
+let otpOff = false;
 const users = {
   u1: { id: 'u1', name: 'کریم', email: 'karim@x.com', phone: '0700', status: 'active', created_at: NOW - 40 * DAY, last_login_at: NOW - DAY },
   u2: { id: 'u2', name: 'زهرا', email: 'z@x.com', phone: '0711', status: 'active', created_at: NOW - 3 * DAY, last_login_at: null },
@@ -451,6 +453,30 @@ const fake = http.createServer((req, res) => {
     if ((m = /^\/api\/admin\/logins\/([^/]+)\/resend$/.exec(p)) && req.method === 'POST') return j(200, { ok: true, result: 'sent', status: 'sent' });
     if (p === '/api/admin/logins/unlock' && req.method === 'POST') return j(200, { ok: true });
     if ((m = /^\/api\/admin\/logins\/([^/]+)\/reveal$/.exec(p))) return j(200, { ok: true, code: '999111' });
+
+    /*
+     *  دفترِ **دومِ** کدهای سرورِ حساب — `otp_codes` (ثبت‌نام و رمزِ
+     *  فراموش‌شده). گزارشِ صاحب سامانه: کد به ایمیلش رسید و این صفحه
+     *  می‌گفت «هنوز کسی کد نخواسته»، چون پنل فقط دفترِ اول را می‌خواند.
+     *
+     *  ⚠️ ساختگی باید همان کاری را بکند که واقعی می‌کند — همان درسِ
+     *  «ایمیل را نمی‌گشت و سنجه سبزِ دروغ می‌داد».
+     */
+    if (p === '/api/admin/otp' && req.method === 'GET') {
+      //  سرورِ حسابِ کهنه این دفتر را ندارد
+      if (otpOff) return j(404, { error: { code: 'not_found', message: 'این مسیر وجود ندارد' } });
+      const want = u.searchParams.get('app') || '';
+      const rows = [{
+        id: 'otp_reg1', purpose: 'register', app: 'pump',
+        destination: 'haroon@x.com', masked_destination: 'ha***@x.com',
+        attempts: 0, max_attempts: 5,
+        created_at: NOW - 30e3, expires_at: NOW + 240e3, consumed_at: null,
+        sent_at: NOW - 29e3, via: 'log', log_only: true,
+        active: true, can_reveal: true,
+      }];
+      return j(200, { requests: want && want !== 'pump' ? [] : rows });
+    }
+    if ((m = /^\/api\/admin\/otp\/([^/]+)\/reveal$/.exec(p))) return j(200, { ok: true, code: '622186', expires_in: 210 });
 
     //  ── دسترسی‌هایی که در ۱.۴۱.۰ از پنل افتادند و در ۱.۴۷.۰ برگشتند ──
     if (p === '/api/admin/vip-codes' && req.method === 'GET') {
@@ -949,6 +975,48 @@ try {
   //  ⛔ و خودِ کد در فهرست نیست — نمایش همیشه یک کارِ جدا و ثبت‌شده است
   check('⛔ ولی خودِ کد در فهرست نمی‌آید',
     fromAccount.every((r) => r.code === null), JSON.stringify(fromAccount));
+
+  /*
+   *  ⛔ و دفترِ **دومِ** سرورِ حساب — کدِ ثبت‌نام.
+   *
+   *  گزارشِ صاحب سامانه با عکس: «کد نمیاد توی بخش کد ها هیچ کدی نمیاد…
+   *  اصلاً دیده نمی‌شود برای کدام حساب و کدام برنامه و ایمیل است.»
+   *  همان درس، بارِ سوم: سرورِ حساب خودش دو دفترِ کد دارد.
+   */
+  const fromOtp = (live.json?.items || []).filter((r) => r.source === 'account-otp');
+  check('کدِ ثبت‌نامِ سرورِ حساب هم در «کدهای زنده» می‌آید',
+    fromOtp.length === 1 && fromOtp[0].id === 'otp_reg1',
+    JSON.stringify(live.json?.items || []));
+  check('و می‌گوید برای کدام ایمیل، کدام برنامه و چه کاری',
+    fromOtp[0]?.email === 'haroon@x.com' && fromOtp[0]?.app === 'pump'
+      && fromOtp[0]?.appName === 'پمپ‌بنزین' && fromOtp[0]?.purpose === 'ثبت‌نام',
+    JSON.stringify(fromOtp[0] || {}));
+  //  ⛔ «رفت» با «در لاگ چاپ شد» یکی نیست
+  check('⛔ راهِ `log` سرخ می‌ماند، نه سبزِ «رفت»',
+    fromOtp[0]?.logOnly === true, JSON.stringify(fromOtp[0] || {}));
+  check('⛔ و این کد هم در فهرست نمی‌آید',
+    fromOtp.every((r) => r.code === null) && fromOtp[0]?.canReveal === true,
+    JSON.stringify(fromOtp[0] || {}));
+
+  const otpReveal = await api('POST', '/api/account-admin/otp/otp_reg1/reveal', {}, auth);
+  check('نمایشِ کدِ ثبت‌نام از درِ خودش می‌رود',
+    otpReveal.status === 200 && otpReveal.json?.code === '622186'
+      && last()?.path === '/api/admin/otp/otp_reg1/reveal',
+    `${otpReveal.status} ${last()?.path}`);
+
+  /*
+   *  ⛔ **افتادنِ یک دفتر دیگری را نمی‌برد.**
+   *  سرورِ حسابِ کهنه `/api/admin/otp` را ندارد و ۴۰۴ می‌دهد؛ آن یعنی
+   *  «این دفتر را ندارم»، نه «خرابم» — فهرست نباید دوباره خالی شود.
+   */
+  otpOff = true;
+  const liveOld = await api('GET', '/api/codes-admin/live', undefined, auth);
+  check('سرورِ حسابِ کهنه (۴۰۴ روی دفترِ دوم) فهرست را خالی نمی‌کند',
+    liveOld.status === 200
+      && (liveOld.json?.items || []).some((r) => r.source === 'account')
+      && !(liveOld.json?.accountError),
+    `${liveOld.status} ${JSON.stringify(liveOld.json?.accountError || '')}`);
+  otpOff = false;
 
   console.log('\n── در بسته است ──');
   const beforeSneak = seen.length;

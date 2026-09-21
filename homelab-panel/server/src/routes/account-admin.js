@@ -1127,6 +1127,26 @@ router.post('/logins/:id/reveal', requireRole('admin'), guard(async (req, res) =
 }));
 
 /**
+ * همان کار، برای دفترِ **دومِ** کدهای سرورِ حساب (`otp_codes`).
+ *
+ * ⛔ **دو دفترِ کد هست و این دو مسیر یکی نمی‌شوند.**
+ * `/logins/:id/reveal` مالِ «ورود با کدِ ایمیلی» است؛ این یکی مالِ کدِ
+ * **ثبت‌نام** و **رمزِ فراموش‌شده** — همان کدی که کاربرِ تازه می‌گیرد و تا
+ * ۱.۴۷.۵ هیچ‌جای پنل دیده نمی‌شد (گزارشِ صاحب سامانه با عکس: «کد نمیاد
+ * توی بخش کد ها هیچ کدی نمیاد»).
+ *
+ * ⛔ و هر سه نگهبان همان‌اند: نقشِ `admin`ِ پنل · فقط پورتِ پنل · دو بار
+ *    ثبت (دفترِ پنل و `otp.code_revealed`ِ خودِ سرورِ حساب)، و فقط کدِ
+ *    **زنده**.
+ */
+router.post('/otp/:id/reveal', requireRole('admin'), guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const out = await cloudRaw('POST', `/api/admin/otp/${id}/reveal`);
+  audit({ actor: actorOf(req), action: 'account.otp.reveal', entity: 'otp_code', entityId: id });
+  res.json(out);
+}));
+
+/**
  * حالِ رباتِ ایمیلِ **سرورِ حساب** — نه رباتِ خودِ پنل.
  *
  * ⚠️ این دو یکی نیستند و فرقشان یک بار کاربر را کاملاً زمین زد: پنل SMTPِ

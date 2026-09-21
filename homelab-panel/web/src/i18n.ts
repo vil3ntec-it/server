@@ -901,6 +901,13 @@ const fa = {
   navShops: 'فروشگاه‌ها',
   codesLogOnly: 'فقط در لاگ — نرفت',
   codesFromAccount: 'ورود به برنامه — سرورِ حساب',
+  //  ⚠️ دفترِ **دومِ** سرورِ حساب: کدِ ثبت‌نام و رمزِ فراموش‌شده
+  codesFromAccountOtp: 'سرورِ حساب',
+  //  ⛔ چهار شمارندهٔ بالا مالِ رباتِ خودِ پنل‌اند و برای کدهای سرورِ حساب
+  //     همیشه صفر می‌مانند — همین یک بار کاربر را گمراه کرد
+  codesListLive: 'کدهای زندهٔ همین حالا',
+  codesListDay: 'کدهای امروز (هر دو دفتر)',
+  codesQueueNote: 'شمارنده‌های بالا مالِ رباتِ ایمیلِ خودِ پنل‌اند؛ کدهای برنامه‌ها را سرورِ حساب خودش می‌فرستد.',
   codesReveal: 'نمایشِ کد',
   codesRevealFailed: 'کد نیامد',
   codesLocked: 'قفل شده',
@@ -1918,6 +1925,10 @@ const en: Dict = {
   navShops: 'Shops',
   codesLogOnly: 'log only — not sent',
   codesFromAccount: 'App sign-in — account server',
+  codesFromAccountOtp: 'Account server',
+  codesListLive: 'Live right now',
+  codesListDay: 'Today (both ledgers)',
+  codesQueueNote: 'The counters above belong to the panel’s own mailer; app codes are sent by the account server itself.',
   codesReveal: 'Show code',
   codesRevealFailed: 'Could not get the code',
   codesLocked: 'locked',

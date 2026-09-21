@@ -40,7 +40,13 @@ type LiveItem = {
    *  شد» می‌گفت در دفترِ سرورِ حساب نشسته بود و این صفحه — که فقط دفترِ خودش
    *  را می‌خواند — می‌گفت «هنوز کسی کد نخواسته».
    */
-  source?: 'panel' | 'account';
+  /*
+   *  ⚠️ و سرورِ حساب خودش **دو** دفتر دارد: `account` مالِ «ورود با کدِ
+   *  ایمیلی» است و `account-otp` مالِ کدِ **ثبت‌نام** و **رمزِ
+   *  فراموش‌شده**. تا ۱.۴۷.۵ فقط اولی خوانده می‌شد، پس کدِ کاربرِ تازه
+   *  هیچ‌جا دیده نمی‌شد — و هر دو مسیرِ «نمایشِ کد» جدا هستند.
+   */
+  source?: 'panel' | 'account' | 'account-otp';
   /** ردیفِ سرورِ حساب کدش در فهرست نمی‌آید؛ با دکمه و با ثبت نشان داده می‌شود */
   canReveal?: boolean;
   /** ⛔ «رفت» نیست: فقط در لاگِ سرور چاپ شده و هیچ ایمیلی بیرون نرفته */
@@ -216,6 +222,13 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
     [items, onlyLive]
   );
 
+  //  ⚠️ از خودِ فهرست شمرده می‌شوند، نه از یک مسیرِ دوم: یک حقیقت، یک منبع
+  const liveCount = useMemo(() => (items || []).filter((i) => i.status === 'live').length, [items]);
+  const dayCount = useMemo(() => {
+    const since = Date.now() - 24 * 3600 * 1000;
+    return (items || []).filter((i) => Number(i.createdAt || 0) >= since).length;
+  }, [items]);
+
   if (!items) return <Loading />;
 
   return (
@@ -236,6 +249,20 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
 
       {accountError && <Notice tone="warn">{t('codesAccountDown')} — {accountError}</Notice>}
 
+      {/*
+        ⛔ **دو شمارندهٔ خودِ فهرست، پیش از شمارنده‌های صف.**
+
+        گزارشِ صاحب سامانه با عکس: کد به ایمیلش رسیده بود و این صفحه هر
+        چهار شمارنده‌اش صفر بود. آن چهارتا **درست** می‌گفتند — مالِ رباتِ
+        ایمیلِ خودِ پنل‌اند و کدِ برنامه‌ها را سرورِ حساب خودش می‌فرستد،
+        پس هیچ‌وقت از صفر بالا نمی‌روند. ولی کنارِ هم خوانده می‌شدند و
+        یعنی «هیچ کدی در کار نیست».
+      */}
+      <div className="grid grid-cols-2 gap-3">
+        <Stat label={t('codesListLive')} value={liveCount} />
+        <Stat label={t('codesListDay')} value={dayCount} />
+      </div>
+
       {queue && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label={t('codesQWaiting')} value={queue.waiting} />
@@ -248,6 +275,8 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
           />
         </div>
       )}
+
+      <p className="text-[11px] leading-snug text-ink-muted" dir="auto">{t('codesQueueNote')}</p>
 
       <Card
         title={t('codesLive')}
@@ -319,7 +348,9 @@ function CodeRow({ item, now }: { item: LiveItem; now: number }) {
     setRevealing(true);
     setRevealError('');
     try {
-      const r = await api<{ code?: string }>(`/api/account-admin/logins/${encodeURIComponent(String(item.id))}/reveal`, { body: {} });
+      //  ⛔ هر دفتر درِ خودش را دارد؛ یکی کردنشان یعنی ۴۰۴ برای نیمی از ردیف‌ها
+      const door = item.source === 'account-otp' ? 'otp' : 'logins';
+      const r = await api<{ code?: string }>(`/api/account-admin/${door}/${encodeURIComponent(String(item.id))}/reveal`, { body: {} });
       setShown(String(r.code || ''));
     } catch (e) {
       setRevealError(e instanceof Error ? e.message : t('codesRevealFailed'));
@@ -356,7 +387,9 @@ function CodeRow({ item, now }: { item: LiveItem; now: number }) {
         <div className="min-w-0">
           <p className="truncate text-sm">{item.appName}</p>
           <p className="truncate text-[10px] text-ink-muted">
-            {item.source === 'account' ? t('codesFromAccount') : item.purpose}
+            {item.source === 'account' ? t('codesFromAccount')
+              : item.source === 'account-otp' ? `${t('codesFromAccountOtp')} · ${item.purpose}`
+              : item.purpose}
             {item.autoResend ? ` · ${t('codesAuto')}` : ''}
             {item.locked ? ` · ${t('codesLocked')}` : ''}
           </p>
