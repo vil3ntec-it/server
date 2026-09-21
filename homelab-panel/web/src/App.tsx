@@ -22,6 +22,7 @@ import Updates from './pages/control/Updates';
 import PanelUsers from './pages/control/PanelUsers';
 import Assistant from './pages/Assistant';
 import { AccountServerHub, CustomersHub, DomainsHub, LoginsHub, LogsHub, MonitoringHub, NetworkHub, PlansHub } from './pages/hubs';
+import ShopDesk from './pages/account/ShopDesk';
 import DockerPage from './pages/Docker';
 import ProcessesPage from './pages/Processes';
 import DatabasesPage from './pages/Databases';
@@ -67,6 +68,16 @@ function Shell() {
 
         {/* مشتری‌ها و فروش — پلِ سرورِ حساب */}
         <Route path="/customers" element={<CustomersHub />} />
+        {/*
+          ⛔ میزِ فروشگاه صفحهٔ خودش را گرفت (بندهای ۴.۱ تا ۴.۴ سندِ ریمیک):
+          داشبورد، سه گروهِ اشتراک، و کدِ شاگرد — هیچ‌کدام در `/customers`
+          نبودند و آن صفحه فهرستِ اشتراک‌هاست، نه میزِ یک بخش.
+
+          ⚠️ و `/customers?app=shop` **دست‌نخورده کار می‌کند** و به این‌جا
+          `Navigate` نمی‌شود: کسی که فهرستِ اشتراک‌ها را با فیلترِ دکان
+          می‌خواهد باید همان را بگیرد. فقط آیتمِ منو به این‌جا آمد.
+        */}
+        <Route path="/shop" element={<ShopDesk />} />
         <Route path="/account-server" element={<AccountServerHub />} />
         {/* نشانی‌های قدیمی نباید بشکنند — همان قاعدهٔ گامِ ۴ی ریمیک */}
         <Route path="/visitors" element={<Navigate to="/customers?tab=visitors" replace />} />

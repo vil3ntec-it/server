@@ -53,7 +53,7 @@ const FILE_OF = {
   '/sites': 'pages/Sites.tsx',
   '/site-server': 'pages/SiteServer.tsx',
   '/stations': 'pages/Stations.tsx',
-  '/customers?app=shop': 'pages/account/Customers.tsx',
+  '/shop': 'pages/account/ShopDesk.tsx',
   '/codes': 'pages/Codes.tsx',
 };
 
@@ -217,6 +217,54 @@ const stationsRoute = fs.readFileSync(path.join(here, '..', 'src', 'routes', 'st
 check('⛔ درِ دومی برای پوشه ساخته نشد',
   /folder: describeFolder\(/.test(stationsRoute)
   && !/router\.get\('\/:code\/folder/.test(stationsRoute));
+
+/*
+ *  ══ گامِ ۴ — میزِ فروشگاه، تمام‌صفحه ═══════════════════════════════════
+ */
+const shopDesk = read('pages/account/ShopDesk.tsx');
+
+//  ۴.۱ — صفحهٔ خودش، با سه تب
+check('۴.۱ میزِ فروشگاه سه تب دارد',
+  /shopDeskDash/.test(shopDesk) && /shopDeskGroups/.test(shopDesk) && /shopDeskCodes/.test(shopDesk));
+
+//  ۴.۲ — شش عدد و فهرستِ رو به پایان با ایمیل
+check('۴.۲ داشبورد هر شش عدد را نشان می‌دهد',
+  ['counts.shops', 'counts.customers', 'counts.subscribed', 'counts.online',
+   'counts.supportUnread', 'counts.supportOpen'].every((k) => shopDesk.includes(`d.${k}`)));
+check('۴.۲ و «رو به پایان» ایمیل و روزِ مانده دارد',
+  /r\.ownerEmail/.test(shopDesk) && /r\.daysLeft/.test(shopDesk));
+
+/*
+ *  ⛔ مهم‌ترین بندِ گامِ ۴: **پنل هیچ عددی حساب نمی‌کند.** اگر صفحه خودش
+ *  گروه‌بندی یا جمع می‌کرد، همان «دفترِ دوم» بود که سه بار در این مخزن
+ *  زد: مدیر «فعال» می‌دید و مشتری «تمام شده».
+ */
+check('⛔ و صفحه خودش گروه‌بندی نمی‌کند',
+  !/\.filter\(\s*\(?[a-z]\)?\s*=>\s*[a-z]\.status/.test(shopDesk)
+  && !/daysLeft\s*=\s*Math\./.test(shopDesk),
+  'گروه‌بندی و جمع کارِ سرورِ حساب است');
+
+//  ۴.۳ — سه گروه، و هر سه نام‌دار
+check('۴.۳ سه گروهِ اشتراک هست',
+  /shopDeskHas/.test(shopDesk) && /shopDeskNone/.test(shopDesk) && /shopDeskExpired/.test(shopDesk));
+
+//  ۴.۴ — کدِ شاگرد و شمارِ شاگردها
+check('۴.۴ کدِ شاگرد و شمارِ شاگردها هست',
+  /shopDeskStudents/.test(shopDesk) && /staff-codes/.test(shopDesk));
+/*
+ *  ⛔ و نمایشِ کد با یک کلیکِ **جدا** است، نه با باز شدنِ صفحه — همان
+ *  قاعدهٔ میزِ کدها. بی آن، هر تازه‌شدنِ صفحه یک ردیفِ «کد دیده شد» برای
+ *  هر دکان می‌ساخت و آن دفتر بی‌معنا می‌شد.
+ */
+check('⛔ و کد با کلیکِ جدا می‌آید، نه با باز شدنِ صفحه',
+  /staff-codes\/reveal/.test(shopDesk) && /onClick=\{reveal\}/.test(shopDesk));
+check('⛔ و هیچ کدِ شاگردی در خودِ صفحه نوشته نشده',
+  !/SHG-/.test(shopDesk));
+
+//  ⛔ و درِ منو یکی است: آیتم به `/shop` می‌رود، نه دو در برای یک موضوع
+check('⛔ آیتمِ منوی فروشگاه یک در دارد',
+  /\{ to: '\/shop', key: 'navShops'/.test(layout)
+  && !/to: '\/customers\?app=shop'/.test(layout));
 
 console.log('\n════════════════════════════════════');
 console.log(`  ✅ ${pass} سبز، ${fail} قرمز`);

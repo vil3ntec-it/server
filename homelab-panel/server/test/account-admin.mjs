@@ -157,6 +157,44 @@ const fake = http.createServer((req, res) => {
         .some((v) => String(v || '').toLowerCase().includes(q));
       return j(200, { shops: shops.filter(hit), total: shops.length, limit: 200, offset: 0 });
     }
+    //  ══ میزِ فروشگاه — بندهای ۴.۲ تا ۴.۴ ══════════════════════════════
+    if (p === '/api/admin/shop-desk/overview' && req.method === 'GET') {
+      return j(200, {
+        app: 'shop', serverTime: NOW, onlineWithinMs: 600000,
+        counts: { shops: 2, customers: 2, subscribed: 1, online: 1, expiring: 1, supportOpen: 3, supportUnread: 5 },
+        expiring: [{ subscriptionId: 'sub-x', tenantId: 'shp-1', tenantName: 'دکانِ یک',
+                     ownerName: 'هارون', ownerEmail: 'haroon@x.com', plan: 'm1',
+                     endsAt: NOW + 2 * DAY, daysLeft: 2 }],
+        support: [{ id: 'th-1', subject: 'سلام', who: 'هارون', status: 'open', unread_admin: 2 }],
+        days: Number(u.searchParams.get('days')) || 7,
+      });
+    }
+    if (p === '/api/admin/shop-desk/groups' && req.method === 'GET') {
+      return j(200, {
+        app: 'shop', serverTime: NOW,
+        groups: {
+          has: [{ tenantId: 'shp-1', tenantName: 'دکانِ یک', ownerEmail: 'haroon@x.com', ownerName: 'هارون',
+                  ownerPhone: '', subscriptionId: 'sub-x', plan: 'm1', status: 'active',
+                  endsAt: NOW + 2 * DAY, daysLeft: 2, createdAt: NOW }],
+          none: [{ tenantId: 'shp-2', tenantName: 'دکانِ دو', ownerEmail: 'b@x.com', ownerName: '',
+                   ownerPhone: '', subscriptionId: '', plan: '', status: 'none', endsAt: 0, daysLeft: 0, createdAt: NOW }],
+          expired: [],
+        },
+        counts: { has: 1, none: 1, expired: 0 },
+      });
+    }
+    if ((m = /^\/api\/admin\/shops\/([^/]+)\/staff-codes$/.exec(p)) && req.method === 'GET') {
+      return j(200, {
+        shop: { id: m[1], name: 'دکانِ یک' },
+        students: { total: 2, active: 2, members: 3 },
+        standing: { id: 'stc-1', role: 'staff', generation: 1, usedCount: 4 },
+        codes: [{ id: 'stc-2', hint: 'PL51', role: 'staff', status: 'active', createdAt: NOW,
+                  expiresAt: null, maxUses: 1, usedCount: 0 }],
+      });
+    }
+    if ((m = /^\/api\/admin\/shops\/([^/]+)\/staff-codes\/reveal$/.exec(p)) && req.method === 'POST') {
+      return j(200, { ok: true, code: 'SHG-8F29-KD72-PL51', role: 'staff', generation: 1 });
+    }
     if ((m = /^\/api\/admin\/shops\/([^/]+)$/.exec(p)) && req.method === 'GET') {
       const s = shops.find((x) => x.id === m[1]);
       if (!s) return j(404, { error: { code: 'not_found', message: 'دکان پیدا نشد' } });
@@ -1185,6 +1223,65 @@ try {
   const accAudit = await api('GET', '/api/account-admin/account-audit', undefined, auth);
   check('دفترِ ممیزیِ خودِ سرورِ حساب دیده می‌شود',
     accAudit.status === 200 && accAudit.json?.entries?.[0]?.action === 'admin.vip_code_created', String(accAudit.status));
+
+  // ══ میزِ فروشگاه — بندهای ۴.۲ تا ۴.۴ ════════════════════════════════
+  console.log('\n── میزِ فروشگاه ──');
+
+  const ov = await api('GET', '/api/account-admin/shop-desk/overview?days=7', undefined, auth);
+  check('۴.۲ داشبوردِ فروشگاه از سرورِ حساب می‌آید',
+    ov.status === 200 && ov.json?.counts?.shops === 2 && ov.json?.counts?.online === 1,
+    `${ov.status} ${JSON.stringify(ov.json).slice(0, 160)}`);
+  //  ⚠️ ایمیل و روزِ مانده — همان چیزی که صریح خواسته شد
+  check('۴.۲ «رو به پایان» ایمیل و روزِ مانده دارد',
+    ov.json?.expiring?.[0]?.ownerEmail === 'haroon@x.com' && ov.json?.expiring?.[0]?.daysLeft === 2);
+  //  ⛔ تعریفِ «آنلاین» از سرور می‌آید، نه از عددی که پنل خودش بداند
+  check('⛔ تعریفِ «آنلاین» از خودِ سرور می‌آید', Number(ov.json?.onlineWithinMs) > 0);
+  //  ⚠️ `days` واقعاً به بالادست می‌رود، نه فیلترِ محلی
+  check('⚠️ و `days` به سرورِ حساب می‌رسد', last()?.query?.days === '7', JSON.stringify(last()?.query));
+
+  const gp = await api('GET', '/api/account-admin/shop-desk/groups?q=haroon', undefined, auth);
+  check('۴.۳ سه گروهِ اشتراک از سرورِ حساب می‌آید',
+    gp.status === 200 && Array.isArray(gp.json?.groups?.has)
+    && Array.isArray(gp.json?.groups?.none) && Array.isArray(gp.json?.groups?.expired),
+    `${gp.status} ${JSON.stringify(gp.json).slice(0, 160)}`);
+  check('⚠️ و جست‌وجو دستِ سرورِ حساب است، نه فیلترِ محلی',
+    last()?.query?.q === 'haroon', JSON.stringify(last()?.query));
+
+  const sc = await api('GET', '/api/account-admin/shop-accounts/shp-1/staff-codes', undefined, auth);
+  check('۴.۴ شمارِ شاگردها و فهرستِ پوشیدهٔ کدها می‌آید',
+    sc.status === 200 && sc.json?.students?.total === 2 && sc.json?.codes?.[0]?.hint === 'PL51',
+    `${sc.status} ${JSON.stringify(sc.json).slice(0, 160)}`);
+  //  ⛔ خودِ کد در فهرست نیست — همان قاعدهٔ میزِ کدها
+  check('⛔ و هیچ کدِ خامی در فهرست نیست',
+    !/SHG-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}/.test(JSON.stringify(sc.json)));
+
+  const rv = await api('POST', '/api/account-admin/shop-accounts/shp-1/staff-codes/reveal', {}, auth);
+  check('۴.۴ نمایشِ کدِ ثابت، با یک کلیکِ جدا',
+    rv.status === 200 && rv.json?.code === 'SHG-8F29-KD72-PL51', `${rv.status} ${rv.text?.slice(0, 160)}`);
+  //  ⛔ و دو بار ثبت می‌شود: دفترِ پنل، و دفترِ خودِ سرورِ حساب
+  const revealLog = await api('GET', '/api/control/audit?limit=80', undefined, auth);
+  check('⛔ و در دفترِ کارهای حساسِ پنل می‌نشیند',
+    JSON.stringify(revealLog.json || {}).includes('account.staff_code.revealed'),
+    String(revealLog.status));
+
+  //  ⛔ `operator` نمی‌تواند کد را ببیند — همان مرزِ «نمایشِ کد»
+  //  ⚠️ نشستِ خودش ساخته می‌شود: `oAuth`ی بالا داخلِ یک `if` است و
+  //  تکیه کردن به متغیرِ بلوکِ دیگری یعنی روزی این بند بی‌صدا نمی‌دود.
+  await api('POST', '/api/auth/users', { username: 'op-shop', password: 'Operator-1405-shop', role: 'operator' }, auth);
+  const opLogin = await api('POST', '/api/auth/login', { username: 'op-shop', password: 'Operator-1405-shop' });
+  const opAuth = { Authorization: `Bearer ${opLogin.json?.token}` };
+  check('نشستِ operator برای این بند ساخته شد', Boolean(opLogin.json?.token), String(opLogin.status));
+  const opRv = await api('POST', '/api/account-admin/shop-accounts/shp-1/staff-codes/reveal', {}, opAuth);
+  check('⛔ operator کدِ شاگرد را نمی‌بیند (۴۰۳)', opRv.status === 403, String(opRv.status));
+  //  ⚠️ ولی خودِ فهرست برایش باز است — شمارِ شاگردها راز نیست
+  const opList = await api('GET', '/api/account-admin/shop-accounts/shp-1/staff-codes', undefined, opAuth);
+  check('⚠️ ولی فهرست برایش باز است', opList.status === 200, String(opList.status));
+
+  //  ⛔ فهرستِ سفید است، نه پروکسی: هر چیزِ دیگری زیرِ این پیشوند ۴۰۴
+  const before = seen.length;
+  const bogus = await api('GET', '/api/account-admin/shop-desk/anything', undefined, auth);
+  check('⛔ مسیرِ نانوشته ۴۰۴ می‌گیرد و به سرورِ حساب هم نمی‌رسد',
+    bogus.status === 404 && seen.length === before, `${bogus.status} ${seen.length - before}`);
 
   console.log('\n── سرورِ حساب خاموش ──');
   fake.close();
