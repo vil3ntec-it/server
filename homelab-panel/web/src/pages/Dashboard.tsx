@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useLive } from '../useLive';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -25,6 +26,17 @@ export default function Dashboard() {
   const { t, lang, metrics, history } = useApp();
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState(false);
+  /*
+   *  ⛔ **نبضِ شصت‌ثانیه‌ایِ کور برداشته شد.**
+   *
+   *  داشبورد از سه سرچشمه می‌خواند و هر سه حالا خودشان خبر می‌دهند:
+   *  سایت‌ها، پمپ‌ها و دفترِ رخدادها. پس در سکوت صفر درخواست، و با
+   *  هر تغییرِ واقعی همان لحظه.
+   *
+   *  ⚠️ `loadRef` لازم است چون `load` داخلِ همان اثر ساخته می‌شود و
+   *  بیرونش دیده نمی‌شود؛ بی آن باید کلِ اثر بازنویسی می‌شد.
+   */
+  const loadRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     let alive = true;
@@ -42,15 +54,16 @@ export default function Dashboard() {
       }
     };
     load();
-    // اطلاعات غیرلحظه‌ای (سایت‌ها، خطاها) — معیارها خودشان از سوکت می‌آیند
-    const timer = setInterval(load, 60000);
+    loadRef.current = load;
     document.addEventListener('visibilitychange', load);
     return () => {
       alive = false;
-      clearInterval(timer);
       document.removeEventListener('visibilitychange', load);
     };
   }, []);
+
+  //  سه موضوعی که دادهٔ این صفحه از آن‌ها می‌آید — هر سه حالا خبر می‌دهند
+  useLive(['sites', 'stations', 'logs'], () => loadRef.current());
 
   if (!data) return error ? <Empty title={t('connectionLost')} /> : <Loading />;
 

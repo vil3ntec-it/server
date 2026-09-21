@@ -48,7 +48,22 @@ const DIRTY_PATH_LIMIT = 512;
 const BIG_VALUE_BYTES = 64 * 1024;
 const BIG_VALUE_MIN_GAP_MS = 250;
 
-export function createStore({ key = 'main', label = null, dataDir, token = '', seedToken = '', alsoAccept = [] }) {
+export function createStore({
+  key = 'main', label = null, dataDir, token = '', seedToken = '', alsoAccept = [],
+  /*
+   *  ⛔ **یک جای خبر دادن، نه ده جا.**
+   *
+   *  هر نوشتنِ این دفتر — از وب‌سوکتِ برنامهٔ نیتیو، از درخواستِ ساده، یا
+   *  از صندوقِ گوشیِ کارمند — سرِ آخر به `applyMutation` می‌رسد. پس
+   *  گذرگاهِ زنده هم همان‌جا خبردار می‌شود و نه در تک‌تکِ مسیرها؛ وگرنه
+   *  مسیرِ تازه‌ای که فردا اضافه شود بی‌صدا از قلم می‌افتد.
+   *
+   *  ⚠️ خودِ این فایل هیچ موضوعی نمی‌شناسد — صاحبِ دفتر می‌گوید نامِ
+   *  موضوعش چیست. `sitesync` می‌گوید «سایت‌ها»، `stations` می‌گوید
+   *  «پمپ‌ها».
+   */
+  onWrite = null,
+}) {
   fs.mkdirSync(dataDir, { recursive: true });
 
   const ROOT = {};
@@ -455,6 +470,8 @@ export function createStore({ key = 'main', label = null, dataDir, token = '', s
 
   function applyMutation(kind, p, value) {
     stats.writes++;
+    //  ⚠️ خبر دادن هیچ‌وقت نوشتن را نمی‌خواباند: دفتر اصل است، نبض رفاه
+    if (onWrite) { try { onWrite(p); } catch { /* گذرگاه کسی را نمی‌خواباند */ } }
     if (kind === 'set' || kind === 'remove') {
       setNode(p, kind === 'remove' ? null : value);
       schedulePersist(topKeyOf(p));

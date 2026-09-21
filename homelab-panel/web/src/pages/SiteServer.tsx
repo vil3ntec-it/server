@@ -1,3 +1,4 @@
+import { useLive } from '../useLive';
 import { useCallback, useEffect, useState } from 'react';
 import {
   Anchor,
@@ -43,11 +44,17 @@ export default function SiteServer() {
     }
   }, []);
 
-  useEffect(() => {
-    load();
-    const timer = setInterval(load, 8000);
-    return () => clearInterval(timer);
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
+
+  /*
+   *  ⛔ **نبضِ هشت‌ثانیه‌ایِ کور برداشته شد** — پرفشارترینِ کلِ پنل بود.
+   *
+   *  ⚠️ ولی این صفحه یک تورِ ایمنی نگه می‌دارد (۳۰ ثانیه) و عمداً: بخشی
+   *  از حالش از **بیرونِ** دفتر می‌آید (خودِ پروسهٔ سرورِ سایت و تونلش)
+   *  و آن‌جا کسی `onWrite` ندارد که خبر بدهد. تور فقط وقتی می‌دود که
+   *  سوکت چیزی نگفته باشد.
+   */
+  useLive('sites', load, 30000);
 
   if (!info) return <Loading />;
   if (!info.enabled) {
@@ -308,6 +315,9 @@ function MessengerCard() {
 
   useEffect(() => {
     load();
+    //  نبضِ آگاهانه: کدهای پیام‌رسان دفترِ خودشان را دارند و هنوز به
+    //  گذرگاهِ زنده وصل نشده‌اند. کارِ مانده، بندِ ۱.۵-الف در
+    //  `docs/REMAKE-fa.md` — پنهان نمی‌شود، ثبت می‌شود.
     const timer = setInterval(load, 5000);
     return () => clearInterval(timer);
   }, [load]);
@@ -376,6 +386,7 @@ function NotifyCard({ addresses }: { addresses: SiteServerInfo['addresses'] }) {
 
   useEffect(() => {
     load();
+    //  نبضِ آگاهانه: همان حالِ کدهای پیام‌رسان — بندِ ۱.۵-الف
     const timer = setInterval(load, 6000);
     return () => clearInterval(timer);
   }, [load]);
@@ -1013,6 +1024,9 @@ function PermanentAddress({ data, onChanged }: { data: SiteServerInfo; onChanged
         }
       } catch { /* هنوز */ }
     };
+    //  نبضِ آگاهانه: انتظارِ ورودِ کاربر در مرورگرِ بیرونی — هیچ نوشتنی
+    //  روی این سرور رخ نمی‌دهد که بشود به آن خبر داد، و با ورود خودش
+    //  می‌ایستد (`loggedIn` در وابستگی‌ها).
     const timer = setInterval(ask, 4000);
     return () => clearInterval(timer);
   }, [loggedIn, active]);

@@ -20,6 +20,7 @@ import path from 'node:path';
 import { WebSocketServer } from 'ws';
 import { attachHeartbeat } from '../lib/ws-heartbeat.js';
 import { createStore } from './store.js';
+import { bumpSoon } from '../live/bus.js';
 
 export const MAIN_KEY = 'main';
 
@@ -59,6 +60,8 @@ export function createSiteSync({ dataDir, token = '' }) {
     token,
     seedToken: '',
     alsoAccept: STRICT || !LEGACY_TOKEN ? [] : [LEGACY_TOKEN],
+    //  همان قاعدهٔ پمپ‌ها: نوشتنِ واقعی ⇒ خبر، و رگبار یک پیام
+    onWrite: () => { bumpSoon('sites', 400); },
   });
   stores.set(MAIN_KEY, main);
 
