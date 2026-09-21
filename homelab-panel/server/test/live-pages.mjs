@@ -171,6 +171,53 @@ check('⛔ هر دفترِ کد درِ خودش را دارد',
   /account-otp' \? 'otp' : 'logins'/.test(codes),
   'یکی کردنشان یعنی ۴۰۴ برای نیمی از ردیف‌ها');
 
+/*
+ *  ══ گامِ ۳ — پوشهٔ هر حساب، پشتیبان‌ها، و دادهٔ درجا ═════════════════════
+ *
+ *  صفحهٔ «پمپ‌بنزین‌ها» در فهرستِ بالا زنده شده بود، ولی صفحهٔ **پروفایلِ
+ *  یک پمپ** — همان جایی که دادهٔ یک حساب دیده می‌شود — از فهرستِ منو
+ *  درنمی‌آید (زیرصفحه است) و تا امروز یک نبضِ کورِ بیست‌ثانیه‌ای داشت.
+ */
+const profile = read('pages/StationProfile.tsx');
+
+//  ۳.۳ — «به حسابش آمد ⇒ دادهٔ خودش درجا»، بی تازه کردنِ دستی
+check('۳.۳ پروفایلِ پمپ زنده است', /useLive\('stations'/.test(profile));
+check('۳.۳ و نبضِ کورِ بیست‌ثانیه‌ایش رفت',
+  [...profile.matchAll(/setInterval\(/g)].length
+    <= [...profile.matchAll(/نبضِ آگاهانه:/g)].length);
+
+//  ۳.۱ — پوشهٔ هر حساب دیده می‌شود
+check('۳.۱ «پوشهٔ این حساب» در پروفایل دیده می‌شود',
+  /پوشهٔ این حساب/.test(profile) && /d\.folder/.test(profile));
+/*
+ *  ⛔ مهم‌ترین بندِ ۳.۱: فهرست از **سرور** می‌آید، نه از یک کپیِ دستی در
+ *  این فایل. کپیِ دستی یعنی فایلی که فردا اضافه شود این‌جا بی‌صدا از قلم
+ *  می‌افتد — همان تله‌ای که «یک دفتر را وصل کردم» سه بار در این مخزن زد.
+ */
+check('⛔ و فهرستِ فایل‌ها از سرور می‌آید، نه از کپیِ دستی',
+  /d\.folder\.items\.map/.test(profile)
+  && !/'station\.json'/.test(profile) && !/'readkey\.txt'/.test(profile));
+
+//  ۳.۲ — پشتیبان‌ها با تاریخ و اندازه
+check('۳.۲ فایل‌های پشتیبان با تاریخ و اندازه دیده می‌شوند',
+  /فایل‌های پشتیبان/.test(profile) && /d\.backups/.test(profile)
+  && /toLocaleString\('fa-IR'\)/.test(profile) && /fmtBytes\(b\.bytes\)/.test(profile));
+
+//  ⛔ و سمتِ سرور: چیدمان یک جا نوشته شده و رمز از آن در بیرون نمی‌رود
+const layoutSrc = fs.readFileSync(path.join(here, '..', 'src', 'stations', 'layout.js'), 'utf8');
+check('⛔ چیدمانِ پوشه تنها یک جا نوشته شده', /export const LAYOUT = \[/.test(layoutSrc));
+check('⛔ و این فایل هیچ‌وقت چیزی نمی‌نویسد',
+  !/writeFile|mkdir|rmSync|unlink/.test(layoutSrc),
+  'توصیف‌کننده است، نه سازنده');
+check('⛔ و محتوای رمزها را نمی‌خواند',
+  !/readFile/.test(layoutSrc), 'token.txt و readkey.txt فقط «هست/نیست»');
+
+const stationsRoute = fs.readFileSync(path.join(here, '..', 'src', 'routes', 'stations.js'), 'utf8');
+//  ⛔ درِ دوم ساخته نشد: همان مسیرِ جزئیات که از قبل `files` و `backups` می‌داد
+check('⛔ درِ دومی برای پوشه ساخته نشد',
+  /folder: describeFolder\(/.test(stationsRoute)
+  && !/router\.get\('\/:code\/folder/.test(stationsRoute));
+
 console.log('\n════════════════════════════════════');
 console.log(`  ✅ ${pass} سبز، ${fail} قرمز`);
 console.log('════════════════════════════════════\n');

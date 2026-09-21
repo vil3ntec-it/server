@@ -427,6 +427,75 @@ try {
   const slim = await api('GET', '/api/stations/pump1/backups', undefined, { 'x-station-token': one.json.token });
   check('سهمِ دیسک: کهنه‌ها رفتند و فقط تازه‌ترین ماند', (slim.json?.items || []).length === 1);
 
+  // ── ۱۰ج) پوشهٔ هر حساب: چیدمانِ ثابت، مستند و دیده‌شدنی ────────────────
+  //
+  //  بندِ ۳.۱ی `docs/REMAKE-fa.md`. ⛔ فهرست از `src/stations/layout.js`
+  //  خوانده می‌شود، نه از یک کپیِ دستی این‌جا — وگرنه این سنجه با اضافه
+  //  شدنِ یک فایلِ تازه بی‌صدا کهنه می‌شد و سبزِ دروغ می‌داد.
+  console.log('\n۱۰ج) پوشهٔ هر حساب');
+  const { LAYOUT, describeFolder } = await import('../src/stations/layout.js');
+
+  const folderApi = (await api('GET', '/api/stations-admin/pump1/detail', undefined, auth)).json?.folder;
+  check('پوشهٔ حساب در جزئیاتِ پنل می‌آید', Boolean(folderApi) && folderApi.exists === true);
+
+  const names = (folderApi?.items || []).map((i) => i.name);
+  check('هر قلمِ چیدمانِ ثابت در پاسخ هست، به همان ترتیب',
+    names.join('|') === LAYOUT.map((e) => e.name).join('|'), names.join(','));
+
+  //  همان چیزی که واقعاً روی دیسک است، نه ادعای پاسخ
+  const onDiskNames = new Set(fs.readdirSync(path.join(root, 'pump1')));
+  const claimed = (folderApi?.items || []).filter((i) => i.exists).map((i) => i.name);
+  check('«هست» یعنی واقعاً روی دیسک هست',
+    claimed.length > 0 && claimed.every((n) => onDiskNames.has(n)), claimed.join(','));
+
+  //  ⛔ رازها فقط «هست/نیست» — محتوایشان هیچ‌وقت از این در بیرون نمی‌رود
+  const secretRows = (folderApi?.items || []).filter((i) => i.secret);
+  const folderText = JSON.stringify(folderApi);
+  check('رمزها در فهرست‌اند ولی محتوایشان نه',
+    secretRows.length === 2
+    && !folderText.includes(one.json.token)
+    && !folderText.includes(one.json.readKey),
+    secretRows.map((r) => r.name).join(','));
+
+  //  ⚠️ نبودنِ یک فایل خطا نیست — پمپی که چیزی نفرستاده `live.json` ندارد
+  const bare = describeFolder(root, 'no-such-pump');
+  check('پوشهٔ نبوده خطا نمی‌دهد، «نیست» می‌گوید',
+    bare.exists === false && bare.items.length === LAYOUT.length
+    && bare.items.every((i) => !i.exists) && bare.missing.length === LAYOUT.length);
+
+  //  فایلی که در چیدمان نیست پنهان نمی‌شود
+  fs.writeFileSync(path.join(root, 'pump1', 'note.txt'), 'salam');
+  const withExtra = describeFolder(root, 'pump1');
+  check('فایلِ ناشناخته پنهان نمی‌شود', withExtra.extras.some((e) => e.name === 'note.txt'));
+  fs.rmSync(path.join(root, 'pump1', 'note.txt'));
+
+  //  بندِ ۳.۲ — پشتیبان‌ها با تاریخ و اندازه، نه فقط نام
+  const bkRows = (await api('GET', '/api/stations-admin/pump1/detail', undefined, auth)).json?.backups || [];
+  check('هر پشتیبان تاریخ و اندازه دارد',
+    bkRows.length > 0 && bkRows.every((b) => b.name && b.day && b.at && Number(b.bytes) > 0));
+
+  // ── ۱۰د) «به حسابش آمد ⇒ دادهٔ خودش درجا» ─────────────────────────────
+  //
+  //  بندِ ۳.۳ی `docs/REMAKE-fa.md`: «هر وقت کاربر به حسابش آمد، سرور درجا
+  //  اطلاعاتش را برساند» — بی تازه کردنِ دستی و بی این‌که کسی چیزی بنویسد.
+  //
+  //  ⛔ این سنجه عمداً با یک اتصالِ **کاملاً تازه** کار می‌کند و پس از
+  //  اشتراک **هیچ نوشتنی** نمی‌کند. اگر سرور فقط تغییرِ بعدی را بفرستد،
+  //  این‌جا برای همیشه منتظر می‌ماند و سنجه سرخ می‌شود — همان چیزی که
+  //  «باید از بخش بیرون بشوم و دوباره بیایم تا ببینم» توصیفش می‌کرد.
+  console.log('\n۱۰د) ورودِ تازه، دادهٔ درجا');
+  const fresh = await connect(BASE, 'pump1', one.json.readKey);
+  sendOp(fresh.ws, { op: 'sub', subId: 'fresh', event: 'value', path: 'live' });
+  const first = await fresh.next();
+  check('اتصالِ تازه بی هیچ نوشتنی دادهٔ همین حالا را گرفت',
+    first.op === 'event' && Number(first.value?.seq) === 5 && first.value?.tank?.petrol?.show === 4200,
+    JSON.stringify(first?.value?.seq));
+
+  //  و همان داده از راهِ HTTP هم بی هیچ کاری می‌آید (اپِ گوشی در پس‌زمینه)
+  const freshHttp = await api('GET', `/api/stations/pump1/live?token=${one.json.readKey}`);
+  check('همان داده از درِ HTTP هم درجا می‌آید', freshHttp.json?.live?.seq === 5);
+  fresh.ws.close();
+
   // ── ۱۱) داده پس از راه‌اندازیِ دوباره سرِ جایش است ──────────────────────
   console.log('\n۱۱) ماندگاری');
   app1.ws.close();
