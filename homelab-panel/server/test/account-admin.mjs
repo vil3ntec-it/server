@@ -49,6 +49,8 @@ const DAY = 86400e3;
 const seen = [];                 // { method, path, query, body, bearer }
 //  کلیدِ «سرورِ حسابِ کهنه است و دفترِ دومِ کدها را ندارد» — فقط برای یک بند
 let otpOff = false;
+//  «رباتِ ارسالِ سرورِ حساب تنظیم نیست» — فقط برای یک بند
+let otpSendBroken = false;
 const users = {
   u1: { id: 'u1', name: 'کریم', email: 'karim@x.com', phone: '0700', status: 'active', created_at: NOW - 40 * DAY, last_login_at: NOW - DAY },
   u2: { id: 'u2', name: 'زهرا', email: 'z@x.com', phone: '0711', status: 'active', created_at: NOW - 3 * DAY, last_login_at: null },
@@ -477,6 +479,17 @@ const fake = http.createServer((req, res) => {
       return j(200, { requests: want && want !== 'pump' ? [] : rows });
     }
     if ((m = /^\/api\/admin\/otp\/([^/]+)\/reveal$/.exec(p))) return j(200, { ok: true, code: '622186', expires_in: 210 });
+    /*
+     *  ⛔ فرستادنِ دوباره — و ساختگی باید همان کاری را بکند که واقعی
+     *  می‌کند: با رباتِ تنظیم‌نشده ۴۰۹ می‌دهد، نه ۲۰۰. یک بار همین
+     *  «ساختگیِ خوش‌بین» سنجه را سبزِ دروغ کرد.
+     */
+    if ((m = /^\/api\/admin\/otp\/([^/]+)\/resend$/.exec(p))) {
+      if (otpSendBroken) {
+        return j(409, { error: { code: 'delivery_not_configured', message: 'رباتِ ارسال تنظیم نیست' } });
+      }
+      return j(200, { ok: true, via: 'smtp' });
+    }
 
     //  ── دسترسی‌هایی که در ۱.۴۱.۰ از پنل افتادند و در ۱.۴۷.۰ برگشتند ──
     if (p === '/api/admin/vip-codes' && req.method === 'GET') {
@@ -997,6 +1010,30 @@ try {
   check('⛔ و این کد هم در فهرست نمی‌آید',
     fromOtp.every((r) => r.code === null) && fromOtp[0]?.canReveal === true,
     JSON.stringify(fromOtp[0] || {}));
+
+  /*
+   *  ⛔ بندِ ۲.۶ سند — «ارسالِ خودکار نشد، خودم می‌فرستم».
+   */
+  const otpAgain = await api('POST', '/api/account-admin/otp/otp_reg1/resend', {}, auth);
+  check('فرستادنِ دوبارهٔ کد از درِ خودش می‌رود',
+    otpAgain.status === 200 && last()?.path === '/api/admin/otp/otp_reg1/resend',
+    `${otpAgain.status} ${last()?.path}`);
+
+  //  ⛔ و «نرفت» سبز نمی‌شود — پیامِ خودِ سرورِ حساب باید برسد
+  otpSendBroken = true;
+  const broke = await api('POST', '/api/account-admin/otp/otp_reg1/resend', {}, auth);
+  /*
+   *  ⚠️ قراردادِ خطای این پنل **صاف** است، نه تودرتو: `{ error, message }`.
+   *  همان چیزی که `web/src/api.ts` می‌خواند (`json.error` کد است و
+   *  `json.message` متن). پس هم کد به صفحه می‌رسد هم دلیلش — و سنجه هم
+   *  همین شکل را می‌خواهد، نه شکلِ سرورِ حساب.
+   */
+  check('⛔ رباتِ تنظیم‌نشده ⇒ خطا، نه «فرستادم»',
+    broke.status === 409
+      && String(broke.json?.error || '') === 'delivery_not_configured'
+      && String(broke.json?.message || '').length > 0,
+    `${broke.status} ${JSON.stringify(broke.json)}`);
+  otpSendBroken = false;
 
   const otpReveal = await api('POST', '/api/account-admin/otp/otp_reg1/reveal', {}, auth);
   check('نمایشِ کدِ ثبت‌نام از درِ خودش می‌رود',

@@ -339,6 +339,12 @@ function CodeRow({ item, now }: { item: LiveItem; now: number }) {
    *  شدنِ صفحه — هر دو و نیم ثانیه — یک ردیفِ «کد دیده شد» برای هر مشتری
    *  می‌ساخت و آن دفتر را بی‌معنا می‌کرد.
    */
+  /*
+   *  ⛔ **سه دفترِ کد، سه در.** یکی کردنشان یعنی ۴۰۴ برای نیمی از ردیف‌ها:
+   *  کدِ ورود در `logins` است و کدِ ثبت‌نام در `otp`.
+   */
+  const door = `/api/account-admin/${item.source === 'account-otp' ? 'otp' : 'logins'}/${encodeURIComponent(String(item.id))}`;
+
   const [shown, setShown] = useState('');
   const [revealing, setRevealing] = useState(false);
   const [revealError, setRevealError] = useState('');
@@ -350,8 +356,7 @@ function CodeRow({ item, now }: { item: LiveItem; now: number }) {
     setRevealError('');
     try {
       //  ⛔ هر دفتر درِ خودش را دارد؛ یکی کردنشان یعنی ۴۰۴ برای نیمی از ردیف‌ها
-      const door = item.source === 'account-otp' ? 'otp' : 'logins';
-      const r = await api<{ code?: string }>(`/api/account-admin/${door}/${encodeURIComponent(String(item.id))}/reveal`, { body: {} });
+      const r = await api<{ code?: string }>(`${door}/reveal`, { body: {} });
       setShown(String(r.code || ''));
     } catch (e) {
       setRevealError(e instanceof Error ? e.message : t('codesRevealFailed'));
@@ -359,6 +364,55 @@ function CodeRow({ item, now }: { item: LiveItem; now: number }) {
       setRevealing(false);
     }
   };
+
+  /*
+   *  ⛔ **«ارسالِ خودکار نشد، خودم می‌فرستم» — بندِ ۲.۶ سند.**
+   *
+   *  خواستهٔ صاحب سامانه: «اگر در مرورِ زمان مشکل در ارسالِ خودکار پیش
+   *  آمد، خودم درجا و سریع بفرستم به طرف.»
+   *
+   *  ⛔ همان کد فرستاده می‌شود، نه کدِ تازه: کدی که همین حالا دستِ مشتری
+   *  است باید تا آخرِ اعتبارش کار کند.
+   *
+   *  ⚠️ و «نرفت» سبز نمی‌شود — سرورِ حساب برای رباتِ تنظیم‌نشده ۴۰۹ می‌دهد
+   *  و همان پیام این‌جا سرخ نشان داده می‌شود. وگرنه دکمه‌ای می‌ماند که
+   *  می‌گوید «فرستادم» و هیچ ایمیلی نمی‌رود.
+   */
+  const [sending, setSending] = useState(false);
+  const [sendNote, setSendNote] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const resend = async () => {
+    if (sending) return;
+    setSending(true);
+    setSendNote(null);
+    try {
+      await api(`${door}/resend`, { body: {} });
+      setSendNote({ ok: true, text: t('codesSentAgain') });
+    } catch (e) {
+      setSendNote({ ok: false, text: e instanceof Error ? e.message : t('codesSendAgainFailed') });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  /*
+   *  ⛔ **یک کلیک ⇒ نامهٔ آماده — بندِ ۲.۵ سند.**
+   *
+   *  خواستهٔ صاحب سامانه: «با یک کلیک هم من بتوانم درجا بروم ایمیلِ همان
+   *  طرف با کدِ آماده.»
+   *
+   *  ⚠️ `mailto:` برنامهٔ ایمیلِ خودِ کامپیوتر را با گیرنده و موضوع و متنِ
+   *  آماده باز می‌کند. هیچ کتابخانه‌ای اضافه نشد و هیچ نامه‌ای از این
+   *  کامپیوتر بیرون نمی‌رود تا خودِ صاحبِ سامانه «بفرست» را نزند.
+   *
+   *  ⛔ **و فقط وقتی کد روی صفحه است.** نامهٔ آماده بی کد یعنی یک نامهٔ
+   *  خالی — پس دکمه تا «نمایشِ کد» زده نشود نیست.
+   */
+  const mailHref = code
+    ? `mailto:${encodeURIComponent(item.email)}`
+      + `?subject=${encodeURIComponent(t('codesMailSubject'))}`
+      + `&body=${encodeURIComponent(t('codesMailBody').replace('{code}', code))}`
+    : null;
 
   const stateColor =
     item.logOnly ? 'var(--status-warning)'
@@ -459,7 +513,44 @@ function CodeRow({ item, now }: { item: LiveItem; now: number }) {
       </Cell>
 
       <Cell className="text-end">
-        {code && <CopyButton value={code} />}
+        <div className="flex items-center justify-end gap-1">
+          {code && <CopyButton value={code} />}
+
+          {/*
+            ⛔ بندِ ۲.۵ — یک کلیک و نامه آماده است.
+            فقط وقتی کد روی صفحه است؛ نامهٔ آمادهٔ بی کد یک نامهٔ خالی است.
+          */}
+          {mailHref && (
+            <a
+              className="chip whitespace-nowrap"
+              href={mailHref}
+              title={t('codesMailHint')}
+            >
+              <Send className="h-3 w-3" />
+            </a>
+          )}
+
+          {/*
+            ⛔ بندِ ۲.۶ — فرستادنِ دوبارهٔ همان کد.
+            فقط برای کدِ زندهٔ سرورِ حساب: کدِ مرده دوباره فرستادنی نیست و
+            کدِ خودِ پنل صفِ خودش را دارد.
+          */}
+          {live && item.source !== 'panel' && (
+            <ActionButton onClick={resend} disabled={sending}>
+              {sending ? '…' : t('codesSendAgain')}
+            </ActionButton>
+          )}
+        </div>
+
+        {sendNote && (
+          <p
+            className="mt-1 text-[10px] leading-snug"
+            style={{ color: sendNote.ok ? 'var(--status-good)' : 'var(--status-critical)' }}
+            dir="auto"
+          >
+            {sendNote.text}
+          </p>
+        )}
       </Cell>
     </Row>
   );
