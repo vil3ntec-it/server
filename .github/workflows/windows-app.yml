@@ -223,6 +223,13 @@ jobs:
       # target_commitish را عوض می‌کند و اگر برچسب از قبل باشد جابه‌جایش
       # نمی‌کند — نتیجه‌اش این بود که فایلِ zip منتشرشده مالِ یک کامیتِ قدیمی
       # می‌ماند و به‌روزرسانیِ داخلِ برنامه نسخهٔ کهنه می‌گرفت.
+      # ⛔ «try/catch» این‌جا کار نمی‌کند و یک بار CI را سرخ کرد (اجرای ۲۰۹):
+      #    در PowerShell خروجیِ ناصفرِ یک برنامهٔ **بیرونی** (مثلِ gh) خطای
+      #    متوقف‌کننده نمی‌سازد، پس `catch` هیچ‌وقت نمی‌دوید — PATCHِ برچسبِ
+      #    نبوده ۴۲۲ می‌گرفت، «برچسب جابه‌جا شد» چاپ می‌شد، و گام با همان
+      #    کدِ ۱ می‌افتاد. تا دیروز پنهان بود چون `windows-preview` همیشه از
+      #    قبل وجود داشت؛ با آمدنِ `windows-branch` همان لحظه دیده شد.
+      #    ملاک `$LASTEXITCODE` است، نه استثنا.
       - name: جابه‌جا کردن برچسب پیش‌نمایش
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         shell: pwsh
@@ -230,12 +237,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $body = @{ sha = '${{ github.sha }}'; force = $true } | ConvertTo-Json -Compress
-          try {
-            $body | gh api -X PATCH "repos/${{ github.repository }}/git/refs/tags/$env:CHANNEL_TAG" --input -
+          $body | gh api -X PATCH "repos/${{ github.repository }}/git/refs/tags/$env:CHANNEL_TAG" --input -
+          if ($LASTEXITCODE -eq 0) {
             Write-Host 'برچسب جابه‌جا شد.'
-          } catch {
+          } else {
+            Write-Host 'برچسب نبود — ساخته می‌شود.'
             $create = @{ ref = "refs/tags/$env:CHANNEL_TAG"; sha = '${{ github.sha }}' } | ConvertTo-Json -Compress
             $create | gh api -X POST "repos/${{ github.repository }}/git/refs" --input -
+            if ($LASTEXITCODE -ne 0) { throw "ساختنِ برچسب $env:CHANNEL_TAG هم نشد." }
             Write-Host 'برچسب ساخته شد.'
           }
 
