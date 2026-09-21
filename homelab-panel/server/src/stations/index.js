@@ -36,6 +36,7 @@ import path from 'node:path';
 import { WebSocketServer } from 'ws';
 import { attachHeartbeat } from '../lib/ws-heartbeat.js';
 import { createStore } from '../sitesync/store.js';
+import { bumpSoon } from '../live/bus.js';
 
 /** شاخه‌ای که برنامهٔ نیتیو می‌نویسد و بقیه فقط می‌خوانند */
 export const LIVE_BRANCH = 'live';
@@ -181,7 +182,24 @@ export function createStations({ dataDir, enroll = 'lan' } = {}) {
       return existing;
     }
 
-    const store = createStore({ key, label: name.trim() || key, dataDir: dirFor(key) });
+    /*
+     *  ⛔ **هر نوشتنِ واقعیِ این پمپ، گذرگاهِ زنده را بیدار می‌کند.**
+     *
+     *  تا امروز صفحهٔ «پمپ‌بنزین‌ها» یک نبضِ کور داشت: هر چند ثانیه
+     *  می‌پرسید، چه چیزی عوض شده باشد چه نه. حالا تا برنامهٔ نیتیو
+     *  چیزی ننویسد، **صفر** درخواست — و همان لحظه که نوشت، صفحه
+     *  خودش تازه می‌شود.
+     *
+     *  ⚠️ `bumpSoon` است نه `bump`: یک عکسِ ایستگاه ده‌ها خانه را پشتِ
+     *  سرِ هم می‌نویسد و ده پیام یعنی ده بار خواندنِ همان صفحه — همان
+     *  فشاری که می‌خواستیم برداریم، از سمتِ سرور.
+     */
+    const store = createStore({
+      key,
+      label: name.trim() || key,
+      dataDir: dirFor(key),
+      onWrite: () => { bumpSoon('stations', 400); },
+    });
     stores.set(key, store);
     await store.ensureToken();
     await ensureReadKey(key);

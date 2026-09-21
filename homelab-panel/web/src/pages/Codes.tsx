@@ -190,6 +190,7 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
   useEffect(() => {
     alive.current = true;
     load();
+    //  نبضِ آگاهانه: ساعتِ شمارشِ معکوسِ روی صفحه است، نه خواندنِ داده
     //  ⚠️ این یکی نبضِ داده نیست، ساعتِ شمارشِ معکوسِ روی صفحه است و می‌ماند
     const clock = setInterval(() => setTick(Date.now()), 1000);
     return () => {

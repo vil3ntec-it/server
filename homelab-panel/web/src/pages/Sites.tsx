@@ -1,3 +1,4 @@
+import { useLive } from '../useLive';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Database,
@@ -66,6 +67,13 @@ export default function Sites() {
   useEffect(() => {
     load().catch(() => setSites([]));
   }, [load]);
+
+  /*
+   *  ⚠️ حالِ روشن/خاموشِ هر سایت از قبل از سوکت می‌آمد، ولی **خودِ فهرست**
+   *  نه: سایتِ تازه‌ساخته، حذف‌شده یا نام‌عوض‌شده تا تازه کردنِ دستی دیده
+   *  نمی‌شد. حالا هر نوشتنِ واقعیِ دفترِ سایت‌ها خبر می‌دهد.
+   */
+  useLive('sites', () => { load().catch(() => {}); });
 
   // بروزرسانی زندهٔ وضعیت از سوکت
   useEffect(() => {

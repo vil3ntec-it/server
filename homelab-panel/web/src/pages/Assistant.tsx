@@ -7,6 +7,7 @@
 //  قانونِ طلایی همین‌جا دیده می‌شود: هر اقدامِ تغییردهنده یک کارتِ «تأیید و
 //  اجرا / رد» است. تا کلیک نشود هیچ چیزی روی سرور عوض نمی‌شود.
 // ---------------------------------------------------------------------------
+import { useLive } from '../useLive';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bot, Check, Cpu, Download, FileText, Power, RefreshCw, Send, Trash2, Wrench, X, Zap } from 'lucide-react';
 import { useApp } from '../app-context';
@@ -45,6 +46,14 @@ export default function Assistant() {
   }, []);
 
   useEffect(() => { loadStatus(); }, [loadStatus]);
+
+  /*
+   *  ⚠️ این صفحه رویدادهای خودش را از قبل داشت (`agent:install`،
+   *  `agent:notice`)، ولی موضوعِ «دستیار» در گذرگاهِ زنده را نه — یعنی
+   *  کاری که از **بیرونِ** همین صفحه حالِ دستیار را عوض می‌کرد (مثلِ
+   *  کارِ اتوماسیون) دیده نمی‌شد.
+   */
+  useLive('agent', loadStatus);
   useEffect(() => {
     if (!socket) return;
     const refresh = () => loadStatus();

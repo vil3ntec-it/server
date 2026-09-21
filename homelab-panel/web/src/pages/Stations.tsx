@@ -36,6 +36,7 @@ import { ActionButton, Cell, Notice, Row, Stat, Table, Tabs } from '../control/u
 import StationsCloud from './StationsCloud';
 import PumpCodes from './PumpCodes';
 import PumpHealth from './PumpHealth';
+import { useLive } from '../useLive';
 
 type Station = {
   code: string;
@@ -120,14 +121,21 @@ export default function StationsPage() {
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-    // پمپِ زنده هر بیست ثانیه چیزی می‌فرستد؛ صفحه هم هم‌قدمِ همان باشد
-    const timer = setInterval(() => {
-      api<Overview>('/api/stations-admin/').then(setData).catch(() => {});
-    }, 20000);
-    return () => clearInterval(timer);
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
+
+  /*
+   *  ⛔ **نبضِ بیست‌ثانیه‌ایِ کور برداشته شد.**
+   *
+   *  پیش از این، این صفحه هر بیست ثانیه می‌پرسید — چه پمپی چیزی نوشته
+   *  باشد چه نه. حالا هر نوشتنِ واقعیِ برنامهٔ نیتیو خودش خبر می‌دهد
+   *  (`onWrite` در دفترِ هر پمپ)، پس:
+   *
+   *    در سکوت ⇒ صفر درخواست     ·     نوشتنِ واقعی ⇒ همان لحظه
+   *
+   *  یعنی هم زنده‌تر است هم کم‌فشارتر — همان خواستهٔ «روی کامپیوتر فشار
+   *  نیاورد».
+   */
+  useLive('stations', load);
 
   async function create() {
     try {
