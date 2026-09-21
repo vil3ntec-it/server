@@ -12,8 +12,9 @@ import backupJobs from './backup.js';
 import healthJobs from './health.js';
 import maintenanceJobs from './maintenance.js';
 import agentJobs from './agent.js';
+import botJobs from './bots.js';
 
-export const jobs = [...backupJobs, ...healthJobs, ...maintenanceJobs, ...agentJobs];
+export const jobs = [...backupJobs, ...healthJobs, ...maintenanceJobs, ...agentJobs, ...botJobs];
 
 /** نام‌های جدولِ ۱۰.۲ — آزمون همین فهرست را با ثبت‌شده‌ها می‌سنجد */
 export const REQUIRED_JOBS = Object.freeze([
@@ -21,6 +22,9 @@ export const REQUIRED_JOBS = Object.freeze([
   'health-check', 'uptime', 'metrics', 'thermal-guard',
   'log-rotate', 'temp-cleanup', 'db-vacuum', 'security-updates',
   'agent-morning-report', 'restart-on-down', 'disk-alert', 'suspicious-login-alert', 'agent-idle-off',
+  //  ⛔ چهار رباتِ گامِ ۵. نامشان قفل است تا سیزنِ بعدی نامِ دیگری نسازد —
+  //  همان قاعده‌ای که `test/remake-spec.mjs` هم دارد.
+  'pump-watch', 'shop-watch', 'login-watch', 'code-rescue',
 ]);
 
 export function testJobs() {

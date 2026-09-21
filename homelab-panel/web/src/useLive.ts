@@ -16,6 +16,8 @@ import { useApp } from './app-context';
 
 export type LiveTopic =
   | 'sites' | 'automation' | 'logs' | 'stations' | 'agent' | 'backups' | 'cron' | 'settings'
+  //  بندِ ۱.۵-الف — دفترِ پیام‌رسان و اعلان‌ها هم به گذرگاه وصل شد
+  | 'messenger' | 'notify'
   | 'codes' | 'logins' | 'support' | 'customers' | 'plans' | 'notices' | 'sales' | 'sync';
 
 /**

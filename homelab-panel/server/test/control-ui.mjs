@@ -172,6 +172,13 @@ try {
      *  خاموش می‌بیند.
      */
     ['/customers', 'مشتری‌ها و اشتراک‌ها'],
+    /*
+     *  میزِ فروشگاه — بندهای ۴.۱ تا ۴.۴. سه تب، و هر سه باید بی سرورِ
+     *  حساب هم قاب و عنوانشان بیاید، نه صفحهٔ سفید.
+     */
+    ['/shop', 'فروشگاه‌ها'],
+    ['/shop?tab=subs', 'اشتراک‌ها'],
+    ['/shop?tab=codes', 'کدِ شاگرد'],
     ['/sales', 'فروش'],
     ['/plans', 'پلن‌ها و قیمت‌ها'],
     ['/plans?tab=discounts', 'تخفیف‌ها و کمپین'],
@@ -197,7 +204,7 @@ try {
   ];
 
   /*  صفحه‌هایی که از سرورِ حساب می‌خوانند — فقط این‌ها حق دارند ۴۰۹/۵۰۳ بدهند.  */
-  const ACCOUNT_PAGES = new Set(['/customers', '/sales', '/plans', '/plans?tab=discounts', '/notices', '/support', '/sync', '/logins', '/discounts',
+  const ACCOUNT_PAGES = new Set(['/shop', '/shop?tab=subs', '/shop?tab=codes', '/customers', '/sales', '/plans', '/plans?tab=discounts', '/notices', '/support', '/sync', '/logins', '/discounts',
     '/plans?tab=codes', '/plans?tab=requests', '/customers?tab=visitors', '/account-server', '/account-server?tab=email',
     '/vip-codes', '/visitors']);
 

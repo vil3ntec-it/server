@@ -24,6 +24,7 @@ import { readMirrorStatus, mirrorDir } from '../stations/cloud-mirror.js';
 import { logEvent } from '../db.js';
 import { isLocalRequest, safeCode, LIVE_BRANCH, INBOX_BRANCH, META_BRANCH } from '../stations/index.js';
 import { listBackups, saveBackup, KEEP_DAYS, MAX_BYTES } from '../stations/backups.js';
+import { describeFolder } from '../stations/layout.js';
 import { cloudStatus, cloudLogin, cloudForget, cloudCall } from '../stations/cloud.js';
 import { noticesFor } from '../announce/store.js';
 
@@ -486,6 +487,13 @@ adminRouter.get('/:code/detail', async (req, res) => {
     files: store.branches().map((b) => ({ key: b.key, bytes: b.bytes, children: b.children })),
     //  پشتیبان‌های همین پمپ — سه روزِ آخر (‎stations/backups.js‎)
     backups: listBackups(config.stations.dataDir, store.key),
+    /*
+     *  ⚠️ «پوشهٔ این حساب» — چیدمانِ ثابت از ‎stations/layout.js‎، تنها جایی
+     *  که آن فهرست نوشته شده. درِ دومی ساخته نشد: همین مسیر از قبل ‎files‎ و
+     *  ‎backups‎ را می‌داد و دو مسیر برای یک صفحه همان سردرگمی است.
+     *  ⛔ محتوای ‎token.txt‎/‎readkey.txt‎ خوانده نمی‌شود — فقط «هست یا نیست».
+     */
+    folder: describeFolder(config.stations.dataDir, store.key),
   });
 });
 

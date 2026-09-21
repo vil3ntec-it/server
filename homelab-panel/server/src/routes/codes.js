@@ -238,7 +238,7 @@ const publicApp = (row) => ({
  *  ⚠️ نرسیدن به سرورِ حساب صفحه را نمی‌شکند: کدهای خودِ پنل سرِ جایشان
  *  می‌مانند و `accountError` می‌گوید چرا آن یکی نیامد.
  */
-async function accountCodes(app, limit) {
+export async function accountCodes(app, limit) {
   const out = await cloudRaw('GET', '/api/admin/logins', {
     query: { app: app || '', limit },
   });
@@ -295,7 +295,7 @@ async function accountCodes(app, limit) {
  *  دفتر را ندارد»، نه «خراب است» — پس فهرستِ خالی برمی‌گردد و صفحه
  *  نمی‌شکند. هر خطای دیگری گفته می‌شود.
  */
-async function accountOtpCodes(app, limit) {
+export async function accountOtpCodes(app, limit) {
   let out;
   try {
     out = await cloudRaw('GET', '/api/admin/otp', { query: { app: app || '', limit } });

@@ -133,15 +133,37 @@ const SMTP_PORT = smtp.address().port;
  * شش‌رقمیِ داخلِ تازه‌ترین ایمیل — همان کدی که به دستِ کاربر می‌رسید.
  * ⚠️ بدنه چندبخشی و base64 است (عنوان و متنِ فارسی)، پس هر بلوکِ base64
  * هم باز می‌شود؛ گشتنِ خامِ متن شش‌رقمی پیدا نمی‌کرد.
+ *
+ * ⛔ **و دو نگهبان که با یک سرخیِ CI به دست آمدند** (اجرای ۱۸:۱۱ روی
+ * `b05bffe`): پیامِ «کد واقعاً به ایمیل رفت» سبز بود ولی
+ * `register/verify` `otp_wrong` می‌گرفت — یعنی کد پیدا شده بود، **غلط**.
+ * ریشه: مرزِ MIMEی nodemailer (`--_NmP-<هگز>-Part_1`) تصادفی است و
+ * هر از گاهی شش رقمِ پشتِ سرِ هم در خودش دارد. آن رشته پیش از متنِ نامه
+ * می‌آمد، پس «اولین شش‌رقمی» مرز بود نه کد.
+ *
+ *   ۱) **سرآیندها اصلاً گشته نمی‌شوند** — فقط بدنهٔ بعد از خطِ خالی.
+ *   ۲) **مرزِ شش‌رقمی باید نویسهٔ غیرِ الفبا‌عددی دو طرفش باشد**، پس
+ *      شش رقمِ وسطِ یک رشتهٔ هگز دیگر قبول نمی‌شود.
+ *
+ * ⚠️ این «ضعیف کردنِ سنجه» نیست، درست کردنِ خودِ ابزارِ سنجه است: آن
+ * سیزده سرخ رفتارِ سالمِ سرور را «خراب» نشان می‌دادند.
  */
 const codeFromMail = async () => {
+  /** سرآیندهای هر بخش را می‌اندازد و فقط بدنه را می‌دهد. */
+  const bodyOnly = (raw) => {
+    const at = raw.indexOf('\n\n');
+    return at < 0 ? raw : raw.slice(at + 2);
+  };
   const dig = (raw) => {
-    const parts = [raw.replace(/=\r?\n/g, '').replace(/=3D/g, '=')];
-    for (const m of raw.matchAll(/^([A-Za-z0-9+/=]{16,})$/gm)) {
+    const stripped = bodyOnly(raw);
+    const parts = [];
+    for (const m of stripped.matchAll(/^([A-Za-z0-9+/=]{16,})$/gm)) {
       try { parts.push(Buffer.from(m[1], 'base64').toString('utf8')); } catch { /* base64 نبود */ }
     }
+    //  ⚠️ بلوک‌های باز‌شده **اول**: متنِ نامه آن‌جاست، نه در خامِ MIME
+    parts.push(stripped.replace(/=\r?\n/g, '').replace(/=3D/g, '='));
     for (const text of parts) {
-      const hit = /(?:^|[^\d])(\d{6})(?:[^\d]|$)/.exec(text);
+      const hit = /(?:^|[^A-Za-z0-9])(\d{6})(?:[^A-Za-z0-9]|$)/.exec(text);
       if (hit) return hit[1];
     }
     return '';
@@ -215,6 +237,24 @@ try {
     await new Promise((r) => setTimeout(r, 500));
   }
   if (!health) { console.log(out.slice(-2000)); throw new Error('سرورِ حساب از راهِ درگاه بالا نیامد'); }
+
+  /*
+   *  ⚠️ یک نشستِ مدیرِ **خودِ پنل** هم لازم است — برای بندِ ۸ب، که همان
+   *  دری را می‌زند که صاحبِ سامانه در مرورگر می‌زند. این نشست فقط روی
+   *  پورتِ پنل کار می‌کند و هیچ‌وقت از پورتِ عمومی نمی‌رود.
+   */
+  const panelHit = async (method, p2, body) => {
+    const res = await fetch(`http://127.0.0.1:${PANEL}${p2}`, {
+      method, headers: { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const text = await res.text();
+    let json = null; try { json = JSON.parse(text); } catch { /* غیرِ JSON */ }
+    return { status: res.status, json, text };
+  };
+  await panelHit('POST', '/api/auth/setup', { username: 'admin', password: 'E2e-1405-panel' });
+  const panelToken =
+    (await panelHit('POST', '/api/auth/login', { username: 'admin', password: 'E2e-1405-panel' })).json?.token || '';
 
   // ── ۱) دو مسیرِ بی‌توکن که برنامه سرِ باز شدن می‌زند ──────────────────────
   console.log('\n── ۱) پیش از هر ورودی ──');
@@ -367,6 +407,94 @@ try {
   const bye = await call('POST', '/api/auth/logout',
     { token: access, body: { refreshToken: refreshed.json?.refreshToken || refreshTok } });
   check('POST /api/auth/logout', ours(bye), `${bye.status} ${bye.text.slice(0, 160)}`);
+
+  // ── ۸ب) اشتراک از پنل ⇒ قفل‌های برنامه، بی نصبِ چیزی ────────────────────
+  //
+  //  بندهای ۳.۴ و ۳.۵ی `docs/REMAKE-fa.md`. خواستهٔ صاحب سامانه:
+  //  «از سرور اشتراکشان یا تخفیفشان را عوض کنم، اتومات برود روی
+  //  برنامه‌شان و لازم نباشد چیزی نصب کنند.»
+  //
+  //  ⛔ این‌جا **همان** دری زده می‌شود که خودِ پنل می‌زند
+  //  (`/api/account-admin/subs/pump/…`) و بعد **همان** دری که برنامه
+  //  می‌زند (`/api/pump/device/license` از پورتِ عمومی). یعنی زنجیره
+  //  کامل سنجیده می‌شود، نه دو نیمهٔ جدا — همان درسی که این پرونده از
+  //  روزِ اول رویش ساخته شد.
+  //
+  //  ⚠️ و ملاک **فهرستِ قابلیتِ مجوز** است، نه «اشتراک فعال شد»: قفل‌های
+  //  برنامه از `feat`ِ داخلِ مجوز باز و بسته می‌شوند، و پاسخِ `me` آن
+  //  فهرست را به `LicenseGuard` نمی‌رساند (درسِ ۱۴۰۵/۰۷/۰۸ ریپوی پمپ).
+  console.log('\n── ۸ب) اشتراک و افزونه از پنل ⇒ مجوزِ برنامه ──');
+  {
+    const panel = async (method, p2, body) => {
+      const res = await fetch(`http://127.0.0.1:${PANEL}${p2}`, {
+        method,
+        headers: { 'content-type': 'application/json', Authorization: `Bearer ${panelToken}` },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      const text = await res.text();
+      let json = null; try { json = JSON.parse(text); } catch { /* غیرِ JSON */ }
+      return { status: res.status, json, text };
+    };
+
+    //  حالِ امروز: پمپِ تازه در دورهٔ آزمایشی است، پس مجوز دارد ولی پلنش «آزمایشی»
+    const before = await call('POST', '/api/pump/device/license', { token: devTok, body: {} });
+    const featsBefore = before.json?.features || [];
+    check('پیش از اشتراک، مجوزِ دورهٔ آزمایشی می‌آید',
+      before.status === 200 && Array.isArray(featsBefore) && featsBefore.length > 0,
+      `${before.status} ${before.text.slice(0, 160)}`);
+
+    //  صاحبِ سامانه این پمپ را در فهرستِ «اشتراک بده» پیدا می‌کند — با ایمیل
+    const targets = await panel('GET', `/api/account-admin/grant-targets?app=pump&q=${encodeURIComponent(email)}`);
+    const target = (targets.json?.items || [])[0];
+    check('پمپِ این حساب با ایمیل در فهرستِ «اشتراک بده» پیدا می‌شود',
+      Boolean(target?.tenantId), `${targets.status} ${targets.text.slice(0, 200)}`);
+
+    //  ⛔ اشتراک با فهرستِ **محدود** داده می‌شود، نه پلنِ کامل: وگرنه
+    //  «باز شد» را نمی‌شد از «از اول باز بود» جدا کرد.
+    const grant = await panel('POST', '/api/account-admin/subs/pump/grant', {
+      tenantId: target?.tenantId, plan: 'standard', features: ['kar_app'],
+      endsAt: Date.now() + 90 * 86400000,
+    });
+    check('اشتراک از پنل داده شد', grant.status === 200 && Boolean(grant.json?.subscription),
+      `${grant.status} ${grant.text.slice(0, 220)}`);
+
+    //  ⚠️ هیچ نصبی، هیچ ورودِ دوباره‌ای: همان توکنِ دستگاهِ قبلی
+    const after = await call('POST', '/api/pump/device/license', { token: devTok, body: {} });
+    const featsAfter = after.json?.features || [];
+    check('۳.۴ بی نصبِ چیزی، همان دستگاه مجوزِ اشتراک را گرفت',
+      after.status === 200 && featsAfter.includes('kar_app'),
+      `${after.status} ${JSON.stringify(featsAfter).slice(0, 200)}`);
+    //  و «محدود» واقعاً محدود است — وگرنه سنجهٔ بعدی بی‌معنا می‌شد
+    check('و فهرستِ محدود واقعاً محدود است (پلنِ کامل نیامد)',
+      !featsAfter.includes('cloud'), JSON.stringify(featsAfter).slice(0, 200));
+
+    //  ── ۳.۵ افزونه («تخفیف»/قابلیتِ اضافه) هم از همان راه می‌رسد ──────────
+    const subId = grant.json?.subscription?.id || '';
+    const addon = await panel('POST', `/api/account-admin/subs/pump/${encodeURIComponent(subId)}/addons`,
+      { feature: 'cloud', note: 'سنجهٔ ۳.۵' });
+    check('افزونه از پنل روی همان اشتراک نشست', addon.status === 200,
+      `${addon.status} ${addon.text.slice(0, 220)}`);
+
+    const withAddon = await call('POST', '/api/pump/device/license', { token: devTok, body: {} });
+    const featsAddon = withAddon.json?.features || [];
+    check('۳.۵ و همان لحظه در مجوزِ برنامه دیده می‌شود',
+      withAddon.status === 200 && featsAddon.includes('cloud') && featsAddon.includes('kar_app'),
+      JSON.stringify(featsAddon).slice(0, 200));
+
+    //  ⛔ و برداشتنش هم می‌رسد: «بتونم اشتراکشو بردارم یا روش اضافه کنم»
+    const addonId = addon.json?.addon?.id || '';
+    const gone = await panel('DELETE',
+      `/api/account-admin/subs/pump/${encodeURIComponent(subId)}/addons/${encodeURIComponent(addonId)}`);
+    const afterGone = await call('POST', '/api/pump/device/license', { token: devTok, body: {} });
+    check('⛔ و برداشتنِ افزونه هم همان لحظه می‌رسد',
+      gone.status === 200 && !(afterGone.json?.features || []).includes('cloud'),
+      `${gone.status} ${JSON.stringify(afterGone.json?.features || []).slice(0, 160)}`);
+
+    //  ⚠️ و مجوز همچنان امضاشده است — «باز شد» بی امضا یعنی قفل دور خورد
+    check('⚠️ و مجوز همچنان امضاشده و کلیددار است',
+      String(afterGone.json?.license || '').split('.').length === 3
+      && String(afterGone.json?.publicKey || '').length > 0);
+  }
 
   // ── ۹) فهرستِ سفید، از خودِ shop خوانده می‌شود ───────────────────────────
   console.log('\n── ۹) ⛔ فهرستِ درگاه با ‎apiRouter‎ی خودِ سرورِ حساب یکی است ──');

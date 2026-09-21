@@ -111,6 +111,47 @@ function shapeAccountRow(r, at = Date.now()) {
   };
 }
 
+/*
+ *  ══ میزِ «فروشگاه» — بندهای ۴.۲ تا ۴.۴ سندِ ریمیک ═══════════════════════
+ *
+ *  ⛔ **همه‌شان پلِ محض‌اند**: هیچ عددی این‌جا حساب نمی‌شود و هیچ چیزی
+ *  ذخیره نمی‌شود. جمع و گروه‌بندی روی سرورِ حساب است
+ *  (`routes/admin-shop-desk.js`)، چون همان‌جا هم خودِ برنامه با همان
+ *  قاعده قفل باز می‌کند. دو جای تصمیم یعنی روزی پنل «دارد» می‌گوید و
+ *  برنامه «تمام شده».
+ */
+router.get('/shop-desk/overview', guard(async (req, res) => {
+  const days = Math.min(90, Math.max(1, Number(req.query.days) || 7));
+  res.json(await cloudRaw('GET', '/api/admin/shop-desk/overview', { query: { days } }));
+}));
+
+router.get('/shop-desk/groups', guard(async (req, res) => {
+  //  ⚠️ جست‌وجو دستِ سرورِ حساب است، نه فیلترِ محلی — همان قاعدهٔ
+  //  `grant-targets`: آوردنِ همهٔ دکان‌ها برای یک کادر یعنی «همهٔ
+  //  ردیف‌ها را بخوان».
+  const q = String(req.query.q || '').slice(0, 60);
+  res.json(await cloudRaw('GET', '/api/admin/shop-desk/groups', { query: { q } }));
+}));
+
+/**
+ * کدِ شاگردِ یک دکان و شمارِ شاگردهایش — بندِ ۴.۴.
+ *
+ * ⛔ خودِ کد در این فهرست **نمی‌آید**؛ نمایشش درِ جدا و نگهبان‌دار دارد،
+ * همان قاعدهٔ سه‌گانهٔ میزِ کدها.
+ */
+router.get('/shop-accounts/:id/staff-codes', guard(async (req, res) => {
+  res.json(await cloudRaw('GET', `/api/admin/shops/${idOf(req.params.id)}/staff-codes`));
+}));
+
+router.post('/shop-accounts/:id/staff-codes/reveal', requireRole('admin'), guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const out = await cloudRaw('POST', `/api/admin/shops/${id}/staff-codes/reveal`, { body: {} });
+  //  ⛔ دو بار ثبت: دفترِ خودِ پنل و دفترِ خودِ سرورِ حساب — همان قاعدهٔ
+  //  «نمایشِ کد» که از ۱.۴۵.۳ سرِ جایش است.
+  audit({ actor: actorOf(req), action: 'account.staff_code.revealed', entity: 'shop', entityId: id });
+  res.json({ ok: true, code: out.code || '', role: out.role || '', generation: Number(out.generation) || 0 });
+}));
+
 /** حساب‌های دکان — همان شکلی که اپِ مدیریت می‌خواند (‎items[].accountId‎). */
 router.get('/shop-accounts', guard(async (req, res) => {
   const out = await cloudRaw('GET', '/api/admin/shops', {
@@ -1160,6 +1201,32 @@ router.post('/otp/:id/resend', guard(async (req, res) => {
   const id = idOf(req.params.id);
   const out = await cloudRaw('POST', `/api/admin/otp/${id}/resend`);
   audit({ actor: actorOf(req), action: 'account.otp.resend', entity: 'otp_code', entityId: id });
+  res.json(out);
+}));
+
+/**
+ * فرستادنِ کدِ **بازیابیِ رمز** به یک حساب — بندِ ۶.۱ سندِ ریمیک.
+ *
+ * ⛔ **رمزِ تازه از این‌جا گذاشته نمی‌شود و هیچ‌وقت نباید بشود.** کاربر
+ * خودش در برنامه کد را می‌زند و رمزش را می‌گذارد. مدیری که بتواند رمزِ
+ * کسی را عوض کند می‌تواند جای او وارد شود — آن یک درِ پشتی است، نه یک
+ * قابلیت. آزمونِ سمتِ سرورِ حساب همین را قدغن کرده.
+ *
+ * ⛔ **و منطقِ تازه‌ای این‌جا نیست**: همان کدِ `purpose: 'reset'` که مسیرِ
+ * عمومی هم می‌سازد، پس در همان میزِ «کدهای شش‌رقمی» دیده می‌شود و با همان
+ * «نمایشِ کد» و «دوباره بفرست» اداره می‌شود. یک راه، نه دو.
+ *
+ * ⚠️ نقشِ نوشتن لازم است (`guard` + روتر پشتِ `requireWriteRole` است)، ولی
+ * `admin` لازم **نیست**: کدی که به **همان** نشانیِ همیشگیِ کاربر می‌رود
+ * رازی جابه‌جا نمی‌کند — همان مرزِ «دوباره بفرست».
+ */
+router.post('/otp/password-reset', guard(async (req, res) => {
+  const email = String(req.body?.email || '').slice(0, 160);
+  //  ⚠️ `app` اختیاری است و `sectionOf` با خالی **خطا می‌دهد**: فقط وقتی
+  //  چیزی آمده باشد سنجیده می‌شود. بی آن، هر درخواستِ بی‌بخش ۴۰۰ می‌گرفت.
+  const app = req.body?.app ? sectionOf(req.body.app) : '';
+  const out = await cloudRaw('POST', '/api/admin/otp/password-reset', { body: { email, app } });
+  audit({ actor: actorOf(req), action: 'account.otp.password_reset', detail: { app } });
   res.json(out);
 }));
 

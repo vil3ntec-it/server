@@ -53,7 +53,7 @@ const FILE_OF = {
   '/sites': 'pages/Sites.tsx',
   '/site-server': 'pages/SiteServer.tsx',
   '/stations': 'pages/Stations.tsx',
-  '/customers?app=shop': 'pages/account/Customers.tsx',
+  '/shop': 'pages/account/ShopDesk.tsx',
   '/codes': 'pages/Codes.tsx',
 };
 
@@ -150,10 +150,144 @@ check('⛔ و کدِ خودِ پنل از این در نمی‌رود (صفِ خ
 check('⛔ و «نرفت» سرخ نشان داده می‌شود، نه بی‌صدا',
   /sendNote/.test(codes) && /status-critical/.test(codes));
 
+//  ۲.۷ — داشبوردِ خودِ بخش
+check('۲.۷ شمارندهٔ «نرفته‌های امروز» هست',
+  /codesListFailed/.test(codes) && /tone=\{failed\.count > 0/.test(codes));
+/*
+ *  ⛔ مهم‌ترین بندِ ۲.۷: **عدد بی دلیل کسی را به کار نمی‌اندازد.**
+ *  یک «۳ تا نرفت» خالی همان بن‌بستی است که یک بار ساعت‌ها وقت برد.
+ */
+check('⛔ و کنارش دلیلِ نرفتن نوشته می‌شود',
+  /codesWhyLabel/.test(codes) && /failed\.reasons/.test(codes));
+//  ⛔ «فقط در لاگ» باید در نرفته‌ها شمرده شود: مهرِ «رفت» دارد و ایمیلی نرفته
+check('⛔ و «فقط در لاگ» نرفته شمرده می‌شود',
+  /i\.sendState === 'failed' \|\| i\.logOnly/.test(codes));
+//  ⚠️ و از خودِ همان فهرست شمرده می‌شود، نه از یک مسیرِ دوم
+check('⚠️ و از خودِ فهرست شمرده می‌شود، نه مسیرِ دوم',
+  !/api<[^>]*>\('\/api\/codes-admin\/stats/.test(codes));
+
 //  ⛔ سه دفتر، سه در
 check('⛔ هر دفترِ کد درِ خودش را دارد',
   /account-otp' \? 'otp' : 'logins'/.test(codes),
   'یکی کردنشان یعنی ۴۰۴ برای نیمی از ردیف‌ها');
+
+/*
+ *  ══ بندِ ۱.۵-الف — دو نبضِ باقی‌مانده هم رفتند ═══════════════════════════
+ *
+ *  ⛔ این دو تا از گامِ ۱ باقی مانده بودند و **پنهان نشدند**: با خطِ
+ *  «نبضِ آگاهانه» اعلام شده بودند و در سند «نشد» نوشته بودیم. حالا
+ *  دفترِ خودشان به گذرگاه وصل است.
+ */
+const siteServer = read('pages/SiteServer.tsx');
+check('۱.۵-الف کدهای پیام‌رسان زنده شد', /useLive\('messenger'/.test(siteServer));
+check('۱.۵-الف اعلان‌ها زنده شدند', /useLive\('notify'/.test(siteServer));
+//  ⛔ و نبضِ پنج و شش ثانیه‌ای واقعاً رفت — وگرنه «زنده شد» فقط یک واژه است
+check('⛔ و نبضِ ۵ و ۶ ثانیه‌ای برداشته شد',
+  !/setInterval\(load, 5000\)/.test(siteServer) && !/setInterval\(load, 6000\)/.test(siteServer));
+
+const messengerSrc = fs.readFileSync(path.join(here, '..', 'src', 'messenger', 'index.js'), 'utf8');
+const notifySrc = fs.readFileSync(path.join(here, '..', 'src', 'notify', 'index.js'), 'utf8');
+//  ⛔ و نوشتنِ واقعی خبر می‌دهد، وگرنه صفحه‌ای که به موضوعِ بیدارنشدنی
+//  وصل شود از نبضِ کورِ قبلی **بدتر** است.
+check('⛔ دفترِ پیام‌رسان با نوشتن خبر می‌دهد',
+  /bumpSoon\('messenger'/.test(messengerSrc) && /codes\.set\([\s\S]{0,80}touched\(\)/.test(messengerSrc));
+check('⛔ دفترِ اعلان‌ها هم', /bumpSoon\('notify'/.test(notifySrc)
+  && (notifySrc.match(/\n\s*touched\(\);/g) || []).length >= 5);
+
+/*
+ *  ══ گامِ ۳ — پوشهٔ هر حساب، پشتیبان‌ها، و دادهٔ درجا ═════════════════════
+ *
+ *  صفحهٔ «پمپ‌بنزین‌ها» در فهرستِ بالا زنده شده بود، ولی صفحهٔ **پروفایلِ
+ *  یک پمپ** — همان جایی که دادهٔ یک حساب دیده می‌شود — از فهرستِ منو
+ *  درنمی‌آید (زیرصفحه است) و تا امروز یک نبضِ کورِ بیست‌ثانیه‌ای داشت.
+ */
+const profile = read('pages/StationProfile.tsx');
+
+//  ۳.۳ — «به حسابش آمد ⇒ دادهٔ خودش درجا»، بی تازه کردنِ دستی
+check('۳.۳ پروفایلِ پمپ زنده است', /useLive\('stations'/.test(profile));
+check('۳.۳ و نبضِ کورِ بیست‌ثانیه‌ایش رفت',
+  [...profile.matchAll(/setInterval\(/g)].length
+    <= [...profile.matchAll(/نبضِ آگاهانه:/g)].length);
+
+//  ۳.۱ — پوشهٔ هر حساب دیده می‌شود
+check('۳.۱ «پوشهٔ این حساب» در پروفایل دیده می‌شود',
+  /پوشهٔ این حساب/.test(profile) && /d\.folder/.test(profile));
+/*
+ *  ⛔ مهم‌ترین بندِ ۳.۱: فهرست از **سرور** می‌آید، نه از یک کپیِ دستی در
+ *  این فایل. کپیِ دستی یعنی فایلی که فردا اضافه شود این‌جا بی‌صدا از قلم
+ *  می‌افتد — همان تله‌ای که «یک دفتر را وصل کردم» سه بار در این مخزن زد.
+ */
+check('⛔ و فهرستِ فایل‌ها از سرور می‌آید، نه از کپیِ دستی',
+  /d\.folder\.items\.map/.test(profile)
+  && !/'station\.json'/.test(profile) && !/'readkey\.txt'/.test(profile));
+
+//  ۳.۲ — پشتیبان‌ها با تاریخ و اندازه
+check('۳.۲ فایل‌های پشتیبان با تاریخ و اندازه دیده می‌شوند',
+  /فایل‌های پشتیبان/.test(profile) && /d\.backups/.test(profile)
+  && /toLocaleString\('fa-IR'\)/.test(profile) && /fmtBytes\(b\.bytes\)/.test(profile));
+
+//  ⛔ و سمتِ سرور: چیدمان یک جا نوشته شده و رمز از آن در بیرون نمی‌رود
+const layoutSrc = fs.readFileSync(path.join(here, '..', 'src', 'stations', 'layout.js'), 'utf8');
+check('⛔ چیدمانِ پوشه تنها یک جا نوشته شده', /export const LAYOUT = \[/.test(layoutSrc));
+check('⛔ و این فایل هیچ‌وقت چیزی نمی‌نویسد',
+  !/writeFile|mkdir|rmSync|unlink/.test(layoutSrc),
+  'توصیف‌کننده است، نه سازنده');
+check('⛔ و محتوای رمزها را نمی‌خواند',
+  !/readFile/.test(layoutSrc), 'token.txt و readkey.txt فقط «هست/نیست»');
+
+const stationsRoute = fs.readFileSync(path.join(here, '..', 'src', 'routes', 'stations.js'), 'utf8');
+//  ⛔ درِ دوم ساخته نشد: همان مسیرِ جزئیات که از قبل `files` و `backups` می‌داد
+check('⛔ درِ دومی برای پوشه ساخته نشد',
+  /folder: describeFolder\(/.test(stationsRoute)
+  && !/router\.get\('\/:code\/folder/.test(stationsRoute));
+
+/*
+ *  ══ گامِ ۴ — میزِ فروشگاه، تمام‌صفحه ═══════════════════════════════════
+ */
+const shopDesk = read('pages/account/ShopDesk.tsx');
+
+//  ۴.۱ — صفحهٔ خودش، با سه تب
+check('۴.۱ میزِ فروشگاه سه تب دارد',
+  /shopDeskDash/.test(shopDesk) && /shopDeskGroups/.test(shopDesk) && /shopDeskCodes/.test(shopDesk));
+
+//  ۴.۲ — شش عدد و فهرستِ رو به پایان با ایمیل
+check('۴.۲ داشبورد هر شش عدد را نشان می‌دهد',
+  ['counts.shops', 'counts.customers', 'counts.subscribed', 'counts.online',
+   'counts.supportUnread', 'counts.supportOpen'].every((k) => shopDesk.includes(`d.${k}`)));
+check('۴.۲ و «رو به پایان» ایمیل و روزِ مانده دارد',
+  /r\.ownerEmail/.test(shopDesk) && /r\.daysLeft/.test(shopDesk));
+
+/*
+ *  ⛔ مهم‌ترین بندِ گامِ ۴: **پنل هیچ عددی حساب نمی‌کند.** اگر صفحه خودش
+ *  گروه‌بندی یا جمع می‌کرد، همان «دفترِ دوم» بود که سه بار در این مخزن
+ *  زد: مدیر «فعال» می‌دید و مشتری «تمام شده».
+ */
+check('⛔ و صفحه خودش گروه‌بندی نمی‌کند',
+  !/\.filter\(\s*\(?[a-z]\)?\s*=>\s*[a-z]\.status/.test(shopDesk)
+  && !/daysLeft\s*=\s*Math\./.test(shopDesk),
+  'گروه‌بندی و جمع کارِ سرورِ حساب است');
+
+//  ۴.۳ — سه گروه، و هر سه نام‌دار
+check('۴.۳ سه گروهِ اشتراک هست',
+  /shopDeskHas/.test(shopDesk) && /shopDeskNone/.test(shopDesk) && /shopDeskExpired/.test(shopDesk));
+
+//  ۴.۴ — کدِ شاگرد و شمارِ شاگردها
+check('۴.۴ کدِ شاگرد و شمارِ شاگردها هست',
+  /shopDeskStudents/.test(shopDesk) && /staff-codes/.test(shopDesk));
+/*
+ *  ⛔ و نمایشِ کد با یک کلیکِ **جدا** است، نه با باز شدنِ صفحه — همان
+ *  قاعدهٔ میزِ کدها. بی آن، هر تازه‌شدنِ صفحه یک ردیفِ «کد دیده شد» برای
+ *  هر دکان می‌ساخت و آن دفتر بی‌معنا می‌شد.
+ */
+check('⛔ و کد با کلیکِ جدا می‌آید، نه با باز شدنِ صفحه',
+  /staff-codes\/reveal/.test(shopDesk) && /onClick=\{reveal\}/.test(shopDesk));
+check('⛔ و هیچ کدِ شاگردی در خودِ صفحه نوشته نشده',
+  !/SHG-/.test(shopDesk));
+
+//  ⛔ و درِ منو یکی است: آیتم به `/shop` می‌رود، نه دو در برای یک موضوع
+check('⛔ آیتمِ منوی فروشگاه یک در دارد',
+  /\{ to: '\/shop', key: 'navShops'/.test(layout)
+  && !/to: '\/customers\?app=shop'/.test(layout));
 
 console.log('\n════════════════════════════════════');
 console.log(`  ✅ ${pass} سبز، ${fail} قرمز`);

@@ -18,9 +18,10 @@
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowRight, Fuel, HardDrive, Inbox, Smartphone } from 'lucide-react';
+import { Archive, ArrowRight, FolderTree, Fuel, HardDrive, Inbox, Smartphone } from 'lucide-react';
 
 import { api } from '../api';
+import { useLive } from '../useLive';
 import { Card, CopyButton, Loading, StatusDot } from '../components/ui';
 import { ActionButton, KV, Notice, Tabs } from '../control/ui';
 
@@ -40,6 +41,15 @@ type Detail = {
   inboxCount: number;
   qrAccounts: number;
   files: { key: string; bytes: number; children: number }[];
+  //  «پوشهٔ این حساب» — چیدمانِ ثابتِ ‎stations/layout.js‎ روی سرور
+  folder?: {
+    path: string; exists: boolean; bytes: number; missing: string[];
+    items: { name: string; kind: 'file' | 'dir'; title: string; branch: string | null;
+             secret: boolean; exists: boolean; bytes: number; at: string | null; children: number | null }[];
+    extras: { name: string; kind: 'file' | 'dir'; bytes: number; at: string | null }[];
+  };
+  //  پشتیبان‌های همین پمپ — ‎stations/backups.js‎، سه روزِ تقویمی
+  backups?: { name: string; day: string; bytes: number; at: string }[];
 };
 type Connect = { code: string; name: string; staff: { link: string | null; qr: string | null; readKey: string }; shortcut: string | null };
 type CloudStation = { id: string; code: string; name: string; sub_status: string | null; ends_at: number | null; plan: string | null };
@@ -90,9 +100,16 @@ export default function StationProfile() {
     } catch (e) { setErr((e as Error).message); }
   }, [code]);
 
+  /*
+   *  ⛔ نبضِ کورِ بیست‌ثانیه‌ای برداشته شد. هر نوشتنِ دفترِ پمپ از
+   *  ‎sitesync/store.js‎ موضوعِ «پمپ‌ها» را بیدار می‌کند، پس این صفحه
+   *  همان لحظه تازه می‌شود و تا چیزی عوض نشود **صفر** درخواست می‌زند.
+   *  ⚠️ کفِ شصت‌ثانیه‌ای فقط برای وقتی است که گذرگاه وصل نباشد.
+   */
+  useLive('stations', load, 60000);
+
   useEffect(() => {
     void load();
-    const t = setInterval(load, 20000);   // هم‌قدمِ حلقهٔ انتشارِ برنامه
     api<Connect>(`/api/stations-admin/${encodeURIComponent(code)}/connect?karBase=${encodeURIComponent('https://yaqobipump.top/kar')}`)
       .then(setConnect).catch(() => setConnect(null));
     //  سرورِ حساب اختیاری است: اگر وصل نباشد، کارتِ اپِ کارمندان فقط کیو‌آر را دارد
@@ -104,7 +121,6 @@ export default function StationProfile() {
         try { detail = await api<CloudDetail>(`/api/stations-admin/cloud/station/${encodeURIComponent(st.id)}`); } catch { /* بی کد */ }
         setCloud({ st, detail });
       }).catch(() => {});
-    return () => clearInterval(t);
   }, [code, load]);
 
   if (err && !d) return <Card title="پمپ" icon={<Fuel size={18} />}><Notice tone="bad">{err}</Notice><Link className="btn" to="/stations">برگشت</Link></Card>;
@@ -242,13 +258,82 @@ export default function StationProfile() {
         </Card>
 
         <div className="space-y-4">
-          <Card title="فایل‌ها" icon={<HardDrive size={16} />} action={<span className="text-xs opacity-60">{fmtBytes(d.diskBytes)}</span>}>
-            {d.files.length === 0 ? <Notice>هنوز فایلی نیست.</Notice> : (
-              <div className="space-y-2">
-                {d.files.map((f) => (
-                  <div key={f.key} className="flex items-center justify-between gap-2 text-sm">
-                    <span className="flex items-center gap-2 min-w-0"><Inbox size={14} className="opacity-60" /><span className="truncate" dir="ltr">{f.key}.json</span></span>
-                    <span className="text-xs opacity-60 whitespace-nowrap">{fmtBytes(f.bytes)}{f.children ? ` · ${fa(f.children)}` : ''}</span>
+          {/*
+            ── پوشهٔ این حساب ──────────────────────────────────────────────
+            خواستهٔ صاحب سامانه: «برای هر حسابِ کاربر یک فولدرِ مخصوصِ خودش،
+            دقیق و منظم چیده شود و اطلاعاتشان دیده شود.»
+            ⛔ فهرست از ‎stations/layout.js‎ی سرور می‌آید، نه از یک کپیِ
+            دستی این‌جا — وگرنه فایلی که فردا اضافه شود در این صفحه
+            بی‌صدا از قلم می‌افتاد.
+            ⛔ و رمزها فقط «هست/نیست» می‌شوند؛ محتوایشان هیچ‌وقت خوانده
+            نمی‌شود.
+          */}
+          <Card title="پوشهٔ این حساب" icon={<FolderTree size={16} />}
+                action={<span className="text-xs opacity-60">{fmtBytes(d.folder?.bytes ?? d.diskBytes)}</span>}>
+            {!d.folder ? (
+              <Notice>نسخهٔ سرور این فهرست را نمی‌دهد.</Notice>
+            ) : (
+              <>
+                <div className="mb-2 flex items-center gap-2 text-[11px] text-ink-muted">
+                  <span className="truncate" dir="ltr" title={d.folder.path}>{d.folder.path}</span>
+                  <CopyButton value={d.folder.path} />
+                </div>
+                <div className="space-y-1.5">
+                  {d.folder.items.map((f) => (
+                    <div key={f.name} className={`flex items-center justify-between gap-2 text-sm ${f.exists ? '' : 'opacity-45'}`}>
+                      <span className="flex min-w-0 items-center gap-2">
+                        {f.kind === 'dir' ? <Archive size={14} className="opacity-60" /> : <Inbox size={14} className="opacity-60" />}
+                        <span className="truncate" dir="ltr">{f.name}</span>
+                        <span className="truncate text-[11px] opacity-60">{f.title}</span>
+                      </span>
+                      <span className="whitespace-nowrap text-xs opacity-60">
+                        {f.exists
+                          ? (f.secret ? 'ساخته شده' : `${fmtBytes(f.bytes)}${f.children ? ` · ${fa(f.children)} فایل` : ''}`)
+                          : 'هنوز نیامده'}
+                      </span>
+                    </div>
+                  ))}
+                  {d.folder.extras.map((f) => (
+                    <div key={`x-${f.name}`} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Inbox size={14} className="opacity-60" />
+                        <span className="truncate" dir="ltr">{f.name}</span>
+                        <span className="text-[11px]" style={{ color: 'var(--status-warning)' }}>ناشناخته</span>
+                      </span>
+                      <span className="whitespace-nowrap text-xs opacity-60">{fmtBytes(f.bytes)}</span>
+                    </div>
+                  ))}
+                </div>
+                {/* ⚠️ «هنوز نیامده» خطا نیست: پمپی که چیزی نفرستاده ‎live.json‎ ندارد. */}
+                {d.folder.missing.length > 0 && (
+                  <div className="mt-2 text-[11px] opacity-60">
+                    {`${fa(d.folder.missing.length)} قلم هنوز ساخته نشده — تا برنامه چیزی نفرستد طبیعی است.`}
+                  </div>
+                )}
+              </>
+            )}
+          </Card>
+
+          {/*
+            ── فایل‌های پشتیبان ────────────────────────────────────────────
+            «بک‌اپ‌ها هم همین‌طور [دیده شوند]». ⛔ فقط دیدنی است: نه دانلود،
+            نه پاک کردن. چرخشِ سه‌روزه کارِ ‎stations/backups.js‎ است.
+          */}
+          <Card title="فایل‌های پشتیبان" icon={<Archive size={16} />}
+                action={<span className="text-xs opacity-60">{fa(d.backups?.length || 0)}</span>}>
+            {!d.backups || d.backups.length === 0 ? (
+              <Notice>هنوز پشتیبانی از این پمپ نرسیده. برنامهٔ کامپیوتر هر ۶ ساعت می‌فرستد.</Notice>
+            ) : (
+              <div className="space-y-1.5">
+                {d.backups.map((b) => (
+                  <div key={b.name} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <Archive size={14} className="opacity-60" />
+                      <span className="truncate" dir="ltr">{b.name}</span>
+                    </span>
+                    <span className="whitespace-nowrap text-xs opacity-60">
+                      {new Date(b.at).toLocaleString('fa-IR')} · {fmtBytes(b.bytes)}
+                    </span>
                   </div>
                 ))}
               </div>
