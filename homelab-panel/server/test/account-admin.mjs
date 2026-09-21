@@ -484,6 +484,14 @@ const fake = http.createServer((req, res) => {
      *  می‌کند: با رباتِ تنظیم‌نشده ۴۰۹ می‌دهد، نه ۲۰۰. یک بار همین
      *  «ساختگیِ خوش‌بین» سنجه را سبزِ دروغ کرد.
      */
+    if (p === '/api/admin/otp/password-reset' && req.method === 'POST') {
+      const mail = String(body?.email || '');
+      //  ⚠️ ساختگی همان کاری را می‌کند که واقعی: نشانیِ ناموجود ۴۰۴
+      if (!mail.includes('@') || mail.startsWith('nobody')) {
+        return j(404, { error: { code: 'user_not_found', message: 'حسابی با این ایمیل نیست' } });
+      }
+      return j(201, { ok: true, email: mail, expiresAt: NOW + 300e3, resendSeconds: 60 });
+    }
     if ((m = /^\/api\/admin\/otp\/([^/]+)\/resend$/.exec(p))) {
       if (otpSendBroken) {
         return j(409, { error: { code: 'delivery_not_configured', message: 'رباتِ ارسال تنظیم نیست' } });
@@ -1040,6 +1048,29 @@ try {
     otpReveal.status === 200 && otpReveal.json?.code === '622186'
       && last()?.path === '/api/admin/otp/otp_reg1/reveal',
     `${otpReveal.status} ${last()?.path}`);
+
+  /*
+   *  ⛔ بندِ ۶.۱ سند — کدِ بازیابیِ رمز.
+   */
+  const reset = await api('POST', '/api/account-admin/otp/password-reset', { email: 'k@x.com', app: 'pump' }, auth);
+  check('کدِ بازیابیِ رمز از میزِ کدها می‌رود',
+    reset.status === 200 && last()?.path === '/api/admin/otp/password-reset'
+      && last()?.body?.email === 'k@x.com',
+    `${reset.status} ${last()?.path}`);
+  //  ⚠️ و «حساب نیست» به مدیر گفته می‌شود، نه ۲۰۰ِ خالی
+  const noOne = await api('POST', '/api/account-admin/otp/password-reset', { email: 'nobody@x.com' }, auth);
+  check('⚠️ و «حساب نیست» گفته می‌شود، نه ۲۰۰ِ خالی',
+    noOne.status === 404 && String(noOne.json?.error || '') === 'user_not_found',
+    `${noOne.status} ${JSON.stringify(noOne.json)}`);
+  /*
+   *  ⛔ و هیچ راهی برای عوض کردنِ خودِ رمز از این پل نیست — مدیری که
+   *  بتواند رمزِ کسی را بگذارد می‌تواند جای او وارد شود.
+   */
+  const beforeTry = seen.length;
+  const setPw = await api('POST', '/api/account-admin/otp/password-set', { email: 'k@x.com', password: 'x' }, auth);
+  check('⛔ و رمز از این پل گذاشته نمی‌شود',
+    setPw.status === 404 && seen.length === beforeTry,
+    `${setPw.status} ${seen.length - beforeTry}`);
 
   /*
    *  ⛔ **افتادنِ یک دفتر دیگری را نمی‌برد.**

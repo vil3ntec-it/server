@@ -230,6 +230,37 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
     return (items || []).filter((i) => Number(i.createdAt || 0) >= since).length;
   }, [items]);
 
+  /*
+   *  ⛔ **بندِ ۲.۷ سند — «نرفته‌ها، و دلیلِ نرفتن».**
+   *
+   *  یک عددِ خالیِ «۳ تا نرفت» همان بن‌بستی است که یک بار ساعت‌ها وقت برد:
+   *  کاربر می‌دید نرفته و نمی‌دانست چرا. پس کنارِ عدد، **دلیل‌ها** هم
+   *  گروه می‌شوند و پرتکرارترین‌ها نوشته می‌شوند.
+   *
+   *  ⛔ و «فقط در لاگ» در این شمار **حساب می‌شود**: ردیفی که مهرِ «رفت»
+   *  دارد ولی رباتش `log` بوده، هیچ ایمیلی نفرستاده. همان «کلکِ دروغ»ی
+   *  که این صفحه برای گرفتنش ساخته شد.
+   *
+   *  ⚠️ فقط ۲۴ ساعتِ گذشته: دلیلِ ماهِ پیش دیگر کارِ امروز نیست و عددِ
+   *  همیشه‌سرخ کسی را به کار نمی‌اندازد.
+   */
+  const failed = useMemo(() => {
+    const since = Date.now() - 24 * 3600 * 1000;
+    const rows = (items || []).filter(
+      (i) => Number(i.createdAt || 0) >= since && (i.sendState === 'failed' || i.logOnly)
+    );
+    const why = new Map<string, number>();
+    for (const r of rows) {
+      const key = r.logOnly ? t('codesWhyLogOnly') : (r.sendError || t('codesWhyUnknown'));
+      why.set(key, (why.get(key) || 0) + 1);
+    }
+    return {
+      count: rows.length,
+      //  پرتکرارترین دلیل‌ها اول — دو تا بس است؛ فهرستِ بلند کسی را نمی‌خواند
+      reasons: [...why.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2),
+    };
+  }, [items, t]);
+
   if (!items) return <Loading />;
 
   return (
@@ -250,6 +281,8 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
 
       {accountError && <Notice tone="warn">{t('codesAccountDown')} — {accountError}</Notice>}
 
+      <ResetCard />
+
       {/*
         ⛔ **دو شمارندهٔ خودِ فهرست، پیش از شمارنده‌های صف.**
 
@@ -259,10 +292,26 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
         پس هیچ‌وقت از صفر بالا نمی‌روند. ولی کنارِ هم خوانده می‌شدند و
         یعنی «هیچ کدی در کار نیست».
       */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <Stat label={t('codesListLive')} value={liveCount} />
         <Stat label={t('codesListDay')} value={dayCount} />
+        <Stat
+          label={t('codesListFailed')}
+          value={failed.count}
+          tone={failed.count > 0 ? 'bad' : undefined}
+        />
       </div>
+
+      {/*
+        ⛔ عدد بی دلیل کسی را به کار نمی‌اندازد. این خط می‌گوید **چرا** نرفت،
+        و پرتکرارترین دلیل اول می‌آید.
+      */}
+      {failed.count > 0 && (
+        <p className="text-[11px] leading-snug" style={{ color: 'var(--status-critical)' }} dir="auto">
+          {t('codesWhyLabel')}{' '}
+          {failed.reasons.map(([why, n]) => `${why}${n > 1 ? ` (${n})` : ''}`).join(' · ')}
+        </p>
+      )}
 
       {queue && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -323,6 +372,87 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
         )}
       </Card>
     </div>
+  );
+}
+
+/* ------------------- کدِ بازیابیِ رمز — بندِ ۶.۱ سند --------------------- */
+
+/**
+ *  خواستهٔ صاحب سامانه: «تغییرِ رمز برای کاربرهای برنامه راحت و آسان شود:
+ *  کدِ شش‌رقمی به طرف داده شود، بعد از زدنش در برنامه رمزِ تازه بگذارد.»
+ *
+ *  ⛔ **رمزِ تازه از این‌جا گذاشته نمی‌شود و هیچ‌وقت نباید بشود.** کاربر
+ *  خودش در برنامه کد را می‌زند. مدیری که بتواند رمزِ کسی را عوض کند،
+ *  می‌تواند جای او وارد شود — آن یک درِ پشتی است، نه یک قابلیت.
+ *
+ *  ⚠️ و جایش عمداً **همین صفحه** است، نه صفحه‌ای تازه: کدی که این دکمه
+ *  می‌سازد همان لحظه در فهرستِ پایینِ همین صفحه می‌نشیند و با همان
+ *  «نمایشِ کد» و «دوباره بفرست» اداره می‌شود. دو صفحه برای یک موضوع همان
+ *  سردرگمی است که گامِ ۴ی ریمیک برداشت.
+ */
+function ResetCard() {
+  const { t } = useApp();
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState('');
+  const [app, setApp] = useState('pump');
+  const [busy, setBusy] = useState(false);
+
+  const send = async () => {
+    if (busy || !email.trim()) return;
+    setBusy(true);
+    try {
+      await api('/api/account-admin/otp/password-reset', { body: { email: email.trim(), app } });
+      //  ⚠️ کد این‌جا نشان داده نمی‌شود — همان لحظه در فهرستِ پایین می‌آید
+      toast(t('codesResetSent'), 'good');
+      setEmail('');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : t('codesResetFailed'), 'bad');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="chip"
+        onClick={() => setOpen(true)}
+      >
+        <KeyRound className="h-3.5 w-3.5" /> {t('codesResetOpen')}
+      </button>
+    );
+  }
+
+  return (
+    <Card title={t('codesResetTitle')} icon={<KeyRound className="h-4 w-4" />}>
+      <p className="mb-2 text-xs text-ink-muted" dir="auto">{t('codesResetHint')}</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-[220px] flex-1">
+          <Field label={t('codesEmail')}>
+            <input
+              className="input w-full"
+              dir="ltr"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void send(); }}
+              placeholder="name@example.com"
+            />
+          </Field>
+        </div>
+        <div className="w-36">
+          <Select
+            value={app}
+            onChange={setApp}
+            options={[{ value: 'pump', label: t('codesAppPump') }, { value: 'shop', label: t('codesAppShop') }]}
+          />
+        </div>
+        <ActionButton onClick={send} disabled={busy || !email.trim()}>
+          {busy ? '…' : t('codesResetSend')}
+        </ActionButton>
+        <ActionButton onClick={() => setOpen(false)}>{t('close')}</ActionButton>
+      </div>
+    </Card>
   );
 }
 
