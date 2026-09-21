@@ -1147,6 +1147,23 @@ router.post('/otp/:id/reveal', requireRole('admin'), guard(async (req, res) => {
 }));
 
 /**
+ * فرستادنِ دوبارهٔ **همان** کد — «ارسالِ خودکار نشد، خودم می‌فرستم».
+ *
+ * ⛔ کدِ تازه‌ای ساخته نمی‌شود (قاعدهٔ `otp.resend`ِ سرورِ حساب): کدی که
+ * همین حالا دستِ مشتری است باید تا آخرِ اعتبارش کار کند.
+ *
+ * ⚠️ این‌جا `requireRole('admin')` **نیست** و عمداً، مثلِ `/logins/:id/resend`:
+ * فرستادنِ دوباره به **همان** نشانیِ همیشگی هیچ رازی را جابه‌جا نمی‌کند،
+ * برخلافِ «نمایشِ کد» که کد را به چشمِ مدیر می‌آورد.
+ */
+router.post('/otp/:id/resend', guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const out = await cloudRaw('POST', `/api/admin/otp/${id}/resend`);
+  audit({ actor: actorOf(req), action: 'account.otp.resend', entity: 'otp_code', entityId: id });
+  res.json(out);
+}));
+
+/**
  * حالِ رباتِ ایمیلِ **سرورِ حساب** — نه رباتِ خودِ پنل.
  *
  * ⚠️ این دو یکی نیستند و فرقشان یک بار کاربر را کاملاً زمین زد: پنل SMTPِ

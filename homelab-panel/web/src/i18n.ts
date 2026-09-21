@@ -903,6 +903,13 @@ const fa = {
   codesFromAccount: 'ورود به برنامه — سرورِ حساب',
   //  ⚠️ دفترِ **دومِ** سرورِ حساب: کدِ ثبت‌نام و رمزِ فراموش‌شده
   codesFromAccountOtp: 'سرورِ حساب',
+  //  ⛔ بندهای ۲.۵ و ۲.۶ سند — «خودم درجا می‌فرستم»
+  codesSendAgain: 'دوباره بفرست',
+  codesSentAgain: 'همان کد دوباره فرستاده شد',
+  codesSendAgainFailed: 'فرستادنِ دوباره نشد',
+  codesMailHint: 'نامهٔ آماده با همین کد — در برنامهٔ ایمیلِ خودتان باز می‌شود',
+  codesMailSubject: 'کدِ ورودِ شما',
+  codesMailBody: 'سلام،\n\nکدِ شش‌رقمیِ شما: {code}\n\nاین کد تا چند دقیقهٔ دیگر کار می‌کند و فقط یک بار.',
   //  ⛔ چهار شمارندهٔ بالا مالِ رباتِ خودِ پنل‌اند و برای کدهای سرورِ حساب
   //     همیشه صفر می‌مانند — همین یک بار کاربر را گمراه کرد
   codesListLive: 'کدهای زندهٔ همین حالا',
@@ -1926,6 +1933,12 @@ const en: Dict = {
   codesLogOnly: 'log only — not sent',
   codesFromAccount: 'App sign-in — account server',
   codesFromAccountOtp: 'Account server',
+  codesSendAgain: 'Resend',
+  codesSentAgain: 'The same code was sent again',
+  codesSendAgainFailed: 'Could not resend',
+  codesMailHint: 'A ready email with this code — opens in your own mail app',
+  codesMailSubject: 'Your sign-in code',
+  codesMailBody: 'Hello,\n\nYour six-digit code: {code}\n\nIt works for a few more minutes, and only once.',
   codesListLive: 'Live right now',
   codesListDay: 'Today (both ledgers)',
   codesQueueNote: 'The counters above belong to the panel’s own mailer; app codes are sent by the account server itself.',
