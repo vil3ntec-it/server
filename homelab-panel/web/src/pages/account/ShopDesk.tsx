@@ -63,28 +63,50 @@ function Dash() {
   const load = useLoad<Overview>('/api/account-admin/shop-desk/overview?days=7', [], ['customers', 'sales', 'support']);
   if (load.error) return <CloudProblem code={load.code} message={load.error} onRetry={load.reload} />;
   if (!load.data) return <Loading label={t('navShops')} />;
+
+  /*
+   *  ⛔ **شکلِ پاسخِ بالادست فرض نمی‌شود.**
+   *
+   *  گزارشِ صاحب سامانه (۱۴۰۵/۰۷/۱۰): «بخشِ فروشگاه را اصلاً باز نمی‌کند،
+   *  می‌زنم روش از برنامه می‌ندازه بیرون.»
+   *
+   *  ریشه: سرورِ حسابِ **کهنه** (پیش از ۲.۹.۰) این مسیر را ندارد یا
+   *  شکلِ دیگری می‌دهد، و `d.counts.shops` روی یک `undefined` می‌نشست ⇒
+   *  استثنا وسطِ رندر ⇒ کلِ درختِ React از ریشه می‌رفت ⇒ پنجرهٔ سفید.
+   *
+   *  ⛔ حالا دو لایه: این‌جا شکل را نمی‌سازیم و نمی‌شکنیم، و
+   *  `PageBoundary` هم پشتِ سرش هست تا هیچ صفحه‌ای هیچ‌وقت کلِ برنامه را
+   *  با خودش نبرد. یکی‌شان کافی نیست: این یکی همین صفحه را درست
+   *  نگه می‌دارد، آن یکی بیست‌وچند صفحهٔ دیگر را.
+   *
+   *  ⚠️ و عدد ساخته نمی‌شود — نیامده «—» است، نه صفر. صفرِ دروغ بدتر از
+   *  خالی است: مدیر می‌بیند «صفر مشتری» و باور می‌کند.
+   */
   const d = load.data;
-  const mins = Math.round(d.onlineWithinMs / 60000);
+  const counts = d.counts || ({} as Overview['counts']);
+  const expiring = Array.isArray(d.expiring) ? d.expiring : [];
+  const support = Array.isArray(d.support) ? d.support : [];
+  const mins = Math.round(Number(d.onlineWithinMs || 0) / 60000);
 
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Stat label={t('shopDeskShops')} value={fa(d.counts.shops)} icon={<Store size={16} />} />
-        <Stat label={t('shopDeskCustomers')} value={fa(d.counts.customers)} icon={<Users size={16} />} />
-        <Stat label={t('shopDeskSubscribed')} value={fa(d.counts.subscribed)} tone="good" />
+        <Stat label={t('shopDeskShops')} value={fa(counts.shops)} icon={<Store size={16} />} />
+        <Stat label={t('shopDeskCustomers')} value={fa(counts.customers)} icon={<Users size={16} />} />
+        <Stat label={t('shopDeskSubscribed')} value={fa(counts.subscribed)} tone="good" />
         {/* ⚠️ تعریفِ «آنلاین» از خودِ سرور می‌آید، نه از یک عددِ نوشته‌شده این‌جا */}
-        <Stat label={t('shopDeskOnline')} value={fa(d.counts.online)} tone="info" icon={<Wifi size={16} />}
+        <Stat label={t('shopDeskOnline')} value={fa(counts.online)} tone="info" icon={<Wifi size={16} />}
               sub={t('shopDeskOnlineHint').replace('{n}', fa(mins))} />
-        <Stat label={t('shopDeskSupport')} value={fa(d.counts.supportUnread)}
-              tone={d.counts.supportUnread > 0 ? 'warn' : undefined}
+        <Stat label={t('shopDeskSupport')} value={fa(counts.supportUnread)}
+              tone={Number(counts.supportUnread) > 0 ? 'warn' : undefined}
               icon={<MessagesSquare size={16} />}
-              sub={t('shopDeskSupportOpen').replace('{n}', fa(d.counts.supportOpen))} />
+              sub={t('shopDeskSupportOpen').replace('{n}', fa(counts.supportOpen))} />
       </div>
 
       <Card title={t('shopDeskExpiring').replace('{n}', fa(d.days))} icon={<Clock size={16} />}>
-        {d.expiring.length === 0 ? <Notice tone="good">{t('shopDeskExpiringNone')}</Notice> : (
+        {expiring.length === 0 ? <Notice tone="good">{t('shopDeskExpiringNone')}</Notice> : (
           <Table head={[t('shopDeskName'), t('shopDeskEmail'), t('shopDeskPlan'), t('shopDeskLeft'), t('shopDeskEnds')]}>
-            {d.expiring.map((r) => (
+            {expiring.map((r) => (
               <Row key={r.subscriptionId}>
                 <Cell>{r.tenantName || r.tenantId}</Cell>
                 {/* ⚠️ ایمیل همان چیزی است که صاحبِ سامانه صریح خواست */}
@@ -101,9 +123,9 @@ function Dash() {
       </Card>
 
       <Card title={t('shopDeskThreads')} icon={<MessagesSquare size={16} />}>
-        {(d.support || []).length === 0 ? <Notice>{t('shopDeskThreadsNone')}</Notice> : (
+        {support.length === 0 ? <Notice>{t('shopDeskThreadsNone')}</Notice> : (
           <Table head={[t('shopDeskWho'), t('shopDeskSubject'), t('shopDeskUnread')]}>
-            {(d.support || []).map((s) => (
+            {support.map((s) => (
               <Row key={s.id}>
                 <Cell>{s.who || '—'}</Cell>
                 <Cell>{s.subject || '—'}</Cell>
@@ -146,7 +168,10 @@ function SubGroups() {
   const load = useLoad<Groups>(`/api/account-admin/shop-desk/groups?q=${encodeURIComponent(q)}`, [q], 'customers');
   if (load.error) return <CloudProblem code={load.code} message={load.error} onRetry={load.reload} />;
   if (!load.data) return <Loading label={t('shopDeskGroups')} />;
-  const g = load.data.groups;
+  //  ⛔ همان قاعده: شکلِ بالادست فرض نمی‌شود
+  const g = load.data.groups || ({} as Groups['groups']);
+  const c = load.data.counts || ({} as Groups['counts']);
+  const arr = (x: GroupRow[] | undefined) => (Array.isArray(x) ? x : []);
 
   return (
     <div className="space-y-4">
@@ -156,14 +181,14 @@ function SubGroups() {
         ⛔ سه گروه، چون «هیچ‌وقت نداشت» با «داشت و تمام شد» یکی نیست و
         صاحبِ سامانه صریح سه‌تا خواست. گروه‌بندی سمتِ سرور انجام شده.
       */}
-      <Card title={`${t('shopDeskHas')} — ${fa(load.data.counts.has)}`}>
-        <GroupTable rows={g.has} empty={t('shopDeskHasNone')} />
+      <Card title={`${t('shopDeskHas')} — ${fa(c.has)}`}>
+        <GroupTable rows={arr(g.has)} empty={t('shopDeskHasNone')} />
       </Card>
-      <Card title={`${t('shopDeskNone')} — ${fa(load.data.counts.none)}`}>
-        <GroupTable rows={g.none} empty={t('shopDeskNoneNone')} />
+      <Card title={`${t('shopDeskNone')} — ${fa(c.none)}`}>
+        <GroupTable rows={arr(g.none)} empty={t('shopDeskNoneNone')} />
       </Card>
-      <Card title={`${t('shopDeskExpired')} — ${fa(load.data.counts.expired)}`}>
-        <GroupTable rows={g.expired} empty={t('shopDeskExpiredNone')} />
+      <Card title={`${t('shopDeskExpired')} — ${fa(c.expired)}`}>
+        <GroupTable rows={arr(g.expired)} empty={t('shopDeskExpiredNone')} />
       </Card>
       <Notice>{t('shopDeskGrantHint')}</Notice>
     </div>
@@ -196,15 +221,19 @@ function StaffCodeCard({ shopId, onClose }: { shopId: string; onClose: () => voi
 
   if (load.error) return <CloudProblem code={load.code} message={load.error} onRetry={load.reload} />;
   if (!load.data) return <Loading label={t('shopDeskCodes')} />;
+  //  ⛔ همان قاعدهٔ داشبورد: شکلِ بالادست فرض نمی‌شود
   const d = load.data;
+  const shop = d.shop || ({} as StaffCodes['shop']);
+  const students = d.students || ({} as StaffCodes['students']);
+  const codes = Array.isArray(d.codes) ? d.codes : [];
 
   return (
-    <Card title={d.shop.name || d.shop.id} icon={<KeyRound size={16} />}
+    <Card title={shop.name || shop.id || '—'} icon={<KeyRound size={16} />}
           action={<ActionButton onClick={onClose}>{t('close')}</ActionButton>}>
       <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label={t('shopDeskStudents')} value={fa(d.students.total)} icon={<Users size={16} />}
-              sub={t('shopDeskStudentsActive').replace('{n}', fa(d.students.active))} />
-        <Stat label={t('shopDeskCodesMade')} value={fa(d.codes.length)} />
+        <Stat label={t('shopDeskStudents')} value={fa(students.total)} icon={<Users size={16} />}
+              sub={t('shopDeskStudentsActive').replace('{n}', fa(students.active))} />
+        <Stat label={t('shopDeskCodesMade')} value={fa(codes.length)} />
         <Stat label={t('shopDeskStanding')} value={d.standing ? fa(d.standing.usedCount) : '—'}
               sub={d.standing ? t('shopDeskStandingUsed') : t('shopDeskStandingNone')} />
       </div>
@@ -229,8 +258,8 @@ function StaffCodeCard({ shopId, onClose }: { shopId: string; onClose: () => voi
       */}
       <div className="mt-4">
         <Table head={[t('shopDeskHint'), t('shopDeskRole'), t('shopDeskUses'), t('shopDeskStatus')]}
-               empty={d.codes.length === 0}>
-          {d.codes.map((c) => (
+               empty={codes.length === 0}>
+          {codes.map((c) => (
             <Row key={c.id}>
               <Cell mono>…{c.hint}</Cell>
               <Cell>{c.role}</Cell>
@@ -252,9 +281,10 @@ function Codes() {
   const load = useLoad<Groups>(`/api/account-admin/shop-desk/groups?q=${encodeURIComponent(q)}`, [q], 'customers');
   if (load.error) return <CloudProblem code={load.code} message={load.error} onRetry={load.reload} />;
   if (!load.data) return <Loading label={t('shopDeskCodes')} />;
-  const g = load.data.groups;
+  const g = load.data.groups || ({} as Groups['groups']);
+  const arr = (x: GroupRow[] | undefined) => (Array.isArray(x) ? x : []);
   //  همهٔ حساب‌ها، نه فقط اشتراک‌دارها — خواستهٔ صریح بود
-  const all = [...g.has, ...g.none, ...g.expired];
+  const all = [...arr(g.has), ...arr(g.none), ...arr(g.expired)];
 
   return (
     <div className="space-y-4">

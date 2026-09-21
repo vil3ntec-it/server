@@ -487,7 +487,14 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/sync/errors') return j(200, { errors: [{ id: 'err1', app: 'shop', account_kind: 'shop', account_id: 's1', device_id: 'dev-1', user_id: 'u1', tenant_id: 's1', app_version: '2.1.0', version: '', platform: 'android', message: 'خطای آزمایشی', stack: '', at: NOW - 60e3, created_at: NOW - 60e3 }] });
 
     //  ورودها
-    if (p === '/api/admin/logins' && req.method === 'GET') return j(200, { requests: [{ request_id: 'req1', app: 'shop', masked_email: 'k***@x.com', status: 'sent', created_at: NOW - 120e3, tries: 1 }], worker: { alive: true } });
+    /*
+     *  ⚠️ **ردیفِ زنده، همان‌طور که واقعی می‌دهد.** تا ۱.۵۰.۲ این ردیف نه
+     *  `active` داشت نه `expires_at`، پس پنل «منقضی» می‌خواندش — و هیچ
+     *  بندی هم این را نمی‌دید، چون تنها ادعای آن روزها «کد در فهرست
+     *  نیست» بود که برای ردیفِ مرده هم سبز می‌شد. همان «ساختگی باید همان
+     *  کاری را بکند که واقعی می‌کند».
+     */
+    if (p === '/api/admin/logins' && req.method === 'GET') return j(200, { requests: [{ request_id: 'req1', app: 'shop', masked_email: 'k***@x.com', state: 'sent', created_at: NOW - 120e3, expires_at: NOW + 120e3, active: true, code_attempts: 1 }], worker: { alive: true } });
     if (p === '/api/admin/email' && req.method === 'GET') return j(200, { email: { provider: 'log', from: 'a@b.c', host: '' } });
     if (p === '/api/admin/logins/stats') return j(200, { sent: 12, failed: 1, queued: 0, p50: 120, p95: 400, worker: { alive: true }, alerts: [] });
     if ((m = /^\/api\/admin\/logins\/([^/]+)\/resend$/.exec(p)) && req.method === 'POST') return j(200, { ok: true, result: 'sent', status: 'sent' });
@@ -1031,9 +1038,19 @@ try {
   check('کدهای ورودِ سرورِ حساب در «کدهای زنده» می‌آیند',
     live.status === 200 && fromAccount.length === 1 && fromAccount[0].id === 'req1',
     `${live.status} ${JSON.stringify(live.json?.items || [])}`);
-  //  ⛔ و خودِ کد در فهرست نیست — نمایش همیشه یک کارِ جدا و ثبت‌شده است
-  check('⛔ ولی خودِ کد در فهرست نمی‌آید',
-    fromAccount.every((r) => r.code === null), JSON.stringify(fromAccount));
+  /*
+   *  ⚠️ **و خودِ کد هم می‌آید — از ۱.۵۰.۳.**
+   *
+   *  تا دیروز این بند وارونه بود («خودِ کد در فهرست نمی‌آید») و دلیلش
+   *  خوب بود: هر نمایش در دفترِ سرورِ حساب ثبت می‌شود، پس فهرستی که
+   *  هر دو‌ونیم ثانیه خودش را تازه می‌کند آن دفتر را بی‌معنا می‌کرد.
+   *
+   *  ⛔ **آن بند پاک نشد، از درِ تازه گرفته شد**: کد دیده می‌شود، و
+   *  بندِ بعدی همان چیزی را نگه می‌دارد که این بند نگه می‌داشت —
+   *  «چند بار تازه شدن، چند ردیفِ نمایش؟».
+   */
+  check('کدِ سرورِ حساب در همان فهرست دیده می‌شود',
+    fromAccount[0]?.code === '999111', JSON.stringify(fromAccount));
 
   /*
    *  ⛔ و دفترِ **دومِ** سرورِ حساب — کدِ ثبت‌نام.
@@ -1053,9 +1070,31 @@ try {
   //  ⛔ «رفت» با «در لاگ چاپ شد» یکی نیست
   check('⛔ راهِ `log` سرخ می‌ماند، نه سبزِ «رفت»',
     fromOtp[0]?.logOnly === true, JSON.stringify(fromOtp[0] || {}));
-  check('⛔ و این کد هم در فهرست نمی‌آید',
-    fromOtp.every((r) => r.code === null) && fromOtp[0]?.canReveal === true,
+  check('و کدِ ثبت‌نام هم در همان فهرست دیده می‌شود',
+    fromOtp[0]?.code === '622186' && fromOtp[0]?.canReveal === true,
     JSON.stringify(fromOtp[0] || {}));
+
+  /*
+   *  ⛔ **و همان چیزی که بندِ قدیمی نگه می‌داشت: یک کد، یک ردیفِ نمایش.**
+   *
+   *  این بندْ جانِ اصلاحِ ۱.۵۰.۳ است. صفحهٔ کدها خودش را هر دو‌ونیم ثانیه
+   *  تازه می‌کند؛ اگر هر تازه شدن یک `reveal` می‌زد، دفترِ ممیزیِ سرورِ
+   *  حساب پر از «کد دیده شد» می‌شد و بی‌معنا. پس فهرست سه بارِ دیگر
+   *  خوانده می‌شود و شمارِ درخواست‌های **بالادست** باید **صفر** بالا
+   *  برود — کد از آینهٔ حافظه می‌آید، نه از یک پرسشِ تازه.
+   *
+   *  ⚠️ و ملاک شمارِ درخواست‌هاست، نه `last()`: وقتی چیزی فرستاده نشود
+   *  `last()` همان درخواستِ موفقِ قبلی را نشان می‌دهد و سبزِ دروغ می‌دهد.
+   */
+  const revealsBefore = seen.filter((r) => r.path.endsWith('/reveal')).length;
+  for (let i = 0; i < 3; i++) await api('GET', '/api/codes-admin/live', undefined, auth);
+  const revealsAfter = seen.filter((r) => r.path.endsWith('/reveal')).length;
+  const stillShown = await api('GET', '/api/codes-admin/live', undefined, auth);
+  check('⛔ هر کد فقط یک بار پرسیده می‌شود — تازه شدنِ صفحه دفترِ ممیزی را پر نمی‌کند',
+    revealsAfter === revealsBefore, `${revealsBefore} ⇒ ${revealsAfter}`);
+  check('⚠️ و با این حال کد هنوز روی صفحه است (از آینه، نه از پرسشِ تازه)',
+    (stillShown.json?.items || []).some((r) => r.source === 'account' && r.code === '999111'),
+    JSON.stringify(stillShown.json?.items || []).slice(0, 200));
 
   /*
    *  ⛔ بندِ ۲.۶ سند — «ارسالِ خودکار نشد، خودم می‌فرستم».
@@ -1157,6 +1196,17 @@ try {
     //  ⛔ نمایشِ کد هم فقط admin — operator با همان نشستِ سالم رد می‌شود
     const oReveal = await api('POST', '/api/account-admin/logins/req1/reveal', {}, oAuth);
     check('⛔ نمایشِ کد فقط برای admin است', oReveal.status === 403, String(oReveal.status));
+    /*
+     *  ⛔ و آینهٔ میزِ کدها همان مرز را دارد: فهرست برای operator باز است
+     *  (شمارِ کدها راز نیست) ولی **خودِ کد** نه. بی این بند، اصلاحِ
+     *  ۱.۵۰.۳ می‌توانست کد را به نقشی بدهد که دکمه‌اش ۴۰۳ می‌گیرد.
+     */
+    const oLive = await api('GET', '/api/codes-admin/live', undefined, oAuth);
+    check('⛔ و operator فهرست را می‌بیند ولی کدِ سرورِ حساب را نه',
+      oLive.status === 200
+        && (oLive.json?.items || []).some((r) => r.source === 'account')
+        && (oLive.json?.items || []).every((r) => r.source === 'panel' || !r.code),
+      `${oLive.status} ${JSON.stringify(oLive.json?.items || []).slice(0, 200)}`);
   } else {
     check('ساختنِ کاربرِ آزمون', false, `${mk.status} ${JSON.stringify(mk.json)} / ${mk2.status}`);
   }
