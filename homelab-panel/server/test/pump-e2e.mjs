@@ -374,6 +374,105 @@ try {
   const pull = await call('GET', '/api/sync/v1/pull?since=0', { token: devTok });
   check('GET /api/sync/v1/pull', ours(pull), `${pull.status} ${pull.text.slice(0, 160)}`);
 
+  // ── ۶ب) رفت‌وبرگشتِ **واقعی** — نوشتنِ این‌جا ⇒ خواندنِ آن‌جا ─────────────
+  //
+  //  ⛔ تا دیروز این بخش فقط `ops: []` می‌فرستاد. آن ثابت می‌کرد «مسیر
+  //  جواب می‌دهد»، نه «اطلاعات واقعاً می‌رود و برمی‌گردد» — یعنی اگر
+  //  فردا سرور opها را بی‌صدا دور می‌ریخت، همین سنجه سبز می‌ماند.
+  //
+  //  حالا یک ردیفِ واقعیِ گاوصندوق با توکنِ **دستگاه** نوشته می‌شود و با
+  //  سه هویتِ مختلف خوانده می‌شود. شکلِ op مو‌به‌مو همان است که
+  //  `CloudLink.Sync.Wire` می‌فرستد.
+  console.log('\n── ۶ب) رفت‌وبرگشتِ واقعیِ Sync v1 ──');
+  const rowUid = 'E2E' + crypto.randomBytes(8).toString('hex').toUpperCase();
+  const opId = crypto.randomUUID();
+  const mark = 'نشانهٔ رفت‌وبرگشت ' + rowUid.slice(-6);
+  const wrote = await call('POST', '/api/sync/v1/push', {
+    token: devTok,
+    body: {
+      device_id: uid,
+      schema_version: 1,
+      queued: 1,
+      ops: [{
+        op_id: opId, table: 'SafeEntry', row_id: rowUid, type: 'insert',
+        ts: Date.now(), fields: { Title: mark, Amount: '1405', MonthKey: '1405-07' },
+      }],
+    },
+  });
+  check('یک ردیفِ واقعی با توکنِ دستگاه نوشته شد',
+    wrote.status === 200 && Number(wrote.json?.applied) === 1,
+    `${wrote.status} ${wrote.text.slice(0, 220)}`);
+
+  /** opهای این دفتر پس از cursor، از دیدِ همان هویت و همان دستگاه. */
+  const pullAs = async (token, device) => {
+    const r = await call('GET', `/api/sync/v1/pull?device_id=${encodeURIComponent(device)}&since=0&limit=500`,
+      { token });
+    return { r, hit: (r.json?.ops || []).find((o) => o.row_id === rowUid) || null };
+  };
+
+  //  ۱) دستگاهِ **دیگرِ همان پمپ** — همان چیزی که کامپیوترِ دومِ پمپ است
+  const asOther = await pullAs(devTok, uid + '-B');
+  check('⇒ دستگاهِ دیگرِ همان پمپ آن ردیف را می‌گیرد',
+    !!asOther.hit, `${asOther.r.status} ${asOther.r.text.slice(0, 220)}`);
+  check('⇒ و فیلدهایش مو‌به‌مو همان است که فرستاده شد',
+    asOther.hit?.fields?.Title === mark && String(asOther.hit?.fields?.Amount) === '1405',
+    JSON.stringify(asOther.hit?.fields));
+
+  //  ۲) توکنِ **حساب** — قاعدهٔ `CloudLink.Sync`: هر دو توکن به همان پمپ
+  const asAccount = await pullAs(access, uid + '-C');
+  check('⇒ توکنِ حساب و توکنِ دستگاه به **همان** دفترِ پمپ می‌رسند',
+    !!asAccount.hit, `${asAccount.r.status} ${asAccount.r.text.slice(0, 220)}`);
+
+  //  ۳) خودِ همان دستگاه — سرور opهای خودش را پس نمی‌دهد (بی پژواک)
+  const asSelf = await pullAs(devTok, uid);
+  check('⛔ و به خودِ همان دستگاه پژواک نمی‌شود',
+    asSelf.r.status === 200 && !asSelf.hit, `${asSelf.r.status} ${asSelf.r.text.slice(0, 220)}`);
+
+  //  ۴) **حسابِ دیگر، پمپِ دیگر** — هیچ ردیفی از این پمپ نمی‌بیند.
+  //
+  //  ⛔ این مهم‌ترین بندِ این بخش است: نگهبانِ سرور
+  //  (`lib/sync-v1-auth.js`) حساب را **فقط از توکن** درمی‌آورد و
+  //  `account` در بدنه یا نشانی را اصلاً نمی‌خواند. بی این سنجه،
+  //  «دفترِ هر پمپ مالِ خودش است» فقط یک ادعا بود.
+  const uid2 = 'e2e2-' + crypto.randomBytes(6).toString('hex');
+  const email2 = `${uid2}@example.com`;
+  const seen = mailbox.length;
+  const start2 = await call('POST', '/api/auth/register/start',
+    { body: { name: 'پمپِ همسایه', email: email2, password, passwordConfirm: password, app: 'pump' } });
+  check('حسابِ دومِ سنجه ساخته می‌شود', start2.status === 200 || start2.status === 201,
+    `${start2.status} ${start2.text.slice(0, 160)}`);
+  for (let i = 0; i < 80 && mailbox.length === seen; i++) await new Promise((r) => setTimeout(r, 250));
+  const code2 = await codeFromMail();
+  const verify2 = await call('POST', '/api/auth/register/verify',
+    { body: { email: email2, code: code2, app: 'pump' } });
+  const complete2 = await call('POST', '/api/auth/register/complete', {
+    body: {
+      ticket: verify2.json?.ticket || '', name: 'پمپِ همسایه', password,
+      terms: { accepted: true, version: verify2.json?.terms?.version || '' },
+      device: { uid: uid2, name: 'E2E-2', platform: 'windows' },
+      app: 'pump',
+    },
+  });
+  const access2 = complete2.json?.accessToken || '';
+  await call('POST', '/api/pump', { token: access2, body: { name: 'پمپِ همسایه' } });
+  const bind2 = await call('POST', '/api/pump/device/bind',
+    { token: access2, body: { device: { uid: uid2, name: 'E2E-2', platform: 'windows' } } });
+  const devTok2 = bind2.json?.token || bind2.json?.deviceToken || '';
+  check('و پمپِ خودش را دارد', devTok2.length > 0, `${bind2.status} ${bind2.text.slice(0, 200)}`);
+
+  const neighbour = await pullAs(devTok2, uid2);
+  check('⛔ پمپِ همسایه **هیچ** ردیفی از دفترِ این پمپ نمی‌بیند',
+    neighbour.r.status === 200 && !neighbour.hit && (neighbour.r.json?.ops || []).length === 0,
+    `${neighbour.r.status} ${(neighbour.r.json?.ops || []).length} op`);
+
+  //  ۵) و عوض کردنِ شناسه در خودِ درخواست هیچ دری باز نمی‌کند
+  const spoof = await call('GET',
+    `/api/sync/v1/pull?device_id=${encodeURIComponent(uid2)}&since=0&limit=500&account=${encodeURIComponent(uid)}`,
+    { token: devTok2 });
+  check('⛔ و `account`ِ دستی در نشانی نادیده می‌رود (حساب فقط از توکن)',
+    spoof.status === 200 && !(spoof.json?.ops || []).some((o) => o.row_id === rowUid),
+    `${spoof.status} ${spoof.text.slice(0, 200)}`);
+
   // ── ۷) ورود با کدِ ایمیلی — درِ سومِ برنامه ──────────────────────────────
   console.log('\n── ۷) ورود با کدِ ایمیلی ──');
   const mailsBefore = mailbox.length;
