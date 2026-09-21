@@ -45,6 +45,15 @@ let rejectLogin = false;   // رمز را رد کن
 let limitLogin = false;    // سقفِ نرخ را پر کن (۴۲۹)
 let limitRetryAfter = 1;   // ثانیه‌ای که سرور می‌گوید
 /*
+ *  ⛔ **سقفِ همگانی، نه فقط سقفِ ورود.**
+ *
+ *  سرورِ حساب یک `app.use(rateLimit({ max: generalMax }))` دارد که روی
+ *  **هر** درخواست می‌نشیند (۶۰۰ در ربع ساعت، برای هر IP) — و همهٔ
+ *  ترافیکِ این پنل از یک IP می‌رود. ساختگی باید همان کاری را بکند که
+ *  واقعی می‌کند، وگرنه سنجه‌ای داریم که هیچ‌وقت قرمز نمی‌شود.
+ */
+let limitAll = false;      // ۴۲۹ روی مسیرهای داده هم
+/*
  *  ⛔ **ورودِ ساختگی عمداً مکث می‌کند** — وگرنه پنجرهٔ هم‌زمانی هیچ‌وقت
  *  دیده نمی‌شود و بندِ «ازدحامِ سرد» سبزِ دروغ می‌دهد.
  *
@@ -84,6 +93,11 @@ const fake = http.createServer((req, res) => {
     }
     const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
     seen.calls.push({ path: p, bearer });
+    if (limitAll) {
+      res.statusCode = 429;
+      res.setHeader('Retry-After', String(limitRetryAfter));
+      return res.end(JSON.stringify({ error: { code: 'rate_limited', message: 'تعداد درخواست بیش از حد مجاز است' } }));
+    }
     if (!valid.has(bearer)) {
       res.statusCode = 401;
       const deny = () => res.end(JSON.stringify({ error: { code: 'unauthorized', message: 'احراز هویت لازم است' } }));
@@ -322,6 +336,62 @@ try {
     goodRow?.state === 'good' && /9\.9\.9/.test(goodRow?.value || ''), JSON.stringify(goodRow));
   check('و پیامِ سبز از «ایمیل تنظیم نیست» حرفی نمی‌زند',
     !/ایمیل تنظیم نیست/.test(goodRow?.value || ''), goodRow?.value);
+
+  // ══ سقفِ همگانی: پنل نباید پنجره را خودش پر نگه دارد ═══════════════════
+  /*
+   *  گزارشِ صاحب سامانه با عکس (۱۴۰۵/۰۷/۱۱)، بارِ سوم: «کدهای ورودِ
+   *  برنامه‌ها نیامد — سقفِ نرخِ سرورِ حساب پر شده» و هر شمارنده صفر، و
+   *  همان نوار روی میزِ فروشگاه.
+   *
+   *  ⛔ ریشه‌ای که دو اصلاحِ پیشین ندیده بودند: `autoFail` و تک‌پروازی هر
+   *  دو فقط **درِ ورود** را می‌دیدند. سقفِ سرورِ حساب یک سقفِ **همگانی**
+   *  هم دارد که روی هر درخواست می‌نشیند، و `cloudRaw` عددِ ۴۲۹ را
+   *  اصلاً نمی‌دید: خطا را بالا می‌داد و ده ثانیهٔ بعد دیدبان باز می‌زد.
+   *  یعنی پنل با ضربانِ خودش پنجره را پر **نگه می‌داشت** و آن پنجره
+   *  هیچ‌وقت خالی نمی‌شد — با رمزِ درست و سرورِ سالم.
+   *
+   *  ⚠️ ملاک **شمارِ** درخواست‌های بالادست است، نه `last()`: وقتی چیزی
+   *  فرستاده نشود، `last()` همان درخواستِ موفقِ قبلی را نشان می‌دهد و
+   *  سبزِ دروغ می‌دهد.
+   */
+  console.log('\n── سقفِ همگانی، نه فقط سقفِ ورود ──');
+
+  limitAll = true;
+  limitRetryAfter = 2;
+  const hit = await api('GET', '/api/stations-admin/cloud/stats', undefined, auth);
+  check('۴۲۹ِ مسیرِ داده به همان شکلِ صاف به صفحه می‌رسد',
+    hit.status === 429 && hit.json?.error === 'rate_limited',
+    `${hit.status} ${JSON.stringify(hit.json)}`);
+  check('و پیام می‌گوید خودمان داریم صبر می‌کنیم، نه «رمز را بسنج»',
+    /نمی‌پرسیم/.test(hit.json?.message || '') && !/HLP_ACCOUNT_ADMIN/.test(hit.json?.message || ''),
+    hit.json?.message);
+
+  //  ⛔ قلبِ ماجرا: داخلِ مهلت، دوازده درخواستِ پنل — درست همان‌طور که
+  //  دیدبان و ربات‌ها و صفحه‌ها می‌زنند — **صفر** درخواستِ بالادست بسازد.
+  const upBefore = seen.calls.length;
+  const loginBefore = seen.logins.length;
+  for (let i = 0; i < 6; i++) {
+    await api('GET', '/api/stations-admin/cloud/stats', undefined, auth);
+    await api('GET', '/api/stations-admin/cloud/users', undefined, auth);
+  }
+  check('⛔ داخلِ مهلت، دوازده درخواست **صفر** بار به سرورِ حساب می‌زند',
+    seen.calls.length - upBefore === 0, `${seen.calls.length - upBefore} درخواستِ بالادست`);
+  check('و حتی یک ورودِ تازه هم نمی‌زند',
+    seen.logins.length - loginBefore === 0, `${seen.logins.length - loginBefore} ورود`);
+
+  //  ⚠️ و هم‌زمان‌ها هم — همان آهنگِ واقعیِ مرورگر و ربات‌ها
+  const rushBefore = seen.calls.length;
+  await Promise.all(Array.from({ length: 8 }, () =>
+    api('GET', '/api/stations-admin/cloud/stats', undefined, auth)));
+  check('⛔ هشت درخواستِ هم‌زمان هم صفر', seen.calls.length - rushBefore === 0,
+    `${seen.calls.length - rushBefore} درخواستِ بالادست`);
+
+  //  ⛔ و مهلت واقعاً تمام می‌شود — وگرنه این اصلاح فقط یک بن‌بستِ تازه بود
+  limitAll = false;
+  await new Promise((r) => setTimeout(r, 3300));
+  const backUp = await api('GET', '/api/stations-admin/cloud/stats', undefined, auth);
+  check('پس از مهلت، خودش بی هیچ کاری وصل می‌شود',
+    backUp.status === 200 && backUp.json?.stations === 3, `${backUp.status} ${JSON.stringify(backUp.json)}`);
 
   console.log('\n── سرورِ حساب خاموش شد ──');
   await new Promise((r) => fake.close(r));

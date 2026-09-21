@@ -24,7 +24,7 @@ import { mailReady } from '../codes/mail.js';
 import { queueStatus } from '../codes/queue.js';
 import { adminHostFor } from '../platform/domain.js';
 import { probeAccountServer } from '../api/account-proxy.js';
-import { cloudStatus } from '../stations/cloud.js';
+import { cloudStatus, cloudLimitState } from '../stations/cloud.js';
 import { downHint, mailEnvForChild } from '../account/supervisor.js';
 
 const router = Router();
@@ -196,6 +196,29 @@ router.get('/', async (req, res) => {
           hint: 'سرور بالاست ولی مدیر هنوز واردش نشده. از پنل ← پمپ‌ها ← تنظیمات و داده‌ها، یا HLP_ACCOUNT_ADMIN_USER/PASSWORD در .env تا خودش وارد شود.',
         };
       }
+      /*
+       *  ⛔ **سقفِ نرخ ساکت نمی‌ماند.**
+       *
+       *  گزارشِ صاحب سامانه با عکس (۱۴۰۵/۰۷/۱۱): روی هر صفحه نوارِ «تعداد
+       *  درخواست بیش از حد مجاز است» و هیچ ردیفی نمی‌آمد — و عیب‌یابی در
+       *  همان حال **سبز** بود، چون `/api/health` سرورِ حساب از سقف رد
+       *  می‌شود. همان «کلکِ دروغ»: سرور بالاست، ولی پنل هیچ چیزی از آن
+       *  نمی‌تواند بخواند.
+       *
+       *  ⚠️ و این ردیف **زرد** است نه سرخ، و می‌گوید چند ثانیهٔ دیگر
+       *  خودش باز می‌شود: کارِ آدمی لازم نیست، فقط دانستن.
+       */
+      const lim = cloudLimitState();
+      if (lim.limited) {
+        return {
+          state: WARN,
+          value: `سقفِ نرخ پر شده — ${lim.secondsLeft} ثانیه تا تلاشِ بعدی`,
+          hint: 'سرورِ حساب بالاست ولی سقفِ نرخش پر شده، پس پنل عمداً چیزی از آن '
+              + 'نمی‌پرسد تا پنجره خودش خالی شود. کدها، میزِ فروشگاه و مشتری‌ها تا '
+              + 'آن لحظه خالی می‌مانند و بعد خودشان برمی‌گردند — کاری لازم نیست.',
+        };
+      }
+
       /*
        *  ⛔ «روشن است» با «کار می‌کند» یکی نیست ═══════════════════════════
        *

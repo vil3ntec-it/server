@@ -210,9 +210,12 @@ try {
    */
   const runsOf = async () => (await api('GET', '/api/automation/jobs/test-minutely/runs')).json?.items || [];
   const maxId = (rows) => rows.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0);
+  //  ⚠️ مقداری که عمداً در گذشته گذاشتیم — مرزِ سنجهٔ «دوباره جلو رفت»
+  let pastMark = 0;
   const pushToPast = () => {
     const db = openDb();
-    db.prepare("UPDATE automation_jobs SET next_run_at = ? WHERE name = 'test-minutely'").run(Date.now() - 1000);
+    pastMark = Date.now() - 1000;
+    db.prepare("UPDATE automation_jobs SET next_run_at = ? WHERE name = 'test-minutely'").run(pastMark);
     db.close();
   };
 
@@ -223,7 +226,25 @@ try {
   let fresh = (await runsOf()).filter((r) => Number(r.id) > mark);
   check('کارِ روشن با وقتِ گذشته در تیکِ بعدی اجرا شد (trigger=scheduled)', fresh.some((r) => r.trigger === 'scheduled' && r.status === 'ok'), JSON.stringify(fresh));
   const after = (await api('GET', '/api/automation/jobs/test-minutely')).json?.job;
-  check('و next_run_at دوباره به آینده رفت', after?.next_run_at > Date.now() && after?.last_status === 'ok', String(after?.next_run_at));
+  /*
+   *  ⚠️ **ساعتِ دیوار از این بند هم بیرون رفت** — همان درسی که بالاتر
+   *  برای «تا حالا نباید دویده باشد» نوشته شد، این بار از سمتِ مقایسه با
+   *  `Date.now()`.
+   *
+   *  کارِ `test-minutely` دقیقه‌ای است، پس `next_run_at`ش مرزِ **دقیقهٔ
+   *  بعد** است. اگر اجرا در ثانیهٔ ۵۸ بیفتد، تا این خط خوانده شود همان
+   *  مرز از ساعت رد شده و سنجه سرخ می‌شود — در حالی که زمان‌بند کارش را
+   *  کاملاً درست کرده. یک بار همین‌جا سرخ داد (۱۴۰۵/۰۷/۱۱).
+   *
+   *  ⛔ و سقف بالا نرفت و «کمی بیشتر صبر کن» نوشته نشد: آن‌چه این بند
+   *  باید ثابت کند «در آینده است» نیست، **«از همان گذشته‌ای که گذاشتیم
+   *  جلو رفت»** است — یعنی زمان‌بند دوباره برنامه‌ریزی کرد و کار در
+   *  گذشته گیر نکرد تا ابد بدود. آن دو مهر هر دو سمتِ سرورند و به سرعتِ
+   *  ماشین بند نیستند.
+   */
+  check('و next_run_at دوباره جلو رفت (در گذشته گیر نکرد)',
+    Number(after?.next_run_at) > pastMark && after?.last_status === 'ok',
+    `${after?.next_run_at} (مرزِ گذشته: ${pastMark})`);
 
   //  ۲) حالا که یک اجرای واقعی در دفتر هست، خاموشش می‌کنیم
   mark = maxId(await runsOf());

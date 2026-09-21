@@ -144,6 +144,110 @@ let autoInFlight = null; // Promise<string> | null
  */
 let autoFail = null; // { until, code, message, status }
 
+/* ══════════ سقفِ نرخ: یک دروازه برای **کلِ** پل، نه فقط درِ ورود ══════════
+ *
+ *  گزارشِ صاحب سامانه با عکس (۱۴۰۵/۰۷/۱۱)، بارِ سوم: «کدهای ورودِ
+ *  برنامه‌ها نیامد — سقفِ نرخِ سرورِ حساب پر شده» و هر شمارنده صفر. و
+ *  همان نوار روی میزِ فروشگاه.
+ *
+ *  ۱.۴۷.۴ مهلتِ ورودِ ناموفق را ساخت و ۱.۵۰.۲ ورودهای هم‌زمان را یکی
+ *  کرد. هر دو درست بودند و هر دو فقط **درِ ورود** را می‌دیدند. ولی
+ *  سرورِ حساب یک سقفِ **همگانی** هم دارد که روی هر درخواست می‌نشیند:
+ *
+ *      app.use(rateLimit({ max: generalMax }))   // shop/server/src/app.js
+ *      generalMax = ۶۰۰ در پنجرهٔ ۱۵ دقیقه، برای هر IP
+ *
+ *  و همهٔ ترافیکِ این پنل از **یک** IP می‌رود (۱۲۷.۰.۰.۱، چون پل
+ *  مستقیم به سرورِ حساب روی همین کامپیوتر می‌زند): دیدبانِ زنده هر ده
+ *  ثانیه، آینهٔ کدها، سه ربات، و هر صفحه‌ای که باز است.
+ *
+ *  ⛔ و `cloudRaw` عددِ ۴۲۹ را **اصلاً نمی‌دید** — نه مهلتی، نه
+ *  `Retry-After`ی. خطا را بالا می‌داد و ده ثانیهٔ بعد دیدبان باز می‌زد.
+ *  یعنی پنل با ضربانِ خودش پنجره را پر **نگه می‌داشت** و پنجرهٔ
+ *  ربع‌ساعته هیچ‌وقت خالی نمی‌شد: با رمزِ کاملاً درست و سرورِ کاملاً
+ *  سالم، هیچ کدی و هیچ ردیفی هیچ‌وقت نمی‌آمد. همان بن‌بستِ «نبضِ کلیدِ
+ *  مرده» در `admin-gate.js`، این بار از سمتِ خودمان و روی کلِ پل.
+ *
+ *  ⛔ پس مهلت از درِ ورود بیرون آمد و روی **کلِ پل** نشست: تا مهلت تمام
+ *  نشود هیچ چیزی از این پل بیرون نمی‌رود — نه ورود، نه داده، نه دیدبان،
+ *  نه ربات. صفرِ مطلق، تا پنجره خودش خالی شود.
+ */
+
+/** پنجرهٔ سقفِ نرخِ سرورِ حساب (`RATE_WINDOW_MS`) — صبرِ بیشتر از این بی‌معناست */
+const LIMIT_WINDOW_MS = 15 * 60_000;
+
+/**
+ *  پله‌های عقب‌نشینی.
+ *
+ *  ⚠️ **پلهٔ اول صفر است و این عمدی است**: حرفِ خودِ سرور مقدم می‌ماند
+ *  (قاعدهٔ ۱.۴۷.۴) و یک ۴۲۹ِ تکی با همان `Retry-After` تمام می‌شود.
+ *
+ *  ⚠️ ولی از ۴۲۹ِ **دوم** به بعد کف بالا می‌رود، چون `Retry-After`ِ این
+ *  سرور می‌گوید کِی قدیمی‌ترین ضربه از پنجره می‌افتد — یعنی **یک** خانه
+ *  آزاد می‌شود. پنلی که همان لحظه رگبارش را دوباره بزند همان یک خانه را
+ *  می‌خورد و باز ۴۲۹ می‌گیرد: عقب‌نشینیِ خانه‌به‌خانه که هیچ‌وقت تمام
+ *  نمی‌شود.
+ */
+const LIMIT_STEPS = [0, 30_000, 2 * 60_000, 5 * 60_000, LIMIT_WINDOW_MS];
+
+/** سرور `Retry-After` نداد ⇒ کورکورانه نپرس؛ نیم دقیقه صبر کن */
+const LIMIT_BLIND_MS = 30_000;
+
+let limited = null;    // { until } — تا این لحظه هیچ درخواستی زده نمی‌شود
+let limitStreak = 0;   // چند ۴۲۹ِ پشتِ سرِ هم؛ با اولین پاسخِ سالم صفر
+
+/** خطای «الان نمی‌پرسیم» — شکلش همان قراردادِ صافِ این پنل است. */
+function limitError(waitMs) {
+  const secs = Math.max(1, Math.ceil(waitMs / 1000));
+  const err = new Error(
+    `سقفِ نرخِ سرورِ حساب پر شده — تا ${secs} ثانیهٔ دیگر چیزی از آن نمی‌پرسیم تا خودش خالی شود`
+  );
+  err.code = 'rate_limited';
+  err.status = 429;
+  err.retryAfter = secs;
+  return err;
+}
+
+/** آیا این پاسخ «زیادی زدی» است؟ */
+function isRateLimited(status, code) { return status === 429 || code === 'rate_limited'; }
+
+/** ۴۲۹ آمد ⇒ کلِ پل تا پایانِ مهلت می‌خوابد. */
+function noteLimit(res) {
+  const retryAfter = Number(res?.headers?.get?.('retry-after'));
+  const floor = LIMIT_STEPS[Math.min(limitStreak, LIMIT_STEPS.length - 1)];
+  limitStreak += 1;
+  const asked = Number.isFinite(retryAfter) && retryAfter > 0
+    ? retryAfter * 1000 + 1_000
+    : LIMIT_BLIND_MS;
+  const wait = Math.min(Math.max(asked, floor), LIMIT_WINDOW_MS);
+  limited = { until: Date.now() + wait };
+  return wait;
+}
+
+/** هر پاسخِ سالم یعنی پنجره باز است — و شمارنده از نو. */
+function clearLimit() { limited = null; limitStreak = 0; }
+
+/**
+ * دروازه — پیش از **هر** درخواستِ این پل.
+ *
+ * ⛔ این تنها چیزی است که پنجرهٔ سرورِ حساب را خالی می‌کند؛ بی آن، هر
+ * تلاش خودش دلیلِ تلاشِ بعدی است.
+ */
+function limitGate() {
+  if (!limited) return;
+  const left = limited.until - Date.now();
+  if (left <= 0) { limited = null; return; }
+  throw limitError(left);
+}
+
+/** برای آزمون و برای ناظر: پل همین حالا در مهلت است یا نه. */
+export function cloudLimitState() {
+  if (!limited) return { limited: false, secondsLeft: 0, streak: limitStreak };
+  const left = limited.until - Date.now();
+  if (left <= 0) { limited = null; return { limited: false, secondsLeft: 0, streak: limitStreak }; }
+  return { limited: true, secondsLeft: Math.ceil(left / 1000), streak: limitStreak };
+}
+
 /** مهلتِ پس از هر ورودِ ناموفق — بر حسبِ جنسِ خرابی. */
 function coolFor(status, code, retryAfterSec) {
   //  ⚠️ حرفِ خودِ سرور مقدم است: سقفِ نرخ `Retry-After` می‌دهد.
@@ -174,6 +278,8 @@ function coolFor(status, code, retryAfterSec) {
 async function autoToken(force = false, stale = null) {
   const creds = autoCreds();
   if (!creds) return null;
+  //  ⛔ داخلِ مهلتِ سقفِ نرخ، حتی ورود هم زده نمی‌شود
+  limitGate();
   const fresh = auto?.token && (!auto.expiresAt || auto.expiresAt - Date.now() > 60_000);
   //  کسِ دیگری همین حالا توکن را عوض کرده ⇒ همان تازه را بگیر، دوباره وارد نشو
   if (fresh && (!force || (stale && auto.token !== stale))) return auto.token;
@@ -224,6 +330,9 @@ async function doLogin(creds) {
     err.status = res.status === 401 ? 409 : res.status;
 
     const retryAfter = Number(res.headers?.get?.('retry-after'));
+    //  ⛔ ۴۲۹ِ درِ ورود هم کلِ پل را می‌خواباند: دیدبان و ربات‌ها که
+    //  هم‌زمان می‌زنند، همان پنجره را پر نگه می‌دارند.
+    if (isRateLimited(res.status, body?.error?.code)) noteLimit(res);
     const cool = coolFor(res.status, body?.error?.code, retryAfter);
     autoFail = cool > 0
       ? { until: Date.now() + cool, code: err.code, message: err.message, status: err.status }
@@ -231,13 +340,14 @@ async function doLogin(creds) {
     throw err;
   }
   autoFail = null;
+  clearLimit();
   const exp = body.expiresAt ? Number(new Date(body.expiresAt)) : NaN;
   auto = { token: body.token, expiresAt: Number.isFinite(exp) ? exp : null };
   return auto.token;
 }
 
 /** برای آزمون: توکنِ خودکار را دور بریز. */
-export function cloudResetAuto() { auto = null; autoFail = null; autoInFlight = null; }
+export function cloudResetAuto() { auto = null; autoFail = null; autoInFlight = null; limited = null; limitStreak = 0; }
 
 /** نامِ رازی که توکنِ مدیرِ ابر زیرش می‌نشیند. */
 const SECRET_NAME = 'pump_cloud_admin_token';
@@ -334,6 +444,14 @@ export async function cloudLogin(username, password, actor = 'admin') {
     throw err;
   }
 
+  /*
+   *  ⚠️ **ورودِ دستی دروازه نمی‌خورد و این عمدی است**: آدمی که خودش دکمه
+   *  را زده، یک درخواست است نه یک ضربان — و باید جوابِ واقعیِ سرور را
+   *  ببیند، نه «ما داریم صبر می‌کنیم». ولی موفقیتش یعنی پنجره باز است،
+   *  پس مهلتِ خودکار هم همان‌جا برداشته می‌شود.
+   */
+  clearLimit();
+
   putSecret({
     name: SECRET_NAME,
     kind: 'api_key',
@@ -381,6 +499,7 @@ export async function cloudCall(name, { query = {}, body = null, params = {} } =
   }
   //  ورودِ خودکار (اگر تنظیم است) همیشه جلوتر از توکنِ گاوصندوق: آن یکی
   //  دوازده ساعته می‌میرد و کسی نیست دوباره وارد شود؛ این یکی خودش تازه می‌شود.
+  limitGate();
   const creds = autoCreds();
   let t = creds ? await autoToken() : token();
   if (!t) {
@@ -417,6 +536,7 @@ export async function cloudRaw(method, path, { query = {}, body = null } = {}) {
     err.status = 400;
     throw err;
   }
+  limitGate();
   const creds = autoCreds();
   const t = creds ? await autoToken() : token();
   if (!t) {
@@ -450,6 +570,14 @@ async function authedSend(method, path, { query = {}, body = null, creds, token:
     res = await send(t);
   }
 
+  /*
+   *  ⛔ **۴۲۹ِ مسیرِ داده، نه فقط مسیرِ ورود.** تا دیروز این عدد مثلِ هر
+   *  خطای دیگری بالا می‌رفت و ده ثانیهٔ بعد دیدبان باز می‌زد — یعنی پنل
+   *  خودش پنجرهٔ سقفِ نرخِ سرورِ حساب را پر **نگه می‌داشت** و آن پنجره
+   *  هیچ‌وقت خالی نمی‌شد. حالا همین‌جا کلِ پل می‌خوابد.
+   */
+  if (res.status === 429) throw limitError(noteLimit(res));
+
   const out = await res.json().catch(() => ({}));
 
   if (res.status === 401) {
@@ -461,11 +589,14 @@ async function authedSend(method, path, { query = {}, body = null, creds, token:
     throw err;
   }
   if (!res.ok) {
+    if (isRateLimited(res.status, out?.error?.code)) throw limitError(noteLimit(res));
     const err = new Error(out?.error?.message || 'سرورِ حساب جواب نداد');
     err.code = out?.error?.code || 'cloud_error';
     err.status = res.status;
     throw err;
   }
+  //  پاسخِ سالم ⇒ پنجره باز است، و شمارنده از نو
+  clearLimit();
   return out;
 }
 
@@ -490,6 +621,7 @@ export async function cloudRawText(method, path, { query = {} } = {}) {
     err.status = 400;
     throw err;
   }
+  limitGate();
   const creds = autoCreds();
   let t = creds ? await autoToken() : token();
   if (!t) {
@@ -509,6 +641,7 @@ export async function cloudRawText(method, path, { query = {} } = {}) {
     t = await autoToken(true, t);
     res = await send(t);
   }
+  if (res.status === 429) throw limitError(noteLimit(res));
   const text = await res.text().catch(() => '');
   if (res.status === 401) {
     const err = new Error('نشستِ مدیر روی سرورِ حساب تمام شده — دوباره وارد شوید');
@@ -524,5 +657,6 @@ export async function cloudRawText(method, path, { query = {} } = {}) {
     err.status = res.status;
     throw err;
   }
+  clearLimit();
   return { text, contentType: res.headers.get('content-type') || 'text/html; charset=utf-8' };
 }

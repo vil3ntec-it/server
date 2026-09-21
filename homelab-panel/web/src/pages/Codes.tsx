@@ -313,20 +313,20 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
         </p>
       )}
 
-      {queue && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Stat label={t('codesQWaiting')} value={queue.waiting} />
-          <Stat label={t('codesQSending')} value={queue.sending} />
-          <Stat label={t('codesQSentHour')} value={queue.sentLastHour} />
-          <Stat
-            label={t('codesQFailed')}
-            value={queue.failed}
-            tone={queue.failed > 0 ? 'bad' : undefined}
-          />
-        </div>
-      )}
+      {/*
+        ⛔ **چهار شمارندهٔ صفِ رباتِ ایمیلِ پنل از این تب برداشته شد.**
 
-      <p className="text-[11px] leading-snug text-ink-muted" dir="auto">{t('codesQueueNote')}</p>
+        خواستهٔ صاحب سامانه با عکس (۱۴۰۵/۰۷/۱۱): «این صفحه خیلی بهتر و
+        خلوت‌تر بشه.» در همان عکس هفت کادرِ عدد پشتِ سرِ هم بود و چهارتای
+        آخرش همیشه صفر — چون مالِ رباتِ ایمیلِ **خودِ پنل**‌اند و کدِ
+        برنامه‌ها را سرورِ حساب خودش می‌فرستد. عددِ همیشه‌صفر کنارِ عددِ
+        واقعی، خودِ عددِ واقعی را هم بی‌معنا می‌کند.
+
+        ⚠️ و پاک نشدند، **سرِ جای درستشان رفتند**: هر چهارتا از قبل در
+        تبِ «ربات و تنظیمات» بودند (همان‌جا که ربات تنظیم می‌شود) و
+        این‌جا رونوشتشان بود. یعنی هیچ عددی گم نشد، فقط دو بار نوشته
+        نمی‌شود.
+      */}
 
       <Card
         title={t('codesLive')}
@@ -1027,12 +1027,21 @@ function BotTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
       </Card>
 
       <Card title={t('codesQueue')} icon={<Bot className="h-4 w-4" />}>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           <Stat label={t('codesQWaiting')} value={queue?.waiting ?? 0} />
           <Stat label={t('codesQSending')} value={queue?.sending ?? 0} />
           <Stat label={t('codesQWorkers')} value={`${queue?.busyWorkers ?? 0}/${queue?.workers ?? 0}`} />
           <Stat label={t('codesQSentHour')} value={queue?.sentLastHour ?? 0} />
+          <Stat label={t('codesQFailed')} value={queue?.failed ?? 0}
+                tone={Number(queue?.failed) > 0 ? 'bad' : undefined} />
         </div>
+        {/*
+          ⚠️ این خط از تبِ «کدهای زنده» به این‌جا آمد، چون این‌جا **راست**
+          است: این شمارنده‌ها مالِ رباتِ ایمیلِ خودِ پنل‌اند. آن‌جا کنارِ
+          کدهای برنامه‌ها می‌نشستند و صفر بودنشان «هیچ کدی در کار نیست»
+          خوانده می‌شد.
+        */}
+        <p className="mt-3 text-[11px] leading-snug text-ink-muted" dir="auto">{t('codesQueueNote')}</p>
       </Card>
 
       <div className="flex justify-end">

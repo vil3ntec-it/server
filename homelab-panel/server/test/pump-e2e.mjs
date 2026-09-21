@@ -496,6 +496,59 @@ try {
       && String(afterGone.json?.publicKey || '').length > 0);
   }
 
+  // ── ۸ج) میزِ فروشگاه، با سرورِ حسابِ واقعی ───────────────────────────────
+  //
+  //  گزارشِ صاحب سامانه (۱۴۰۵/۰۷/۱۰ و باز ۱۴۰۵/۰۷/۱۱): «بخشِ فروشگاه کار
+  //  نمی‌کنه، از برنامه می‌ندازه بیرون.»
+  //
+  //  ⛔ تا امروز این سه مسیر فقط با سرورِ حسابِ **ساختگی** سنجیده می‌شدند
+  //  (`account-admin.mjs`) — و ساختگی همان چیزی را می‌داد که پنل انتظار
+  //  داشت، پس هیچ‌وقت قرمز نمی‌شد. سنجه‌ای که جدولش را خودش پر کند سبز
+  //  نیست، خراب است. این‌جا با `shop/server`ِ واقعی زده می‌شود.
+  //
+  //  ⚠️ و ملاک «۲۰۰ گرفت» نیست، **شکلِ پاسخ** است: همان کلیدهایی که
+  //  `ShopDesk.tsx` می‌خواند. یک ۲۰۰ با شکلِ دیگر، همان استثنای وسطِ
+  //  رندر است که کلِ پنجره را سفید می‌کرد.
+  console.log('\n── ۸ج) میزِ فروشگاه با سرورِ حسابِ واقعی ──');
+  {
+    const panel = async (method, p2) => {
+      const res = await fetch(`http://127.0.0.1:${PANEL}${p2}`, {
+        method, headers: { Authorization: `Bearer ${panelToken}` },
+      });
+      const text = await res.text();
+      let json = null; try { json = JSON.parse(text); } catch { /* غیرِ JSON */ }
+      return { status: res.status, json, text };
+    };
+
+    const ov = await panel('GET', '/api/account-admin/shop-desk/overview?days=7');
+    check('۴.۱ داشبوردِ فروشگاه از سرورِ حسابِ واقعی جواب می‌دهد',
+      ov.status === 200, `${ov.status} ${ov.text.slice(0, 220)}`);
+
+    const c = ov.json?.counts || {};
+    //  ⛔ هر شش عدد، و از همان `counts` — نه ساخته‌شده در صفحه
+    check('⛔ و هر شش شمارندهٔ داشبورد در پاسخ هست',
+      ['shops', 'customers', 'subscribed', 'online', 'expiring', 'supportOpen']
+        .every((k) => typeof c[k] === 'number'),
+      JSON.stringify(c).slice(0, 200));
+    check('⛔ و `expiring`/`support` آرایه‌اند — همان چیزی که صفحه `.map` می‌کند',
+      Array.isArray(ov.json?.expiring) && Array.isArray(ov.json?.support),
+      `${typeof ov.json?.expiring} / ${typeof ov.json?.support}`);
+    //  ⚠️ تعریفِ «آنلاین» از خودِ سرور می‌آید، نه از عددی در صفحه
+    check('⚠️ و تعریفِ «آنلاین» را خودِ سرور می‌گوید (onlineWithinMs)',
+      Number(ov.json?.onlineWithinMs) > 0, String(ov.json?.onlineWithinMs));
+
+    const gr = await panel('GET', '/api/account-admin/shop-desk/groups');
+    check('۴.۲ سه گروهِ اشتراک از سرورِ حسابِ واقعی می‌آید',
+      gr.status === 200
+      && ['has', 'none', 'expired'].every((k) => Array.isArray(gr.json?.groups?.[k])),
+      `${gr.status} ${gr.text.slice(0, 220)}`);
+
+    //  ⚠️ جست‌وجو دستِ سرورِ حساب است، نه فیلترِ محلی — و نباید بشکند
+    const grq = await panel('GET', '/api/account-admin/shop-desk/groups?q=%D9%87%DB%8C%DA%86');
+    check('⚠️ و جست‌وجو هم از همان بالادست می‌آید و نمی‌شکند', grq.status === 200,
+      `${grq.status} ${grq.text.slice(0, 160)}`);
+  }
+
   // ── ۹) فهرستِ سفید، از خودِ shop خوانده می‌شود ───────────────────────────
   console.log('\n── ۹) ⛔ فهرستِ درگاه با ‎apiRouter‎ی خودِ سرورِ حساب یکی است ──');
   {
