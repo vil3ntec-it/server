@@ -251,9 +251,16 @@ check('۴.۱ میزِ فروشگاه سه تب دارد',
   /shopDeskDash/.test(shopDesk) && /shopDeskGroups/.test(shopDesk) && /shopDeskCodes/.test(shopDesk));
 
 //  ۴.۲ — شش عدد و فهرستِ رو به پایان با ایمیل
+/*
+ *  ⚠️ از ۱.۵۰.۳ خانه‌ها از یک `counts`ِ **سنجیده‌شده** خوانده می‌شوند
+ *  (`d.counts || {}`)، نه مستقیم از `d.counts.…` — وگرنه سرورِ حسابِ کهنه
+ *  کلِ صفحه را می‌شکست. ادعا همان است، از درِ تازه: هر شش عدد هست **و**
+ *  سرچشمه‌شان همان پاسخِ بالادست است.
+ */
 check('۴.۲ داشبورد هر شش عدد را نشان می‌دهد',
-  ['counts.shops', 'counts.customers', 'counts.subscribed', 'counts.online',
-   'counts.supportUnread', 'counts.supportOpen'].every((k) => shopDesk.includes(`d.${k}`)));
+  ['shops', 'customers', 'subscribed', 'online', 'supportUnread', 'supportOpen']
+    .every((k) => shopDesk.includes(`counts.${k}`))
+  && /const counts = d\.counts \|\|/.test(shopDesk));
 check('۴.۲ و «رو به پایان» ایمیل و روزِ مانده دارد',
   /r\.ownerEmail/.test(shopDesk) && /r\.daysLeft/.test(shopDesk));
 
@@ -288,6 +295,51 @@ check('⛔ و هیچ کدِ شاگردی در خودِ صفحه نوشته نش�
 check('⛔ آیتمِ منوی فروشگاه یک در دارد',
   /\{ to: '\/shop', key: 'navShops'/.test(layout)
   && !/to: '\/customers\?app=shop'/.test(layout));
+
+/* =========================================================================
+ *  ۵) یک صفحهٔ شکسته کلِ پنل را نمی‌اندازد
+ *
+ *  گزارشِ صاحب سامانه: «بخشِ فروشگاه رو اصلاً باز نمی‌کنه، می‌زنم روش از
+ *  برنامه می‌ندازه بیرون.»
+ *
+ *  ⛔ ریشه: در کلِ این پنل **هیچ `ErrorBoundary`ی نبود**. یک استثنا وسطِ
+ *  رندر یعنی React کلِ درخت را باز می‌کند — یعنی صفحهٔ سفید، یعنی «از
+ *  برنامه می‌ندازه بیرون». و `ShopDesk` شکلِ پاسخِ بالادست را بی سنجش
+ *  می‌خواند، پس سرورِ حسابِ کهنه (پیش از ۲.۹.۰) دقیقاً همان استثنا را
+ *  می‌ساخت.
+ * ========================================================================= */
+const boundary = read('components/PageBoundary.tsx');
+check('۵) پنل نگهبانِ خطای صفحه دارد',
+  /getDerivedStateFromError/.test(boundary) && /componentDidCatch/.test(boundary));
+check('۵) و هر صفحه داخلِ همان نگهبان رندر می‌شود',
+  /<PageBoundary[^>]*>\s*<Outlet/.test(layout),
+  'بی این، یک استثنا کلِ پنل را سفید می‌کند');
+/*
+ *  ⚠️ `key` روی نگهبان لازم است، نه تجمل: بی آن، صفحه‌ای که یک بار شکست
+ *  تا تازه‌سازیِ دستی شکسته می‌ماند — حتی وقتی کاربر به صفحهٔ سالمِ دیگری
+ *  رفته باشد.
+ */
+check('⚠️ و با عوض شدنِ نشانی خودش را از نو می‌سازد',
+  /<PageBoundary key=\{location\.pathname\}/.test(layout));
+
+/*
+ *  ⛔ و خودِ صفحه هم شکلِ بالادست را کورکورانه باور نمی‌کند. نگهبان تورِ
+ *  آخر است، نه جانشینِ سنجش.
+ */
+check('⛔ میزِ فروشگاه شکلِ پاسخِ سرورِ حساب را می‌سنجد',
+  /Array\.isArray\(d\.expiring\)/.test(shopDesk)
+  && /d\.counts \|\|/.test(shopDesk),
+  'سرورِ حسابِ کهنه نباید صفحه را بشکند');
+
+/*
+ *  ⚠️ و فیلترِ میزِ کدها دو نامِ **سرورِ حساب** را هم دارد: بیشترِ کدهای
+ *  این فهرست مالِ آن دفترند و سرور `?app=pump|shop` را می‌پذیرد، ولی تا
+ *  ۱.۵۰.۲ هیچ راهی نبود که از صفحه انتخابشان کنی — یعنی فیلتر دقیقاً
+ *  برای آن‌هایی که بیشتر لازم بودند کار نمی‌کرد.
+ */
+const codesPage = read('pages/Codes.tsx');
+check('⚠️ فیلترِ کدها «پمپ‌بنزین» و «فروشگاه» را هم دارد',
+  /value: 'pump'/.test(codesPage) && /value: 'shop'/.test(codesPage));
 
 console.log('\n════════════════════════════════════');
 console.log(`  ✅ ${pass} سبز، ${fail} قرمز`);

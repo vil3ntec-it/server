@@ -20,6 +20,9 @@ import { linkApp } from '../appauth/registry-link.js';
 import { checkMailSettings, codeSettings, safeCodeSettings, saveCodeSettings } from '../codes/settings.js';
 import { onPanelMailChanged } from '../account/supervisor.js';
 import { cloudRaw } from '../stations/cloud.js';
+import { audit } from '../control/audit.js';
+import { atLeast, roleOf } from '../control/roles.js';
+import { mirrorAccountCodes } from '../codes/mirror.js';
 import { issueCode, maskEmail, revealCode, verifyCode } from '../codes/service.js';
 import { awaitDelivery, drainQueue, queueStatus } from '../codes/queue.js';
 import { mailReady, sendCodeEmail } from '../codes/mail.js';
@@ -232,8 +235,8 @@ const publicApp = (row) => ({
  *
  *  ⛔ **دفترِ دومی ساخته نشد** — این فقط می‌خواند و نگه نمی‌دارد.
  *
- *  ⚠️ و کد این‌جا **نمی‌آید**: خودِ سرورِ حساب هم در فهرست کد نمی‌دهد. نمایشِ
- *  کد یک کارِ جدا و ثبت‌شده است (`POST /api/account-admin/logins/:id/reveal`).
+ *  ⚠️ کد را خودِ این تابع **نمی‌آورد** (سرورِ حساب هم در فهرست کد نمی‌دهد)؛
+ *  `mirrorAccountCodes` در مسیرِ `/live` یک بار می‌پرسدش و می‌نشاندش.
  *
  *  ⚠️ نرسیدن به سرورِ حساب صفحه را نمی‌شکند: کدهای خودِ پنل سرِ جایشان
  *  می‌مانند و `accountError` می‌گوید چرا آن یکی نیامد.
@@ -253,7 +256,7 @@ export async function accountCodes(app, limit) {
     emailMasked: r.masked_email,
     subjectId: r.device_id || '',
     purpose: 'login',
-    //  فهرست هیچ‌وقت کد نمی‌دهد؛ «نمایشِ کد» مسیرِ جداست
+    //  خالی می‌آید و آینهٔ `/live` پرش می‌کند — این تابع هیچ‌وقت نمی‌پرسد
     code: null,
     canReveal: Boolean(r.active),
     createdAt: r.created_at,
@@ -317,7 +320,7 @@ export async function accountOtpCodes(app, limit) {
     purpose: r.purpose === 'register' ? 'ثبت‌نام'
       : r.purpose === 'reset' ? 'رمزِ فراموش‌شده'
       : r.purpose === 'login' ? 'ورود' : r.purpose,
-    //  فهرست هیچ‌وقت کد نمی‌دهد؛ «نمایشِ کد» مسیرِ جداست
+    //  خالی می‌آید و آینهٔ `/live` پرش می‌کند — این تابع هیچ‌وقت نمی‌پرسد
     code: null,
     canReveal: Boolean(r.can_reveal),
     createdAt: r.created_at,
@@ -401,6 +404,43 @@ adminRouter.get('/live', async (req, res) => {
       if (r.status === 'fulfilled') account = account.concat(r.value);
       else if (!accountError) accountError = r.reason?.message || 'به سرورِ حساب نرسیدیم';
     }
+  }
+
+  /*
+   *  ⛔ **و کدِ سرورِ حساب هم همین‌جا دیده می‌شود** — خواستهٔ صریحِ صاحب
+   *  سامانه: «کدهایی که ساخته می‌شه اول همین‌جا بیان و بعد بره به ایمیل».
+   *
+   *  کدهای خودِ پنل از روزِ اول در فهرست بودند و کدهای سرورِ حساب نه، پس
+   *  از دیدِ او این صفحه همیشه بی‌کد بود — و کدِ هر سه برنامه مالِ همان
+   *  دفترِ بالادست است.
+   *
+   *  ⚠️ قاعدهٔ ۱۴۰۵/۰۷/۰۴ ضعیف نشد، ریشه‌اش بسته شد: آن قاعده نگرانِ
+   *  **تکرار** بود («هر تازه‌شدنِ دو‌ونیم‌ثانیه‌ای یک ردیفِ کد دیده شد»).
+   *  `mirrorAccountCodes` هر کد را **یک بار** می‌پرسد، پس دفترِ ممیزی
+   *  دقیقاً یک ردیف برای هر کد دارد — مثلِ یک کلیکِ دستی، نه بیشتر.
+   *
+   *  ⛔ و هر سه نگهبانِ نمایش سرِ جایشان‌اند: فقط نقشِ `admin` (این مسیر
+   *  برای operator هم خواندنی است و او کد نمی‌بیند)، فقط پورتِ پنل، و
+   *  فقط کدِ **زنده**.
+   */
+  if (account.length && atLeast(roleOf(req), 'admin')) {
+    const actor = req.user?.username || 'admin';
+    account = await mirrorAccountCodes(
+      account,
+      async (source, id) => {
+        const door = source === 'account-otp' ? 'otp' : 'logins';
+        const out = await cloudRaw('POST', `/api/admin/${door}/${encodeURIComponent(String(id))}/reveal`);
+        return out?.code || '';
+      },
+      (source, id) => audit({
+        actor,
+        action: source === 'account-otp' ? 'account.otp.reveal' : 'account.login.reveal',
+        entity: source === 'account-otp' ? 'otp_code' : 'login_request',
+        entityId: String(id),
+        detail: { via: 'live-desk' },
+      }),
+      now
+    );
   }
 
   const all = [...items.map((r) => ({ ...r, source: 'panel' })), ...account]

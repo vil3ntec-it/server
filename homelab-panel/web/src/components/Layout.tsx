@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { PageBoundary } from './PageBoundary';
 import {
   Activity,
   Bot,
@@ -394,7 +395,11 @@ export default function Layout() {
         <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} items={paletteItems} />
 
         <main className="min-h-0 flex-1 overflow-y-auto bg-surface-sunken p-3 sm:p-5">
-          <Outlet />
+          {/* ⛔ یک صفحهٔ خراب کلِ برنامه را نمی‌بندد (۱۴۰۵/۰۷/۱۰) — و
+              `key`ِ مسیر یعنی با رفتن به صفحهٔ دیگر، از نو ساخته می‌شود. */}
+          <PageBoundary key={location.pathname}>
+            <Outlet />
+          </PageBoundary>
         </main>
       </div>
     </div>
