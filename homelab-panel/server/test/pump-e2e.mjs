@@ -133,15 +133,37 @@ const SMTP_PORT = smtp.address().port;
  * شش‌رقمیِ داخلِ تازه‌ترین ایمیل — همان کدی که به دستِ کاربر می‌رسید.
  * ⚠️ بدنه چندبخشی و base64 است (عنوان و متنِ فارسی)، پس هر بلوکِ base64
  * هم باز می‌شود؛ گشتنِ خامِ متن شش‌رقمی پیدا نمی‌کرد.
+ *
+ * ⛔ **و دو نگهبان که با یک سرخیِ CI به دست آمدند** (اجرای ۱۸:۱۱ روی
+ * `b05bffe`): پیامِ «کد واقعاً به ایمیل رفت» سبز بود ولی
+ * `register/verify` `otp_wrong` می‌گرفت — یعنی کد پیدا شده بود، **غلط**.
+ * ریشه: مرزِ MIMEی nodemailer (`--_NmP-<هگز>-Part_1`) تصادفی است و
+ * هر از گاهی شش رقمِ پشتِ سرِ هم در خودش دارد. آن رشته پیش از متنِ نامه
+ * می‌آمد، پس «اولین شش‌رقمی» مرز بود نه کد.
+ *
+ *   ۱) **سرآیندها اصلاً گشته نمی‌شوند** — فقط بدنهٔ بعد از خطِ خالی.
+ *   ۲) **مرزِ شش‌رقمی باید نویسهٔ غیرِ الفبا‌عددی دو طرفش باشد**، پس
+ *      شش رقمِ وسطِ یک رشتهٔ هگز دیگر قبول نمی‌شود.
+ *
+ * ⚠️ این «ضعیف کردنِ سنجه» نیست، درست کردنِ خودِ ابزارِ سنجه است: آن
+ * سیزده سرخ رفتارِ سالمِ سرور را «خراب» نشان می‌دادند.
  */
 const codeFromMail = async () => {
+  /** سرآیندهای هر بخش را می‌اندازد و فقط بدنه را می‌دهد. */
+  const bodyOnly = (raw) => {
+    const at = raw.indexOf('\n\n');
+    return at < 0 ? raw : raw.slice(at + 2);
+  };
   const dig = (raw) => {
-    const parts = [raw.replace(/=\r?\n/g, '').replace(/=3D/g, '=')];
-    for (const m of raw.matchAll(/^([A-Za-z0-9+/=]{16,})$/gm)) {
+    const stripped = bodyOnly(raw);
+    const parts = [];
+    for (const m of stripped.matchAll(/^([A-Za-z0-9+/=]{16,})$/gm)) {
       try { parts.push(Buffer.from(m[1], 'base64').toString('utf8')); } catch { /* base64 نبود */ }
     }
+    //  ⚠️ بلوک‌های باز‌شده **اول**: متنِ نامه آن‌جاست، نه در خامِ MIME
+    parts.push(stripped.replace(/=\r?\n/g, '').replace(/=3D/g, '='));
     for (const text of parts) {
-      const hit = /(?:^|[^\d])(\d{6})(?:[^\d]|$)/.exec(text);
+      const hit = /(?:^|[^A-Za-z0-9])(\d{6})(?:[^A-Za-z0-9]|$)/.exec(text);
       if (hit) return hit[1];
     }
     return '';
