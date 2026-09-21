@@ -37,6 +37,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ── کدام برچسب؟ ──────────────────────────────────────────────────────
+      # ⛔ «windows-preview» فقط یک برچسبِ نمایش نیست — همان کانالی است که
+      #    مرکز فرمانِ نصب‌شده از آن به‌روزرسانی می‌گیرد
+      #    (`panelReleaseTag()` در src/update/github.js). پس هر ساختی که
+      #    رویش بنشیند، مستقیم روی کامپیوترِ صاحب سامانه می‌رود.
+      #
+      #    تا امروز ساختِ هر شاخهٔ کاری همان برچسب را جابه‌جا می‌کرد، یعنی کدِ
+      #    مرج‌نشده به‌عنوان «به‌روزرسانی» سرو می‌شد — بی این‌که کسی بفهمد.
+      #
+      # ⚠️ ولی ساختِ شاخه‌ها برداشته نشد و نباید برداشته شود: دلیلش بالای
+      #    همین فایل نوشته است (پیش از merge فایلِ نصبی باید در دسترس باشد).
+      #    فقط مقصدش عوض شد — «windows-branch»، که هیچ برنامه‌ای نمی‌خواندش.
+      - name: برچسب کانال
+        shell: pwsh
+        run: |
+          $ref = '${{ github.ref }}'
+          $name = '${{ github.ref_name }}'
+          if ($ref.StartsWith('refs/tags/v')) {
+            $tag = $name
+            $title = $name
+          } elseif ($name -eq 'main') {
+            $tag = 'windows-preview'
+            $title = 'مرکز فرمان — پیش‌نمایش ویندوز'
+          } else {
+            $tag = 'windows-branch'
+            $title = 'مرکز فرمان — ساختِ شاخهٔ کاری (به‌روزرسانی از این‌جا نمی‌آید)'
+          }
+          "CHANNEL_TAG=$tag"     | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "CHANNEL_NAME=$title"  | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "برچسبِ این ساخت: $tag"
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -200,10 +231,10 @@ jobs:
         run: |
           $body = @{ sha = '${{ github.sha }}'; force = $true } | ConvertTo-Json -Compress
           try {
-            $body | gh api -X PATCH "repos/${{ github.repository }}/git/refs/tags/windows-preview" --input -
+            $body | gh api -X PATCH "repos/${{ github.repository }}/git/refs/tags/$env:CHANNEL_TAG" --input -
             Write-Host 'برچسب جابه‌جا شد.'
           } catch {
-            $create = @{ ref = 'refs/tags/windows-preview'; sha = '${{ github.sha }}' } | ConvertTo-Json -Compress
+            $create = @{ ref = "refs/tags/$env:CHANNEL_TAG"; sha = '${{ github.sha }}' } | ConvertTo-Json -Compress
             $create | gh api -X POST "repos/${{ github.repository }}/git/refs" --input -
             Write-Host 'برچسب ساخته شد.'
           }
@@ -211,8 +242,8 @@ jobs:
       - name: انتشار
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'windows-preview' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'مرکز فرمان — پیش‌نمایش ویندوز' }}
+          tag_name: ${{ env.CHANNEL_TAG }}
+          name: ${{ env.CHANNEL_NAME }}
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') || contains(github.ref_name, '-') }}
           target_commitish: ${{ github.sha }}
           # parts/* عمداً باز نشده: SHA256SUMS.txt هم آنجا کپی می‌شود و هم
@@ -287,7 +318,7 @@ jobs:
           #    جمعِ کنترلی‌اش در SHA256SUMS.txt می‌ماند ولی خودِ فایل نبود، و
           #    همان فایلی است که پوشهٔ داده را قابلِ حمل می‌کند.
           $keep = @($env:EXE_NAME, $env:PORTABLE_NAME, 'SHA256SUMS.txt', 'JOIN-PARTS.bat')
-          $release = gh api "repos/${{ github.repository }}/releases/tags/windows-preview" | ConvertFrom-Json
+          $release = gh api "repos/${{ github.repository }}/releases/tags/$env:CHANNEL_TAG" | ConvertFrom-Json
           foreach ($asset in $release.assets) {
             $mine = ($keep -contains $asset.name) -or $asset.name.StartsWith("$($env:EXE_NAME).part")
             if ($mine) { continue }
