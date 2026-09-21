@@ -90,11 +90,59 @@ async function dial(url, init) {
 /** توکنِ خودکار — فقط در حافظه. */
 let auto = null; // { token, expiresAt }
 
+/*
+ *  ⛔ ورودِ ناموفق مهلت می‌گیرد — وگرنه پنل خودش را بیرون می‌گذارد.
+ *
+ *  گزارشِ صاحب سامانه با عکس (۱۴۰۵/۰۷/۰۸): صفحهٔ «کدهای زنده» نوارِ
+ *  «ورود خودکار به سرور حساب نشد: تعداد درخواست بیش از حد مجاز است»
+ *  داشت و هر چهار شمارنده صفر بود.
+ *
+ *  زنجیرهٔ مرگ، و هر سه حلقه‌اش لازم بود:
+ *    ۱) هر خطا `auto = null` می‌کرد — از جمله ۴۲۹
+ *    ۲) پس درخواستِ بعدی کَش نداشت و یک `POST /api/admin/login` تازه می‌زد
+ *    ۳) و سقفِ `authMax`ِ سرورِ حساب ده در ربع ساعت است
+ *
+ *  صفحهٔ کدهای زنده مرتب تازه می‌شود، پس هر تازه‌شدن یک لاگین بود ⇒ ۴۲۹
+ *  ⇒ کَش پاک ⇒ لاگینِ بعدی هم ۴۲۹… و پنجرهٔ ربع‌ساعته هیچ‌وقت خالی
+ *  نمی‌شد. یعنی **حتی با رمزِ کاملاً درست** دیگر هیچ‌وقت وارد نمی‌شد.
+ *
+ *  ⚠️ همان الگوی «نبضِ کلیدِ مرده» در `admin-gate.js` است، این بار از
+ *  سمتِ خودمان: تلاشِ تکراریِ بی‌مهلت، خودش سقف را پر می‌کند.
+ */
+let autoFail = null; // { until, code, message, status }
+
+/** مهلتِ پس از هر ورودِ ناموفق — بر حسبِ جنسِ خرابی. */
+function coolFor(status, code, retryAfterSec) {
+  //  ⚠️ حرفِ خودِ سرور مقدم است: سقفِ نرخ `Retry-After` می‌دهد.
+  if (Number.isFinite(retryAfterSec) && retryAfterSec > 0) {
+    return Math.min(retryAfterSec * 1000 + 1_000, 15 * 60_000);
+  }
+  if (status === 429 || code === 'rate_limited') return 2 * 60_000;
+  //  ⛔ رمزِ غلط مهلت **نمی‌گیرد** و این عمدی است: صاحبِ سامانه `.env` را
+  //  درست می‌کند و باید همان لحظه وصل شود، بی راه‌اندازیِ دوباره —
+  //  سنجه‌اش سرِ جایش است. و بی‌مهارِ هم نمی‌ماند: تلاشِ پشتِ سرِ هم
+  //  خودش سقفِ نرخ را پر می‌کند و همان ۴۲۹ِ بالا مهارش می‌کند. یعنی
+  //  مهار یک لایه بیرون‌تر است، نه این‌که نباشد.
+  if (code === 'bad_credentials') return 0;
+  return 15_000;
+}
+
 async function autoToken(force = false) {
   const creds = autoCreds();
   if (!creds) return null;
   const fresh = auto?.token && (!auto.expiresAt || auto.expiresAt - Date.now() > 60_000);
   if (!force && fresh) return auto.token;
+
+  //  ⛔ داخلِ مهلت، **هیچ درخواستی** زده نمی‌شود. این تنها چیزی است که
+  //  سقفِ نرخ را خالی می‌کند؛ بی آن، هر تلاش خودش دلیلِ تلاشِ بعدی است.
+  if (autoFail && autoFail.until > Date.now()) {
+    //  توکنِ سالمِ قبلی بهتر از هیچ است — شاید هنوز کار کند.
+    if (auto?.token && !force) return auto.token;
+    const err = new Error(autoFail.message);
+    err.code = autoFail.code;
+    err.status = autoFail.status;
+    throw err;
+  }
 
   const res = await dial(`${cloudTarget()}/api/admin/login`, {
     method: 'POST',
@@ -103,21 +151,40 @@ async function autoToken(force = false) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || !body?.token) {
-    auto = null;
-    const err = new Error(body?.error?.message
-      ? `ورودِ خودکار به سرورِ حساب نشد: ${body.error.message} — HLP_ACCOUNT_ADMIN_USER/PASSWORD را بسنجید`
-      : 'ورودِ خودکار به سرورِ حساب نشد — HLP_ACCOUNT_ADMIN_USER/PASSWORD را بسنجید');
-    err.code = body?.error?.code === 'bad_credentials' ? 'auto_login_rejected' : (body?.error?.code || 'auto_login_failed');
+    const code = body?.error?.code === 'bad_credentials'
+      ? 'auto_login_rejected'
+      : (body?.error?.code || 'auto_login_failed');
+    const limited = res.status === 429 || body?.error?.code === 'rate_limited';
+
+    //  ⛔ توکنِ سالمِ روی حافظه با یک ۴۲۹ پاک نمی‌شود. فقط وقتی دور
+    //  ریخته می‌شود که خودِ سرور بگوید این رمز/نشست بد است.
+    if (!limited) auto = null;
+
+    //  ⚠️ پیام باید کارِ درست را بگوید: «رمز را بسنج» برای ۴۲۹ غلط است
+    //  و آدم را دنبالِ چیزی می‌فرستد که خراب نیست.
+    const why = body?.error?.message ? `: ${body.error.message}` : '';
+    const hint = limited
+      ? ' — سقفِ نرخِ سرورِ حساب پر شده؛ خودش چند دقیقهٔ دیگر باز می‌شود'
+      : ' — HLP_ACCOUNT_ADMIN_USER/PASSWORD را بسنجید';
+    const err = new Error(`ورودِ خودکار به سرورِ حساب نشد${why}${hint}`);
+    err.code = code;
     err.status = res.status === 401 ? 409 : res.status;
+
+    const retryAfter = Number(res.headers?.get?.('retry-after'));
+    const cool = coolFor(res.status, body?.error?.code, retryAfter);
+    autoFail = cool > 0
+      ? { until: Date.now() + cool, code: err.code, message: err.message, status: err.status }
+      : null;
     throw err;
   }
+  autoFail = null;
   const exp = body.expiresAt ? Number(new Date(body.expiresAt)) : NaN;
   auto = { token: body.token, expiresAt: Number.isFinite(exp) ? exp : null };
   return auto.token;
 }
 
 /** برای آزمون: توکنِ خودکار را دور بریز. */
-export function cloudResetAuto() { auto = null; }
+export function cloudResetAuto() { auto = null; autoFail = null; }
 
 /** نامِ رازی که توکنِ مدیرِ ابر زیرش می‌نشیند. */
 const SECRET_NAME = 'pump_cloud_admin_token';
