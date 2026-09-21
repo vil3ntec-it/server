@@ -25,6 +25,9 @@ const check = (name, ok, extra = '') => {
   console.log(`  ${ok ? '✅' : '❌'} ${name}${ok || !extra ? '' : ' — ' + String(extra).slice(0, 240)}`);
 };
 
+/** کلیدِ همهٔ ردیف‌های عیب‌یابی — فقط برای پیامِ خطا، وقتی ردیف پیدا نشد. */
+const diagKeys = (d) => (d.json?.checks || []).map((c) => c.key);
+
 // ── ۰) قاعدهٔ نشانی — بی سرور ───────────────────────────────────────────────
 console.log('\n── نشانی‌ای که پل می‌زند ──');
 {
@@ -144,10 +147,43 @@ try {
   check('رمز که درست شد، بی راه‌اندازیِ دوباره وصل می‌شود', back.status === 200, String(back.status));
 
   console.log('\n── سنجهٔ «چرا کار نمی‌کند» ──');
-  const diag = await api('GET', '/api/diagnostics', undefined, auth);
-  const acct = (diag.json?.checks || []).find((c) => c.key === 'accountServer');
-  check('سرورِ حساب یک ردیف در عیب‌یابی دارد', Boolean(acct), JSON.stringify(diag.json?.checks?.map((c) => c.key)));
-  check('و سبز است، با نسخهٔ واقعیِ سرور', acct?.state === 'good' && /9\.9\.9/.test(acct?.value || ''), JSON.stringify(acct));
+  const row = async () => {
+    const d = await api('GET', '/api/diagnostics', undefined, auth);
+    return (d.json?.checks || []).find((c) => c.key === 'accountServer');
+  };
+
+  /*
+   *  ⛔ **دو حال، و هر دو سنجیده می‌شود.**
+   *
+   *  تا ۱۴۰۵/۰۷/۰۷ این ردیف با رباتِ ایمیلِ تنظیم‌نشده هم **سبز** بود —
+   *  همان «کلکِ دروغ»ی که در این ریپو قدغن است: کدِ شش‌رقمیِ ثبت‌نام و
+   *  ورود ساخته می‌شود و به دستِ هیچ‌کس نمی‌رسد، و عیب‌یابی می‌گفت
+   *  همه‌چیز خوب است. حالا `warn` می‌دهد.
+   *
+   *  ⚠️ **و همان اصلاح این سنجه را سرخ کرد** و درست هم کرد: این آزمون
+   *  SMTP ندارد، پس حالِ **درستش** `warn` است و ادعای «سبز است» کهنه
+   *  شده بود. ⛔ ولی پاک کردنش غلط بود — با آن، هیچ آزمونی راهِ **سبز**
+   *  را نمی‌سنجید. پس هر دو حال این‌جا می‌آید.
+   */
+  const warnRow = await row();
+  check('سرورِ حساب یک ردیف در عیب‌یابی دارد', Boolean(warnRow), JSON.stringify(diagKeys(await api('GET', '/api/diagnostics', undefined, auth))));
+  check('بی SMTP، هشدار می‌دهد — نه سبزِ دروغ',
+    warnRow?.state === 'warn' && /9\.9\.9/.test(warnRow?.value || '') && /ایمیل/.test(warnRow?.value || ''),
+    JSON.stringify(warnRow));
+  check('و راهِ درست کردنش را می‌گوید', /کدهای شش‌رقمی/.test(warnRow?.hint || ''), warnRow?.hint);
+
+  //  ⛔ حالا SMTPِ خودِ پنل نوشته می‌شود — همان چیزی که سرورِ حساب هم از
+  //  آن می‌گیرد (`mailEnvForChild`). از این پس ردیف باید **واقعاً** سبز شود.
+  const setMail = await api('PUT', '/api/codes-admin/settings', {
+    email: { host: 'smtp.example.com', port: 587, secure: false, username: 'u', password: 'p', from: 'codes@example.com', fromName: 'کدها' },
+  }, auth);
+  check('SMTPِ پنل نوشته شد', setMail.status === 200, JSON.stringify(setMail.json));
+
+  const goodRow = await row();
+  check('با SMTP، سبز می‌شود و نسخهٔ واقعیِ سرور را می‌گوید',
+    goodRow?.state === 'good' && /9\.9\.9/.test(goodRow?.value || ''), JSON.stringify(goodRow));
+  check('و پیامِ سبز از «ایمیل تنظیم نیست» حرفی نمی‌زند',
+    !/ایمیل تنظیم نیست/.test(goodRow?.value || ''), goodRow?.value);
 
   console.log('\n── سرورِ حساب خاموش شد ──');
   await new Promise((r) => fake.close(r));
