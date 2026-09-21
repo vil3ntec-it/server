@@ -346,7 +346,18 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
                 value={app}
                 onChange={setApp}
                 placeholder={t('codesAllApps')}
-                options={apps.map((a) => ({ value: a.slug, label: a.name }))}
+                /*
+                 *  ⛔ **دو نامِ سرورِ حساب هم این‌جا هستند، نه فقط برنامه‌های
+                 *  خودِ پنل.** بیشترِ کدهای این فهرست (ورودِ دکان و پمپ) مالِ
+                 *  آن دفترند و سرور `?app=pump|shop` را می‌پذیرد — ولی تا
+                 *  دیروز هیچ راهی نبود که از صفحه انتخابشان کنی، پس فیلتر
+                 *  دقیقاً برای آن‌هایی که بیشتر لازم بودند کار نمی‌کرد.
+                 */
+                options={[
+                  { value: 'pump', label: t('codesAppPump') },
+                  { value: 'shop', label: t('codesAppShop') },
+                  ...apps.map((a) => ({ value: a.slug, label: a.name })),
+                ]}
               />
             </div>
             <ActionButton onClick={load}>
