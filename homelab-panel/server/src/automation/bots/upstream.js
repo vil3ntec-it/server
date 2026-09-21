@@ -35,7 +35,31 @@ export async function runUpstream(ctx, now = Date.now()) {
   /* ── ۱) رباتِ ایمیلِ سرورِ حساب اصلاً تنظیم است؟ ─────────────────────── */
   try {
     const mail = await cloudRaw('GET', '/api/admin/email');
-    const provider = String(mail?.provider || mail?.settings?.provider || '').toLowerCase();
+    /*
+     *  ⛔ **شکلِ واقعی `{ email: { provider } }` است، نه `{ provider }`.**
+     *
+     *  `admin-platform.js` در سرورِ حساب `res.json({ email: await
+     *  mailer.masked() })` می‌دهد. این خط آن لایه را نمی‌دید، پس
+     *  `provider` همیشه رشتهٔ خالی می‌شد و ربات **همیشه** می‌گفت «رباتِ
+     *  ایمیل تنظیم نیست» — حتی وقتی SMTP کاملاً درست بود. یعنی هر پنج
+     *  دقیقه یک هشدارِ **دروغِ** «بحرانی‌ترین یافتهٔ سامانه»، برای همیشه.
+     *  و زیانش «یک خطِ اضافه» نیست: هشداری که همیشه هست، دیگر هشدار
+     *  نیست — صاحبِ سامانه یاد می‌گیرد ردش کند، و روزی که واقعاً SMTP
+     *  خراب شود همان خط را هم نمی‌بیند.
+     *
+     *  ⚠️ و `code-rescue` از این خبر تصمیم نمی‌گیرد؛ آن از `logOnly`ِ
+     *  خودِ همان کد می‌فهمد. پس این باگ کارِ نجات را نمی‌خواباند —
+     *  فقط دفترِ هشدارها را بی‌معنا می‌کند.
+     *
+     *  ⚠️ و ساختگیِ `test/bots.mjs` شکلِ صاف می‌داد، پس هیچ بندی این را
+     *  نمی‌دید — همان درسِ دفترِ ورود، در همان روز و از همان جنس.
+     *
+     *  ⛔ هر سه شکل خوانده می‌شود تا سرورِ حسابِ کهنه یا صافِ فردا هم
+     *  بی‌صدا نخوابد.
+     */
+    const provider = String(
+      mail?.email?.provider || mail?.provider || mail?.settings?.provider || ''
+    ).toLowerCase();
     out.mail = { provider, ready: provider !== '' && provider !== 'log' };
     if (!out.mail.ready) {
       /*

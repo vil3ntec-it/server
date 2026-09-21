@@ -494,7 +494,20 @@ const fake = http.createServer((req, res) => {
      *  نیست» بود که برای ردیفِ مرده هم سبز می‌شد. همان «ساختگی باید همان
      *  کاری را بکند که واقعی می‌کند».
      */
-    if (p === '/api/admin/logins' && req.method === 'GET') return j(200, { requests: [{ request_id: 'req1', app: 'shop', masked_email: 'k***@x.com', state: 'sent', created_at: NOW - 120e3, expires_at: NOW + 120e3, active: true, code_attempts: 1 }], worker: { alive: true } });
+    /*
+     *  ⛔ **شکلِ پاسخ عمداً همان دو لایهٔ سرورِ حسابِ واقعی است.**
+     *
+     *  تا دیروز این ساختگی یک `requests` صافِ آرایه‌ای می‌داد و واقعی
+     *  `{ requests: { requests, locks } }` — چون `login-codes.listRequests`
+     *  یک **شیء** برمی‌گرداند و `otp.listRequests` یک **آرایه**، و
+     *  `routes/admin-logins.js` هر دو را یک‌جور می‌پیچد.
+     *
+     *  نتیجه: `Array.isArray(out.requests)` روی سرورِ واقعی «نه» می‌گفت،
+     *  فهرستِ کدهای **ورود** همیشه خالی برمی‌گشت، و این بند با ساختگیِ
+     *  صاف سبزِ دروغ می‌داد. سنجه‌ای که جدولش را خودش پر کند سبز نیست،
+     *  خراب است.
+     */
+    if (p === '/api/admin/logins' && req.method === 'GET') return j(200, { requests: { requests: [{ request_id: 'req1', app: 'shop', masked_email: 'k***@x.com', state: 'sent', created_at: NOW - 120e3, expires_at: NOW + 120e3, active: true, code_attempts: 1 }], locks: [] }, worker: { alive: true } });
     if (p === '/api/admin/email' && req.method === 'GET') return j(200, { email: { provider: 'log', from: 'a@b.c', host: '' } });
     if (p === '/api/admin/logins/stats') return j(200, { sent: 12, failed: 1, queued: 0, p50: 120, p95: 400, worker: { alive: true }, alerts: [] });
     if ((m = /^\/api\/admin\/logins\/([^/]+)\/resend$/.exec(p)) && req.method === 'POST') return j(200, { ok: true, result: 'sent', status: 'sent' });
@@ -994,7 +1007,11 @@ try {
 
   console.log('\n── ورود با کدِ ایمیلی ──');
   const lg = await api('GET', '/api/account-admin/logins?app=shop', undefined, auth);
-  check('درخواست‌های ورود با ایمیلِ ماسک‌شده', lg.status === 200 && lg.json?.requests?.[0]?.masked_email === 'k***@x.com');
+  //  ⚠️ این مسیر پاسخِ بالادست را **دست‌نخورده** به اپِ مدیریت می‌دهد،
+  //  پس همان دو لایهٔ واقعی را دارد — نه شکلِ صافِ ساختگیِ قدیم.
+  check('درخواست‌های ورود با ایمیلِ ماسک‌شده',
+    lg.status === 200 && lg.json?.requests?.requests?.[0]?.masked_email === 'k***@x.com',
+    JSON.stringify(lg.json).slice(0, 200));
   check('⛔ کدِ خام در فهرست نیست', !JSON.stringify(lg.json).includes('999111'), JSON.stringify(lg.json).slice(0, 160));
   const lgStats = await api('GET', '/api/account-admin/logins/stats', undefined, auth);
   check('آمارِ بیست‌وچهار ساعت', lgStats.status === 200 && lgStats.json?.sent === 12);

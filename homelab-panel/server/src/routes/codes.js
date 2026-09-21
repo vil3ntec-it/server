@@ -245,7 +245,35 @@ export async function accountCodes(app, limit) {
   const out = await cloudRaw('GET', '/api/admin/logins', {
     query: { app: app || '', limit },
   });
-  const rows = Array.isArray(out?.requests) ? out.requests : [];
+  /*
+   *  ⛔ **و این‌جا کدِ ورود برای ماه‌ها بی‌صدا گم می‌شد.**
+   *
+   *  گزارشِ صاحب سامانه، بارها: «کد نمیاد توی بخشِ کدها، هیچ کدی نمیاد.»
+   *  کدهای **ثبت‌نام** می‌آمدند و کدِ **ورود** — همانی که برنامهٔ پمپ و
+   *  دکان برای وارد شدن می‌خواهد — هیچ‌وقت. و ریشه‌اش یک کلمه بود:
+   *
+   *      shop: otp.listRequests()         ⇒ یک **آرایه**
+   *      shop: login-codes.listRequests() ⇒ یک **شیء** { requests, locks }
+   *
+   *  و `routes/admin-logins.js` هر دو را یک‌جور در `{ requests: … }`
+   *  می‌پیچد. پس پاسخِ دفترِ ورود دو لایه است:
+   *
+   *      { requests: { requests: [...], locks: [...] }, worker }
+   *
+   *  یعنی `out.requests` یک شیء بود، `Array.isArray` نه می‌گفت، و فهرست
+   *  **همیشه خالی** برمی‌گشت — بی هیچ خطایی، هیچ‌جا. همان «۴۲۹ی که کسی
+   *  نمی‌دید»، این بار از سمتِ شکلِ پاسخ.
+   *
+   *  ⛔ **و هر دو شکل پذیرفته می‌شود، نه یکی**: سرورِ حسابِ کهنه‌تر شکلِ
+   *  صاف می‌دهد و اگر فردا بالادست دو لایه را صاف کند، این‌جا نباید
+   *  دوباره خالی شود. یک خط تحمل، به‌جای یک باگِ خاموش.
+   *
+   *  ⚠️ **و `account-admin.js` عمداً دست نخورد**: آن مسیر پاسخ را
+   *  دست‌نخورده به اپِ مدیریت می‌دهد و شکلش قراردادِ همان اپ است
+   *  (`data/Api.kt`). این‌جا فقط فهرستِ یکپارچهٔ خودِ پنل ساخته می‌شود.
+   */
+  const book = Array.isArray(out?.requests) ? out.requests : out?.requests?.requests;
+  const rows = Array.isArray(book) ? book : [];
   return rows.map((r) => ({
     id: r.request_id,
     //  ⚠️ نشانِ سرچشمه — صفحه باید بگوید این ردیف مالِ کدام دفتر است

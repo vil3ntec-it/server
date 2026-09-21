@@ -393,6 +393,53 @@ try {
     if (mailbox.length > mailsBefore) codeLogin = await codeFromMail();
     else await new Promise((r) => setTimeout(r, 250));
   }
+  /*
+   *  ⛔ **«کد اول این‌جا بیاد و بعد بره به ایمیل» — با کدِ واقعی سنجیده شد**
+   *
+   *  خواستهٔ صریحِ صاحب سامانه: «کدهایی که ساخته می‌شه اول اون‌جا بیان و
+   *  بعد بره به ایمیل طرف که هم من ببینم هم اون… و با مشخصات بگه این
+   *  برای این برنامه و این ایمیل است.»
+   *
+   *  ⚠️ تا امروز این فقط با سرورِ حسابِ **ساختگی** سنجیده می‌شد
+   *  (`account-admin.mjs` · `codes-mirror.mjs`) — و ساختگی همان کدی را
+   *  می‌داد که خودمان گذاشته بودیم. این‌جا کد را **خودِ سرورِ حسابِ
+   *  واقعی** ساخته و از **ایمیلِ واقعی** بیرون آمده، پس اگر رقم‌ها یکی
+   *  باشند یعنی زنجیره واقعاً کامل است.
+   *
+   *  ⛔ و عمداً **پیش از** `verify` است: آینه فقط کدِ **زنده** را
+   *  می‌آورد. بعد از مصرف شدنش این بند برای همیشه سبزِ دروغ می‌داد.
+   */
+  {
+    const desk = await fetch(`http://127.0.0.1:${PANEL}/api/codes-admin/live?limit=60`, {
+      headers: { Authorization: `Bearer ${panelToken}` },
+    });
+    const deskJson = await desk.json().catch(() => ({}));
+    const items = Array.isArray(deskJson?.items) ? deskJson.items : [];
+    const forMe = items.filter((r) => String(r.email || '').toLowerCase() === email.toLowerCase());
+    /*
+     *  ⚠️ ردیفِ **ورود** خواسته می‌شود، نه هر ردیفی با این ایمیل: کدِ
+     *  ثبت‌نامِ همین حساب (دفترِ `account-otp`) از قبل در فهرست هست و
+     *  مصرف شده. گرفتنِ «اولین ردیف» یعنی سنجه‌ای که با ردیفِ **مرده** هم
+     *  می‌تواند سبز شود.
+     */
+    const mine = forMe.find((r) => r.source === 'account' && r.status === 'live');
+
+    check('کدِ ورود در «کدهای زندهٔ» پنل دیده می‌شود',
+      desk.status === 200 && Boolean(mine),
+      `${desk.status} — ${items.length} ردیف؛ برای این ایمیل: ${JSON.stringify(forMe.map((r) => [r.source, r.status]))}`);
+    //  ⛔ ملاک خودِ رقم‌هاست، نه «ردیفی آمد»
+    check('⛔ و رقم‌هایش همان کدی است که به ایمیل رفت',
+      String(mine?.code || '') === String(codeLogin),
+      `صفحه: «${mine?.code}» · ایمیل: «${codeLogin}»`);
+    //  ⚠️ «با مشخصات بگه این برای این برنامه و این ایمیل است»
+    check('⚠️ و می‌گوید مالِ کدام برنامه و کدام دفتر است',
+      String(mine?.app || '') === 'pump' && String(mine?.source || '').startsWith('account'),
+      `app=${mine?.app} source=${mine?.source}`);
+    check('⚠️ و هنوز زنده است با ثانیهٔ باقی‌مانده',
+      mine?.status === 'live' && Number(mine?.expiresIn) > 0,
+      `${mine?.status} / ${mine?.expiresIn}`);
+  }
+
   const vr = await call('POST', '/api/auth/pump/verify',
     { body: { request_id: reqId, code: codeLogin, device_id: uid, device_name: 'E2E' } });
   check('POST /api/auth/pump/verify ⇒ نشست (درِ سوم کامل کار می‌کند)',

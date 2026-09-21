@@ -98,7 +98,13 @@ const fake = http.createServer((req, res) => {
       if (!d) return j(404, { error: { code: 'not_found', message: 'نیست' } });
       return j(200, { station: { id: m[1], ...d } });
     }
-    if (p === '/api/admin/email') return j(200, { provider: state.mailProvider });
+    /*
+     *  ⛔ **همان لایه‌ای که سرورِ حسابِ واقعی می‌دهد**: `admin-platform.js`
+     *  پاسخ را در `{ email: … }` می‌پیچد. ساختگیِ صاف، بندِ «رباتِ ایمیل
+     *  تنظیم است» را سبزِ دروغ می‌کرد در حالی که ربات روی سرورِ واقعی
+     *  همیشه می‌گفت تنظیم نیست.
+     */
+    if (p === '/api/admin/email') return j(200, { email: { provider: state.mailProvider } });
     if (p === '/api/admin/logins') return j(200, { requests: state.logins });
     if (p === '/api/admin/otp') return j(200, { requests: state.otp });
     if ((m = /^\/api\/admin\/(logins|otp)\/([^/]+)\/resend$/.exec(p)) && req.method === 'POST') {
@@ -297,6 +303,36 @@ try {
   }
   const otpTries = state.resends.filter((x) => x === 'logins/req-1').length;
   check('۵.۵ ⛔ حداکثر دو تلاش، نه حلقهٔ بی‌پایان', otpTries <= 2, String(otpTries));
+
+  /* ══ و حالِ **سالم** هم سنجیده می‌شود، نه فقط حالِ خراب ══════════════
+   *
+   *  ⛔ این بند از یک باگِ واقعی درآمد (۱۴۰۵/۰۷/۱۱): ربات شکلِ پاسخِ
+   *  رباتِ ایمیل را غلط می‌خواند (`{provider}` به‌جای `{email:{provider}}`)،
+   *  پس **همیشه** می‌گفت «تنظیم نیست» — حتی با SMTPِ کاملاً درست. و
+   *  هیچ بندی نمی‌گرفتش، چون همهٔ بندهای بالا فقط حالِ `log` را
+   *  می‌سنجیدند: سنجه‌ای که فقط یک طرفِ شرط را ببیند، نصفِ کد را بی‌سنجه
+   *  می‌گذارد.
+   *
+   *  ⚠️ همان درسِ `account-link.mjs`: «هر دو حال سنجیده می‌شود» — بی
+   *  SMTP هشدار، با SMTP سکوت.
+   */
+  console.log('\n── ۵.۳ب رباتِ ایمیلِ **تنظیم‌شده** ──');
+  state.mailProvider = 'smtp';
+  const warnBefore = (await events('bot.mail_not_configured')).length;
+  const okRun = await runJob('login-watch');
+  check('۵.۳ب رباتِ ورود با SMTPِ تنظیم‌شده هم می‌دود', okRun.run?.status === 'ok',
+    JSON.stringify(okRun.run));
+  check('۵.۳ب ⛔ و دیگر «رباتِ ایمیل تنظیم نیست» نمی‌گوید',
+    (await events('bot.mail_not_configured')).length === warnBefore,
+    `${warnBefore} ⇒ ${(await events('bot.mail_not_configured')).length}`);
+
+  //  ⛔ و کارِ درست‌کننده‌اش هم آزاد می‌شود: کدی که با ربات‌ِ خاموش
+  //  «تلاش نکن» گرفته بود، حالا واقعاً دوباره می‌رود.
+  await api('POST', '/api/automation/jobs/code-rescue/run',
+    { payload: { id: 'otp-1', source: 'account-otp', app: 'pump', email: 'a@x.com' } });
+  await wait(900);
+  check('۵.۳ب ⛔ و حالا کدِ قبلاً رهاشده واقعاً دوباره فرستاده شد',
+    state.resends.some((x) => x === 'otp/otp-1'), state.resends.join(','));
   check('۵.۵ و تلاشِ سوم در دفتر «رد شد» ثبت می‌شود',
     (await runsOf()).some((r) => String(r.output || '').includes('max_tries')),
     JSON.stringify((await runsOf()).slice(0, 3).map((r) => String(r.output || '').slice(0, 80))));
