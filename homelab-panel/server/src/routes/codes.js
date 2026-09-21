@@ -280,6 +280,66 @@ async function accountCodes(app, limit) {
   }));
 }
 
+/*
+ *  و دفترِ **دومِ** سرورِ حساب — `otp_codes`.
+ *
+ *  ⛔ همان درس، بارِ سوم: سرورِ حساب خودش **دو** دفترِ کد دارد.
+ *  `login_requests` مالِ «ورود با کدِ ایمیلی» است و بالا خوانده می‌شود؛
+ *  ولی کدِ **ثبت‌نام** (`register`) و کدِ **رمزِ فراموش‌شده** (`reset`) —
+ *  یعنی همان کدی که کاربرِ تازه می‌گیرد — در `otp_codes` می‌نشیند.
+ *
+ *  گزارشِ صاحب سامانه با عکس: کد به ایمیلش رسید و این صفحه هر چهار
+ *  شمارنده‌اش صفر بود و می‌گفت «هنوز کسی کد نخواسته». دقیقاً همین.
+ *
+ *  ⚠️ سرورِ حسابِ کهنه این مسیر را ندارد و ۴۰۴ می‌دهد؛ آن یعنی «این
+ *  دفتر را ندارد»، نه «خراب است» — پس فهرستِ خالی برمی‌گردد و صفحه
+ *  نمی‌شکند. هر خطای دیگری گفته می‌شود.
+ */
+async function accountOtpCodes(app, limit) {
+  let out;
+  try {
+    out = await cloudRaw('GET', '/api/admin/otp', { query: { app: app || '', limit } });
+  } catch (err) {
+    if (Number(err?.status) === 404) return [];
+    throw err;
+  }
+  const rows = Array.isArray(out?.requests) ? out.requests : [];
+  return rows.map((r) => ({
+    id: r.id,
+    source: 'account-otp',
+    //  نصبِ کهنه `app` ندارد؛ «—» بهتر از نامِ حدسی است
+    app: r.app || '',
+    appName: r.app === 'pump' ? 'پمپ‌بنزین' : r.app === 'shop' ? 'فروشگاه' : 'سرورِ حساب',
+    email: r.destination,
+    emailMasked: r.masked_destination,
+    subjectId: '',
+    //  ⚠️ همین بود که صاحب سامانه می‌خواست بداند: این کد برای چه کاری است
+    purpose: r.purpose === 'register' ? 'ثبت‌نام'
+      : r.purpose === 'reset' ? 'رمزِ فراموش‌شده'
+      : r.purpose === 'login' ? 'ورود' : r.purpose,
+    //  فهرست هیچ‌وقت کد نمی‌دهد؛ «نمایشِ کد» مسیرِ جداست
+    code: null,
+    canReveal: Boolean(r.can_reveal),
+    createdAt: r.created_at,
+    expiresAt: r.expires_at,
+    expiresIn: r.active ? Math.max(0, Math.round((r.expires_at - Date.now()) / 1000)) : 0,
+    usedAt: r.consumed_at,
+    cancelledAt: null,
+    tries: r.attempts,
+    status: r.consumed_at ? 'used' : r.active ? 'live' : 'expired',
+    //  ردیفی که ساخته شده یعنی ارسالش هم انجام شده — این دفتر صف ندارد و
+    //  کدی که نرفته باشد همان لحظه پاک می‌شود (`otp.js`)
+    sendState: r.sent_at ? 'sent' : 'queued',
+    //  ⛔ «رفت» با «در لاگ چاپ شد» یکی نیست
+    logOnly: Boolean(r.log_only),
+    sendError: '',
+    sendResponse: r.via || null,
+    sentAt: r.sent_at,
+    autoResend: false,
+    locked: false,
+  }));
+}
+
 adminRouter.get('/live', async (req, res) => {
   const now = Date.now();
   const rows = recentRequests({
@@ -326,10 +386,20 @@ adminRouter.get('/live', async (req, res) => {
   //  بخشِ سرورِ حساب فقط دو نام دارد؛ فیلترِ برنامهٔ خودِ پنل به آن نمی‌خورد
   const accountApp = wanted === 'shop' || wanted === 'pump' ? wanted : null;
   if (!wanted || accountApp) {
-    try {
-      account = await accountCodes(accountApp, Math.min(200, Number(req.query.limit) || 60));
-    } catch (err) {
-      accountError = err?.message || 'به سرورِ حساب نرسیدیم';
+    const cap = Math.min(200, Number(req.query.limit) || 60);
+    /*
+     *  ⚠️ **هر دو دفترِ سرورِ حساب، و افتادنِ یکی دیگری را نمی‌برد.**
+     *  `allSettled` عمدی است: اگر دفترِ ورود جواب بدهد و دفترِ ثبت‌نام نه
+     *  (سرورِ کهنه، یا برعکس)، آن‌چه هست باید دیده شود — وگرنه یک مسیرِ
+     *  نداشته کلِ فهرست را دوباره خالی می‌کرد، یعنی همان باگِ اول.
+     */
+    const got = await Promise.allSettled([
+      accountCodes(accountApp, cap),
+      accountOtpCodes(accountApp, cap),
+    ]);
+    for (const r of got) {
+      if (r.status === 'fulfilled') account = account.concat(r.value);
+      else if (!accountError) accountError = r.reason?.message || 'به سرورِ حساب نرسیدیم';
     }
   }
 
