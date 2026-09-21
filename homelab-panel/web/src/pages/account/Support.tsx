@@ -59,7 +59,7 @@ export default function Support() {
         }
       />
 
-      {list.error && <CloudProblem code={list.code} message={list.error} />}
+      {list.error && <CloudProblem code={list.code} message={list.error} onRetry={list.reload} />}
 
       <InlineNotice tone="info">
         پشتیبانی همیشه باز است و به اشتراک ربطی ندارد. پیوست (عکس و ویدیو و صدا) از این صندوق نمی‌گذرد؛

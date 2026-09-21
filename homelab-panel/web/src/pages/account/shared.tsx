@@ -104,6 +104,24 @@ export type Load<T> = { data: T | null; error: string | null; code: string; busy
  * ⛔ و نبضِ کور نیست: تا سرورِ حساب نگوید چیزی عوض شده، هیچ درخواستی
  * زده نمی‌شود.
  */
+/**
+ * خطاهایی که با صبر کردن خودشان درست می‌شوند — و فقط همین‌ها دوباره
+ * تلاش می‌شوند.
+ *
+ * ⛔ `not_linked` و `auto_login_rejected` عمداً این‌جا نیستند: آن دو کارِ
+ *    آدم می‌خواهند (نام و رمزِ مدیر) و تکرارشان فقط سقفِ نرخ را پر می‌کند.
+ */
+const RETRY_CODES = new Set([
+  'rate_limited',
+  'account_server_down',
+  'account_server_unreachable',
+  'cloud_session_expired',
+  'auto_login_failed',
+]);
+
+/** فاصلهٔ تلاش‌ها — فزاینده، با سقفِ یک دقیقه. */
+const RETRY_WAITS = [5_000, 10_000, 20_000, 40_000, 60_000];
+
 export function useLoad<T>(path: string | null, deps: unknown[] = [], live?: LiveTopic | LiveTopic[]): Load<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -116,23 +134,57 @@ export function useLoad<T>(path: string | null, deps: unknown[] = [], live?: Liv
     return () => { alive.current = false; };
   }, []);
 
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tries = useRef(0);
+
   const reload = useCallback(async () => {
     if (!path) { setBusy(false); return; }
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
     setBusy(true);
     try {
       const res = await api<T>(path);
       if (!alive.current) return;
+      tries.current = 0;
       setData(res);
       setError(null);
       setCode('');
     } catch (e) {
       if (!alive.current) return;
+      const c = e instanceof ApiError ? e.code : '';
       setError(e instanceof Error ? e.message : 'خواندن از سرورِ حساب نشد');
-      setCode(e instanceof ApiError ? e.code : '');
+      setCode(c);
+      /*
+       *  ⛔ **خطای گذرا باید خودش برگردد** — وگرنه صفحه تا تازه کردنِ
+       *  دستی روی همان نوار می‌ماند.
+       *
+       *  گزارشِ صاحب سامانه با عکس (۱۴۰۵/۰۷/۱۰): روی «کدهای زنده» و میزِ
+       *  فروشگاه نوشته بود «سقفِ نرخِ سرورِ حساب پر شده؛ **خودش چند
+       *  دقیقهٔ دیگر باز می‌شود**» — و هیچ‌وقت باز نمی‌شد. آن جمله یک
+       *  قولِ نانوشته بود که کسی به آن عمل نمی‌کرد: گذرگاهِ زنده هم
+       *  بیدارش نمی‌کند، چون روی سرورِ حساب هیچ چیزی عوض نشده که خبر
+       *  بدهد.
+       *
+       *  ⛔ **و این نبضِ کور نیست**: فقط وقتی می‌دود که خواندن **شکست
+       *  خورده** باشد، با فاصلهٔ فزاینده، و با نخستین موفقیت برای همیشه
+       *  می‌ایستد. صفحهٔ سالم همچنان صفر درخواست می‌زند.
+       *
+       *  ⛔ و فقط خطاهای **گذرا**: «رمزِ مدیر غلط است» یا «هنوز وارد
+       *  نشده‌اید» با تلاشِ دوباره درست نمی‌شوند و تکرارشان فقط سقفِ نرخ
+       *  را پر می‌کند — همان زخمی که این اصلاح دارد می‌بندد.
+       */
+      if (RETRY_CODES.has(c)) {
+        const wait = RETRY_WAITS[Math.min(tries.current, RETRY_WAITS.length - 1)];
+        tries.current += 1;
+        //  نبضِ آگاهانه: تلاشِ دوبارهٔ یک‌باره پس از خطای گذرا — نه دوره‌ای
+        timer.current = setTimeout(() => { timer.current = null; void reload(); }, wait);
+      }
     } finally {
       if (alive.current) setBusy(false);
     }
   }, [path]);
+
+  //  نوبتِ در صف با رفتنِ صفحه پاک می‌شود، وگرنه روی صفحهٔ بسته می‌دود
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { void reload(); }, [path, ...deps]);
@@ -152,7 +204,20 @@ export function useLoad<T>(path: string | null, deps: unknown[] = [], live?: Liv
  * ⛔ «docker compose» در هیچ پیامی نمی‌آید؛ کامپیوترِ خانگی ویندوز است و
  *    سرورِ حساب را خودِ پنل بالا می‌آورد.
  */
-export function CloudProblem({ code, message }: { code: string; message: string }) {
+export function CloudProblem({ code, message, onRetry }: { code: string; message: string; onRetry?: () => void }) {
+  /*
+   *  ⚠️ خطای گذرا خودش دوباره تلاش می‌شود (`useLoad`) — و صفحه باید
+   *  **بگوید** که منتظر است، وگرنه کاربر روی یک نوارِ ثابت می‌ماند و
+   *  گمان می‌کند همه‌چیز خوابیده. و یک راهِ «همین حالا» هم کنارش هست،
+   *  چون منتظر ماندن وقتی خودت می‌دانی سرور برگشته آزاردهنده است.
+   */
+  const waiting = RETRY_CODES.has(code);
+  const again = onRetry ? (
+    <button type="button" onClick={onRetry} className="mr-2 underline underline-offset-2 hover:opacity-80">
+      همین حالا دوباره
+    </button>
+  ) : null;
+
   if (code === 'not_linked') {
     return (
       <Notice tone="warn">
@@ -164,13 +229,16 @@ export function CloudProblem({ code, message }: { code: string; message: string 
   if (code === 'auto_login_rejected') {
     return <Notice tone="bad">ورودِ خودکار به سرورِ حساب رد شد — نام و رمزِ مدیرِ سرورِ حساب درست نیست.</Notice>;
   }
-  if (code === 'account_server_down' || code === 'account_server_unreachable') {
-    return <Notice tone="bad">{message}</Notice>;
-  }
   if (code === 'cloud_session_expired') {
-    return <Notice tone="warn">نشستِ مدیر روی سرورِ حساب تمام شده — دوباره وارد شوید.</Notice>;
+    return <Notice tone="warn">نشستِ مدیر روی سرورِ حساب تمام شده — خودمان دوباره وارد می‌شویم.{again}</Notice>;
   }
-  return <Notice tone="bad">{message}</Notice>;
+  return (
+    <Notice tone="bad">
+      {message}
+      {waiting && <span className="text-ink-muted"> — خودمان دوباره تلاش می‌کنیم.</span>}
+      {again}
+    </Notice>
+  );
 }
 
 /** قابِ استانداردِ هر صفحه: عنوان، توضیح، و نوارِ ابزار. */

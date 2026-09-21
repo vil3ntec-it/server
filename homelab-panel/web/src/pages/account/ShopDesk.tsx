@@ -61,7 +61,7 @@ const when = (ms?: number | null) => (ms ? new Date(Number(ms)).toLocaleDateStri
 function Dash() {
   const { t } = useApp();
   const load = useLoad<Overview>('/api/account-admin/shop-desk/overview?days=7', [], ['customers', 'sales', 'support']);
-  if (load.error) return <CloudProblem code={load.code} message={load.error} />;
+  if (load.error) return <CloudProblem code={load.code} message={load.error} onRetry={load.reload} />;
   if (!load.data) return <Loading label={t('navShops')} />;
   const d = load.data;
   const mins = Math.round(d.onlineWithinMs / 60000);
@@ -144,7 +144,7 @@ function SubGroups() {
   const { t } = useApp();
   const [q, setQ] = useState('');
   const load = useLoad<Groups>(`/api/account-admin/shop-desk/groups?q=${encodeURIComponent(q)}`, [q], 'customers');
-  if (load.error) return <CloudProblem code={load.code} message={load.error} />;
+  if (load.error) return <CloudProblem code={load.code} message={load.error} onRetry={load.reload} />;
   if (!load.data) return <Loading label={t('shopDeskGroups')} />;
   const g = load.data.groups;
 
@@ -194,7 +194,7 @@ function StaffCodeCard({ shopId, onClose }: { shopId: string; onClose: () => voi
     } finally { setBusy(false); }
   };
 
-  if (load.error) return <CloudProblem code={load.code} message={load.error} />;
+  if (load.error) return <CloudProblem code={load.code} message={load.error} onRetry={load.reload} />;
   if (!load.data) return <Loading label={t('shopDeskCodes')} />;
   const d = load.data;
 
@@ -250,7 +250,7 @@ function Codes() {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState('');
   const load = useLoad<Groups>(`/api/account-admin/shop-desk/groups?q=${encodeURIComponent(q)}`, [q], 'customers');
-  if (load.error) return <CloudProblem code={load.code} message={load.error} />;
+  if (load.error) return <CloudProblem code={load.code} message={load.error} onRetry={load.reload} />;
   if (!load.data) return <Loading label={t('shopDeskCodes')} />;
   const g = load.data.groups;
   //  همهٔ حساب‌ها، نه فقط اشتراک‌دارها — خواستهٔ صریح بود

@@ -42,7 +42,7 @@ export default function SyncStatus() {
         sub="آخرین همگام‌سازی، صف، تعارض‌ها و خطاهای برنامه‌ها — بی هیچ نگاهی به دادهٔ مشتری"
       />
 
-      {devices.error && <CloudProblem code={devices.code} message={devices.error} />}
+      {devices.error && <CloudProblem code={devices.code} message={devices.error} onRetry={devices.reload} />}
 
       <Notice tone="info">
         این صفحه فقط <b>وضعیت</b> را نشان می‌دهد. محتوای دادهٔ مشتری هیچ‌جا در پنل باز نمی‌شود.

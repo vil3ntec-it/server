@@ -44,7 +44,7 @@ export default function Plans() {
         actions={<AppPicker value={app} onChange={(v) => setApp(v as AppId)} />}
       />
 
-      {plans.error && <CloudProblem code={plans.code} message={plans.error} />}
+      {plans.error && <CloudProblem code={plans.code} message={plans.error} onRetry={plans.reload} />}
 
       <Notice tone="info">
         قیمتِ روزِ خرید روی خودِ اشتراک می‌نشیند؛ عوض کردنِ قیمتِ یک پلن روی اشتراک‌های فروخته‌شده اثری ندارد
@@ -159,7 +159,7 @@ function FreeTrial({ app }: { app: AppId }) {
 
   return (
     <Card title="دورهٔ آزمایشیِ حسابِ تازه" icon={<Gift className="h-4 w-4" />}>
-      {cfg.error && <CloudProblem code={cfg.code} message={cfg.error} />}
+      {cfg.error && <CloudProblem code={cfg.code} message={cfg.error} onRetry={cfg.reload} />}
 
       <Notice tone="info">
         حسابِ تازه‌ای که در این بخش ساخته می‌شود، این تعداد روز <b>همهٔ</b> قابلیت‌های پولی را دارد —

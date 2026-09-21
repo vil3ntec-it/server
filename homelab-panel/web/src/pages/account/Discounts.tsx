@@ -41,7 +41,7 @@ export default function Discounts() {
         }
       />
 
-      {codes.error && <CloudProblem code={codes.code} message={codes.error} />}
+      {codes.error && <CloudProblem code={codes.code} message={codes.error} onRetry={codes.reload} />}
 
       <Card title="کدهای تخفیف" icon={<Ticket className="h-4 w-4" />}>
         {codes.busy && !codes.data ? (

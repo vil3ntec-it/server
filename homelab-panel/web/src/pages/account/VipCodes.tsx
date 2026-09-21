@@ -79,7 +79,7 @@ export default function VipCodes() {
         }
       />
 
-      {codes.error && <CloudProblem code={codes.code} message={codes.error} />}
+      {codes.error && <CloudProblem code={codes.code} message={codes.error} onRetry={codes.reload} />}
 
       <Card title={`کدهای ${APP_LABEL[app]}`} icon={<Ticket className="h-4 w-4" />}>
         {codes.busy && !codes.data ? (

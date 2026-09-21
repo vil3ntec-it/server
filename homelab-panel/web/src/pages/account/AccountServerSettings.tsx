@@ -67,7 +67,7 @@ export function ManagedApps() {
         }
       />
 
-      {apps.error && <CloudProblem code={apps.code} message={apps.error} />}
+      {apps.error && <CloudProblem code={apps.code} message={apps.error} onRetry={apps.reload} />}
 
       {freshKey && (
         <Notice tone="warn">
@@ -156,7 +156,7 @@ export function AccountEmail() {
     <div className="flex flex-col gap-4">
       <PageHead title="ایمیلِ سرورِ حساب" sub="کدِ ورود و اعلان‌های مشتری‌های دکان و پمپ از این‌جا می‌رود" />
 
-      {load.error && <CloudProblem code={load.code} message={load.error} />}
+      {load.error && <CloudProblem code={load.code} message={load.error} onRetry={load.reload} />}
 
       {load.data?.email && !load.data.email.ready && (
         <Notice tone="bad">
@@ -265,7 +265,7 @@ export function AccountSmsPush() {
     <div className="flex flex-col gap-4">
       <PageHead title="پیامک و پوش" sub="راه‌های دیگرِ رساندنِ کد و خبر به مشتری" />
 
-      {sms.error && <CloudProblem code={sms.code} message={sms.error} />}
+      {sms.error && <CloudProblem code={sms.code} message={sms.error} onRetry={sms.reload} />}
 
       <Card title="پیامک" icon={<MessageSquare className="h-4 w-4" />}>
         {sms.busy && !sms.data ? <Skeleton rows={2} /> : (
@@ -314,7 +314,7 @@ export function AccountAudit() {
         sub="کارهایی که روی سرورِ حساب انجام شده — از جمله آن‌ها که از پنلِ خودش انجام شده‌اند"
       />
 
-      {log.error && <CloudProblem code={log.code} message={log.error} />}
+      {log.error && <CloudProblem code={log.code} message={log.error} onRetry={log.reload} />}
 
       <Notice tone="info">
         این با «لاگ‌ها ← دفتر رخدادها» یکی نیست: آن یکی کارهای <b>خودِ این پنل</b> را می‌گوید.

@@ -91,6 +91,39 @@ async function dial(url, init) {
 let auto = null; // { token, expiresAt }
 
 /*
+ *  ⛔ **یک ورود در یک زمان** — و این تنها چیزی است که ازدحامِ سرد را
+ *  مهار می‌کند.
+ *
+ *  گزارشِ صاحب سامانه با عکس (۱۴۰۵/۰۷/۱۰): هم «کدهای زنده» و هم میزِ
+ *  فروشگاه نوارِ «ورودِ خودکار به سرورِ حساب نشد: تعداد درخواست بیش از
+ *  حد مجاز است» داشتند و **هیچ ردیفی** نمی‌آمد.
+ *
+ *  مهلتِ ۱.۴۷.۴ (`autoFail`) درست بود ولی نیمی از مسئله را می‌دید: آن
+ *  تلاش‌های **پشتِ سرِ هم** را مهار می‌کند و تلاش‌های **هم‌زمان** را نه.
+ *  با کَشِ خالی یا توکنِ مرده، هر درخواستی که همان لحظه در راه است خودش
+ *  یک `POST /api/admin/login` می‌زند:
+ *
+ *      صفحهٔ کدها      ⇒ دو دفترِ بالادست با allSettled   ۲
+ *      حالِ رباتِ ایمیل ⇒ /api/admin/email                 ۱
+ *      میزِ فروشگاه    ⇒ overview + groups                ۲
+ *      دیدبانِ زنده    ⇒ /api/admin/stamps هر ده ثانیه    ۱
+ *      سه ربات        ⇒ pump-watch · shop-watch · login   ۳
+ *
+ *  یعنی یک بار باز کردنِ پنل با توکنِ مرده می‌تواند **نُه** ورود بزند —
+ *  و سقفِ `authMax`ِ سرورِ حساب ده در ربع ساعت است. بعدش ۴۲۹، بعدش مهلتِ
+ *  دو دقیقه‌ای، و بعد از مهلت **باز همان ازدحام** ⇒ پنجرهٔ ربع‌ساعته
+ *  هیچ‌وقت خالی نمی‌شود. همان بن‌بستِ ۱.۴۷.۴، این بار از سمتِ هم‌زمانی.
+ *
+ *  ⛔ پس هر کسی که وسطِ یک ورود برسد، به **همان** ورود می‌پیوندد و ورودِ
+ *  دومی نمی‌زند. یک ورود ⇒ یک خانه از سقف، نه نُه‌تا.
+ *
+ *  ⚠️ و `force` هم می‌پیوندد: هر ورودی که همین حالا تمام شود توکنِ
+ *  **تازه‌ای** از سرور می‌آورد، پس جدا زدنش فقط یک خانهٔ دیگر از سقف را
+ *  می‌خورد و هیچ چیزی تازه‌تر نمی‌دهد.
+ */
+let autoInFlight = null; // Promise<string> | null
+
+/*
  *  ⛔ ورودِ ناموفق مهلت می‌گیرد — وگرنه پنل خودش را بیرون می‌گذارد.
  *
  *  گزارشِ صاحب سامانه با عکس (۱۴۰۵/۰۷/۰۸): صفحهٔ «کدهای زنده» نوارِ
@@ -127,11 +160,23 @@ function coolFor(status, code, retryAfterSec) {
   return 15_000;
 }
 
-async function autoToken(force = false) {
+/**
+ * توکنِ مدیرِ سرورِ حساب — از حافظه، وگرنه یک ورود.
+ *
+ * @param {boolean} force  توکنی که داشتیم رد شد (۴۰۱)
+ * @param {string|null} stale  **همان** توکنی که رد شد — و این مهم است:
+ *   شش درخواستِ هم‌زمان با یک توکنِ مرده، شش تا ۴۰۱ می‌گیرند. اگر یکی‌شان
+ *   زودتر وارد شود و توکنِ تازه بنشاند، بقیه هم `force` می‌زنند و چون
+ *   `force` سنجشِ تازگی را دور می‌زند، **ورودِ دومی** می‌سازند — حتی
+ *   برای توکنی که چند میلی‌ثانیه پیش ساخته شده. با این پارامتر،
+ *   «مرده» یعنی «همانی که من زدم هنوز روی حافظه است»، نه «۴۰۱ گرفتم».
+ */
+async function autoToken(force = false, stale = null) {
   const creds = autoCreds();
   if (!creds) return null;
   const fresh = auto?.token && (!auto.expiresAt || auto.expiresAt - Date.now() > 60_000);
-  if (!force && fresh) return auto.token;
+  //  کسِ دیگری همین حالا توکن را عوض کرده ⇒ همان تازه را بگیر، دوباره وارد نشو
+  if (fresh && (!force || (stale && auto.token !== stale))) return auto.token;
 
   //  ⛔ داخلِ مهلت، **هیچ درخواستی** زده نمی‌شود. این تنها چیزی است که
   //  سقفِ نرخ را خالی می‌کند؛ بی آن، هر تلاش خودش دلیلِ تلاشِ بعدی است.
@@ -144,6 +189,14 @@ async function autoToken(force = false) {
     throw err;
   }
 
+  //  ⛔ ورودی در راه است ⇒ همان را بگیر، ورودِ دومی نزن.
+  if (autoInFlight) return autoInFlight;
+  autoInFlight = doLogin(creds).finally(() => { autoInFlight = null; });
+  return autoInFlight;
+}
+
+/** خودِ ورود — تنها جایی که ورودِ **خودکار** زده می‌شود، و یکی‌یکی. */
+async function doLogin(creds) {
   const res = await dial(`${cloudTarget()}/api/admin/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -184,7 +237,7 @@ async function autoToken(force = false) {
 }
 
 /** برای آزمون: توکنِ خودکار را دور بریز. */
-export function cloudResetAuto() { auto = null; autoFail = null; }
+export function cloudResetAuto() { auto = null; autoFail = null; autoInFlight = null; }
 
 /** نامِ رازی که توکنِ مدیرِ ابر زیرش می‌نشیند. */
 const SECRET_NAME = 'pump_cloud_admin_token';
@@ -393,7 +446,7 @@ async function authedSend(method, path, { query = {}, body = null, creds, token:
   let res = await send(t);
   if (res.status === 401 && creds) {
     //  توکنِ خودکار مرده — یک بار، و فقط یک بار، دوباره وارد شو
-    t = await autoToken(true);
+    t = await autoToken(true, t);
     res = await send(t);
   }
 
@@ -453,7 +506,7 @@ export async function cloudRawText(method, path, { query = {} } = {}) {
 
   let res = await send(t);
   if (res.status === 401 && creds) {
-    t = await autoToken(true);
+    t = await autoToken(true, t);
     res = await send(t);
   }
   const text = await res.text().catch(() => '');

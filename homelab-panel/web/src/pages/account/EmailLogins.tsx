@@ -48,7 +48,7 @@ export default function EmailLogins() {
 
   return (
     <div className="flex flex-col gap-4">
-      {list.error && <CloudProblem code={list.code} message={list.error} />}
+      {list.error && <CloudProblem code={list.code} message={list.error} onRetry={list.reload} />}
 
       <Notice tone="info">
         این میز مالِ ورودِ مشتری‌ها به برنامه‌هاست (کدِ شش‌رقمیِ ایمیلی روی سرورِ حساب)، نه ورود به خودِ پنل.
