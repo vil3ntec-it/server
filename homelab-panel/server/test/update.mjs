@@ -50,6 +50,62 @@ check(
   `سرور ${serverVersion} در برابرِ برنامه ${desktopVersion}`,
 );
 
+/*
+ *  ── کانالِ به‌روزرسانی فقط از main پر می‌شود ─────────────────────────────
+ *
+ *  ⛔ «windows-preview» فقط برچسبِ نمایش نیست — همان چیزی است که
+ *  panelReleaseTag() پیش‌فرض می‌دهد، یعنی کانالی که مرکز فرمانِ نصب‌شده از
+ *  آن به‌روزرسانی می‌گیرد. تا ۱.۵۰.۳ ساختِ **هر شاخهٔ کاری** همان برچسب را
+ *  جابه‌جا می‌کرد، پس کدِ مرج‌نشده به‌عنوان «به‌روزرسانی» روی کامپیوترِ صاحب
+ *  سامانه می‌نشست — بی‌صدا، و بی این‌که هیچ سنجه‌ای ببیندش.
+ *
+ *  ⚠️ ساختِ شاخه‌ها برداشته نشد (دلیلش بالای خودِ ورک‌فلو نوشته است): فقط
+ *  مقصدش «windows-branch» شد، که pickPanelRelease هیچ‌وقت برنمی‌داردش.
+ */
+console.log('\n── کانالِ به‌روزرسانی فقط از main ──');
+{
+  const wf = fs.readFileSync(path.join(repoRoot, '.github', 'workflows', 'windows-app.yml'), 'utf8');
+
+  check(
+    'برچسبِ انتشار از یک جا تصمیم گرفته می‌شود (CHANNEL_TAG)',
+    wf.includes('CHANNEL_TAG') && /tag_name:\s*\$\{\{\s*env\.CHANNEL_TAG\s*\}\}/.test(wf),
+  );
+  check(
+    '⛔ هیچ‌جای ورک‌فلو «windows-preview» را مستقیم منتشر نمی‌کند',
+    !/tag_name:.*windows-preview/.test(wf),
+  );
+  check(
+    'شاخهٔ غیرِ main به برچسبِ جدا می‌رود',
+    wf.includes("'windows-branch'"),
+  );
+  check(
+    "و «windows-preview» فقط زیرِ شرطِ main نوشته شده",
+    /\$name -eq 'main'[\s\S]{0,120}windows-preview/.test(wf),
+  );
+
+  //  ⛔ برچسبی که هنوز نیست باید ساخته شود — و «try/catch» این را نمی‌گرفت.
+  //     در PowerShell خروجیِ ناصفرِ یک برنامهٔ بیرونی (gh) استثنا نمی‌سازد،
+  //     پس `catch` نمی‌دوید: PATCHِ برچسبِ نبوده ۴۲۲ می‌گرفت، «جابه‌جا شد»
+  //     چاپ می‌شد و گام با کدِ ۱ می‌افتاد (CI، اجرای ۲۰۹). تا دیروز پنهان
+  //     بود چون `windows-preview` همیشه از قبل وجود داشت.
+  {
+    const step = wf.split('جابه‌جا کردن برچسب پیش‌نمایش')[1]?.split('- name:')[0] ?? '';
+    check(
+      'گامِ برچسب با $LASTEXITCODE تصمیم می‌گیرد، نه با استثنا',
+      step.includes('$LASTEXITCODE') && !/\bcatch\b/.test(step),
+    );
+    check(
+      'و نشدنِ ساختِ برچسب بی‌صدا رد نمی‌شود',
+      /throw/.test(step),
+    );
+  }
+
+  //  ⚠️ سنجشِ رفتاریِ همین («ساختِ شاخه انتخاب نمی‌شود») پایین‌تر است، در
+  //     بخشِ «انتشارِ درست انتخاب می‌شود» — چون ماژولِ به‌روزرسانی ریشهٔ نصب
+  //     را سرِ **بار شدن** می‌خواند، و بار کردنش این بالا (پیش از
+  //     HLP_INSTALL_ROOT) همان سنجهٔ «ریشهٔ نصب» را سرخ می‌کرد. خودش گرفتش.
+}
+
 const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'cc-update-'));
 const installRoot = path.join(tmp, 'install');
 const dataDir = path.join(tmp, 'data');
@@ -185,6 +241,16 @@ try {
     target_commitish: 'c'.repeat(40),
     assets: [{ name: 'ControlCenter-Setup-1.4.0.exe' }],
   };
+  //  ⛔ ساختِ شاخهٔ کاری («windows-branch») هیچ‌وقت به‌عنوان به‌روزرسانیِ پنل
+  //     برداشته نمی‌شود — وگرنه کدِ مرج‌نشده روی کامپیوترِ صاحب سامانه می‌نشیند.
+  check(
+    '⛔ ساختِ شاخه هیچ‌وقت به‌عنوان به‌روزرسانی انتخاب نمی‌شود',
+    updater.pickPanelRelease(
+      [{ tag_name: 'windows-branch', draft: false, prerelease: true, assets: [{ name: 'ControlCenter-Setup-9.9.9.exe' }] }],
+      'windows-preview',
+    ) === null,
+  );
+
   check('تازه‌ترین از میانِ دو تاریخ برداشته می‌شود',
     updater.pickPanelRelease([rolling], 'windows-preview')?.tag_name === 'windows-preview');
   check('شمارهٔ نسخه از فایلِ نصبی خوانده شد',
