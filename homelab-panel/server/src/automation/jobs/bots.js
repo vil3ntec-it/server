@@ -29,6 +29,7 @@ import { config } from '../../config.js';
 import { runWatch } from '../bots/watch.js';
 import { runUpstream } from '../bots/upstream.js';
 import { rescueBatch } from '../bots/rescue.js';
+import { check as checkBundle, apply as applyBundle } from '../../account/updater.js';
 
 /** بی سرورِ حساب، ربات‌ها کاری ندارند — و این «خطا» نیست. */
 const noAccountServer = () => !config.accountApi?.enabled;
@@ -90,4 +91,46 @@ export const codeRescue = defineJob({
   },
 });
 
-export default [pumpWatch, shopWatch, loginWatch, codeRescue];
+
+// ══ رباتِ پنجم: سرورِ حساب خودش تازه می‌شود ═══════════════════════════════
+//
+//  ⛔ **چرا لازم شد** (۱۴۰۵/۰۷/۱۱): کدِ سرورِ حساب فقط با فایلِ نصبِ مرکز
+//  فرمان می‌آمد، پس در لحظهٔ ساختِ نصاب یخ می‌زد. سرورِ صاحب سامانه روی
+//  ۲.۷.۰ مانده بود — و روی ۲.۷.۰ **فروشِ اشتراک کار نمی‌کند**.
+//
+//  ⚠️ **روزی یک بار، نه پانزده‌دقیقه‌ای**: `shop` در دقیقه نسخهٔ تازه
+//  نمی‌دهد و این کار ۳۴ مگابایت دانلود دارد. سنجیدنش رایگان است (یک
+//  درخواست به گیت‌هاب)، ولی گرفتنش نه.
+export const accountServerUpdate = defineJob({
+  name: 'account-server-update',
+  title: 'به‌روزرسانیِ سرورِ حساب',
+  description: 'روزی یک بار — بستهٔ آمادهٔ سرورِ حساب را می‌گیرد و می‌نشاند (دیتابیس و رازها دست‌نخورده)',
+  every: 24 * 60 * 60_000,
+  timeout: 15 * 60_000,
+  //  ⚠️ یک تلاش: دورِ بعد فرداست و تلاشِ دوباره فقط ۳۴ مگابایت دیگر است.
+  attempts: 1,
+  quiet: true,
+  async run(ctx) {
+    if (noAccountServer()) return { skipped: true, reason: 'سرورِ حساب روی این پنل تنظیم نشده' };
+
+    //  اول فقط می‌پرسیم — تا چیزی تازه نباشد، یک بایت هم دانلود نمی‌شود.
+    const seen = await checkBundle();
+    if (!seen.ok) return { skipped: true, reason: seen.why };
+    if (!seen.available) return { skipped: true, reason: `تازه‌ترین است (${seen.current || '؟'})` };
+
+    const out = await applyBundle({ actor: 'ربات' });
+    if (!out.ok) throw new Error(out.why || 'به‌روزرسانی نشد');
+
+    //  ⛔ بی‌صدا نه: عوض شدنِ سرورِ حساب چیزی است که صاحبِ سامانه باید
+    //  بداند — همان قاعدهٔ «متنِ خبر عدد دارد».
+    if (out.changed) {
+      await ctx.notify('info', `سرورِ حساب از ${out.from || '؟'} به ${out.to} به‌روز شد`);
+    }
+    return out;
+  },
+  async onFail(ctx, err) {
+    await ctx.notify('warn', `سرورِ حساب به‌روز نشد: ${err.message}`);
+  },
+});
+
+export default [pumpWatch, shopWatch, loginWatch, codeRescue, accountServerUpdate];

@@ -1,0 +1,108 @@
+# ---------------------------------------------------------------------------
+#  بستهٔ آمادهٔ سرورِ حساب — تا پنل بتواند خودش تازه‌اش کند
+#
+#  گزارشِ صاحب سامانه (۱۴۰۵/۰۷/۱۱): برنامهٔ پمپ می‌گفت «سرورِ حساب جواب داد
+#  (نسخهٔ 2.7.0)» در حالی که `shop` روی ۲.۹.۰ بود — و روی ۲.۷.۰ فروشِ اشتراک
+#  کار نمی‌کند.
+#
+#  ⛔ ریشه: کدِ سرورِ حساب فقط از راهِ `windows-app.yml` می‌آمد، یعنی در
+#  لحظهٔ ساختِ **نصابِ ۹۰ مگابایتیِ** مرکز فرمان یخ می‌زد. این ورک‌فلو همان
+#  کد را جدا و سبک منتشر می‌کند (~۳۴ مگابایت، با `node_modules`) تا پنل
+#  بتواند بی نصبِ دوباره تازه‌اش کند.
+#
+#  ⚠️ **عمداً زمان‌بندیِ خودش را دارد**: اگر به ساختِ ویندوز می‌چسبید، باز
+#  هم به‌روزرسانیِ سرورِ حساب گروگانِ انتشارِ نصاب می‌ماند — یعنی همان
+#  باگ، از درِ دیگر.
+# ---------------------------------------------------------------------------
+name: بستهٔ سرورِ حساب
+
+on:
+  workflow_dispatch:
+  schedule:
+    #  هر روز ۰۳:۱۷ UTC — دقیقهٔ غیرِ گرد، تا با انبوهِ کارهای سرِ ساعت جمع نشود
+    - cron: '17 3 * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/account-server.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: account-server-bundle
+  cancel-in-progress: true
+
+env:
+  TAG: account-server
+  ASSET: account-server.tar.gz
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: گرفتنِ کدِ سرورِ حساب
+        run: |
+          git clone --depth 1 https://github.com/vil3ntec-it/shop.git /tmp/shop
+          test -f /tmp/shop/server/src/index.js
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: نصبِ وابستگی‌ها — بی dev
+        working-directory: /tmp/shop/server
+        run: npm install --omit=dev --no-audit --no-fund
+
+      - name: نسخه و ساختنِ بسته
+        id: pack
+        run: |
+          set -euo pipefail
+          VER=$(node -p "require('/tmp/shop/server/package.json').version")
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+          #  پوشه‌های کاریِ سرورِ حساب هیچ‌وقت در بسته نمی‌روند: دیتابیس و
+          #  رازهای هر نصب مالِ همان کامپیوتر است.
+          rm -rf /tmp/shop/server/test /tmp/shop/server/data /tmp/shop/server/.env
+
+          #  ⚠️ یک پوشهٔ سرآمد لازم است، چون پنل با `--strip-components=1`
+          #  بازش می‌کند.
+          mkdir -p /tmp/pack
+          cp -r /tmp/shop/server /tmp/pack/account-server
+          tar -czf "$ASSET" -C /tmp/pack account-server
+          ls -lh "$ASSET"
+
+          #  ⛔ بستهٔ بی `node_modules` بی‌فایده است — پنل نمی‌تواند
+          #  `npm install` بزند (روی ویندوزِ مشتری اصلاً npm نیست).
+          tar -tzf "$ASSET" | grep -q '^account-server/node_modules/' \
+            || { echo '::error::node_modules در بسته نیست'; exit 1; }
+          tar -tzf "$ASSET" | grep -q '^account-server/src/index.js$' \
+            || { echo '::error::src/index.js در بسته نیست'; exit 1; }
+
+      - name: انتشار
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VER: ${{ steps.pack.outputs.version }}
+        run: |
+          set -euo pipefail
+          BODY=$(cat <<EOF
+          ## سرورِ حساب — نسخهٔ $VER
+
+          بستهٔ **آمادهٔ اجرا** (سورس + \`node_modules\`) برای مرکز فرمان.
+
+          لازم نیست دستی بگیریدش: پنل ← «سرورِ حساب» ← «بررسیِ به‌روزرسانی».
+          پنل خودش می‌گیرد، می‌سنجد و جایگزین می‌کند — دیتابیس و رازها
+          دست‌نخورده می‌مانند.
+
+          ---
+          <sub>از \`vil3ntec-it/shop\` — ساختِ $(date -u '+%Y-%m-%d %H:%M UTC')</sub>
+          EOF
+          )
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "سرورِ حساب — $VER" --notes "$BODY" --prerelease
+          else
+            gh release create "$TAG" --title "سرورِ حساب — $VER" --notes "$BODY" --prerelease
+          fi
+          gh release upload "$TAG" "$ASSET" --clobber
+          echo "منتشر شد: $VER"

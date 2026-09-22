@@ -535,6 +535,50 @@ try {
       return { status: res.status, json, text };
     };
 
+    // ── ۸الف) حسابی که ثبت شده ولی هنوز چیزی نخریده کجا دیده می‌شود؟ ────
+    //
+    //  گزارشِ صاحب سامانه (۱۴۰۵/۰۷/۱۱): «توی سرور حساب‌های ثبت‌شده رو هم
+    //  بالا نمیاره — نمی‌دونم به خاطر اینه که به سرور وصل نیست یا چی.»
+    //
+    //  ⚠️ این‌جا همان پمپی سنجیده می‌شود که **همین الان** ثبت شد و هنوز
+    //  هیچ اشتراکی ندارد — یعنی دقیقاً همان کسی که قرار است به او اشتراک
+    //  فروخته شود.
+    {
+      const subs = await panel('GET', '/api/account-admin/customers?app=pump&limit=300');
+      //  ⚠️ کلیدِ پاسخ `subscriptions` است — همان که `Customers.tsx`
+      //  می‌خواند. بارِ اول `items`/`rows` نوشته شد و سنجه **سبزِ دروغ**
+      //  می‌داد: فهرست همیشه خالی دیده می‌شد، حتی وقتی پر بود.
+      const rows = subs.json?.subscriptions || [];
+      const inSubs = rows.some((r) => JSON.stringify(r).includes(email));
+
+      const targets = await panel('GET',
+        `/api/account-admin/grant-targets?app=pump&q=${encodeURIComponent('')}`);
+      const picks = targets.json?.items || [];
+      const inTargets = picks.length > 0;
+
+      check('«مشتری‌ها» پاسخ می‌دهد (پنل به سرورِ حساب وصل است)',
+        subs.status === 200, `${subs.status} ${subs.text.slice(0, 200)}`);
+
+      //  ⛔ ریشهٔ گزارش: فهرستِ «مشتری‌ها» از `sales/subscriptions` می‌آمد،
+      //  یعنی فقط حساب‌هایی که **ردیفِ اشتراک** دارند. پمپِ تازه‌ای که
+      //  هنوز نخریده — دقیقاً همان کسی که قرار است به او اشتراک فروخته
+      //  شود — آن‌جا نبود. حالا دفترِ خودِ حساب‌ها هم ادغام می‌شود و
+      //  ردیفش نشانِ صریحِ `neverSubscribed` دارد.
+      const never = rows.filter((r) => r.neverSubscribed);
+      console.log(`     ⓘ پمپِ بی‌اشتراک در «مشتری‌ها»: ${inSubs ? 'هست' : 'نیست'}`
+        + ` · در «اشتراک بده»: ${inTargets ? 'هست' : 'نیست'} (${picks.length} ردیف)`);
+      console.log(`     ⓘ «مشتری‌ها» ${rows.length} ردیف داد، ${never.length} تایش بی‌اشتراک`
+        + ` · نمونه: ${JSON.stringify(never[0] || picks[0] || null).slice(0, 220)}`);
+
+      check('⛔ حسابِ بی‌اشتراک در «مشتری‌ها» دیده می‌شود',
+        inSubs, `مشتری‌ها=${rows.length} ردیف، ${never.length} بی‌اشتراک`);
+      check('⛔ و نشانِ صریحِ «هیچ‌وقت اشتراک نداشته» دارد، نه فیلدهای خالی',
+        never.some((r) => JSON.stringify(r).includes(email)),
+        `${never.length} ردیفِ بی‌اشتراک`);
+      check('⛔ و در «اشتراک بده» هم هست — وگرنه نمی‌شود به او اشتراک فروخت',
+        inTargets, `اشتراک‌بده=${picks.length} ردیف`);
+    }
+
     //  حالِ امروز: پمپِ تازه در دورهٔ آزمایشی است، پس مجوز دارد ولی پلنش «آزمایشی»
     const before = await call('POST', '/api/pump/device/license', { token: devTok, body: {} });
     const featsBefore = before.json?.features || [];

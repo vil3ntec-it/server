@@ -6,11 +6,12 @@
 //  روشن/خاموش کند یا لاگش را ببیند.
 // ---------------------------------------------------------------------------
 import { Router } from 'express';
-import { requireAuth } from '../auth.js';
+import { requireAuth, requireRole } from '../auth.js';
 import {
   accountStatus, accountLogs, startAccountServer, stopAccountServer, restartAccountServer,
 } from '../account/supervisor.js';
 import { probeAccountServer } from '../api/account-proxy.js';
+import { check as checkBundle, apply as applyBundle } from '../account/updater.js';
 import { cloudStatus } from '../stations/cloud.js';
 
 const router = Router();
@@ -42,6 +43,29 @@ router.post('/stop', (req, res) => {
 
 router.post('/restart', async (req, res) => {
   res.json(await restartAccountServer());
+});
+
+// ══ به‌روزرسانیِ خودِ سرورِ حساب ═══════════════════════════════════════════
+//
+//  ⛔ **چرا لازم شد** (۱۴۰۵/۰۷/۱۱): کدِ سرورِ حساب فقط با فایلِ نصبِ مرکز
+//  فرمان می‌آمد، پس در لحظهٔ ساختِ نصاب یخ می‌زد. سرورِ صاحب سامانه روی
+//  ۲.۷.۰ مانده بود در حالی که **فروشِ اشتراک ۲.۹.۰ می‌خواهد**. شرحِ کامل
+//  در `account/updater.js`.
+
+/** هست و تازه‌تر است؟ — خواندنی، پس برای هر واردشده باز است. */
+router.get('/update', async (req, res) => {
+  res.json(await checkBundle());
+});
+
+/**
+ * بگیر و بنشان.
+ *
+ * ⛔ فقط `admin`: این سرویسِ حساب و اشتراکِ همهٔ برنامه‌ها را یک لحظه
+ * می‌خواباند و دوباره بالا می‌آورد — همان قاعدهٔ `/api/platform/*`.
+ */
+router.post('/update', requireRole('admin'), async (req, res) => {
+  const out = await applyBundle({ actor: req.user?.username || 'admin' });
+  res.status(out.ok ? 200 : 400).json(out);
 });
 
 export default router;

@@ -456,16 +456,109 @@ const subsPath = (app, tail = '') => `/api/admin${SECTION[sectionOf(app)]}/subsc
  * ۱۳) و مدیر باید هر دو را کنارِ هم ببیند. خودِ فیلتر کارِ سرورِ حساب
  * است تا دو جا دو قاعده نشود.
  */
+/**
+ * ══ حسابی که هنوز چیزی نخریده هم یک مشتری است ════════════════════════════
+ *
+ * گزارشِ صاحب سامانه (۱۴۰۵/۰۷/۱۱): «توی سرور حساب‌های ثبت‌شده رو هم بالا
+ * نمیاره — نمی‌دونم به خاطر اینه که به سرور وصل نیست یا چی.»
+ *
+ * ⛔ **وصل بودن مشکل نبود** (سنجیده شد: بندِ ۸الف در `test/pump-e2e.mjs`
+ * روی سرورِ واقعی — «مشتری‌ها» ۲۰۰ می‌داد). ریشه این بود که این فهرست از
+ * `sales/subscriptions` می‌آید، یعنی **فقط حساب‌هایی که ردیفِ اشتراک
+ * دارند**. پمپ یا دکانی که تازه ثبت‌نام کرده و هنوز چیزی نخریده — یعنی
+ * **دقیقاً همان کسی که قرار است به او اشتراک فروخته شود** — در هیچ
+ * صفحه‌ای دیده نمی‌شد.
+ *
+ * ⛔ **این‌جا هیچ حالی حساب نمی‌شود.** دو فهرستِ خودِ سرورِ حساب کنارِ هم
+ * می‌نشینند و بس: اشتراک‌ها، و دفترِ حساب‌ها. «بی‌اشتراک» هم چیزی نیست
+ * که پنل نتیجه بگیرد — خودِ سرور `sub_status` را `none` می‌دهد.
+ * (قاعدهٔ «پنل هیچ عددی حساب نمی‌کند» سرِ جایش است.)
+ *
+ * ⚠️ و روی سرورِ حسابِ **کهنه** هم کار می‌کند: هر دو مسیر از ۲.۷.۰ هستند.
+ * ⚠️ نرسیدن به دفترِ حساب‌ها این فهرست را نمی‌شکند — اشتراک‌ها سرِ جایشان
+ * می‌مانند، همان قاعدهٔ `Promise.allSettled`ِ دو دفترِ کد.
+ */
 router.get('/customers', guard(async (req, res) => {
-  res.json(await cloudRaw('GET', '/api/admin/sales/subscriptions', {
+  const scope = scopeOf(req.query.app);
+  //  ⚠️ `scopeOf` برای «همه» رشتهٔ **خالی** می‌دهد، نه `'both'` — چون
+  //  همان خالی است که به سرورِ حساب می‌رود. پس «هر چیزی جز pump و shop»
+  //  یعنی هر دو؛ بارِ اول `[scope]` نوشتم و با نشانیِ بی‌پارامتر دفترِ
+  //  پمپ‌ها اصلاً خوانده نمی‌شد.
+  const apps = scope === 'pump' || scope === 'shop' ? [scope] : ['pump', 'shop'];
+  const limit = Math.min(2000, Math.max(1, Number(req.query.limit) || 300));
+
+  const out = await cloudRaw('GET', '/api/admin/sales/subscriptions', {
     query: {
-      app: scopeOf(req.query.app) === 'both' ? '' : scopeOf(req.query.app),
+      app: scope === 'both' ? '' : scope,
       status: String(req.query.status || '').slice(0, 20),
       city: String(req.query.city || '').slice(0, 60),
       kind: String(req.query.kind || '').slice(0, 20),
-      limit: Math.min(2000, Math.max(1, Number(req.query.limit) || 300)),
+      limit,
     },
+  });
+
+  const subscriptions = Array.isArray(out.subscriptions) ? out.subscriptions : [];
+
+  //  ⚠️ فیلترِ حال دستِ سرور است؛ وقتی مدیر حالِ خاصی خواسته، «بی‌اشتراک»
+  //  جوابِ پرسشش نیست و قاطی کردنش فهرست را دروغ می‌کند.
+  if (String(req.query.status || '').trim()) return res.json({ ...out, subscriptions });
+
+  const known = new Set(subscriptions.map((r) => `${r.app}:${r.tenantId}`));
+  const extras = [];
+  const rosterFailed = [];
+
+  //  ⚠️ سقفِ دفترِ حساب‌ها روی سرورِ حساب **۲۰۰** است و بیشتر از آن ۴۰۰
+  //  می‌گیرد، نه این‌که بریده شود. فهرستِ اشتراک‌ها سقفِ خودش را دارد
+  //  (۲۰۰۰)، پس همان عدد را به این یکی دادن یعنی یک ۴۰۰ِ خاموش — و
+  //  یک بار همین شد: فهرست بی‌صدا خالی می‌ماند و کسی نمی‌فهمید چرا.
+  const rosterLimit = Math.min(200, limit);
+
+  await Promise.all(apps.map(async (app) => {
+    try {
+      const roster = app === 'pump'
+        ? await cloudRaw('GET', '/api/admin/pump/stations', { query: { q: '', limit: rosterLimit } })
+        : await cloudRaw('GET', '/api/admin/shops', { query: { q: '', limit: rosterLimit } });
+      for (const a of (roster.stations || roster.shops || [])) {
+        if (known.has(`${app}:${a.id}`)) continue;
+        extras.push({
+          //  شناسهٔ ردیف: اشتراکی نیست، پس خودِ حساب است — و پیشوند
+          //  می‌گیرد تا هیچ‌وقت با شناسهٔ یک اشتراکِ واقعی یکی نشود.
+          id: `acct:${app}:${a.id}`,
+          app,
+          tenantId: a.id,
+          tenantName: a.name || '',
+          ownerUserId: a.owner_user_id || '',
+          ownerName: a.owner_name || '',
+          ownerEmail: a.owner_email || '',
+          ownerPhone: a.owner_phone || '',
+          city: a.city || '',
+          plan: '', planTitle: '',
+          status: a.sub_status || 'none',
+          active: false,
+          startsAt: 0, endsAt: 0, daysLeft: 0,
+          permanent: false,
+          price: null, currency: '', paid: 0,
+          features: [],
+          note: '',
+          createdAt: Number(a.created_at) || 0,
+          //  ⚠️ نشانِ صریح، تا صفحه لازم نباشد از خالی بودنِ فیلدها نتیجه بگیرد
+          neverSubscribed: true,
+        });
+      }
+    } catch (e) {
+      //  ⛔ نرسیدن به دفترِ حساب‌ها این فهرست را نمی‌شکند — اشتراک‌ها سرِ
+      //  جایشان می‌مانند. ⚠️ ولی **بی‌صدا هم نمی‌ماند**: سکوتِ این `catch`
+      //  یک بار یک ۴۰۰ِ ساده را نیم‌ساعت پنهان کرد.
+      rosterFailed.push({ app, reason: String(e?.code || 'cloud_error'), message: String(e?.message || '') });
+    }
   }));
+
+  res.json({
+    ...out,
+    subscriptions: [...subscriptions, ...extras],
+    neverSubscribed: extras.length,
+    rosterFailed,
+  });
 }));
 
 /**

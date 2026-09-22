@@ -734,11 +734,46 @@ try {
   }
 
   console.log('\n── مشتری‌ها: یک فهرست برای هر دو بخش ──');
+  const beforeCust = seen.length;
   const cust = await api('GET', '/api/account-admin/customers', undefined, auth);
+  const custRows = cust.json?.subscriptions || [];
+  const custPaths = seen.slice(beforeCust).map((r) => r.path);
+  //  ⚠️ `last()` این‌جا دیگر `sales/subscriptions` نیست — دفترِ حساب‌ها
+  //  بعدش خوانده می‌شود. ملاک «زده شد» است، نه «آخرین بود».
   check('فهرستِ مشتری‌ها از ‎/api/admin/sales/subscriptions‎ می‌آید',
-    cust.status === 200 && cust.json?.subscriptions?.length === 2 && last()?.path === '/api/admin/sales/subscriptions',
-    `${cust.status} ${JSON.stringify(last()?.path)}`);
-  const shopRow = (cust.json?.subscriptions || []).find((r) => r.app === 'shop');
+    cust.status === 200 && custPaths.includes('/api/admin/sales/subscriptions')
+      && custRows.filter((r) => !r.neverSubscribed).length === 2,
+    `${cust.status} ${JSON.stringify(custPaths)}`);
+
+  /*
+   *  ⛔ گزارشِ صاحب سامانه (۱۴۰۵/۰۷/۱۱): «توی سرور حساب‌های ثبت‌شده رو هم
+   *  بالا نمیاره.» ریشه‌اش این بود که فهرست فقط از `sales/subscriptions`
+   *  می‌آمد، یعنی **فقط حساب‌هایی که ردیفِ اشتراک دارند** — و حسابِ تازه‌ای
+   *  که هنوز چیزی نخریده، دقیقاً همان کسی است که می‌خواهیم به او بفروشیم.
+   */
+  check('⛔ دفترِ خودِ حساب‌ها هم خوانده می‌شود، نه فقط اشتراک‌ها',
+    custPaths.includes('/api/admin/pump/stations') && custPaths.includes('/api/admin/shops'),
+    JSON.stringify(custPaths));
+  const never = custRows.filter((r) => r.neverSubscribed);
+  check('⛔ پمپِ بی‌اشتراک در فهرست هست و نشانِ صریح دارد',
+    never.some((r) => r.app === 'pump' && r.tenantId === 'st2' && r.ownerEmail === 'haroon@x.com'),
+    JSON.stringify(never).slice(0, 200));
+  check('⛔ و شناسه‌اش هیچ‌وقت با شناسهٔ یک اشتراکِ واقعی یکی نمی‌شود',
+    never.every((r) => String(r.id).startsWith('acct:')), JSON.stringify(never.map((r) => r.id)));
+  check('⛔ حسابی که اشتراک دارد دوباره به‌عنوان «بی‌اشتراک» نمی‌آید',
+    !never.some((r) => r.tenantId === 'st1'), JSON.stringify(never.map((r) => r.tenantId)));
+  check('⚠️ و سقفِ دفترِ حساب‌ها از ۲۰۰ بالاتر نمی‌رود (وگرنه ۴۰۰ِ خاموش)',
+    seen.slice(beforeCust).filter((r) => r.path === '/api/admin/shops')
+      .every((r) => Number(r.query?.limit) <= 200),
+    JSON.stringify(seen.slice(beforeCust).filter((r) => r.path === '/api/admin/shops').map((r) => r.query)));
+
+  //  ⛔ فیلترِ حال دستِ سرور است؛ «بی‌اشتراک» جوابِ «فعال‌ها را بده» نیست.
+  const onlyActive = await api('GET', '/api/account-admin/customers?status=active', undefined, auth);
+  check('⛔ با فیلترِ حال، حسابِ بی‌اشتراک قاطی نمی‌شود',
+    onlyActive.status === 200 && !(onlyActive.json?.subscriptions || []).some((r) => r.neverSubscribed),
+    JSON.stringify(onlyActive.json).slice(0, 160));
+
+  const shopRow = custRows.find((r) => r.app === 'shop' && !r.neverSubscribed);
   for (const f of ['tenantName', 'ownerEmail', 'city', 'planTitle', 'status', 'daysLeft', 'permanent', 'price', 'paid']) {
     check(`فیلدِ «${f}» در ردیفِ مشتری هست`, shopRow?.[f] !== undefined, JSON.stringify(shopRow));
   }

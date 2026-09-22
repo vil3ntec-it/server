@@ -66,7 +66,9 @@ export default function Customers() {
   //  **موجود** را داشت (تمدید، تعلیق، لغو…). دادنِ اشتراکِ **اول** هیچ دری
   //  نداشت، چون این فهرست از `sales/subscriptions` می‌آید و حسابِ تازه‌ای
   //  که چیزی نخریده در آن نیست. شرحش در `GrantSub.tsx`.
-  const [grant, setGrant] = useState(false);
+  //  ⚠️ حالِ «دادنِ اشتراک» خودش می‌گوید برای **کدام** حساب باز شده، تا
+  //  ردیفِ یک حسابِ بی‌اشتراک بتواند همان‌جا ایمیلش را جلو ببرد.
+  const [grant, setGrant] = useState<{ app: AppId; q: string } | null>(null);
 
   const query = useMemo(() => {
     const p = new URLSearchParams();
@@ -89,8 +91,12 @@ export default function Customers() {
   }, [list.data, q]);
 
   const counts = useMemo(() => {
-    const out = { active: 0, expiring: 0, expired: 0, permanent: 0 };
+    const out = { active: 0, expiring: 0, expired: 0, permanent: 0, never: 0 };
     for (const r of rows) {
+      //  ⛔ حسابِ بی‌اشتراک در هیچ‌کدام از چهار شمارندهٔ دیگر نمی‌نشیند —
+      //  نه «فعال» است، نه «منقضی». شمردنش در آن‌ها یعنی عددی که دروغ
+      //  می‌گوید.
+      if (r.neverSubscribed) { out.never++; continue; }
       if (r.permanent) out.permanent++;
       if (r.status === 'active') out.active++;
       if (r.status === 'expired' || r.status === 'cancelled') out.expired++;
@@ -143,7 +149,10 @@ export default function Customers() {
         sub="همهٔ اشتراک‌های دکان و پمپ، از سرورِ حساب — با فیلترِ بخش، وضعیت، شهر و نوعِ پلن"
         actions={(
           <div className="flex flex-wrap items-center gap-2">
-            <button className="btn btn-primary btn-sm" onClick={() => setGrant(true)}>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={() => setGrant({ app: app === 'both' ? 'pump' : app, q: '' })}
+            >
               <CreditCard className="h-4 w-4" /> دادنِ اشتراک
             </button>
             <AppPicker value={app} onChange={setApp} withBoth />
@@ -153,11 +162,12 @@ export default function Customers() {
 
       {list.error && <CloudProblem code={list.code} message={list.error} onRetry={list.reload} />}
 
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Stat label="فعال" value={fa(counts.active)} tone="good" icon={<Users className="h-4 w-4" />} />
         <Stat label="رو به پایان (≤۳۰ روز)" value={fa(counts.expiring)} tone="warn" />
         <Stat label="منقضی یا لغوشده" value={fa(counts.expired)} tone="bad" />
         <Stat label="دائمی" value={fa(counts.permanent)} tone="info" />
+        <Stat label="ثبت‌شده، بی اشتراک" value={fa(counts.never)} />
       </div>
 
       <Card>
@@ -197,9 +207,20 @@ export default function Customers() {
         ) : (
           <Table head={['مشتری', 'بخش', 'پلن', 'وضعیت', 'مانده', 'قیمت', 'پرداخت‌شده', '']}>
             {rows.map((r) => {
-              const tone = daysTone(r.daysLeft, r.permanent);
+              //  ⚠️ حسابِ بی‌اشتراک «۰ روز مانده» نیست — هیچ روزی ندارد.
+              const tone = r.neverSubscribed
+                ? { tone: 'neutral' as const, text: '—' }
+                : daysTone(r.daysLeft, r.permanent);
+              /*
+               *  ⛔ روی حسابِ بی‌اشتراک هیچ‌کدام از کارهای اشتراک (تمدید،
+               *  تعلیق، لغو…) معنا ندارد و شناسه‌اش هم شناسهٔ اشتراک نیست —
+               *  زدنشان فقط یک ۴۰۰ِ گنگ می‌گیرد. و «دکمه‌ای که زده شود و
+               *  هیچ اتفاقی نیفتد باگ است، نه قفل.» پس ردیفش مستقیم به
+               *  «دادنِ اشتراک» می‌رود، با ایمیلِ خودش از پیش نوشته‌شده.
+               */
+              const sell = () => setGrant({ app: r.app, q: r.ownerEmail || r.tenantName || '' });
               return (
-                <Row key={`${r.app}-${r.id}`} onClick={() => setOpen(r)}>
+                <Row key={`${r.app}-${r.id}`} onClick={() => (r.neverSubscribed ? sell() : setOpen(r))}>
                   <Cell>
                     <p className="font-medium text-ink">{r.tenantName || r.ownerName || '—'}</p>
                     <p className="text-[11px] text-ink-muted">
@@ -213,7 +234,16 @@ export default function Customers() {
                   <Cell className="tnum">{r.price == null ? '—' : money(r.price, r.currency)}</Cell>
                   <Cell className="tnum">{money(r.paid, r.currency)}</Cell>
                   <Cell>
-                    <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); setOpen(r); }}>پرونده</button>
+                    {r.neverSubscribed ? (
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={(e) => { e.stopPropagation(); sell(); }}
+                      >
+                        دادنِ اشتراک
+                      </button>
+                    ) : (
+                      <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); setOpen(r); }}>پرونده</button>
+                    )}
                   </Cell>
                 </Row>
               );
@@ -232,11 +262,18 @@ export default function Customers() {
         />
       )}
 
+      {/*
+        *  ⚠️ `key` عمدی است: با آن، پنجره برای هر حساب از نو ساخته می‌شود و
+        *  `startQuery` بی هیچ `useEffect`ی می‌نشیند. بی آن، جست‌وجوی حسابِ
+        *  قبلی در پنجرهٔ بعدی می‌ماند.
+        */}
       <GrantSub
-        open={grant}
-        onClose={() => setGrant(false)}
+        key={grant ? `${grant.app}:${grant.q}` : 'idle'}
+        open={Boolean(grant)}
+        onClose={() => setGrant(null)}
         onDone={after}
-        startApp={app === 'both' ? 'pump' : app}
+        startApp={grant?.app}
+        startQuery={grant?.q}
       />
 
       <ConfirmDialog

@@ -26,6 +26,16 @@ export type SubRow = {
   paid: number;
   features: string[];
   note: string;
+  /**
+   *  ⚠️ این ردیف اشتراک نیست، **خودِ حساب** است: پمپ یا دکانی که ثبت شده و
+   *  هیچ‌وقت چیزی نخریده. تا ۱۴۰۵/۰۷/۱۱ اصلاً در این فهرست نبود (فهرست از
+   *  `sales/subscriptions` می‌آمد) و صاحبِ سامانه همین را «حساب‌های ثبت‌شده
+   *  بالا نمیاد» می‌دید.
+   *
+   *  ⛔ نشانِ صریح است، نه نتیجه‌گیری از خالی بودنِ فیلدها — وگرنه روزی
+   *  اشتراکی با پلنِ بی‌نام هم «بی‌اشتراک» خوانده می‌شد.
+   */
+  neverSubscribed?: boolean;
 };
 
 export type DeviceRow = { id: string; uid: string; name: string; lastSeenAt: number; revoked: boolean };

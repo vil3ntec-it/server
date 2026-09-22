@@ -25,6 +25,10 @@ export const REQUIRED_JOBS = Object.freeze([
   //  ⛔ چهار رباتِ گامِ ۵. نامشان قفل است تا سیزنِ بعدی نامِ دیگری نسازد —
   //  همان قاعده‌ای که `test/remake-spec.mjs` هم دارد.
   'pump-watch', 'shop-watch', 'login-watch', 'code-rescue',
+  //  ⛔ و رباتِ پنجم: سرورِ حساب خودش تازه می‌شود، وگرنه در لحظهٔ ساختِ
+  //  نصاب یخ می‌زند — همان چیزی که سرورِ صاحب سامانه را روی ۲.۷.۰ نگه
+  //  داشت در حالی که فروشِ اشتراک ۲.۹.۰ می‌خواهد.
+  'account-server-update',
 ]);
 
 export function testJobs() {

@@ -1,6 +1,6 @@
 {
   "name": "homelab-panel-web",
-  "version": "1.50.4",
+  "version": "1.50.7",
   "private": true,
   "type": "module",
   "scripts": {
