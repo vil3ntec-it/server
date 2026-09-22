@@ -61,14 +61,23 @@ function spanOf(p: Plan): string {
   return `${fa(p.amount)} ${UNIT_LABEL[p.unit] || p.unit}`;
 }
 
-export default function GrantSub({ open, onClose, onDone, startApp }: {
+export default function GrantSub({ open, onClose, onDone, startApp, startQuery }: {
   open: boolean;
   onClose: () => void;
   onDone: () => Promise<void> | void;
   startApp?: AppId;
+  /**
+   *  جست‌وجوی آماده — وقتی از ردیفِ یک حسابِ بی‌اشتراک باز می‌شود، همان
+   *  ایمیل این‌جا می‌نشیند تا مدیر دوباره دنبالش نگردد.
+   *
+   *  ⚠️ فقط مقدارِ **آغازین** است: صفحه با `key` از نو ساخته می‌شود، پس
+   *  هیچ `useEffect`ی لازم نیست و تایپِ خودِ کاربر هیچ‌وقت زیرِ دستش عوض
+   *  نمی‌شود.
+   */
+  startQuery?: string;
 }) {
   const [app, setApp] = useState<AppId>(startApp === 'pump' ? 'pump' : 'shop');
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(startQuery || '');
   const [picked, setPicked] = useState<Target | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [note, setNote] = useState('');
