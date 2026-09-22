@@ -30,6 +30,7 @@ import { accountApiUrl, setDownHint } from '../api/account-proxy.js';
 import { codeSettings } from '../codes/settings.js';
 import { mailReady } from '../codes/mail.js';
 import { livePushSecret } from '../routes/live.js';
+import { pickDir } from './bundle.js';
 
 const RING = 200;
 const ring = [];
@@ -53,18 +54,30 @@ let lastError = '';
  * روی لینوکس یا HLP_ACCOUNT_DIR بدهید یا یک symlink به نامِ account-server.
  */
 export function resolveAccountDir() {
-  const candidates = [
-    config.accountApi?.dir,
-    path.resolve(SERVER_ROOT, '..', 'account-server'),
-    path.resolve(SERVER_ROOT, '..', '..', 'account-server'),
-    path.join(config.dataDir, 'account-server', 'app'),
-  ].filter(Boolean);
-  for (const dir of candidates) {
-    try {
-      if (fs.existsSync(path.join(dir, 'src', 'index.js')) && fs.existsSync(path.join(dir, 'node_modules'))) return dir;
-    } catch { /* بعدی */ }
-  }
-  return null;
+  //  ⛔ خودِ تصمیم در `bundle.pickDir` است و این‌جا فقط سه مسیر ساخته
+  //  می‌شوند — وگرنه «کدام پوشه برنده است» بی بالا آوردنِ کلِ پنل
+  //  سنجیدنی نبود، و همان بود که سال‌ها کسی ندیدش.
+
+  //  ══ و آن‌چه خودِ پنل دانلود کرده ═════════════════════════════════════
+  //
+  //  ⛔ **تازه‌تر برنده است، نه پوشهٔ ثابت.** تا دیروز پوشهٔ داده آخرین
+  //  گزینه بود و فقط وقتی به آن می‌رسیدیم که بسته‌ای در کار نباشد —
+  //  یعنی روی هر نصبِ واقعی **هیچ‌وقت**. نتیجه: کدِ سرورِ حساب در لحظهٔ
+  //  ساختِ نصاب یخ می‌زد و تنها راهِ تازه کردنش نصبِ دوبارهٔ کلِ مرکز
+  //  فرمان بود. همان چیزی بود که سرورِ صاحب سامانه را روی ۲.۷.۰ نگه
+  //  داشت در حالی که فروشِ اشتراک ۲.۹.۰ می‌خواهد.
+  //
+  //  ⚠️ و نصبِ تازهٔ مرکز فرمان خودش از این جلو می‌زند: بستهٔ نو نسخهٔ
+  //  بالاتری دارد، پس همان برنده می‌شود و پوشهٔ دانلودیِ کهنه کنار
+  //  می‌رود. هیچ‌کدام دیگری را قفل نمی‌کند.
+  return pickDir({
+    forced: config.accountApi?.dir || '',
+    bundled: [
+      path.resolve(SERVER_ROOT, '..', 'account-server'),
+      path.resolve(SERVER_ROOT, '..', '..', 'account-server'),
+    ],
+    downloaded: path.join(config.dataDir, 'account-server', 'app'),
+  });
 }
 
 /** پوشهٔ دادهٔ سرورِ حساب — داخلِ پوشهٔ دادهٔ پنل، تا با آن جابه‌جا شود. */
