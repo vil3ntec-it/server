@@ -341,6 +341,40 @@ const codesPage = read('pages/Codes.tsx');
 check('⚠️ فیلترِ کدها «پمپ‌بنزین» و «فروشگاه» را هم دارد',
   /value: 'pump'/.test(codesPage) && /value: 'shop'/.test(codesPage));
 
+
+/*
+ *  ⛔ «برنامه روشن است» یک قاعده دارد، نه دو. فهرستِ پمپ‌ها فقط `liveAt` را
+ *  می‌سنجید و پروفایل اتصالِ زنده را؛ برنامه عکسِ بی‌تغییر را دوباره
+ *  نمی‌فرستد، پس پمپِ وصل در فهرست «خبری نیست» می‌گرفت.
+ */
+const stationsPage = read('pages/Stations.tsx');
+const profilePage = read('pages/StationProfile.tsx');
+const liveRule = read('stationLive.ts');
+check('⛔ فهرست و پروفایلِ پمپ هر دو از `stationOnline` می‌خوانند',
+  /stationOnline\(/.test(stationsPage) && /stationOnline\(/.test(profilePage));
+check('⛔ و هیچ‌کدام مرزِ زمانیِ خودش را ندارد',
+  !/LIVE_WINDOW_MS\s*=/.test(stationsPage) && !/LIVE_WINDOW_MS\s*=/.test(profilePage));
+check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، نه فقط عکس',
+  /liveConnections/.test(liveRule) && /lastActivity/.test(liveRule) && /liveAt/.test(liveRule));
+{
+  // رفتاری: همان تابع، با سه حالتِ واقعی
+  // تنها سه جای نوع‌دارِ همان فایل، صریح برداشته می‌شوند (بی وابستگی به کامپایلر)
+  const body = liveRule
+    .replace(/export type StationLiveSignals = \{[^}]*\};/, '')
+    .replace(/export /g, '')
+    .replace('(s: StationLiveSignals, now = Date.now()): boolean', '(s, now = Date.now())')
+    .replace('(t?: number | null)', '(t)');
+  let fn = null;
+  try { fn = new Function(body + '\nreturn stationOnline;')(); } catch (e) { console.log('   ', e.message); }
+  const now = 10_000_000;
+  check('⛔ پمپِ وصل با عکسِ کهنه «روشن» است',
+    fn && fn({ liveConnections: 1, lastActivity: null, liveAt: now - 10 * 60_000 }, now) === true);
+  check('⛔ پمپِ بی اتصال و بی خبر «خاموش» است',
+    fn && fn({ liveConnections: 0, lastActivity: now - 5 * 60_000, liveAt: now - 5 * 60_000 }, now) === false);
+  check('⚠️ عکسِ تازه به‌تنهایی «روشن» است',
+    fn && fn({ liveConnections: 0, lastActivity: null, liveAt: now - 30_000 }, now) === true);
+}
+
 console.log('\n════════════════════════════════════');
 console.log(`  ✅ ${pass} سبز، ${fail} قرمز`);
 console.log('════════════════════════════════════\n');

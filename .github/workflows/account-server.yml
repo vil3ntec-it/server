@@ -74,9 +74,18 @@ jobs:
 
           #  ⛔ بستهٔ بی `node_modules` بی‌فایده است — پنل نمی‌تواند
           #  `npm install` بزند (روی ویندوزِ مشتری اصلاً npm نیست).
-          tar -tzf "$ASSET" | grep -q '^account-server/node_modules/' \
+          #
+          #  ⛔ فهرست اول در یک فایل، بعد `grep` — **نه** `tar -tzf | grep -q`.
+          #  زیرِ `pipefail`، `grep -q` با نخستین تطبیق بیرون می‌رود، `tar`
+          #  «stdout: write error» (SIGPIPE) می‌گیرد و کلِ خط شکست می‌خورد —
+          #  یعنی درست وقتی `node_modules` **هست**، «در بسته نیست» گفته
+          #  می‌شد. هر چهار اجرای این ورک‌فلو (۱۴۰۵/۰۶/۳۱ تا ۰۷/۰۲) همین‌جا
+          #  افتادند و هیچ بسته‌ای منتشر نشد، پس سرورِ حسابِ مشتری‌ها هرگز
+          #  تازه نشد (گزارشِ «برنامهٔ پمپ به سرور وصل نمی‌شود»، ۱۴۰۵/۰۷/۱۳).
+          tar -tzf "$ASSET" > /tmp/pack/list.txt
+          grep -q '^account-server/node_modules/' /tmp/pack/list.txt \
             || { echo '::error::node_modules در بسته نیست'; exit 1; }
-          tar -tzf "$ASSET" | grep -q '^account-server/src/index.js$' \
+          grep -q '^account-server/src/index.js$' /tmp/pack/list.txt \
             || { echo '::error::src/index.js در بسته نیست'; exit 1; }
 
       - name: انتشار

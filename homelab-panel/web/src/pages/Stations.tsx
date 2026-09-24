@@ -37,6 +37,7 @@ import StationsCloud from './StationsCloud';
 import PumpCodes from './PumpCodes';
 import PumpHealth from './PumpHealth';
 import { useLive } from '../useLive';
+import { stationOnline } from '../stationLive';
 
 type Station = {
   code: string;
@@ -79,13 +80,8 @@ function fmtBytes(n: number) {
   return `${v.toFixed(i ? 1 : 0)} ${units[i]}`;
 }
 
-/**
- * «زنده است؟» — دو دقیقه سکوت یعنی برنامهٔ آن پمپ خاموش است.
- * حلقهٔ انتشارِ خودِ برنامه هر ۲۰ ثانیه است، پس این مرز با خیالِ راحت
- * شش برابرِ آن گرفته شده و یک قطعیِ کوتاهِ شبکه پمپ را «مرده» نشان نمی‌دهد.
- */
-const LIVE_WINDOW_MS = 2 * 60 * 1000;
-const isLive = (s: Station) => Boolean(s.liveAt && Date.now() - s.liveAt < LIVE_WINDOW_MS);
+/** «زنده است؟» — همان قاعدهٔ پروفایلِ پمپ (`stationOnline`)، نه یک قاعدهٔ دوم. */
+const isLive = (s: Station) => stationOnline(s);
 
 export default function StationsPage() {
   const { role } = useApp();

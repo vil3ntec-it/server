@@ -150,6 +150,36 @@ const same = await updater.apply({
 check('⇒ و وقتی همان نسخه است، چیزی دانلود نمی‌شود',
   same.ok === true && same.changed === false, JSON.stringify(same).slice(0, 160));
 
+console.log('\n── ۷) ⛔ ورک‌فلوی بسته خودش را نمی‌اندازد ──');
+//  ۱۴۰۵/۰۷/۱۳: هر چهار اجرای account-server.yml با «node_modules در بسته نیست»
+//  افتادند در حالی که بود — `tar -tzf | grep -q` زیرِ `pipefail` (SIGPIPE).
+{
+  const wf = fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', '..', '.github', 'workflows', 'account-server.yml'), 'utf8');
+  const code = wf.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+  check('⇒ هیچ «| grep -q»ی زیرِ pipefail نیست', !/\|\s*grep\s+-q/.test(code));
+  check('⇒ فهرستِ بسته اول در فایل نوشته می‌شود', /tar -tzf "\$ASSET" > /.test(code));
+  check('⇒ و همان دو سنجه سرِ جایشان‌اند (node_modules و src/index.js)',
+    code.includes("'^account-server/node_modules/'") && code.includes("'^account-server/src/index.js$'"));
+  //  و خودِ آن خطِ پوسته واقعاً می‌دود — با بسته‌ای به بزرگیِ واقعی
+  const box = fs.mkdtempSync(path.join(os.tmpdir(), 'wfpk-'));
+  fs.mkdirSync(path.join(box, 'account-server', 'src'), { recursive: true });
+  fs.writeFileSync(path.join(box, 'account-server', 'src', 'index.js'), '');
+  for (let i = 0; i < 4000; i++) {
+    const d = path.join(box, 'account-server', 'node_modules', 'p' + (i % 90));
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(path.join(d, 'f' + i + '.js'), 'x');
+  }
+  spawnSync('tar', ['-czf', 'a.tgz', 'account-server'], { cwd: box });
+  const run = (sh) => spawnSync('bash', ['-c', 'set -euo pipefail\n' + sh], { cwd: box, env: { ...process.env, ASSET: 'a.tgz' } }).status;
+  const lines = code.split('\n');
+  const at = lines.findIndex((l) => l.includes('tar -tzf "$ASSET" >'));
+  const fixed = lines.slice(at, at + 5).join('\n').replace(/\/tmp\/pack\/list\.txt/g, 'list.txt');
+  check('⇒ خطِ تازه روی بستهٔ پُر سبز است', run(fixed) === 0);
+  check('⇒ و خطِ قدیمی همان‌جا می‌افتاد (دندانِ این سنجه)',
+    run(`tar -tzf "$ASSET" | grep -q '^account-server/node_modules/' || exit 1`) !== 0);
+  fs.rmSync(box, { recursive: true, force: true });
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${pass} سبز، ${fails.length} سرخ`);
 if (fails.length) { for (const f of fails) console.log('  ✖', f); process.exit(1); }
