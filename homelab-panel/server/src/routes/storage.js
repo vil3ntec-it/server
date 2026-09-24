@@ -4,6 +4,7 @@
 //  با حسابِ مدیرِ پنل، یا با کلیدِ محلیِ برنامهٔ رویِ همین کامپیوتر.
 // ---------------------------------------------------------------------------
 import { Router } from 'express';
+import { requireWriteRole } from '../auth.js';
 import path from 'node:path';
 import { requireLocalOrAuth } from '../local-key.js';
 import { audit } from '../lib/audit.js';
@@ -34,7 +35,12 @@ import {
 import { backupStatus, restoreTest } from '../backup/rotation.js';
 
 const router = Router();
+const writeAdmin = requireWriteRole('admin');
 router.use(requireLocalOrAuth);
+//  ⛔ چیدنِ دیسک، جابه‌جا کردن و پاک کردنِ پشتیبان‌ها کارِ مدیر است — تا
+//  ۱.۵۰.۸ هر «بیننده‌ای» می‌توانست پشتیبان‌ها را هرس کند. کلیدِ محلی (خودِ
+//  همین کامپیوتر) مثلِ قبل رد می‌شود.
+router.use((req, res, next) => (req.user?.local ? next() : writeAdmin(req, res, next)));
 
 // ------------------------------ وضعیت ---------------------------------------
 router.get('/', async (req, res) => {

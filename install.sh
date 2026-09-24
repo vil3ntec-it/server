@@ -607,7 +607,14 @@ setup_caddy() {
 # VILL3N — ساخته‌شده توسط install.sh؛ تغییر از پنل یا با ‎vill3n repair‎ برمی‌گردد
 $DOMAIN, api.$DOMAIN, admin.$DOMAIN {
 	encode gzip
-	reverse_proxy 127.0.0.1:$PUBLIC_PORT
+	# ⛔ پنل IPِ کاربر را از این سرآیندها می‌خواند و درخواستِ Caddy از خودِ همین
+	# کامپیوتر (loopback) می‌آید؛ پس سرآیندی که خودِ کاربر ساخته نباید برسد،
+	# وگرنه سقفِ نرخ و «فقط از شبکهٔ خانگی» با یک سرآیندِ جعلی دور می‌خورد.
+	reverse_proxy 127.0.0.1:$PUBLIC_PORT {
+		header_up -Cf-Connecting-Ip
+		header_up -X-Real-Ip
+		header_up X-Forwarded-For {remote_host}
+	}
 }
 www.$DOMAIN {
 	redir https://$DOMAIN{uri} permanent
@@ -617,7 +624,11 @@ EOF
     cat > "$tmp" <<EOF
 # VILL3N — بی دامنه: فقط HTTP روی شبکهٔ خانگی به پورتِ عمومیِ پنل
 http://:80 {
-	reverse_proxy 127.0.0.1:$PUBLIC_PORT
+	reverse_proxy 127.0.0.1:$PUBLIC_PORT {
+		header_up -Cf-Connecting-Ip
+		header_up -X-Real-Ip
+		header_up X-Forwarded-For {remote_host}
+	}
 }
 EOF
   fi

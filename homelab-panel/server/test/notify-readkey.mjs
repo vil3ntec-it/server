@@ -87,9 +87,12 @@ try {
   check('با رمز باز است', (await req('GET', '/api/notify/mirza/json?key=' + encodeURIComponent(KEY))).status === 200);
 
   console.log('\n── ثبتِ دستگاه هم «خواندن» است ──');
-  const dev = { subscription: { endpoint: 'https://example.invalid/x', keys: { p256dh: 'a', auth: 'b' } }, label: 'تست' };
+  const dev = { subscription: { endpoint: 'https://fcm.googleapis.com/fcm/send/test-device', keys: { p256dh: 'a', auth: 'b' } }, label: 'تست' };
   check('ثبتِ دستگاه بدون رمز رد می‌شود', (await req('POST', '/api/notify/mirza/devices', dev)).status === 403);
   check('ثبتِ دستگاه با رمز قبول می‌شود', (await req('POST', '/api/notify/mirza/devices', { ...dev, key: KEY })).status === 200);
+  //  ⛔ نشانیِ پوشی که سرویسِ پوشِ مرورگر نیست (شبکهٔ داخلی) پذیرفته نمی‌شود
+  const inside = { subscription: { endpoint: 'http://192.168.1.1/admin', keys: { p256dh: 'a', auth: 'b' } }, key: KEY };
+  check('⛔ نشانیِ پوشِ داخلی رد می‌شود', (await req('POST', '/api/notify/mirza/devices', inside)).status === 400);
 
   console.log('\n── فرستادن همچنان باز است (مثل قبل) ──');
   check('هر برنامه‌ای می‌تواند خبر بدهد', (await req('POST', '/api/notify/staff', { message: 'سلام' })).status === 200);

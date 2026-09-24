@@ -48,8 +48,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   let file = path.join(root, pathname);
-  // جلوگیری از خروج از ریشه
-  if (!file.startsWith(root)) {
+  // جلوگیری از خروج از ریشه — ⛔ با `path.relative`، نه `startsWith`: ریشهٔ
+  // ‎/srv/site‎ با ‎startsWith‎ پوشهٔ همسایهٔ ‎/srv/site-x‎ را هم می‌پذیرفت
+  const rel = path.relative(root, file);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
     res.writeHead(403);
     console.error(`[403] ${req.method} ${pathname}`);
     return res.end('forbidden');

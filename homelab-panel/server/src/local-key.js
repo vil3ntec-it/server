@@ -33,7 +33,8 @@ export function localKey() {
   cached = crypto.randomBytes(24).toString('hex');
   try {
     fs.mkdirSync(path.dirname(KEY_FILE), { recursive: true });
-    fs.writeFileSync(KEY_FILE, cached, 'utf8');
+    fs.writeFileSync(KEY_FILE, cached, { encoding: 'utf8', mode: 0o600 });
+    try { fs.chmodSync(KEY_FILE, 0o600); } catch { /* ویندوز: ACLِ پوشهٔ کاربر */ }
   } catch { /* اگر ننوشت، برنامهٔ محلی باید با حسابِ پنل وارد شود */ }
   return cached;
 }

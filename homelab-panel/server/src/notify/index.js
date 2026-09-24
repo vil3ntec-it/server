@@ -20,7 +20,7 @@ import { WebSocketServer } from 'ws';
 import { attachHeartbeat } from '../lib/ws-heartbeat.js';
 import { db, q, logEvent, getSetting, setSetting } from '../db.js';
 import { bumpSoon } from '../live/bus.js';
-import { pushToDevices, vapidPublicKey } from '../messenger/push.js';
+import { pushToDevices, vapidPublicKey, isPushService } from '../messenger/push.js';
 
 export const notifyEvents = new EventEmitter();
 
@@ -322,8 +322,10 @@ export function history(name, { since = null, limit = 100 } = {}) {
 
 // -------------------------------- دستگاه‌ها --------------------------------
 export function subscribeDevice(name, { label, endpoint, p256dh, auth }) {
+  //  ⛔ نشانیِ ناشناس پیش از ساختنِ هر ردیفی رد می‌شود (شرحش در messenger/push.js)
+  if (!endpoint || !isPushService(endpoint)) return { ok: false, error: 'invalid' };
   const topicRow = ensureTopic(name);
-  if (!topicRow || !endpoint) return { ok: false, error: 'invalid' };
+  if (!topicRow) return { ok: false, error: 'invalid' };
   q(
     `INSERT INTO ntf_devices(topic, label, push_endpoint, push_p256dh, push_auth, created_at)
      VALUES(?, ?, ?, ?, ?, ?)

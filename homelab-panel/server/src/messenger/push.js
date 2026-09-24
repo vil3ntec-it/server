@@ -36,7 +36,7 @@ function loadKeys() {
   };
   try {
     fs.mkdirSync(path.dirname(KEY_FILE), { recursive: true });
-    fs.writeFileSync(KEY_FILE, JSON.stringify(keys, null, 2), 'utf8');
+    fs.writeFileSync(KEY_FILE, JSON.stringify(keys, null, 2), { encoding: 'utf8', mode: 0o600 });
     logEvent('info', 'panel', 'کلیدهای نوتیفیکیشن (VAPID) ساخته شد');
   } catch (e) {
     logEvent('error', 'panel', `کلید نوتیفیکیشن ذخیره نشد: ${e.message}`);
@@ -101,6 +101,31 @@ function encrypt(payload, p256dhB64, authB64) {
 }
 
 /**
+ * ⛔ نشانیِ اشتراکِ پوش را مرورگرِ کاربر می‌دهد و این سرور بعداً به آن
+ * `POST` می‌زند. بی این سنجش، هر کسی با رمزِ خواندنِ یک موضوع می‌توانست این
+ * کامپیوتر را وادار کند به نشانی‌های داخلیِ شبکهٔ خانه (مودم، پنل، سرورِ
+ * حساب) درخواست بزند. پس فقط HTTPS و فقط سرویس‌های پوشِ شناخته‌شدهٔ
+ * مرورگرها — همان چند نامی که مرورگرها واقعاً می‌دهند.
+ */
+const PUSH_HOSTS = [
+  'fcm.googleapis.com', 'android.googleapis.com',       // کروم، اج، اندروید
+  'updates.push.services.mozilla.com',                  // فایرفاکس
+  'web.push.apple.com',                                 // سافاری
+  'notify.windows.com',                                 // اجِ قدیمی (زیرِدامنه‌دار)
+];
+//  ⚠️ فقط آزمون‌ها این را پر می‌کنند (سرویسِ پوشِ ساختگی روی ‎127.0.0.1‎)
+const TEST_HOSTS = String(process.env.HLP_PUSH_TEST_HOSTS || '').split(',').map((x) => x.trim()).filter(Boolean);
+export function isPushService(u) {
+  try {
+    const url = u instanceof URL ? u : new URL(String(u));
+    if (TEST_HOSTS.includes(url.hostname)) return true;
+    if (url.protocol !== 'https:' || url.username || url.password) return false;
+    const host = url.hostname.toLowerCase();
+    return PUSH_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+  } catch { return false; }
+}
+
+/**
  * یک نوتیفیکیشن به یک دستگاه می‌فرستد.
  * @returns {Promise<{ok:boolean, status?:number, gone?:boolean}>}
  */
@@ -112,6 +137,7 @@ export async function sendPush(device, payload, { ttl = 86400 } = {}) {
   let origin;
   try {
     const u = new URL(device.push_endpoint);
+    if (!isPushService(u)) return { ok: false, status: 0 };
     origin = `${u.protocol}//${u.host}`;
   } catch {
     return { ok: false, status: 0 };

@@ -6,7 +6,7 @@
 //  روشن/خاموش کند یا لاگش را ببیند.
 // ---------------------------------------------------------------------------
 import { Router } from 'express';
-import { requireAuth, requireRole } from '../auth.js';
+import { requireAuth, requireRole, requireWriteRole, userRole } from '../auth.js';
 import {
   accountStatus, accountLogs, startAccountServer, stopAccountServer, restartAccountServer,
 } from '../account/supervisor.js';
@@ -16,6 +16,10 @@ import { cloudStatus } from '../stations/cloud.js';
 
 const router = Router();
 router.use(requireAuth);
+//  ⛔ روشن/خاموش کردن و به‌روز کردنِ سرورِ حساب کارِ مدیرِ پنل است — تا ۱.۵۰.۸
+//  هر واردشده‌ای (حتی «بیننده») سرورِ ورود و اشتراکِ همهٔ برنامه‌ها را
+//  خاموش می‌کرد.
+router.use(requireWriteRole('admin'));
 
 /** وضعیت: نصب هست؟ روشن است؟ چند بار افتاده؟ و خودِ سرور جواب می‌دهد؟ */
 router.get('/status', async (req, res) => {
@@ -23,7 +27,13 @@ router.get('/status', async (req, res) => {
   const probe = await probeAccountServer().catch((e) => ({ up: false, error: e.message }));
   let bridge = null;
   try { bridge = cloudStatus(); } catch { /* گاوصندوق بسته */ }
-  res.json({ ...st, up: !!probe.up, version: probe.version || null, url: probe.url || null, bridge });
+  //  ⛔ رمزِ مدیرِ سرورِ حساب فقط به مدیرِ پنل نشان داده می‌شود. با آن رمز
+  //  همهٔ اشتراک‌ها، کدها و پول دست می‌خورد؛ «بیننده» و «کارگزار» نامش را
+  //  می‌بینند، نه رمزش.
+  const admin = st.admin && userRole(req.user.id) !== 'admin'
+    ? { ...st.admin, password: null, hidden: true }
+    : st.admin;
+  res.json({ ...st, admin, up: !!probe.up, version: probe.version || null, url: probe.url || null, bridge });
 });
 
 /** آخرین سطرهای لاگِ خودِ سرورِ حساب */

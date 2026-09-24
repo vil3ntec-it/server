@@ -17,7 +17,7 @@
 import crypto from 'node:crypto';
 import express, { Router } from 'express';
 import QRCode from 'qrcode';
-import { requireAuth, requireWriteRole } from '../auth.js';
+import { requireAuth, requireWriteRole, requireRole, userRole } from '../auth.js';
 import { getStations, getMirror } from '../state.js';
 import { config } from '../config.js';
 import { readMirrorStatus, mirrorDir } from '../stations/cloud-mirror.js';
@@ -365,7 +365,8 @@ adminRouter.delete('/:code', requireWriteRole('admin'), async (req, res) => {
 });
 
 /** رمزهای کامل — عمداً جدا و ثبت‌شونده در لاگ */
-adminRouter.get('/:code/keys', (req, res) => {
+//  ⛔ فقط مدیرِ پنل: رمزِ نوشتنِ پمپ یعنی نوشتن روی دفترِ آن پمپ از اینترنت
+adminRouter.get('/:code/keys', requireRole('admin'), (req, res) => {
   const stations = getStations();
   const store = stations?.get(req.params.code);
   if (!store) return res.status(404).json({ error: 'not_found' });
@@ -526,7 +527,11 @@ adminRouter.get('/:code/connect', async (req, res) => {
     ok: true,
     code,
     name: store.read(META_BRANCH)?.name || code,
-    app: wsBase ? { ws: `${wsBase}/station?station=${encodeURIComponent(code)}`, token: store.getToken() } : null,
+    //  ⛔ رمزِ نوشتن فقط برای مدیرِ پنل؛ بقیه نشانی را می‌بینند، نه رمز را
+    app: wsBase ? {
+      ws: `${wsBase}/station?station=${encodeURIComponent(code)}`,
+      token: userRole(req.user.id) === 'admin' ? store.getToken() : null,
+    } : null,
     staff: { link: staffLink, qr: await qrFor(staffLink), readKey },
     shortcut: httpBase
       ? `${httpBase}/api/stations/${encodeURIComponent(code)}/live?token=${encodeURIComponent(readKey)}`

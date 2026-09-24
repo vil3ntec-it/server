@@ -53,7 +53,7 @@ const child = spawn(
       HLP_DATA_DIR: path.join(tmp, 'data'),
       HLP_SITES_ROOT: path.join(tmp, 'sites'),
       HLP_METRICS_INTERVAL: '3000',
-      HLP_TUNNEL: '0',
+      HLP_TUNNEL: '0', HLP_PUSH_TEST_HOSTS: '127.0.0.1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   }
