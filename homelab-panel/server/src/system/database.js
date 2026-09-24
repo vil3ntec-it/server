@@ -259,14 +259,28 @@ export async function dropDatabase(engine, conn, name) {
  * دسترسی عمداً به همان یک دیتابیس محدود است، نه GRANT ALL روی *.* — یک
  * برنامه‌ای که به دیتابیسِ خودش وصل می‌شود نباید بتواند بقیه را بخواند.
  */
+/**
+ * رمز داخلِ رشتهٔ SQL — هم `'` دوتایی می‌شود هم `\\`.
+ *
+ * ⛔ MySQL در حالتِ پیش‌فرض `\\` را نویسهٔ گریز می‌خواند؛ دوتایی کردنِ `'`
+ * به‌تنهایی با یک `\\` در تهِ رمز رشته را می‌شکست. نویسهٔ NUL هم پذیرفته
+ * نمی‌شود (سرِ هر دو تابع رد می‌شود).
+ */
+function sqlString(password, engine) {
+  const s = String(password).replace(/'/g, "''");
+  //  PostgreSQL با `standard_conforming_strings` (پیش‌فرض) `\\` را خودش می‌خواند
+  return engine === 'mysql' ? s.replace(/\\/g, '\\\\') : s;
+}
+
 export async function createUser(engine, conn, { name, password, database = null }) {
   if (!ENGINES.includes(engine)) return fail('unknown_engine');
   if (!validIdent(name)) return fail('invalid_name');
   if (!password || String(password).length < 8) return fail('weak_password');
+  if (String(password).includes('\0')) return fail('weak_password');
   if (database && !validIdent(database)) return fail('invalid_database');
 
   // رمز داخلِ رشتهٔ SQL می‌رود، پس نقلِ‌قولِ تکی باید دو برابر شود
-  const quoted = String(password).replace(/'/g, "''");
+  const quoted = sqlString(password, engine);
 
   if (engine === 'mysql') {
     const statements = [
@@ -300,8 +314,9 @@ export async function setPassword(engine, conn, name, password) {
   if (!ENGINES.includes(engine)) return fail('unknown_engine');
   if (!validIdent(name)) return fail('invalid_name');
   if (!password || String(password).length < 8) return fail('weak_password');
+  if (String(password).includes('\0')) return fail('weak_password');
 
-  const quoted = String(password).replace(/'/g, "''");
+  const quoted = sqlString(password, engine);
   const sql = engine === 'mysql'
     ? `ALTER USER '${name}'@'%' IDENTIFIED BY '${quoted}'; FLUSH PRIVILEGES;`
     : `ALTER ROLE "${name}" PASSWORD '${quoted}';`;

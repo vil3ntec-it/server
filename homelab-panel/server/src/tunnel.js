@@ -1506,7 +1506,10 @@ export async function startTunnel({ port } = {}) {
         return [parts[0], parts.slice(1)];
       })()
     : tunnelToken
-      ? [state.binary, ['tunnel', '--no-autoupdate', 'run', '--token', tunnelToken]]
+      //  ⛔ توکن از محیط (`TUNNEL_TOKEN`)، نه از خطِ فرمان: خطِ فرمانِ هر
+      //  پروسه در «پروسه‌ها»ی همین پنل و در Task Manager دیده می‌شود، و این
+      //  توکن یعنی هر کسی تونلِ این دامنه را جای این کامپیوتر بالا بیاورد.
+      ? [state.binary, ['tunnel', '--no-autoupdate', 'run']]
       : named
         ? [state.binary, ['tunnel', '--no-autoupdate', '--config', CONFIG_FILE, 'run']]
         : [
@@ -1521,7 +1524,11 @@ export async function startTunnel({ port } = {}) {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
     // مثلِ runCf: گواهی همان‌جایی که واقعاً هست، نه جایی که آرزو داریم باشد
-    env: { ...process.env, TUNNEL_ORIGIN_CERT: findCert() || CERT_FILE },
+    env: {
+      ...process.env,
+      TUNNEL_ORIGIN_CERT: findCert() || CERT_FILE,
+      ...(tunnelToken && !custom ? { TUNNEL_TOKEN: tunnelToken } : {}),
+    },
   });
   const myChild = child;
 

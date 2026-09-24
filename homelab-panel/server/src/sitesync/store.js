@@ -688,13 +688,13 @@ export function createStore({
     // رمزِ تصادفیِ تازه ساخته می‌شد و از آن لحظه همهٔ دستگاه‌ها پشتِ در می‌ماندند
     // بدون اینکه هیچ راهی برای فهمیدنِ رمزِ تازه داشته باشند.
     AUTH_TOKEN = seedToken || crypto.randomBytes(18).toString('hex');
-    await fsp.writeFile(tokenFile, AUTH_TOKEN, 'utf8');
+    await fsp.writeFile(tokenFile, AUTH_TOKEN, { encoding: 'utf8', mode: 0o600 });
     return AUTH_TOKEN;
   }
 
   async function rotateToken() {
     AUTH_TOKEN = crypto.randomBytes(18).toString('hex');
-    await fsp.writeFile(path.join(dataDir, 'token.txt'), AUTH_TOKEN, 'utf8');
+    await fsp.writeFile(path.join(dataDir, 'token.txt'), AUTH_TOKEN, { encoding: 'utf8', mode: 0o600 });
     for (const ws of [...clients]) {
       try {
         ws.close();

@@ -143,6 +143,14 @@ router.get('/shop-accounts/:id/staff-codes', guard(async (req, res) => {
   res.json(await cloudRaw('GET', `/api/admin/shops/${idOf(req.params.id)}/staff-codes`));
 }));
 
+/*
+ *  ⛔ پول و اشتراک فقط با نقشِ «مدیر»ِ پنل. این روتر با `writeNeedsOperator`
+ *  سوار است، پس تا ۱.۵۰.۸ یک «کارگزار» قیمت‌ها را عوض می‌کرد، اشتراک و کدِ
+ *  VIP می‌داد، پرداخت پاک می‌کرد و به همهٔ مشتری‌ها پیام می‌فرستاد.
+ *  دیدن و پشتیبانیِ روزمره برای کارگزار باز است.
+ */
+const money = requireRole('admin');
+
 router.post('/shop-accounts/:id/staff-codes/reveal', requireRole('admin'), guard(async (req, res) => {
   const id = idOf(req.params.id);
   const out = await cloudRaw('POST', `/api/admin/shops/${id}/staff-codes/reveal`, { body: {} });
@@ -268,7 +276,7 @@ router.post('/shop-accounts/:id/disable', requireRole('admin'), guard(async (req
  * پلن)؛ وگرنه تاریخِ پایان همین‌جا از روی همان مقدار ساخته می‌شود.
  * پلنِ ناشناخته (‎custom‎) بی مقدار پذیرفته نمی‌شود.
  */
-router.post('/shop-accounts/:id/vip', guard(async (req, res) => {
+router.post('/shop-accounts/:id/vip', money, guard(async (req, res) => {
   const id = idOf(req.params.id);
   const b = req.body || {};
   const planCode = String(b.planCode || 'custom').slice(0, 20);
@@ -313,7 +321,7 @@ async function findSubscription(id) {
 }
 
 /** تمدید — تاریخِ پایان به اندازهٔ «مقدار + واحد» جلو می‌رود (تقویمی). */
-router.post('/subscriptions/:id/extend', guard(async (req, res) => {
+router.post('/subscriptions/:id/extend', money, guard(async (req, res) => {
   const id = idOf(req.params.id);
   const amount = Number(req.body?.amount) || 1;
   const unit = String(req.body?.unit || 'month');
@@ -367,12 +375,12 @@ router.get('/plans', guard(async (req, res) => {
   });
 }));
 
-router.put('/plans/:code/discount', guard(async (req, res) => {
+router.put('/plans/:code/discount', money, guard(async (req, res) => {
   const code = idOf(req.params.code);
   res.json(await cloudRaw('PUT', `/api/admin/plans/${code}/discount`, { query: { app: appOf(req) }, body: req.body || {} }));
 }));
 
-router.delete('/plans/:code/discount', guard(async (req, res) => {
+router.delete('/plans/:code/discount', money, guard(async (req, res) => {
   const code = idOf(req.params.code);
   res.json(await cloudRaw('DELETE', `/api/admin/plans/${code}/discount`, { query: { app: appOf(req) } }));
 }));
@@ -419,7 +427,7 @@ router.post('/support/threads/:id/status', guard(async (req, res) => {
   res.json(await cloudRaw('POST', `/api/admin/support/threads/${id}/status`, { body: { status: String(req.body?.status || '') } }));
 }));
 
-router.post('/support/broadcast', guard(async (req, res) => {
+router.post('/support/broadcast', money, guard(async (req, res) => {
   const b = req.body || {};
   const out = await cloudRaw('POST', '/api/admin/support/broadcast', {
     body: { body: String(b.body || ''), target: b.target, limit: b.limit, app: b.app || 'both' },
@@ -755,7 +763,7 @@ async function subscriptionOf(app, id) {
  * این عمدی است: دو جدولِ جدا، دو دفتر. پس همین‌جا ترجمه می‌شود، نه در
  * مرورگر.
  */
-router.post('/subs/:app/grant', guard(async (req, res) => {
+router.post('/subs/:app/grant', money, guard(async (req, res) => {
   const app = sectionOf(req.params.app);
   const tenantId = idOf(req.body?.tenantId);
   const b = req.body || {};
@@ -777,7 +785,7 @@ router.post('/subs/:app/grant', guard(async (req, res) => {
  * صریح تمدید می‌کند. پس مقدارهای فعلی (پلن، دستگاه، مهلت) هم با آن
  * می‌روند، وگرنه پیش‌فرض‌های سرور روی اشتراکِ زنده می‌نشستند.
  */
-router.post('/subs/:app/:id/extend', guard(async (req, res) => {
+router.post('/subs/:app/:id/extend', money, guard(async (req, res) => {
   const app = sectionOf(req.params.app);
   const id = idOf(req.params.id);
   const amount = Number(req.body?.amount) || 1;
@@ -808,7 +816,7 @@ router.post('/subs/:app/:id/status', guard(async (req, res) => {
 }));
 
 /** تبدیل به دائمی — بی شمارشِ روز، ولی همچنان با تپش و پشتیبانی. */
-router.post('/subs/:app/:id/permanent', guard(async (req, res) => {
+router.post('/subs/:app/:id/permanent', money, guard(async (req, res) => {
   const app = sectionOf(req.params.app);
   const id = idOf(req.params.id);
   const out = await cloudRaw('POST', `${subsPath(app)}/${id}/permanent`);
@@ -817,7 +825,7 @@ router.post('/subs/:app/:id/permanent', guard(async (req, res) => {
 }));
 
 /** تخفیفِ مستقیم روی همین یک اشتراک، با دلیل (بندِ ۱۱.۳.۲). */
-router.post('/subs/:app/:id/discount', guard(async (req, res) => {
+router.post('/subs/:app/:id/discount', money, guard(async (req, res) => {
   const app = sectionOf(req.params.app);
   const id = idOf(req.params.id);
   const b = req.body || {};
@@ -838,7 +846,7 @@ router.get('/subs/:app/:id/addons', guard(async (req, res) => {
   res.json(await cloudRaw('GET', `${subsPath(app)}/${idOf(req.params.id)}/addons`));
 }));
 
-router.post('/subs/:app/:id/addons', guard(async (req, res) => {
+router.post('/subs/:app/:id/addons', money, guard(async (req, res) => {
   const app = sectionOf(req.params.app);
   const id = idOf(req.params.id);
   const out = await cloudRaw('POST', `${subsPath(app)}/${id}/addons`, {
@@ -852,7 +860,7 @@ router.post('/subs/:app/:id/addons', guard(async (req, res) => {
   res.json(out);
 }));
 
-router.delete('/subs/:app/:id/addons/:addonId', guard(async (req, res) => {
+router.delete('/subs/:app/:id/addons/:addonId', money, guard(async (req, res) => {
   const app = sectionOf(req.params.app);
   const id = idOf(req.params.id);
   const out = await cloudRaw('DELETE', `${subsPath(app)}/${id}/addons/${idOf(req.params.addonId)}`);
@@ -870,7 +878,7 @@ router.delete('/subs/:app/:id/addons/:addonId', guard(async (req, res) => {
  * ⚠️ `app` همیشه همراه است: «m1»ی دکان و «m1»ی پمپ دو ردیفِ جدا با دو
  *    ارزند و یک بار همین شرط جا افتاده بود.
  */
-router.patch('/plans/:code', guard(async (req, res) => {
+router.patch('/plans/:code', money, guard(async (req, res) => {
   const app = sectionOf(req.query.app || req.body?.app || 'shop');
   const code = idOf(req.params.code);
   const b = req.body || {};
@@ -912,7 +920,7 @@ router.get('/discount-codes', guard(async (req, res) => {
   }));
 }));
 
-router.post('/discount-codes', guard(async (req, res) => {
+router.post('/discount-codes', money, guard(async (req, res) => {
   const b = req.body || {};
   const out = await cloudRaw('POST', '/api/admin/discount-codes', {
     body: {
@@ -1071,7 +1079,7 @@ router.post('/notices/:id/test', guard(async (req, res) => {
   }));
 }));
 
-router.post('/notices/:id/send', guard(async (req, res) => {
+router.post('/notices/:id/send', money, guard(async (req, res) => {
   const id = idOf(req.params.id);
   const out = await cloudRaw('POST', `/api/admin/notices/${id}/send`);
   audit({ actor: actorOf(req), action: 'account.notice.send', entity: 'notice', entityId: id, detail: { sent: out.sent, failed: out.failed } });
@@ -1168,20 +1176,20 @@ function paymentInput(b = {}) {
   return out;
 }
 
-router.post('/payments', guard(async (req, res) => {
+router.post('/payments', money, guard(async (req, res) => {
   const out = await cloudRaw('POST', '/api/admin/payments', { body: paymentInput(req.body) });
   audit({ actor: actorOf(req), action: 'account.payment.create', entity: 'payment', entityId: out.payment?.id || '', detail: { app: out.payment?.app, amount: out.payment?.amount } });
   res.json(out);
 }));
 
-router.put('/payments/:id', guard(async (req, res) => {
+router.put('/payments/:id', money, guard(async (req, res) => {
   const id = idOf(req.params.id);
   const out = await cloudRaw('PUT', `/api/admin/payments/${id}`, { body: paymentInput(req.body) });
   audit({ actor: actorOf(req), action: 'account.payment.update', entity: 'payment', entityId: id });
   res.json(out);
 }));
 
-router.delete('/payments/:id', guard(async (req, res) => {
+router.delete('/payments/:id', money, guard(async (req, res) => {
   const id = idOf(req.params.id);
   const out = await cloudRaw('DELETE', `/api/admin/payments/${id}`);
   audit({ actor: actorOf(req), action: 'account.payment.delete', entity: 'payment', entityId: id });
@@ -1406,7 +1414,7 @@ router.get('/vip-codes', guard(async (req, res) => {
   }));
 }));
 
-router.post('/vip-codes', guard(async (req, res) => {
+router.post('/vip-codes', money, guard(async (req, res) => {
   const app = sectionOf(req.body?.app || 'shop');
   const out = await cloudRaw('POST', `/api/admin${SECTION[app]}/vip-codes`, { body: req.body || {} });
   //  ⛔ خودِ کد در دفترِ ممیزی نمی‌نشیند — کدی که در لاگ بنشیند دیگر راز نیست.
@@ -1442,7 +1450,7 @@ router.get('/purchase-requests', guard(async (req, res) => {
   }));
 }));
 
-router.post('/purchase-requests/:id/approve', guard(async (req, res) => {
+router.post('/purchase-requests/:id/approve', money, guard(async (req, res) => {
   const id = idOf(req.params.id);
   const out = await cloudRaw('POST', `/api/admin/purchase-requests/${id}/approve`, { body: req.body || {} });
   audit({ actor: actorOf(req), action: 'account.purchase.approve', entity: 'purchase_request', entityId: id });
@@ -1474,20 +1482,20 @@ router.get('/apps', guard(async (req, res) => {
   res.json(await cloudRaw('GET', '/api/admin/apps'));
 }));
 
-router.post('/apps', guard(async (req, res) => {
+router.post('/apps', money, guard(async (req, res) => {
   const out = await cloudRaw('POST', '/api/admin/apps', { body: req.body || {} });
   audit({ actor: actorOf(req), action: 'account.app.create', entity: 'app', detail: { name: String(req.body?.name || '') } });
   res.json(out);
 }));
 
-router.put('/apps/:id', guard(async (req, res) => {
+router.put('/apps/:id', money, guard(async (req, res) => {
   const id = idOf(req.params.id);
   const out = await cloudRaw('PUT', `/api/admin/apps/${id}`, { body: req.body || {} });
   audit({ actor: actorOf(req), action: 'account.app.update', entity: 'app', entityId: id });
   res.json(out);
 }));
 
-router.delete('/apps/:id', guard(async (req, res) => {
+router.delete('/apps/:id', money, guard(async (req, res) => {
   const id = idOf(req.params.id);
   const out = await cloudRaw('DELETE', `/api/admin/apps/${id}`);
   audit({ actor: actorOf(req), action: 'account.app.delete', entity: 'app', entityId: id });

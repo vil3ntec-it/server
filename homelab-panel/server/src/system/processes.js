@@ -79,6 +79,17 @@ function stateOf(stat) {
  *
  * etimes (ثانیهٔ سپری‌شده) به‌جای lstart، چون lstart خودش چند کلمه است.
  */
+/**
+ * رازهای خطِ فرمان پیش از نشان داده شدن پوشانده می‌شوند.
+ *
+ * ⛔ فهرستِ پروسه‌ها برای هر نقشی باز است، و خطِ فرمانِ برنامه‌های دیگر
+ * (نه فقط تونلِ خودمان) ممکن است `--token …` یا `--password=…` داشته باشد.
+ */
+const SECRET_FLAG = /(--?(?:token|password|passwd|secret|api[-_]?key|key)(?:=|\s+))("[^"]*"|'[^']*'|\S+)/gi;
+export function redactArgs(command) {
+  return String(command || '').replace(SECRET_FLAG, '$1•••');
+}
+
 async function listUnix() {
   const res = await run(
     'ps',
@@ -95,7 +106,7 @@ async function listUnix() {
     const parts = text.split(/\s+/);
     if (parts.length < 9) continue;
     const [pid, ppid, user, pcpu, pmem, rss, stat, etimes] = parts;
-    const command = parts.slice(8).join(' ');
+    const command = redactArgs(parts.slice(8).join(' '));
     if (!validPid(pid)) continue;
 
     items.push({

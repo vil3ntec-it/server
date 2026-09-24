@@ -1,7 +1,8 @@
 // مدیریت سایت‌ها: فهرست، افزودن با مسیر، کشف خودکار، Start/Stop/Restart، لاگ
 import { Router } from 'express';
 import { requireLocalOrAuth } from '../local-key.js';
-import { requireWriteRole } from '../auth.js';
+import { requireWriteRole, userRole } from '../auth.js';
+import path from 'node:path';
 import {
   listSites,
   getSite,
@@ -48,7 +49,46 @@ router.get('/:id', async (req, res) => {
   res.json({ site: info, config: readSiteConfig(site.slug), workspace: workspacePaths(site.slug) });
 });
 
+/*
+ *  ⛔ «فرمانِ اجرا» یعنی اجرای هر دستوری روی این کامپیوتر (با `shell`)، و
+ *  ریشهٔ سایت بیرونِ پوشهٔ سایت‌ها یعنی دسترسیِ فایل‌منیجر به همان‌جا. پس هر
+ *  دو فقط کارِ مدیرِ پنل است — تا ۱.۵۰.۸ یک «کارگزار» با سایتی به ریشهٔ ‎/‎ و
+ *  یک فرمانِ دلخواه، کلِ کامپیوتر را داشت. و ریشه‌ای که خودِ پوشهٔ دادهٔ
+ *  پنل یا بالاتر از آن باشد برای هیچ‌کس پذیرفته نمی‌شود.
+ */
+function sensitiveSiteChange(body, before = null) {
+  const cmd = body.startCommand ?? body.start_command;
+  if (cmd !== undefined && String(cmd || '') !== String(before?.start_command || '')) return true;
+  const root = body.path ?? body.rootPath ?? body.root_path;
+  if (root !== undefined) {
+    const rel = path.relative(path.resolve(sitesRoot()), path.resolve(String(root || '')));
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return true;
+  }
+  return false;
+}
+function badSiteRoot(body) {
+  const root = body.path ?? body.rootPath ?? body.root_path;
+  if (root === undefined || root === null || root === '') return false;
+  const abs = path.resolve(String(root));
+  if (abs === path.parse(abs).root) return true;               //  ریشهٔ دیسک
+  const rel = path.relative(abs, path.resolve(config.dataDir));
+  return !rel.startsWith('..') && !path.isAbsolute(rel);       //  خودِ پوشهٔ دادهٔ پنل یا بالاترش
+}
+function guardSite(req, res, before = null) {
+  const body = req.body || {};
+  if (badSiteRoot(body)) {
+    res.status(400).json({ ok: false, error: 'bad_root', message: 'این پوشه نمی‌تواند ریشهٔ سایت باشد' });
+    return false;
+  }
+  if (!req.user?.local && sensitiveSiteChange(body, before) && userRole(req.user.id) !== 'admin') {
+    res.status(403).json({ ok: false, error: 'forbidden', needed: 'admin' });
+    return false;
+  }
+  return true;
+}
+
 router.post('/', async (req, res) => {
+  if (!guardSite(req, res)) return;
   const { path: rootPath, name, domain, port, kind, startCommand, autostart } = req.body || {};
   const result = await addSite({ rootPath, name, domain, port, kind, startCommand, autostart });
   if (!result.ok) return res.status(400).json(result);
@@ -65,6 +105,7 @@ router.post('/create', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   const before = getSite(req.params.id);
+  if (!guardSite(req, res, before)) return;
   const result = updateSite(req.params.id, req.body || {});
   if (!result.ok) {
     return res.status(result.error === 'invalid_domain' ? 400 : 404).json(result);

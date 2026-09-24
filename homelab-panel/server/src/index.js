@@ -708,7 +708,13 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
    *  نمی‌خورند. پیش از express.json، چون بدنه جریانی می‌رود.
    */
   publicApp.use(accountProxy);
-  publicApp.use(express.json({ limit: MSG_LIMIT }));
+  //  ⛔ سقفِ بدنه پیش از احراز: فقط پیام‌رسان پیوستِ بزرگ دارد. تا ۱.۵۰.۸ هر
+  //  مسیرِ عمومی — حتی بی‌رمز — بدنهٔ چندصد مگابایتی را در حافظه می‌خواند.
+  //  دفترِ زندهٔ پمپ هم‌اندازهٔ سقفِ وب‌سوکتِ همان است (۶۴ مگابایت)؛ بقیه ۵.
+  const bigBody = (p) => /^\/api\/(v1\/)?(messenger|stations)\b/.test(p);
+  publicApp.use((req, res, next) => express.json({
+    limit: bigBody(req.path) ? (req.path.includes('messenger') ? MSG_LIMIT : '64mb') : '5mb',
+  })(req, res, next));
   /*
    *  «mode» می‌گوید این جواب از کدام پورت آمده.
    *

@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------------------
 import { Router } from 'express';
 import QRCode from 'qrcode';
-import { requireAuth, requireWriteRole } from '../auth.js';
+import { requireAuth, requireWriteRole, requireRole, userRole } from '../auth.js';
 import { getSiteSync } from '../state.js';
 import { config } from '../config.js';
 import { readInterfaces, readPublicIp } from '../metrics/network.js';
@@ -37,6 +37,11 @@ import {
 
 const router = Router();
 router.use(requireAuth);
+//  ⛔ تونل، رمزِ سرورِ سایت، نشانیِ عمومی و میزبان‌ها کارِ مدیرِ پنل است.
+//  تا ۱.۵۰.۸ این روتر فقط «واردشده» می‌خواست: یک «بیننده» می‌توانست توکنِ
+//  تونل را عوض کند، رمزِ سرور را بچرخاند یا تونل را خاموش کند — یعنی همهٔ
+//  برنامه‌ها را از اینترنت جدا کند.
+router.use(requireWriteRole('admin'));
 
 // بدونِ پیش‌فرض: نشانیِ سایتِ کسِ دیگری، حدسِ درستی برای هیچ‌کس نیست
 const DEFAULT_SITE_URL = '';
@@ -157,7 +162,9 @@ router.get('/', async (req, res) => {
 
   const token = sync.getToken();
   const tunnel = publicState();
-  const link = buildSiteLink(token);
+  //  ⛔ لینکِ سایت خودِ رمزِ نوشتن را دارد؛ فقط مدیرِ پنل آن را می‌گیرد
+  const isAdmin = userRole(req.user.id) === 'admin';
+  const link = isAdmin ? buildSiteLink(token) : '';
 
   res.json({
     enabled: true,
@@ -177,7 +184,7 @@ router.get('/', async (req, res) => {
     tunnelAutostart: getSetting('tunnel_autostart', true) !== false,
     siteUrl: siteUrl(),
     siteLink: link,
-    siteLinkQr: await qrFor(link),
+    siteLinkQr: link ? await qrFor(link) : null,
     howTo: {
       fa: 'در سایت: تنظیمات ← هم‌زمان‌سازی ← سرور شخصی. «آدرس سرور» و «رمز سرور» زیر را وارد کنید.',
     },
@@ -185,7 +192,7 @@ router.get('/', async (req, res) => {
 });
 
 // نمایش رمز کامل — عمداً جدا و ثبت‌شونده در لاگ
-router.get('/token', (req, res) => {
+router.get('/token', requireRole('admin'), (req, res) => {
   const sync = getSiteSync();
   if (!sync) return res.status(404).json({ error: 'disabled' });
   logEvent('warn', 'panel', `رمز سرور سایت توسط «${req.user.username}» نمایش داده شد`);

@@ -125,7 +125,7 @@ export function createStations({ dataDir, enroll = 'lan' } = {}) {
     } catch { /* هنوز ساخته نشده */ }
     if (!value) {
       value = crypto.randomBytes(18).toString('hex');
-      await fsp.writeFile(readKeyFile(key), value, 'utf8');
+      await fsp.writeFile(readKeyFile(key), value, { encoding: 'utf8', mode: 0o600 });
     }
     readKeys.set(key, value);
     return value;
@@ -137,7 +137,7 @@ export function createStations({ dataDir, enroll = 'lan' } = {}) {
     const key = safeCode(code);
     if (!stores.has(key)) return null;
     const value = crypto.randomBytes(18).toString('hex');
-    await fsp.writeFile(readKeyFile(key), value, 'utf8');
+    await fsp.writeFile(readKeyFile(key), value, { encoding: 'utf8', mode: 0o600 });
     readKeys.set(key, value);
     // هر گوشی‌ای که با رمزِ قدیمی وصل است باید دوباره اجازه بگیرد
     stores.get(key).closeClients();
