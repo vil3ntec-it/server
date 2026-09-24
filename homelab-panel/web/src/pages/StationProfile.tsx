@@ -22,6 +22,7 @@ import { Archive, ArrowRight, FolderTree, Fuel, HardDrive, Inbox, Smartphone } f
 
 import { api } from '../api';
 import { useLive } from '../useLive';
+import { stationOnline } from '../stationLive';
 import { Card, CopyButton, Loading, StatusDot } from '../components/ui';
 import { ActionButton, KV, Notice, Tabs } from '../control/ui';
 
@@ -63,7 +64,6 @@ const fmtBytes = (n: number) => {
   while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
   return `${v.toFixed(i ? 1 : 0)} ${u[i]}`;
 };
-const LIVE_WINDOW_MS = 2 * 60 * 1000;
 const PALETTE = ['var(--accent)', 'var(--status-good)', 'var(--status-warning)', 'var(--status-critical)'];
 const SUB_FA: Record<string, string> = { active: 'فعال', trial: 'آزمایشی', expired: 'تمام شده', suspended: 'معلق', cancelled: 'لغو شده' };
 
@@ -127,7 +127,7 @@ export default function StationProfile() {
   if (!d) return <Loading label="پروفایلِ پمپ" />;
 
   const live = d.live;
-  const online = Boolean(d.lastActivity && Date.now() - d.lastActivity < LIVE_WINDOW_MS) || d.liveConnections > 0;
+  const online = stationOnline(d);
   const name = live?.station?.name || d.name;
   const initial = (name || d.code).trim().slice(0, 1) || '⛽';
   const tank = live?.tank || null;
@@ -148,7 +148,7 @@ export default function StationProfile() {
       </div>
 
       {/* ── ردیفِ اول: آواتار · مشخصات · وضعیت ── */}
-      <div className="grid gap-4 lg:grid-cols-[280px_1fr_320px]">
+      <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)_320px]">
         <Card>
           <div className="flex flex-col items-center gap-3 text-center">
             <div className="flex h-28 w-28 items-center justify-center rounded-full text-4xl font-bold"
@@ -221,7 +221,7 @@ export default function StationProfile() {
       </div>
 
       {/* ── ردیفِ دوم: تب‌ها · فایل‌ها و اپِ کارمندان ── */}
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <Card>
           <Tabs active={tab} onChange={setTab} tabs={[
             { id: 'alerts', label: 'خبرها', badge: live?.alerts.length ?? 0 },
