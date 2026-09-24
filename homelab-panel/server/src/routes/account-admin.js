@@ -348,8 +348,23 @@ router.get('/shop-plans', guard(async (req, res) => {
 }));
 
 /** نرخ‌نامه با تخفیف‌ها — همان شکلِ خودِ سرورِ حساب (‎plans[]‎ با ‎fullPrice‎ و ‎discount‎). */
+/*
+ *  ⛔ `config` هیچ‌وقت خام به مرورگر نمی‌رود — فقط کلیدهایی که صفحهٔ پلن‌ها
+ *  می‌خواند.
+ *
+ *  سرورِ حساب تا ۲.۹.۰ در همین پاسخ **کلِ** `app_config` را می‌داد، یعنی
+ *  کلیدِ خصوصیِ امضای مجوز، رمزِ SMTP و کلیدِ پوش — و این مسیر فقط `guard`
+ *  دارد، پس به مرورگرِ **هر** کاربرِ واردشدهٔ پنل می‌رسید. آن‌طرف از ۲.۹.۱
+ *  بسته است؛ این‌جا دفاعِ دوم است تا سرورِ حسابِ کهنه‌تر هم چیزی درز ندهد.
+ */
+const PLAN_CONFIG_KEYS = ['currency', 'pump_currency', 'trial_days', 'pump_trial_days'];
 router.get('/plans', guard(async (req, res) => {
-  res.json(await cloudRaw('GET', '/api/admin/plans', { query: { app: appOf(req) } }));
+  const out = await cloudRaw('GET', '/api/admin/plans', { query: { app: appOf(req) } });
+  const cfg = out?.config || {};
+  res.json({
+    ...out,
+    config: Object.fromEntries(PLAN_CONFIG_KEYS.filter((k) => k in cfg).map((k) => [k, cfg[k]])),
+  });
 }));
 
 router.put('/plans/:code/discount', guard(async (req, res) => {

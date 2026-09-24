@@ -249,7 +249,9 @@ const fake = http.createServer((req, res) => {
     //  ⚠️ `config` واقعاً همراهِ پاسخِ پلن‌ها می‌آید (‎admin.js‎، ‎allConfig()‎)
     //  و `‎/account-config‎` از همین‌جا می‌خواندش — سرورِ حساب هیچ `GET`ی
     //  برای `config` ندارد.
-    if (p === '/api/admin/plans' && req.method === 'GET') return j(200, { plans, app: u.searchParams.get('app') || 'shop', config: { ...accountConfig } });
+    //  ⚠️ رازها عمداً در همین پاسخ‌اند: سرورِ حسابِ پیش از ۲.۹.۱ همین‌طور می‌داد،
+    //  و پنل نباید هیچ‌کدام را به مرورگر برساند (بندِ «رازِ app_config» پایین).
+    if (p === '/api/admin/plans' && req.method === 'GET') return j(200, { plans, app: u.searchParams.get('app') || 'shop', config: { ...accountConfig, license_private_key: '-----BEGIN PRIVATE KEY-----fake', email_pass: 'smtp-fake-pass', vapid_private: 'vapid-fake' } });
     if ((m = /^\/api\/admin\/plans\/([^/]+)\/discount$/.exec(p))) {
       const plan = plans.find((x) => x.code === m[1]);
       if (!plan) return j(404, { error: { code: 'not_found', message: 'پلن پیدا نشد' } });
@@ -699,6 +701,12 @@ try {
   check('از پلن‌های دکان خوانده شد، نه پمپ', last()?.query?.app === 'shop');
   const adm = await api('GET', '/api/account-admin/plans', undefined, auth);
   check('نرخ‌نامه با fullPrice و discount', adm.json?.plans?.[1]?.fullPrice === 5000 && adm.json?.plans?.[1]?.discount?.percent === 20, JSON.stringify(adm.json?.plans?.[1]));
+  {
+    const blob = JSON.stringify(adm.json || {});
+    check('⛔ رازِ app_config (کلیدِ امضا، رمزِ SMTP، کلیدِ پوش) به مرورگر نمی‌رسد',
+      !/PRIVATE KEY|smtp-fake-pass|vapid-fake|license_private_key|email_pass/.test(blob), blob.slice(0, 300));
+    check('ولی واحدِ پول و روزهای آزمایشی هنوز می‌آیند', adm.json?.config?.currency === 'AFN' && adm.json?.config?.pump_trial_days === '30');
+  }
   const disc = await api('PUT', '/api/account-admin/plans/m1/discount', { percent: 10, label: 'نوروز' }, auth);
   check('تخفیف ⇒ PUT روی پلنِ دکان', disc.status === 200 && last()?.method === 'PUT' && last()?.path === '/api/admin/plans/m1/discount' && last()?.query?.app === 'shop' && last()?.body?.percent === 10, JSON.stringify(last()));
   const clr = await api('DELETE', '/api/account-admin/plans/m1/discount', undefined, auth);
