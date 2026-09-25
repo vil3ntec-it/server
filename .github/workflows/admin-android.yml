@@ -62,7 +62,13 @@ jobs:
       # ── انتشار ─────────────────────────────────────────────────────────
       # برچسب روی همین ساخت می‌نشیند، وگرنه فایلِ منتشرشده مالِ یک کامیتِ
       # قدیمی می‌ماند و به‌روزرسانیِ داخلِ برنامه نسخهٔ کهنه می‌گیرد.
+      # ⛔ **فقط main منتشر می‌کند.** برچسبِ `admin-android` همان کانالی است که
+      #    برنامهٔ نصب‌شده از آن به‌روزرسانی می‌گیرد (`Updater.TAG`)؛ ساختِ یک شاخهٔ
+      #    کاری کدِ مرج‌نشده را به‌عنوانِ «به‌روزرسانی» روی گوشیِ صاحبِ سامانه
+      #    می‌فرستاد — همان باگی که ۱.۵۰.۵ برای `windows-preview` بست. شاخه‌ها
+      #    فقط می‌سازند (سنجشِ کامپایل) و فایل را در artifact می‌گذارند.
       - name: جابه‌جا کردن برچسب
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -72,6 +78,7 @@ jobs:
             -f ref='refs/tags/admin-android' -f sha='${{ github.sha }}'
 
       - name: انتشار
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: admin-android
@@ -102,6 +109,7 @@ jobs:
             <sub>ساخته‌شده از `${{ github.sha }}` روی شاخهٔ `${{ github.ref_name }}`</sub>
 
       - name: پاک کردن فایل‌های نسخه‌های قبلی
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

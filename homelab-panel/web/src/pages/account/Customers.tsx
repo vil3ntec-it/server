@@ -34,7 +34,14 @@ type Deed = {
   run: (row: SubRow) => Promise<unknown>;
 };
 
-export default function Customers() {
+/**
+ *  ⚠️ `fixedApp` و `embedded`: همین صفحه داخلِ بخشِ خودِ هر برنامه هم
+ *  می‌نشیند («پمپ‌بنزین‌ها ← اشتراک‌ها» و «فروشگاه‌ها ← اشتراک‌ها») — خواستهٔ
+ *  صاحبِ سامانه (۱۴۰۵/۰۷/۱۳): «اشتراک‌ها رو توی بخشِ مربوطه‌شون بذار که راحت
+ *  بشه دید و پیدا کرد». ⛔ رونوشتِ دومی ساخته نشد: همان فهرست، همان کارها،
+ *  همان پنجره‌های تأیید — فقط بخش ثابت است و سربرگِ صفحه نیست.
+ */
+export default function Customers({ fixedApp, embedded = false }: { fixedApp?: AppId; embedded?: boolean } = {}) {
   /*
    *  دامنه از خودِ نشانی می‌آید تا منو بتواند مستقیم به «فروشگاه‌ها» یا
    *  «پمپ‌بنزین‌ها» باز کند.
@@ -49,12 +56,23 @@ export default function Customers() {
    */
   const [params] = useSearchParams();
   const fromUrl = params.get('app');
-  const [app, setApp] = useState<Scope>(fromUrl === 'shop' || fromUrl === 'pump' ? fromUrl : 'both');
+  const [app, setApp] = useState<Scope>(fixedApp || (fromUrl === 'shop' || fromUrl === 'pump' ? fromUrl : 'both'));
 
   //  رفتن از «فروشگاه‌ها» به «پمپ‌بنزین‌ها» همان صفحه است؛ بی این، فیلتر عوض نمی‌شد
   useEffect(() => {
+    if (fixedApp) { setApp(fixedApp); return; }
     if (fromUrl === 'shop' || fromUrl === 'pump') setApp(fromUrl);
-  }, [fromUrl]);
+  }, [fromUrl, fixedApp]);
+
+  /*
+   *  ⛔ «فقط آخرین اشتراکِ هر حساب» — پیش‌فرض روشن.
+   *
+   *  حسابی که یک بار لغو و دوباره خریده دو ردیف داشت (یکی «لغو · ۰ روز»، یکی
+   *  «فعال · ۳۶۵ روز») و صاحبِ سامانه نمی‌فهمید حالِ **امروزِ** آن حساب
+   *  کدام است. ردیف‌های کهنه پاک نمی‌شوند — با برداشتنِ تیک برمی‌گردند، چون
+   *  تاریخچه و پرداخت‌ها به آن‌ها بند است.
+   */
+  const [latestOnly, setLatestOnly] = useState(true);
 
   const [status, setStatus] = useState('');
   const [kind, setKind] = useState('');
@@ -83,14 +101,29 @@ export default function Customers() {
   }, [app, status, kind, city]);
 
   const list = useLoad<ListOut>(`/api/account-admin/customers?${query}`, [query], 'customers');
-  const rows = useMemo(() => {
-    const all = list.data?.subscriptions || [];
+  const { rows, older } = useMemo(() => {
+    let all = list.data?.subscriptions || [];
+    let hidden = 0;
+    if (latestOnly) {
+      const best = new Map<string, SubRow>();
+      for (const r of all) {
+        const k = `${r.app}:${r.tenantId}`;
+        const at = (x: SubRow) => Number(x.createdAt || x.startsAt || 0);
+        const cur = best.get(k);
+        if (!cur || at(r) > at(cur)) best.set(k, r);
+      }
+      hidden = all.length - best.size;
+      all = all.filter((r) => best.get(`${r.app}:${r.tenantId}`) === r);
+    }
     const needle = q.trim().toLowerCase();
-    if (!needle) return all;
-    return all.filter((r) =>
-      [r.tenantName, r.ownerName, r.ownerEmail, r.ownerPhone, r.city, r.planTitle]
-        .some((v) => String(v || '').toLowerCase().includes(needle)));
-  }, [list.data, q]);
+    if (!needle) return { rows: all, older: hidden };
+    return {
+      rows: all.filter((r) =>
+        [r.tenantName, r.ownerName, r.ownerEmail, r.ownerPhone, r.city, r.planTitle]
+          .some((v) => String(v || '').toLowerCase().includes(needle))),
+      older: hidden,
+    };
+  }, [list.data, q, latestOnly]);
 
   const counts = useMemo(() => {
     const out = { active: 0, expiring: 0, expired: 0, permanent: 0, never: 0 };
@@ -147,22 +180,36 @@ export default function Customers() {
   ];
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <PageHead
-        title="مشتری‌ها و اشتراک‌ها"
-        sub="همهٔ اشتراک‌های دکان و پمپ، از سرورِ حساب — با فیلترِ بخش، وضعیت، شهر و نوعِ پلن"
-        actions={(
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={() => setGrant({ app: app === 'both' ? 'pump' : app, q: '' })}
-            >
-              <CreditCard className="h-4 w-4" /> دادنِ اشتراک
-            </button>
-            <AppPicker value={app} onChange={setApp} withBoth />
-          </div>
-        )}
-      />
+    <div className={embedded ? '' : 'mx-auto max-w-6xl'}>
+      {embedded ? (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-ink-muted">
+            اشتراکِ {APP_LABEL[(fixedApp || 'pump') as AppId]}‌ها — روزِ مانده، تاریخِ پایان و همهٔ کارها همین‌جا
+          </p>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => setGrant({ app: fixedApp || 'pump', q: '' })}
+          >
+            <CreditCard className="h-4 w-4" /> دادنِ اشتراک
+          </button>
+        </div>
+      ) : (
+        <PageHead
+          title="مشتری‌ها و اشتراک‌ها"
+          sub="همهٔ اشتراک‌های دکان و پمپ، از سرورِ حساب — با فیلترِ بخش، وضعیت، شهر و نوعِ پلن"
+          actions={(
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => setGrant({ app: app === 'both' ? 'pump' : app, q: '' })}
+              >
+                <CreditCard className="h-4 w-4" /> دادنِ اشتراک
+              </button>
+              {!fixedApp && <AppPicker value={app} onChange={setApp} withBoth />}
+            </div>
+          )}
+        />
+      )}
 
       {list.error && <CloudProblem code={list.code} message={list.error} onRetry={list.reload} />}
 
@@ -202,6 +249,10 @@ export default function Customers() {
             />
           </div>
           <input className="input w-32" placeholder="شهر" value={city} onChange={(e) => setCity(e.target.value)} />
+          <label className="flex items-center gap-1.5 text-xs text-ink-muted">
+            <input type="checkbox" checked={latestOnly} onChange={(e) => setLatestOnly(e.target.checked)} />
+            فقط آخرین اشتراکِ هر حساب{latestOnly && older > 0 ? ` (${fa(older)} ردیفِ کهنه پنهان)` : ''}
+          </label>
         </div>
 
         {list.busy && !list.data ? (
@@ -209,7 +260,7 @@ export default function Customers() {
         ) : rows.length === 0 ? (
           <Empty title="هیچ اشتراکی با این فیلتر نیست" hint="فیلترها را بردارید یا بخشِ دیگری را ببینید." />
         ) : (
-          <Table head={['مشتری', 'بخش', 'پلن', 'وضعیت', 'مانده', 'قیمت', 'پرداخت‌شده', '']}>
+          <Table head={['مشتری', 'بخش', 'پلن', 'وضعیت', 'مانده', 'پایان', 'قیمت', 'پرداخت‌شده', '']}>
             {rows.map((r) => {
               //  ⚠️ حسابِ بی‌اشتراک «۰ روز مانده» نیست — هیچ روزی ندارد.
               //  ⚠️ حسابِ بی‌اشتراک «۰ روز مانده» نیست — مگر در دورهٔ
@@ -237,6 +288,7 @@ export default function Customers() {
                   <Cell>{r.planTitle || r.plan || '—'}</Cell>
                   <Cell><Badge tone={r.status === 'active' ? 'good' : r.status === 'suspended' ? 'warn' : 'bad'}>{STATUS_LABEL[r.status] || r.status}</Badge></Cell>
                   <Cell><Badge tone={tone.tone}>{tone.text}</Badge></Cell>
+                  <Cell className="tnum">{r.permanent ? 'دائمی' : r.endsAt ? day(r.endsAt) : '—'}</Cell>
                   <Cell className="tnum">{r.price == null ? '—' : money(r.price, r.currency)}</Cell>
                   <Cell className="tnum">{money(r.paid, r.currency)}</Cell>
                   <Cell>

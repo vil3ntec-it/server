@@ -26,6 +26,7 @@ export type SubRow = {
   paid: number;
   features: string[];
   note: string;
+  createdAt?: number;
   /**
    *  ⚠️ این ردیف اشتراک نیست، **خودِ حساب** است: پمپ یا دکانی که ثبت شده و
    *  هیچ‌وقت چیزی نخریده. تا ۱۴۰۵/۰۷/۱۱ اصلاً در این فهرست نبود (فهرست از

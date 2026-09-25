@@ -62,6 +62,8 @@ private const val TONE_BAD = 3
 
 private enum class Section(val title: String) {
   Shops("فروشگاه‌ها"),
+  //  ⛔ اشتراکِ فروشگاه‌ها کنارِ خودِ فروشگاه‌ها — همان زبانهٔ بخشِ پمپ
+  ShopSubs("💳 اشتراکِ فروشگاه‌ها"),
   Stations("پمپ‌ها"),
   Sites("سایت‌ها"),
   Panel("کاربران پنل"),
@@ -140,6 +142,11 @@ fun AccountsScreen(session: Session) {
           text = { Text(item.title, style = MaterialTheme.typography.labelLarge) },
         )
       }
+    }
+
+    if (section == Section.ShopSubs) {
+      SubscriptionsTab(session, "shop")
+      return@Column
     }
 
     OutlinedTextField(
@@ -230,6 +237,8 @@ private fun toneTint(tone: Int): Color = when (tone) {
 /* ------------------------- گرفتن و ترجمهٔ داده ---------------------------- */
 
 private fun load(session: Session, section: Section): List<AccountRow> = when (section) {
+  //  زبانهٔ اشتراک‌ها داده‌اش را خودش می‌خواند (`SubscriptionsTab`)
+  Section.ShopSubs -> emptyList()
   Section.Shops -> Api.shopAccounts(session).items("items").let { array ->
     (0 until array.length()).map { index ->
       val row = array.optJSONObject(index) ?: JSONObject()
