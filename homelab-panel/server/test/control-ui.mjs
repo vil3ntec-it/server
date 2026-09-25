@@ -205,6 +205,7 @@ try {
     ['/customers?tab=visitors', 'بازدیدکننده‌ها'],
     ['/account-server', 'برنامه‌های زیرِ مدیریت'],
     ['/account-server?tab=email', 'ایمیلِ سرورِ حساب'],
+    ['/account-server?tab=status', 'وضعیتِ سرورِ حساب'],
     //  نشانی‌های قدیمی نباید بشکنند
     ['/vip-codes', 'کدهای اشتراک'],
     ['/visitors', 'بازدیدکننده‌ها'],
@@ -212,7 +213,7 @@ try {
 
   /*  صفحه‌هایی که از سرورِ حساب می‌خوانند — فقط این‌ها حق دارند ۴۰۹/۵۰۳ بدهند.  */
   const ACCOUNT_PAGES = new Set(['/subscriptions', '/subscriptions?app=pump', '/codes?app=pump', '/stations#codes', '/shop', '/shop?tab=subs', '/stations#subs', '/shop?tab=subs#', '/shop?tab=codes', '/customers', '/sales', '/plans', '/plans?tab=discounts', '/notices', '/support', '/sync', '/logins', '/discounts',
-    '/plans?tab=codes', '/plans?tab=requests', '/customers?tab=visitors', '/account-server', '/account-server?tab=email',
+    '/plans?tab=codes', '/plans?tab=requests', '/customers?tab=visitors', '/account-server', '/account-server?tab=email', '/account-server?tab=status',
     '/vip-codes', '/visitors']);
 
   for (const [route, heading] of PAGES) {

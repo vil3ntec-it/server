@@ -39,6 +39,21 @@ let child = null;
 let startedAt = 0;
 let restarts = 0;
 let stopping = false;
+/*
+ *  ⛔ **چرا افتاد** — نه فقط «کدِ ۱».
+ *
+ *  گزارشِ صاحب سامانه (۱۴۰۵/۰۷/۱۳، با عکس): پس از به‌روز کردنِ سرورِ حساب
+ *  `api.<دامنه>/admin/` فقط می‌گفت «پروسه بسته شد (کد 1) — لاگِ سرورِ حساب
+ *  در پنل را ببینید» و **هیچ صفحه‌ای در پنل آن لاگ را نشان نمی‌داد**. پس
+ *  چند سطرِ آخرِ stderrِ همان پروسه نگه داشته می‌شود و با افتادنش کنارِ
+ *  کدِ خروج می‌نشیند (`crashInfo`) — فقط برای پنل، پشتِ ورودِ مدیر.
+ *  ⚠️ در پیامِ **عمومیِ** درگاه (`downHint`) نمی‌رود: stderr نشانیِ پوشه‌ها
+ *  را دارد و آن پیام از اینترنت دیده می‌شود.
+ */
+const TAIL = 12;
+let tail = [];
+let crashes = 0;
+let lastCrash = null;
 let backoffTimer = null;
 let lastError = '';
 
@@ -226,6 +241,11 @@ export function onPanelMailChanged() {
   return { ok: true };
 }
 
+/** چند بار از بالا آمدنِ پنل افتاده و آخرین بار چرا — برای به‌روزرسان و صفحهٔ پنل. */
+export function crashInfo() {
+  return { count: crashes, last: lastCrash ? { ...lastCrash, lines: lastCrash.lines.slice() } : null };
+}
+
 export function accountLogs(limit = 100) {
   return ring.slice(-Math.max(1, Math.min(RING, limit)));
 }
@@ -245,6 +265,8 @@ export function accountStatus() {
     uptimeMs: startedAt ? Date.now() - startedAt : 0,
     restarts,
     lastError: lastError || null,
+    //  ⚠️ فقط از مسیرِ پنل (پشتِ ورود) — نشانیِ پوشه‌ها در آن هست
+    lastCrash: lastCrash ? { at: lastCrash.at, code: lastCrash.code, lines: lastCrash.lines.slice(-6) } : null,
     driver: 'pglite',
     //  مدیرِ سرورِ حساب — همانی که اپِ مدیریت و /admin/ با آن وارد می‌شوند.
     //  ⚠️ فقط از این مسیر (پورتِ پنل، پشتِ ورودِ مدیر) دیده می‌شود. تا پیش
@@ -300,6 +322,7 @@ export function startAccountServer() {
   announce(`سرورِ حساب روشن شد (پورت ${env.PORT}، دیتابیس PGlite در ${accountDataDir()}) — از api.<دامنه> رد می‌شود`);
   logEvent('info', 'account', `سرورِ حساب روشن شد روی پورت ${env.PORT}`);
 
+  tail = [];
   const wire = (stream, level) => {
     stream.setEncoding('utf8');
     let buf = '';
@@ -307,7 +330,11 @@ export function startAccountServer() {
       buf += chunk;
       const lines = buf.split(/\r?\n/);
       buf = lines.pop() || '';
-      for (const l of lines) if (l.trim()) push(level, l.trim());
+      for (const l of lines) {
+        if (!l.trim()) continue;
+        push(level, l.trim());
+        if (level === 'error') { tail.push(l.trim().slice(0, 400)); if (tail.length > TAIL) tail.shift(); }
+      }
     });
   };
   wire(child.stdout, 'info');
@@ -319,6 +346,8 @@ export function startAccountServer() {
     startedAt = 0;
     if (stopping) { push('info', 'سرورِ حساب خاموش شد'); return; }
     lastError = `پروسه بسته شد (کد ${code ?? signal})`;
+    crashes++;
+    lastCrash = { at: Date.now(), code: code ?? signal, lines: tail.slice() };
     push('warn', lastError);
     logEvent('warn', 'account', lastError);
     restarts++;
@@ -407,7 +436,7 @@ export function downHint() {
     return 'سرورِ حساب همین حالا دارد بالا می‌آید — چند ثانیهٔ دیگر دوباره امتحان کنید.';
   }
   if (lastError) {
-    return `سرورِ حساب روی سرورِ خانگی افتاده (${lastError}) و پنل دارد دوباره بالا می‌آوردش — کمی بعد دوباره امتحان کنید؛ اگر ماند، لاگِ «سرورِ حساب» در پنل را ببینید.`;
+    return `سرورِ حساب روی سرورِ خانگی افتاده (${lastError}) و پنل دارد دوباره بالا می‌آوردش — کمی بعد دوباره امتحان کنید؛ اگر ماند، در مرکز فرمان «سرورِ حساب ← وضعیت و لاگ» دلیلش نوشته شده است.`;
   }
   return 'سرورِ حساب روی سرورِ خانگی هنوز بالا نیامده — چند ثانیهٔ دیگر دوباره امتحان کنید.';
 }

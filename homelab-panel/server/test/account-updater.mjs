@@ -328,6 +328,74 @@ console.log('\n── ۹) دانلودِ ادامه‌دار، یک کار در 
   check('⛔ روی ویندوز tar.exe خودِ ویندوز (System32)، نه tarِ گیت', /System32', 'tar\.exe'/.test(src));
 }
 
+// ── ۱۰) ⛔ «به‌روز کردم و سرورِ حساب دیگر بالا نیامد (کد ۱)» ─────────────
+//  گزارشِ صاحب سامانه (۱۴۰۵/۰۷/۱۳، با عکس). نسخهٔ تازه‌ای که روی آن کامپیوتر
+//  سرِ بالا آمدن می‌افتد نباید همهٔ برنامه‌ها را بی‌سرور بگذارد.
+console.log('\n── ۱۰) نسخهٔ تازه بالا نیامد ⇒ نسخهٔ قبلی برمی‌گردد ──');
+{
+  // ۱۰الف) داورِ «بالا آمد؟» — خالص، با ناظر و پرسشِ ساختگی
+  let n = 0;
+  const crashes = () => ({ count: n, last: n ? { code: 1, lines: ['راه‌اندازی شکست خورد: Error: boom'] } : null });
+  const down = async () => ({ up: false });
+  const w1 = updater.watchStart({ want: '6.0.0', ms: 2000, every: 5, probe: down, crashes });
+  n += 2;
+  const r1 = await w1;
+  check('⛔ دو افتادن پس از راه‌اندازی ⇒ «بالا نیامد» با همان سطرها',
+    r1.ok === false && r1.code === 1 && r1.lines[0].includes('boom'), JSON.stringify(r1));
+  const r2 = await updater.watchStart({ want: '6.0.0', ms: 2000, every: 5, probe: async () => ({ up: true, version: '6.0.0' }), crashes });
+  check('⇒ بالا آمد و نسخه همان است ⇒ «شد»', r2.ok === true && !r2.slow, JSON.stringify(r2));
+  const r3 = await updater.watchStart({ want: '6.0.0', ms: 40, every: 5, probe: down, crashes });
+  check('⚠️ فقط کند بود و هیچ افتادنی نبود ⇒ برنمی‌گرداند (مهاجرتِ دیتابیسِ بزرگ)', r3.ok === true && r3.slow === true, JSON.stringify(r3));
+  const base = n;
+  const w4 = updater.watchStart({ want: '6.0.0', ms: 60, every: 5, probe: down, crashes });
+  n = base + 1;
+  const r4 = await w4;
+  check('⇒ یک افتادن و تا ته پنجره بالا نیامد ⇒ «بالا نیامد»', r4.ok === false, JSON.stringify(r4));
+
+  // ۱۰ب) جابه‌جاییِ واقعی روی دیسک: تازه نشست، بالا نیامد، قبلی برگشت
+  const dir = path.join(tmp, 'pack-6.0.0');
+  makeServer(path.join(dir, 'account-server'), '6.0.0', 'BROKEN');
+  const file = path.join(tmp, 'acct-6.0.0.tar.gz');
+  spawnSync('tar', ['-czf', file, '-C', dir, 'account-server']);
+  const rel6 = {
+    name: 'سرورِ حساب — 6.0.0', body: '', published_at: '2026-09-25T00:00:00Z',
+    assets: [{ name: 'account-server.tar.gz', size: fs.statSync(file).size, browser_download_url: 'https://example.invalid/6' }],
+  };
+  const gh6 = async (url) => (String(url).includes('/releases/tags/')
+    ? { ok: true, status: 200, json: async () => rel6 }
+    : { ok: true, status: 200, arrayBuffer: async () => fs.readFileSync(file) });
+  const before = versionAt(downloaded);
+  let judged = '';
+  const out = await updater.apply({
+    fetchImpl: gh6, restart: false, retryDelays: [],
+    verify: async (v) => { judged = v; return { ok: false, code: 1, lines: ['راه‌اندازی شکست خورد: Error: boom'] }; },
+  });
+  check('⇒ داور همان نسخهٔ تازه را سنجید', judged === '6.0.0', judged);
+  check('⛔ شکست را می‌گوید و «برگردانده شد»', out.ok === false && out.code === 'rolled_back' && out.to === before,
+    JSON.stringify(out).slice(0, 200));
+  check('⛔ نسخهٔ روی دیسک همان نسخهٔ سالمِ قبلی است', versionAt(downloaded) === before, versionAt(downloaded));
+  check('⇒ نسخهٔ خراب کنار گذاشته شد (app.bad)، نه پاک', versionAt(path.join(path.dirname(downloaded), 'app.bad')) === '6.0.0');
+  check('⇒ و دلیل (سطرهای stderr) در پاسخ هست', out.lines?.[0]?.includes('boom'));
+  check('⇒ پیام نسخهٔ خراب و نسخهٔ برگشته را نام می‌برد', out.why.includes('6.0.0') && out.why.includes(before), out.why);
+  check('⇒ دیتابیس دست نخورد', fs.readFileSync(path.join(pg, 'db.bin'), 'utf8') === 'دیتابیسِ مشتری');
+
+  // ۱۰ج) و وقتی بالا آمد، همان «شد» همیشگی
+  const ok = await updater.apply({ fetchImpl: gh6, restart: false, retryDelays: [], verify: async () => ({ ok: true }) });
+  check('⇒ نسخهٔ سالم می‌نشیند', ok.ok && ok.to === '6.0.0' && versionAt(downloaded) === '6.0.0', JSON.stringify(ok).slice(0, 160));
+
+  // ۱۰د) سورس: ناظر دلیلِ افتادن را نگه می‌دارد و درگاهِ عمومی آن را پخش نمی‌کند
+  const sup = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'src', 'account', 'supervisor.js'), 'utf8');
+  check('⇒ ناظر سطرهای stderr را کنارِ کدِ خروج نگه می‌دارد', /lastCrash = \{ at: Date\.now\(\), code: code \?\? signal, lines: tail\.slice\(\) \}/.test(sup));
+  const hint = sup.slice(sup.indexOf('export function downHint'), sup.indexOf('setDownHint(downHint)'));
+  check('⛔ پیامِ عمومیِ درگاه stderr را نمی‌برد (نشانیِ پوشه‌ها)', !/lastCrash|tail/.test(hint));
+  check('⇒ و به جای درستِ پنل می‌فرستد', hint.includes('وضعیت و لاگ'));
+  const hubs = fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', 'web', 'src', 'pages', 'hubs.tsx'), 'utf8');
+  check('⛔ تبِ «وضعیت و لاگ» واقعاً در بخشِ سرورِ حساب هست', /id: 'status', label: 'وضعیت و لاگ', body: <AccountServerLog \/>/.test(hubs));
+  const logPage = fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', 'web', 'src', 'pages', 'account', 'AccountServerLog.tsx'), 'utf8');
+  check('⇒ و همان تب لاگ و آخرین افتادن را می‌خواند',
+    logPage.includes("'/api/account-server/logs?limit=200'") && logPage.includes('st.lastCrash'));
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${pass} سبز، ${fails.length} سرخ`);
 if (fails.length) { for (const f of fails) console.log('  ✖', f); process.exit(1); }

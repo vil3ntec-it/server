@@ -28,8 +28,9 @@ import path from 'node:path';
 import { config } from '../config.js';
 import { logEvent } from '../db.js';
 import {
-  accountDataDir, resolveAccountDir, restartAccountServer, stopAccountServer, waitAccountServerExit,
+  accountDataDir, crashInfo, resolveAccountDir, restartAccountServer, stopAccountServer, waitAccountServerExit,
 } from './supervisor.js';
+import { probeAccountServer } from '../api/account-proxy.js';
 import { repoSlug } from '../update/github.js';
 import { usable, versionAt, newer } from './bundle.js';
 
@@ -153,7 +154,7 @@ export const TAR_EXCLUDES = ['--exclude=node_modules/.bin'];
 //  `progress()` را می‌خواند. رفتن و برگشتن هیچ چیزی را از سر نمی‌کند.
 const job = {
   running: false,
-  phase: 'idle', // idle · check · download · extract · swap · restart · done · error
+  phase: 'idle', // idle · check · download · extract · swap · restart · verify · done · error
   got: 0,
   total: 0,
   from: '',
@@ -161,6 +162,8 @@ const job = {
   why: '',
   code: '',
   attempt: 0,
+  //  سطرهای آخرِ stderrِ نسخه‌ای که بالا نیامد — فقط وقتی برگردانده شد
+  lines: [],
   startedAt: 0,
   endedAt: 0,
 };
@@ -189,6 +192,7 @@ export function start(opts = {}) {
         why: out.ok ? (out.changed ? `به ${out.to} به‌روز شد` : (out.why || 'تازه‌ترین است')) : (out.why || 'به‌روزرسانی نشد'),
         code: out.code || '',
         to: out.to || job.to,
+        lines: Array.isArray(out.lines) ? out.lines : [],
       });
       return out;
     })
@@ -286,8 +290,40 @@ async function renameRetry(from, to, tries = 12) {
  * (`EBUSY`). پس سرورِ حساب درست پیش از جابه‌جایی خاموش و بعدش روشن
  * می‌شود — و اگر جابه‌جایی نشد، همان نسخهٔ قبلی دوباره روشن می‌شود.
  */
-export async function apply({ fetchImpl = fetch, actor = 'admin', restart = true, retryDelays = [2000, 5000, 10000] } = {}) {
-  setJob({ running: true, phase: 'check', got: 0, total: 0, from: '', to: '', why: '', code: '', attempt: 0, startedAt: Date.now(), endedAt: 0 });
+/**
+ * نسخهٔ تازه واقعاً بالا آمد؟
+ *
+ * ⛔ **ریشهٔ «به‌روز کردم و سرورِ حساب دیگر بالا نیامد»** (۱۴۰۵/۰۷/۱۳، عکسِ
+ * صاحب سامانه: «پروسه بسته شد (کد 1)»). به‌روزرسان پس از جابه‌جایی فقط
+ * `restartAccountServer` را می‌زد و «شد» می‌گفت؛ اگر نسخهٔ تازه روی آن
+ * کامپیوتر سرِ بالا آمدن می‌افتاد، ناظر تا ابد دوباره بالایش می‌آورد و
+ * همهٔ برنامه‌ها — ورود، اشتراک، پمپ — بی‌سرور می‌ماندند، در حالی که نسخهٔ
+ * سالمِ قبلی کنارش در `app.prev` نشسته بود.
+ *
+ * دو افتادن پس از راه‌اندازی، یا یک افتادن و بالا نیامدن تا ته پنجره ⇒ نه.
+ * ⚠️ کندی به‌تنهایی «نه» نیست: مهاجرتِ دیتابیسِ بزرگ ممکن است طول بکشد و
+ * برگرداندنِ نسخه وسطِ آن بدتر است.
+ */
+export async function watchStart({ want = '', ms = 90_000, every = 1000, probe = probeAccountServer, crashes = crashInfo } = {}) {
+  const base = crashes().count;
+  const until = Date.now() + ms;
+  for (;;) {
+    const c = crashes();
+    if (c.count - base >= 2) return { ok: false, code: c.last?.code, lines: c.last?.lines || [] };
+    try {
+      const p = await probe();
+      if (p?.up && (!want || !p.version || p.version === want)) return { ok: true };
+    } catch { /* هنوز */ }
+    if (Date.now() >= until) {
+      const e = crashes();
+      return e.count > base ? { ok: false, code: e.last?.code, lines: e.last?.lines || [] } : { ok: true, slow: true };
+    }
+    await sleep(every);
+  }
+}
+
+export async function apply({ fetchImpl = fetch, actor = 'admin', restart = true, retryDelays = [2000, 5000, 10000], verify = null } = {}) {
+  setJob({ running: true, phase: 'check', got: 0, total: 0, from: '', to: '', why: '', code: '', attempt: 0, lines: [], startedAt: Date.now(), endedAt: 0 });
   const info = await check({ fetchImpl });
   if (!info.ok) return info;
   setJob({ from: info.current, to: info.latest, total: info.size || 0 });
@@ -364,12 +400,35 @@ export async function apply({ fetchImpl = fetch, actor = 'admin', restart = true
       throw e;
     }
 
-    logEvent('account.server.updated', { from: info.current, to: got, actor });
     if (restart) {
       setJob({ phase: 'restart' });
       stopped = false;
       try { await restartAccountServer(); } catch { /* دورِ بعدِ ناظر */ }
     }
+
+    // ── ۴) ⛔ نسخهٔ تازه بالا آمد؟ نه ⇒ همان لحظه نسخهٔ قبلی برمی‌گردد
+    const judge = verify || (restart ? (v) => watchStart({ want: v }) : null);
+    if (judge) {
+      setJob({ phase: 'verify' });
+      const seen = await judge(got);
+      if (!seen?.ok && fs.existsSync(old) && usable(old)) {
+        const bad = path.join(root, 'app.bad');
+        if (restart) { stopAccountServer(); await waitAccountServerExit(10000); }
+        await fsp.rm(bad, { recursive: true, force: true }).catch(() => {});
+        await renameRetry(live, bad);
+        await renameRetry(old, live);
+        if (restart) { try { await restartAccountServer(); } catch { /* دورِ بعدِ ناظر */ } }
+        const back = versionAt(live);
+        logEvent('account.server.rolled_back', { from: got, to: back, actor, code: seen?.code ?? null });
+        return {
+          ok: false, code: 'rolled_back', from: got, to: back,
+          why: `نسخهٔ ${got} روی این کامپیوتر بالا نیامد (کد ${seen?.code ?? '؟'}) — نسخهٔ ${back} برگردانده شد و سرورِ حساب دوباره کار می‌کند`,
+          lines: (seen?.lines || []).slice(-8),
+        };
+      }
+    }
+
+    logEvent('account.server.updated', { from: info.current, to: got, actor });
     await fsp.rm(archive, { force: true }).catch(() => {});
     return { ok: true, changed: true, from: info.current, to: got };
   } catch (e) {
