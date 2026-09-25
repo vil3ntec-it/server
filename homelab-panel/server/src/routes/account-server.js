@@ -11,7 +11,7 @@ import {
   accountStatus, accountLogs, startAccountServer, stopAccountServer, restartAccountServer,
 } from '../account/supervisor.js';
 import { probeAccountServer } from '../api/account-proxy.js';
-import { check as checkBundle, apply as applyBundle } from '../account/updater.js';
+import { check as checkBundle, start as startBundle, progress as bundleProgress } from '../account/updater.js';
 import { cloudStatus } from '../stations/cloud.js';
 
 const router = Router();
@@ -68,17 +68,23 @@ router.get('/update', async (req, res) => {
 });
 
 /**
- * بگیر و بنشان.
+ * بگیر و بنشان — **در پس‌زمینه**.
+ *
+ * ⛔ همان لحظه برمی‌گردد و کار روی سرور ادامه دارد. پیش از این کلِ دانلود
+ * داخلِ همین درخواست بود: صفحه هیچ عددی نمی‌دید، رفتن به بخشِ دیگر دکمه را
+ * از نو می‌ساخت و کلیکِ دوم دانلودِ اولی را پاک می‌کرد. کارِ در جریان
+ * دوباره شروع نمی‌شود (`started: false`).
  *
  * ⛔ فقط `admin`: این سرویسِ حساب و اشتراکِ همهٔ برنامه‌ها را یک لحظه
  * می‌خواباند و دوباره بالا می‌آورد — همان قاعدهٔ `/api/platform/*`.
  */
-router.post('/update', requireRole('admin'), async (req, res) => {
-  const out = await applyBundle({ actor: req.user?.username || 'admin' });
-  //  ⚠️ `detail` همان چیزی است که رابط به کاربر نشان می‌دهد (`ApiError`)،
-  //  پس جملهٔ آدمیزاد (`why`) آن‌جا می‌نشیند، نه خروجیِ خامِ `tar`.
-  if (!out.ok) return res.status(400).json({ ...out, error: out.code || 'update_failed', detail: out.why || 'به‌روزرسانی نشد' });
-  res.json(out);
+router.post('/update', requireRole('admin'), (req, res) => {
+  res.json(startBundle({ actor: req.user?.username || 'admin' }));
+});
+
+/** حالِ کارِ جاری — چند مگابایت آمده، کدام گام. بی هیچ درخواستی به بیرون. */
+router.get('/update/progress', (req, res) => {
+  res.json(bundleProgress());
 });
 
 export default router;

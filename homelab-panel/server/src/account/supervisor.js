@@ -346,10 +346,32 @@ export function stopAccountServer() {
   return { ok: true };
 }
 
-export function restartAccountServer() {
+/**
+ * تا پروسهٔ فرزند واقعاً بسته شود صبر می‌کند (یا تا سقفِ `ms`).
+ *
+ * ⛔ **ریشهٔ «به‌روز شد ولی سرورِ حساب بالا نیامد»**: `restartAccountServer`
+ * هشتصد میلی‌ثانیه صبر می‌کرد و بعد `startAccountServer` را می‌زد — ولی اگر
+ * فرزند هنوز نمرده بود، `child` پر بود و «از قبل در حال اجراست» برمی‌گشت،
+ * و وقتی فرزند واقعاً می‌مرد `stopping` راست بود و **هیچ‌کس دوباره روشنش
+ * نمی‌کرد**. و روی ویندوز پوشه‌ای که `cwd`ِ یک پروسهٔ زنده است جابه‌جا
+ * نمی‌شود، پس به‌روزرسانی باید پیش از جابه‌جایی همین را صبر کند.
+ */
+export function waitAccountServerExit(ms = 8000) {
+  const c = child;
+  if (!c) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(false), ms);
+    t.unref?.();
+    c.once('exit', () => { clearTimeout(t); resolve(true); });
+  });
+}
+
+export async function restartAccountServer() {
   stopAccountServer();
+  await waitAccountServerExit(8000);
   restarts = 0;
-  return new Promise((resolve) => setTimeout(() => resolve(startAccountServer()), 800));
+  await new Promise((r) => setTimeout(r, 300));
+  return startAccountServer();
 }
 
 /**

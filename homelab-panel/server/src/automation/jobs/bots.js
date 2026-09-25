@@ -29,7 +29,7 @@ import { config } from '../../config.js';
 import { runWatch } from '../bots/watch.js';
 import { runUpstream } from '../bots/upstream.js';
 import { rescueBatch } from '../bots/rescue.js';
-import { check as checkBundle, apply as applyBundle } from '../../account/updater.js';
+import { check as checkBundle, start as startBundle, settled as bundleSettled } from '../../account/updater.js';
 
 /** بی سرورِ حساب، ربات‌ها کاری ندارند — و این «خطا» نیست. */
 const noAccountServer = () => !config.accountApi?.enabled;
@@ -118,7 +118,12 @@ export const accountServerUpdate = defineJob({
     if (!seen.ok) return { skipped: true, reason: seen.why };
     if (!seen.available) return { skipped: true, reason: `تازه‌ترین است (${seen.current || '؟'})` };
 
-    const out = await applyBundle({ actor: 'ربات' });
+    //  ⛔ از همان درِ یگانهٔ صفحهٔ «به‌روزرسانی‌ها»: اگر کاربر همین لحظه
+    //  دکمه را زده باشد، کارِ دوم راه نمی‌افتد (دو کار یعنی هر کدام نیمهٔ
+    //  دیگری را پاک کند).
+    const began = startBundle({ actor: 'ربات' });
+    if (!began.started) return { skipped: true, reason: 'به‌روزرسانیِ دیگری در جریان است' };
+    const out = (await bundleSettled()) || { ok: false, why: 'به‌روزرسانی نشد' };
     if (!out.ok) throw new Error(out.why || 'به‌روزرسانی نشد');
 
     //  ⛔ بی‌صدا نه: عوض شدنِ سرورِ حساب چیزی است که صاحبِ سامانه باید

@@ -289,15 +289,39 @@ export async function checkForUpdate({ force = false } = {}) {
 
 /* ------------------------------ دانلود --------------------------------- */
 
+/**
+ * ⛔ حالِ نصبِ در جریان — چند مگابایت آمده و کدام گام.
+ *
+ * گزارشِ صاحب سامانه (۱۴۰۵/۰۷/۱۳): «نشان نمی‌دهد چند مگابایت است… با رفتن
+ * به بخشِ دیگر از سر می‌شود». کلِ نصب داخلِ یک درخواست بود و صفحه هیچ عددی
+ * نمی‌گرفت؛ برگشتن به صفحه دکمه را دوباره نشان می‌داد و کلیکِ دوم نصبِ
+ * دومی راه می‌انداخت. حالا صفحه همین را از `GET /update` می‌خواند و مسیرِ
+ * نصب کارِ دوم را رد می‌کند (`installBusy`).
+ */
+const install = { running: false, phase: 'idle', got: 0, total: 0, why: '', at: 0 };
+export function installProgress() {
+  return { ...install };
+}
+export function installBusy() {
+  return install.running;
+}
+export function markInstall(patch) {
+  Object.assign(install, patch, { at: Date.now() });
+}
+
 export async function downloadUpdate(info) {
   if (!info?.downloadUrl) throw new Error('no_download_url');
   await fsp.mkdir(UPDATE_DIR, { recursive: true });
   const name = `update-${normalizeVersion(info.latest || 'head')}-${Date.now()}.zip`;
   const target = path.join(UPDATE_DIR, name);
 
+  markInstall({ phase: 'download', got: 0, total: 0 });
   const res = await httpGet(info.downloadUrl, { headers: githubHeaders(), timeout: 120000 });
   if (res.status < 200 || res.status >= 300) throw new Error(`download_http_${res.status}`);
 
+  //  codeload گاهی اندازه را نمی‌گوید (chunked) — آن‌وقت فقط «آمده» دیده می‌شود
+  install.total = Number(res.headers?.['content-length']) || 0;
+  res.stream.on('data', (chunk) => { install.got += chunk.length; });
   await pipeline(res.stream, fs.createWriteStream(target));
   const st = await fsp.stat(target);
   if (st.size < 1024) throw new Error('download_too_small');

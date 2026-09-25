@@ -216,7 +216,7 @@ router.post(
 router.get(
   '/update',
   guard(async (req, res) => {
-    res.json({ status: updater.updateStatus(), pending: getSetting('cc_update_pending', null) });
+    res.json({ status: updater.updateStatus(), pending: getSetting('cc_update_pending', null), progress: updater.installProgress() });
   })
 );
 
@@ -264,22 +264,41 @@ router.post(
 router.post(
   '/update/install',
   requireRole('admin'),
-  rateLimit({ windowMs: 600000, max: 3 }),
+  rateLimit({ windowMs: 600000, max: 6 }),
   guard(async (req, res) => {
     if (!bool(req.body?.confirm)) return fail(res, 400, 'confirmation_required');
+    //  ⛔ نصبِ دوم هم‌زمان با اولی راه نمی‌افتد — برگشتن به صفحه و کلیکِ دوباره
+    //  همان کارِ در جریان را نشان می‌دهد، نه این‌که از سر شروع کند.
+    if (updater.installBusy()) return res.status(409).json({ error: 'install_running', detail: 'نصب در جریان است', progress: updater.installProgress() });
+    updater.markInstall({ running: true, phase: 'check', got: 0, total: 0, why: '' });
     const info = await updater.checkForUpdate({ force: bool(req.body?.force) });
-    if (!info.available && !bool(req.body?.force)) return res.json({ ok: false, reason: 'already_up_to_date', info });
-    if (info.error) return fail(res, 502, 'github_unreachable', info.error);
+    if (!info.available && !bool(req.body?.force)) {
+      updater.markInstall({ running: false, phase: 'idle' });
+      return res.json({ ok: false, reason: 'already_up_to_date', info });
+    }
+    if (info.error) {
+      updater.markInstall({ running: false, phase: 'error', why: info.error });
+      return fail(res, 502, 'github_unreachable', info.error);
+    }
 
-    const downloaded = await updater.downloadUpdate(info);
+    let downloaded;
     try {
+      downloaded = await updater.downloadUpdate(info);
+    } catch (e) {
+      updater.markInstall({ running: false, phase: 'error', why: e.message });
+      throw e;
+    }
+    try {
+      updater.markInstall({ phase: 'install' });
       const result = await updater.applyUpdate(info, downloaded, {
         actor: actorOf(req),
         restart: bool(req.body?.restart, true),
       });
       setSetting('cc_update_pending', null);
+      updater.markInstall({ running: false, phase: 'done' });
       res.json({ ok: true, info, downloaded: { size: downloaded.size, checksum: downloaded.checksum }, ...result });
     } catch (e) {
+      updater.markInstall({ running: false, phase: 'error', why: e.message });
       // در برنامهٔ ویندوز، اگر نسخهٔ تازه کتابخانهٔ تازه بخواهد هیچ فایلی
       // جابه‌جا نشده — همین را صریح می‌گوییم تا کاربر دنبالِ فایلِ نصبی برود.
       // بسته‌ای که بخش‌های نصبِ فعلی را ندارد، نصب نمی‌شود. هیچ فایلی هم

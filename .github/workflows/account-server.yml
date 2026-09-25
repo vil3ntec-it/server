@@ -64,6 +64,13 @@ jobs:
           #  پوشه‌های کاریِ سرورِ حساب هیچ‌وقت در بسته نمی‌روند: دیتابیس و
           #  رازهای هر نصب مالِ همان کامپیوتر است.
           rm -rf /tmp/shop/server/test /tmp/shop/server/data /tmp/shop/server/.env
+          #  ⛔ `node_modules/.bin` پیوندِ نمادین است و `tar.exe`ِ ویندوز بی
+          #  دسترسیِ مدیر نمی‌سازدش — کلِ باز کردن با خطا تمام می‌شد. سرورِ
+          #  حساب از `.bin` چیزی اجرا نمی‌کند. (پنل هم هنگامِ باز کردن کنارش
+          #  می‌گذارد، پس بستهٔ کهنه هم باز می‌شود.)
+          find /tmp/shop/server/node_modules -name .bin -type d -prune -exec rm -rf {} +
+          LINKS=$(find /tmp/shop/server -type l)
+          if [ -n "$LINKS" ]; then echo "::error::پیوندِ نمادین در بسته مانده"; echo "$LINKS"; exit 1; fi
 
           #  ⚠️ یک پوشهٔ سرآمد لازم است، چون پنل با `--strip-components=1`
           #  بازش می‌کند.
