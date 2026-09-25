@@ -27,15 +27,14 @@
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Fuel, KeyRound, Smartphone } from 'lucide-react';
+import { CreditCard, Fuel, KeyRound, Smartphone } from 'lucide-react';
 
 import { api } from '../api';
 import { useApp } from '../app-context';
 import { Card, ConfirmDialog, CopyButton, Empty, Field, Loading, Modal, StatusDot, toast } from '../components/ui';
 import { ActionButton, Cell, Notice, Row, Stat, Table, Tabs } from '../control/ui';
 import StationsCloud from './StationsCloud';
-import Customers from './account/Customers';
-import PumpCodes from './PumpCodes';
+import GoTo from './account/GoTo';
 import PumpHealth from './PumpHealth';
 import { useLive } from '../useLive';
 import { stationOnline } from '../stationLive';
@@ -251,14 +250,30 @@ export default function StationsPage() {
       {/* ── ۱ — حساب‌ها و کاربرها: روی سرورِ حساب ─────────────────────────────── */}
       {tab === 'accounts' && <StationsCloud section="accounts" />}
 
-      {/* ── اشتراک‌ها: دادن، تمدید، تعلیق، لغو — روزِ مانده و تاریخِ پایان ── */}
-      {tab === 'subs' && <Customers fixedApp="pump" embedded />}
+      {/* ── اشتراک‌ها: همه در بخشِ مرکزی؛ این‌جا فقط درِ همان‌جا با بخشِ پمپ ── */}
+      {tab === 'subs' && (
+        <GoTo
+          icon={<CreditCard size={18} />}
+          title="اشتراک‌های پمپ‌بنزین‌ها"
+          hint="دیدن، دادن با مدتِ دلخواه، تمدید، لغو و قیمتِ پلن‌ها — همه در بخشِ «اشتراک‌ها»، با فیلترِ پمپ"
+          to="/subscriptions?app=pump"
+          cta="رفتن به اشتراک‌ها"
+        />
+      )}
 
       {/* ── ۳ — نرخ‌ها ─────────────────────────────────────────────────── */}
       {tab === 'plans' && <StationsCloud section="plans" />}
 
-      {/* ── ۴ — کد و ربات ──────────────────────────────────────────────── */}
-      {tab === 'codes' && <PumpCodes />}
+      {/* ── ۴ — کد و ربات: همه در بخشِ مرکزیِ «کدهای شش‌رقمی»، با تبِ پمپ ── */}
+      {tab === 'codes' && (
+        <GoTo
+          icon={<KeyRound size={18} />}
+          title="کدهای شش‌رقمیِ پمپ‌بنزین"
+          hint="کدهای زندهٔ ورود و کدِ دستی برای کارمندان، با «رفت / نرفت» — همه در بخشِ «کدهای شش‌رقمی»، تبِ پمپ"
+          to="/codes?app=pump"
+          cta="رفتن به کدها"
+        />
+      )}
 
       {/* ── ۲ — وصل بودن: پمپ‌های همین سرور ────────────────────────────── */}
       {tab === 'online' && (

@@ -263,6 +263,40 @@ check('۴.۲ داشبورد هر شش عدد را نشان می‌دهد',
   ['shops', 'customers', 'subscribed', 'online', 'supportUnread', 'supportOpen']
     .every((k) => shopDesk.includes(`counts.${k}`))
   && /const counts = d\.counts \|\|/.test(shopDesk));
+//  ── اشتراک‌ها یک بخش، کدها یک بخش، داشبوردِ کار — ۱۴۰۵/۰۷/۱۳ (۱.۵۰.۱۶) ────
+{
+  const app = read('App.tsx');
+  const hub = read('pages/account/SubscriptionsHub.tsx');
+  const stations = read('pages/Stations.tsx');
+  const dash = read('pages/Dashboard.tsx');
+  const codes = read('pages/Codes.tsx');
+  check('⛔ منو یک درِ «اشتراک‌ها» دارد، نه «مشتری‌ها» و «پلن‌ها»ی جدا',
+    /to: '\/subscriptions', key: 'acSubscriptions'/.test(layout)
+    && !/to: '\/customers'/.test(layout) && !/to: '\/plans'/.test(layout));
+  check('⇒ نشانی‌های قدیمی به تبِ خودشان در اشتراک‌ها می‌روند',
+    /path="\/customers" element=\{<ToSubscriptions tab="subs"/.test(app)
+    && /path="\/plans" element=\{<ToSubscriptions tab="plans"/.test(app)
+    && /path="\/vip-codes" element=\{<ToSubscriptions tab="codes"/.test(app));
+  check('⇒ همان صفحه‌ها داخلِ تب‌های هاب — نه رونوشت',
+    /<Customers key=/.test(hub) && /<Plans \/>/.test(hub) && /<VipCodes \/>/.test(hub) && /<PurchaseRequests \/>/.test(hub));
+  check('⇒ پمپ‌بنزین‌ها و فروشگاه‌ها فقط درِ همان بخش‌اند، با بخشِ خودشان',
+    /to="\/subscriptions\?app=pump"/.test(stations) && !/<Customers/.test(stations)
+    && /to="\/subscriptions\?app=shop"/.test(shopDesk) && !/<Customers/.test(shopDesk));
+  check('⇒ «مدیریتِ اشتراک»ِ جدولِ پمپ هم به همان‌جا می‌رود',
+    /\/subscriptions\?app=pump&q=/.test(read('pages/StationsCloud.tsx')));
+  check('⇒ تمدید و دادنِ اشتراک مدتِ دلخواه دارند',
+    /function ExtendDialog/.test(read('pages/account/Customers.tsx'))
+    && /customSpan/.test(read('pages/account/GrantSub.tsx')) && /endsAt/.test(read('pages/account/GrantSub.tsx')));
+  check('⛔ داشبورد حالِ سرور را نشان نمی‌دهد — مانیتورینگ جای خودش است',
+    !/cpu\.usage|memory\.usage|disk\.usage|temperature/.test(dash) && /to="\/monitoring"/.test(dash));
+  check('⇒ داشبورد فروش و اشتراکِ هر برنامه و پشتیبانی را می‌خواند',
+    /sales\/summary/.test(dash) && /sales\/expiring/.test(dash) && /support\/threads/.test(dash) && /codes-admin\/live/.test(dash));
+  check('⇒ کدها: تبِ هر برنامه در نشانی، و ساختِ کد از همان صفحه',
+    /TAB_APPS/.test(codes) && /'pump-station'/.test(codes) && /\/api\/codes-admin\/send/.test(codes) && /params\.get\('app'\)/.test(codes));
+  check('⇒ صفحهٔ جدای «کدِ پمپ» رفت؛ پمپ‌بنزین‌ها به تبِ پمپِ کدها می‌رود',
+    !fs.existsSync(path.join(webSrc, 'pages', 'PumpCodes.tsx')) && /to="\/codes\?app=pump"/.test(stations));
+}
+
 check('۴.۲ و «رو به پایان» ایمیل و روزِ مانده دارد',
   /r\.ownerEmail/.test(shopDesk) && /r\.daysLeft/.test(shopDesk));
 

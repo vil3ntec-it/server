@@ -1,5 +1,16 @@
 // ---------------------------------------------------------------------------
-//  کدهای شش‌رقمی
+//  کدهای شش‌رقمی — یک بخش برای همهٔ کدها، از هر برنامه جدا
+//
+//  خواستهٔ صاحب سامانه (۱۴۰۵/۰۷/۱۳): «کدهای شش‌رقمی همه توی یک بخش باشن اما
+//  از هر برنامه جدا؛ کدِ همه یک جا ساخته بشه؛ کدی که ساخته می‌شه همون‌جا
+//  دیده بشه که رفت یا نرفت، زنده؛ و صفحه‌اش خیلی داغون است، بهترش کن.»
+//
+//  پس: تبِ هر برنامه (پمپ · دکان · برنامه‌های خودِ پنل) بالای فهرست، در
+//  نشانی (`?app=`) تا «پمپ‌بنزین‌ها ← کد و ربات» مستقیم همین‌جا برسد؛ ساختنِ
+//  کد و کدِ بازیابیِ رمز پشتِ دو دکمه (پنجره)، نه دو کارتِ همیشه‌باز؛ و
+//  شمارنده‌های صفِ رباتِ پنل فقط در تبِ «ربات و تنظیمات»، چون مالِ همان‌جایند.
+//  ⛔ هیچ دفترِ تازه‌ای ساخته نشد: همان `/api/codes-admin/live` (هر دو دفتر)
+//  و همان `/send`ِ موتورِ خودِ پنل که «پمپ‌بنزین‌ها ← کد و ربات» می‌زد.
 //
 //  سه تب، و هر کدام یک سؤالِ مشخص را جواب می‌دهد:
 //
@@ -11,6 +22,7 @@
 //  نمی‌کند و صفحه‌ای که باید دستی نو شود، همیشه کدِ مرده نشان می‌دهد.
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useLive } from '../useLive';
 import {
   Bot,
@@ -122,7 +134,19 @@ type Settings = {
 
 export default function Codes() {
   const { t } = useApp();
-  const [tab, setTab] = useState('live');
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') || 'live';
+  //  ⚠️ تبِ برنامه در نشانی می‌ماند: `/codes?app=pump` همان چیزی است که
+  //  «پمپ‌بنزین‌ها ← کد و ربات» باز می‌کند، و برگشتِ مرورگر هم درست می‌شود.
+  const app = params.get('app') || '';
+  const set = (next: { tab?: string; app?: string }) => {
+    const p = new URLSearchParams();
+    const t2 = next.tab ?? tab;
+    const a2 = next.app ?? app;
+    if (t2 !== 'live') p.set('tab', t2);
+    if (a2) p.set('app', a2);
+    setParams(p);
+  };
   const [queue, setQueue] = useState<QueueState | null>(null);
 
   return (
@@ -134,7 +158,7 @@ export default function Codes() {
 
       <Tabs
         active={tab}
-        onChange={setTab}
+        onChange={(id) => set({ tab: id })}
         tabs={[
           { id: 'live', label: t('codesLive'), badge: queue?.waiting },
           { id: 'apps', label: t('codesApps') },
@@ -142,7 +166,7 @@ export default function Codes() {
         ]}
       />
 
-      {tab === 'live' && <LiveTab onQueue={setQueue} />}
+      {tab === 'live' && <LiveTab onQueue={setQueue} app={app} onApp={(a) => set({ app: a })} />}
       {tab === 'apps' && <AppsTab />}
       {tab === 'bot' && <BotTab onQueue={setQueue} />}
     </div>
@@ -151,7 +175,24 @@ export default function Codes() {
 
 /* --------------------------- تبِ کدهای زنده ------------------------------ */
 
-function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
+/**
+ *  کدام کدها مالِ کدام تب‌اند.
+ *
+ *  ⚠️ دو دفتر، دو نام: کدِ ورودِ برنامهٔ پمپ در دفترِ سرورِ حساب `pump` است و
+ *  کدی که مدیر از همین صفحه برای کارمندِ پمپ می‌سازد در موتورِ خودِ پنل
+ *  `pump-station`. برای صاحبِ سامانه هر دو «کدِ پمپ»اند، پس یک تب.
+ */
+const TAB_APPS: Record<string, string[]> = {
+  pump: ['pump', 'pump-station'],
+  shop: ['shop', 'shop-desk'],
+};
+/** برنامهٔ خودِ پنل که «ساختِ کد» برای این تب می‌زند. */
+const MAKE_FOR: Record<string, { slug: string; name: string }> = {
+  pump: { slug: 'pump-station', name: 'پمپ بنزین' },
+  shop: { slug: 'shop-desk', name: 'دکان' },
+};
+
+function LiveTab({ onQueue, app, onApp }: { onQueue: (q: QueueState) => void; app: string; onApp: (a: string) => void }) {
   const { t } = useApp();
   const [items, setItems] = useState<LiveItem[] | null>(null);
   const [queue, setQueue] = useState<QueueState | null>(null);
@@ -166,17 +207,19 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
    */
   const [mailProvider, setMailProvider] = useState('');
   const [onlyLive, setOnlyLive] = useState(true);
-  const [app, setApp] = useState('');
   const [apps, setApps] = useState<CodeApp[]>([]);
+  const [making, setMaking] = useState(false);
+  const [resetting, setResetting] = useState(false);
   // ساعتِ صفحه، تا شمارشِ معکوس بینِ دو بار گرفتنِ داده هم جلو برود
   const [tick, setTick] = useState(Date.now());
   const alive = useRef(true);
 
   const load = useCallback(async () => {
     try {
-      const res = await api<{ items: LiveItem[]; queue: QueueState; accountError?: string }>(
-        `/api/codes-admin/live${app ? `?app=${encodeURIComponent(app)}` : ''}`
-      );
+      //  ⚠️ همه را می‌گیرد و خودِ صفحه به تب‌ها پخش می‌کند: تبِ «پمپ» هم کدِ
+      //  دفترِ سرورِ حساب را می‌خواهد هم کدِ دستیِ موتورِ پنل، و سرور یک
+      //  فیلترِ یک‌نامی دارد.
+      const res = await api<{ items: LiveItem[]; queue: QueueState; accountError?: string }>('/api/codes-admin/live');
       if (!alive.current) return;
       setItems(res.items);
       setQueue(res.queue);
@@ -185,7 +228,7 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
     } catch {
       if (alive.current) setItems([]);
     }
-  }, [app, onQueue]);
+  }, [onQueue]);
 
   useEffect(() => {
     alive.current = true;
@@ -218,17 +261,37 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
       .catch(() => setMailProvider(''));
   }, []);
 
+  const inTab = useCallback((i: LiveItem) => {
+    if (!app) return true;
+    const names = TAB_APPS[app] || [app];
+    return names.includes(i.app);
+  }, [app]);
+
   const shown = useMemo(
-    () => (items || []).filter((i) => !onlyLive || i.status === 'live'),
-    [items, onlyLive]
+    () => (items || []).filter((i) => inTab(i) && (!onlyLive || i.status === 'live')),
+    [items, onlyLive, inTab]
   );
 
+  //  تب‌های برنامه: پمپ و دکان همیشه؛ برنامه‌های خودِ پنل که زیرِ آن دو
+  //  نمی‌روند، هر کدام تبِ خودشان — با شمارِ کدهای زندهٔ همان برنامه.
+  const liveOf = (names: string[]) => (items || []).filter((i) => i.status === 'live' && names.includes(i.app)).length;
+  const appTabs = useMemo(() => {
+    const extra = apps.filter((a) => !Object.values(TAB_APPS).some((names) => names.includes(a.slug)));
+    return [
+      { id: '', label: t('codesTabAll'), badge: liveOf(['pump', 'pump-station', 'shop', 'shop-desk', ...extra.map((a) => a.slug)]) },
+      { id: 'pump', label: t('codesAppPump'), badge: liveOf(TAB_APPS.pump) },
+      { id: 'shop', label: t('codesAppShop'), badge: liveOf(TAB_APPS.shop) },
+      ...extra.map((a) => ({ id: a.slug, label: a.name, badge: liveOf([a.slug]) })),
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apps, items, t]);
+
   //  ⚠️ از خودِ فهرست شمرده می‌شوند، نه از یک مسیرِ دوم: یک حقیقت، یک منبع
-  const liveCount = useMemo(() => (items || []).filter((i) => i.status === 'live').length, [items]);
+  const liveCount = useMemo(() => (items || []).filter((i) => inTab(i) && i.status === 'live').length, [items, inTab]);
   const dayCount = useMemo(() => {
     const since = Date.now() - 24 * 3600 * 1000;
-    return (items || []).filter((i) => Number(i.createdAt || 0) >= since).length;
-  }, [items]);
+    return (items || []).filter((i) => inTab(i) && Number(i.createdAt || 0) >= since).length;
+  }, [items, inTab]);
 
   /*
    *  ⛔ **بندِ ۲.۷ سند — «نرفته‌ها، و دلیلِ نرفتن».**
@@ -247,7 +310,7 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
   const failed = useMemo(() => {
     const since = Date.now() - 24 * 3600 * 1000;
     const rows = (items || []).filter(
-      (i) => Number(i.createdAt || 0) >= since && (i.sendState === 'failed' || i.logOnly)
+      (i) => inTab(i) && Number(i.createdAt || 0) >= since && (i.sendState === 'failed' || i.logOnly)
     );
     const why = new Map<string, number>();
     for (const r of rows) {
@@ -259,12 +322,17 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
       //  پرتکرارترین دلیل‌ها اول — دو تا بس است؛ فهرستِ بلند کسی را نمی‌خواند
       reasons: [...why.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2),
     };
-  }, [items, t]);
+  }, [items, t, inTab]);
 
   if (!items) return <Loading />;
 
+  const make = MAKE_FOR[app] || (app ? { slug: app, name: apps.find((a) => a.slug === app)?.name || app } : MAKE_FOR.pump);
+
   return (
     <div className="space-y-4">
+      {/* ── تبِ هر برنامه — «از هر برنامه جدا» ─────────────────────────── */}
+      <Tabs active={app} onChange={onApp} tabs={appTabs} />
+
       {queue && !queue.mailReady && (
         <Notice tone="warn">
           {t('codesNoMail')}
@@ -281,7 +349,18 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
 
       {accountError && <Notice tone="warn">{t('codesAccountDown')} — {accountError}</Notice>}
 
-      <ResetCard />
+      {/* ── دو کار، دو دکمه — پنجره، نه دو کارتِ همیشه‌باز ─────────────── */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button className="btn btn-primary btn-sm" onClick={() => setMaking(true)}>
+          <Send className="h-4 w-4" /> {t('codesMakeOpen')}
+        </button>
+        <button className="btn btn-sm" onClick={() => setResetting(true)}>
+          <KeyRound className="h-4 w-4" /> {t('codesResetOpen')}
+        </button>
+        <p className="text-[11px] text-ink-muted">{t('codesMakeNote')}</p>
+      </div>
+      {making && <MakeCodeModal target={make} onClose={() => setMaking(false)} onDone={load} />}
+      {resetting && <ResetModal startApp={app === 'shop' ? 'shop' : 'pump'} onClose={() => setResetting(false)} />}
 
       {/*
         ⛔ **دو شمارندهٔ خودِ فهرست، پیش از شمارنده‌های صف.**
@@ -313,23 +392,18 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
         </p>
       )}
 
-      {queue && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Stat label={t('codesQWaiting')} value={queue.waiting} />
-          <Stat label={t('codesQSending')} value={queue.sending} />
-          <Stat label={t('codesQSentHour')} value={queue.sentLastHour} />
-          <Stat
-            label={t('codesQFailed')}
-            value={queue.failed}
-            tone={queue.failed > 0 ? 'bad' : undefined}
-          />
-        </div>
+      {/*
+        ⚠️ چهار شمارندهٔ صفِ رباتِ خودِ پنل از این تب رفتند (۱.۵۰.۱۶): یک بار
+        صاحبِ سامانه آن‌ها را «همهٔ کدها» خواند و صفر دید. جایشان تبِ «ربات و
+        تنظیمات» است، که مالِ همان ربات است. `queue` هنوز خوانده می‌شود، چون
+        نشانِ روی تبِ «کدهای زنده» از آن است.
+      */}
+      {queue && queue.failed > 0 && (
+        <Notice tone="warn">{t('codesQFailed')}: {queue.failed} — {t('codesQueueNote')}</Notice>
       )}
 
-      <p className="text-[11px] leading-snug text-ink-muted" dir="auto">{t('codesQueueNote')}</p>
-
       <Card
-        title={t('codesLive')}
+        title={app ? `${t('codesLive')} — ${appTabs.find((x) => x.id === app)?.label || app}` : t('codesLive')}
         icon={<Timer className="h-4 w-4" />}
         action={
           <div className="flex items-center gap-2">
@@ -341,25 +415,6 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
               />
               {t('codesOnlyLive')}
             </label>
-            <div className="w-36">
-              <Select
-                value={app}
-                onChange={setApp}
-                placeholder={t('codesAllApps')}
-                /*
-                 *  ⛔ **دو نامِ سرورِ حساب هم این‌جا هستند، نه فقط برنامه‌های
-                 *  خودِ پنل.** بیشترِ کدهای این فهرست (ورودِ دکان و پمپ) مالِ
-                 *  آن دفترند و سرور `?app=pump|shop` را می‌پذیرد — ولی تا
-                 *  دیروز هیچ راهی نبود که از صفحه انتخابشان کنی، پس فیلتر
-                 *  دقیقاً برای آن‌هایی که بیشتر لازم بودند کار نمی‌کرد.
-                 */
-                options={[
-                  { value: 'pump', label: t('codesAppPump') },
-                  { value: 'shop', label: t('codesAppShop') },
-                  ...apps.map((a) => ({ value: a.slug, label: a.name })),
-                ]}
-              />
-            </div>
             <ActionButton onClick={load}>
               <RefreshCw className="h-3.5 w-3.5" />
             </ActionButton>
@@ -401,11 +456,10 @@ function LiveTab({ onQueue }: { onQueue: (q: QueueState) => void }) {
  *  «نمایشِ کد» و «دوباره بفرست» اداره می‌شود. دو صفحه برای یک موضوع همان
  *  سردرگمی است که گامِ ۴ی ریمیک برداشت.
  */
-function ResetCard() {
+function ResetModal({ startApp, onClose }: { startApp: string; onClose: () => void }) {
   const { t } = useApp();
-  const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
-  const [app, setApp] = useState('pump');
+  const [app, setApp] = useState(startApp);
   const [busy, setBusy] = useState(false);
 
   const send = async () => {
@@ -413,9 +467,9 @@ function ResetCard() {
     setBusy(true);
     try {
       await api('/api/account-admin/otp/password-reset', { body: { email: email.trim(), app } });
-      //  ⚠️ کد این‌جا نشان داده نمی‌شود — همان لحظه در فهرستِ پایین می‌آید
+      //  ⚠️ کد این‌جا نشان داده نمی‌شود — همان لحظه در فهرستِ زنده می‌آید
       toast(t('codesResetSent'), 'good');
-      setEmail('');
+      onClose();
     } catch (e) {
       toast(e instanceof Error ? e.message : t('codesResetFailed'), 'bad');
     } finally {
@@ -423,47 +477,121 @@ function ResetCard() {
     }
   };
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        className="chip"
-        onClick={() => setOpen(true)}
-      >
-        <KeyRound className="h-3.5 w-3.5" /> {t('codesResetOpen')}
-      </button>
-    );
-  }
-
   return (
-    <Card title={t('codesResetTitle')} icon={<KeyRound className="h-4 w-4" />}>
-      <p className="mb-2 text-xs text-ink-muted" dir="auto">{t('codesResetHint')}</p>
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="min-w-[220px] flex-1">
-          <Field label={t('codesEmail')}>
-            <input
-              className="input w-full"
-              dir="ltr"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') void send(); }}
-              placeholder="name@example.com"
-            />
-          </Field>
-        </div>
-        <div className="w-36">
+    <Modal
+      open
+      onClose={onClose}
+      title={t('codesResetTitle')}
+      footer={(
+        <>
+          <button className="btn" onClick={onClose}>{t('close')}</button>
+          <ActionButton className="btn btn-primary" onClick={send} disabled={busy || !email.trim()}>
+            {busy ? '…' : t('codesResetSend')}
+          </ActionButton>
+        </>
+      )}
+    >
+      <p className="mb-3 text-xs text-ink-muted" dir="auto">{t('codesResetHint')}</p>
+      <div className="grid gap-3 sm:grid-cols-[1fr_9rem]">
+        <Field label={t('codesEmail')}>
+          <input
+            className="input w-full"
+            dir="ltr"
+            autoFocus
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void send(); }}
+            placeholder="name@example.com"
+          />
+        </Field>
+        <Field label={t('codesFrom')}>
           <Select
             value={app}
             onChange={setApp}
             options={[{ value: 'pump', label: t('codesAppPump') }, { value: 'shop', label: t('codesAppShop') }]}
           />
-        </div>
-        <ActionButton onClick={send} disabled={busy || !email.trim()}>
-          {busy ? '…' : t('codesResetSend')}
-        </ActionButton>
-        <ActionButton onClick={() => setOpen(false)}>{t('close')}</ActionButton>
+        </Field>
       </div>
-    </Card>
+    </Modal>
+  );
+}
+
+/* ------------------- ساختِ کد از خودِ پنل و فرستادنش ---------------------- */
+
+/**
+ *  «کدِ همه یک جا ساخته بشه» — همان کاری که تا ۱.۵۰.۱۵ فقط در «پمپ‌بنزین‌ها ←
+ *  کد و ربات» بود (`PumpCodes.tsx`)، حالا برای هر تب. همان موتور، همان صف،
+ *  همان قالبِ ایمیلِ خودِ پنل (`/api/codes-admin/send`).
+ *
+ *  ⚠️ این درخواست عمداً کُند است و باید باشد: سرور تا خودِ سرورِ ایمیل نگوید
+ *  «گرفتم» جواب نمی‌دهد. تا دیروز همان لحظه «فرستاده شد» می‌گفت و اگر ایمیل
+ *  نمی‌رفت، هیچ‌جا معلوم نمی‌شد. و کدِ ساخته‌شده همان لحظه در فهرستِ زنده
+ *  با «رفت / نرفت» می‌نشیند.
+ */
+function MakeCodeModal({ target, onClose, onDone }: { target: { slug: string; name: string }; onClose: () => void; onDone: () => void }) {
+  const { t } = useApp();
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const send = async () => {
+    if (!email.trim() || busy) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const res = await api<{ ok: boolean; message?: string; delivery?: { state: string; error?: string | null } }>(
+        '/api/codes-admin/send',
+        { method: 'POST', body: { app: target.slug, appName: target.name, kind: 'app', email: email.trim(), name: name.trim() || undefined } }
+      );
+      const failed = res.delivery?.state === 'failed' || res.ok === false;
+      setNote({ ok: !failed, text: res.message || (failed ? t('codesFailed') : t('codesSent')) });
+      if (!failed) { setEmail(''); setName(''); }
+    } catch (e) {
+      setNote({ ok: false, text: e instanceof Error ? e.message : t('codesFailed') });
+    } finally {
+      setBusy(false);
+      onDone();
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`${t('codesMakeTitle')} — ${target.name}`}
+      footer={(
+        <>
+          <button className="btn" onClick={onClose}>{t('close')}</button>
+          <ActionButton className="btn btn-primary" onClick={send} disabled={busy || !email.trim()}>
+            {busy ? t('codesSending') : t('codesMakeSend')}
+          </ActionButton>
+        </>
+      )}
+    >
+      <p className="mb-3 text-xs text-ink-muted" dir="auto">{t('codesMakeHint')}</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label={t('codesEmail')}>
+          <input
+            className="input w-full"
+            dir="ltr"
+            autoFocus
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void send(); }}
+            placeholder="name@example.com"
+          />
+        </Field>
+        <Field label={t('codesMakeName')}>
+          <input className="input w-full" value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+      </div>
+      {note && (
+        <p className="mt-3 text-xs" style={{ color: note.ok ? 'var(--status-good)' : 'var(--status-critical)' }} dir="auto">
+          {note.text}
+        </p>
+      )}
+    </Modal>
   );
 }
 

@@ -4,6 +4,7 @@ import { PageBoundary } from './PageBoundary';
 import {
   Activity,
   Bot,
+  CreditCard,
   Archive,
   ChevronDown,
   Workflow,
@@ -36,8 +37,6 @@ import {
   MessagesSquare,
   RefreshCw,
   Search,
-  Tag,
-  Users,
   Wallet,
 } from 'lucide-react';
 import { useApp } from '../app-context';
@@ -118,9 +117,13 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'money',
     key: 'navMoney',
     items: [
-      { to: '/customers', key: 'acCustomers', icon: Users },
+      /*
+       *  ⛔ «مشتری‌ها و اشتراک‌ها» و «پلن‌ها و تخفیف‌ها» یک در شدند
+       *     (۱۴۰۵/۰۷/۱۳، خواستهٔ صاحب سامانه: «همهٔ اشتراک‌ها داخلِ یک بخش»).
+       *     نشانی‌های قدیمی در App.tsx به تبِ خودشان می‌روند.
+       */
+      { to: '/subscriptions', key: 'acSubscriptions', icon: CreditCard },
       { to: '/sales', key: 'acSales', icon: Wallet },
-      { to: '/plans', key: 'acPlans', icon: Tag },
       { to: '/notices', key: 'acNotices', icon: Megaphone },
       { to: '/support', key: 'acSupport', icon: MessagesSquare },
       { to: '/sync', key: 'acSync', icon: RefreshCw },

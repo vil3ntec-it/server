@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AppProvider, useApp } from './app-context';
 import { featureOn } from './features';
 import { Loading, ToastHost } from './components/ui';
@@ -19,7 +19,8 @@ import Vault from './pages/control/Vault';
 import Updates from './pages/control/Updates';
 import PanelUsers from './pages/control/PanelUsers';
 import Assistant from './pages/Assistant';
-import { AccountServerHub, CustomersHub, DomainsHub, LoginsHub, LogsHub, MonitoringHub, NetworkHub, PlansHub } from './pages/hubs';
+import { AccountServerHub, DomainsHub, LoginsHub, LogsHub, MonitoringHub, NetworkHub } from './pages/hubs';
+import SubscriptionsHub from './pages/account/SubscriptionsHub';
 import ShopDesk from './pages/account/ShopDesk';
 import DatabasesPage from './pages/Databases';
 import TerminalPage from './pages/Terminal';
@@ -32,6 +33,22 @@ import SalesPage from './pages/account/Sales';
 import NoticesPage from './pages/account/Notices';
 import SupportPage from './pages/account/Support';
 import SyncStatusPage from './pages/account/SyncStatus';
+
+/**
+ *  نشانیِ قدیمیِ اشتراک‌ها ⇒ تبِ خودش در `/subscriptions`، با همان پارامترها.
+ *  `/customers?tab=visitors` هم تبِ «بازدیدکننده‌ها» می‌شود، و `/plans?tab=codes`
+ *  «کدهای اشتراک» — همان نام‌های قبلی.
+ */
+function ToSubscriptions({ tab }: { tab: string }) {
+  const loc = useLocation();
+  const p = new URLSearchParams(loc.search);
+  const old = p.get('tab');
+  const target = old && ['subs', 'plans', 'discounts', 'codes', 'requests', 'visitors'].includes(old) ? old : tab;
+  p.delete('tab');
+  if (target !== 'subs') p.set('tab', target);
+  const qs = p.toString();
+  return <Navigate to={`/subscriptions${qs ? `?${qs}` : ''}`} replace />;
+}
 
 function Shell() {
   const { ready, authed } = useApp();
@@ -66,25 +83,25 @@ function Shell() {
         <Route path="/logins" element={<LoginsHub />} />
 
         {/* مشتری‌ها و فروش — پلِ سرورِ حساب */}
-        <Route path="/customers" element={<CustomersHub />} />
+        {/*
+          ⛔ **اشتراک‌ها یک بخش‌اند** (۱۴۰۵/۰۷/۱۳): «مشتری‌ها و اشتراک‌ها» و
+          «پلن‌ها و تخفیف‌ها» در `/subscriptions` یکی شدند. نشانی‌های قدیمی
+          نمی‌شکنند — هر کدام با همان پارامترها (`app`، `q`) به تبِ خودش می‌رود.
+        */}
+        <Route path="/subscriptions" element={<SubscriptionsHub />} />
+        <Route path="/customers" element={<ToSubscriptions tab="subs" />} />
+        <Route path="/plans" element={<ToSubscriptions tab="plans" />} />
+        <Route path="/visitors" element={<ToSubscriptions tab="visitors" />} />
+        <Route path="/vip-codes" element={<ToSubscriptions tab="codes" />} />
+        <Route path="/discounts" element={<ToSubscriptions tab="discounts" />} />
         {/*
           ⛔ میزِ فروشگاه صفحهٔ خودش را گرفت (بندهای ۴.۱ تا ۴.۴ سندِ ریمیک):
-          داشبورد، سه گروهِ اشتراک، و کدِ شاگرد — هیچ‌کدام در `/customers`
-          نبودند و آن صفحه فهرستِ اشتراک‌هاست، نه میزِ یک بخش.
-
-          ⚠️ و `/customers?app=shop` **دست‌نخورده کار می‌کند** و به این‌جا
-          `Navigate` نمی‌شود: کسی که فهرستِ اشتراک‌ها را با فیلترِ دکان
-          می‌خواهد باید همان را بگیرد. فقط آیتمِ منو به این‌جا آمد.
+          داشبورد، سه گروهِ اشتراک، و کدِ شاگرد. کارهای اشتراکش حالا از همان
+          `/subscriptions?app=shop` است.
         */}
         <Route path="/shop" element={<ShopDesk />} />
         <Route path="/account-server" element={<AccountServerHub />} />
-        {/* نشانی‌های قدیمی نباید بشکنند — همان قاعدهٔ گامِ ۴ی ریمیک */}
-        <Route path="/visitors" element={<Navigate to="/customers?tab=visitors" replace />} />
-        <Route path="/vip-codes" element={<Navigate to="/plans?tab=codes" replace />} />
         <Route path="/sales" element={<SalesPage />} />
-        <Route path="/plans" element={<PlansHub />} />
-        {/* نشانیِ جدا برای تخفیف‌ها هیچ‌وقت نبود، ولی لینکِ حدسی نباید بشکند */}
-        <Route path="/discounts" element={<Navigate to="/plans?tab=discounts" replace />} />
         <Route path="/notices" element={<NoticesPage />} />
         <Route path="/support" element={<SupportPage />} />
         <Route path="/sync" element={<SyncStatusPage />} />

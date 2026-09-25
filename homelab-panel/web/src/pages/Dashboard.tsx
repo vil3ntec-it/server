@@ -1,368 +1,252 @@
-import { useEffect, useRef, useState } from 'react';
-import { useLive } from '../useLive';
+// ---------------------------------------------------------------------------
+//  داشبورد — کارِ صاحبِ سامانه، نه حالِ سرور
+//
+//  خواستهٔ صاحب سامانه (۱۴۰۵/۰۷/۱۳، بارِ دوم): «داشبورد متفاوت باشه؛ توی
+//  برنامه یک مانیتورینگ است، چرا باید دوباره توی داشبورد ببینم؟ داشبورد برای
+//  دیدنِ درآمد و فروشِ من از اشتراک‌های هر برنامه و دیدنِ اشتراک‌های مردم و
+//  پشتیبانی و غیره است، نه این‌ها.»
+//
+//  پس CPU و RAM و دیسک و دما از این صفحه رفتند — همه در «مانیتورینگ» بودند و
+//  هستند (`/monitoring`). این‌جا فقط چیزهایی است که هر روز صبح پرسیده می‌شود:
+//
+//    · هر برنامه چند اشتراکِ فعال دارد، چندتا رو به پایان، این ماه چقدر فروخت
+//    · درآمدِ امروز / این ماه / امسال، و نمودارِ دوازده ماه
+//    · کدام اشتراک‌ها تا سی روزِ دیگر تمام می‌شوند
+//    · چه گفت‌وگوهای پشتیبانی بازند
+//    · کدهای شش‌رقمیِ امروز رفتند یا نه
+//
+//  ⛔ **هیچ عددی این‌جا حساب نمی‌شود** — همه از سرورِ حساب می‌آید
+//     (`/api/account-admin/*`)، همان قاعدهٔ همهٔ صفحه‌های مشتری و پول.
+//  ⛔ **هیچ نبضی ندارد**: هر بخش با موضوعِ زندهٔ خودش تازه می‌شود
+//     (`sales` · `customers` · `support` · `codes`)، همان `useLive`.
+//  ⚠️ نیامده «—» است، نه صفر: صفرِ دروغ بدتر از خالی است.
+// ---------------------------------------------------------------------------
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  AlertTriangle,
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  Clock,
-  Cpu,
-  Globe,
-  HardDrive,
-  MemoryStick,
-  Network as NetworkIcon,
-  Server,
-  Thermometer,
-  Wifi,
-} from 'lucide-react';
-import { useApp } from '../app-context';
+import { Activity, Clock, CreditCard, Fuel, Hash, MessagesSquare, Store, Wallet } from 'lucide-react';
 import { api } from '../api';
-import type { DashboardData } from '../types';
-import { Card, Loading, StatusDot, Badge, Empty } from '../components/ui';
-import { Bar, LiveChart, Ring } from '../components/charts';
-import { bytes, bytesPerSec, dateTime, duration, ltr, percent } from '../format';
+import { useLive } from '../useLive';
+import { Badge, Card, Empty, Skeleton } from '../components/ui';
+import { Cell, Notice, Row, Stat, Table } from '../control/ui';
+import {
+  APP_LABEL, CURRENCY_LABEL, CloudProblem, PageHead, day, daysTone, fa, moment, money, useLoad, type AppId,
+} from './account/shared';
+import Revenue from './account/Revenue';
+import type { Expiring, SalesSummary, Thread } from './account/types';
+
+type CodeLite = { app: string; status: string; createdAt: number; sendState: string; logOnly?: boolean };
+
+const APPS: AppId[] = ['pump', 'shop'];
+const ICON: Record<AppId, typeof Fuel> = { pump: Fuel, shop: Store };
+
+/** جمعِ یک بخش از پاسخِ فروش، به ازای هر ارز — شکلِ بالادست فرض نمی‌شود. */
+function sumOf(rev: SalesSummary['revenue'] | undefined, period: string, app?: AppId): Record<string, number> {
+  const out: Record<string, number> = {};
+  const bucket = rev?.[period] || {};
+  for (const a of app ? [app] : APPS) {
+    for (const [cur, n] of Object.entries(bucket[a] || {})) out[cur] = (out[cur] || 0) + Number(n || 0);
+  }
+  return out;
+}
+
+/** «۱۲٬۰۰۰ افغانی · ۳۰۰ دالر» — و «—» وقتی هیچ. */
+function moneyList(sums: Record<string, number>): string {
+  const parts = Object.entries(sums).filter(([, n]) => n > 0).map(([cur, n]) => money(n, cur));
+  return parts.length ? parts.join(' · ') : '—';
+}
 
 export default function Dashboard() {
-  const { t, lang, metrics, history } = useApp();
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [error, setError] = useState(false);
+  const summary = useLoad<SalesSummary>('/api/account-admin/sales/summary', [], 'sales');
+  const expiring = useLoad<{ expiring: Expiring[]; days: number }>('/api/account-admin/sales/expiring?days=30', [], 'customers');
+  const threads = useLoad<{ threads: Thread[]; unread: number }>('/api/account-admin/support/threads?limit=100', [], 'support');
+
   /*
-   *  ⛔ **نبضِ شصت‌ثانیه‌ایِ کور برداشته شد.**
-   *
-   *  داشبورد از سه سرچشمه می‌خواند و هر سه حالا خودشان خبر می‌دهند:
-   *  سایت‌ها، پمپ‌ها و دفترِ رخدادها. پس در سکوت صفر درخواست، و با
-   *  هر تغییرِ واقعی همان لحظه.
-   *
-   *  ⚠️ `loadRef` لازم است چون `load` داخلِ همان اثر ساخته می‌شود و
-   *  بیرونش دیده نمی‌شود؛ بی آن باید کلِ اثر بازنویسی می‌شد.
+   *  کدها از دفترِ خودِ پنل و دفترِ سرورِ حساب، همان `/api/codes-admin/live`
+   *  که صفحهٔ «کدهای شش‌رقمی» می‌خواند — یک منبع، یک حقیقت.
    */
-  const loadRef = useRef<() => void>(() => {});
-
-  useEffect(() => {
-    let alive = true;
-    const load = async () => {
-      // وقتی تب پنهان است بی‌جهت به سرور فشار نمی‌آوریم
-      if (document.visibilityState !== 'visible') return;
-      try {
-        const d = await api<DashboardData>('/api/dashboard');
-        if (alive) {
-          setData(d);
-          setError(false);
-        }
-      } catch {
-        if (alive) setError(true);
-      }
-    };
-    load();
-    loadRef.current = load;
-    document.addEventListener('visibilitychange', load);
-    return () => {
-      alive = false;
-      document.removeEventListener('visibilitychange', load);
-    };
+  const [codes, setCodes] = useState<CodeLite[] | null>(null);
+  const loadCodes = useCallback(() => {
+    api<{ items: CodeLite[] }>('/api/codes-admin/live')
+      .then((r) => setCodes(Array.isArray(r.items) ? r.items : []))
+      .catch(() => setCodes([]));
   }, []);
+  useEffect(loadCodes, [loadCodes]);
+  useLive('codes', loadCodes);
 
-  //  سه موضوعی که دادهٔ این صفحه از آن‌ها می‌آید — هر سه حالا خبر می‌دهند
-  useLive(['sites', 'stations', 'logs'], () => loadRef.current());
+  const s = summary.data;
+  const counts = s?.counts || {};
+  const exp = Array.isArray(expiring.data?.expiring) ? expiring.data!.expiring : [];
+  const open = useMemo(
+    () => (Array.isArray(threads.data?.threads) ? threads.data!.threads : [])
+      .filter((t) => t.status !== 'closed')
+      .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0)),
+    [threads.data]
+  );
+  const codeStats = useMemo(() => {
+    const since = Date.now() - 24 * 3600 * 1000;
+    const all = codes || [];
+    const today = all.filter((c) => Number(c.createdAt || 0) >= since);
+    return {
+      live: all.filter((c) => c.status === 'live').length,
+      today: today.length,
+      failed: today.filter((c) => c.sendState === 'failed' || c.logOnly).length,
+    };
+  }, [codes]);
 
-  if (!data) return error ? <Empty title={t('connectionLost')} /> : <Loading />;
-
-  // معیارها از سوکت می‌آیند (هر ۲ ثانیه) و در نبود سوکت از پاسخ REST
-  const cpu = metrics?.cpu ?? data.cpu;
-  const memory = metrics?.memory ?? data.memory;
-  const disk = metrics?.disk ?? data.disk;
-  const temp = metrics?.temperature ?? data.temperature;
-  const net = metrics?.network ?? data.network;
-  const uptime = metrics?.host.uptimeSeconds ?? data.server.uptimeSeconds;
-  const points = history.length ? history : data.history;
+  /** ارزهایی که واقعاً در دوازده ماهِ اخیر دیده شده‌اند — نمودار برای هر کدام. */
+  const currencies = useMemo(() => Array.from(new Set(
+    (s?.series || []).flatMap((b) => [...Object.keys(b.shop || {}), ...Object.keys(b.pump || {})])
+  )), [s]);
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-4">
-      {/* هویت سرور */}
-      <Card>
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <span
-              className="flex h-11 w-11 items-center justify-center rounded-xl"
-              style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}
-            >
-              <Server className="h-5 w-5" />
-            </span>
-            <div>
-              <h1 className="text-base font-semibold">{data.server.name}</h1>
-              <p className="text-xs text-ink-muted">
-                {data.server.platform} · {data.server.release} · {data.server.arch}
-              </p>
-            </div>
-          </div>
-          <StatusDot online={data.server.online} label={data.server.online ? t('online') : t('offline')} />
-        </div>
+      <PageHead
+        title="داشبورد"
+        sub="فروش و اشتراک‌های هر برنامه، از سرورِ حساب — حالِ خودِ سرور در «مانیتورینگ» است"
+        actions={(
+          <>
+            <Link to="/subscriptions" className="btn btn-sm btn-primary"><CreditCard className="h-4 w-4" /> اشتراک‌ها</Link>
+            <Link to="/monitoring" className="btn btn-sm"><Activity className="h-4 w-4" /> مانیتورینگِ سرور</Link>
+          </>
+        )}
+      />
 
-        <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-4">
-          <Info label={t('internalIp')} value={data.server.internalIp ?? '—'} mono />
-          <Info label={t('publicIp')} value={data.server.publicIp ?? '—'} mono />
-          <Info label={t('uptime')} value={duration(uptime, t)} icon={<Clock className="h-3.5 w-3.5" />} />
-          <Info
-            label={t('ping')}
-            value={data.network.ping?.ms != null ? ltr(`${data.network.ping.ms} ms`) : '—'}
-            icon={<Wifi className="h-3.5 w-3.5" />}
-          />
-        </dl>
+      {summary.error && <CloudProblem code={summary.code} message={summary.error} onRetry={summary.reload} />}
+
+      {/* ── هر برنامه، یک کارت: اشتراک‌ها و فروشِ این ماه ───────────────────── */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        {APPS.map((app) => {
+          const Icon = ICON[app];
+          const c = counts[app];
+          const soon = exp.filter((e) => e.app === app).length;
+          return (
+            <Card
+              key={app}
+              title={APP_LABEL[app]}
+              icon={<Icon className="h-4 w-4" />}
+              action={<Link className="btn btn-sm" to={`/subscriptions?app=${app}`}>اشتراک‌های {APP_LABEL[app]}</Link>}
+            >
+              {summary.busy && !s ? <Skeleton rows={2} /> : (
+                <>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <Stat label="فعال" value={fa(c?.active)} tone="good" />
+                    <Stat label="رو به پایان (۳۰ روز)" value={expiring.data ? fa(soon) : '—'} tone={soon > 0 ? 'warn' : undefined} />
+                    <Stat label="تعلیق / منقضی" value={c ? fa((c.suspended || 0) + (c.expired || 0)) : '—'} tone={c && (c.suspended || c.expired) ? 'bad' : undefined} />
+                    <Stat label="حساب‌ها" value={fa(c?.tenants)} />
+                  </div>
+                  <p className="mt-3 text-sm">
+                    <span className="text-ink-muted">فروشِ این ماه: </span>
+                    <span className="tnum font-semibold">{moneyList(sumOf(s?.revenue, 'month', app))}</span>
+                    <span className="text-ink-muted"> · امسال: </span>
+                    <span className="tnum">{moneyList(sumOf(s?.revenue, 'year', app))}</span>
+                  </p>
+                </>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* ── درآمد — امروز، این ماه، امسال، و دوازده ماه ────────────────────── */}
+      <Card title="درآمد" icon={<Wallet className="h-4 w-4" />} action={<Link className="btn btn-sm" to="/sales">فروش و پرداخت‌ها</Link>}>
+        {summary.busy && !s ? <Skeleton rows={3} /> : (
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Stat label="امروز" value={moneyList(sumOf(s?.revenue, 'today'))} />
+              <Stat label="این ماه" value={moneyList(sumOf(s?.revenue, 'month'))} tone="good" />
+              <Stat label="امسال" value={moneyList(sumOf(s?.revenue, 'year'))} />
+            </div>
+            {currencies.length === 0 ? (
+              <Empty title="هنوز پرداختی ثبت نشده" hint="با ثبتِ اولین پرداخت در «فروش»، نمودارِ دوازده ماه این‌جا می‌آید." />
+            ) : (
+              <div className="grid gap-4 lg:grid-cols-2">
+                {currencies.map((cur) => (
+                  <div key={cur} className="rounded-xl border border-line p-3">
+                    <Revenue series={s?.series || []} currency={cur} />
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-[11px] text-ink-muted">
+              ارزها جمع نمی‌شوند: {Object.entries(CURRENCY_LABEL).map(([k, v]) => `${v} (${k})`).join(' · ')} هر کدام عددِ خودش را دارد.
+            </p>
+          </div>
+        )}
       </Card>
 
-      {/* چهار معیار اصلی */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricTile
-          title={t('cpu')}
-          icon={<Cpu className="h-4 w-4" />}
-          value={cpu.usage}
-          color="var(--series-1)"
-          detail={`${cpu.count} ${t('cores')}${cpu.model ? ` · ${ltr(cpu.model.slice(0, 26))}` : ''}`}
-          points={points}
-          accessor={(p) => p.cpu}
-        />
-        <MetricTile
-          title={t('ram')}
-          icon={<MemoryStick className="h-4 w-4" />}
-          value={memory.usage}
-          color="var(--series-2)"
-          detail={ltr(`${bytes(memory.used)} / ${bytes(memory.total)}`)}
-          points={points}
-          accessor={(p) => p.memory}
-        />
-        <MetricTile
-          title={t('disk')}
-          icon={<HardDrive className="h-4 w-4" />}
-          value={disk.usage}
-          color="var(--series-3)"
-          detail={ltr(`${bytes(disk.used)} / ${bytes(disk.total)}`)}
-          points={points}
-          accessor={(p) => p.disk}
-        />
-
-        <Card className="flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-sm font-semibold">
-              <NetworkIcon className="h-4 w-4" />
-              {t('network')}
-            </h2>
-          </div>
-          {net.supported ? (
-            <>
-              <div className="mt-3 space-y-1.5">
-                <p className="flex items-center gap-1.5 text-sm">
-                  <ArrowDownToLine className="h-3.5 w-3.5" style={{ color: 'var(--series-1)' }} />
-                  <span className="text-ink-soft">{t('download')}</span>
-                  <span className="tnum ms-auto font-semibold">{bytesPerSec(net.rxBytesPerSec)}</span>
-                </p>
-                <p className="flex items-center gap-1.5 text-sm">
-                  <ArrowUpFromLine className="h-3.5 w-3.5" style={{ color: 'var(--series-2)' }} />
-                  <span className="text-ink-soft">{t('upload')}</span>
-                  <span className="tnum ms-auto font-semibold">{bytesPerSec(net.txBytesPerSec)}</span>
-                </p>
-              </div>
-              <div className="mt-2">
-                <LiveChart
-                  points={points}
-                  x={(p) => p.at}
-                  height={54}
-                  compact
-                  format={(v) => bytesPerSec(v)}
-                  series={[
-                    { key: 'rx', label: t('download'), color: 'var(--series-1)', value: (p) => p.rx },
-                    { key: 'tx', label: t('upload'), color: 'var(--series-2)', value: (p) => p.tx },
-                  ]}
-                />
-              </div>
-            </>
-          ) : (
-            <p className="py-6 text-center text-xs text-ink-muted">{t('notSupported')}</p>
-          )}
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* شمارنده‌ها + دما */}
-        <div className="flex flex-col gap-4">
-          <Card title={t('temperature')} icon={<Thermometer className="h-4 w-4" />}>
-            {temp.supported && temp.max != null ? (
-              <>
-                <p className="tnum text-3xl font-semibold">{ltr(`${temp.max.toFixed(1)}°C`)}</p>
-                <ul className="mt-3 space-y-1 text-xs text-ink-soft">
-                  {temp.sensors.slice(0, 5).map((s) => (
-                    <li key={s.label} className="flex items-center justify-between gap-2">
-                      <span className="truncate">{s.label}</span>
-                      <span className="tnum">{ltr(`${s.celsius.toFixed(1)}°C`)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : (
-              <p className="py-4 text-center text-xs text-ink-muted">{t('notSupported')}</p>
-            )}
-          </Card>
-
-          <Card>
-            <div className="grid grid-cols-2 gap-3">
-              <CountTile
-                to="/sites"
-                label={t('sitesCount')}
-                value={data.counts.sites}
-                sub={`${data.counts.sitesOnline} ${t('online')}`}
-                icon={<Server className="h-4 w-4" />}
-              />
-              <CountTile
-                to="/domains"
-                label={t('domainsCount')}
-                value={data.counts.domains}
-                icon={<Globe className="h-4 w-4" />}
-              />
-            </div>
-          </Card>
-        </div>
-
-        {/* دیسک‌ها */}
-        <Card title={t('disk')} icon={<HardDrive className="h-4 w-4" />}>
-          <ul className="space-y-3">
-            {disk.disks.map((d) => (
-              <li key={d.mount}>
-                <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-                  <span className="truncate font-medium" dir="ltr">{d.label || d.mount}</span>
-                  <span className="tnum text-ink-soft">
-                    {ltr(`${bytes(d.used)} / ${bytes(d.total)} · ${percent(d.usage, 0)}`)}
-                  </span>
-                </div>
-                <Bar
-                  value={d.usage}
-                  color={d.usage > 90 ? 'var(--status-critical)' : d.usage > 75 ? 'var(--status-warning)' : 'var(--series-3)'}
-                />
-              </li>
-            ))}
-          </ul>
-        </Card>
-
-        {/* آخرین خطاها */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        {/* ── رو به پایان ───────────────────────────────────────────────── */}
         <Card
-          title={t('lastErrors')}
-          icon={<AlertTriangle className="h-4 w-4" />}
-          action={
-            <Link to="/logs" className="text-xs text-ink-soft hover:text-ink">
-              {t('logs')}
-            </Link>
-          }
+          className="lg:col-span-2"
+          title={`رو به پایان — ${fa(expiring.data?.days || 30)} روزِ آینده`}
+          icon={<Clock className="h-4 w-4" />}
+          action={<Link className="btn btn-sm" to="/subscriptions">همه</Link>}
         >
-          {data.errors.length ? (
-            <ul className="space-y-2.5">
-              {data.errors.slice(0, 7).map((e) => (
-                <li key={e.id} className="flex items-start gap-2">
-                  <Badge tone={e.level === 'error' ? 'bad' : 'warn'}>{e.level === 'error' ? t('errors') : t('warnings')}</Badge>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-xs text-ink">{e.message}</p>
-                    <p className="text-[11px] text-ink-muted">{dateTime(e.created_at, lang)}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="py-6 text-center text-xs text-ink-muted">{t('noData')}</p>
+          {expiring.error ? <CloudProblem code={expiring.code} message={expiring.error} onRetry={expiring.reload} />
+            : expiring.busy && !expiring.data ? <Skeleton rows={4} />
+            : exp.length === 0 ? <Notice tone="good">هیچ اشتراکی تا سی روزِ آینده تمام نمی‌شود.</Notice> : (
+              <Table head={['مشتری', 'بخش', 'پلن', 'مانده', 'پایان']}>
+                {exp.slice(0, 8).map((e) => {
+                  const tone = daysTone(e.daysLeft, false, e.status);
+                  return (
+                    <Row key={`${e.app}-${e.subscriptionId}`}>
+                      <Cell>
+                        <p className="font-medium text-ink">{e.tenantName || e.ownerName || '—'}</p>
+                        <p className="text-[11px] text-ink-muted">{e.ownerEmail || e.ownerPhone || '—'}</p>
+                      </Cell>
+                      <Cell><Badge tone={e.app === 'pump' ? 'info' : 'neutral'}>{APP_LABEL[e.app]}</Badge></Cell>
+                      <Cell>{e.plan || '—'}</Cell>
+                      <Cell><Badge tone={tone.tone}>{tone.text}</Badge></Cell>
+                      <Cell className="tnum">{day(e.endsAt)}</Cell>
+                    </Row>
+                  );
+                })}
+              </Table>
+            )}
+          {exp.length > 8 && <p className="mt-2 text-[11px] text-ink-muted">و {fa(exp.length - 8)} تای دیگر — در «اشتراک‌ها».</p>}
+        </Card>
+
+        {/* ── پشتیبانی ─────────────────────────────────────────────────── */}
+        <Card
+          title="پشتیبانی — گفت‌وگوهای باز"
+          icon={<MessagesSquare className="h-4 w-4" />}
+          action={<Link className="btn btn-sm" to="/support">صندوق</Link>}
+        >
+          {threads.error ? <CloudProblem code={threads.code} message={threads.error} onRetry={threads.reload} />
+            : threads.busy && !threads.data ? <Skeleton rows={4} />
+            : open.length === 0 ? <Notice tone="good">گفت‌وگوی بازی نیست.</Notice> : (
+              <ul className="space-y-2">
+                {open.slice(0, 6).map((t) => (
+                  <li key={t.id} className="rounded-xl border border-line p-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-sm font-medium text-ink">{t.accountName || t.shopName || t.stationName || t.who || '—'}</p>
+                      <div className="flex items-center gap-1.5">
+                        {Number(t.unreadAdmin) > 0 && <Badge tone="warn">{fa(t.unreadAdmin)} نخوانده</Badge>}
+                        <Badge tone={t.app === 'pump' ? 'info' : 'neutral'}>{APP_LABEL[(t.app === 'pump' ? 'pump' : 'shop') as AppId]}</Badge>
+                      </div>
+                    </div>
+                    <p className="mt-1 truncate text-xs text-ink-muted" dir="auto">{t.lastMessage || '—'}</p>
+                    <p className="text-[11px] text-ink-muted">{moment(t.updatedAt)}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          {Number(threads.data?.unread) > 0 && (
+            <p className="mt-2 text-[11px]" style={{ color: 'var(--status-warning)' }}>{fa(threads.data!.unread)} پیامِ نخوانده در کل</p>
           )}
         </Card>
       </div>
+
+      {/* ── کدهای شش‌رقمی ─────────────────────────────────────────────────── */}
+      <Card title="کدهای شش‌رقمی" icon={<Hash className="h-4 w-4" />} action={<Link className="btn btn-sm" to="/codes">همهٔ کدها</Link>}>
+        {codes === null ? <Skeleton rows={1} /> : (
+          <div className="grid grid-cols-3 gap-3">
+            <Stat label="زندهٔ همین حالا" value={fa(codeStats.live)} />
+            <Stat label="ساخته‌شده در ۲۴ ساعت" value={fa(codeStats.today)} />
+            <Stat label="نرفته در ۲۴ ساعت" value={fa(codeStats.failed)} tone={codeStats.failed > 0 ? 'bad' : undefined} />
+          </div>
+        )}
+      </Card>
     </div>
-  );
-}
-
-function Info({
-  label,
-  value,
-  mono,
-  icon,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <div>
-      <dt className="flex items-center gap-1 text-[11px] text-ink-muted">
-        {icon}
-        {label}
-      </dt>
-      <dd className={`truncate text-sm font-medium ${mono ? 'font-mono tnum' : ''}`}>{value}</dd>
-    </div>
-  );
-}
-
-function MetricTile({
-  title,
-  icon,
-  value,
-  color,
-  detail,
-  points,
-  accessor,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  value: number;
-  color: string;
-  detail: string;
-  points: import('../types').HistoryPoint[];
-  accessor: (p: import('../types').HistoryPoint) => number | null;
-}) {
-  return (
-    <Card className="flex flex-col">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="flex items-center gap-2 text-sm font-semibold">
-            {icon}
-            {title}
-          </h2>
-          <p className="mt-1 truncate text-[11px] text-ink-muted">{detail}</p>
-        </div>
-        <Ring value={value} color={color} label={title} />
-      </div>
-      <div className="mt-2">
-        <LiveChart
-          points={points}
-          x={(p) => p.at}
-          height={48}
-          compact
-          yMax={100}
-          format={(v) => (v == null ? '—' : `${v.toFixed(0)}%`)}
-          series={[{ key: title, label: title, color, value: accessor }]}
-        />
-      </div>
-    </Card>
-  );
-}
-
-function CountTile({
-  to,
-  label,
-  value,
-  sub,
-  icon,
-}: {
-  to: string;
-  label: string;
-  value: number;
-  sub?: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <Link
-      to={to}
-      className="rounded-xl border border-line p-3 transition-colors hover:bg-surface-raised"
-      style={{ background: 'var(--surface-0)' }}
-    >
-      <p className="flex items-center gap-1.5 text-[11px] text-ink-muted">
-        {icon}
-        {label}
-      </p>
-      <p className="tnum mt-1 text-2xl font-semibold">{value}</p>
-      {sub && <p className="text-[11px] text-ink-muted">{sub}</p>}
-    </Link>
   );
 }

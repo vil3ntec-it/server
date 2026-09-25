@@ -65,7 +65,9 @@ const daysLeftOf = (status: string | null | undefined, ends: number | null | und
  * مانده» می‌گشت و این دو جدول هیچ دکمه‌ای نداشتند.
  */
 //  ⚠️ همان بخشِ پمپ، زبانهٔ «اشتراک‌ها» — نه بیرون رفتن به صفحهٔ دیگر
-const manageLink = (q: string) => `/stations?q=${encodeURIComponent(q)}#subs`;
+//  ⛔ کارهای اشتراک فقط در بخشِ مرکزیِ «اشتراک‌ها» است (۱۴۰۵/۰۷/۱۳)؛ این
+//  لینک مستقیم همان‌جا را با بخشِ پمپ و جست‌وجوی همین حساب باز می‌کند.
+const manageLink = (q: string) => `/subscriptions?app=pump&q=${encodeURIComponent(q)}`;
 const fmtDate = (ms?: number | null) =>
   ms ? new Date(Number(ms)).toLocaleDateString('fa-AF', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '—';
 
