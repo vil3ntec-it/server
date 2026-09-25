@@ -8,7 +8,7 @@ import { api } from '../../api';
 import { useApp } from '../../app-context';
 import { Card, Field, Loading, Modal, toast } from '../../components/ui';
 import { dateTime, relative } from '../../format';
-import { cc } from '../../control/api';
+import { cc, type InstallProgress } from '../../control/api';
 import type { UpdateInfo, UpdateStatus } from '../../control/types';
 import { ActionButton, KV, Notice, Select } from '../../control/ui';
 
@@ -23,6 +23,8 @@ export default function Updates() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [steps, setSteps] = useState<Step[] | null>(null);
   const [restarting, setRestarting] = useState(false);
+  //  ⛔ حالِ نصبِ در جریان — از سرور، پس رفتن و برگشتن همان را نشان می‌دهد
+  const [prog, setProg] = useState<InstallProgress | null>(null);
   //  سرورِ حساب (ورود، اشتراک، باتِ تلگرام) — بستهٔ جدای خودش را دارد
   const [acct, setAcct] = useState<AcctUpdate | null>(null);
   const loadAcct = useCallback(async () => {
@@ -34,6 +36,7 @@ export default function Updates() {
       const res = await cc.updateStatus();
       setStatus(res.status);
       setPending(res.pending);
+      setProg(res.progress || null);
     } catch (e) {
       toast((e as Error).message, 'bad');
     } finally {
@@ -63,8 +66,25 @@ export default function Updates() {
     return () => clearInterval(timer);
   }, [restarting]);
 
+  //  تا نصب در جریان است، هر ثانیه چند مگابایت آمده. اگر پنل وسطِ کار
+  //  خودش را دوباره بالا آورد (نصب تمام شد)، همان انتظارِ «restarting».
+  const installing = !!prog?.running;
+  useEffect(() => {
+    if (!installing) return;
+    const timer = setInterval(async () => {
+      try {
+        const res = await cc.updateStatus();
+        setProg(res.progress || null);
+      } catch {
+        setRestarting(true);
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [installing]);
+
   /* نصب — با force، حتی وقتی انتشار از نصبِ فعلی عقب‌تر است */
   const install = async (force = false) => {
+    setProg({ running: true, phase: 'check', got: 0, total: 0, why: '' });
     try {
       const res = await cc.installUpdate(force);
       if (!res.ok) {
@@ -75,6 +95,8 @@ export default function Updates() {
       if (res.restart) setRestarting(true);
     } catch (e) {
       toast((e as Error).message, 'bad');
+    } finally {
+      load();
     }
   };
 
@@ -145,7 +167,9 @@ export default function Updates() {
           </div>
         )}
 
-        {(info?.available || pending) && (
+        {installing && prog && <InstallBar p={prog} />}
+
+        {!installing && (info?.available || pending) && (
           <div className="mt-4 rounded-xl border p-3" style={{ borderColor: 'color-mix(in srgb, var(--accent) 35%, transparent)' }}>
             <p className="mb-2 text-sm font-medium">
               {t('ccUpdateAvailable')} — <span className="tnum">{info?.latest || pending?.latest}</span>
@@ -296,12 +320,60 @@ function Settings({ open, onClose, status, onSaved }: { open: boolean; onClose: 
   );
 }
 
+/** نوارِ «چند مگابایت آمده» برای نصبِ خودِ مرکز فرمان. */
+function InstallBar({ p }: { p: InstallProgress }) {
+  const pct = p.total > 0 ? Math.min(100, Math.round((p.got / p.total) * 100)) : 0;
+  const label = p.phase === 'download' ? 'در حالِ دانلود' : p.phase === 'install' ? 'در حالِ نصب — پنل پس از آن خودش دوباره بالا می‌آید…' : 'در حالِ پرسیدن از گیت‌هاب…';
+  return (
+    <div className="mt-4 space-y-2 rounded-xl border p-3" style={{ borderColor: 'color-mix(in srgb, var(--accent) 35%, transparent)' }}>
+      <p className="text-sm font-medium">
+        {label}
+        {p.phase === 'download' && (
+          <span className="tnum" dir="ltr"> — {MB(p.got)}{p.total ? ` / ${MB(p.total)}` : ''} MB{p.total ? ` (${pct}%)` : ''}</span>
+        )}
+      </p>
+      {p.phase === 'download' && p.total > 0 && (
+        <div className="h-2 w-full overflow-hidden rounded-full bg-surface-sunken" dir="ltr">
+          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'var(--accent)', transition: 'width .4s' }} />
+        </div>
+      )}
+      <p className="text-[11px] text-ink-muted">می‌توانید به بخشِ دیگری بروید؛ نصب روی سرور ادامه دارد و این‌جا دوباره دیده می‌شود.</p>
+    </div>
+  );
+}
+
 type AcctUpdate = {
   ok: boolean;
   current?: string;
   latest?: string;
   available?: boolean;
+  size?: number;
   why?: string;
+};
+
+type AcctJob = {
+  running: boolean;
+  phase: 'idle' | 'check' | 'download' | 'extract' | 'swap' | 'restart' | 'done' | 'error';
+  got: number;
+  total: number;
+  from: string;
+  to: string;
+  why: string;
+  attempt: number;
+  endedAt: number;
+};
+
+const MB = (n: number) => (n / 1048576).toFixed(1);
+
+const PHASE: Record<AcctJob['phase'], string> = {
+  idle: '',
+  check: 'در حالِ پرسیدن از گیت‌هاب…',
+  download: 'در حالِ دانلود',
+  extract: 'در حالِ باز کردنِ بسته…',
+  swap: 'در حالِ جابه‌جایی — سرورِ حساب یک لحظه خاموش است…',
+  restart: 'در حالِ راه‌اندازیِ دوبارهٔ سرورِ حساب…',
+  done: '',
+  error: '',
 };
 
 /**
@@ -312,39 +384,110 @@ type AcctUpdate = {
  * درش کارِ «به‌روزرسانیِ سرورِ حساب» در «اتوماسیون» بود. ⛔ حالا همین صفحه
  * هر دو را نشان می‌دهد و یک دکمه نصبش می‌کند — همان `/api/account-server/update`
  * که آن کار هم می‌زند، پس راهِ دومی ساخته نشد.
+ *
+ * ⛔ و همان روز: «دانلود کنسل می‌شود، از سر می‌شود، با رفتن به بخشِ دیگر از
+ * سر می‌شود و نشان نمی‌دهد چند مگابایت است.» کار حالا روی سرور است و این
+ * کارت فقط هر ثانیه `/update/progress` را می‌خواند — رفتن و برگشتن همان کارِ
+ * در جریان را نشان می‌دهد، نه دکمهٔ تازه.
  */
 function AccountServerCard({ info, onDone }: { info: AcctUpdate | null; onDone: () => void }) {
-  if (!info) return null;
+  const [job, setJob] = useState<AcctJob | null>(null);
+  const [starting, setStarting] = useState(false);
+
+  const poll = useCallback(async () => {
+    try {
+      const j = await api<AcctJob>('/api/account-server/update/progress');
+      setJob(j);
+      return j;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  //  با باز شدنِ صفحه: اگر کاری در جریان است، همان را نشان بده
+  useEffect(() => { poll(); }, [poll]);
+
+  //  تا کار در جریان است، هر ثانیه
+  const running = !!job?.running;
+  useEffect(() => {
+    if (!running) return;
+    let alive = true;
+    const timer = setInterval(async () => {
+      const j = await poll();
+      if (!alive || !j || j.running) return;
+      if (j.phase === 'done') toast(j.why ? `سرورِ حساب: ${j.why}` : 'سرورِ حساب به‌روز شد', 'good');
+      else if (j.phase === 'error') toast(j.why || 'به‌روزرسانی نشد', 'bad');
+      onDone();
+    }, 1000);
+    return () => { alive = false; clearInterval(timer); };
+  }, [running, poll, onDone]);
+
+  if (!info && !job) return null;
+  const pct = job && job.total > 0 ? Math.min(100, Math.round((job.got / job.total) * 100)) : 0;
+  const showError = !running && job?.phase === 'error' && job.why;
+
   return (
     <Card title="سرورِ حساب (ورود، اشتراک، باتِ تلگرام)" icon={<ServerCog className="h-4 w-4" />}>
-      <KV label="نسخهٔ نصب‌شده" mono>{info.current || '—'}</KV>
-      <KV label="تازه‌ترین نسخه" mono>{info.latest || '—'}</KV>
-      {!info.ok && (
+      <KV label="نسخهٔ نصب‌شده" mono>{info?.current || '—'}</KV>
+      <KV label="تازه‌ترین نسخه" mono>{info?.latest || '—'}{info?.size ? ` · ${MB(info.size)} MB` : ''}</KV>
+
+      {running && job && (
+        <div className="mt-3 space-y-2">
+          <p className="text-sm font-medium">
+            {PHASE[job.phase]}
+            {job.phase === 'download' && (
+              <span className="tnum" dir="ltr">
+                {' '}— {MB(job.got)}{job.total ? ` / ${MB(job.total)}` : ''} MB{job.total ? ` (${pct}%)` : ''}
+              </span>
+            )}
+            {job.phase === 'download' && job.attempt > 1 && <span className="text-ink-muted"> · تلاشِ {job.attempt} (ادامه از همان‌جا)</span>}
+          </p>
+          {job.phase === 'download' && (
+            <div className="h-2 w-full overflow-hidden rounded-full bg-surface-sunken" dir="ltr">
+              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: 'var(--accent)', transition: 'width .4s' }} />
+            </div>
+          )}
+          <p className="text-[11px] text-ink-muted">می‌توانید به بخشِ دیگری بروید؛ کار روی سرور ادامه دارد و این‌جا دوباره دیده می‌شود.</p>
+        </div>
+      )}
+
+      {showError && (
+        <p className="mt-3 text-sm" style={{ color: 'var(--status-critical)' }}>
+          {job!.why}
+          {job!.got > 0 && job!.total > 0 && job!.got < job!.total && (
+            <span className="tnum" dir="ltr"> — {MB(job!.got)} / {MB(job!.total)} MB</span>
+          )}
+        </p>
+      )}
+
+      {!running && info && !info.ok && (
         <p className="mt-3 text-sm" style={{ color: 'var(--status-critical)' }}>{info.why || 'سنجیده نشد'}</p>
       )}
-      {info.ok && info.available && (
+      {!running && info?.ok && info.available && (
         <div className="mt-3">
-          <ActionButton
+          <button
             className="btn btn-sm btn-primary"
-            busyLabel="در حالِ نصب… (یکی دو دقیقه)"
+            disabled={starting}
             onClick={async () => {
+              setStarting(true);
               try {
-                const out = await api<{ ok: boolean; changed?: boolean; to?: string; why?: string }>('/api/account-server/update', { method: 'POST', body: {} });
-                toast(out.changed ? `سرورِ حساب به ${out.to} به‌روز شد` : (out.why || 'تازه‌ترین است'), 'good');
+                const out = await api<{ ok: boolean; started: boolean; progress: AcctJob }>('/api/account-server/update', { method: 'POST', body: {} });
+                setJob(out.progress);
+                if (!out.started) toast('به‌روزرسانیِ سرورِ حساب از قبل در جریان است', 'good');
               } catch (e) {
                 toast((e as Error).message, 'bad');
               } finally {
-                onDone();
+                setStarting(false);
               }
             }}
           >
             <Download className="h-4 w-4" />
-            به‌روز کردنِ سرورِ حساب به {info.latest}
-          </ActionButton>
-          <p className="mt-2 text-[11px] text-ink-muted">دیتابیس و رازها دست نمی‌خورند؛ سرورِ حساب یک بار دوباره بالا می‌آید.</p>
+            {showError ? 'ادامهٔ به‌روزرسانی' : `به‌روز کردنِ سرورِ حساب به ${info.latest}`}
+          </button>
+          <p className="mt-2 text-[11px] text-ink-muted">دیتابیس و رازها دست نمی‌خورند؛ سرورِ حساب یک بار دوباره بالا می‌آید. اگر اینترنت قطع شد، دانلود از همان‌جا ادامه پیدا می‌کند.</p>
         </div>
       )}
-      {info.ok && !info.available && (
+      {!running && info?.ok && !info.available && (
         <p className="mt-3 text-sm" style={{ color: 'var(--status-good)' }}>سرورِ حساب به‌روز است.</p>
       )}
     </Card>

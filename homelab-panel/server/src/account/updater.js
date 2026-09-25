@@ -27,7 +27,9 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '../config.js';
 import { logEvent } from '../db.js';
-import { accountDataDir, resolveAccountDir, restartAccountServer } from './supervisor.js';
+import {
+  accountDataDir, resolveAccountDir, restartAccountServer, stopAccountServer, waitAccountServerExit,
+} from './supervisor.js';
 import { repoSlug } from '../update/github.js';
 import { usable, versionAt, newer } from './bundle.js';
 
@@ -118,6 +120,157 @@ const run = (cmd, args, opts = {}) => new Promise((resolve) => {
 });
 
 /**
+ * کدام `tar`.
+ *
+ * ⛔ روی ویندوز **همیشه `tar.exe`ِ خودِ ویندوز** (System32). اگر گیت نصب
+ * باشد، `tar`ِ گیت (GNU/msys) ممکن است زودتر در `PATH` بیاید و آن
+ * `C:\…` را «میزبانِ دور به نامِ C» می‌خواند — بسته هیچ‌وقت باز نمی‌شد.
+ */
+export function tarCommand() {
+  if (process.platform !== 'win32') return 'tar';
+  const sys = path.join(process.env.SystemRoot || process.env.windir || 'C:\\Windows', 'System32', 'tar.exe');
+  return fs.existsSync(sys) ? sys : 'tar';
+}
+
+/**
+ * ⛔ `node_modules/.bin` باز نمی‌شود: پیوندِ نمادین است و `tar.exe`ِ ویندوز
+ * بی دسترسیِ مدیر یا «حالتِ توسعه‌دهنده» نمی‌سازدش — و **کلِ** باز کردن با
+ * کدِ خطا تمام می‌شد، یعنی «بسته باز نشد» روی هر ویندوزِ معمولی. سرورِ حساب
+ * هیچ‌وقت از `.bin` چیزی اجرا نمی‌کند.
+ */
+export const TAR_EXCLUDES = ['--exclude=node_modules/.bin'];
+
+// ══ کارِ پس‌زمینه ═════════════════════════════════════════════════════════
+//
+//  ⛔ **ریشهٔ «دانلود کنسل می‌شود، از سر می‌شود، با رفتن به بخشِ دیگر از سر
+//  می‌شود و نشان نمی‌دهد چند مگابایت است»** (گزارشِ صاحب سامانه،
+//  ۱۴۰۵/۰۷/۱۳): کلِ دانلود و باز کردن و جابه‌جایی **داخلِ یک درخواستِ HTTP**
+//  بود. صفحه هیچ عددی نمی‌گرفت، رفتن به بخشِ دیگر دکمه را از نو می‌ساخت، و
+//  کلیکِ دوباره یک `apply`ِ دوم راه می‌انداخت که `app.next` و فایلِ نیمه‌کارهٔ
+//  اولی را **پاک می‌کرد** — پس هیچ‌کدام تمام نمی‌شد.
+//
+//  حالا: یک کار، روی سرور، یکی در هر لحظه. صفحه فقط شروعش می‌کند و هر ثانیه
+//  `progress()` را می‌خواند. رفتن و برگشتن هیچ چیزی را از سر نمی‌کند.
+const job = {
+  running: false,
+  phase: 'idle', // idle · check · download · extract · swap · restart · done · error
+  got: 0,
+  total: 0,
+  from: '',
+  to: '',
+  why: '',
+  code: '',
+  attempt: 0,
+  startedAt: 0,
+  endedAt: 0,
+};
+let jobPromise = null;
+
+const setJob = (patch) => Object.assign(job, patch);
+
+/** حالِ کارِ جاری — بی هیچ درخواستی به بیرون. */
+export function progress() {
+  return { ...job };
+}
+
+/**
+ * کار را در پس‌زمینه شروع می‌کند و همان لحظه برمی‌گردد.
+ * کارِ در جریان را **هرگز** دوباره شروع نمی‌کند.
+ */
+export function start(opts = {}) {
+  if (jobPromise) return { ok: true, started: false, progress: progress() };
+  jobPromise = apply(opts)
+    .catch((e) => ({ ok: false, code: 'failed', why: 'به‌روزرسانی نشد', detail: String(e?.message || e).slice(0, 300) }))
+    .then((out) => {
+      setJob({
+        running: false,
+        endedAt: Date.now(),
+        phase: out.ok ? 'done' : 'error',
+        why: out.ok ? (out.changed ? `به ${out.to} به‌روز شد` : (out.why || 'تازه‌ترین است')) : (out.why || 'به‌روزرسانی نشد'),
+        code: out.code || '',
+        to: out.to || job.to,
+      });
+      return out;
+    })
+    .finally(() => { jobPromise = null; });
+  return { ok: true, started: true, progress: progress() };
+}
+
+/** فقط برای آزمون: منتظرِ پایانِ کارِ جاری. */
+export function settled() {
+  return jobPromise || Promise.resolve(null);
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** نامِ فایلِ نیمه‌کاره — به نسخه بسته است تا نیمهٔ نسخهٔ دیگر ادامه داده نشود. */
+function partFile(root, version) {
+  return path.join(root, `.account-server-${String(version || 'x').replace(/[^\w.-]/g, '')}.tar.gz.part`);
+}
+
+/**
+ * ⛔ دانلودِ **ادامه‌دار**: هر چه آمده روی دیسک می‌ماند و تلاشِ بعدی با
+ * `Range` از همان‌جا ادامه می‌دهد — چه تلاشِ دوباره داخلِ همین کار، چه
+ * کلیکِ بعدیِ کاربر پس از قطعِ اینترنت. پاسخِ ۲۰۰ (سروری که `Range` نفهمد)
+ * یعنی از صفر.
+ */
+async function downloadTo(file, url, size, fetchImpl) {
+  let have = 0;
+  try { have = fs.statSync(file).size; } catch { have = 0; }
+  if (size && have > size) { await fsp.rm(file, { force: true }); have = 0; }
+  if (size && have === size) { setJob({ got: have, total: size }); return; }
+
+  const headers = { 'user-agent': 'control-center' };
+  if (have > 0) headers.range = `bytes=${have}-`;
+  const res = await fetchImpl(url, { headers });
+  if (!res.ok && res.status !== 206) {
+    const e = new Error(`http_${res.status}`);
+    e.status = res.status;
+    throw e;
+  }
+  const resumed = res.status === 206 && have > 0;
+  if (!resumed) have = 0;
+  const len = Number(res.headers?.get?.('content-length')) || 0;
+  const total = size || (len ? have + len : 0);
+  setJob({ got: have, total });
+
+  const out = fs.createWriteStream(file, { flags: resumed ? 'a' : 'w' });
+  const wrote = new Promise((resolve, reject) => { out.on('finish', resolve); out.on('error', reject); });
+  try {
+    if (res.body && typeof res.body[Symbol.asyncIterator] === 'function') {
+      for await (const chunk of res.body) {
+        const buf = Buffer.from(chunk);
+        if (!out.write(buf)) await new Promise((r) => out.once('drain', r));
+        job.got += buf.length;
+      }
+    } else {
+      //  پیاده‌سازی‌هایی که بدنهٔ جریانی ندارند (آزمون‌ها)
+      const buf = Buffer.from(await res.arrayBuffer());
+      out.write(buf);
+      job.got += buf.length;
+    }
+  } finally {
+    out.end();
+    await wrote.catch(() => {});
+  }
+  if (size && fs.statSync(file).size !== size) {
+    const e = new Error('short');
+    e.short = true;
+    throw e;
+  }
+}
+
+/** جابه‌جایی با چند تلاش — ضدِ ویروس یک لحظه فایل‌های تازه را نگه می‌دارد. */
+async function renameRetry(from, to, tries = 12) {
+  for (let i = 0; ; i++) {
+    try { await fsp.rename(from, to); return; } catch (e) {
+      if (i >= tries - 1 || !/EBUSY|EPERM|EACCES|ENOTEMPTY/.test(e.code || '')) throw e;
+      await sleep(500);
+    }
+  }
+}
+
+/**
  * ══ گرفتن و نشاندنِ بستهٔ تازه ═══════════════════════════════════════════
  *
  * ⛔ **پوشهٔ در حالِ اجرا تا آخرین لحظه دست نمی‌خورد.** بسته در
@@ -129,12 +282,15 @@ const run = (cmd, args, opts = {}) => new Promise((resolve) => {
  * `<dataDir>/account-server/` هستند و این فقط `app` را عوض می‌کند. عوض
  * شدنِ `API_SECRET` یعنی همهٔ نشست‌های همهٔ برنامه‌ها یک‌شبه بی‌اعتبار.
  *
- * ⚠️ `tar` روی هر دو سیستم هست — روی ویندوز ۱۰ به بعد `tar.exe` خودِ
- * ویندوز است. پس یک فرمان، نه دو راه.
+ * ⛔ **روی ویندوز پوشه‌ای که `cwd`ِ سرورِ حسابِ زنده است جابه‌جا نمی‌شود**
+ * (`EBUSY`). پس سرورِ حساب درست پیش از جابه‌جایی خاموش و بعدش روشن
+ * می‌شود — و اگر جابه‌جایی نشد، همان نسخهٔ قبلی دوباره روشن می‌شود.
  */
-export async function apply({ fetchImpl = fetch, actor = 'admin', restart = true } = {}) {
+export async function apply({ fetchImpl = fetch, actor = 'admin', restart = true, retryDelays = [2000, 5000, 10000] } = {}) {
+  setJob({ running: true, phase: 'check', got: 0, total: 0, from: '', to: '', why: '', code: '', attempt: 0, startedAt: Date.now(), endedAt: 0 });
   const info = await check({ fetchImpl });
   if (!info.ok) return info;
+  setJob({ from: info.current, to: info.latest, total: info.size || 0 });
   if (!info.available) {
     return { ok: true, changed: false, current: info.current, latest: info.latest,
       why: 'سرورِ حساب همین حالا تازه‌ترین نسخه است' };
@@ -143,39 +299,86 @@ export async function apply({ fetchImpl = fetch, actor = 'admin', restart = true
   const root = accountDataDir();
   const next = path.join(root, 'app.next');
   const live = installedDir();
-  const archive = path.join(root, `.${ASSET}.part`);
+  const archive = partFile(root, info.latest);
+  let stopped = false;
 
   try {
     await fsp.mkdir(root, { recursive: true });
+    //  نیمه‌کاره‌های نسخه‌های دیگر به کاری نمی‌آیند
+    for (const f of await fsp.readdir(root).catch(() => [])) {
+      const full = path.join(root, f);
+      if (/^\.account-server-.*\.part$/.test(f) && full !== archive) await fsp.rm(full, { force: true }).catch(() => {});
+    }
+
+    // ── ۱) دانلود، با ادامه و چند تلاش
+    setJob({ phase: 'download' });
+    for (let i = 0; ; i++) {
+      setJob({ attempt: i + 1 });
+      try {
+        await downloadTo(archive, info.url, info.size, fetchImpl);
+        break;
+      } catch (e) {
+        //  ۴xx (جز ۴۰۸/۴۲۹) تلاشِ دوباره نمی‌خواهد
+        const fatal = e.status && e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429 && e.status !== 416;
+        if (e.status === 416) await fsp.rm(archive, { force: true }).catch(() => {});
+        if (fatal || i >= retryDelays.length) {
+          return { ok: false, code: 'download',
+            why: e.status ? `دانلود نشد (${e.status})` : 'دانلود قطع شد — دوباره بزنید، از همان‌جا ادامه می‌دهد',
+            detail: String(e?.message || e).slice(0, 200) };
+        }
+        await sleep(retryDelays[i]);
+      }
+    }
+
+    // ── ۲) باز کردن کنارِ نصبِ فعلی
+    setJob({ phase: 'extract' });
     await fsp.rm(next, { recursive: true, force: true });
     await fsp.mkdir(next, { recursive: true });
-
-    const res = await fetchImpl(info.url, { headers: { 'user-agent': 'control-center' } });
-    if (!res.ok) return { ok: false, why: `دانلود نشد (${res.status})`, code: 'download' };
-    await fsp.writeFile(archive, Buffer.from(await res.arrayBuffer()));
-
-    const out = await run('tar', ['-xzf', archive, '-C', next, '--strip-components=1'], { timeout: 300000 });
-    if (!out.ok) return { ok: false, why: 'بسته باز نشد', code: 'extract', detail: out.stderr.slice(0, 300) };
+    const out = await run(tarCommand(), ['-xzf', archive, '-C', next, '--strip-components=1', ...TAR_EXCLUDES], { timeout: 300000 });
+    if (!out.ok) {
+      //  آرشیوِ خراب را نگه نمی‌داریم، وگرنه تلاشِ بعدی همان را «کامل» می‌بیند
+      await fsp.rm(archive, { force: true }).catch(() => {});
+      return { ok: false, why: 'بسته باز نشد', code: 'extract', detail: out.stderr.slice(0, 300) };
+    }
 
     //  ⛔ پیش از هر جابه‌جایی: واقعاً یک سرورِ حسابِ سالم است؟
     if (!usable(next)) return { ok: false, why: 'بستهٔ دانلودشده ناقص است', code: 'incomplete' };
     const got = versionAt(next);
     if (!got) return { ok: false, why: 'نسخهٔ بستهٔ دانلودشده خوانده نشد', code: 'incomplete' };
 
-    //  جابه‌جاییِ آخر — و نسخهٔ قبلی تا دورِ بعد نگه داشته می‌شود
+    // ── ۳) جابه‌جایی — سرورِ حساب یک لحظه خاموش
+    setJob({ phase: 'swap' });
+    if (restart && fs.existsSync(live)) {
+      stopAccountServer();
+      await waitAccountServerExit(10000);
+      stopped = true;
+    }
     const old = path.join(root, 'app.prev');
     await fsp.rm(old, { recursive: true, force: true });
-    if (fs.existsSync(live)) await fsp.rename(live, old);
-    await fsp.rename(next, live);
+    if (fs.existsSync(live)) await renameRetry(live, old);
+    try {
+      await renameRetry(next, live);
+    } catch (e) {
+      //  برگرداندنِ نسخهٔ قبلی — سرورِ حساب نباید بی پوشه بماند
+      if (!fs.existsSync(live) && fs.existsSync(old)) await renameRetry(old, live).catch(() => {});
+      throw e;
+    }
 
     logEvent('account.server.updated', { from: info.current, to: got, actor });
-    if (restart) { try { restartAccountServer(); } catch { /* دورِ بعدِ ناظر */ } }
+    if (restart) {
+      setJob({ phase: 'restart' });
+      stopped = false;
+      try { await restartAccountServer(); } catch { /* دورِ بعدِ ناظر */ }
+    }
+    await fsp.rm(archive, { force: true }).catch(() => {});
     return { ok: true, changed: true, from: info.current, to: got };
   } catch (e) {
     return { ok: false, why: 'به‌روزرسانی نشد', code: 'failed', detail: String(e?.message || e).slice(0, 300) };
   } finally {
-    await fsp.rm(archive, { force: true }).catch(() => {});
+    //  ⚠️ فایلِ نیمه‌کارهٔ دانلود عمداً پاک نمی‌شود — ادامهٔ دانلود از همان است.
     await fsp.rm(next, { recursive: true, force: true }).catch(() => {});
+    if (!jobPromise) job.running = false;
+    if (stopped) { try { await restartAccountServer(); } catch { /* دورِ بعدِ ناظر */ } }
   }
 }
 

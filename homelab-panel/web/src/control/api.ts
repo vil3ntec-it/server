@@ -176,7 +176,7 @@ export const cc = {
   deleteSecret: (id: number) => api(`${CC}/vault/${id}`, { method: 'DELETE' }),
 
   /* -------------------------- به‌روزرسانی --------------------------- */
-  updateStatus: () => api<{ status: UpdateStatus; pending: { latest: string; at: number } | null }>(`${CC}/update`),
+  updateStatus: () => api<{ status: UpdateStatus; pending: { latest: string; at: number } | null; progress?: InstallProgress }>(`${CC}/update`),
   checkUpdate: (force = false) => api<UpdateInfo>(`${CC}/update/check`, { body: { force } }),
   updateSettings: (body: Record<string, unknown>) => api<{ status: UpdateStatus }>(`${CC}/update/settings`, { body }),
   installUpdate: (force = false) =>
@@ -185,6 +185,15 @@ export const cc = {
 };
 
 /* --------------------------- انواعِ کمکی --------------------------- */
+
+/** حالِ نصبِ در جریانِ خودِ مرکز فرمان — چند مگابایت آمده و کدام گام. */
+export type InstallProgress = {
+  running: boolean;
+  phase: 'idle' | 'check' | 'download' | 'install' | 'done' | 'error';
+  got: number;
+  total: number;
+  why: string;
+};
 
 export type ProjectBundle = {
   project: Project;
