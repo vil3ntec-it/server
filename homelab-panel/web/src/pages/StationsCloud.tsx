@@ -20,6 +20,7 @@ import { api } from '../api';
 import { Card, CopyButton, Field, Loading, Modal, toast } from '../components/ui';
 import { useApp } from '../app-context';
 import { ActionButton, Cell, KV, Notice, Row, Select, Stat, Table, Tabs } from '../control/ui';
+import DeleteAccount from './account/DeleteAccount';
 
 type Status = { base: string; target?: string; local?: boolean; linked: boolean; auto?: boolean; vault: boolean; updatedAt: number | null };
 
@@ -121,6 +122,7 @@ export type CloudSection = 'accounts' | 'plans' | 'data';
 export default function StationsCloud({ section = 'accounts' }: { section?: CloudSection } = {}) {
   const [status, setStatus] = useState<Status | null>(null);
   const [users, setUsers] = useState<PumpUser[]>([]);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [subs, setSubs] = useState<Sub[]>([]);
   const [expiring, setExpiring] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -323,7 +325,12 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
                 <Cell>{fmtDate(ends)}</Cell>
                 <Cell>{daysLeftOf(status, ends)}</Cell>
                 <Cell>
-                  <Link className="btn btn-sm" to={manageLink(u.email || u.station_name || '')}>مدیریتِ اشتراک</Link>
+                  <div className="flex flex-wrap gap-1">
+                    <Link className="btn btn-sm" to={manageLink(u.email || u.station_name || '')}>مدیریتِ اشتراک</Link>
+                    <button className="btn btn-sm" style={{ color: 'var(--status-critical)' }} onClick={() => setDeleting(u.id)}>
+                      حذفِ حساب
+                    </button>
+                  </div>
                 </Cell>
               </Row>
             );
@@ -724,6 +731,10 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
         )}
       </Modal>
 
+      {deleting && (
+        <DeleteAccount userId={deleting} onClose={() => setDeleting(null)}
+                       onDone={() => { loadData(expiring); loadMore(); }} />
+      )}
       {grantFor && (
         <GrantModal station={grantFor} plans={plans} onClose={() => setGrantFor(null)}
                     onDone={() => { setGrantFor(null); loadData(expiring); loadMore(); }} />

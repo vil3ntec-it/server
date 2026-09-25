@@ -22,6 +22,7 @@ import {
 } from './shared';
 import GrantSub from './GrantSub';
 import type { Addon, Payment, PumpProfile, ShopProfile, SubRow } from './types';
+import DeleteAccount from './DeleteAccount';
 
 type ListOut = { subscriptions: SubRow[]; serverTime: number };
 
@@ -476,9 +477,26 @@ function Profile({
     : { name: pump.data?.owner?.name || row.ownerName, email: pump.data?.owner?.email || row.ownerEmail, phone: pump.data?.owner?.phone || row.ownerPhone };
   const busy = (app === 'shop' ? shop.busy : pump.busy) && !shop.data && !pump.data;
   const tone = daysTone(row.daysLeft, row.permanent, row.status);
+  const [deleting, setDeleting] = useState(false);
 
   return (
-    <Modal open wide onClose={onClose} title={`${row.tenantName || owner.name || '—'} · ${APP_LABEL[app]}`}>
+    <Modal
+      open
+      wide
+      onClose={onClose}
+      title={`${row.tenantName || owner.name || '—'} · ${APP_LABEL[app]}`}
+      footer={row.ownerUserId ? (
+        <div className="flex justify-start">
+          <button className="btn btn-sm" style={{ color: 'var(--status-critical)' }} onClick={() => setDeleting(true)}>
+            حذفِ کاملِ حساب…
+          </button>
+        </div>
+      ) : undefined}
+    >
+      {deleting && row.ownerUserId && (
+        <DeleteAccount userId={row.ownerUserId} onClose={() => setDeleting(false)}
+                       onDone={async () => { await onChanged(); onClose(); }} />
+      )}
       <Tabs
         active={tab}
         onChange={setTab}
