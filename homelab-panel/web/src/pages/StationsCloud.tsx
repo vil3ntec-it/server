@@ -26,8 +26,10 @@ type Status = { base: string; target?: string; local?: boolean; linked: boolean;
 
 type PumpUser = {
   id: string; name: string; email: string | null; phone: string | null;
-  station_id: string; station_name: string; station_code: string;
-  role: string; sub_status: string | null; sub_ends_at: number | null;
+  station_id: string | null; station_name: string | null; station_code: string | null;
+  role: string | null; sub_status: string | null; sub_ends_at: number | null;
+  /** حسابی که از برنامهٔ پمپ آمده ولی هنوز پمپی نساخته (سرورِ حساب ۲.۱۰.۶+) */
+  no_station?: boolean;
 };
 
 type Sub = {
@@ -305,7 +307,7 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
   const usersCard = (
     <Card title="افرادِ پمپ‌ها" icon={<Users size={18} />}>
       {users.length === 0 ? (
-        <Notice>هنوز کسی به پمپی وصل نشده است.</Notice>
+        <Notice>هنوز هیچ حسابی از برنامهٔ پمپ ساخته نشده است.</Notice>
       ) : (
         <Table head={['نام', 'ایمیل / شماره', 'پمپ', 'نقش', 'اشتراک', 'پایان', 'روزِ مانده', '']}>
           {users.map((u) => {
@@ -319,9 +321,16 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
               <Row key={`${u.id}-${u.station_id}`}>
                 <Cell>{u.name || '—'}</Cell>
                 <Cell><span dir="ltr">{u.email || u.phone || '—'}</span></Cell>
-                <Cell>{u.station_name ? `${u.station_name} (${u.station_code})` : '—'}</Cell>
-                <Cell>{ROLE_FA[u.role] || u.role}</Cell>
-                <Cell>{SUB_FA[status] || 'بدون اشتراک'}</Cell>
+                {/*  ⛔ حسابِ بی‌پمپ هم دیده می‌شود و می‌گوید چرا اشتراکی ندارد:
+                     دورهٔ آزمایشی و اشتراک مالِ پمپ‌اند، و تا کاربر در
+                     برنامه «ساختنِ پمپ» را نزده هیچ‌کدام معنا ندارد. */}
+                <Cell>
+                  {u.station_name
+                    ? `${u.station_name} (${u.station_code})`
+                    : <span style={{ color: 'var(--status-warning)' }}>⏳ هنوز پمپی نساخته</span>}
+                </Cell>
+                <Cell>{u.role ? (ROLE_FA[u.role] || u.role) : '—'}</Cell>
+                <Cell>{u.station_id ? (SUB_FA[status] || 'بدون اشتراک') : '— (بی پمپ)'}</Cell>
                 <Cell>{fmtDate(ends)}</Cell>
                 <Cell>{daysLeftOf(status, ends)}</Cell>
                 <Cell>
