@@ -21,6 +21,7 @@ import { requireAuth, requireWriteRole, requireRole, userRole } from '../auth.js
 import { getStations, getMirror } from '../state.js';
 import { config } from '../config.js';
 import { readMirrorStatus, mirrorDir } from '../stations/cloud-mirror.js';
+import * as alertPush from '../stations/alert-push.js';
 import { logEvent } from '../db.js';
 import { isLocalRequest, safeCode, LIVE_BRANCH, INBOX_BRANCH, META_BRANCH } from '../stations/index.js';
 import { listBackups, saveBackup, KEEP_DAYS, MAX_BYTES } from '../stations/backups.js';
@@ -132,6 +133,37 @@ router.get('/:code/live', (req, res) => {
     return res.json({ ok: true, code: ctx.code, live: null, empty: true, notices });
   }
   res.json({ ok: true, code: ctx.code, live, notices });
+});
+
+/**
+ * ══ پوشِ خبرها به گوشیِ بسته — ثبتِ گوشی ═══════════════════════════════════
+ *
+ *   GET    /:code/push              ⇒ { vapidPublicKey, devices }
+ *   POST   /:code/push {subscription, label}
+ *   DELETE /:code/push?endpoint=…
+ *
+ * ⛔ هر سه با رمزِ **همان پمپ** (رمزِ خواندن کافی است) — همان درِ ‎/live‎.
+ * گوشی‌ای که عکسِ زنده را می‌تواند بخواند، خبرش را هم می‌تواند بگیرد؛ و هیچ
+ * چیزِ دیگری. شرح در ‎stations/alert-push.js‎.
+ */
+router.get('/:code/push', (req, res) => {
+  const ctx = open(req, res, 'read');
+  if (!ctx) return;
+  res.json({ ok: true, vapidPublicKey: alertPush.publicKey(), devices: alertPush.deviceCount(ctx.code) });
+});
+
+router.post('/:code/push', (req, res) => {
+  const ctx = open(req, res, 'read');
+  if (!ctx) return;
+  const r = alertPush.register(ctx.code, req.body?.subscription || req.body, req.body?.label);
+  if (!r.ok) return res.status(400).json(r);
+  res.json(r);
+});
+
+router.delete('/:code/push', (req, res) => {
+  const ctx = open(req, res, 'read');
+  if (!ctx) return;
+  res.json(alertPush.unregister(ctx.code, req.query.endpoint || req.body?.endpoint));
 });
 
 /**

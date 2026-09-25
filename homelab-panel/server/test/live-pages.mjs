@@ -107,7 +107,9 @@ check('و خبر دادن هیچ‌وقت نوشتن را نمی‌خوابان�
 
 const stationsSrc = fs.readFileSync(path.join(here, '..', 'src', 'stations', 'index.js'), 'utf8');
 check('هر نوشتنِ پمپ موضوعِ «پمپ‌ها» را بیدار می‌کند',
-  /onWrite: \(\) => \{ bumpSoon\('stations'/.test(stationsSrc));
+  //  ⚠️ از ۱۴۰۵/۰۷/۱۳ مسیرِ نوشته‌شده را هم می‌گیرد (پوشِ خبرها)؛ نبض همچنان
+  //  **اولین** کارِ هر نوشتن است، بی هیچ شرطی
+  /onWrite: \(p?\) => \{\s*bumpSoon\('stations'/.test(stationsSrc));
 
 const syncSrc = fs.readFileSync(path.join(here, '..', 'src', 'sitesync', 'index.js'), 'utf8');
 check('هر نوشتنِ سایت موضوعِ «سایت‌ها» را بیدار می‌کند',
