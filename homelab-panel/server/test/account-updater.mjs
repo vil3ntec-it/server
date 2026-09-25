@@ -160,6 +160,10 @@ console.log('\n── ۷) ⛔ ورک‌فلوی بسته خودش را نمی‌
   check('⇒ فهرستِ بسته اول در فایل نوشته می‌شود', /tar -tzf "\$ASSET" > /.test(code));
   check('⇒ و همان دو سنجه سرِ جایشان‌اند (node_modules و src/index.js)',
     code.includes("'^account-server/node_modules/'") && code.includes("'^account-server/src/index.js$'"));
+  //  ۱۴۰۵/۰۷/۱۳ (بارِ دوم): کار checkout ندارد، پس `gh release` بی GH_REPO با
+  //  «not a git repository» می‌افتاد و بستهٔ ۲.۱۰.۰ منتشر نشد.
+  check('⇒ گامِ انتشار ریپو را صریح به gh می‌گوید (GH_REPO)',
+    /GH_REPO:\s*\$\{\{\s*github\.repository\s*\}\}/.test(code) || /actions\/checkout/.test(code));
   //  و خودِ آن خطِ پوسته واقعاً می‌دود — با بسته‌ای به بزرگیِ واقعی
   const box = fs.mkdtempSync(path.join(os.tmpdir(), 'wfpk-'));
   fs.mkdirSync(path.join(box, 'account-server', 'src'), { recursive: true });

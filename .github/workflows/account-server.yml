@@ -91,6 +91,10 @@ jobs:
       - name: انتشار
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          #  ⛔ این کار هیچ `actions/checkout`ی ندارد (کدِ shop را خودش کلون
+          #  می‌کند)، پس `gh release` بی این خط دنبالِ `.git`ِ همین پوشه می‌گشت و
+          #  با «not a git repository» می‌افتاد — بسته هیچ‌وقت منتشر نمی‌شد.
+          GH_REPO: ${{ github.repository }}
           VER: ${{ steps.pack.outputs.version }}
         run: |
           set -euo pipefail
