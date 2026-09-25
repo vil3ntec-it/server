@@ -64,7 +64,8 @@ const daysLeftOf = (status: string | null | undefined, ends: number | null | und
  * ⚠️ چرا لازم شد: صاحبِ سامانه از این صفحه دنبالِ «حذفِ اشتراک» و «روزِ
  * مانده» می‌گشت و این دو جدول هیچ دکمه‌ای نداشتند.
  */
-const manageLink = (q: string) => `/customers?app=pump&q=${encodeURIComponent(q)}`;
+//  ⚠️ همان بخشِ پمپ، زبانهٔ «اشتراک‌ها» — نه بیرون رفتن به صفحهٔ دیگر
+const manageLink = (q: string) => `/stations?q=${encodeURIComponent(q)}#subs`;
 const fmtDate = (ms?: number | null) =>
   ms ? new Date(Number(ms)).toLocaleDateString('fa-AF', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '—';
 

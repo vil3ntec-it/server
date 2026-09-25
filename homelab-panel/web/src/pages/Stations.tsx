@@ -26,7 +26,7 @@
 //  می‌شود) دیده می‌شوند. رمزِ برنامه هیچ‌وقت در فهرست نمی‌آید.
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Fuel, KeyRound, Smartphone } from 'lucide-react';
 
 import { api } from '../api';
@@ -34,6 +34,7 @@ import { useApp } from '../app-context';
 import { Card, ConfirmDialog, CopyButton, Empty, Field, Loading, Modal, StatusDot, toast } from '../components/ui';
 import { ActionButton, Cell, Notice, Row, Stat, Table, Tabs } from '../control/ui';
 import StationsCloud from './StationsCloud';
+import Customers from './account/Customers';
 import PumpCodes from './PumpCodes';
 import PumpHealth from './PumpHealth';
 import { useLive } from '../useLive';
@@ -101,9 +102,16 @@ export default function StationsPage() {
    */
   const [tab, setTab] = useState(() => {
     const want = window.location.hash.replace('#', '');
-    return ['accounts', 'online', 'plans', 'codes', 'data'].includes(want) ? want : 'accounts';
+    return ['accounts', 'subs', 'online', 'plans', 'codes', 'data'].includes(want) ? want : 'accounts';
   });
   const goTab = (id: string) => { setTab(id); window.location.hash = id; };
+  //  ⚠️ لینکِ «مدیریتِ اشتراک» از همین صفحه به ‎#subs‎ می‌آید؛ بی این، نشانی
+  //  عوض می‌شد و زبانه همان‌جا می‌ماند
+  const loc = useLocation();
+  useEffect(() => {
+    const want = loc.hash.replace('#', '');
+    if (['accounts', 'subs', 'online', 'plans', 'codes', 'data'].includes(want)) setTab(want);
+  }, [loc.hash]);
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
@@ -230,6 +238,9 @@ export default function StationsPage() {
         onChange={goTab}
         tabs={[
           { id: 'accounts', label: 'حساب‌ها و کاربرها' },
+          //  ⛔ اشتراک‌های پمپ همین‌جا، نه فقط در «مشتری‌ها و اشتراک‌ها»
+          //  (خواستهٔ صاحبِ سامانه ۱۴۰۵/۰۷/۱۳). همان صفحه، با بخشِ ثابت.
+          { id: 'subs', label: '💳 اشتراک‌ها' },
           { id: 'online', label: 'وصل بودن', badge: liveCount },
           { id: 'plans', label: 'نرخ‌ها' },
           { id: 'codes', label: 'کد و ربات' },
@@ -239,6 +250,9 @@ export default function StationsPage() {
 
       {/* ── ۱ — حساب‌ها و کاربرها: روی سرورِ حساب ─────────────────────────────── */}
       {tab === 'accounts' && <StationsCloud section="accounts" />}
+
+      {/* ── اشتراک‌ها: دادن، تمدید، تعلیق، لغو — روزِ مانده و تاریخِ پایان ── */}
+      {tab === 'subs' && <Customers fixedApp="pump" embedded />}
 
       {/* ── ۳ — نرخ‌ها ─────────────────────────────────────────────────── */}
       {tab === 'plans' && <StationsCloud section="plans" />}

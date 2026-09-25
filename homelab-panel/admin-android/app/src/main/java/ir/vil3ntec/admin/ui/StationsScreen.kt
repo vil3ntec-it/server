@@ -79,6 +79,8 @@ import org.json.JSONObject
 
 private val PUMP_TABS = listOf(
   "حساب‌ها و کاربرها",
+  //  ⛔ اشتراک‌های پمپ همین‌جا — روزِ مانده، پایان، دادن/تمدید/تعلیق/لغو
+  "💳 اشتراک‌ها",
   "وصل بودن",
   "نرخ‌ها",
   "کد و ربات",
@@ -93,6 +95,8 @@ private const val PUMP_CODE_NAME = "پمپ بنزین"
 @Composable
 fun StationsScreen(session: Session) {
   var tab by remember { mutableIntStateOf(0) }
+  //  «مدیریتِ اشتراک» از کارتِ یک حساب ⇒ همین زبانه با ایمیلِ همان حساب
+  var subsQuery by remember { mutableStateOf("") }
 
   Column(Modifier.fillMaxSize()) {
     Text(
@@ -117,11 +121,12 @@ fun StationsScreen(session: Session) {
     }
 
     when (tab) {
-      0 -> PumpAccountsTab(session)
-      1 -> PumpOnlineTab(session)
-      2 -> PumpPlansTab(session)
-      3 -> PumpCodesTab(session)
-      4 -> PumpDataTab(session)
+      0 -> PumpAccountsTab(session, onManage = { q -> subsQuery = q; tab = 1 })
+      1 -> SubscriptionsTab(session, "pump", initialQuery = subsQuery)
+      2 -> PumpOnlineTab(session)
+      3 -> PumpPlansTab(session)
+      4 -> PumpCodesTab(session)
+      5 -> PumpDataTab(session)
     }
   }
 }
@@ -141,14 +146,13 @@ private data class PumpUser(
 )
 
 @Composable
-private fun PumpAccountsTab(session: Session) {
+private fun PumpAccountsTab(session: Session, onManage: (String) -> Unit) {
   var users by remember { mutableStateOf<List<PumpUser>?>(null) }
   var error by remember { mutableStateOf("") }
   var errorCode by remember { mutableStateOf("") }
   var reload by remember { mutableIntStateOf(0) }
   var busy by remember { mutableStateOf(false) }
   var note by remember { mutableStateOf("") }
-  var granting by remember { mutableStateOf<PumpUser?>(null) }
   val scope = rememberCoroutineScope()
 
   LaunchedEffect(reload) {
@@ -184,37 +188,18 @@ private fun PumpAccountsTab(session: Session) {
           SectionTitle("${users!!.size} حساب · ${users!!.count { it.active }} فعال")
         }
         items(safeKeys(users!!) { it.id }, key = { it.first }) { (_, user) ->
-          PumpUserCard(user, busy = busy, onGrant = { granting = user })
+          PumpUserCard(user, busy = busy, onGrant = {
+            onManage(user.contact.substringBefore(" · ").ifBlank { user.name })
+          })
         }
       }
     }
   }
 
-  granting?.let { target ->
-    GrantDialog(
-      title = target.name,
-      onDismiss = { granting = null },
-      onConfirm = { months ->
-        granting = null
-        if (!busy) {
-          busy = true
-          scope.launch {
-            note = try {
-              withContext(Dispatchers.IO) {
-                Api.grantPumpSubscription(session, target.id, "custom", months)
-              }
-              "اشتراکِ ${target.name} تمدید شد."
-            } catch (e: Exception) {
-              e.message ?: "نشد"
-            } finally {
-              busy = false
-            }
-            reload++
-          }
-        }
-      },
-    )
-  }
+  //  ⛔ «اشتراک بده»ِ قدیمی این‌جا شناسهٔ **کاربر** را به‌جای شناسهٔ پمپ
+  //  می‌فرستاد، با `planCode`/`months` که سرورِ حساب نمی‌خواند — یعنی هیچ‌وقت
+  //  درست اشتراک نمی‌داد. حالا کارت به زبانهٔ «اشتراک‌ها» می‌رود، با ایمیلِ
+  //  همین حساب از پیش نوشته‌شده؛ تنها جای دادن و برداشتن همان‌جاست.
 }
 
 @Composable
@@ -275,26 +260,9 @@ private fun PumpUserCard(user: PumpUser, busy: Boolean, onGrant: () -> Unit) {
       Modifier.fillMaxWidth().padding(top = 8.dp),
       horizontalArrangement = Arrangement.End,
     ) {
-      OutlinedButton(enabled = !busy, onClick = onGrant) { Text("اشتراک بده") }
+      OutlinedButton(enabled = !busy, onClick = onGrant) { Text("مدیریتِ اشتراک") }
     }
   }
-}
-
-@Composable
-private fun GrantDialog(title: String, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
-  androidx.compose.material3.AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text("اشتراک برای $title") },
-    text = { Text("چند ماه اشتراک داده شود؟", style = MaterialTheme.typography.bodyMedium) },
-    confirmButton = {
-      Row {
-        TextButton(onClick = { onConfirm(1) }) { Text("۱ ماه") }
-        TextButton(onClick = { onConfirm(6) }) { Text("۶ ماه") }
-        TextButton(onClick = { onConfirm(12) }) { Text("۱ سال") }
-      }
-    },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("انصراف") } },
-  )
 }
 
 /* ========================================================================= */

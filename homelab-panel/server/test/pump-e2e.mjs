@@ -637,6 +637,65 @@ try {
     check('⚠️ و مجوز همچنان امضاشده و کلیددار است',
       String(afterGone.json?.license || '').split('.').length === 3
       && String(afterGone.json?.publicKey || '').length > 0);
+
+    //  ── ۸ج) زبانهٔ «اشتراک‌ها»ی برنامهٔ ادمینِ اندروید — همان راه، همان نام‌ها ──
+    //  ⛔ «اشتراک بده»ِ قدیمیِ آن برنامه شناسهٔ کاربر را به‌جای پمپ می‌فرستاد، با
+    //  `planCode`/`months` که سرورِ حساب نمی‌خواند. زبانهٔ تازه
+    //  (`SubscriptionsTab.kt`) همان درهای پنلِ وب را می‌زند؛ این‌جا همان
+    //  ترتیب با سرورِ **واقعی** دویده می‌شود و نام‌های فیلد با خودِ فایلِ
+    //  کاتلین سنجیده می‌شوند — کاتلین در این سندباکس ساخته نمی‌شود.
+    console.log('\n── ۸ج) برنامهٔ ادمین: اشتراک‌ها در بخشِ پمپ ──');
+    {
+      const kt = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'admin-android', 'app', 'src', 'main',
+        'java', 'ir', 'vil3ntec', 'admin', 'ui', 'SubscriptionsTab.kt'), 'utf8');
+      const apiKt = fs.readFileSync(path.join(import.meta.dirname, '..', '..', 'admin-android', 'app', 'src', 'main',
+        'java', 'ir', 'vil3ntec', 'admin', 'data', 'Api.kt'), 'utf8');
+      const list = await panel('GET', '/api/account-admin/customers?app=pump&limit=500');
+      const all = list.json?.subscriptions || [];
+      const mine = all.filter((r) => r.ownerEmail === email);
+      const latest = mine.sort((a, b) => (b.createdAt || b.startsAt || 0) - (a.createdAt || a.startsAt || 0))[0];
+      const keys = ['id', 'app', 'tenantId', 'tenantName', 'ownerName', 'ownerEmail', 'planTitle', 'status',
+        'daysLeft', 'endsAt', 'permanent'];
+      check('فهرست همهٔ فیلدهایی را دارد که کاتلین می‌خواند',
+        latest && keys.every((k) => k in latest), JSON.stringify(latest || {}).slice(0, 240));
+      check('⛔ و کاتلین همان نام‌ها را می‌خواند (نه نامِ خیالی)',
+        keys.every((k) => kt.includes(`"${k}"`)) && kt.includes('"subscriptions"') && kt.includes('"neverSubscribed"'));
+      check('آخرین اشتراکِ این پمپ فعال است، با روزِ مانده و تاریخِ پایان',
+        latest?.status === 'active' && latest.daysLeft > 0 && Number(latest.endsAt) > Date.now(),
+        JSON.stringify(latest || {}).slice(0, 200));
+      const idsUnique = new Set(all.map((r) => `${r.app}:${r.id}`)).size === all.length;
+      check('کلیدِ ردیف‌ها (بخش:شناسه) یکتاست — Compose با کلیدِ تکراری می‌افتد', idsUnique);
+
+      const pl = await panel('GET', '/api/account-admin/plans?app=pump');
+      const sellable = (pl.json?.plans || []).filter((p) => (p.active === true || p.active === 1) && !/^free$/i.test(p.code));
+      check('پلن‌های فروشی برای کادرِ «دادنِ اشتراک» می‌آیند', pl.status === 200 && sellable.length > 0,
+        `${pl.status} ${JSON.stringify(pl.json?.plans || []).slice(0, 160)}`);
+
+      for (const path2 of ['/api/account-admin/customers?app=', '/api/account-admin/grant-targets?app=',
+        '/api/account-admin/plans?app=', '/api/account-admin/subs/$app/grant', '/api/account-admin/subs/$app/$id/extend',
+        '/api/account-admin/subs/$app/$id/status']) {
+        check(`Api.kt همان در را می‌زند: ${path2}`, apiKt.includes(path2));
+      }
+      check('⛔ و درِ خرابِ قدیمی (cloud/grant با months) دیگر در Api.kt نیست',
+        !/cloud\/grant/.test(apiKt) && !/put\("months"/.test(apiKt));
+
+      //  همان کارهای دکمه‌های کارت، به همان ترتیب
+      const ext = await panel('POST', `/api/account-admin/subs/pump/${encodeURIComponent(latest?.id || '')}/extend`,
+        { amount: 1, unit: 'month' });
+      const afterExt = (await panel('GET', '/api/account-admin/customers?app=pump&limit=500')).json?.subscriptions || [];
+      const extRow = afterExt.find((r) => String(r.id) === String(latest?.id));
+      check('«تمدید یک ماه» تاریخِ پایان را جلو برد', ext.status === 200 && Number(extRow?.endsAt) > Number(latest?.endsAt),
+        `${ext.status} ${latest?.endsAt} ⇒ ${extRow?.endsAt}`);
+      const cancel = await panel('POST', `/api/account-admin/subs/pump/${encodeURIComponent(latest?.id || '')}/status`,
+        { status: 'cancelled' });
+      const afterCancel = (await panel('GET', '/api/account-admin/customers?app=pump&limit=500')).json?.subscriptions || [];
+      const cRow = afterCancel.find((r) => String(r.id) === String(latest?.id));
+      check('«لغو / حذف» ⇒ وضعیت لغو و روزِ مانده صفر', cancel.status === 200 && cRow?.status === 'cancelled' && cRow.daysLeft === 0,
+        `${cancel.status} ${JSON.stringify(cRow || {}).slice(0, 160)}`);
+      const lic = await call('POST', '/api/pump/device/license', { token: devTok, body: {} });
+      check('⛔ و برنامهٔ پمپ همان لحظه قابلیتِ پولی را از دست داد',
+        !(lic.json?.features || []).includes('kar_app'), JSON.stringify(lic.json?.features || []).slice(0, 160));
+    }
   }
 
   // ── ۹) فهرستِ سفید، از خودِ shop خوانده می‌شود ───────────────────────────

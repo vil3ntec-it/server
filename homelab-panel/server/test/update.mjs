@@ -62,6 +62,21 @@ check(
  *  ⚠️ ساختِ شاخه‌ها برداشته نشد (دلیلش بالای خودِ ورک‌فلو نوشته است): فقط
  *  مقصدش «windows-branch» شد، که pickPanelRelease هیچ‌وقت برنمی‌داردش.
  */
+//  ⛔ همان باگ، کانالِ برنامهٔ ادمینِ اندروید (۱۴۰۵/۰۷/۱۳): ساختِ هر شاخهٔ
+//  کاری برچسبِ `admin-android` را — که `Updater.TAG` از آن به‌روزرسانی
+//  می‌گیرد — جابه‌جا می‌کرد. حالا هر سه گامِ انتشار پشتِ شرطِ main‌اند.
+console.log('\n── کانالِ برنامهٔ ادمین فقط از main ──');
+{
+  const wf = fs.readFileSync(path.join(repoRoot, '.github', 'workflows', 'admin-android.yml'), 'utf8');
+  const kt = fs.readFileSync(path.join(repoRoot, 'homelab-panel', 'admin-android', 'app', 'src', 'main', 'java',
+    'ir', 'vil3ntec', 'admin', 'work', 'Updater.kt'), 'utf8');
+  check('برنامهٔ ادمین از برچسبِ admin-android به‌روز می‌شود', /TAG = "admin-android"/.test(kt));
+  for (const name of ['جابه‌جا کردن برچسب', 'انتشار', 'پاک کردن فایل‌های نسخه‌های قبلی']) {
+    const step = wf.split(`- name: ${name}\n`)[1]?.split('- name:')[0] ?? '';
+    check(`⛔ گامِ «${name}» فقط روی main`, /^\s*if: github\.ref == 'refs\/heads\/main'/.test(step), step.slice(0, 80));
+  }
+}
+
 console.log('\n── کانالِ به‌روزرسانی فقط از main ──');
 {
   const wf = fs.readFileSync(path.join(repoRoot, '.github', 'workflows', 'windows-app.yml'), 'utf8');

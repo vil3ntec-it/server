@@ -28,6 +28,7 @@ import { Card, CopyButton, Loading, toast } from '../../components/ui';
 import { useApp } from '../../app-context';
 import { ActionButton, Cell, Notice, Row, Stat, Table, Tabs } from '../../control/ui';
 import { CloudProblem, fa, useLoad } from './shared';
+import Customers from './Customers';
 
 type Overview = {
   serverTime: number;
@@ -326,6 +327,9 @@ export default function ShopDesk() {
       <Tabs tabs={tabs} active={active} onChange={(id) => setParams(id === 'dash' ? {} : { tab: id })} />
       {active === 'dash' && <Dash />}
       {active === 'subs' && <SubGroups />}
+      {/* ⛔ و کارهای اشتراک (دادن، تمدید، تعلیق، لغو) همین‌جا — همان فهرستِ
+          «مشتری‌ها و اشتراک‌ها» با بخشِ ثابتِ دکان، نه رونوشتِ دوم */}
+      {active === 'subs' && <Customers fixedApp="shop" embedded />}
       {active === 'codes' && <Codes />}
     </div>
   );

@@ -264,20 +264,11 @@ object Api {
     call(session, "/api/stations-admin/cloud/login", "POST",
       JSONObject().put("username", username).put("password", password))
 
-  /** اشتراک دادن به یک پمپ */
-  fun grantPumpSubscription(
-    session: Session,
-    stationId: String,
-    planCode: String,
-    months: Int,
-  ): Reply {
-    val body = JSONObject()
-      .put("stationId", stationId)
-      .put("planCode", planCode)
-      .put("months", months)
-    return call(session, "/api/stations-admin/cloud/grant", "POST", body)
-  }
-
+  /*
+   *  ⛔ «اشتراک دادن به یک پمپ» (درِ قدیمیِ «کلاود ← گرنت» با ماه و کدِ پلن) از این‌جا
+   *  برداشته شد: سرورِ حساب آن دو را نمی‌خواند و صفحه شناسهٔ کاربر را به‌جای
+   *  شناسهٔ پمپ می‌فرستاد. راهِ درست `subGrant` است (پایین‌تر).
+   */
   fun setPumpSubscriptionStatus(session: Session, id: String, status: String): Reply =
     call(session, "/api/stations-admin/cloud/subscriptions/$id/status", "POST",
       JSONObject().put("status", status))
@@ -361,6 +352,33 @@ object Api {
     val body = JSONObject().put("status", status)
     return call(session, "/api/account-admin/subscriptions/$subscriptionId/status", "POST", body)
   }
+
+  /* ------------------ اشتراک‌ها — همان درهای پنلِ وب -------------------- */
+  /*
+   *  ⛔ ‎`SubscriptionsTab`‎ از همین پنج در می‌رود — همان‌هایی که پنلِ وب
+   *  می‌زند و با سرورهای واقعی سنجیده شده‌اند (‎test/pump-e2e.mjs‎). بخش
+   *  (‎pump‎/‎shop‎) در مسیر است و روی سرور از فهرستِ ثابت رد می‌شود.
+   */
+  fun customers(session: Session, app: String): Reply =
+    call(session, "/api/account-admin/customers?app=$app&limit=500")
+
+  fun grantTargets(session: Session, app: String, q: String): Reply =
+    call(session, "/api/account-admin/grant-targets?app=$app&limit=20&q=" +
+      java.net.URLEncoder.encode(q, "UTF-8"))
+
+  fun accountPlans(session: Session, app: String): Reply =
+    call(session, "/api/account-admin/plans?app=$app")
+
+  fun subGrant(session: Session, app: String, tenantId: String, plan: String): Reply =
+    call(session, "/api/account-admin/subs/$app/grant", "POST",
+      JSONObject().put("tenantId", tenantId).put("plan", plan))
+
+  fun subExtend(session: Session, app: String, id: String): Reply =
+    call(session, "/api/account-admin/subs/$app/$id/extend", "POST",
+      JSONObject().put("amount", 1).put("unit", "month"))
+
+  fun subStatus(session: Session, app: String, id: String, status: String): Reply =
+    call(session, "/api/account-admin/subs/$app/$id/status", "POST", JSONObject().put("status", status))
 
   /* --------------------------- اطلاعیه‌ها -------------------------------- */
 
