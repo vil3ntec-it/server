@@ -122,7 +122,8 @@ try {
    *  کردنِ گروه‌های دیگر می‌دود، چون آن‌ها حالشان را در حافظهٔ مرورگر
    *  نگه می‌دارند و بعدش دیگر «حالتِ پیش‌فرض» نیست.
    */
-  for (const label of ['مشتری‌ها و اشتراک‌ها', 'فروش', 'پلن‌ها و تخفیف‌ها', 'مرکز اعلان', 'پشتیبانی', 'وضعیت Sync']) {
+  //  ⛔ «مشتری‌ها و اشتراک‌ها» و «پلن‌ها و تخفیف‌ها» یک در شدند: «اشتراک‌ها» (۱.۵۰.۱۶)
+  for (const label of ['اشتراک‌ها', 'فروش', 'مرکز اعلان', 'پشتیبانی', 'وضعیت Sync']) {
     check(`«${label}» بدونِ باز کردنِ گروه دیده می‌شود`, firstText.includes(label), firstText.slice(0, 300));
   }
 
@@ -138,14 +139,13 @@ try {
   }
   await page.waitForTimeout(300);
   const navText = await navBox.innerText();
-  for (const label of ['پروژه‌ها', 'سرورها', 'انبار', 'گاوصندوق', 'مانیتورینگ', 'لاگ‌ها', 'زمان‌بندی', 'اتوماسیون', 'به‌روزرسانی', 'ترمینال']) {
+  for (const label of ['سرورها', 'انبار', 'گاوصندوق', 'مانیتورینگ', 'لاگ‌ها', 'اتوماسیون', 'به‌روزرسانی', 'ترمینال']) {
     check(`«${label}» با باز کردنِ گروه می‌آید`, navText.includes(label), navText.slice(0, 200));
   }
 
   console.log('\n── صفحه‌ها در تمِ تیره ──');
   //  ‎/control‎ پشتِ کلیدِ commandCenter در features.ts خاموش است و به داشبورد برمی‌گردد
   const PAGES = [
-    ['/control/projects', 'پروژه‌ها'],
     ['/control/servers', 'سرورها'],
     //  نشانی‌های قدیمی به تبِ همان موضوع می‌روند (pages/hubs.tsx)
     ['/control/networking', 'شبکه و آدرس‌ها'],
@@ -161,7 +161,6 @@ try {
     ['/logs', 'لاگ'],
     ['/control/updates', 'به‌روزرسانی'],
     ['/assistant', 'دستیار هوشمند'],
-    ['/cron', 'زمان‌بندی'],
     //  موتورِ اتوماسیون (بخشِ ۱۰): جدولِ کارها باید با نامِ کارهای واقعی بیاید
     ['/automation', 'پشتیبانِ روزانه'],
     /*
@@ -171,17 +170,21 @@ try {
      *  بی داده هم بیاید و صفحه سفید نماند — همان چیزی که کاربر با مودمِ
      *  خاموش می‌بیند.
      */
-    ['/customers', 'مشتری‌ها و اشتراک‌ها'],
+    //  ⛔ همهٔ اشتراک‌ها در یک بخش (۱۴۰۵/۰۷/۱۳)؛ نشانیِ قدیمی به همان می‌رود
+    ['/subscriptions', 'اشتراک‌ها'],
+    ['/subscriptions?app=pump', 'پمپ‌بنزین'],
+    ['/customers', 'اشتراک‌ها'],
     /*
      *  میزِ فروشگاه — بندهای ۴.۱ تا ۴.۴. سه تب، و هر سه باید بی سرورِ
      *  حساب هم قاب و عنوانشان بیاید، نه صفحهٔ سفید.
      */
     ['/shop', 'فروشگاه‌ها'],
     ['/shop?tab=subs', 'اشتراک‌ها'],
-    //  ⛔ اشتراک‌ها داخلِ بخشِ خودِ هر برنامه (۱۴۰۵/۰۷/۱۳) — با دکمهٔ
-    //  «دادنِ اشتراک» و همان فهرستِ «مشتری‌ها و اشتراک‌ها»
-    ['/stations#subs', 'دادنِ اشتراک'],
-    ['/shop?tab=subs#', 'دادنِ اشتراک'],
+    //  ⛔ بخشِ هر برنامه فقط درِ بخشِ مرکزیِ «اشتراک‌ها» است (۱۴۰۵/۰۷/۱۳)
+    ['/stations#subs', 'رفتن به اشتراک‌ها'],
+    ['/shop?tab=subs#', 'رفتن به اشتراک‌ها'],
+    ['/stations#codes', 'رفتن به کدها'],
+    ['/codes?app=pump', 'کدهای زنده — پمپ‌بنزین'],
     ['/shop?tab=codes', 'کدِ شاگرد'],
     ['/sales', 'فروش'],
     ['/plans', 'پلن‌ها و قیمت‌ها'],
@@ -202,14 +205,15 @@ try {
     ['/customers?tab=visitors', 'بازدیدکننده‌ها'],
     ['/account-server', 'برنامه‌های زیرِ مدیریت'],
     ['/account-server?tab=email', 'ایمیلِ سرورِ حساب'],
+    ['/account-server?tab=status', 'وضعیتِ سرورِ حساب'],
     //  نشانی‌های قدیمی نباید بشکنند
     ['/vip-codes', 'کدهای اشتراک'],
     ['/visitors', 'بازدیدکننده‌ها'],
   ];
 
   /*  صفحه‌هایی که از سرورِ حساب می‌خوانند — فقط این‌ها حق دارند ۴۰۹/۵۰۳ بدهند.  */
-  const ACCOUNT_PAGES = new Set(['/shop', '/shop?tab=subs', '/stations#subs', '/shop?tab=subs#', '/shop?tab=codes', '/customers', '/sales', '/plans', '/plans?tab=discounts', '/notices', '/support', '/sync', '/logins', '/discounts',
-    '/plans?tab=codes', '/plans?tab=requests', '/customers?tab=visitors', '/account-server', '/account-server?tab=email',
+  const ACCOUNT_PAGES = new Set(['/subscriptions', '/subscriptions?app=pump', '/codes?app=pump', '/stations#codes', '/shop', '/shop?tab=subs', '/stations#subs', '/shop?tab=subs#', '/shop?tab=codes', '/customers', '/sales', '/plans', '/plans?tab=discounts', '/notices', '/support', '/sync', '/logins', '/discounts',
+    '/plans?tab=codes', '/plans?tab=requests', '/customers?tab=visitors', '/account-server', '/account-server?tab=email', '/account-server?tab=status',
     '/vip-codes', '/visitors']);
 
   for (const [route, heading] of PAGES) {
@@ -253,32 +257,17 @@ try {
   const closed = await page.evaluate(() => !document.querySelector('.fixed.inset-0.z-\\[70\\]'));
   check('Esc پنجره را می‌بندد', closed);
 
-  console.log('\n── ساختِ پروژه از خودِ رابط ──');
+  console.log('\n── محلِ انبار از خودِ رابط ──');
   await page.goto(`${BASE}/control/storage`, { waitUntil: 'networkidle' });
   await page.fill('input[dir="ltr"]', storageRoot);
   await page.click('button:has-text("ذخیره")');
   await page.waitForTimeout(900);
   check('محلِ انبار از رابط تنظیم شد', fs.existsSync(storageRoot));
 
+  //  ⛔ صفحهٔ «پروژه‌ها» در ۱.۵۰.۱۵ برداشته شد؛ نشانیِ قدیمی‌اش به «سرورها» می‌رود
   await page.goto(`${BASE}/control/projects`, { waitUntil: 'networkidle' });
-  await page.locator('header button:has-text("پروژه جدید")').click();
-  await page.waitForSelector('.card input', { timeout: 8000 });
-  await page.locator('.card input').first().fill('ShopApp');
-  await page.locator('footer button:has-text("ساختن")').click();
-  // مسیرِ SPA رویدادِ load نمی‌دهد، پس خودِ آدرس را می‌پاییم
-  await page.waitForFunction(() => /\/control\/projects\/prj_/.test(location.pathname), null, { timeout: 20000 });
-  check('پروژه ساخته شد و صفحهٔ اختصاصی باز شد', true);
-  const detail = await page.locator('main').innerText();
-  check('شناسهٔ پروژه نشان داده می‌شود', /prj_[0-9a-f]{8}/.test(detail), detail.slice(0, 200));
-  check('پوشهٔ پروژه روی دیسک ساخته شد', fs.existsSync(path.join(storageRoot, 'shopapp', 'backups')));
-
-  console.log('\n── زبانه‌های صفحهٔ پروژه ──');
-  for (const tab of ['شبکه و آدرس‌ها', 'حساب‌ها', 'انبار', 'پیکربندی', 'انتقال به سرور دیگر']) {
-    consoleErrors.length = 0;
-    await page.click(`button:has-text("${tab}")`);
-    await page.waitForTimeout(600);
-    check(`زبانهٔ «${tab}»`, consoleErrors.length === 0, consoleErrors.join(' | '));
-  }
+  await page.waitForTimeout(400);
+  check('نشانیِ قدیمیِ پروژه‌ها به سرورها می‌رود', /\/control\/servers$/.test(page.url()), page.url());
 
   console.log('\n── تمِ روشن و تیره ──');
   for (const theme of ['dark', 'light']) {
@@ -311,17 +300,11 @@ try {
   }
 
   console.log('\n── تصویرِ صفحه‌های اصلی ──');
-  for (const [route, name] of [['/control/projects', 'projects'], ['/control/routing', 'routing'], ['/control/monitoring', 'monitoring']]) {
+  for (const [route, name] of [['/control/servers', 'servers'], ['/control/routing', 'routing'], ['/control/monitoring', 'monitoring']]) {
     await page.goto(`${BASE}${route}`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(400);
     await page.screenshot({ path: path.join(shots, `${name}.png`), fullPage: true });
   }
-  await page.goto(`${BASE}/control/projects`, { waitUntil: 'networkidle' });
-  await page.locator('a[href^="/control/projects/prj_"]').first().click();
-  await page.waitForTimeout(900);
-  await page.screenshot({ path: path.join(shots, 'project-detail.png'), fullPage: true });
-  check('صفحهٔ اختصاصیِ پروژه از فهرست باز می‌شود', /\/control\/projects\/prj_/.test(page.url()), page.url());
-
   console.log('\n── موبایل ──');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE}/control`, { waitUntil: 'networkidle' });

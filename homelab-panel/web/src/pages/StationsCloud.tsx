@@ -20,6 +20,7 @@ import { api } from '../api';
 import { Card, CopyButton, Field, Loading, Modal, toast } from '../components/ui';
 import { useApp } from '../app-context';
 import { ActionButton, Cell, KV, Notice, Row, Select, Stat, Table, Tabs } from '../control/ui';
+import DeleteAccount from './account/DeleteAccount';
 
 type Status = { base: string; target?: string; local?: boolean; linked: boolean; auto?: boolean; vault: boolean; updatedAt: number | null };
 
@@ -65,7 +66,9 @@ const daysLeftOf = (status: string | null | undefined, ends: number | null | und
  * مانده» می‌گشت و این دو جدول هیچ دکمه‌ای نداشتند.
  */
 //  ⚠️ همان بخشِ پمپ، زبانهٔ «اشتراک‌ها» — نه بیرون رفتن به صفحهٔ دیگر
-const manageLink = (q: string) => `/stations?q=${encodeURIComponent(q)}#subs`;
+//  ⛔ کارهای اشتراک فقط در بخشِ مرکزیِ «اشتراک‌ها» است (۱۴۰۵/۰۷/۱۳)؛ این
+//  لینک مستقیم همان‌جا را با بخشِ پمپ و جست‌وجوی همین حساب باز می‌کند.
+const manageLink = (q: string) => `/subscriptions?app=pump&q=${encodeURIComponent(q)}`;
 const fmtDate = (ms?: number | null) =>
   ms ? new Date(Number(ms)).toLocaleDateString('fa-AF', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '—';
 
@@ -119,6 +122,7 @@ export type CloudSection = 'accounts' | 'plans' | 'data';
 export default function StationsCloud({ section = 'accounts' }: { section?: CloudSection } = {}) {
   const [status, setStatus] = useState<Status | null>(null);
   const [users, setUsers] = useState<PumpUser[]>([]);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [subs, setSubs] = useState<Sub[]>([]);
   const [expiring, setExpiring] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -321,7 +325,12 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
                 <Cell>{fmtDate(ends)}</Cell>
                 <Cell>{daysLeftOf(status, ends)}</Cell>
                 <Cell>
-                  <Link className="btn btn-sm" to={manageLink(u.email || u.station_name || '')}>مدیریتِ اشتراک</Link>
+                  <div className="flex flex-wrap gap-1">
+                    <Link className="btn btn-sm" to={manageLink(u.email || u.station_name || '')}>مدیریتِ اشتراک</Link>
+                    <button className="btn btn-sm" style={{ color: 'var(--status-critical)' }} onClick={() => setDeleting(u.id)}>
+                      حذفِ حساب
+                    </button>
+                  </div>
                 </Cell>
               </Row>
             );
@@ -722,6 +731,10 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
         )}
       </Modal>
 
+      {deleting && (
+        <DeleteAccount userId={deleting} onClose={() => setDeleting(null)}
+                       onDone={() => { loadData(expiring); loadMore(); }} />
+      )}
       {grantFor && (
         <GrantModal station={grantFor} plans={plans} onClose={() => setGrantFor(null)}
                     onDone={() => { setGrantFor(null); loadData(expiring); loadMore(); }} />

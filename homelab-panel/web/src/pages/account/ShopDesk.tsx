@@ -21,14 +21,14 @@
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Clock, KeyRound, MessagesSquare, Store, Users, Wifi } from 'lucide-react';
+import { Clock, CreditCard, KeyRound, MessagesSquare, Store, Users, Wifi } from 'lucide-react';
 
 import { api } from '../../api';
 import { Card, CopyButton, Loading, toast } from '../../components/ui';
 import { useApp } from '../../app-context';
 import { ActionButton, Cell, Notice, Row, Stat, Table, Tabs } from '../../control/ui';
 import { CloudProblem, fa, useLoad } from './shared';
-import Customers from './Customers';
+import GoTo from './GoTo';
 
 type Overview = {
   serverTime: number;
@@ -326,10 +326,18 @@ export default function ShopDesk() {
       <h1 className="text-lg font-semibold">{t('navShops')}</h1>
       <Tabs tabs={tabs} active={active} onChange={(id) => setParams(id === 'dash' ? {} : { tab: id })} />
       {active === 'dash' && <Dash />}
+      {/* ⛔ کارهای اشتراک (دادن، تمدید، لغو، قیمت) فقط در بخشِ مرکزیِ «اشتراک‌ها»
+          (۱۴۰۵/۰۷/۱۳)؛ این‌جا درِ همان‌جا با بخشِ دکان، و زیرش سه گروهِ خواندنی */}
+      {active === 'subs' && (
+        <GoTo
+          icon={<CreditCard size={18} />}
+          title="اشتراک‌های فروشگاه‌ها"
+          hint="دیدن، دادن با مدتِ دلخواه، تمدید، لغو و قیمتِ پلن‌ها — همه در بخشِ «اشتراک‌ها»، با فیلترِ دکان"
+          to="/subscriptions?app=shop"
+          cta="رفتن به اشتراک‌ها"
+        />
+      )}
       {active === 'subs' && <SubGroups />}
-      {/* ⛔ و کارهای اشتراک (دادن، تمدید، تعلیق، لغو) همین‌جا — همان فهرستِ
-          «مشتری‌ها و اشتراک‌ها» با بخشِ ثابتِ دکان، نه رونوشتِ دوم */}
-      {active === 'subs' && <Customers fixedApp="shop" embedded />}
       {active === 'codes' && <Codes />}
     </div>
   );

@@ -25,13 +25,8 @@ import Routing from './control/Routing';
 import CloudflarePage from './control/CloudflarePage';
 import AppLogins from './AppLogins';
 import EmailLogins from './account/EmailLogins';
-import Plans from './account/Plans';
-import Discounts from './account/Discounts';
-import VipCodes from './account/VipCodes';
-import PurchaseRequests from './account/PurchaseRequests';
-import Customers from './account/Customers';
-import Visitors from './account/Visitors';
 import { AccountAudit, AccountEmail, AccountSmsPush, ManagedApps } from './account/AccountServerSettings';
+import AccountServerLog from './account/AccountServerLog';
 
 type Tab = { id: string; label: string; body: ReactNode };
 
@@ -80,47 +75,11 @@ export function DomainsHub() {
   );
 }
 
-/**
- * پلن و قیمت + تخفیف و کمپین — یک موضوع: پول.
- *
- * دو صفحهٔ جدا در منو یعنی مدیر نمی‌داند «تخفیفِ پلن» را کجا بزند و
- * «کدِ تخفیف» را کجا؛ هر دو هم روی همان `plans`ِ سرورِ حساب می‌نشینند.
+/*
+ *  ⛔ `PlansHub` و `CustomersHub` در ۱.۵۰.۱۶ به `account/SubscriptionsHub.tsx`
+ *     رفتند — «همهٔ اشتراک‌ها داخلِ یک بخش» (خواستهٔ صاحب سامانه). نشانی‌های
+ *     `/customers` و `/plans` در App.tsx به تبِ خودشان در `/subscriptions` می‌روند.
  */
-export function PlansHub() {
-  return (
-    <Hub
-      tabs={[
-        { id: 'plans', label: 'پلن‌ها و قیمت‌ها', body: <Plans /> },
-        { id: 'discounts', label: 'تخفیف‌ها و کمپین', body: <Discounts /> },
-        /*
-         *  ⛔ این دو در ۱.۴۱.۰ با دفترِ قدیمی رفتند و جایشان در پل نوشته
-         *     نشد — گزارشِ صاحبِ سامانه: «اون دسترسی‌های قدیم رو ندارم».
-         *     همین‌جا برگشتند، نه در یک صفحهٔ تازهٔ منو: هر سه یک موضوعند —
-         *     «مشتری چطور صاحبِ اشتراک می‌شود».
-         */
-        { id: 'codes', label: 'کدهای اشتراک', body: <VipCodes /> },
-        { id: 'requests', label: 'درخواست‌های خرید', body: <PurchaseRequests /> },
-      ]}
-    />
-  );
-}
-
-/**
- * مشتری‌ها + بازدیدکننده‌ها — «چه کسی خرید» و «چه کسی فقط نگاه کرد».
- *
- * ⚠️ بازدیدکننده‌ها هم با دفترِ قدیمی رفته بود. ارزشش دقیقاً در مهمان‌هاست:
- * کسی که نصب کرده و حساب نساخته، همان کسی است که باید دنبالش رفت.
- */
-export function CustomersHub() {
-  return (
-    <Hub
-      tabs={[
-        { id: 'customers', label: 'مشتری‌ها و اشتراک‌ها', body: <Customers /> },
-        { id: 'visitors', label: 'بازدیدکننده‌ها', body: <Visitors /> },
-      ]}
-    />
-  );
-}
 
 /**
  * تنظیماتِ خودِ سرورِ حساب — برنامه‌ها، ایمیل، پیامک و پوش، و دفترِ ممیزی‌اش.
@@ -133,6 +92,9 @@ export function AccountServerHub() {
     <Hub
       tabs={[
         { id: 'apps', label: 'برنامه‌ها', body: <ManagedApps /> },
+        //  ⛔ پیامِ «سرورِ حساب افتاده» به همین تب می‌فرستد؛ تا ۱.۵۰.۱۶ هیچ
+        //     صفحه‌ای لاگش را نشان نمی‌داد.
+        { id: 'status', label: 'وضعیت و لاگ', body: <AccountServerLog /> },
         { id: 'email', label: 'ایمیل', body: <AccountEmail /> },
         { id: 'smspush', label: 'پیامک و پوش', body: <AccountSmsPush /> },
         { id: 'audit', label: 'دفترِ ممیزی', body: <AccountAudit /> },

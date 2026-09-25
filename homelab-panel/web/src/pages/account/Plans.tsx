@@ -13,6 +13,7 @@
 //     در تاریخچهٔ قیمت می‌گذارد.
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Gift, History, Tag } from 'lucide-react';
 
 import { api } from '../../api';
@@ -26,7 +27,10 @@ type PlansOut = { plans: Plan[]; app: string; config: Record<string, string> };
 const UNIT_LABEL: Record<string, string> = { day: 'روزه', week: 'هفته‌ای', month: 'ماهه', year: 'ساله' };
 
 export default function Plans() {
-  const [app, setApp] = useState<AppId>('shop');
+  //  ⚠️ بخشِ آغازین از نشانی (`?app=`) — کسی که از «پمپ‌بنزین‌ها» به بخشِ
+  //  اشتراک‌ها آمده، پلن و کدِ پمپ می‌خواهد، نه دکان. بعدش کادر آزاد است.
+  const [params] = useSearchParams();
+  const [app, setApp] = useState<AppId>(params.get('app') === 'pump' ? 'pump' : 'shop');
   const [edit, setEdit] = useState<Plan | null>(null);
   const [discount, setDiscount] = useState<Plan | null>(null);
 

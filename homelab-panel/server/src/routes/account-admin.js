@@ -266,6 +266,25 @@ router.post('/shop-accounts/:id/disable', requireRole('admin'), guard(async (req
   res.json({ ok: true, disabled });
 }));
 
+/**
+ * 🗑️ حذفِ کاملِ یک حساب — «از ریشه» (۱۴۰۵/۰۷/۱۳).
+ *
+ * ⛔ تصمیم و کار هر دو روی خودِ سرورِ حساب است (`lib/user-delete.js`)؛ این‌جا
+ * فقط پل است. پیش‌نمایش برای هر واردشده؛ حذف فقط نقشِ `admin`ِ پنل، و سرورِ
+ * حساب خودش هم ایمیلِ تاییدی را دوباره می‌سنجد.
+ */
+router.get('/users/:id/delete-preview', guard(async (req, res) => {
+  res.json(await cloudRaw('GET', `/api/admin/users/${idOf(req.params.id)}/delete-preview`));
+}));
+
+router.delete('/users/:id', requireRole('admin'), guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const out = await cloudRaw('DELETE', `/api/admin/users/${id}`, { body: { confirmEmail: String(req.body?.confirmEmail || '') } });
+  audit({ actor: actorOf(req), action: 'account.user_deleted', entity: 'user', entityId: id,
+    detail: { email: out.user?.email || '', stations: out.stations || 0, shops: out.shops || 0 } });
+  res.json(out);
+}));
+
 /* ------------------------------ اشتراک -------------------------------- */
 
 /**

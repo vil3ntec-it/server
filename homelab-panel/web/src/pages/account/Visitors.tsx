@@ -12,6 +12,7 @@
 //  ⛔ فقط دیدنی است — هیچ دکمه‌ای این‌جا چیزی را عوض نمی‌کند.
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Footprints } from 'lucide-react';
 
 import { Badge, Card, Empty, Skeleton } from '../../components/ui';
@@ -38,7 +39,10 @@ type Visitor = {
 };
 
 export default function Visitors() {
-  const [app, setApp] = useState<Scope>('both');
+  //  ⚠️ بخشِ آغازین از نشانی (`?app=`)، مثلِ بقیهٔ تب‌های «اشتراک‌ها»
+  const [params] = useSearchParams();
+  const fromUrl = params.get('app');
+  const [app, setApp] = useState<Scope>(fromUrl === 'pump' || fromUrl === 'shop' ? fromUrl : 'both');
   const [guests, setGuests] = useState(false);
   const [q, setQ] = useState('');
 

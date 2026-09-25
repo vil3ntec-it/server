@@ -2,7 +2,6 @@
 //  انبار — محلِ نگهداری، مصرفِ هر پروژه و بکاپ‌های همه
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Archive, FolderTree, HardDrive } from 'lucide-react';
 import { useApp } from '../../app-context';
 import { Card, Field, Loading, toast } from '../../components/ui';
@@ -97,7 +96,7 @@ export default function StoragePage() {
             {data.items.map((item) => (
               <Row key={item.project_id}>
                 <Cell>
-                  <Link className="hover:underline" to={`/control/projects/${item.project_id}`}>{item.name}</Link>
+                  <span>{item.name}</span>
                 </Cell>
                 <Cell mono>
                   <span dir="ltr" className="block max-w-64 truncate" title={item.dir}>{item.dir}</span>
@@ -123,7 +122,7 @@ export default function StoragePage() {
               <Row key={b.id}>
                 <Cell className="text-xs">{dateTime(b.created_at, lang)}</Cell>
                 <Cell>
-                  <Link className="hover:underline" to={`/control/projects/${b.project_public_id}`}>{b.project_name}</Link>
+                  <span>{b.project_name}</span>
                 </Cell>
                 <Cell><span className="chip" style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}>{b.kind}</span></Cell>
                 <Cell className="tnum">{bytes(b.size)}</Cell>

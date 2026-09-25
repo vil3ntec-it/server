@@ -83,6 +83,7 @@ async function sendOne(row, settings, mailer = null) {
       to: row.email,
       code,
       name: row.subject_name || '',
+      app: row.app,
       appName: app?.name || row.app,
       subject: app?.subject || null,
       minutes: Math.max(1, Math.round((row.expires_at - row.created_at) / 60000)),

@@ -4,15 +4,11 @@ import { PageBoundary } from './PageBoundary';
 import {
   Activity,
   Bot,
+  CreditCard,
   Archive,
-  Boxes,
   ChevronDown,
-  CalendarClock,
   Workflow,
-  Container,
-  Cpu,
   Database,
-  Layers,
   Command as CommandIcon,
   Download,
   FolderTree,
@@ -41,8 +37,6 @@ import {
   MessagesSquare,
   RefreshCw,
   Search,
-  Tag,
-  Users,
   Wallet,
 } from 'lucide-react';
 import { useApp } from '../app-context';
@@ -123,25 +117,33 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'money',
     key: 'navMoney',
     items: [
-      { to: '/customers', key: 'acCustomers', icon: Users },
+      /*
+       *  ⛔ «مشتری‌ها و اشتراک‌ها» و «پلن‌ها و تخفیف‌ها» یک در شدند
+       *     (۱۴۰۵/۰۷/۱۳، خواستهٔ صاحب سامانه: «همهٔ اشتراک‌ها داخلِ یک بخش»).
+       *     نشانی‌های قدیمی در App.tsx به تبِ خودشان می‌روند.
+       */
+      { to: '/subscriptions', key: 'acSubscriptions', icon: CreditCard },
       { to: '/sales', key: 'acSales', icon: Wallet },
-      { to: '/plans', key: 'acPlans', icon: Tag },
       { to: '/notices', key: 'acNotices', icon: Megaphone },
       { to: '/support', key: 'acSupport', icon: MessagesSquare },
       { to: '/sync', key: 'acSync', icon: RefreshCw },
       { to: '/logins', key: 'logins', icon: LogIn },
     ],
   },
+  /*
+   *  ⛔ «پروژه‌ها»، «داکر»، «نسخه‌های اجرا»، «پروسه‌ها» و «زمان‌بندی» از منو
+   *  رفتند (۱۴۰۵/۰۷/۱۳، خواستهٔ صاحب سامانه): این پنل برای پمپ و دکان است
+   *  و هیچ‌کدام از آن پنج صفحه به کارِ سرور نبود. نشانی‌های قدیمی‌شان در
+   *  App.tsx به نزدیک‌ترین صفحهٔ زنده می‌روند. «دامنه‌ها و تونل» ماند: تونل
+   *  همان راهی است که api.<دامنه> به سرورِ حساب می‌رسد.
+   */
   {
     id: 'projects',
     key: 'ccSection',
     collapsed: true,
     items: [
-      { to: '/control/projects', key: 'ccProjects', icon: Boxes },
       { to: '/control/servers', key: 'ccServers', icon: Server },
-      { to: '/docker', key: 'docker', icon: Container },
       { to: '/databases', key: 'databases', icon: Database },
-      { to: '/runtimes', key: 'runtimes', icon: Layers },
       { to: '/control/storage', key: 'ccStorage', icon: Archive },
       { to: '/control/vault', key: 'ccVault', icon: KeyRound, needs: 'admin' },
     ],
@@ -161,8 +163,6 @@ const NAV_GROUPS: NavGroup[] = [
     collapsed: true,
     items: [
       { to: '/monitoring', key: 'monitoring', icon: Activity },
-      { to: '/processes', key: 'processes', icon: Cpu },
-      { to: '/cron', key: 'cron', icon: CalendarClock },
       { to: '/automation', key: 'automation', icon: Workflow },
       { to: '/logs', key: 'logs', icon: ScrollText },
     ],

@@ -114,11 +114,17 @@ try {
     body:JSON.stringify({refreshToken:login.refreshToken})}).then(r=>r.json());
   step('تمدید کار می‌کند', ref.ok===true && ref.token!==login.token, JSON.stringify(ref).slice(0,150));
 
-  console.log('\n── ایمیلی که رفت، کد و نامِ خودِ همان شخص را دارد ──');
+  console.log('\n── ایمیلی که رفت: قالبِ صاحبِ سامانه، با کدِ خودِ همان شخص ──');
   const last = inbox[inbox.length-1];
   const b64 = last.split('Content-Transfer-Encoding: base64')[2]?.split('\r\n\r\n')[1]?.split('\r\n--')[0];
   const html = Buffer.from(String(b64).replace(/\r\n/g,''),'base64').toString('utf8');
-  step('نامِ گیرنده در ایمیل هست', html.includes('سارا عزیز'), html.slice(0,80));
+  //  ⚠️ تا ۱.۵۰.۱۷ این‌جا «سارا عزیز» خواسته می‌شد — قالبِ قدیمی نام داشت.
+  //  قالب‌های صاحبِ سامانه (۱۴۰۵/۰۷/۱۳) جای نام ندارند و «نوشته‌هایشان را دست
+  //  نزن» صریح است؛ پس سنجه همان قالب را می‌خواهد، نه نام را.
+  step('قالبِ صاحبِ سامانه رفت، نه قالبِ قدیمی',
+    html.includes('کد ورود شما') && !html.includes('کد تأیید حساب شما در VILL3N'), html.slice(0,80));
+  step('⛔ کد در پیش‌نمایشِ پنهانِ سرِ نامه نیست',
+    /display:none/.test(html.slice(0, 400)) && !html.slice(0, html.indexOf('</div>')).includes(String(saraCode)));
   step('کدِ خودِ همان شخص در ایمیل هست', html.includes(String(saraCode)), String(saraCode));
 
   console.log('\n── خروج ──');

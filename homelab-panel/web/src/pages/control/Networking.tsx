@@ -2,7 +2,6 @@
 //  شبکه — نمای سراسریِ IPها، پورت‌ها و Endpointهای همهٔ پروژه‌ها
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Network, Radio, Search } from 'lucide-react';
 import { useApp } from '../../app-context';
 import { Card, Loading, toast } from '../../components/ui';
@@ -85,7 +84,7 @@ export default function Networking() {
             {shownEndpoints.map((e) => (
               <Row key={e.id}>
                 <Cell>
-                  <Link className="hover:underline" to={`/control/projects/${e.project_public_id}`}>{e.project_name}</Link>
+                  <span>{e.project_name}</span>
                 </Cell>
                 <Cell>
                   <span className="chip" style={{ background: 'color-mix(in srgb, var(--accent) 14%, transparent)', color: 'var(--accent)' }}>{e.environment}</span>

@@ -59,12 +59,7 @@ import codeRoutes, { adminRouter as codeAdminRoutes } from './routes/codes.js';
 import storageRoutes from './routes/storage.js';
 import platformRoutes from './routes/platform.js';
 import agentRoutes from './routes/agent.js';
-import dockerRoutes from './routes/docker.js';
-import processRoutes from './routes/processes.js';
 import databaseRoutes from './routes/databases.js';
-import runtimeRoutes from './routes/runtimes.js';
-import cronRoutes from './routes/cron.js';
-import { tick as cronTickOnce, reschedule as cronReschedule } from './system/cron.js';
 import { pruneAppAuth } from './appauth/index.js';
 import { localKey } from './local-key.js';
 import { runMigrations, dbVersion } from './lib/migrations.js';
@@ -370,16 +365,8 @@ app.use('/api/platform', platformRoutes);
 // دستیارِ هوشمند — فقط پورتِ پنل؛ خواندن برای همه، گفت‌وگو و تأیید دستِ‌کم operator
 app.use('/api/agent', requireAuth, writeNeedsOperator, agentRoutes);
 app.use('/api/account-server', accountServerRoutes);
-// مدیریتِ Docker — خواندن برای همه، کارها برای operator، حذف فقط admin
-app.use('/api/docker', dockerRoutes);
-// فهرستِ پروسه‌ها — دیدن برای همه، فرستادنِ سیگنال فقط admin
-app.use('/api/processes', processRoutes);
 // دیتابیس‌های کاربر (MySQL/MariaDB و PostgreSQL) — رمز در گاوصندوق می‌ماند
 app.use('/api/databases', databaseRoutes);
-// نسخه‌های Node و Python
-app.use('/api/runtimes', runtimeRoutes);
-// کارهای زمان‌بندی‌شده — زمان‌بندِ خودِ پنل، نه crontab سیستم
-app.use('/api/cron', cronRoutes);
 // موتورِ اتوماسیون — کارهای داخلیِ پنل (پشتیبان، پایش، نگهداری) با دفترِ اجرا
 app.use('/api/automation', automationRoutes);
 /*
@@ -871,18 +858,9 @@ if (config.backupSchedule && !automationEnabled) {
   backupTick.unref?.();
 }
 
-/*
- *  زمان‌بندِ کارها.
- *
- *  هر دقیقه، چون کوچک‌ترین واحدِ cron دقیقه است. ملاکِ اجرا next_run_at
- *  ذخیره‌شده است، نه تطبیقِ دوبارهٔ الگو — پس اگر پنل چند دقیقه خواب بوده
- *  یا تازه بالا آمده، کارِ عقب‌افتاده همان بارِ اول اجرا می‌شود.
- */
-cronReschedule();
-const cronTick = setInterval(() => {
-  cronTickOnce().catch((e) => logEvent('error', 'cron', `تیکِ زمان‌بند ناموفق بود: ${e.message}`));
-}, 60 * 1000);
-cronTick.unref?.();
+//  ⛔ زمان‌بندِ «کارهای دلخواهِ کاربر» (cron_jobs) در ۱.۵۰.۱۵ برداشته شد — با
+//  صفحه‌اش. کارهای خودِ پنل (پشتیبان، پایش، به‌روزرسانیِ سرورِ حساب) همه در
+//  موتورِ اتوماسیون‌اند و همان تجزیه‌کنندهٔ cron را از system/cron.js می‌گیرند.
 
 async function main() {
   if (stations) {

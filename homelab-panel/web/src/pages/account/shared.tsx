@@ -42,6 +42,21 @@ export function money(amount: number | null | undefined, currency?: string | nul
   return `${fa(amount)} ${CURRENCY_LABEL[String(currency || '')] || currency || ''}`.trim();
 }
 
+/**
+ * همان حسابِ سرور (`addPeriod` در `account-admin.js`): از پایانِ فعلی، یا از
+ * امروز اگر تمام شده. ⛔ فقط برای **پیش‌نمایش** روی صفحه؛ عددِ واقعی را
+ * سرورِ حساب می‌نشاند.
+ */
+export function periodEnd(fromMs: number, amount: number, unit: string): number {
+  const d = new Date(Math.max(Number(fromMs) || 0, Date.now()));
+  const n = Math.max(1, Math.floor(Number(amount) || 1));
+  if (unit === 'day') d.setUTCDate(d.getUTCDate() + n);
+  else if (unit === 'week') d.setUTCDate(d.getUTCDate() + n * 7);
+  else if (unit === 'year') d.setUTCFullYear(d.getUTCFullYear() + n);
+  else d.setUTCMonth(d.getUTCMonth() + n);
+  return d.getTime();
+}
+
 export function day(ms: number | null | undefined): string {
   if (!ms) return '—';
   return new Date(Number(ms)).toLocaleDateString('fa-AF', { year: 'numeric', month: '2-digit', day: '2-digit' });
