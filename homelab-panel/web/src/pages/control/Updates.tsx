@@ -3,7 +3,8 @@
 //  پیش از هر نصب، از کلِ برنامه بکاپ گرفته می‌شود و data/ و .env دست نمی‌خورند.
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from 'react';
-import { Download, GitBranch, RefreshCw, Tag } from 'lucide-react';
+import { Download, GitBranch, RefreshCw, ServerCog, Tag } from 'lucide-react';
+import { api } from '../../api';
 import { useApp } from '../../app-context';
 import { Card, Field, Loading, Modal, toast } from '../../components/ui';
 import { dateTime, relative } from '../../format';
@@ -22,6 +23,11 @@ export default function Updates() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [steps, setSteps] = useState<Step[] | null>(null);
   const [restarting, setRestarting] = useState(false);
+  //  سرورِ حساب (ورود، اشتراک، باتِ تلگرام) — بستهٔ جدای خودش را دارد
+  const [acct, setAcct] = useState<AcctUpdate | null>(null);
+  const loadAcct = useCallback(async () => {
+    try { setAcct(await api<AcctUpdate>('/api/account-server/update')); } catch { setAcct(null); }
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -37,7 +43,8 @@ export default function Updates() {
 
   useEffect(() => {
     load();
-  }, [load]);
+    loadAcct();
+  }, [load, loadAcct]);
 
   // بعد از نصب، پنل خودش را بالا می‌آورد؛ منتظر می‌مانیم تا برگردد
   useEffect(() => {
@@ -92,6 +99,10 @@ export default function Updates() {
               busyLabel="…"
               onClick={async () => {
                 try {
+                  //  ⛔ یک دکمه، هر دو: کاربر «بررسیِ به‌روزرسانی» را می‌زند و
+                  //  انتظار دارد سرورِ حساب هم سنجیده شود — نه این‌که دنبالِ
+                  //  درِ دومی در «اتوماسیون» بگردد.
+                  loadAcct();
                   const res = await cc.checkUpdate();
                   setInfo(res);
                   if (res.error) toast(res.error, 'bad');
@@ -188,6 +199,8 @@ export default function Updates() {
         )}
       </Card>
 
+      <AccountServerCard info={acct} onDone={loadAcct} />
+
       <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} status={status} onSaved={() => { setSettingsOpen(false); load(); }} />
 
       <Modal open={Boolean(steps)} onClose={() => setSteps(null)} title={t('ccInstallUpdate')} wide>
@@ -280,5 +293,60 @@ function Settings({ open, onClose, status, onSaved }: { open: boolean; onClose: 
         {t('ccAutoCheck')}
       </label>
     </Modal>
+  );
+}
+
+type AcctUpdate = {
+  ok: boolean;
+  current?: string;
+  latest?: string;
+  available?: boolean;
+  why?: string;
+};
+
+/**
+ * ══ سرورِ حساب — همین‌جا، کنارِ خودِ مرکز فرمان ═══════════════════════════
+ *
+ * گزارشِ صاحب سامانه (۱۴۰۵/۰۷/۱۳): «بررسیِ به‌روزرسانی» را زد و چیزی نیامد،
+ * چون سرورِ حساب (ورود، اشتراک، باتِ تلگرام) بستهٔ جدای خودش را دارد و تنها
+ * درش کارِ «به‌روزرسانیِ سرورِ حساب» در «اتوماسیون» بود. ⛔ حالا همین صفحه
+ * هر دو را نشان می‌دهد و یک دکمه نصبش می‌کند — همان `/api/account-server/update`
+ * که آن کار هم می‌زند، پس راهِ دومی ساخته نشد.
+ */
+function AccountServerCard({ info, onDone }: { info: AcctUpdate | null; onDone: () => void }) {
+  if (!info) return null;
+  return (
+    <Card title="سرورِ حساب (ورود، اشتراک، باتِ تلگرام)" icon={<ServerCog className="h-4 w-4" />}>
+      <KV label="نسخهٔ نصب‌شده" mono>{info.current || '—'}</KV>
+      <KV label="تازه‌ترین نسخه" mono>{info.latest || '—'}</KV>
+      {!info.ok && (
+        <p className="mt-3 text-sm" style={{ color: 'var(--status-critical)' }}>{info.why || 'سنجیده نشد'}</p>
+      )}
+      {info.ok && info.available && (
+        <div className="mt-3">
+          <ActionButton
+            className="btn btn-sm btn-primary"
+            busyLabel="در حالِ نصب… (یکی دو دقیقه)"
+            onClick={async () => {
+              try {
+                const out = await api<{ ok: boolean; changed?: boolean; to?: string; why?: string }>('/api/account-server/update', { method: 'POST', body: {} });
+                toast(out.changed ? `سرورِ حساب به ${out.to} به‌روز شد` : (out.why || 'تازه‌ترین است'), 'good');
+              } catch (e) {
+                toast((e as Error).message, 'bad');
+              } finally {
+                onDone();
+              }
+            }}
+          >
+            <Download className="h-4 w-4" />
+            به‌روز کردنِ سرورِ حساب به {info.latest}
+          </ActionButton>
+          <p className="mt-2 text-[11px] text-ink-muted">دیتابیس و رازها دست نمی‌خورند؛ سرورِ حساب یک بار دوباره بالا می‌آید.</p>
+        </div>
+      )}
+      {info.ok && !info.available && (
+        <p className="mt-3 text-sm" style={{ color: 'var(--status-good)' }}>سرورِ حساب به‌روز است.</p>
+      )}
+    </Card>
   );
 }

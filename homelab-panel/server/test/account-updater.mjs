@@ -184,6 +184,21 @@ console.log('\n── ۷) ⛔ ورک‌فلوی بسته خودش را نمی‌
   fs.rmSync(box, { recursive: true, force: true });
 }
 
+// ── ۸) صفحهٔ «به‌روزرسانی»ِ مرکز فرمان سرورِ حساب را هم به‌روز می‌کند ───
+//  ۱۴۰۵/۰۷/۱۳: صاحب سامانه «بررسیِ به‌روزرسانی» را زد و چیزی نیامد — سرورِ
+//  حساب فقط از کارِ «اتوماسیون» به‌روز می‌شد. حالا همان صفحه هر دو را دارد.
+{
+  const ui = fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', 'web', 'src', 'pages', 'control', 'Updates.tsx'), 'utf8');
+  check('⇒ صفحهٔ به‌روزرسانی سرورِ حساب را می‌سنجد', ui.includes("api<AcctUpdate>('/api/account-server/update')"));
+  check('⇒ و همان‌جا نصبش می‌کند (همان درِ کارِ اتوماسیون، نه راهِ دوم)',
+    /'\/api\/account-server\/update',\s*\{\s*method:\s*'POST'/.test(ui));
+  check('⇒ و دکمهٔ «بررسیِ به‌روزرسانی» هر دو را می‌سنجد',
+    /loadAcct\(\);\s*const res = await cc\.checkUpdate\(\)/.test(ui));
+  const route = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'src', 'routes', 'account-server.js'), 'utf8');
+  check('⇒ شکستِ نصب جملهٔ آدمیزاد را در detail می‌برد (همان که ApiError نشان می‌دهد)',
+    /detail:\s*out\.why/.test(route));
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${pass} سبز، ${fails.length} سرخ`);
 if (fails.length) { for (const f of fails) console.log('  ✖', f); process.exit(1); }
