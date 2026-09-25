@@ -353,7 +353,7 @@ type AcctUpdate = {
 
 type AcctJob = {
   running: boolean;
-  phase: 'idle' | 'check' | 'download' | 'extract' | 'swap' | 'restart' | 'done' | 'error';
+  phase: 'idle' | 'check' | 'download' | 'extract' | 'swap' | 'restart' | 'verify' | 'done' | 'error';
   got: number;
   total: number;
   from: string;
@@ -361,6 +361,8 @@ type AcctJob = {
   why: string;
   attempt: number;
   endedAt: number;
+  code?: string;
+  lines?: string[];
 };
 
 const MB = (n: number) => (n / 1048576).toFixed(1);
@@ -372,6 +374,7 @@ const PHASE: Record<AcctJob['phase'], string> = {
   extract: 'در حالِ باز کردنِ بسته…',
   swap: 'در حالِ جابه‌جایی — سرورِ حساب یک لحظه خاموش است…',
   restart: 'در حالِ راه‌اندازیِ دوبارهٔ سرورِ حساب…',
+  verify: 'در حالِ سنجیدنِ این‌که نسخهٔ تازه واقعاً بالا آمد…',
   done: '',
   error: '',
 };
@@ -458,6 +461,12 @@ function AccountServerCard({ info, onDone }: { info: AcctUpdate | null; onDone: 
             <span className="tnum" dir="ltr"> — {MB(job!.got)} / {MB(job!.total)} MB</span>
           )}
         </p>
+      )}
+      {/* ⛔ نسخهٔ تازه بالا نیامد و برگردانده شد — دلیلش همین‌جا، نه در لاگی که پیدا نمی‌شود */}
+      {showError && !!job!.lines?.length && (
+        <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-surface-sunken p-2 text-[11px] leading-5" dir="ltr">
+          {job!.lines!.join('\n')}
+        </pre>
       )}
 
       {!running && info && !info.ok && (

@@ -26,6 +26,7 @@ import CloudflarePage from './control/CloudflarePage';
 import AppLogins from './AppLogins';
 import EmailLogins from './account/EmailLogins';
 import { AccountAudit, AccountEmail, AccountSmsPush, ManagedApps } from './account/AccountServerSettings';
+import AccountServerLog from './account/AccountServerLog';
 
 type Tab = { id: string; label: string; body: ReactNode };
 
@@ -91,6 +92,9 @@ export function AccountServerHub() {
     <Hub
       tabs={[
         { id: 'apps', label: 'برنامه‌ها', body: <ManagedApps /> },
+        //  ⛔ پیامِ «سرورِ حساب افتاده» به همین تب می‌فرستد؛ تا ۱.۵۰.۱۶ هیچ
+        //     صفحه‌ای لاگش را نشان نمی‌داد.
+        { id: 'status', label: 'وضعیت و لاگ', body: <AccountServerLog /> },
         { id: 'email', label: 'ایمیل', body: <AccountEmail /> },
         { id: 'smspush', label: 'پیامک و پوش', body: <AccountSmsPush /> },
         { id: 'audit', label: 'دفترِ ممیزی', body: <AccountAudit /> },
