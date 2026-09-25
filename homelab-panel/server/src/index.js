@@ -69,6 +69,7 @@ import { pruneAppAuth } from './appauth/index.js';
 import { localKey } from './local-key.js';
 import { runMigrations, dbVersion } from './lib/migrations.js';
 import { startDiscovery, stopDiscovery, serverCard, DISCOVERY_PORT } from './discovery.js';
+import { guardServer } from './lib/lan-guard.js';
 import { startBackupSchedule, stopBackupSchedule } from './storage/backup.js';
 import { pruneAudit as pruneAppAudit } from './lib/audit.js';
 import { pruneTickets } from './lib/ws-ticket.js';
@@ -506,6 +507,16 @@ function createServer() {
 
 const { server: httpServer, secure: panelSecure } = createServer();
 
+//  ⛔ درِ پنل فقط به شبکهٔ خانه و خودِ همین کامپیوتر (‎src/lib/lan-guard.js‎).
+//  پنل روی کارتِ شبکه هم گوش می‌دهد تا برنامهٔ پمپ و گوشیِ کارمند برسند؛
+//  این نگهبان نمی‌گذارد همان در به اینترنت باز شود. ‎HLP_PANEL_LAN_ONLY=0‎
+//  خاموشش می‌کند و ‎HLP_PANEL_NETS‎ شبکهٔ خانهٔ غیرعادی را می‌افزاید.
+if ((process.env.HLP_PANEL_LAN_ONLY ?? '1') !== '0') {
+  guardServer(httpServer, {
+    log: (from) => logEvent('warn', 'panel', `اتصال به پنل از بیرونِ شبکهٔ خانه بسته شد: ${from}`),
+  });
+}
+
 // وقتی https روشن است، یک شنوندهٔ کوچکِ http فقط آدرس را عوض می‌کند
 let redirectServer = null;
 if (panelSecure && config.tls.redirectHttp) {
@@ -520,6 +531,7 @@ if (panelSecure && config.tls.redirectHttp) {
     console.warn(`⚠️  شنوندهٔ تغییرِ مسیرِ http بالا نیامد (${e.code}) — https خودش کار می‌کند.`);
     redirectServer = null;
   });
+  if ((process.env.HLP_PANEL_LAN_ONLY ?? '1') !== '0') guardServer(redirectServer);
   redirectServer.listen(redirectPort, config.host);
 }
 export const scheme = panelSecure ? 'https' : 'http';

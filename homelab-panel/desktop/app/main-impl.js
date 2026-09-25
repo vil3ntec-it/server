@@ -16,6 +16,7 @@ import path from 'node:path';
 import net from 'node:net';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { ensureFirewall } from './firewall.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -144,18 +145,31 @@ function homeNearExe() {
 
 /* ------------------------------ پورتِ آزاد ------------------------------- */
 
-function portFree(port) {
+function portFree(port, host = '127.0.0.1') {
   return new Promise((resolve) => {
     const server = net.createServer();
     server.once('error', () => resolve(false));
     server.once('listening', () => server.close(() => resolve(true)));
-    server.listen(port, '127.0.0.1');
+    server.listen(port, host);
   });
+}
+
+/**
+ * ══ پنل روی کدام کارت گوش بدهد (۱۴۰۵/۰۷/۱۳) ══════════════════════════════
+ *
+ * ⛔ **‎0.0.0.0‎، نه ‎127.0.0.1‎.** تا امروز این‌جا ‎127.0.0.1‎ بود و برنامهٔ پمپ
+ * روی کامپیوترِ دیگر و گوشیِ کارمند روی وای‌فای هیچ‌وقت به سرورِ خانگی
+ * نمی‌رسیدند: کشفِ خودکار نشانیِ شبکه را می‌گفت و همان نشانی «اتصال رد شد»
+ * می‌گرفت. نگهبانِ ‎lan-guard.js‎ در خودِ پنل نمی‌گذارد این در به اینترنت باز
+ * شود. ‎lanAccess: false‎ در تنظیماتِ برنامه همان رفتارِ قدیم را برمی‌گرداند.
+ */
+function listenHost() {
+  return readSettings().lanAccess === false ? '127.0.0.1' : '0.0.0.0';
 }
 
 async function pickPort(preferred = 4700) {
   for (let port = preferred; port < preferred + 40; port++) {
-    if (await portFree(port)) return port;
+    if (await portFree(port, listenHost())) return port;
   }
   return preferred;
 }
@@ -266,7 +280,10 @@ async function startServer() {
       ELECTRON_RUN_AS_NODE: '1',
       NODE_OPTIONS: '--disable-warning=ExperimentalWarning',
       HLP_PORT: String(state.port),
-      HLP_HOST: '127.0.0.1',
+      HLP_HOST: listenHost(),
+      //  ⚠️ سرور خودش ‎127.0.0.1‎ِ پوسته‌های کهنه را به شبکه باز می‌کند
+      //  (‎config.listenHost‎)؛ «نه» گفتنِ صریحِ کاربر باید به آن‌جا هم برسد.
+      HLP_LAN_ACCESS: listenHost() === '0.0.0.0' ? '1' : '0',
       HLP_DATA_DIR: state.dataDir,
       // بدونِ این‌ها، به‌روزرسانی فایل‌ها را کنارِ برنامه می‌ریزد و چیزی که
       // واقعاً اجرا می‌شود عوض نمی‌شود.
@@ -296,6 +313,20 @@ async function startServer() {
 
   const healthy = await waitForHealth(state.port);
   if (state.stopping) return;
+  //  ⚠️ پنل روی شبکه گوش می‌دهد ولی دیوارِ آتشِ ویندوز پیش‌فرض می‌بندد —
+  //  در هر اجرا حداکثر **یک بار** می‌پرسیم (UAC)، و فقط اگر قاعده‌ها نیستند.
+  //  پشتِ سرِ کار، بی انتظار؛ نه گفتن چیزی را روی همین کامپیوتر نمی‌شکند.
+  if (healthy && listenHost() === '0.0.0.0' && !state.firewallAsked) {
+    state.firewallAsked = true;
+    ensureFirewall({ panelPort: state.port, publicPort: 4701, discoveryPort: 4702 })
+      .then((r) => {
+        if (r.state === 'added') pushLog('✅ دیوارِ آتشِ ویندوز برای شبکهٔ خانه باز شد (پنل · پورتِ عمومی · کشفِ خودکار).');
+        else if (r.state === 'declined')
+          pushLog('⚠️ دیوارِ آتشِ ویندوز باز نشد — برنامهٔ پمپ روی کامپیوترهای دیگر و گوشی‌ها به این سرور نمی‌رسند. '
+            + 'بارِ بعد که برنامه باز شد، در پنجرهٔ ویندوز «بله» را بزنید.', 'err');
+      })
+      .catch(() => { /* دیوارِ آتش رفاه است */ });
+  }
   if (healthy) {
     pushLog(`سرور آماده است: ${state.url}`);
     setStatus('running');
