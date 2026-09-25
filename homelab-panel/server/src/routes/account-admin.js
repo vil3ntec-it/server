@@ -520,7 +520,11 @@ router.get('/customers', guard(async (req, res) => {
     },
   });
 
-  const subscriptions = Array.isArray(out.subscriptions) ? out.subscriptions : [];
+  //  ⛔ سرورِ حسابِ پیش از ۲.۹.۲ برای اشتراکِ لغوشده هم روزهای مانده را
+  //  می‌فرستاد («لغو · ۳۶۵ روز مانده»). همین‌جا صفر می‌شود تا با هر نسخه‌ای
+  //  راست گفته شود.
+  const subscriptions = (Array.isArray(out.subscriptions) ? out.subscriptions : []).map((r) =>
+    (r && (r.status === 'cancelled' || r.status === 'expired') ? { ...r, daysLeft: 0 } : r));
 
   //  ⚠️ فیلترِ حال دستِ سرور است؛ وقتی مدیر حالِ خاصی خواسته، «بی‌اشتراک»
   //  جوابِ پرسشش نیست و قاطی کردنش فهرست را دروغ می‌کند.
@@ -555,10 +559,16 @@ router.get('/customers', guard(async (req, res) => {
           ownerEmail: a.owner_email || '',
           ownerPhone: a.owner_phone || '',
           city: a.city || '',
-          plan: '', planTitle: '',
+          plan: '', planTitle: a.sub_status === 'trial' ? 'دورهٔ آزمایشی' : '',
           status: a.sub_status || 'none',
-          active: false,
-          startsAt: 0, endsAt: 0, daysLeft: 0,
+          active: a.sub_status === 'trial',
+          //  ⛔ حسابِ آزمایشی روزهای خودش را دارد — تا ۱۴۰۵/۰۷/۱۳ این‌جا صفر
+          //  بود و هر حسابِ تازه «—» نشان می‌داد، در حالی که دفترِ حساب‌ها
+          //  پایانِ همان دوره را از قبل می‌فرستاد (`ends_at`).
+          startsAt: Number(a.created_at) || 0,
+          endsAt: a.sub_status === 'trial' ? Number(a.ends_at) || 0 : 0,
+          daysLeft: a.sub_status === 'trial' && Number(a.ends_at) > 0
+            ? Math.max(0, Math.ceil((Number(a.ends_at) - Date.now()) / 86_400_000)) : 0,
           permanent: false,
           price: null, currency: '', paid: 0,
           features: [],

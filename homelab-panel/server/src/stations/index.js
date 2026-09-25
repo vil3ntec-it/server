@@ -37,6 +37,7 @@ import { WebSocketServer } from 'ws';
 import { attachHeartbeat } from '../lib/ws-heartbeat.js';
 import { createStore } from '../sitesync/store.js';
 import { bumpSoon } from '../live/bus.js';
+import { createAlertPusher } from './alert-push.js';
 
 /** شاخه‌ای که برنامهٔ نیتیو می‌نویسد و بقیه فقط می‌خوانند */
 export const LIVE_BRANCH = 'live';
@@ -104,6 +105,10 @@ export function createStations({ dataDir, enroll = 'lan' } = {}) {
   const pairings = new Map();
 
   const dirFor = (code) => path.join(dataDir, code);
+  const alertPusher = createAlertPusher({
+    dirFor,
+    read: (code) => stores.get(code)?.read(LIVE_BRANCH),
+  });
   /** کدِ پمپ → رمزِ فقط‌خواندنیِ همان پمپ */
   const readKeys = new Map();
 
@@ -198,7 +203,12 @@ export function createStations({ dataDir, enroll = 'lan' } = {}) {
       key,
       label: name.trim() || key,
       dataDir: dirFor(key),
-      onWrite: () => { bumpSoon('stations', 400); },
+      //  ⛔ و نوشتنِ ‎live‎ خبرهای تازه را به گوشیِ **بسته** هم می‌رساند
+      //  (‎alert-push.js‎) — تنها راهِ خبر گرفتنِ آیفونِ بسته.
+      onWrite: (p) => {
+        bumpSoon('stations', 400);
+        if (String(p || '').replace(/^\/+/, '').split('/')[0] === LIVE_BRANCH) alertPusher.onLiveWrite(key);
+      },
     });
     stores.set(key, store);
     await store.ensureToken();

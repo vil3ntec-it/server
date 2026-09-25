@@ -59,7 +59,9 @@ export default function Customers() {
   const [status, setStatus] = useState('');
   const [kind, setKind] = useState('');
   const [city, setCity] = useState('');
-  const [q, setQ] = useState('');
+  //  ⚠️ جست‌وجو هم از نشانی می‌آید (`?q=`) تا صفحهٔ «پمپ‌بنزین‌ها» بتواند
+  //  با یک کلیک به پروندهٔ همان حساب برسد — کارهای اشتراک فقط همین‌جاست.
+  const [q, setQ] = useState(params.get('q') || '');
   const [open, setOpen] = useState<SubRow | null>(null);
   const [ask, setAsk] = useState<{ deed: Deed; row: SubRow } | null>(null);
   //  ⛔ «اشتراک بده» — تا ۱۴۰۵/۰۷/۰۸ این صفحه فقط کارهای روی اشتراکِ
@@ -129,9 +131,11 @@ export default function Customers() {
     },
     {
       key: 'cancel',
-      label: 'لغو',
+      //  ⚠️ «حذفِ اشتراک» همین است: صاحبِ سامانه دنبالِ «حذف» می‌گشت و
+      //  «لغو» را نمی‌دید. ردیفِ اشتراک برای تاریخچه و پرداخت‌ها می‌ماند.
+      label: 'لغو / حذفِ اشتراک',
       danger: true,
-      consequence: 'اشتراک لغو می‌شود و قابلیت‌های پولی بسته می‌شوند. دادهٔ مشتری دست نمی‌خورد و با اشتراکِ تازه همه‌چیز برمی‌گردد.',
+      consequence: 'اشتراک همین حالا برداشته می‌شود و قابلیت‌های پولی بسته می‌شوند — دورهٔ آزمایشی هم برنمی‌گردد. برنامهٔ مشتری در یک دقیقهٔ بعد خودش می‌فهمد. دادهٔ مشتری دست نمی‌خورد، ردیفِ اشتراک برای تاریخچه و پرداخت‌ها می‌ماند، و با اشتراکِ تازه همه‌چیز برمی‌گردد.',
       run: (r) => api(`/api/account-admin/subs/${r.app}/${r.id}/status`, { body: { status: 'cancelled' } }),
     },
     {
@@ -208,9 +212,11 @@ export default function Customers() {
           <Table head={['مشتری', 'بخش', 'پلن', 'وضعیت', 'مانده', 'قیمت', 'پرداخت‌شده', '']}>
             {rows.map((r) => {
               //  ⚠️ حسابِ بی‌اشتراک «۰ روز مانده» نیست — هیچ روزی ندارد.
-              const tone = r.neverSubscribed
+              //  ⚠️ حسابِ بی‌اشتراک «۰ روز مانده» نیست — مگر در دورهٔ
+              //  آزمایشی باشد، که روزهای خودش را دارد.
+              const tone = r.neverSubscribed && r.status !== 'trial'
                 ? { tone: 'neutral' as const, text: '—' }
-                : daysTone(r.daysLeft, r.permanent);
+                : daysTone(r.daysLeft, r.permanent, r.status);
               /*
                *  ⛔ روی حسابِ بی‌اشتراک هیچ‌کدام از کارهای اشتراک (تمدید،
                *  تعلیق، لغو…) معنا ندارد و شناسه‌اش هم شناسهٔ اشتراک نیست —
@@ -324,7 +330,7 @@ function Profile({
     ? { name: shop.data?.account.ownerName || row.ownerName, email: shop.data?.account.email || row.ownerEmail, phone: shop.data?.account.phone || row.ownerPhone }
     : { name: pump.data?.owner?.name || row.ownerName, email: pump.data?.owner?.email || row.ownerEmail, phone: pump.data?.owner?.phone || row.ownerPhone };
   const busy = (app === 'shop' ? shop.busy : pump.busy) && !shop.data && !pump.data;
-  const tone = daysTone(row.daysLeft, row.permanent);
+  const tone = daysTone(row.daysLeft, row.permanent, row.status);
 
   return (
     <Modal open wide onClose={onClose} title={`${row.tenantName || owner.name || '—'} · ${APP_LABEL[app]}`}>
@@ -373,7 +379,7 @@ function Profile({
             </div>
 
             <div className="flex flex-wrap gap-2 border-t border-line pt-3">
-              {deeds.map((d) => (
+              {deeds.filter((d) => applies(d.key, row.status)).map((d) => (
                 <button
                   key={d.key}
                   className={d.danger ? 'btn btn-sm btn-danger' : 'btn btn-sm'}
@@ -462,6 +468,18 @@ function Profile({
       )}
     </Modal>
   );
+}
+
+/**
+ * کدام کار روی کدام حال معنا دارد — «دکمه‌ای که زده شود و هیچ اتفاقی
+ * نیفتد باگ است». لغوِ اشتراکِ لغوشده یا تعلیقِ اشتراکِ تمام‌شده فقط یک
+ * پیامِ گنگ از سرورِ حساب می‌گرفت.
+ */
+function applies(key: string, status: string): boolean {
+  if (key === 'activate') return status === 'suspended';
+  if (key === 'suspend') return status === 'active';
+  if (key === 'cancel') return status === 'active' || status === 'suspended';
+  return true;
 }
 
 /** تخفیفِ مستقیم روی همین اشتراک، با دلیل — سناریوی ۱۰ پرامپت. */

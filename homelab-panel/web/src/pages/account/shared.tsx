@@ -72,10 +72,24 @@ export function fromLocalInput(value: string): number | null {
  * رنگ و متنِ «چند روز مانده» — یک جا، همان مرزِ سرور.
  * `permanent` یعنی «دائمی ✓» و اصلاً شمرده نمی‌شود.
  */
-export function daysTone(daysLeft: number | null | undefined, permanent?: boolean): {
-  tone: 'good' | 'warn' | 'bad' | 'neutral';
+export function daysTone(daysLeft: number | null | undefined, permanent?: boolean, status?: string): {
+  tone: 'good' | 'warn' | 'bad' | 'neutral' | 'info';
   text: string;
 } {
+  /*
+   *  ⛔ **حال جلوتر از عدد است.** تا ۱۴۰۵/۰۷/۱۳ اشتراکِ لغوشده «۳۶۵ روز
+   *  مانده» نشان داده می‌شد (سنجیده شد، با پنلِ واقعی) و صاحبِ سامانه
+   *  گمان می‌کرد لغو کار نکرده. دورهٔ آزمایشی هم «—» بود، یعنی هر حسابِ
+   *  تازه‌ای روزِ مانده نداشت.
+   */
+  if (status === 'cancelled') return { tone: 'bad', text: 'لغو شد — روزی نمانده' };
+  if (status === 'expired') return { tone: 'bad', text: 'تمام شد' };
+  if (status === 'suspended') {
+    return { tone: 'warn', text: daysLeft && daysLeft > 0 ? `تعلیق — ${fa(daysLeft)} روز نگه داشته شده` : 'تعلیق' };
+  }
+  if (status === 'trial' && daysLeft != null && daysLeft > 0) {
+    return { tone: daysLeft <= 7 ? 'warn' : 'info', text: `آزمایشی — ${fa(daysLeft)} روز مانده` };
+  }
   if (permanent) return { tone: 'good', text: 'دائمی ✓' };
   if (daysLeft == null) return { tone: 'neutral', text: '—' };
   if (daysLeft < 0) return { tone: 'bad', text: `${fa(-daysLeft)} روز از انقضا گذشته` };

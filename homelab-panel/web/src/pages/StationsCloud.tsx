@@ -13,6 +13,7 @@
 //  پس این صفحه فقط یک پنجره است: می‌پرسد و نشان می‌دهد.
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { CreditCard, Fuel, HardDriveDownload, KeyRound, Users } from 'lucide-react';
 
 import { api } from '../api';
@@ -42,6 +43,28 @@ const SUB_FA: Record<string, string> = {
 };
 
 const day = 86_400_000;
+
+/**
+ * روزِ مانده — با حالِ اشتراک، نه فقط تاریخِ پایان.
+ *
+ * ⛔ تا ۱۴۰۵/۰۷/۱۳ اشتراکِ لغوشده «۳۶۵» روزِ مانده نشان داده می‌شد (سنجیده
+ * شد با پنلِ واقعی)؛ لغو و تمام‌شده روزی ندارند.
+ */
+const daysLeftOf = (status: string | null | undefined, ends: number | null | undefined): string => {
+  if (status === 'cancelled' || status === 'expired') return '۰';
+  if (!ends) return '—';
+  return Math.max(0, Math.ceil((Number(ends) - Date.now()) / day)).toLocaleString('fa-AF');
+};
+
+/**
+ * درِ کارهای اشتراک (دادن، تمدید، تعلیق، حذف) — **یک** جا دارد:
+ * «مشتری‌ها و اشتراک‌ها». این صفحه نسخهٔ دومش را نمی‌سازد، فقط با همان
+ * ایمیل آن‌جا می‌برد.
+ *
+ * ⚠️ چرا لازم شد: صاحبِ سامانه از این صفحه دنبالِ «حذفِ اشتراک» و «روزِ
+ * مانده» می‌گشت و این دو جدول هیچ دکمه‌ای نداشتند.
+ */
+const manageLink = (q: string) => `/customers?app=pump&q=${encodeURIComponent(q)}`;
 const fmtDate = (ms?: number | null) =>
   ms ? new Date(Number(ms)).toLocaleDateString('fa-AF', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '—';
 
@@ -274,23 +297,34 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
     );
   }
 
-  const day_ = day;
   const usersCard = (
     <Card title="افرادِ پمپ‌ها" icon={<Users size={18} />}>
       {users.length === 0 ? (
         <Notice>هنوز کسی به پمپی وصل نشده است.</Notice>
       ) : (
-        <Table head={['نام', 'ایمیل / شماره', 'پمپ', 'نقش', 'اشتراک', 'پایان']}>
-          {users.map((u) => (
-            <Row key={`${u.id}-${u.station_id}`}>
-              <Cell>{u.name || '—'}</Cell>
-              <Cell><span dir="ltr">{u.email || u.phone || '—'}</span></Cell>
-              <Cell>{u.station_name ? `${u.station_name} (${u.station_code})` : '—'}</Cell>
-              <Cell>{ROLE_FA[u.role] || u.role}</Cell>
-              <Cell>{SUB_FA[u.sub_status || ''] || 'بدون اشتراک'}</Cell>
-              <Cell>{fmtDate(u.sub_ends_at)}</Cell>
-            </Row>
-          ))}
+        <Table head={['نام', 'ایمیل / شماره', 'پمپ', 'نقش', 'اشتراک', 'پایان', 'روزِ مانده', '']}>
+          {users.map((u) => {
+            //  ⚠️ دفترِ افراد فقط اشتراکِ **خریده‌شده** را می‌شناسد؛ دورهٔ
+            //  آزمایشیِ حسابِ تازه از فهرستِ پمپ‌ها می‌آید (همان سرورِ حساب).
+            //  بی این، هر حسابِ تازه «بدون اشتراک» خوانده می‌شد.
+            const st = cloudStations.find((c) => c.id === u.station_id);
+            const status = u.sub_status || st?.sub_status || '';
+            const ends = u.sub_ends_at || (status === 'trial' ? st?.ends_at : null) || null;
+            return (
+              <Row key={`${u.id}-${u.station_id}`}>
+                <Cell>{u.name || '—'}</Cell>
+                <Cell><span dir="ltr">{u.email || u.phone || '—'}</span></Cell>
+                <Cell>{u.station_name ? `${u.station_name} (${u.station_code})` : '—'}</Cell>
+                <Cell>{ROLE_FA[u.role] || u.role}</Cell>
+                <Cell>{SUB_FA[status] || 'بدون اشتراک'}</Cell>
+                <Cell>{fmtDate(ends)}</Cell>
+                <Cell>{daysLeftOf(status, ends)}</Cell>
+                <Cell>
+                  <Link className="btn btn-sm" to={manageLink(u.email || u.station_name || '')}>مدیریتِ اشتراک</Link>
+                </Cell>
+              </Row>
+            );
+          })}
         </Table>
       )}
     </Card>
@@ -305,7 +339,7 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
       {subs.length === 0 ? (
         <Notice>{expiring ? 'هیچ اشتراکی رو به پایان نیست.' : 'هنوز اشتراکی نیست.'}</Notice>
       ) : (
-        <Table head={['پمپ', 'پلن', 'وضعیت', 'پایان', 'روزِ مانده']}>
+        <Table head={['پمپ', 'پلن', 'وضعیت', 'پایان', 'روزِ مانده', '']}>
           {subs.map((s, i) => {
             /*  ⚠️ دو مسیر، دو شکلِ نام: فهرستِ کامل ستونِ خامِ SQL می‌دهد
                 (station_name/ends_at) و «رو به پایان» شکلِ نگاشت‌شده
@@ -314,14 +348,16 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
             const name = s.station_name || s.tenantName || '';
             const code = s.station_code || '';
             const ends = s.ends_at ?? s.endsAt ?? null;
-            const left = ends ? Math.max(0, Math.ceil((Number(ends) - Date.now()) / day_)) : null;
             return (
               <Row key={s.id || s.tenantId || i}>
                 <Cell>{name ? (code ? `${name} (${code})` : name) : '—'}</Cell>
                 <Cell>{s.plan || '—'}</Cell>
                 <Cell>{SUB_FA[s.status] || s.status}</Cell>
                 <Cell>{fmtDate(ends)}</Cell>
-                <Cell>{left === null ? '—' : left.toLocaleString('fa-AF')}</Cell>
+                <Cell>{daysLeftOf(s.status, ends)}</Cell>
+                <Cell>
+                  <Link className="btn btn-sm" to={manageLink(name)}>مدیریت</Link>
+                </Cell>
               </Row>
             );
           })}
@@ -535,7 +571,7 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
             ) : (
               <Table head={['پمپ', 'وضعیت', 'صاحب', 'اعضا', 'بک‌آپ', 'اشتراک', 'پایان', 'سرورِ خانگی', '']}>
                 {cloudStations.map((s) => {
-                  const left = s.ends_at ? Math.max(0, Math.ceil((Number(s.ends_at) - Date.now()) / day_)) : null;
+                  const left = daysLeftOf(s.sub_status, s.ends_at);
                   return (
                     <Row key={s.id}>
                       <Cell>
@@ -573,7 +609,7 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
                       </Cell>
                       <Cell>
                         <div>{fmtDate(s.ends_at)}</div>
-                        {left !== null && <div className="text-xs opacity-60">{fa(left)} روز</div>}
+                        {left !== '—' && <div className="text-xs opacity-60">{left} روز</div>}
                       </Cell>
                       <Cell>
                         {s.home_url
@@ -584,6 +620,7 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
                         <div className="flex flex-wrap gap-1">
                           <ActionButton className="btn btn-sm btn-primary" onClick={() => openStation(s.id)}>جزئیات و کدِ پمپ</ActionButton>
                           {canWrite && <ActionButton onClick={() => setGrantFor(s)}>اشتراک بده</ActionButton>}
+                          <Link className="btn btn-sm" to={manageLink(s.owner_email || s.name || '')}>تمدید / حذفِ اشتراک</Link>
                           {canWrite && <ActionButton onClick={() => setCodeFor(s)}>کدِ اشتراک</ActionButton>}
                         </div>
                       </Cell>
