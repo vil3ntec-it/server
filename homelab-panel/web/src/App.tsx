@@ -13,8 +13,6 @@ import CodesPage from './pages/Codes';
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
 import Command from './pages/control/Command';
-import CcProjects from './pages/control/Projects';
-import ProjectDetail from './pages/control/ProjectDetail';
 import CcServers from './pages/control/Servers';
 import StoragePage from './pages/control/StoragePage';
 import Vault from './pages/control/Vault';
@@ -23,12 +21,8 @@ import PanelUsers from './pages/control/PanelUsers';
 import Assistant from './pages/Assistant';
 import { AccountServerHub, CustomersHub, DomainsHub, LoginsHub, LogsHub, MonitoringHub, NetworkHub, PlansHub } from './pages/hubs';
 import ShopDesk from './pages/account/ShopDesk';
-import DockerPage from './pages/Docker';
-import ProcessesPage from './pages/Processes';
 import DatabasesPage from './pages/Databases';
-import RuntimesPage from './pages/Runtimes';
 import TerminalPage from './pages/Terminal';
-import CronPage from './pages/Cron';
 import AutomationPage from './pages/Automation';
 import StationsPage from './pages/Stations';
 import StationProfile from './pages/StationProfile';
@@ -52,14 +46,19 @@ function Shell() {
         <Route path="/sites" element={<Sites />} />
         <Route path="/domains" element={<DomainsHub />} />
         {featureOn('files') && <Route path="/files" element={<Files />} />}
-        <Route path="/docker" element={<DockerPage />} />
-        <Route path="/processes" element={<ProcessesPage />} />
         <Route path="/databases" element={<DatabasesPage />} />
-        <Route path="/runtimes" element={<RuntimesPage />} />
         <Route path="/terminal" element={<TerminalPage />} />
-        <Route path="/cron" element={<CronPage />} />
         <Route path="/automation" element={<AutomationPage />} />
         <Route path="/tunnel-domains" element={<Navigate to="/domains?tab=tunnel" replace />} />
+        {/*
+          ⛔ پنج صفحه‌ای که از منو رفتند (۱۴۰۵/۰۷/۱۳): نشانیِ قدیمی نباید بشکند،
+          پس هر کدام به نزدیک‌ترین صفحهٔ زنده می‌رود.
+        */}
+        <Route path="/docker" element={<Navigate to="/control/servers" replace />} />
+        <Route path="/runtimes" element={<Navigate to="/control/servers" replace />} />
+        <Route path="/processes" element={<Navigate to="/monitoring" replace />} />
+        <Route path="/cron" element={<Navigate to="/automation" replace />} />
+        <Route path="/control/projects/*" element={<Navigate to="/control/servers" replace />} />
         <Route path="/monitoring" element={<MonitoringHub />} />
         <Route path="/network" element={<NetworkHub />} />
         <Route path="/logs" element={<LogsHub />} />
@@ -96,8 +95,6 @@ function Shell() {
 
         {/* مرکز فرمان */}
         {featureOn('commandCenter') && <Route path="/control" element={<Command />} />}
-        <Route path="/control/projects" element={<CcProjects />} />
-        <Route path="/control/projects/:projectId" element={<ProjectDetail />} />
         <Route path="/control/servers" element={<CcServers />} />
         <Route path="/control/networking" element={<Navigate to="/network?tab=projects" replace />} />
         <Route path="/control/routing" element={<Navigate to="/domains?tab=routing" replace />} />

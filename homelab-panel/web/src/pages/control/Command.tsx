@@ -106,17 +106,14 @@ export default function Command() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* ──────────────── پروژه‌ها ──────────────── */}
-        <Card className="lg:col-span-2" title={t('ccProjects')} icon={<Boxes className="h-4 w-4" />} action={<Link className="btn btn-sm" to="/control/projects">{t('ccDetails')}</Link>}>
+        <Card className="lg:col-span-2" title={t('ccProjects')} icon={<Boxes className="h-4 w-4" />}>
           {data.projects.length === 0 ? (
             <Empty title={t('ccNoItems')} hint={t('ccNewProject')} />
           ) : (
             <ul className="space-y-1.5">
               {data.projects.map((p) => (
                 <li key={p.project_id}>
-                  <Link
-                    to={`/control/projects/${p.project_id}`}
-                    className="flex items-center gap-3 rounded-xl border border-line px-3 py-2.5 transition hover:bg-surface-raised"
-                  >
+                  <div className="flex items-center gap-3 rounded-xl border border-line px-3 py-2.5">
                     <span
                       className="h-2 w-2 shrink-0 rounded-full"
                       style={{ background: p.down > 0 ? 'var(--status-critical)' : p.online > 0 ? 'var(--status-good)' : 'var(--text-muted)' }}
@@ -131,7 +128,7 @@ export default function Command() {
                     <span className="tnum shrink-0 text-[11px] text-ink-muted">
                       {p.online}/{p.endpoints}
                     </span>
-                  </Link>
+                  </div>
                 </li>
               ))}
             </ul>
