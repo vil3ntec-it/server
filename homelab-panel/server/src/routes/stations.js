@@ -26,6 +26,7 @@ import { logEvent } from '../db.js';
 import { isLocalRequest, safeCode, LIVE_BRANCH, INBOX_BRANCH, META_BRANCH } from '../stations/index.js';
 import { listBackups, saveBackup, KEEP_DAYS, MAX_BYTES } from '../stations/backups.js';
 import { describeFolder } from '../stations/layout.js';
+import { validateChatInput, CHAT_RELAY_DAYS } from '../stations/chat.js';
 import { cloudStatus, cloudLogin, cloudForget, cloudCall } from '../stations/cloud.js';
 import { noticesFor } from '../announce/store.js';
 
@@ -198,6 +199,54 @@ router.get('/:code/acct/:id', (req, res) => {
     return res.status(404).json({ error: 'not_found' });
   }
   res.json({ ok: true, at: Number(env.at) || 0, d: env.d === undefined ? null : env.d });
+});
+
+/**
+ * ══ «گروهِ کارکنان» — گفت‌وگوی گروهیِ همین پمپ ════════════════════════════
+ *
+ *   GET  /:code/chat?since=<seq>&limit=<n>
+ *        ⇒ { ok, relayDays, last, messages:[{ seq, cid, from, role, text, at }] }
+ *   POST /:code/chat {cid, from, role, text} ⇒ { ok, message }
+ *
+ * ⛔ هر دو با رمزِ **همان پمپ** — رمزِ برنامه یا رمزِ خواندن (گوشیِ کارمند).
+ * رمزِ پمپِ دیگر، مثلِ رمزِ غلط، همان ‎404‎ِ «نیست» را می‌گیرد: پمپ‌های یک
+ * سرور هرگز گروهِ هم را نمی‌بینند و از جوابِ ما هم نمی‌فهمند کدام کد هست.
+ * بی هیچ رمزی ⇒ ‎401‎ (این یکی دربارهٔ بودنِ پمپ چیزی نمی‌گوید).
+ *
+ * ⚠️ رمزِ خواندن این‌جا نوشتن هم دارد — مثلِ ‎inbox‎: پیامِ گروه روی حسابِ
+ * هیچ‌کس اثر نمی‌گذارد. شرحِ کامل در ‎stations/chat.js‎.
+ */
+function openChat(req, res) {
+  if (!tokenOf(req)) {
+    res.status(401).json({ error: 'auth_required', message: 'رمزِ پمپ لازم است' });
+    return null;
+  }
+  return open(req, res, 'read');
+}
+
+router.get('/:code/chat', async (req, res) => {
+  const ctx = openChat(req, res);
+  if (!ctx) return;
+  res.set('Cache-Control', 'no-store');
+  try {
+    const out = await ctx.stations.chat.list(ctx.code, { since: req.query.since, limit: req.query.limit });
+    res.json({ ok: true, relayDays: CHAT_RELAY_DAYS, last: out.last, messages: out.messages });
+  } catch (err) {
+    res.status(500).json({ error: 'read_failed', message: String(err?.message || err) });
+  }
+});
+
+router.post('/:code/chat', async (req, res) => {
+  const ctx = openChat(req, res);
+  if (!ctx) return;
+  const v = validateChatInput(req.body);
+  if (v.error) return res.status(400).json({ error: v.error, message: v.message });
+  try {
+    const out = await ctx.stations.chat.post(ctx.code, v.value);
+    res.json({ ok: true, message: out.message, ...(out.duplicate ? { duplicate: true } : {}) });
+  } catch (err) {
+    res.status(500).json({ error: 'save_failed', message: String(err?.message || err) });
+  }
 });
 
 /** نام و کدِ پمپ — کم‌هزینه‌ترین راهِ «این رمز به کجا می‌خورد؟» */

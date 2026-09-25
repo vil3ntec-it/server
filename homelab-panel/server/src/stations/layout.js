@@ -10,6 +10,7 @@
 //        live.json                     عکسِ زندهٔ برنامه     (شاخهٔ ‎live‎)
 //        inbox.json                    صندوقِ گوشی‌ها        (شاخهٔ ‎inbox‎)
 //        acct.json                     حساب‌های کیو‌آرِ زنده  (شاخهٔ ‎acct‎)
+//        chat.json                     گروهِ کارکنان، ۱۵ روز (‎chat.js‎)
 //        token.txt                     رمزِ برنامهٔ کامپیوتر — می‌نویسد
 //        readkey.txt                   رمزِ گوشی‌ها — فقط می‌خواند
 //        backups/                      پشتیبان‌های همان پمپ (‎backups.js‎)
@@ -40,6 +41,8 @@ export const LAYOUT = [
   { name: 'live.json',    kind: 'file', branch: 'live',    title: 'عکسِ زندهٔ برنامه' },
   { name: 'inbox.json',   kind: 'file', branch: 'inbox',   title: 'صندوقِ گوشی‌ها' },
   { name: 'acct.json',    kind: 'file', branch: 'acct',    title: 'حساب‌های کیو‌آرِ زنده' },
+  //  ⚠️ شاخهٔ دفترِ ‎sitesync‎ نیست (‎chat.js‎ خودش می‌نویسد)، پس ‎branch‎ ندارد
+  { name: 'chat.json',    kind: 'file',                    title: 'گروهِ کارکنان — ۱۵ روزِ آخر' },
   { name: 'token.txt',    kind: 'file', secret: true,      title: 'رمزِ برنامهٔ کامپیوتر' },
   { name: 'readkey.txt',  kind: 'file', secret: true,      title: 'رمزِ گوشی‌ها (فقط‌خواندنی)' },
   { name: 'backups',      kind: 'dir',                     title: 'پشتیبان‌های همین پمپ' },

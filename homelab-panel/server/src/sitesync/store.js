@@ -63,8 +63,16 @@ export function createStore({
    *  «پمپ‌ها».
    */
   onWrite = null,
+  /*
+   *  ⛔ شاخه‌هایی که مالِ دفترِ دیگری در همان پوشه‌اند (مثلِ ‎chat‎ِ پمپ،
+   *  ‎stations/chat.js‎). این دفتر نه از دیسک بارشان می‌کند، نه می‌نویسدشان:
+   *  وگرنه یک ‎set chat‎ از وب‌سوکت فایلِ آن دفتر را بی‌صدا روی‌نویسی می‌کرد
+   *  و ‎/data/chat‎ یک رونوشتِ کهنه نشان می‌داد.
+   */
+  reserved = [],
 }) {
   fs.mkdirSync(dataDir, { recursive: true });
+  const RESERVED = new Set((Array.isArray(reserved) ? reserved : [reserved]).map(String).filter(Boolean));
 
   const ROOT = {};
   const pendingPersist = new Map();
@@ -214,6 +222,7 @@ export function createStore({
     const loaded = [];
     for (const f of files) {
       if (!f.endsWith('.json')) continue;
+      if (RESERVED.has(f.slice(0, -5))) continue;
       try {
         const text = await fsp.readFile(path.join(dataDir, f), 'utf8');
         const branch = f.slice(0, -5);
@@ -469,6 +478,13 @@ export function createStore({
   }
 
   function applyMutation(kind, p, value) {
+    if (RESERVED.size) {
+      const top = topKeyOf(p);
+      if (top !== null && RESERVED.has(top)) return undefined;
+      if (top === null && kind === 'update' && value && typeof value === 'object') {
+        value = Object.fromEntries(Object.entries(value).filter(([k]) => !RESERVED.has(splitPath(k)[0])));
+      }
+    }
     stats.writes++;
     //  ⚠️ خبر دادن هیچ‌وقت نوشتن را نمی‌خواباند: دفتر اصل است، نبض رفاه
     if (onWrite) { try { onWrite(p); } catch { /* گذرگاه کسی را نمی‌خواباند */ } }
