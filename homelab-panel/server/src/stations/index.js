@@ -38,6 +38,7 @@ import { attachHeartbeat } from '../lib/ws-heartbeat.js';
 import { createStore } from '../sitesync/store.js';
 import { bumpSoon } from '../live/bus.js';
 import { createAlertPusher } from './alert-push.js';
+import { isLocalPeer, extraNetsFromEnv } from '../lib/lan-guard.js';
 
 /** شاخه‌ای که برنامهٔ نیتیو می‌نویسد و بقیه فقط می‌خوانند */
 export const LIVE_BRANCH = 'live';
@@ -80,13 +81,11 @@ export function isLocalRequest(req) {
    */
   const ip = clientIp(req);
   if (!ip) return false;
-  if (ip === '127.0.0.1' || ip === '::1' || ip === 'localhost') return true;
-  if (/^10\./.test(ip)) return true;
-  if (/^192\.168\./.test(ip)) return true;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return true;
-  if (/^169\.254\./.test(ip)) return true;
-  if (/^f[cd][0-9a-f]{2}:/i.test(ip)) return true; // fc00::/7 — شبکهٔ محلیِ IPv6
-  return false;
+  if (ip === 'localhost') return true;
+  //  ⛔ «شبکهٔ خانه» یک تعریف دارد — همان نگهبانِ درِ پنل (‎lib/lan-guard.js‎،
+  //  با ‎HLP_PANEL_NETS‎ برای شبکهٔ غیرعادی). دو فهرستِ جدا یعنی روزی پنل
+  //  برنامهٔ پمپ را راه می‌دهد و ثبتِ پمپ ردش می‌کند (۱۴۰۵/۰۷/۱۳، سنجهٔ ‎lanreach‎).
+  return isLocalPeer(ip, extraNetsFromEnv());
 }
 
 /**
