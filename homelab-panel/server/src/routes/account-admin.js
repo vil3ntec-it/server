@@ -645,7 +645,42 @@ router.get('/pump-accounts/:id', guard(async (req, res) => {
       lastSeenAt: d.last_seen_at ? Number(d.last_seen_at) : 0,
       revoked: Boolean(d.revoked) || d.status === 'revoked',
     })),
+    //  ⛔ **کامپیوترهای خودِ پمپ** (۱۴۰۵/۰۷/۱۳). سرورِ حساب آن‌ها را از قبل
+    //  می‌داد (`station_devices`) و این‌جا دور ریخته می‌شد؛ «دستگاه‌ها»ی
+    //  بالا دستگاه‌های **ورودِ** صاحبِ حساب‌اند، نه کامپیوترهایی که به پمپ
+    //  ثبت شده‌اند. پس کامپیوتری که جدا شده بود («این کامپیوتر از پمپ جدا
+    //  شده است») در پنل دیده نمی‌شد و هیچ راهی برای برگرداندنش نبود.
+    computers: (Array.isArray(detail.devices) ? detail.devices : []).map((d) => ({
+      id: d.id,
+      uid: d.deviceUid || '',
+      name: d.name || d.platform || '',
+      platform: d.platform || '',
+      createdAt: Number(d.createdAt) || 0,
+      lastSeenAt: Number(d.lastSeenAt) || 0,
+      revoked: d.status === 'revoked',
+    })),
+    deviceLimit: Number(detail.deviceLimit) || 0,
   });
+}));
+
+/**
+ * جدا کردن و برگرداندنِ یک کامپیوترِ پمپ (۱۴۰۵/۰۷/۱۳).
+ *
+ * ⛔ تصمیم روی خودِ سرورِ حساب است (`POST /api/admin/pump/stations/:id/devices/
+ * :deviceId/:action` با سقفِ دستگاه و دفترِ رخداد)؛ این‌جا فقط پل است و فقط
+ * نقشِ `admin`. **هیچ داده‌ای پاک نمی‌شود** — فقط راهِ آن کامپیوتر به سرور
+ * بسته یا باز می‌شود. برگرداندن تنها راهِ کامپیوتری است که «از پمپ جدا شده»
+ * و خودش دوباره ثبت نمی‌شود (`device_revoked`).
+ */
+router.post('/pump-accounts/:id/computers/:deviceId/:action', requireRole('admin'), guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const deviceId = idOf(req.params.deviceId);
+  const action = String(req.params.action || '');
+  if (!['revoke', 'restore'].includes(action)) return res.status(404).json({ error: 'not_found', message: 'این مسیر وجود ندارد' });
+  const out = await cloudRaw('POST', `/api/admin/pump/stations/${id}/devices/${deviceId}/${action}`, { body: {} });
+  audit({ actor: actorOf(req), action: action === 'revoke' ? 'account.pump_computer_revoked' : 'account.pump_computer_restored',
+    entity: 'pump', entityId: id, detail: { deviceId } });
+  res.json(out);
 }));
 
 /** تاریخچهٔ اشتراکِ یک حساب — چه کسی کِی چه کرد. */

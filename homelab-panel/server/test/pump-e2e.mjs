@@ -329,7 +329,7 @@ try {
   const bind = await call('POST', '/api/pump/device/bind', {
     token: access, body: { device: { uid, name: 'E2E', platform: 'windows' } },
   });
-  const devTok = bind.json?.token || bind.json?.deviceToken || '';
+  let devTok = bind.json?.token || bind.json?.deviceToken || '';
   check('POST /api/pump/device/bind ⇒ توکنِ دستگاه', devTok.length > 0,
     `${bind.status} ${bind.text.slice(0, 220)}`);
   check('و کلیدِ عمومی همراهش آمد (قفلِ TOFU)', (bind.json?.publicKey || '').length > 0,
@@ -637,6 +637,52 @@ try {
     check('⚠️ و مجوز همچنان امضاشده و کلیددار است',
       String(afterGone.json?.license || '').split('.').length === 3
       && String(afterGone.json?.publicKey || '').length > 0);
+
+    //  ── ۸ب۲) کامپیوترهای پمپ در پنل: دیدن، جدا کردن، برگرداندن ──────────
+    //  ⛔ (۱۴۰۵/۰۷/۱۳) پنل «دستگاه‌های ورودِ» صاحبِ حساب را نشان می‌داد، نه
+    //  کامپیوترهایی که به پمپ ثبت شده‌اند؛ و کامپیوترِ جداشده («این کامپیوتر
+    //  از پمپ جدا شده است») هیچ راهِ برگشتی نداشت — برنامهٔ پمپ فقط می‌گفت
+    //  «ثبت نشده». همان راهِ کاربر، روی سرورِ واقعی:
+    console.log('\n── ۸ب۲) کامپیوترهای پمپ در پنل: جدا کردن و برگرداندن ──');
+    {
+      const prof = await panel('GET', `/api/account-admin/pump-accounts/${target?.tenantId}`);
+      const comps = prof.json?.computers || [];
+      const mine = comps.find((c) => c.uid === uid);
+      check('پنل کامپیوترِ ثبت‌شدهٔ همین پمپ را نشان می‌دهد', prof.status === 200 && Boolean(mine),
+        `${prof.status} ${JSON.stringify(comps).slice(0, 200)}`);
+      check('و سقفِ کامپیوترها را می‌گوید', Number(prof.json?.deviceLimit) > 0, String(prof.json?.deviceLimit));
+
+      const off = await panel('POST', `/api/account-admin/pump-accounts/${target?.tenantId}/computers/${mine?.id}/revoke`, {});
+      check('«جدا کردن» از پنل', off.status === 200, `${off.status} ${off.text.slice(0, 160)}`);
+      const dead = await call('GET', '/api/pump/device/me', { token: devTok });
+      check('⇒ توکنِ همان کامپیوتر همان لحظه مُرد (کدِ صریح، نه خطای مبهم)',
+        dead.status === 401 || dead.status === 403, `${dead.status} ${dead.text.slice(0, 160)}`);
+      //  ⚠️ نشستِ بالا در بندِ «خروج» باطل شد؛ صاحبِ پمپ دوباره وارد می‌شود
+      const relog = await call('POST', '/api/auth/login', { body: { email, password, app: 'pump' } });
+      const acc2 = relog.json?.accessToken || '';
+      check('صاحبِ پمپ دوباره وارد شد', acc2.length > 0, `${relog.status} ${relog.text.slice(0, 120)}`);
+      const again = await call('POST', '/api/pump/device/bind',
+        { token: acc2, body: { device: { uid, name: 'E2E', platform: 'windows' } } });
+      check('⇒ و خودش دوباره ثبت نمی‌شود (device_revoked)',
+        again.status === 403 && again.json?.error?.code === 'device_revoked', `${again.status} ${again.text.slice(0, 160)}`);
+      const prof2 = await panel('GET', `/api/account-admin/pump-accounts/${target?.tenantId}`);
+      check('⇒ پنل آن را «جدا شده» نشان می‌دهد',
+        (prof2.json?.computers || []).some((c) => c.id === mine?.id && c.revoked));
+
+      const on = await panel('POST', `/api/account-admin/pump-accounts/${target?.tenantId}/computers/${mine?.id}/restore`, {});
+      check('«برگرداندن» از پنل', on.status === 200, `${on.status} ${on.text.slice(0, 160)}`);
+      const back = await call('POST', '/api/pump/device/bind',
+        { token: acc2, body: { device: { uid, name: 'E2E', platform: 'windows' } } });
+      const newTok = back.json?.deviceToken || back.json?.token || '';
+      check('⇒ همان کامپیوتر دوباره ثبت شد و مجوز گرفت',
+        (back.status === 200 || back.status === 201) && newTok.length > 0, `${back.status} ${back.text.slice(0, 160)}`);
+      const alive = await call('GET', '/api/pump/device/me', { token: newTok });
+      check('⇒ و توکنِ تازه‌اش کار می‌کند', alive.status === 200, `${alive.status}`);
+      //  بقیهٔ سنجه با همین کامپیوترِ برگشته ادامه می‌دهد
+      if (newTok) devTok = newTok;
+      const bad = await panel('POST', `/api/account-admin/pump-accounts/${target?.tenantId}/computers/${mine?.id}/wipe`, {});
+      check('⛔ کارِ ناشناخته (جز جدا/برگرداندن) پذیرفته نمی‌شود', bad.status === 404, `${bad.status}`);
+    }
 
     //  ── ۸ج) زبانهٔ «اشتراک‌ها»ی برنامهٔ ادمینِ اندروید — همان راه، همان نام‌ها ──
     //  ⛔ «اشتراک بده»ِ قدیمیِ آن برنامه شناسهٔ کاربر را به‌جای پمپ می‌فرستاد، با

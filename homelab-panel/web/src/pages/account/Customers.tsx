@@ -283,7 +283,7 @@ export default function Customers({ fixedApp, embedded = false }: { fixedApp?: A
                */
               const sell = () => setGrant({ app: r.app, q: r.ownerEmail || r.tenantName || '' });
               return (
-                <Row key={`${r.app}-${r.id}`} onClick={() => (r.neverSubscribed ? sell() : setOpen(r))}>
+                <Row key={`${r.app}-${r.id}`} onClick={() => setOpen(r)}>
                   <Cell>
                     <p className="font-medium text-ink">{r.tenantName || r.ownerName || '—'}</p>
                     <p className="text-[11px] text-ink-muted">
@@ -298,16 +298,21 @@ export default function Customers({ fixedApp, embedded = false }: { fixedApp?: A
                   <Cell className="tnum">{r.price == null ? '—' : money(r.price, r.currency)}</Cell>
                   <Cell className="tnum">{money(r.paid, r.currency)}</Cell>
                   <Cell>
-                    {r.neverSubscribed ? (
-                      <button
-                        className="btn btn-primary btn-sm"
-                        onClick={(e) => { e.stopPropagation(); sell(); }}
-                      >
-                        دادنِ اشتراک
-                      </button>
-                    ) : (
+                    {/*  ⛔ پرونده برای **هر** ردیف (۱۴۰۵/۰۷/۱۳): حسابِ تازه‌ای که
+                         هنوز چیزی نخریده (همهٔ ثبت‌نام‌های تازه، در دورهٔ آزمایشی)
+                         پرونده نداشت — پس نه کامپیوترهایش دیده می‌شد، نه «حذفِ
+                         کاملِ حساب» به آن می‌رسید. */}
+                    <div className="flex gap-1.5">
+                      {r.neverSubscribed && (
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={(e) => { e.stopPropagation(); sell(); }}
+                        >
+                          دادنِ اشتراک
+                        </button>
+                      )}
                       <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); setOpen(r); }}>پرونده</button>
-                    )}
+                    </div>
                   </Cell>
                 </Row>
               );
@@ -468,10 +473,12 @@ function Profile({
   const shop = useLoad<ShopProfile>(app === 'shop' ? `/api/account-admin/shop-accounts/${row.tenantId}` : null);
   const pump = useLoad<PumpProfile>(app === 'pump' ? `/api/account-admin/pump-accounts/${row.tenantId}` : null);
   const pays = useLoad<{ payments: Payment[] }>(`/api/account-admin/payments?app=${app}&tenantId=${encodeURIComponent(row.tenantId)}`);
-  const addons = useLoad<{ addons: Addon[] }>(`/api/account-admin/subs/${app}/${row.id}/addons`);
+  //  حسابی که هنوز اشتراکی نخریده، اشتراکی ندارد که افزونه یا تمدید داشته باشد
+  const addons = useLoad<{ addons: Addon[] }>(row.neverSubscribed ? null : `/api/account-admin/subs/${app}/${row.id}/addons`);
   const history = useLoad<{ history: Record<string, unknown>[] }>(`/api/account-admin/customers/${app}/${row.tenantId}/history`);
 
   const devices = (app === 'shop' ? shop.data?.devices : pump.data?.devices) || [];
+  const computers = pump.data?.computers || [];
   const owner = app === 'shop'
     ? { name: shop.data?.account.ownerName || row.ownerName, email: shop.data?.account.email || row.ownerEmail, phone: shop.data?.account.phone || row.ownerPhone }
     : { name: pump.data?.owner?.name || row.ownerName, email: pump.data?.owner?.email || row.ownerEmail, phone: pump.data?.owner?.phone || row.ownerPhone };
@@ -502,6 +509,7 @@ function Profile({
         onChange={setTab}
         tabs={[
           { id: 'overview', label: 'اشتراک' },
+          ...(app === 'pump' ? [{ id: 'computers', label: 'کامپیوترهای پمپ', badge: computers.length }] : []),
           { id: 'devices', label: 'دستگاه‌ها', badge: devices.length },
           { id: 'payments', label: 'پرداخت‌ها', badge: pays.data?.payments.length },
           { id: 'notes', label: 'یادداشت و تاریخچه' },
@@ -530,6 +538,9 @@ function Profile({
               <p className="text-xs text-ink-muted">قابلیت‌های پلن: {row.features.join(' · ')}</p>
             )}
 
+            {row.neverSubscribed ? (
+              <Notice tone="info">این حساب هنوز اشتراکی نخریده؛ برای فروش، «دادنِ اشتراک» را در فهرست بزنید.</Notice>
+            ) : (<>
             <div>
               <p className="label">افزونه‌ها (قابلیتِ فروخته‌شدهٔ جدا)</p>
               {addons.busy && !addons.data ? <Skeleton rows={1} /> : (addons.data?.addons.length ? (
@@ -553,16 +564,57 @@ function Profile({
               ))}
               <DiscountButton row={row} onDone={onChanged} />
             </div>
+            </>)}
           </div>
         )
+      )}
+
+      {tab === 'computers' && app === 'pump' && (
+        <div className="flex flex-col gap-3">
+          <Notice tone="info">
+            کامپیوترهایی که برنامهٔ پمپ رویشان به همین پمپ ثبت شده
+            {pump.data?.deviceLimit ? <> — سقف: <b>{fa(pump.data.deviceLimit)}</b></> : null}.
+            «جدا کردن» فقط راهِ آن کامپیوتر به سرور را می‌بندد و <b>هیچ داده‌ای پاک نمی‌شود</b>؛
+            کامپیوترِ جداشده خودش دوباره ثبت نمی‌شود و فقط «برگرداندن» بازش می‌کند.
+          </Notice>
+          {computers.length === 0 ? (
+            <Empty icon={<Smartphone className="h-6 w-6" />} title="هیچ کامپیوتری به این پمپ ثبت نشده"
+              hint="برنامهٔ پمپ با ورود به همین حساب و زدنِ نامِ پمپ خودش ثبت می‌شود." />
+          ) : (
+            <Table head={['کامپیوتر', 'ثبت', 'آخرین اتصال', 'حال', '']}>
+              {computers.map((c) => (
+                <Row key={c.id}>
+                  <Cell>{c.name || '—'}</Cell>
+                  <Cell>{day(c.createdAt)}</Cell>
+                  <Cell>{moment(c.lastSeenAt)}</Cell>
+                  <Cell><Badge tone={c.revoked ? 'bad' : 'good'}>{c.revoked ? 'جدا شده' : 'فعال'}</Badge></Cell>
+                  <Cell>
+                    <ActionButton
+                      className={c.revoked ? 'btn btn-sm btn-primary' : 'btn btn-sm'}
+                      busyLabel="…"
+                      onClick={async () => {
+                        try {
+                          await api(`/api/account-admin/pump-accounts/${row.tenantId}/computers/${c.id}/${c.revoked ? 'restore' : 'revoke'}`, { body: {} });
+                          toast(c.revoked ? 'کامپیوتر برگشت — برنامه در اولین اتصال خودش دوباره ثبت می‌شود' : 'کامپیوتر از پمپ جدا شد');
+                          await pump.reload();
+                        } catch (e) { toast(e instanceof Error ? e.message : 'نشد', 'bad'); }
+                      }}
+                    >
+                      {c.revoked ? 'برگرداندن' : 'جدا کردن'}
+                    </ActionButton>
+                  </Cell>
+                </Row>
+              ))}
+            </Table>
+          )}
+        </div>
       )}
 
       {tab === 'devices' && (
         <div className="flex flex-col gap-3">
           <Notice tone="info">
-            آزاد کردنِ دستگاه از این‌جا ممکن نیست: سرورِ حساب مسیرِ مدیریتی برای باطل کردنِ دستگاه ندارد و
-            خودِ مشتری از «حسابِ من» در برنامه یا از پورتالِ خودش دستگاه را آزاد می‌کند. این فهرست فقط
-            می‌گوید چه دستگاهی و کِی وصل شده — تا وقتی مشتری زنگ می‌زند، جواب حدس نباشد.
+            دستگاه‌هایی که صاحبِ حساب با آن‌ها <b>وارد شده</b> (ورود با ایمیل). خودِ مشتری از «حسابِ من» در
+            برنامه یا از پورتالش آزادشان می‌کند.{app === 'pump' ? ' کامپیوترهای ثبت‌شده به پمپ در زبانهٔ «کامپیوترهای پمپ» هستند.' : ''}
           </Notice>
           {devices.length === 0 ? (
             <Empty icon={<Smartphone className="h-6 w-6" />} title="هیچ دستگاهی ثبت نشده" />

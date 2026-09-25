@@ -66,6 +66,14 @@ export type PumpProfile = {
   subscription: Record<string, unknown> | null;
   files: { path: string; rev: number; size: number; updatedAt: number }[];
   devices: DeviceRow[];
+  /** کامپیوترهای ثبت‌شده به همین پمپ — نه دستگاه‌های ورودِ صاحب حساب. */
+  computers?: PumpComputer[];
+  deviceLimit?: number;
+};
+
+export type PumpComputer = {
+  id: string; uid: string; name: string; platform: string;
+  createdAt: number; lastSeenAt: number; revoked: boolean;
 };
 
 export type Payment = {
