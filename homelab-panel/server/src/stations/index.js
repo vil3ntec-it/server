@@ -38,6 +38,7 @@ import { attachHeartbeat } from '../lib/ws-heartbeat.js';
 import { createStore } from '../sitesync/store.js';
 import { bumpSoon } from '../live/bus.js';
 import { createAlertPusher } from './alert-push.js';
+import { createStationChat, CHAT_BRANCH } from './chat.js';
 import { isLocalPeer, extraNetsFromEnv } from '../lib/lan-guard.js';
 
 /** شاخه‌ای که برنامهٔ نیتیو می‌نویسد و بقیه فقط می‌خوانند */
@@ -108,6 +109,9 @@ export function createStations({ dataDir, enroll = 'lan' } = {}) {
     dirFor,
     read: (code) => stores.get(code)?.read(LIVE_BRANCH),
   });
+  //  ⛔ «گروهِ کارکنان» — دفترِ جدای هر پمپ (‎chat.js‎)؛ هر نوشتنش همان
+  //  موضوعِ «پمپ‌ها»ی گذرگاهِ زنده را بیدار می‌کند، با همان ‎bumpSoon‎.
+  const chat = createStationChat({ dirFor, onChange: () => bumpSoon('stations', 400) });
   /** کدِ پمپ → رمزِ فقط‌خواندنیِ همان پمپ */
   const readKeys = new Map();
 
@@ -202,6 +206,8 @@ export function createStations({ dataDir, enroll = 'lan' } = {}) {
       key,
       label: name.trim() || key,
       dataDir: dirFor(key),
+      //  ⛔ ‎chat.json‎ مالِ ‎chat.js‎ است، نه این دفتر
+      reserved: [CHAT_BRANCH],
       //  ⛔ و نوشتنِ ‎live‎ خبرهای تازه را به گوشیِ **بسته** هم می‌رساند
       //  (‎alert-push.js‎) — تنها راهِ خبر گرفتنِ آیفونِ بسته.
       onWrite: (p) => {
@@ -255,6 +261,7 @@ export function createStations({ dataDir, enroll = 'lan' } = {}) {
     store.stop?.();
     stores.delete(key);
     readKeys.delete(key);
+    chat.forget(key);
     await fsp.rm(dirFor(key), { recursive: true, force: true });
     return true;
   }
@@ -492,6 +499,7 @@ export function createStations({ dataDir, enroll = 'lan' } = {}) {
     enroll: enrollStation,
     accessOf,
     readKeyOf,
+    chat,
     rotateReadKey,
     createPairing,
     pendingPairings,
