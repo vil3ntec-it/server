@@ -97,13 +97,18 @@ try {
 
   /* ────────────────────────── ثبت و مهاجرت ────────────────────────────── */
   console.log('\n── ثبتِ کارها ──');
+  //  ⚠️ «در آینده» نسبت به لحظهٔ **پرسیدن**، با یک تیکِ زمان‌بند ارفاق: کاری
+  //  که سرِ دقیقه‌اش رسیده ولی تیکِ بعدی هنوز نزده، سالم است. سنجهٔ قبلی
+  //  `Date.now()`ِ پس از پاسخ را می‌گرفت و سرِ مرزِ دقیقه گاهی سرخ می‌شد
+  //  (CI، ۱۴۰۵/۰۷/۰۳: health-check درست ۶۶ میلی‌ثانیه پیش از سنجش سررسید).
+  const askedAt = Date.now();
   const jobs = (await api('GET', '/api/automation/jobs')).json?.items || [];
   const names = jobs.map((j) => j.name);
   for (const n of REQUIRED) check(`کارِ «${n}» ثبت شده`, names.includes(n));
   check('همه از اول روشن‌اند', REQUIRED.every((n) => jobs.find((j) => j.name === n)?.enabled === true));
   const withSchedule = jobs.filter((j) => j.trigger === 'schedule');
   check('هر کارِ زمان‌بندی‌شده next_run_at دارد و در آینده است',
-    withSchedule.length >= 9 && withSchedule.every((j) => j.next_run_at > Date.now()), JSON.stringify(withSchedule.map((j) => [j.name, j.next_run_at])));
+    withSchedule.length >= 9 && withSchedule.every((j) => j.next_run_at > askedAt - 60_000), JSON.stringify(withSchedule.map((j) => [j.name, j.next_run_at])));
   check('گزارشِ صبحگاهی ساعتش را از تنظیماتِ دستیار می‌گیرد', jobs.find((j) => j.name === 'agent-morning-report')?.schedule === '0 8 * * *');
   check('کارهای رویدادی next_run_at ندارند', jobs.filter((j) => j.trigger === 'event').every((j) => j.next_run_at == null));
   check('کارهای هر ۳۰ ثانیه فاصلهٔ ثابت دارند', ['metrics', 'thermal-guard'].every((n) => jobs.find((j) => j.name === n)?.every === 30000));
