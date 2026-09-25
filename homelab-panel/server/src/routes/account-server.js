@@ -75,7 +75,10 @@ router.get('/update', async (req, res) => {
  */
 router.post('/update', requireRole('admin'), async (req, res) => {
   const out = await applyBundle({ actor: req.user?.username || 'admin' });
-  res.status(out.ok ? 200 : 400).json(out);
+  //  ⚠️ `detail` همان چیزی است که رابط به کاربر نشان می‌دهد (`ApiError`)،
+  //  پس جملهٔ آدمیزاد (`why`) آن‌جا می‌نشیند، نه خروجیِ خامِ `tar`.
+  if (!out.ok) return res.status(400).json({ ...out, error: out.code || 'update_failed', detail: out.why || 'به‌روزرسانی نشد' });
+  res.json(out);
 });
 
 export default router;
