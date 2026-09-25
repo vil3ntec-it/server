@@ -18,7 +18,7 @@ import { Badge, Card, ConfirmDialog, Empty, Modal, Skeleton, toast } from '../..
 import { ActionButton, Cell, KV, Notice, Row, Select, Stat, Table, Tabs } from '../../control/ui';
 import {
   APP_LABEL, AppPicker, CloudProblem, PageHead, STATUS_LABEL,
-  day, daysTone, fa, moment, money, useLoad, type AppId, type Scope,
+  day, daysTone, fa, moment, money, periodEnd, useLoad, type AppId, type Scope,
 } from './shared';
 import GrantSub from './GrantSub';
 import type { Addon, Payment, PumpProfile, ShopProfile, SubRow } from './types';
@@ -82,6 +82,8 @@ export default function Customers({ fixedApp, embedded = false }: { fixedApp?: A
   const [q, setQ] = useState(params.get('q') || '');
   const [open, setOpen] = useState<SubRow | null>(null);
   const [ask, setAsk] = useState<{ deed: Deed; row: SubRow } | null>(null);
+  //  تمدید با مدتِ دلخواه — پنجرهٔ خودش، نه پرسشِ «مطمئنید؟»
+  const [extend, setExtend] = useState<SubRow | null>(null);
   //  ⛔ «اشتراک بده» — تا ۱۴۰۵/۰۷/۰۸ این صفحه فقط کارهای روی اشتراکِ
   //  **موجود** را داشت (تمدید، تعلیق، لغو…). دادنِ اشتراکِ **اول** هیچ دری
   //  نداشت، چون این فهرست از `sales/subscriptions` می‌آید و حسابِ تازه‌ای
@@ -144,9 +146,12 @@ export default function Customers({ fixedApp, embedded = false }: { fixedApp?: A
 
   const deeds: Deed[] = [
     {
+      //  ⛔ «تمدید یا دلخواه چند وقته» (۱۴۰۵/۰۷/۱۳): مدت را مدیر می‌گوید، نه
+      //  یک ماهِ ثابت. این کار پنجرهٔ خودش را دارد (`ExtendDialog`) و `run`ش
+      //  فقط برای شکلِ یکدست است — از آن‌جا صدا زده می‌شود، با مدتِ برگزیده.
       key: 'extend',
-      label: 'تمدید یک ماه',
-      consequence: 'تاریخِ پایانِ این اشتراک یک ماهِ تقویمی جلو می‌رود. برنامهٔ مشتری در اولین اتصال آن را می‌گیرد؛ کلیدِ تازه‌ای لازم نیست.',
+      label: 'تمدید…',
+      consequence: 'تاریخِ پایانِ این اشتراک به اندازهٔ مدتِ برگزیده جلو می‌رود. برنامهٔ مشتری در اولین اتصال آن را می‌گیرد؛ کلیدِ تازه‌ای لازم نیست.',
       run: (r) => api(`/api/account-admin/subs/${r.app}/${r.id}/extend`, { body: { amount: 1, unit: 'month' } }),
     },
     {
@@ -315,7 +320,7 @@ export default function Customers({ fixedApp, embedded = false }: { fixedApp?: A
           row={open}
           deeds={deeds}
           onClose={() => setOpen(null)}
-          onDeed={(deed, row) => setAsk({ deed, row })}
+          onDeed={(deed, row) => (deed.key === 'extend' ? setExtend(row) : setAsk({ deed, row }))}
           onChanged={after}
         />
       )}
@@ -333,6 +338,14 @@ export default function Customers({ fixedApp, embedded = false }: { fixedApp?: A
         startApp={grant?.app}
         startQuery={grant?.q}
       />
+
+      {extend && (
+        <ExtendDialog
+          row={extend}
+          onClose={() => setExtend(null)}
+          onDone={async () => { setExtend(null); await after(); setOpen(null); }}
+        />
+      )}
 
       <ConfirmDialog
         open={Boolean(ask)}
@@ -355,6 +368,86 @@ export default function Customers({ fixedApp, embedded = false }: { fixedApp?: A
         }}
       />
     </div>
+  );
+}
+
+/* ------------------------ تمدید با مدتِ دلخواه --------------------------- */
+
+const UNIT_FA: Record<string, string> = { day: 'روز', week: 'هفته', month: 'ماه', year: 'سال' };
+const PRESETS: { amount: number; unit: string; label: string }[] = [
+  { amount: 1, unit: 'month', label: '۱ ماه' },
+  { amount: 3, unit: 'month', label: '۳ ماه' },
+  { amount: 6, unit: 'month', label: '۶ ماه' },
+  { amount: 1, unit: 'year', label: '۱ سال' },
+];
+
+/**
+ *  «تمدید یا دلخواه چند وقته به طرف داد» — چهار دکمهٔ آماده و یک مدتِ دستی.
+ *  ⛔ عدد را سرورِ حساب حساب می‌کند (`/extend` با `amount`/`unit`)؛ تاریخِ
+ *  روی این پنجره فقط پیش‌نمایشِ همان قاعده است تا مدیر پیش از زدن ببیند.
+ */
+function ExtendDialog({ row, onClose, onDone }: { row: SubRow; onClose: () => void; onDone: () => Promise<void> }) {
+  const [amount, setAmount] = useState('1');
+  const [unit, setUnit] = useState('month');
+  const n = Math.max(1, Math.floor(Number(amount) || 0));
+  const preview = periodEnd(row.endsAt, n, unit);
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`تمدیدِ اشتراک — ${row.tenantName || row.ownerName || '—'}`}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>انصراف</button>
+          <ActionButton
+            className="btn btn-primary"
+            busyLabel="…"
+            onClick={async () => {
+              try {
+                await api(`/api/account-admin/subs/${row.app}/${row.id}/extend`, { body: { amount: n, unit } });
+                toast(`تمدید شد — ${fa(n)} ${UNIT_FA[unit] || unit}`);
+                await onDone();
+              } catch (e) {
+                toast(e instanceof Error ? e.message : 'نشد', 'bad');
+              }
+            }}
+          >
+            تمدید کن
+          </ActionButton>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap gap-1.5">
+          {PRESETS.map((p) => {
+            const on = n === p.amount && unit === p.unit;
+            return (
+              <button
+                key={p.label}
+                className={on ? 'btn btn-sm btn-primary' : 'btn btn-sm'}
+                onClick={() => { setAmount(String(p.amount)); setUnit(p.unit); }}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-end gap-2">
+          <div className="w-28">
+            <label className="label">مدتِ دلخواه</label>
+            <input className="input w-full" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </div>
+          <div className="w-32">
+            <Select value={unit} onChange={setUnit} options={Object.entries(UNIT_FA).map(([value, label]) => ({ value, label }))} />
+          </div>
+        </div>
+        <Notice tone="info">
+          پایانِ فعلی: <b>{row.permanent ? 'دائمی' : row.endsAt ? day(row.endsAt) : '—'}</b>
+          {' '}⇒ پایانِ تازه: <b>{day(preview)}</b>. مدت از پایانِ فعلی جلو می‌رود (و اگر تمام شده، از امروز).
+          برنامهٔ مشتری در اولین اتصال آن را می‌گیرد؛ کلیدِ تازه‌ای لازم نیست.
+        </Notice>
+      </div>
+    </Modal>
   );
 }
 

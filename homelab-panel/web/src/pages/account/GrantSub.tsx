@@ -30,7 +30,7 @@ import { api } from '../../api';
 import { Badge, Empty, Modal, Skeleton, toast } from '../../components/ui';
 import { Cell, Notice, Row, Table } from '../../control/ui';
 import {
-  APP_LABEL, AppPicker, CloudProblem, STATUS_LABEL, day, fa, money, useLoad, type AppId,
+  APP_LABEL, AppPicker, CloudProblem, STATUS_LABEL, day, fa, money, periodEnd, useLoad, type AppId,
 } from './shared';
 import type { Plan } from './types';
 
@@ -82,6 +82,15 @@ export default function GrantSub({ open, onClose, onDone, startApp, startQuery }
   const [plan, setPlan] = useState<Plan | null>(null);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  /*
+   *  ⛔ «دلخواه چند وقته به طرف داد» (۱۴۰۵/۰۷/۱۳): مدت به‌طورِ پیش‌فرض همان
+   *  مدتِ پلن است (سرور از خودِ پلن می‌خواند)، ولی مدیر می‌تواند مدتِ دیگری
+   *  بگوید — آن‌وقت فقط `endsAt` فرستاده می‌شود و پلن و قابلیت‌ها همان
+   *  می‌مانند، تا باگِ «استاندارد دادم، وی‌آی‌پی گرفت» برنگردد.
+   */
+  const [customSpan, setCustomSpan] = useState(false);
+  const [spanAmount, setSpanAmount] = useState('1');
+  const [spanUnit, setSpanUnit] = useState('month');
 
   /*
    *  ⚠️ جست‌وجو دستِ **سرورِ حساب** است، نه فیلترِ محلی: فهرستِ کاملِ
@@ -108,7 +117,7 @@ export default function GrantSub({ open, onClose, onDone, startApp, startQuery }
     () => (plans.data?.plans || []).filter((p) => p.active && !/^free$/i.test(p.code)),
     [plans.data]);
 
-  const reset = () => { setPicked(null); setPlan(null); setNote(''); setQ(''); };
+  const reset = () => { setPicked(null); setPlan(null); setNote(''); setQ(''); setCustomSpan(false); setSpanAmount('1'); setSpanUnit('month'); };
 
   const close = () => { reset(); onClose(); };
 
@@ -122,8 +131,12 @@ export default function GrantSub({ open, onClose, onDone, startApp, startQuery }
        *  درمی‌آیند (`subs.grant`). فرستادنِ `days`ِ دستی فهرستِ قابلیت‌ها
        *  را خالی می‌گذاشت و خالی یعنی «پلنِ کامل».
        */
+      const n = Math.max(1, Math.floor(Number(spanAmount) || 0));
+      const endsAt = customSpan
+        ? periodEnd(picked.status === 'active' ? picked.endsAt : 0, n, spanUnit)
+        : undefined;
       await api(`/api/account-admin/subs/${picked.app}/grant`, {
-        body: { tenantId: picked.tenantId, plan: plan.code, note: note.trim() || undefined },
+        body: { tenantId: picked.tenantId, plan: plan.code, note: note.trim() || undefined, ...(endsAt ? { endsAt } : {}) },
       });
       toast(`اشتراکِ «${plan.title}» برای ${picked.tenantName || picked.ownerName} ثبت شد`);
       reset();
@@ -275,11 +288,31 @@ export default function GrantSub({ open, onClose, onDone, startApp, startQuery }
         {/* ── قدمِ ۳: پیامد، و یادداشت ───────────────────────────── */}
         {picked && plan && (
           <div className="flex flex-col gap-2">
-            <p className="text-xs font-medium text-ink">۳) چه می‌شود</p>
+            <p className="text-xs font-medium text-ink">۳) مدت</p>
+            <div className="flex flex-wrap items-end gap-2">
+              <button className={!customSpan ? 'btn btn-sm btn-primary' : 'btn btn-sm'} onClick={() => setCustomSpan(false)}>
+                مدتِ خودِ پلن — {spanOf(plan)}
+              </button>
+              <button className={customSpan ? 'btn btn-sm btn-primary' : 'btn btn-sm'} onClick={() => setCustomSpan(true)}>
+                مدتِ دلخواه
+              </button>
+              {customSpan && (
+                <>
+                  <input className="input w-24" inputMode="numeric" value={spanAmount} onChange={(e) => setSpanAmount(e.target.value)} />
+                  <select className="input w-28" value={spanUnit} onChange={(e) => setSpanUnit(e.target.value)}>
+                    {Object.entries(UNIT_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </>
+              )}
+            </div>
+            <p className="text-xs font-medium text-ink">۴) چه می‌شود</p>
             <Notice tone="info">
               اشتراکِ «{plan.title || plan.code}» به نامِ <b>{who}</b> ثبت می‌شود
               {picked.ownerEmail ? <> (ایمیلِ صاحب: {picked.ownerEmail})</> : null}.
-              مدت — {spanOf(plan)} — و فهرستِ قابلیت‌ها از خودِ همان پلن برداشته می‌شود، نه از این صفحه.
+              {customSpan
+                ? <> مدت — <b>{fa(Math.max(1, Math.floor(Number(spanAmount) || 0)))} {UNIT_LABEL[spanUnit]}</b>، تا {day(periodEnd(picked.status === 'active' ? picked.endsAt : 0, Math.max(1, Math.floor(Number(spanAmount) || 0)), spanUnit))} — </>
+                : <> مدت — {spanOf(plan)} — </>}
+              و فهرستِ قابلیت‌ها از خودِ همان پلن برداشته می‌شود، نه از این صفحه.
               {picked.endsAt > 0 && picked.status === 'active' && (
                 <> اشتراکِ فعلی تا {day(picked.endsAt)} اعتبار دارد، پس این مدت <b>از همان تاریخ</b> جلو می‌رود، نه از امروز.</>
               )}

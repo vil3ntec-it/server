@@ -122,7 +122,8 @@ try {
    *  کردنِ گروه‌های دیگر می‌دود، چون آن‌ها حالشان را در حافظهٔ مرورگر
    *  نگه می‌دارند و بعدش دیگر «حالتِ پیش‌فرض» نیست.
    */
-  for (const label of ['مشتری‌ها و اشتراک‌ها', 'فروش', 'پلن‌ها و تخفیف‌ها', 'مرکز اعلان', 'پشتیبانی', 'وضعیت Sync']) {
+  //  ⛔ «مشتری‌ها و اشتراک‌ها» و «پلن‌ها و تخفیف‌ها» یک در شدند: «اشتراک‌ها» (۱.۵۰.۱۶)
+  for (const label of ['اشتراک‌ها', 'فروش', 'مرکز اعلان', 'پشتیبانی', 'وضعیت Sync']) {
     check(`«${label}» بدونِ باز کردنِ گروه دیده می‌شود`, firstText.includes(label), firstText.slice(0, 300));
   }
 
@@ -169,17 +170,21 @@ try {
      *  بی داده هم بیاید و صفحه سفید نماند — همان چیزی که کاربر با مودمِ
      *  خاموش می‌بیند.
      */
-    ['/customers', 'مشتری‌ها و اشتراک‌ها'],
+    //  ⛔ همهٔ اشتراک‌ها در یک بخش (۱۴۰۵/۰۷/۱۳)؛ نشانیِ قدیمی به همان می‌رود
+    ['/subscriptions', 'اشتراک‌ها'],
+    ['/subscriptions?app=pump', 'پمپ‌بنزین'],
+    ['/customers', 'اشتراک‌ها'],
     /*
      *  میزِ فروشگاه — بندهای ۴.۱ تا ۴.۴. سه تب، و هر سه باید بی سرورِ
      *  حساب هم قاب و عنوانشان بیاید، نه صفحهٔ سفید.
      */
     ['/shop', 'فروشگاه‌ها'],
     ['/shop?tab=subs', 'اشتراک‌ها'],
-    //  ⛔ اشتراک‌ها داخلِ بخشِ خودِ هر برنامه (۱۴۰۵/۰۷/۱۳) — با دکمهٔ
-    //  «دادنِ اشتراک» و همان فهرستِ «مشتری‌ها و اشتراک‌ها»
-    ['/stations#subs', 'دادنِ اشتراک'],
-    ['/shop?tab=subs#', 'دادنِ اشتراک'],
+    //  ⛔ بخشِ هر برنامه فقط درِ بخشِ مرکزیِ «اشتراک‌ها» است (۱۴۰۵/۰۷/۱۳)
+    ['/stations#subs', 'رفتن به اشتراک‌ها'],
+    ['/shop?tab=subs#', 'رفتن به اشتراک‌ها'],
+    ['/stations#codes', 'رفتن به کدها'],
+    ['/codes?app=pump', 'کدهای زنده — پمپ‌بنزین'],
     ['/shop?tab=codes', 'کدِ شاگرد'],
     ['/sales', 'فروش'],
     ['/plans', 'پلن‌ها و قیمت‌ها'],
@@ -206,7 +211,7 @@ try {
   ];
 
   /*  صفحه‌هایی که از سرورِ حساب می‌خوانند — فقط این‌ها حق دارند ۴۰۹/۵۰۳ بدهند.  */
-  const ACCOUNT_PAGES = new Set(['/shop', '/shop?tab=subs', '/stations#subs', '/shop?tab=subs#', '/shop?tab=codes', '/customers', '/sales', '/plans', '/plans?tab=discounts', '/notices', '/support', '/sync', '/logins', '/discounts',
+  const ACCOUNT_PAGES = new Set(['/subscriptions', '/subscriptions?app=pump', '/codes?app=pump', '/stations#codes', '/shop', '/shop?tab=subs', '/stations#subs', '/shop?tab=subs#', '/shop?tab=codes', '/customers', '/sales', '/plans', '/plans?tab=discounts', '/notices', '/support', '/sync', '/logins', '/discounts',
     '/plans?tab=codes', '/plans?tab=requests', '/customers?tab=visitors', '/account-server', '/account-server?tab=email',
     '/vip-codes', '/visitors']);
 

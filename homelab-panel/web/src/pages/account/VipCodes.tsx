@@ -14,6 +14,7 @@
 //  ⚠️ کدِ دکان و کدِ پمپ دو دفترِ جدا هستند؛ «هر دو» این‌جا معنی ندارد.
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Check, Copy, Ticket } from 'lucide-react';
 
 import { api } from '../../api';
@@ -59,7 +60,10 @@ const STATUS: Record<string, { tone: 'good' | 'warn' | 'bad' | 'neutral'; label:
 };
 
 export default function VipCodes() {
-  const [app, setApp] = useState<AppId>('shop');
+  //  ⚠️ بخشِ آغازین از نشانی (`?app=`) — کسی که از «پمپ‌بنزین‌ها» به بخشِ
+  //  اشتراک‌ها آمده، پلن و کدِ پمپ می‌خواهد، نه دکان. بعدش کادر آزاد است.
+  const [params] = useSearchParams();
+  const [app, setApp] = useState<AppId>(params.get('app') === 'pump' ? 'pump' : 'shop');
   const [making, setMaking] = useState(false);
   const [made, setMade] = useState<Made | null>(null);
   const [revoke, setRevoke] = useState<VipCode | null>(null);

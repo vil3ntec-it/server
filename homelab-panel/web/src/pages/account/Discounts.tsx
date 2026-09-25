@@ -8,6 +8,7 @@
 //     («این کد روی این پلن چقدر می‌شود؟») کارِ خودِ سرورِ حساب است.
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Megaphone, Ticket } from 'lucide-react';
 
 import { api } from '../../api';
@@ -17,7 +18,10 @@ import { APP_LABEL, AppPicker, CloudProblem, PageHead, day, fa, fromLocalInput, 
 import type { Campaign, CampaignStats, DiscountCode } from './types';
 
 export default function Discounts() {
-  const [app, setApp] = useState<Scope>('both');
+  //  ⚠️ بخشِ آغازین از نشانی (`?app=`)، مثلِ بقیهٔ تب‌های «اشتراک‌ها»
+  const [params] = useSearchParams();
+  const fromUrl = params.get('app');
+  const [app, setApp] = useState<Scope>(fromUrl === 'pump' || fromUrl === 'shop' ? fromUrl : 'both');
   const [newCode, setNewCode] = useState(false);
   const [newCampaign, setNewCampaign] = useState(false);
   const [revoke, setRevoke] = useState<DiscountCode | null>(null);
