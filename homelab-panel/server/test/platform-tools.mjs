@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-//  آزمونِ دیتابیس، نسخه‌های Node/Python، و ترمینال
+//  آزمونِ دیتابیس و ترمینال
 //      node test/platform-tools.mjs
 //
 //  روی ماشینی که MySQL و Postgres ندارد هم سبز می‌شود — نبودنشان یک رفتارِ
@@ -15,7 +15,6 @@ import path from 'node:path';
 import { io as ioClient } from 'socket.io-client';
 
 import { validIdent } from '../src/system/database.js';
-import { normalizeVersion, downloadUrlFor } from '../src/system/runtimes.js';
 import * as terminal from '../src/system/terminal.js';
 
 const PORT = Number(process.env.TEST_PORT || 4796);
@@ -50,16 +49,6 @@ check('نقطه‌ویرگول رد می‌شود', !validIdent('db; DROP DATABA
 check('نقطه رد می‌شود (جلوگیری از db.table)', !validIdent('db.table'));
 check('خالی رد می‌شود', !validIdent(''));
 check('بلندتر از ۶۳ نویسه رد می‌شود', !validIdent('a'.repeat(64)));
-
-console.log('\n── نسخهٔ Node ──');
-check('v22.13.0 پذیرفته می‌شود', normalizeVersion('v22.13.0') === 'v22.13.0');
-check('بدونِ v هم پذیرفته و نرمال می‌شود', normalizeVersion('22.13.0') === 'v22.13.0');
-check('نسخهٔ ناقص رد می‌شود', normalizeVersion('22.13') === null);
-check('حرف در نسخه رد می‌شود', normalizeVersion('v22.x.0') === null);
-check('پیمایشِ مسیر در نسخه رد می‌شود', normalizeVersion('../../etc') === null);
-check('تزریقِ مسیر رد می‌شود', normalizeVersion('v1.0.0/../../..') === null);
-const url = downloadUrlFor('v22.13.0');
-check('آدرسِ دانلود فقط به nodejs.org می‌رود', !url || url.startsWith('https://nodejs.org/dist/'), String(url));
 
 /* ─────────────────────────── ترمینال ─────────────────────────────────── */
 
@@ -183,7 +172,7 @@ async function main() {
   }
 
   console.log('\n── در بسته است ──');
-  for (const url of ['/api/databases/clients', '/api/runtimes/node']) {
+  for (const url of ['/api/databases/clients']) {
     const r = await api('GET', url, undefined, { noAuth: true });
     check(`${url} بدونِ توکن ۴۰۱ می‌دهد`, r.status === 401, r.text);
   }
@@ -212,18 +201,6 @@ async function main() {
 
   r = await api('POST', '/api/databases/mysql/users', { name: 'app', password: '123' });
   check('رمزِ ضعیف رد می‌شود', r.status === 400 && r.json?.error === 'weak_password', r.text);
-
-  console.log('\n── نسخه‌های Node ──');
-  r = await api('GET', '/api/runtimes/node');
-  check('فهرستِ نسخه‌ها می‌آید', r.status === 200 && Array.isArray(r.json?.items), r.text);
-  check('نسخهٔ در حالِ اجرا هست', (r.json?.items || []).some((i) => i.current), r.text);
-  check('نسخهٔ سیستمی حذف‌شدنی نیست', (r.json?.items || []).every((i) => !i.current || i.removable === false), r.text);
-
-  r = await api('POST', '/api/runtimes/node/install', { version: '../../etc/passwd' });
-  check('نسخهٔ نامعتبر برای نصب ۴۰۰ می‌گیرد', r.status === 400, `${r.status} ${r.text}`);
-
-  r = await api('GET', '/api/runtimes/python');
-  check('فهرستِ پایتون می‌آید', r.status === 200 && Array.isArray(r.json?.items), r.text);
 
   console.log('\n── ترمینال از راهِ سوکت ──');
   const adminSocket = await connectSocket(token);
