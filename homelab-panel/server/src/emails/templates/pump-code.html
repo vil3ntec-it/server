@@ -1,0 +1,454 @@
+<title>کد ورود ویلن</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700;900&family=IBM+Plex+Mono:wght@600;700&family=Space+Grotesk:wght@500;700&display=swap">
+<style>
+  :root {
+    --cream:      #FBF6EC;
+    --cream-2:    #F5ECDA;
+    --ink:        #1C1509;
+    --ink-soft:   #3A2E1C;
+    --muted:      #6A5840;
+    --gold:       #E8A317;
+    --gold-deep:  #B87A0B;
+    --gold-text:  #86590A;
+    --gold-soft:  #FDF1D4;
+    --red:        #D22B1E;
+    --red-text:   #A81F14;
+    --red-soft:   #FCE5E2;
+    --glass:      rgba(255, 255, 255, 0.74);
+    --glass-2:    rgba(255, 255, 255, 0.58);
+    --edge:       rgba(255, 255, 255, 0.92);
+    --line:       rgba(122, 96, 52, 0.16);
+    --shadow:     0 38px 70px -40px rgba(74, 52, 12, 0.55);
+    --fa:         'Vazirmatn', 'Segoe UI', system-ui, sans-serif;
+    --mono:       'IBM Plex Mono', ui-monospace, 'Courier New', monospace;
+    --lat:        'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding-block: 0 0;
+    background: var(--cream);
+    color: var(--ink);
+    font-family: var(--fa);
+    direction: rtl;
+    text-align: right;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .aura { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+  .aura i {
+    position: absolute; display: block; border-radius: 50%;
+    filter: blur(90px); opacity: 0.55;
+  }
+  .a1 { top: -180px; inset-inline-end: -140px; width: 520px; height: 440px; background: var(--gold); }
+  .a2 { top: 22%; inset-inline-start: -200px; width: 480px; height: 480px; background: #F6C94A; opacity: 0.42; }
+  .a3 { top: 58%; inset-inline-end: -180px; width: 460px; height: 420px; background: var(--red); opacity: 0.3; }
+  .a4 { bottom: -200px; inset-inline-start: 4%; width: 540px; height: 460px; background: #F2B03A; opacity: 0.4; }
+
+  .wrap {
+    position: relative; z-index: 1;
+    width: 100%; max-width: 680px;
+    margin-inline: auto;
+    padding-inline: 16px;
+    padding-block: 28px 44px;
+    display: flex; flex-direction: column; gap: 18px;
+  }
+
+  .panel {
+    background: linear-gradient(180deg, var(--glass) 0%, var(--glass-2) 100%);
+    border: 1px solid var(--edge);
+    border-radius: 28px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.95), var(--shadow);
+    backdrop-filter: blur(22px) saturate(1.3);
+    -webkit-backdrop-filter: blur(22px) saturate(1.3);
+    padding: 26px 26px;
+  }
+
+  /* ——— 1. تشکر، بالاترین نقطه ——— */
+  .thanks {
+    position: relative; overflow: hidden;
+    border-radius: 28px;
+    background: linear-gradient(118deg, #2A1C06 0%, #6B3F07 46%, #A8300F 100%);
+    border: 1px solid rgba(255, 222, 160, 0.28);
+    box-shadow: var(--shadow);
+    padding: 26px 26px 24px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .thanks::before {
+    content: ""; position: absolute; top: 0; inset-inline: 0; height: 5px;
+    background: linear-gradient(90deg, var(--gold) 0%, #F6C94A 45%, var(--red) 100%);
+  }
+  .thanks .eyebrow {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 700; color: #FFD79A;
+  }
+  .thanks h1 {
+    margin: 0; font-size: clamp(20px, 5.2vw, 25px); font-weight: 900;
+    line-height: 1.65; color: #FFFFFF; text-wrap: balance;
+  }
+  .thanks p { margin: 0; font-size: 14px; line-height: 2; color: #F2DCBC; }
+
+  /* ——— هدر برند ——— */
+  .brand { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+  .brand-id { display: flex; align-items: center; gap: 12px; }
+  .mark {
+    width: 48px; height: 48px; flex-shrink: 0; border-radius: 15px;
+    background: linear-gradient(150deg, #2A1C06 0%, #5C3A08 100%);
+    display: grid; place-items: center;
+    box-shadow: 0 12px 22px -12px rgba(42, 28, 6, 0.9);
+  }
+  .brand-name { font-size: 17px; font-weight: 700; color: var(--ink); line-height: 1.5; }
+  .brand-sub { font-family: var(--lat); font-size: 10px; font-weight: 700; letter-spacing: 0.3em; color: var(--muted); }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 15px; border-radius: 999px;
+    background: var(--red-soft); border: 1px solid rgba(210, 43, 30, 0.32);
+    font-size: 12.5px; font-weight: 600; color: var(--red-text);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--red); }
+
+  /* ——— 2. کد شش‌رقمی ——— */
+  .code-card { display: flex; flex-direction: column; gap: 20px; }
+  .code-head { display: flex; flex-direction: column; gap: 9px; }
+  .code-head h2 { margin: 0; font-size: clamp(24px, 6vw, 30px); font-weight: 900; line-height: 1.5; }
+  .code-head p { margin: 0; font-size: 14.5px; line-height: 2.05; color: var(--ink-soft); }
+
+  .code-box {
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(255,250,240,0.7) 100%);
+    border: 1px solid var(--edge);
+    box-shadow: inset 0 2px 6px rgba(255,255,255,0.9), 0 18px 36px -26px rgba(74,52,12,0.7);
+    padding: 24px 18px 20px;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+  }
+  .code {
+    direction: ltr; font-family: var(--mono);
+    font-size: clamp(40px, 12.5vw, 60px); font-weight: 700;
+    letter-spacing: 0.18em; text-indent: 0.18em;
+    color: var(--ink); line-height: 1.25;
+    user-select: all; -webkit-user-select: all;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 8px 26px rgba(232, 163, 23, 0.4);
+  }
+  .rule { width: 96px; height: 5px; border-radius: 3px; background: linear-gradient(90deg, var(--gold) 0%, var(--red) 100%); }
+  .btn {
+    width: 100%; min-height: 50px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+    padding: 14px 20px; border: 1px solid rgba(255, 255, 255, 0.5); border-radius: 16px;
+    background: linear-gradient(160deg, var(--gold) 0%, #D98A0C 100%);
+    color: #201503; font-family: var(--fa); font-size: 15px; font-weight: 700;
+    cursor: pointer; box-shadow: 0 16px 28px -16px rgba(184, 122, 11, 0.95);
+    transition: transform 0.14s ease, box-shadow 0.14s ease;
+  }
+  .btn:hover { transform: translateY(-1px); box-shadow: 0 20px 32px -16px rgba(184, 122, 11, 1); }
+  .btn:active { transform: translateY(0); }
+  .btn:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
+  .btn.done { background: linear-gradient(160deg, #2F7A2A 0%, #256321 100%); color: #FFFFFF; }
+
+  .meta { display: flex; gap: 10px; flex-wrap: wrap; }
+  .meta div {
+    flex: 1 1 150px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 11px 12px; border-radius: 14px;
+    background: rgba(255, 255, 255, 0.62); border: 1px solid var(--edge);
+    font-size: 12.5px; font-weight: 600; color: var(--ink-soft);
+  }
+  .warn {
+    padding: 15px 18px; border-radius: 18px;
+    background: var(--red-soft); border: 1px solid rgba(210, 43, 30, 0.3);
+    font-size: 13px; line-height: 2.05; color: var(--red-text);
+  }
+
+  /* ——— 3. مشخصات برنامه ——— */
+  .sec-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+  .sec-head h3 { margin: 0; font-size: 21px; font-weight: 900; }
+  .sec-head span { flex-grow: 1; height: 1px; background: var(--line); }
+
+  .feats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .feat {
+    display: flex; gap: 14px; align-items: flex-start;
+    padding: 16px 18px; border-radius: 20px;
+    background: rgba(255, 255, 255, 0.62); border: 1px solid var(--edge);
+  }
+  .ficon {
+    width: 44px; height: 44px; flex-shrink: 0; border-radius: 14px;
+    display: grid; place-items: center;
+  }
+  .ficon.g { background: var(--gold-soft); border: 1px solid rgba(232, 163, 23, 0.4); }
+  .ficon.r { background: var(--red-soft); border: 1px solid rgba(210, 43, 30, 0.3); }
+  .feat h4 { margin: 0 0 5px; font-size: 15.5px; font-weight: 700; line-height: 1.7; color: var(--ink); }
+  .feat p { margin: 0; font-size: 13.5px; line-height: 2.05; color: var(--muted); }
+
+  /* ——— 4. چرا ویلن ——— */
+  .why {
+    border-radius: 28px; padding: 28px 26px;
+    background: linear-gradient(120deg, #241806 0%, #4E3007 58%, #7A2A0D 100%);
+    border: 1px solid rgba(255, 222, 160, 0.25);
+    box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .why-head { display: flex; align-items: center; gap: 11px; }
+  .why-head h3 { margin: 0; font-size: clamp(19px, 5vw, 22px); font-weight: 900; color: #FFFFFF; }
+  .why-badge {
+    width: 36px; height: 36px; flex-shrink: 0; border-radius: 12px;
+    background: rgba(232, 163, 23, 0.24); border: 1px solid rgba(232, 163, 23, 0.55);
+    display: grid; place-items: center;
+  }
+  .why p { margin: 0; font-size: 14.5px; line-height: 2.25; color: #EEDCC0; }
+  .why p + p { margin-top: 10px; }
+  .why b { color: #FFD79A; font-weight: 700; }
+
+  /* ——— 5. یادداشت پشتیبانی ——— */
+  .note { display: flex; gap: 14px; align-items: flex-start; }
+  .note-title { margin: 0 0 8px; font-size: 17px; font-weight: 900; line-height: 1.6; color: var(--ink); }
+  .note p { margin: 0; font-size: 14px; line-height: 2.25; color: var(--ink-soft); }
+  .note strong { color: var(--gold-text); font-weight: 700; }
+  .sign { display: block; margin-top: 14px; font-weight: 700; line-height: 2; color: var(--ink); }
+
+  /* ——— 6. بنر برند ——— */
+  .banner {
+    position: relative; overflow: hidden;
+    border-radius: 28px; border: 1px solid var(--edge);
+    background: linear-gradient(180deg, rgba(255,255,255,0.8) 0%, rgba(253,241,212,0.7) 100%);
+    box-shadow: var(--shadow);
+    padding: 28px 26px 0;
+    min-height: 260px;
+    display: flex; flex-direction: column;
+  }
+  .banner h3 { margin: 0; font-size: clamp(34px, 10vw, 50px); font-weight: 900; line-height: 1.16; }
+  .banner h3 em { font-style: normal; color: var(--red-text); display: block; }
+  .banner .rule { margin: 16px 0 12px; }
+  .banner p { margin: 0 0 12px; font-size: 15px; font-weight: 500; line-height: 1.95; color: var(--ink-soft); max-width: 300px; }
+  .banner svg { display: block; width: min(330px, 78%); height: auto; margin-inline-start: auto; margin-top: auto; }
+
+  /* ——— فوتر ——— */
+  .foot {
+    border-radius: 28px; padding: 22px 24px;
+    background: #1C1509; border: 1px solid rgba(255, 222, 160, 0.18);
+    display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px;
+  }
+  .foot .fi { display: flex; align-items: center; gap: 10px; }
+  .foot .lat { font-family: var(--lat); font-size: 14px; font-weight: 500; color: #F3E7D2; direction: ltr; }
+  .foot .sep { width: 1px; height: 26px; background: rgba(255, 222, 160, 0.2); }
+  .foot .tag { font-size: 13px; font-weight: 500; color: #D9C8AC; margin-inline-start: auto; }
+  .foot .tag b { color: #FFB08C; font-weight: 700; }
+  .fmark { width: 34px; height: 34px; border-radius: 999px; background: var(--red); display: grid; place-items: center; flex-shrink: 0; }
+  .legal { text-align: center; font-size: 11.5px; line-height: 2; color: var(--muted); padding-inline: 8px; }
+
+  @media (min-width: 560px) {
+    .banner { padding: 34px 32px 0; }
+    .banner svg { width: 340px; margin-top: -60px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="aura" aria-hidden="true"><i class="a1"></i><i class="a2"></i><i class="a3"></i><i class="a4"></i></div>
+
+<main class="wrap">
+
+  <section class="thanks">
+    <div class="eyebrow">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#FFD79A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.5s-7.5-4.4-7.5-9.5a4 4 0 0 1 7.5-2 4 4 0 0 1 7.5 2c0 5.1-7.5 9.5-7.5 9.5z"/></svg>
+      <span>از شما سپاسگزاریم</span>
+    </div>
+    <h1>خوش آمدید — ممنون که ویلن را انتخاب کردید.</h1>
+    <p>امیدواریم کار کردن با برنامه برایتان آسان و راحت باشد.</p>
+  </section>
+
+  <section class="panel code-card">
+
+    <div class="brand">
+      <div class="brand-id">
+        <div class="mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#F6C94A" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V5.5A2.5 2.5 0 0 1 6.5 3h4A2.5 2.5 0 0 1 13 5.5V21"/><path d="M2.5 21h12"/><path d="M6.5 9h4"/><path d="M17 21v-5.5a2 2 0 0 0-2-2h-2"/><path d="M17 15.5V8.2L15 6"/></svg>
+        </div>
+        <div>
+          <div class="brand-name">ویلن</div>
+          <div class="brand-sub">VILL3N</div>
+        </div>
+      </div>
+      <span class="chip"><span class="dot" aria-hidden="true"></span>ورود امن</span>
+    </div>
+
+    <div class="code-head">
+      <h2>کد ورود شما</h2>
+      <p>سلام. برای ورود به حساب‌تان در ویلن، این کد شش‌رقمی را در برنامه وارد کنید.</p>
+    </div>
+
+    <div class="code-box">
+      <div class="code" id="code" dir="ltr">482916</div>
+      <div class="rule" aria-hidden="true"></div>
+      <button type="button" class="btn" id="copyBtn">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5"/></svg>
+        <span id="copyLabel">کپی کردن کد</span>
+      </button>
+    </div>
+
+    <div class="meta">
+      <div>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#B87A0B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>
+        <span>اعتبار: ۵ دقیقه</span>
+      </div>
+      <div>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#B87A0B" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4.2-2.9 7.5-7 9-4.1-1.5-7-4.8-7-9V6z"/><path d="M9.2 12.2l2 2 3.6-3.8"/></svg>
+        <span>فقط یک‌بار مصرف</span>
+      </div>
+    </div>
+
+    <p class="warn">اگر شما درخواست ورود نداده‌اید، این ایمیل را نادیده بگیرید. این کد را با هیچ‌کس در میان نگذارید — حتی با کسی که خود را پشتیبانی معرفی می‌کند.</p>
+
+  </section>
+
+  <section class="panel">
+    <div class="sec-head">
+      <h3>مشخصات برنامه</h3>
+      <span aria-hidden="true"></span>
+    </div>
+    <ul class="feats">
+
+      <li class="feat">
+        <div class="ficon r" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#A81F14" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2.5L4.5 13.5H11l-.8 8 8.3-11H12z"/></svg>
+        </div>
+        <div>
+          <h4>مدیریت آسان و سریع حساب‌ها</h4>
+          <p>بخش‌های کاربردی و خودکار برای ثبت، پیگیری و مدیریت راحت‌تر حساب‌های روزمره؛ بدون دردسر و اتلاف وقت.</p>
+        </div>
+      </li>
+
+      <li class="feat">
+        <div class="ficon g" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#86590A" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9h18"/><path d="M9 9v11"/></svg>
+        </div>
+        <div>
+          <h4>رابط کاربری ساده و حرفه‌ای</h4>
+          <p>محیطی مرتب و روان که همه‌چیز را در دسترس شما قرار می‌دهد تا در کمترین زمان، کارهای روزمرهٔ خود را انجام دهید.</p>
+        </div>
+      </li>
+
+      <li class="feat">
+        <div class="ficon g" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#86590A" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3h-3z"/><path d="M20 14v1M20 20v1M14 20h1M18 20h1"/></svg>
+        </div>
+        <div>
+          <h4>دسترسی سریع با QR Code</h4>
+          <p>با استفاده از QR Code، مشتریان و کارمندان می‌توانند سریع‌تر و آسان‌تر به بخش‌های مورد نیاز خود دسترسی داشته باشند.</p>
+        </div>
+      </li>
+
+    </ul>
+  </section>
+
+  <section class="why">
+    <div class="why-head">
+      <div class="why-badge" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#F6C94A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6L12 16.8 6.6 19.6l1.2-6L3.3 9.4l6.1-.8z"/></svg>
+      </div>
+      <h3>چرا ویلن را انتخاب کنم؟</h3>
+    </div>
+    <p>ویلن با هدف ساده‌کردن مدیریت حساب‌های روزمره ساخته شده است. این برنامه بر پایهٔ <b>۲ سال تجربهٔ واقعی در بخش حسابداری و مدیریت حساب در جایگاه‌های سوخت</b> طراحی شده است.</p>
+    <p>تمام جزئیات و امکانات ویلن بر اساس نیازهای واقعی و تجربهٔ عملی طراحی شده‌اند تا مدیریت حساب‌ها سریع‌تر، دقیق‌تر و منظم‌تر انجام شود.</p>
+  </section>
+
+  <section class="panel note">
+    <div class="ficon r" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="#A81F14" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3.5 20.5l1.4-5.2A8.5 8.5 0 1 1 21 11.5z"/></svg>
+    </div>
+    <div>
+      <h4 class="note-title">با اعتماد شما، ویلن بهتر می‌شود</h4>
+      <p>ویلن با اعتماد و پیشنهادهای شما روزبه‌روز پیشرفت می‌کند. اگر هنگام استفاده از برنامه با مشکلی مواجه شدید یا پیشنهادی برای بهتر شدن آن داشتید، با پشتیبانی در تماس شوید. تیم ویلن تلاش می‌کند مشکلات و درخواست‌های شما را در کوتاه‌ترین زمان ممکن بررسی و برطرف کند.</p>
+      <p style="margin-top:12px;">برای دسترسی بهتر و مدیریت مطمئن‌تر اطلاعات، پیشنهاد می‌کنیم از <strong>نسخهٔ آنلاین ویلن</strong> استفاده کنید. استفاده از نسخهٔ آنلاین می‌تواند احتمال از دست رفتن یا گم‌شدن اطلاعات حساب‌ها را تا حد زیادی کاهش دهد.</p>
+      <span class="sign">با سپاس از اعتماد و همراهی شما<br>تیم ویلن</span>
+    </div>
+  </section>
+
+  <section class="banner">
+    <h3>رقابت نکن.<em>پیشرو باش.</em></h3>
+    <div class="rule" aria-hidden="true"></div>
+    <p>به قله‌ای برس که بقیه هنوز در راهش هستند.</p>
+    <svg viewBox="0 0 680 520" aria-hidden="true">
+      <path d="M20,500 L60,360 L120,230 L160,150 L200,50 L250,142 L300,262 L390,366 L480,432 L660,500 Z" fill="#F4EDDD"/>
+      <path d="M200,50 L160,150 L120,230 L60,360 L20,500 L192,500 L216,290 Z" fill="#E7DCC4"/>
+      <path d="M200,50 L216,290 L192,500 L432,500 L390,366 L300,262 L250,142 Z" fill="#FDF9F0"/>
+      <path d="M390,366 L432,500 L660,500 L480,432 Z" fill="#EFE6D3"/>
+      <path d="M200,50 L250,142 L300,262 L390,366 L480,432 L660,500" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linejoin="round"/>
+      <path d="M200,50 L160,150 L120,230 L60,360 L20,500" fill="none" stroke="#DCCFB2" stroke-width="1.6" stroke-linejoin="round"/>
+      <path d="M604,490 C 524,466 470,434 420,396 C 368,356 338,310 300,254 C 264,196 228,126 203,54" fill="none" stroke="#D22B1E" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="1 9"/>
+      <g stroke="#2A1C06" stroke-width="2" stroke-linecap="round" fill="none">
+        <g transform="translate(596,484)"><circle cx="0" cy="-11" r="3.2" fill="#2A1C06" stroke="none"/><path d="M0,-8 L0,-2 M0,-5 L-4,-7 M0,-5 L4,-3 M0,-2 L-3,4 M0,-2 L3,4"/></g>
+        <g transform="translate(512,456)"><circle cx="0" cy="-11" r="3.2" fill="#2A1C06" stroke="none"/><path d="M0,-8 L0,-2 M0,-5 L-4,-7 M0,-5 L4,-3 M0,-2 L-3,4 M0,-2 L3,4"/></g>
+        <g transform="translate(436,410)"><circle cx="0" cy="-11" r="3.2" fill="#2A1C06" stroke="none"/><path d="M0,-8 L0,-2 M0,-5 L-4,-7 M0,-5 L4,-3 M0,-2 L-3,4 M0,-2 L3,4"/></g>
+        <g transform="translate(368,344)"><circle cx="0" cy="-11" r="3.2" fill="#2A1C06" stroke="none"/><path d="M0,-8 L0,-2 M0,-5 L-4,-7 M0,-5 L4,-3 M0,-2 L-3,4 M0,-2 L3,4"/></g>
+        <g transform="translate(314,280)"><circle cx="0" cy="-11" r="3.2" fill="#2A1C06" stroke="none"/><path d="M0,-8 L0,-2 M0,-5 L-4,-7 M0,-5 L4,-3 M0,-2 L-3,4 M0,-2 L3,4"/></g>
+        <g transform="translate(262,192)"><circle cx="0" cy="-11" r="3.2" fill="#2A1C06" stroke="none"/><path d="M0,-8 L0,-2 M0,-5 L-4,-7 M0,-5 L4,-3 M0,-2 L-3,4 M0,-2 L3,4"/></g>
+      </g>
+      <path d="M200,50 L200,8" stroke="#2A1C06" stroke-width="2.6" stroke-linecap="round" fill="none"/>
+      <path d="M203,10 C 232,4 248,20 276,14 L276,42 C 248,48 232,32 203,38 Z" fill="#E8A317"/>
+      <path d="M232,20 L239,32 L246,20" fill="none" stroke="#2A1C06" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </section>
+
+  <section class="foot">
+    <div class="fi">
+      <div class="fmark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h3.5l1.5 4-2 1.5a12 12 0 0 0 6.5 6.5L16 14l4 1.5V19a1.5 1.5 0 0 1-1.7 1.5A16.5 16.5 0 0 1 3.5 5.7 1.5 1.5 0 0 1 5 4z"/></svg>
+      </div>
+      <span class="lat">[شماره تماس شما]</span>
+    </div>
+    <span class="sep" aria-hidden="true"></span>
+    <div class="fi">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#D9C8AC" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 7l8.5 6 8.5-6"/></svg>
+      <span class="lat">vil3ntec@gmail.com</span>
+    </div>
+    <span class="tag">اپ و سایتی می‌سازیم که <b>نتیجه می‌دهد</b></span>
+  </section>
+
+  <p class="legal">این پیام به‌صورت خودکار از طرف ویلن ارسال شده است؛ لطفاً به آن پاسخ ندهید.<br>VILL3N — «سریع، آسان»</p>
+
+</main>
+
+<script>
+  (function () {
+    var btn = document.getElementById('copyBtn');
+    var label = document.getElementById('copyLabel');
+    var code = document.getElementById('code');
+    if (!btn || !label || !code) return;
+
+    btn.addEventListener('click', function () {
+      var text = code.textContent.trim();
+      var done = function () {
+        label.textContent = 'کپی شد';
+        btn.classList.add('done');
+        setTimeout(function () {
+          label.textContent = 'کپی کردن کد';
+          btn.classList.remove('done');
+        }, 2200);
+      };
+      var fallback = function () {
+        try {
+          var sel = window.getSelection();
+          var range = document.createRange();
+          range.selectNodeContents(code);
+          sel.removeAllRanges();
+          sel.addRange(range);
+          document.execCommand('copy');
+          sel.removeAllRanges();
+          done();
+        } catch (e) {
+          label.textContent = 'کد را دستی انتخاب و کپی کنید';
+          setTimeout(function () { label.textContent = 'کپی کردن کد'; }, 2600);
+        }
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, fallback);
+      } else {
+        fallback();
+      }
+    });
+  })();
+</script>

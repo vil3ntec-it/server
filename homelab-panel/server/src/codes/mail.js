@@ -7,6 +7,7 @@
 // ---------------------------------------------------------------------------
 import { openMailer, sendMail } from '../appauth/smtp.js';
 import { otpEmail } from '../emails/otp.js';
+import { brandOf, codeHtml, titleOf } from '../emails/app-templates.js';
 import { codeSettings } from './settings.js';
 
 /** {code} و {app} در عنوان جای‌گذاری می‌شوند */
@@ -53,29 +54,45 @@ export function openCodeMailer(settings = codeSettings()) {
   return openMailer(mailerOptions(settings));
 }
 
-/** خودِ نامه — بدونِ هیچ کاری با شبکه */
-export function buildCodeMail({ to, code, name = '', appName, subject, minutes, settings = codeSettings() }) {
+/**
+ * خودِ نامه — بدونِ هیچ کاری با شبکه.
+ *
+ * ⛔ **قالبِ صاحبِ سامانه، نه قالبِ قدیمی** (۱۴۰۵/۰۷/۱۳): ویلن برای پمپ و
+ * مرکز فرمان، VILL3N Shop برای فروشگاه (`emails/app-templates.js`). قالبِ
+ * `otp.js` فقط وقتی است که فایلِ قالب پیدا نشود — ایمیل نرفتن بدتر از
+ * ایمیلِ قدیمی است.
+ *
+ * ⛔ **کد نه در عنوان است، نه در خطِ پیش‌نمایش، نه در خطِ نخستِ متن**:
+ * «توی اعلانات کدی نباشد؛ روی ایمیل که کلیک کند، کد آن‌جا نشان داده شود.»
+ * عنوانی که در تنظیمات `{code}` دارد، بی کد فرستاده می‌شود.
+ */
+export function buildCodeMail({ to, code, name = '', app = '', appName, subject, minutes, settings = codeSettings() }) {
   const label = appName || settings.appName || 'مرکز فرمان';
-  const built = otpEmail({ code, minutes, appName: label, name });
-  const line = fill(subject || settings.subject, { code, app: label }) || built.subject;
+  const key = app || label;
+  const styled = codeHtml({ app: key, code });
+  const built = styled ? null : otpEmail({ code, minutes, appName: label, name });
+  const custom = fill(String(subject || settings.subject || '').replace(/[:：\-–—]?\s*\{code\}\s*/g, ' '), { app: label })
+    .replace(/\s+/g, ' ').trim();
+  const line = (custom && custom !== 'کد ورود') ? custom : (titleOf(key) || `کد ورود ${label}`);
+  const mins = Number(minutes) > 0 ? Math.round(Number(minutes)) : 10;
   return {
     from: settings.email.from,
-    fromName: settings.email.fromName || label,
+    fromName: settings.email.fromName || brandOf(key) || label,
     to,
     subject: line,
-    text: built.text,
-    html: built.html,
+    text: `کدِ ورودِ شما در ادامه است.\n\n${code}\n\nاین کد ${mins} دقیقه اعتبار دارد و فقط یک بار کار می‌کند. اگر شما درخواستش نکرده‌اید، این ایمیل را نادیده بگیرید.`,
+    html: styled || built.html,
   };
 }
 
 export async function sendCodeEmail({
-  to, code, name = '', appName, subject, minutes, settings = codeSettings(), mailer = null,
+  to, code, name = '', app = '', appName, subject, minutes, settings = codeSettings(), mailer = null,
 }) {
   if (!mailReady(settings)) {
     throw Object.assign(new Error('سرورِ ایمیل تنظیم نشده است'), { code: 'mail_not_configured' });
   }
 
-  const letter = buildCodeMail({ to, code, name, appName, subject, minutes, settings });
+  const letter = buildCodeMail({ to, code, name, app, appName, subject, minutes, settings });
 
   // اتصالِ آماده داده‌اند؟ از همان برو. وگرنه یکی باز و بسته کن.
   const receipt = mailer

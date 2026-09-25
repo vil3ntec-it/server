@@ -1,0 +1,727 @@
+<title>کد ورود VILL3N Shop</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700;800;900&family=Space+Grotesk:wght@700&display=swap">
+<style>
+  :root {
+    --cream:     #FBF6EC;
+    --ink:       #1C1509;
+    --ink-soft:  #3A2E1C;
+    --muted:     #6A5840;
+    --gold:      #E8A317;
+    --gold-lt:   #F7C64F;
+    --gold-deep: #B87A0B;
+    --gold-text: #86590A;
+    --gold-soft: #FDF1D4;
+    --red:       #D22B1E;
+    --red-lt:    #F0553C;
+    --red-text:  #A81F14;
+    --red-soft:  #FCE5E2;
+    --glass:     rgba(255, 255, 255, 0.76);
+    --glass-2:   rgba(255, 255, 255, 0.58);
+    --edge:      rgba(255, 255, 255, 0.94);
+    --line:      rgba(122, 96, 52, 0.16);
+    --shadow:    0 40px 74px -42px rgba(74, 50, 10, 0.6);
+    --fa:        'Vazirmatn', 'Segoe UI', system-ui, sans-serif;
+    --lat:       'Space Grotesk', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--cream);
+    color: var(--ink);
+    font-family: var(--fa);
+    direction: rtl; text-align: right;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .aura { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+  .aura i { position: absolute; display: block; border-radius: 50%; filter: blur(95px); }
+  .b1 { top: -170px; inset-inline-end: -130px; width: 500px; height: 430px; background: var(--gold); opacity: .55; }
+  .b2 { top: 34%; inset-inline-start: -170px; width: 440px; height: 440px; background: #F6C94A; opacity: .42; }
+  .b3 { bottom: -190px; inset-inline-end: 6%; width: 480px; height: 420px; background: var(--red); opacity: .3; }
+
+  .stage { position: relative; z-index: 1; padding-inline: 16px; padding-block: 26px 40px; }
+
+  .sheet {
+    width: 100%; max-width: 720px; margin-inline: auto;
+    background: linear-gradient(180deg, var(--glass) 0%, var(--glass-2) 100%);
+    border: 1px solid var(--edge);
+    border-radius: 32px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.95), var(--shadow);
+    backdrop-filter: blur(24px) saturate(1.35);
+    -webkit-backdrop-filter: blur(24px) saturate(1.35);
+    padding: 20px; display: flex; flex-direction: column; gap: 18px;
+  }
+
+  /* ——— هدر ——— */
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 6px 6px 0; flex-wrap: wrap; }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-txt strong { display: block; font-size: 22px; font-weight: 900; line-height: 1.45; }
+  .logo-txt span { display: block; font-size: 12.5px; font-weight: 500; color: var(--muted); }
+  .verify {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 8px 14px 8px 8px; border-radius: 999px;
+    background: var(--red-soft); border: 1px solid rgba(210,43,30,.28);
+    font-size: 13px; font-weight: 700; color: var(--red-text);
+  }
+
+  /* ——— هیرو ——— */
+  .hero {
+    position: relative; overflow: hidden; border-radius: 26px;
+    background:
+      radial-gradient(540px 340px at 76% 40%, rgba(232,163,23,.42) 0%, rgba(232,163,23,0) 66%),
+      radial-gradient(420px 300px at 18% 96%, rgba(210,43,30,.42) 0%, rgba(210,43,30,0) 70%),
+      linear-gradient(132deg, #221605 0%, #4E2E06 52%, #85290C 100%);
+    border: 1px solid rgba(255, 214, 150, 0.22);
+    padding: 30px 24px 0;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .hero-txt { position: relative; z-index: 2; display: flex; flex-direction: column; gap: 12px; }
+  .hi { display: flex; align-items: center; gap: 10px; }
+  .hi h1 {
+    margin: 0; font-size: clamp(38px, 11vw, 54px); font-weight: 900; line-height: 1.12;
+    background: linear-gradient(100deg, #FFFFFF 0%, #FFE2AE 52%, #F7A85C 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero h2 { margin: 0; font-size: clamp(19px, 5vw, 25px); font-weight: 800; color: #FFFFFF; line-height: 1.65; text-wrap: balance; }
+  .hero p { margin: 0; font-size: 14.5px; line-height: 2.1; color: #E7D2AE; max-width: 44ch; }
+  .hi h1 { font-size: clamp(19px, 5vw, 24px); font-weight: 800; line-height: 1.6; }
+  .perks { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .perks li {
+    display: flex; align-items: center; gap: 9px;
+    padding: 9px 14px; border-radius: 999px;
+    background: rgba(255, 255, 255, 0.09);
+    border: 1px solid rgba(255, 214, 150, 0.22);
+    font-size: 13px; font-weight: 600; color: #F5E3C6;
+    align-self: flex-start;
+  }
+  .art { position: relative; z-index: 1; align-self: center; width: min(100%, 390px); }
+  .art svg { display: block; width: 100%; height: auto; }
+
+  /* ——— کارت کد ——— */
+  .codecard {
+    border-radius: 26px;
+    background: linear-gradient(180deg, rgba(255,255,255,.9) 0%, rgba(253,244,226,.66) 100%);
+    border: 1px solid var(--edge);
+    box-shadow: inset 0 2px 5px rgba(255,255,255,.9), 0 20px 40px -30px rgba(74,50,10,.7);
+    padding: 26px 20px; display: flex; flex-direction: column; align-items: center;
+  }
+  .codecard .head { display: flex; align-items: center; gap: 12px; }
+  .codecard h3 { margin: 0; font-size: clamp(22px, 5.6vw, 27px); font-weight: 900; }
+  .codecard .sub { margin: 6px 0 20px; font-size: 13.5px; line-height: 2; color: var(--muted); text-align: center; }
+
+  .digits { display: flex; gap: 9px; justify-content: center; flex-wrap: wrap; direction: ltr; }
+  .digits span {
+    width: 60px; height: 78px; border-radius: 18px;
+    background: linear-gradient(180deg, #FFFFFF 0%, #FCF4E4 100%);
+    border: 1px solid rgba(232,163,23,.3);
+    box-shadow: inset 0 2px 0 #FFFFFF, inset 0 -3px 8px rgba(184,122,11,.14), 0 14px 24px -16px rgba(74,50,10,.7);
+    display: grid; place-items: center;
+    font-size: 38px; font-weight: 900; color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .copy {
+    margin-top: 24px; min-height: 56px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    padding: 16px 44px; border: 1px solid rgba(255,255,255,.55); border-radius: 999px; cursor: pointer;
+    background: linear-gradient(96deg, #F7C64F 0%, #E8A317 46%, #D2760F 100%);
+    color: #241805; font-family: var(--fa); font-size: 15.5px; font-weight: 800;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 18px 30px -16px rgba(184,122,11,.95);
+    transition: transform .14s ease, box-shadow .14s ease;
+  }
+  .copy:hover { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgba(255,255,255,.7), 0 22px 34px -16px rgba(184,122,11,1); }
+  .copy:active { transform: translateY(0); }
+  .copy:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
+  .copy.done { background: linear-gradient(96deg, #43A047 0%, #2E7D32 100%); color: #FFFFFF; }
+
+  /* ——— سه کارت ——— */
+  .tiles {
+    border-radius: 26px;
+    background: linear-gradient(180deg, rgba(253,241,212,.8) 0%, rgba(252,236,214,.6) 100%);
+    border: 1px solid var(--edge);
+    padding: 6px; display: grid; grid-template-columns: 1fr; gap: 2px;
+  }
+  .tile { padding: 17px 15px; display: flex; gap: 13px; align-items: flex-start; }
+  .tile h4 { margin: 0 0 6px; font-size: 14.5px; font-weight: 800; line-height: 1.6; }
+  .tile p { margin: 0; font-size: 12.5px; line-height: 1.95; color: var(--muted); }
+
+  /* ——— مشخصات برنامه ——— */
+  .wm { font-family: var(--lat); letter-spacing: .01em; }
+  .block {
+    border-radius: 26px;
+    background: linear-gradient(180deg, rgba(255,255,255,.86) 0%, rgba(255,255,255,.6) 100%);
+    border: 1px solid var(--edge);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.95), 0 20px 40px -32px rgba(74,50,10,.65);
+    padding: 24px 22px;
+  }
+  .sec-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .sec-head h3 { margin: 0; font-size: 21px; font-weight: 900; }
+  .sec-head span { flex-grow: 1; height: 1px; background: var(--line); }
+
+  .feats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .feat {
+    display: flex; gap: 14px; align-items: flex-start;
+    padding: 16px 16px; border-radius: 20px;
+    background: rgba(255,255,255,.62); border: 1px solid var(--edge);
+  }
+  .feat h4 { margin: 0 0 6px; font-size: 15.5px; font-weight: 800; line-height: 1.7; }
+  .feat p { margin: 0; font-size: 13.5px; line-height: 2.1; color: var(--muted); }
+
+  .why {
+    border-radius: 26px; padding: 26px 24px;
+    background:
+      radial-gradient(460px 280px at 82% 12%, rgba(232,163,23,.34) 0%, rgba(232,163,23,0) 68%),
+      linear-gradient(126deg, #221605 0%, #4E2E06 56%, #85290C 100%);
+    border: 1px solid rgba(255,214,150,.24);
+    box-shadow: 0 26px 48px -34px rgba(28,17,4,.9);
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .why .sec-head { margin: 0; }
+  .why .sec-head h3 { color: #FFFFFF; }
+  .why .sec-head span { background: rgba(255,214,150,.26); }
+  .why h4 { margin: 0; font-size: 16.5px; font-weight: 800; color: #FFD79A; line-height: 1.8; }
+  .why p { margin: 0; font-size: 14.5px; line-height: 2.2; color: #EEDCC0; }
+
+  .note h4 { margin: 0 0 10px; font-size: 16.5px; font-weight: 800; color: var(--gold-text); line-height: 1.8; }
+  .note p { margin: 0; font-size: 14px; line-height: 2.2; color: var(--ink-soft); }
+  .note p + p { margin-top: 12px; }
+  .note .sign { display: block; margin-top: 14px; font-weight: 800; line-height: 2; color: var(--ink); }
+
+  /* ——— فوتر ——— */
+  .foot { padding: 6px 8px 4px; display: flex; flex-direction: column; gap: 16px; }
+  .foot-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .links { display: flex; gap: 9px; }
+  .links a {
+    width: 42px; height: 42px; border-radius: 999px; display: grid; place-items: center;
+    background: linear-gradient(160deg, #3A2508 0%, #1C1104 100%);
+    border: 1px solid rgba(255,214,150,.22);
+    color: #F2D9A8; text-decoration: none;
+    box-shadow: inset 0 1px 0 rgba(255,214,150,.25), 0 10px 18px -12px rgba(28,17,4,.9);
+    transition: transform .14s ease, color .14s ease;
+  }
+  .links a:hover { color: #FFFFFF; transform: translateY(-2px); }
+  .links a:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
+  .hr { height: 1px; background: linear-gradient(90deg, rgba(122,96,52,0) 0%, rgba(122,96,52,.24) 50%, rgba(122,96,52,0) 100%); }
+  .thanks { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 13.5px; font-weight: 600; color: var(--ink-soft); }
+  .contact { display: flex; gap: 10px; flex-wrap: wrap; }
+  .contact a {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 11px 16px; border-radius: 999px; text-decoration: none;
+    background: rgba(255,255,255,.7); border: 1px solid var(--edge);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 10px 20px -16px rgba(74,50,10,.8);
+    font-family: var(--lat); font-size: 14px; font-weight: 500; color: var(--ink);
+  }
+  .contact a:hover { border-color: rgba(232,163,23,.55); }
+  .contact a:focus-visible { outline: 3px solid var(--red); outline-offset: 3px; }
+  .mascot svg { display: block; width: 104px; height: auto; }
+  .legal { max-width: 720px; margin: 16px auto 0; text-align: center; font-size: 11.5px; line-height: 2; color: var(--muted); }
+
+  @media (min-width: 620px) {
+    .sheet { padding: 24px; }
+    .hero { padding: 36px 32px 0; flex-direction: row-reverse; align-items: flex-end; gap: 8px; }
+    .hero-txt { flex: 1 1 54%; padding-bottom: 40px; }
+    .art { flex: 1 1 44%; width: auto; max-width: 306px; align-self: flex-end; }
+    .tiles { grid-template-columns: 1fr 1fr 1fr; gap: 0; }
+    .tile + .tile { border-inline-start: 1px solid rgba(184,122,11,.18); }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="aura" aria-hidden="true"><i class="b1"></i><i class="b2"></i><i class="b3"></i></div>
+
+<!-- گرادیان‌ها و فیلترهای مشترکِ احجام سه‌بعدی -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <filter id="sBlur" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="7"/></filter>
+  <filter id="mBlur" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="4"/></filter>
+  <filter id="xlBlur" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="13"/></filter>
+
+  <linearGradient id="bagFront" x1="0.15" y1="0" x2="0.9" y2="1">
+    <stop offset="0" stop-color="#FFD98A"/><stop offset="0.42" stop-color="#EDA51C"/><stop offset="1" stop-color="#A65E05"/>
+  </linearGradient>
+  <linearGradient id="bagSide" x1="0" y1="0" x2="1" y2="0.4">
+    <stop offset="0" stop-color="#C07E0B"/><stop offset="1" stop-color="#7C4403"/>
+  </linearGradient>
+  <linearGradient id="bagRim" x1="0" y1="0" x2="0.4" y2="1">
+    <stop offset="0" stop-color="#FFE9B8"/><stop offset="1" stop-color="#E0A427"/>
+  </linearGradient>
+  <linearGradient id="handleTop" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0" stop-color="#F26A4F"/><stop offset="0.5" stop-color="#D22B1E"/><stop offset="1" stop-color="#8E1409"/>
+  </linearGradient>
+</defs></svg>
+
+<div class="stage">
+  <main class="sheet">
+
+    <!-- هدر -->
+    <div class="top">
+      <div class="logo">
+        <svg width="50" height="54" viewBox="0 0 50 54" aria-hidden="true">
+          <ellipse cx="25" cy="50" rx="16" ry="3.4" fill="#4A320A" opacity=".3" filter="url(#mBlur)"/>
+          <path d="M15 17v-3.5a10 10 0 0 1 20 0V17" fill="none" stroke="#8E1409" stroke-width="6" stroke-linecap="round"/>
+          <path d="M15 16v-3.5a10 10 0 0 1 20 0V16" fill="none" stroke="url(#handleTop)" stroke-width="4.4" stroke-linecap="round"/>
+          <path d="M37 18h4.2a2.6 2.6 0 0 1 2.6 2.8l-2 24A5 5 0 0 1 37 49.4z" fill="url(#bagSide)"/>
+          <path d="M8.8 18H37a2.6 2.6 0 0 1 2.6 2.8l-2 24A5 5 0 0 1 32.6 49.4H13.2a5 5 0 0 1-5-4.6l-2-24A2.6 2.6 0 0 1 8.8 18z" fill="url(#bagFront)"/>
+          <path d="M8.8 18H41.2a2.6 2.6 0 0 1 2.6 2.8l-.3 3.4H6.5l-.3-3.4A2.6 2.6 0 0 1 8.8 18z" fill="url(#bagRim)"/>
+          <ellipse cx="17" cy="27" rx="5" ry="7" fill="#FFFFFF" opacity=".4" filter="url(#mBlur)"/>
+          <path d="M11.4 23.5c.6 7.6.9 15.4.8 23.4" fill="none" stroke="#FFF3D6" stroke-opacity=".45" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <div class="logo-txt">
+          <strong class="wm">VILL3N Shop</strong>
+          <span>همیشه همراه شما</span>
+        </div>
+      </div>
+      <span class="verify">
+        <span>ایمیل تأیید هویت</span>
+        <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+          <defs>
+            <linearGradient id="vSh" x1="0.2" y1="0" x2="0.9" y2="1">
+              <stop offset="0" stop-color="#F58C76"/><stop offset="0.5" stop-color="#D22B1E"/><stop offset="1" stop-color="#8A1208"/>
+            </linearGradient>
+          </defs>
+          <path d="M13 2.6l8 3.3v6.9c0 5.1-3.4 9.2-8 11.2-4.6-2-8-6.1-8-11.2V5.9z" fill="url(#vSh)"/>
+          <path d="M13 4.4l6.2 2.6v1.6C17.4 7.2 15.3 6.2 13 5.6z" fill="#FFFFFF" opacity=".35"/>
+          <path d="M9.4 13l2.6 2.6 4.8-5.1" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </span>
+    </div>
+
+    <!-- هیرو -->
+    <section class="hero">
+      <div class="hero-txt">
+        <div class="hi">
+          <h1>سپاس از انتخاب شما</h1>
+          <svg width="38" height="38" viewBox="0 0 64 64" aria-hidden="true">
+            <defs>
+              <linearGradient id="heartG" x1="0.2" y1="0" x2="0.9" y2="1">
+                <stop offset="0" stop-color="#FB9E86"/><stop offset="0.45" stop-color="#D22B1E"/><stop offset="1" stop-color="#7E1007"/>
+              </linearGradient>
+            </defs>
+            <ellipse cx="32" cy="56" rx="15" ry="4" fill="#2A0D03" opacity=".4" filter="url(#mBlur)"/>
+            <path d="M32 54C18 45 8 36 8 25.5 8 17.5 14.2 12 21.4 12c4.6 0 8.6 2.4 10.6 6 2-3.6 6-6 10.6-6C49.8 12 56 17.5 56 25.5 56 36 46 45 32 54z" fill="url(#heartG)"/>
+            <ellipse cx="21" cy="24" rx="7" ry="5" fill="#FFFFFF" opacity=".45" filter="url(#mBlur)" transform="rotate(-28 21 24)"/>
+            <path d="M14 22c1.6-4 4.6-6 8-6.4" fill="none" stroke="#FFFFFF" stroke-opacity=".6" stroke-width="2.6" stroke-linecap="round"/>
+            <g stroke="#F7C64F" stroke-width="3.2" stroke-linecap="round">
+              <path d="M52 8l5-4"/><path d="M58 18l5-1.4"/>
+            </g>
+          </svg>
+        </div>
+        <ul class="perks">
+          <li>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FFD79A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>
+            <span>حساب شما آمادهٔ استفاده است</span>
+          </li>
+          <li>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FFD79A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>
+            <span>آنلاین و آفلاین، هر جا که باشید</span>
+          </li>
+          <li>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FFD79A" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5"/></svg>
+            <span>پشتیبانی همیشه در کنار شماست</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- صحنهٔ سه‌بعدی -->
+      <div class="art">
+        <svg viewBox="0 0 400 372" role="img" aria-label="پاکت نامه و سپر امنیت، حجم سه‌بعدی">
+          <defs>
+            <radialGradient id="glowG" cx="0.5" cy="0.45" r="0.5">
+              <stop offset="0" stop-color="#FFC24D" stop-opacity=".55"/><stop offset="1" stop-color="#FFC24D" stop-opacity="0"/>
+            </radialGradient>
+            <linearGradient id="pedSide" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#2E1C05"/><stop offset="1" stop-color="#120A02"/>
+            </linearGradient>
+            <radialGradient id="pedTop" cx="0.36" cy="0.3" r="0.8">
+              <stop offset="0" stop-color="#5A3A0C"/><stop offset="1" stop-color="#251603"/>
+            </radialGradient>
+            <linearGradient id="envBack" x1="0.1" y1="0" x2="0.9" y2="1">
+              <stop offset="0" stop-color="#D08D12"/><stop offset="1" stop-color="#7D4703"/>
+            </linearGradient>
+            <linearGradient id="envFront" x1="0.12" y1="0" x2="0.92" y2="1">
+              <stop offset="0" stop-color="#FFDC92"/><stop offset="0.45" stop-color="#EDA51C"/><stop offset="1" stop-color="#A55E05"/>
+            </linearGradient>
+            <linearGradient id="envWing" x1="0" y1="0" x2="1" y2="0.6">
+              <stop offset="0" stop-color="#F5BE55"/><stop offset="1" stop-color="#B26B07"/>
+            </linearGradient>
+            <linearGradient id="paperG" x1="0.1" y1="0" x2="0.7" y2="1">
+              <stop offset="0" stop-color="#FFFFFF"/><stop offset="0.7" stop-color="#FDF6E8"/><stop offset="1" stop-color="#E8DCC4"/>
+            </linearGradient>
+            <linearGradient id="redSh" x1="0.2" y1="0" x2="0.9" y2="1">
+              <stop offset="0" stop-color="#F98C76"/><stop offset="0.45" stop-color="#D22B1E"/><stop offset="1" stop-color="#7E1007"/>
+            </linearGradient>
+            <linearGradient id="goldSh" x1="0.2" y1="0" x2="0.9" y2="1">
+              <stop offset="0" stop-color="#FFE39B"/><stop offset="0.45" stop-color="#E8A317"/><stop offset="1" stop-color="#9C5703"/>
+            </linearGradient>
+            <linearGradient id="starG" x1="0.2" y1="0" x2="0.9" y2="1">
+              <stop offset="0" stop-color="#FFE9A8"/><stop offset="0.5" stop-color="#F5B324"/><stop offset="1" stop-color="#B06A02"/>
+            </linearGradient>
+            <linearGradient id="planeA" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#F2DFBB"/>
+            </linearGradient>
+          </defs>
+
+          <ellipse cx="202" cy="196" rx="158" ry="138" fill="url(#glowG)"/>
+
+          <!-- سکوی استوانه‌ای -->
+          <ellipse cx="202" cy="352" rx="150" ry="18" fill="#0E0701" opacity=".55" filter="url(#sBlur)"/>
+          <path d="M57 318v18c0 15 65 27 145 27s145-12 145-27v-18z" fill="url(#pedSide)"/>
+          <ellipse cx="202" cy="318" rx="145" ry="27" fill="url(#pedTop)"/>
+          <path d="M57 318a145 27 0 0 1 290 0" fill="none" stroke="#C98B22" stroke-opacity=".5" stroke-width="2"/>
+          <ellipse cx="202" cy="313" rx="104" ry="16" fill="#2A1905" opacity=".55" filter="url(#sBlur)"/>
+
+          <!-- کارت داخل پاکت -->
+          <g transform="rotate(-6 204 148)">
+            <rect x="150" y="56" width="118" height="152" rx="14" fill="#8A5A08" opacity=".4" filter="url(#sBlur)"/>
+            <rect x="148" y="52" width="118" height="152" rx="14" fill="url(#paperG)"/>
+            <rect x="148" y="52" width="118" height="152" rx="14" fill="none" stroke="#FFFFFF" stroke-opacity=".9" stroke-width="1.6"/>
+            <path d="M207 84l25 10v19.4c0 14.2-10 25.6-25 31.2-15-5.6-25-17-25-31.2V94z" fill="url(#redSh)"/>
+            <path d="M207 87.5l19 7.6v2.4c-5.6-3-12-5.4-19-6.8z" fill="#FFFFFF" opacity=".4"/>
+            <path d="M196.5 114l8 8 15-15.6" fill="none" stroke="#FFFFFF" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="171" y="162" width="72" height="8" rx="4" fill="#E2D4B8"/>
+            <rect x="188" y="178" width="38" height="8" rx="4" fill="#EDE2CC"/>
+          </g>
+
+          <!-- پاکت -->
+          <path d="M96 164h212v126c0 13-10 23-23 23H119c-13 0-23-10-23-23z" fill="url(#envBack)"/>
+          <path d="M96 164l0 40 56-40z" fill="url(#envWing)"/>
+          <path d="M308 164l0 40-56-40z" fill="url(#envWing)" opacity=".85"/>
+          <path d="M96 196l106 78 106-78v94c0 13-10 23-23 23H119c-13 0-23-10-23-23z" fill="url(#envFront)"/>
+          <path d="M96 196l106 78 106-78" fill="none" stroke="#FFEFC8" stroke-opacity=".75" stroke-width="2.6" stroke-linejoin="round"/>
+          <path d="M104 214l74 54" fill="none" stroke="#FFFFFF" stroke-opacity=".45" stroke-width="6" stroke-linecap="round" filter="url(#mBlur)"/>
+          <ellipse cx="150" cy="268" rx="40" ry="22" fill="#FFFFFF" opacity=".22" filter="url(#sBlur)"/>
+          <path d="M112 306h180" stroke="#7C4403" stroke-opacity=".38" stroke-width="7" stroke-linecap="round" filter="url(#mBlur)"/>
+          <path d="M100 232c-2 22-2 42 0 58" fill="none" stroke="#FFF0CC" stroke-opacity=".5" stroke-width="2.4" stroke-linecap="round"/>
+
+          <!-- سپر شناور -->
+          <g transform="translate(334 100)">
+            <ellipse cx="0" cy="44" rx="26" ry="7" fill="#1A0D01" opacity=".4" filter="url(#sBlur)"/>
+            <path d="M0-38l30 12.4v21.4C30 12.5 18 26.4 0 33-18 26.4-30 12.5-30-4.2v-21.4z" fill="url(#redSh)"/>
+            <path d="M0-34l22 9v3.2C15.4-25.4 8-28.4 0-30.4z" fill="#FFFFFF" opacity=".38"/>
+            <path d="M-24-20C-24 6-14 19 0 26" fill="none" stroke="#FFFFFF" stroke-opacity=".28" stroke-width="3.4" stroke-linecap="round"/>
+            <path d="M-11.5-2.5L-3.5 5.5 12.5-11" fill="none" stroke="#FFFFFF" stroke-width="6.4" stroke-linecap="round" stroke-linejoin="round"/>
+          </g>
+
+          <!-- ستاره -->
+          <g transform="translate(366 208)">
+            <ellipse cx="0" cy="26" rx="18" ry="5" fill="#1A0D01" opacity=".35" filter="url(#mBlur)"/>
+            <path d="M0-24l7.6 15.4 17 2.5-12.3 12 2.9 16.9L0 14.9-15.2 22.8l2.9-16.9-12.3-12 17-2.5z" fill="url(#starG)"/>
+            <path d="M0-24l7.6 15.4-7.6 3.4-7.6-3.4z" fill="#FFFFFF" opacity=".35"/>
+          </g>
+
+          <!-- سپر کوچک طلایی -->
+          <g transform="translate(52 214) scale(.78)">
+            <ellipse cx="0" cy="40" rx="22" ry="6" fill="#1A0D01" opacity=".32" filter="url(#mBlur)"/>
+            <path d="M0-32l25 10.4v18C25 10 15 22 0 27.6-15 22-25 10-25-3.6v-18z" fill="url(#goldSh)"/>
+            <path d="M0-28.5l18 7.4v2.6C12.6-21.4 6.6-23.8 0-25.4z" fill="#FFFFFF" opacity=".4"/>
+            <circle cx="0" cy="-2" r="5.4" fill="#7E4703"/>
+            <path d="M0 3v7" stroke="#7E4703" stroke-width="4.6" stroke-linecap="round"/>
+          </g>
+
+          <!-- هواپیمای کاغذی -->
+          <g transform="translate(60 128) rotate(-14)">
+            <path d="M0 0l48-19-14 43-10-15z" fill="url(#planeA)"/>
+            <path d="M24 9l24-28-14 43z" fill="#D9C39A"/>
+            <path d="M0 0l48-19-24 28z" fill="#FFFFFF"/>
+          </g>
+
+          <!-- کاغذرنگی -->
+          <g stroke-linecap="round">
+            <path d="M286 40l15-10" stroke="#F5B324" stroke-width="10"/>
+            <path d="M262 72l6-17" stroke="#D22B1E" stroke-width="10"/>
+            <path d="M120 54l4-15" stroke="#F5B324" stroke-width="9"/>
+            <path d="M346 272l17 7" stroke="#D22B1E" stroke-width="9"/>
+            <path d="M40 300l-16 4" stroke="#F5B324" stroke-width="8"/>
+          </g>
+        </svg>
+      </div>
+    </section>
+
+    <!-- کارت کد -->
+    <section class="codecard">
+      <div class="head">
+        <h3>کد ورود شما</h3>
+        <svg width="58" height="58" viewBox="0 0 58 58" aria-hidden="true">
+          <defs>
+            <radialGradient id="chipG" cx="0.35" cy="0.28" r="0.85">
+              <stop offset="0" stop-color="#FFF7E3"/><stop offset="1" stop-color="#F5DFAE"/>
+            </radialGradient>
+            <linearGradient id="lockBody" x1="0.2" y1="0" x2="0.9" y2="1">
+              <stop offset="0" stop-color="#FFDC92"/><stop offset="0.45" stop-color="#E8A317"/><stop offset="1" stop-color="#9C5703"/>
+            </linearGradient>
+            <linearGradient id="shackle" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#F6C24E"/><stop offset="1" stop-color="#A25B03"/>
+            </linearGradient>
+          </defs>
+          <circle cx="29" cy="29" r="28" fill="url(#chipG)"/>
+          <ellipse cx="29" cy="47" rx="15" ry="4" fill="#8A5A08" opacity=".28" filter="url(#mBlur)"/>
+          <path d="M21 26v-4.5a8 8 0 0 1 16 0V26" fill="none" stroke="#8A5108" stroke-width="6.4" stroke-linecap="round"/>
+          <path d="M21 25v-4.5a8 8 0 0 1 16 0V25" fill="none" stroke="url(#shackle)" stroke-width="4.6" stroke-linecap="round"/>
+          <rect x="16" y="26" width="26" height="19" rx="6.5" fill="url(#lockBody)"/>
+          <ellipse cx="23" cy="32" rx="4.5" ry="3" fill="#FFFFFF" opacity=".45" filter="url(#mBlur)"/>
+          <circle cx="29" cy="34" r="2.8" fill="#6B3A02"/>
+          <path d="M29 36.5v4" stroke="#6B3A02" stroke-width="2.6" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <p class="sub">این کد برای ۱۰ دقیقه معتبر است و فقط یک بار قابل استفاده می‌باشد.</p>
+
+      <div class="digits" id="digits" dir="ltr">
+        <span>4</span><span>8</span><span>2</span><span>9</span><span>1</span><span>6</span>
+      </div>
+
+      <button type="button" class="copy" id="copyBtn">
+        <span id="copyLabel">کپی کردن کد</span>
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="11" height="11" rx="2.5"/>
+          <path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5"/>
+        </svg>
+      </button>
+    </section>
+
+    <!-- سه کارت -->
+    <section class="tiles">
+      <div class="tile">
+        <svg width="46" height="46" viewBox="0 0 46 46" aria-hidden="true">
+          <ellipse cx="23" cy="40" rx="12" ry="3.4" fill="#8A5A08" opacity=".26" filter="url(#mBlur)"/>
+          <path d="M23 7l11 4.5v9.6c0 7.2-4.6 13-11 15.6-6.4-2.6-11-8.4-11-15.6v-9.6z" fill="url(#redSh2)"/>
+          <defs><linearGradient id="redSh2" x1="0.2" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#F98C76"/><stop offset="0.45" stop-color="#D22B1E"/><stop offset="1" stop-color="#7E1007"/></linearGradient></defs>
+          <path d="M23 9.6l8.4 3.4v1.6c-2.6-1.2-5.4-2.2-8.4-2.8z" fill="#FFFFFF" opacity=".38"/>
+          <path d="M18 22.4l3.4 3.4 6.6-7" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div>
+          <h4>امنیت حساب شما</h4>
+          <p>ما همیشه در تلاشیم تا حساب شما امن بماند.</p>
+        </div>
+      </div>
+
+      <div class="tile">
+        <svg width="46" height="46" viewBox="0 0 46 46" aria-hidden="true">
+          <defs>
+            <linearGradient id="clockG" x1="0.2" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#FFDC92"/><stop offset="0.45" stop-color="#E8A317"/><stop offset="1" stop-color="#9C5703"/></linearGradient>
+            <radialGradient id="clockFace" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#FFF8E7"/><stop offset="1" stop-color="#F3E0B8"/></radialGradient>
+          </defs>
+          <ellipse cx="23" cy="41" rx="13" ry="3.4" fill="#8A5A08" opacity=".26" filter="url(#mBlur)"/>
+          <circle cx="23" cy="23" r="15" fill="url(#clockG)"/>
+          <circle cx="23" cy="23" r="11.4" fill="url(#clockFace)"/>
+          <ellipse cx="18.5" cy="15" rx="5" ry="3.2" fill="#FFFFFF" opacity=".55" filter="url(#mBlur)"/>
+          <path d="M23 15.6V23l5 3.4" fill="none" stroke="#A25B03" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <div>
+          <h4>مدت اعتبار کد</h4>
+          <p>۱۰ دقیقه</p>
+        </div>
+      </div>
+
+      <div class="tile">
+        <svg width="46" height="46" viewBox="0 0 46 46" aria-hidden="true">
+          <defs><linearGradient id="warnG" x1="0.2" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#F98C76"/><stop offset="0.45" stop-color="#D22B1E"/><stop offset="1" stop-color="#7E1007"/></linearGradient></defs>
+          <ellipse cx="23" cy="39" rx="14" ry="3.4" fill="#8A5A08" opacity=".26" filter="url(#mBlur)"/>
+          <path d="M20 8.6a3.5 3.5 0 0 1 6 0l11 20a3.5 3.5 0 0 1-3 5.3H12a3.5 3.5 0 0 1-3-5.3z" fill="url(#warnG)"/>
+          <path d="M20 9.6a3.5 3.5 0 0 1 5-.6l-2 3.4z" fill="#FFFFFF" opacity=".35"/>
+          <path d="M23 17.4v7.2" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="23" cy="29" r="1.9" fill="#FFFFFF"/>
+        </svg>
+        <div>
+          <h4>توجه</h4>
+          <p>این کد را با دیگران به اشتراک نگذارید.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- مشخصات برنامه -->
+    <section class="block">
+      <div class="sec-head">
+        <h3>مشخصات برنامه</h3>
+        <span aria-hidden="true"></span>
+      </div>
+      <ul class="feats">
+
+        <li class="feat">
+          <svg width="52" height="52" viewBox="0 0 52 52" aria-hidden="true">
+            <defs>
+              <linearGradient id="scanG" x1="0.2" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#FFDC92"/><stop offset="0.45" stop-color="#E8A317"/><stop offset="1" stop-color="#9C5703"/></linearGradient>
+              <linearGradient id="scanFace" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#FFFBF0"/><stop offset="1" stop-color="#F0E0BE"/></linearGradient>
+            </defs>
+            <ellipse cx="26" cy="46" rx="15" ry="3.8" fill="#8A5A08" opacity=".26" filter="url(#mBlur)"/>
+            <rect x="8" y="10" width="36" height="32" rx="8" fill="url(#scanG)"/>
+            <rect x="12" y="14" width="28" height="24" rx="5" fill="url(#scanFace)"/>
+            <ellipse cx="19" cy="18" rx="6" ry="3.4" fill="#FFFFFF" opacity=".6" filter="url(#mBlur)"/>
+            <g stroke="#7E4703" stroke-linecap="round">
+              <path d="M17 20v12" stroke-width="2.4"/><path d="M21.5 20v12" stroke-width="1.6"/>
+              <path d="M25 20v12" stroke-width="3"/><path d="M29.5 20v12" stroke-width="1.6"/>
+              <path d="M33 20v12" stroke-width="2.4"/>
+            </g>
+            <path d="M10 26h32" stroke="#D22B1E" stroke-width="3" stroke-linecap="round"/>
+          </svg>
+          <div>
+            <h4>اسکن سریع بارکد</h4>
+            <p>با دوربین گوشی یا اسکنر بارکد، محصولات را در سریع‌ترین زمان شناسایی و مدیریت کنید.</p>
+          </div>
+        </li>
+
+        <li class="feat">
+          <svg width="52" height="52" viewBox="0 0 52 52" aria-hidden="true">
+            <defs>
+              <linearGradient id="barA" x1="0.2" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#F98C76"/><stop offset="0.45" stop-color="#D22B1E"/><stop offset="1" stop-color="#7E1007"/></linearGradient>
+              <linearGradient id="barB" x1="0.2" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#FFDC92"/><stop offset="0.45" stop-color="#E8A317"/><stop offset="1" stop-color="#9C5703"/></linearGradient>
+            </defs>
+            <ellipse cx="26" cy="45" rx="17" ry="3.8" fill="#8A5A08" opacity=".26" filter="url(#mBlur)"/>
+            <rect x="9" y="27" width="10" height="15" rx="3.4" fill="url(#barB)"/>
+            <rect x="21" y="17" width="10" height="25" rx="3.4" fill="url(#barA)"/>
+            <rect x="33" y="8" width="10" height="34" rx="3.4" fill="url(#barB)"/>
+            <path d="M11.4 29.5v10M23.4 19.5v20M35.4 10.5v29" stroke="#FFFFFF" stroke-opacity=".45" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <div>
+            <h4>مدیریت بهتر موجودی</h4>
+            <p>ویلن به شما کمک می‌کند پرفروش‌ترین و کم‌فروش‌ترین محصولات را شناسایی کنید و بر اساس میزان فروش، برای خریدهای بعدی تصمیم دقیق‌تری بگیرید. به این ترتیب، موجودی فروشگاه متعادل‌تر می‌شود و سرمایه کمتری در کالاهای کم‌فروش باقی می‌ماند.</p>
+          </div>
+        </li>
+
+        <li class="feat">
+          <svg width="52" height="52" viewBox="0 0 52 52" aria-hidden="true">
+            <defs>
+              <linearGradient id="scrG" x1="0.2" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#FFDC92"/><stop offset="0.45" stop-color="#E8A317"/><stop offset="1" stop-color="#9C5703"/></linearGradient>
+              <linearGradient id="scrFace" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#FFFBF0"/><stop offset="1" stop-color="#EEDCB6"/></linearGradient>
+              <linearGradient id="phoneG" x1="0.2" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#F98C76"/><stop offset="0.5" stop-color="#D22B1E"/><stop offset="1" stop-color="#7E1007"/></linearGradient>
+            </defs>
+            <ellipse cx="26" cy="45" rx="18" ry="3.8" fill="#8A5A08" opacity=".26" filter="url(#mBlur)"/>
+            <rect x="5" y="11" width="34" height="24" rx="4.5" fill="url(#scrG)"/>
+            <rect x="8" y="14" width="28" height="18" rx="2.6" fill="url(#scrFace)"/>
+            <ellipse cx="15" cy="17.5" rx="5.5" ry="2.8" fill="#FFFFFF" opacity=".6" filter="url(#mBlur)"/>
+            <path d="M17 35h10l1.6 5H15.4z" fill="url(#scrG)"/>
+            <rect x="12" y="40" width="20" height="3.4" rx="1.7" fill="#9C5703"/>
+            <rect x="32" y="20" width="16" height="25" rx="4.5" fill="url(#phoneG)"/>
+            <rect x="34.4" y="23.4" width="11.2" height="17" rx="2.2" fill="#FFF3DF"/>
+            <circle cx="40" cy="42.4" r="1.4" fill="#FFD9CF"/>
+          </svg>
+          <div>
+            <h4>آنلاین و آفلاین، روی موبایل و کامپیوتر</h4>
+            <p>ویلن هم با اینترنت و هم بدون اینترنت قابل استفاده است و روی موبایل و کامپیوتر در دسترس شما قرار دارد. با استفاده از نسخهٔ آنلاین، می‌توانید اطلاعات فروشگاه را راحت‌تر مدیریت کنید و دسترسی مطمئن‌تری به اطلاعات خود داشته باشید.</p>
+          </div>
+        </li>
+
+      </ul>
+    </section>
+
+    <!-- چرا ویلن؟ -->
+    <section class="why">
+      <div class="sec-head">
+        <h3>چرا ویلن؟</h3>
+        <span aria-hidden="true"></span>
+      </div>
+      <h4>ساده، کاربردی و متناسب با نیاز واقعی فروشگاه</h4>
+      <p>ویلن برای ساده‌تر کردن مدیریت روزمرهٔ فروشگاه طراحی شده است؛ از ثبت و مدیریت کالا گرفته تا فروش، موجودی و حساب‌های روزانه. امکانات ویلن بر اساس نیازهای واقعی فروشگاه‌ها شکل گرفته تا کارهای روزمره را سریع‌تر، منظم‌تر و کم‌دردسرتر انجام دهید.</p>
+    </section>
+
+    <!-- با اعتماد شما -->
+    <section class="block note">
+      <div class="sec-head">
+        <h3>با اعتماد شما، ویلن بهتر می‌شود</h3>
+        <span aria-hidden="true"></span>
+      </div>
+      <h4>پیشنهادهای شما، مسیر بهتر شدن ویلن را می‌سازند</h4>
+      <p>اگر هنگام استفاده از ویلن با مشکلی مواجه شدید یا پیشنهادی برای بهتر شدن برنامه داشتید، با پشتیبانی در تماس شوید. تیم ویلن تلاش می‌کند مشکلات و درخواست‌های شما را در کوتاه‌ترین زمان بررسی و پیگیری کند.</p>
+      <p>برای دسترسی راحت‌تر و مدیریت مطمئن‌تر اطلاعات فروشگاه، استفاده از <strong style="color:var(--gold-text);">نسخهٔ آنلاین ویلن</strong> پیشنهاد می‌شود. نگهداری اطلاعات در نسخهٔ آنلاین می‌تواند احتمال از دست رفتن یا گم‌شدن اطلاعات حساب‌ها را کاهش دهد.</p>
+      <span class="sign">با سپاس از اعتماد و همراهی شما<br>تیم ویلن</span>
+    </section>
+
+    <!-- فوتر -->
+    <footer class="foot">
+      <div class="foot-row">
+        <div class="logo">
+          <svg width="42" height="46" viewBox="0 0 50 54" aria-hidden="true">
+            <path d="M15 17v-3.5a10 10 0 0 1 20 0V17" fill="none" stroke="#8E1409" stroke-width="6" stroke-linecap="round"/>
+            <path d="M15 16v-3.5a10 10 0 0 1 20 0V16" fill="none" stroke="url(#handleTop)" stroke-width="4.4" stroke-linecap="round"/>
+            <path d="M37 18h4.2a2.6 2.6 0 0 1 2.6 2.8l-2 24A5 5 0 0 1 37 49.4z" fill="url(#bagSide)"/>
+            <path d="M8.8 18H37a2.6 2.6 0 0 1 2.6 2.8l-2 24A5 5 0 0 1 32.6 49.4H13.2a5 5 0 0 1-5-4.6l-2-24A2.6 2.6 0 0 1 8.8 18z" fill="url(#bagFront)"/>
+            <path d="M8.8 18H41.2a2.6 2.6 0 0 1 2.6 2.8l-.3 3.4H6.5l-.3-3.4A2.6 2.6 0 0 1 8.8 18z" fill="url(#bagRim)"/>
+          </svg>
+          <div class="logo-txt">
+            <strong class="wm" style="font-size:18px;">VILL3N Shop</strong>
+            <span>بیشتر از یک خرید ساده</span>
+          </div>
+        </div>
+        <nav class="links" aria-label="راه‌های ارتباط">
+          <a href="#" aria-label="وب‌سایت"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"/></svg></a>
+          <a href="#" aria-label="پیام"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3.5 20.5l1.4-5.2A8.5 8.5 0 1 1 21 11.5z"/></svg></a>
+          <a href="#" aria-label="تماس"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h3.5l1.5 4-2 1.5a12 12 0 0 0 6.5 6.5L16 14l4 1.5V19a1.5 1.5 0 0 1-1.7 1.5A16.5 16.5 0 0 1 3.5 5.7 1.5 1.5 0 0 1 5 4z"/></svg></a>
+          <a href="#" aria-label="ایمیل"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 7l8.5 6 8.5-6"/></svg></a>
+        </nav>
+      </div>
+
+      <div class="hr" aria-hidden="true"></div>
+
+      <div class="contact">
+        <a href="tel:+93792236008">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#A81F14" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h3.5l1.5 4-2 1.5a12 12 0 0 0 6.5 6.5L16 14l4 1.5V19a1.5 1.5 0 0 1-1.7 1.5A16.5 16.5 0 0 1 3.5 5.7 1.5 1.5 0 0 1 5 4z"/></svg>
+          <span dir="ltr">0792 236 008</span>
+        </a>
+        <a href="mailto:vill3ntec@gmail.com">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#86590A" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 7l8.5 6 8.5-6"/></svg>
+          <span dir="ltr">vill3ntec@gmail.com</span>
+        </a>
+      </div>
+
+      <div class="foot-row">
+        <p class="thanks">
+          با
+          <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5s-7.5-4.4-7.5-9.5a4 4 0 0 1 7.5-2 4 4 0 0 1 7.5 2c0 5.1-7.5 9.5-7.5 9.5z" fill="#D22B1E"/></svg>
+          از خرید شما متشکریم.
+        </p>
+        <div class="mascot" aria-hidden="true">
+          <svg viewBox="0 0 110 112">
+            <ellipse cx="55" cy="104" rx="36" ry="7" fill="#6B4505" opacity=".3" filter="url(#sBlur)"/>
+            <path d="M33 33v-7a22 22 0 0 1 44 0v7" fill="none" stroke="#8E1409" stroke-width="12" stroke-linecap="round"/>
+            <path d="M33 31v-7a22 22 0 0 1 44 0v7" fill="none" stroke="url(#handleTop)" stroke-width="8.6" stroke-linecap="round"/>
+            <path d="M82 36h9a5.4 5.4 0 0 1 5.4 5.8l-4 52A10 10 0 0 1 82 102z" fill="url(#bagSide)"/>
+            <path d="M19 36h63a5.4 5.4 0 0 1 5.4 5.8l-4 52a10 10 0 0 1-10 9.2H27.6a10 10 0 0 1-10-9.2l-4-52A5.4 5.4 0 0 1 19 36z" fill="url(#bagFront)"/>
+            <path d="M19 36h72a5.4 5.4 0 0 1 5.4 5.8l-.6 7H14.2l-.6-7A5.4 5.4 0 0 1 19 36z" fill="url(#bagRim)"/>
+            <ellipse cx="32" cy="62" rx="10" ry="15" fill="#FFFFFF" opacity=".32" filter="url(#sBlur)"/>
+            <ellipse cx="42" cy="70" rx="5" ry="6.4" fill="#33200A"/>
+            <ellipse cx="64" cy="70" rx="5" ry="6.4" fill="#33200A"/>
+            <circle cx="43.6" cy="67.6" r="1.8" fill="#FFFFFF"/>
+            <circle cx="65.6" cy="67.6" r="1.8" fill="#FFFFFF"/>
+            <path d="M45 82c4 4 12 4 16 0" fill="none" stroke="#33200A" stroke-width="3.8" stroke-linecap="round"/>
+            <ellipse cx="34" cy="80" rx="4.6" ry="3" fill="#F98C76" opacity=".5"/>
+            <ellipse cx="72" cy="80" rx="4.6" ry="3" fill="#F98C76" opacity=".5"/>
+          </svg>
+        </div>
+      </div>
+    </footer>
+
+  </main>
+
+  <p class="legal">این پیام به‌صورت خودکار ارسال شده است؛ لطفاً به آن پاسخ ندهید.<br>VILL3N — «سریع، آسان»</p>
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById('copyBtn');
+    var label = document.getElementById('copyLabel');
+    var box = document.getElementById('digits');
+    if (!btn || !label || !box) return;
+
+    var code = Array.prototype.map.call(box.querySelectorAll('span'), function (s) {
+      return s.textContent.trim();
+    }).join('');
+
+    function flash(text) {
+      label.textContent = text;
+      btn.classList.add('done');
+      setTimeout(function () {
+        label.textContent = 'کپی کردن کد';
+        btn.classList.remove('done');
+      }, 2200);
+    }
+
+    btn.addEventListener('click', function () {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code).then(function () { flash('کپی شد'); }, function () { flash('کد: ' + code); });
+      } else {
+        flash('کد: ' + code);
+      }
+    });
+  })();
+</script>
