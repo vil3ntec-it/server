@@ -178,7 +178,9 @@ export type LoginRequest = {
 export type Thread = {
   id: string; app: string; who: string; status: string; unreadAdmin: number;
   lastMessage: string; lastSender: string; createdAt: number; updatedAt: number;
-  accountName?: string; shopName?: string; stationName?: string;
+  accountName?: string; accountEmail?: string; shopName?: string; stationName?: string;
+  //  همان چیزهایی که ‎shapeThread‎ی سرورِ حساب می‌دهد — کارتِ طرفِ گفت‌وگو می‌خواندشان
+  subject?: string; contact?: string; deviceUid?: string; stationId?: string; shopId?: string;
 };
 
 export type Message = {
