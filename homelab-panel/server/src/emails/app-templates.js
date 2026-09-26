@@ -18,6 +18,15 @@ import { fileURLToPath } from 'node:url';
 
 export const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'templates');
 export const FILES = Object.freeze({ pump: 'pump-code.html', shop: 'shop-code.html' });
+/*
+ *  ⛔ **نسخهٔ فرستادنی** (گزارشِ صاحبِ سامانه با عکسِ جیمیل، ۱۴۰۵/۰۷/۱۳: «اصلاً
+ *  ظاهرش رو دیدی؟»). فایلِ او صفحهٔ وب است و جیمیل برگهٔ سبک، متغیرِ CSS،
+ *  فلکس و گرید، SVG و اسکریپت را دور می‌ریزد؛ نامه متنِ خام می‌رسید. فایلِ او
+ *  مرجع می‌ماند و نامه از نسخهٔ جدولی با سبکِ درون‌خطی می‌رود (نوشته‌ها
+ *  واژه‌به‌واژه همان — آزمون می‌سنجد)، و شکل‌ها PNGِ همان SVGها با `cid:`.
+ *  ⚠️ این‌ها هم بایت‌به‌بایت همان فایل‌های `shop` هستند.
+ */
+export const EMAIL_FILES = Object.freeze({ pump: 'pump-code.email.html', shop: 'shop-code.email.html' });
 export const SAMPLE = '482916';
 
 /**
@@ -29,15 +38,16 @@ export function appOf(app) {
 }
 
 const cache = new Map();
-function raw(app) {
-  const key = appOf(app);
-  if (!cache.has(key)) {
+function read(file) {
+  if (!cache.has(file)) {
     let text = null;
-    try { text = fs.readFileSync(path.join(DIR, FILES[key]), 'utf8'); } catch { text = null; }
-    cache.set(key, text);
+    try { text = fs.readFileSync(path.join(DIR, file), 'utf8'); } catch { text = null; }
+    cache.set(file, text);
   }
-  return cache.get(key);
+  return cache.get(file);
 }
+function raw(app) { return read(FILES[appOf(app)]); }
+function rawEmail(app) { return read(EMAIL_FILES[appOf(app)]); }
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -66,19 +76,47 @@ function once(text, from, to) {
   return text.slice(0, i) + to + text.slice(i + from.length);
 }
 
+/** خطِ پیش‌نمایش درست پس از `<body …>`. */
+function withPreheader(html) {
+  if (html === null) return null;
+  const m = /<body[^>]*>/.exec(html);
+  if (!m) return null;
+  const at = m.index + m[0].length;
+  return html.slice(0, at) + '\n' + preheader() + html.slice(at);
+}
+
 /** نامهٔ کد با قالبِ همان برنامه، یا `null` اگر قالب یا نشانه‌اش نبود. */
 export function codeHtml({ app, code } = {}) {
   const digits = String(code ?? '').replace(/\D/g, '');
   if (digits.length !== 6) return null;
   const key = appOf(app);
-  let html = raw(key);
+  let html = rawEmail(key);
   if (html === null) return null;
   if (key === 'pump') {
-    html = once(html, `<div class="code" id="code" dir="ltr">${SAMPLE}</div>`,
-      `<div class="code" id="code" dir="ltr">${digits}</div>`);
+    html = once(html, `">${SAMPLE}</div>`, `">${digits}</div>`);
   } else {
-    const spans = (s) => s.split('').map((d) => `<span>${d}</span>`).join('');
-    html = once(html, spans(SAMPLE), spans(digits));
+    const m = /<!--digits-->[^]*?<!--\/digits-->/.exec(html);
+    if (!m) return null;
+    let k = 0;
+    const block = m[0].replace(/>(\d)<\/td>/g, () => `>${digits[k++]}</td>`);
+    if (k !== 6) return null;
+    html = html.slice(0, m.index) + block + html.slice(m.index + m[0].length);
   }
-  return html === null ? null : preheader() + html;
+  return withPreheader(html);
+}
+
+/** پیوست‌های درون‌خطیِ نامه — هر `cid:<app>-<نام>@vill3n`، همان PNGِ کنارِ قالب. */
+export function inlineParts(html) {
+  const out = [];
+  const seen = new Set();
+  for (const m of String(html || '').matchAll(/cid:(pump|shop)-([a-z0-9]+)@vill3n/g)) {
+    const cid = `${m[1]}-${m[2]}@vill3n`;
+    if (seen.has(cid)) continue;
+    seen.add(cid);
+    try {
+      out.push({ cid, filename: `${m[2]}.png`, contentType: 'image/png',
+        data: fs.readFileSync(path.join(DIR, `${m[1]}-img`, `${m[2]}.png`)) });
+    } catch { /* نیست ⇒ بی تصویر */ }
+  }
+  return out;
 }
