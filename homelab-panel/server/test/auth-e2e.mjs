@@ -123,8 +123,12 @@ try {
   //  نزن» صریح است؛ پس سنجه همان قالب را می‌خواهد، نه نام را.
   step('قالبِ صاحبِ سامانه رفت، نه قالبِ قدیمی',
     html.includes('کد ورود شما') && !html.includes('کد تأیید حساب شما در VILL3N'), html.slice(0,80));
+  //  ⚠️ از `<body` شمرده می‌شود، نه از سرِ فایل: نسخهٔ جیمیل‌پسند (۱.۵۰.۲۳)
+  //  سرِ `<head>`ِ بلندتری دارد و «۴۰۰ نویسهٔ اولِ فایل» دیگر به بدنه نمی‌رسید.
+  const body = html.indexOf('<body');
+  const top = html.slice(body, html.indexOf('</div>', body));
   step('⛔ کد در پیش‌نمایشِ پنهانِ سرِ نامه نیست',
-    /display:none/.test(html.slice(0, 400)) && !html.slice(0, html.indexOf('</div>')).includes(String(saraCode)));
+    body > 0 && /display:none/.test(html.slice(body, body + 400)) && !top.includes(String(saraCode)));
   step('کدِ خودِ همان شخص در ایمیل هست', html.includes(String(saraCode)), String(saraCode));
 
   console.log('\n── خروج ──');
