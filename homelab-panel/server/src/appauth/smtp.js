@@ -9,6 +9,7 @@
 // ---------------------------------------------------------------------------
 import net from 'node:net';
 import tls from 'node:tls';
+import { inlineParts } from '../emails/app-templates.js';
 
 const CRLF = '\r\n';
 
@@ -187,7 +188,7 @@ function connect({ host, port, secure, rejectUnauthorized, timeoutMs }) {
 /** متنِ فارسی در ایمیل: هدرها base64 و بدنه هم base64 — همه‌جا درست دیده می‌شود */
 const mime = (value) => `=?UTF-8?B?${Buffer.from(String(value), 'utf8').toString('base64')}?=`;
 
-function buildMessage({ from, fromName, to, subject, text, html }) {
+export function buildMessage({ from, fromName, to, subject, text, html }) {
   const boundary = `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
   const head = [
     `From: ${fromName ? `${mime(fromName)} ` : ''}<${from}>`,
@@ -210,22 +211,49 @@ function buildMessage({ from, fromName, to, subject, text, html }) {
     ].join(CRLF);
   }
 
-  return [
-    ...head,
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
-    '',
-    `--${boundary}`,
+  //  ⛔ تصویرهای قالب پیوستِ درون‌خطی‌اند (`cid:`) — جیمیل نه SVG نشان می‌دهد
+  //  نه `data:`. نامه‌ای که cid دارد `multipart/related` می‌شود.
+  const inline = inlineParts(html);
+  const alt = inline.length ? `a${boundary}` : boundary;
+  const alternative = [
+    `--${alt}`,
     'Content-Type: text/plain; charset=UTF-8',
     'Content-Transfer-Encoding: base64',
     '',
     b64(text),
-    `--${boundary}`,
+    `--${alt}`,
     'Content-Type: text/html; charset=UTF-8',
     'Content-Transfer-Encoding: base64',
     '',
     b64(html),
-    `--${boundary}--`,
-  ].join(CRLF);
+    `--${alt}--`,
+  ];
+  if (!inline.length) {
+    return [...head, `Content-Type: multipart/alternative; boundary="${boundary}"`, '', ...alternative].join(CRLF);
+  }
+  const bin = (buf) => buf.toString('base64').replace(/(.{76})/g, `$1${CRLF}`);
+  const parts = [
+    ...head,
+    `Content-Type: multipart/related; type="multipart/alternative"; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    `Content-Type: multipart/alternative; boundary="${alt}"`,
+    '',
+    ...alternative,
+  ];
+  for (const f of inline) {
+    parts.push(
+      `--${boundary}`,
+      `Content-Type: ${f.contentType}; name="${f.filename}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-ID: <${f.cid}>`,
+      `Content-Disposition: inline; filename="${f.filename}"`,
+      '',
+      bin(f.data),
+    );
+  }
+  parts.push(`--${boundary}--`);
+  return parts.join(CRLF);
 }
 
 /**

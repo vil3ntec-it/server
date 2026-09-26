@@ -35,15 +35,25 @@ for (const [app, appName, subject, brand, key] of cases) {
   check(`${app}: ⛔ کد در عنوان نیست`, !/\d{6}/.test(m.subject));
   check(`${app}: فرستنده «${brand}»`, m.fromName === brand, m.fromName);
   const pre = t.preheader();
-  check(`${app}: ⛔ پیش‌نمایشِ پنهانِ بی‌کد سرِ نامه`, m.html.startsWith(pre) && !pre.includes('201060'));
+  const at = m.html.indexOf(pre);
+  check(`${app}: ⛔ پیش‌نمایشِ پنهانِ بی‌کد سرِ نامه`, at > m.html.indexOf('<body') && at < m.html.indexOf('<table') && !pre.includes('201060'));
   check(`${app}: ⛔ خطِ نخستِ متن بی کد`, !/\d{6}/.test(m.text.split('\n')[0]));
-  check(`${app}: کد داخلِ خودِ نامه هست`, m.html.includes('201060') || m.html.includes('<span>2</span><span>0</span><span>1</span>'));
-  const raw = fs.readFileSync(path.join(t.DIR, t.FILES[key]), 'utf8');
-  const body = m.html.slice(pre.length);
+  const digitsOf = (h) => (/<!--digits-->[^]*?<!--\/digits-->/.exec(h)?.[0].match(/>(\d)<\/td>/g) || []).map((x) => x[1]).join('');
+  check(`${app}: کد داخلِ خودِ نامه هست`, m.html.includes('">201060</div>') || digitsOf(m.html) === '201060');
+  const raw = fs.readFileSync(path.join(t.DIR, t.EMAIL_FILES[key]), 'utf8');
+  const body = m.html.slice(0, at) + m.html.slice(at + pre.length + 1);
   const expected = key === 'pump'
-    ? raw.replace(`id="code" dir="ltr">${t.SAMPLE}<`, 'id="code" dir="ltr">201060<')
-    : raw.replace(t.SAMPLE.split('').map((d) => `<span>${d}</span>`).join(''), '201060'.split('').map((d) => `<span>${d}</span>`).join(''));
-  check(`${app}: ⛔ بقیهٔ نامه بایت‌به‌بایت فایلِ صاحبِ سامانه است`, body === expected);
+    ? raw.replace(`">${t.SAMPLE}</div>`, '">201060</div>')
+    : raw.replace(/<!--digits-->[^]*?<!--\/digits-->/, (b) => { let k = 0; return b.replace(/>(\d)<\/td>/g, () => `>${'201060'[k++]}</td>`); });
+  check(`${app}: ⛔ بقیهٔ نامه بایت‌به‌بایت نسخهٔ فرستادنیِ فایلِ صاحبِ سامانه است`, body === expected);
+  //  ⛔ نوشته‌ها واژه‌به‌واژه همان فایلِ او؛ و چیزی که جیمیل دور می‌ریزد نیست
+  const text = (h) => h.replace(/<!--[^]*?-->/g, '').replace(/<(script|style|title|head)[^]*?<\/\1>/gi, '')
+    .replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  const orig = fs.readFileSync(path.join(t.DIR, t.FILES[key]), 'utf8');
+  check(`${app}: ⛔ نوشته‌های نسخهٔ فرستادنی همان فایلِ صاحبِ سامانه`, text(raw) === text(orig));
+  check(`${app}: ⛔ بی برگهٔ سبک، متغیر، SVG و اسکریپت`, !/<style|<script|var\(--|<svg|class="/.test(raw));
+  const parts = t.inlineParts(m.html);
+  check(`${app}: هر تصویر یک PNGِ پیوستی`, parts.length > 10 && parts.length === new Set([...m.html.matchAll(/src="(cid:[^"]+)"/g)].map((x) => x[1])).size);
   check(`${app}: ⛔ قالبِ قدیمی نیامد`, !m.html.includes('کد تأیید حساب شما در VILL3N'));
 }
 
@@ -57,7 +67,7 @@ check('نامِ فرستندهٔ تنظیمات جلوتر است', named.fromNa
 //  ⛔ و قالب‌ها همان فایل‌های سرورِ حساب‌اند — اگر ریپوی خواهر کنارِ این ریپو است
 const sibling = path.resolve(import.meta.dirname, '..', '..', '..', '..', 'shop', 'server', 'src', 'lib', 'mail-templates');
 if (fs.existsSync(sibling)) {
-  for (const f of Object.values(t.FILES)) {
+  for (const f of [...Object.values(t.FILES), ...Object.values(t.EMAIL_FILES)]) {
     const a = crypto.createHash('sha256').update(fs.readFileSync(path.join(t.DIR, f))).digest('hex');
     const b = crypto.createHash('sha256').update(fs.readFileSync(path.join(sibling, f))).digest('hex');
     check(`${f} بایت‌به‌بایت همان فایلِ سرورِ حساب است`, a === b);
@@ -65,6 +75,13 @@ if (fs.existsSync(sibling)) {
 } else {
   console.log('  ⚠️  ریپوی shop کنارِ این ریپو نیست — سنجشِ یکسانیِ فایل‌ها رد شد');
 }
+
+//  ⛔ نامهٔ SMTPِ پنل تصویرها را درون‌خطی (cid) پیوست می‌کند
+const { buildMessage } = await import('../src/appauth/smtp.js');
+const letter = buildCodeMail({ to: 'a@b.com', code: '201060', app: 'pump', settings });
+const raw822 = buildMessage({ from: 'a@b.com', to: 'x@y.z', subject: letter.subject, text: letter.text, html: letter.html });
+check('نامه multipart/related است', raw822.includes('Content-Type: multipart/related; type="multipart/alternative"'));
+check('هر تصویر Content-IDِ خودش را دارد', t.inlineParts(letter.html).every((p) => raw822.includes(`Content-ID: <${p.cid}>`)));
 
 const qsrc = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'src', 'codes', 'queue.js'), 'utf8');
 check('⛔ صف نامِ برنامه (app) را به نامه می‌دهد', /\n\s+app: row\.app,\n/.test(qsrc));
