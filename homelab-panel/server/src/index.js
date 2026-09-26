@@ -268,6 +268,12 @@ app.use('/api/stations', rateLimit('stations-ip', cap('HLP_RATE_STATIONS_IP', 30
 app.use('/api/stations', rateLimit('stations', cap('HLP_RATE_STATIONS', 1200), 60 * 1000, {
   keyOf: (req) => {
     const code = String(req.path || '').split('/').filter(Boolean)[0] || '';
+    /*  ⚠️ ‎/api/stations/enroll‎ کدِ پمپ نیست — نخستین تکهٔ مسیرش «enroll» است و
+        تا ۱۴۰۵/۰۷/۱۴ همان به‌عنوانِ «پمپِ enroll» یک سطلِ مشترک می‌گرفت: یعنی
+        سقفِ ۱۲۰۰ ثبت در دقیقه برای **همهٔ** پمپ‌های دنیا با هم. تستِ فشار با
+        ۲۰۰۰ پمپ گرفتش: دقیقاً ۸۰۰ ثبتِ آخر ۴۲۹ می‌شدند. ثبت سطلِ آی‌پی را
+        دارد (بالا)، همین بس است.                                              */
+    if (code.toLowerCase() === 'enroll') return clientIp(req);
     return /^[a-z0-9_-]{1,48}$/i.test(code) ? 'stn:' + code.toLowerCase() : clientIp(req);
   },
 }));
