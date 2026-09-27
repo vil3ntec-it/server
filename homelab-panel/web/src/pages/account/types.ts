@@ -186,4 +186,6 @@ export type Thread = {
 export type Message = {
   id: string; threadId: string; sender: string; senderId: string; senderName: string;
   body: string; kind: string; readAt: number | null; createdAt: number;
+  /** رسانهٔ پشتیبانیِ پمپ (عکس/ویدیو/صدا) — سرورِ حساب پس از رسیدن پاکش می‌کند */
+  mediaId?: string | null;
 };
