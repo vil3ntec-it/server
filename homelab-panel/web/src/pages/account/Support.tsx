@@ -15,18 +15,18 @@
 //     نشد و هیچ پیامی روی این کامپیوتر نمی‌ماند: همان قاعدهٔ همیشگی.
 //  ⛔ **پشتیبانی هیچ‌وقت پشتِ اشتراک نمی‌رود.** کسی که اشتراکش تمام شده
 //     بیشتر از همه لازم دارد بپرسد چرا.
-//  ⚠️ **پیوست (عکس/ویدیو/صدا) از این‌جا نمی‌رود و دیده نمی‌شود** — و این
-//     کم‌کاریِ صفحه نیست: مسیرِ مدیریتیِ پشتیبانیِ سرورِ حساب فقط متن دارد
-//     (`support_messages.kind` تنها `text` و `notice` می‌شود). دکمه‌ای که
-//     بخورد به «این‌جا نمی‌شود» از نبودنش بدتر است، پس ساخته نشده.
+//  📎 **رسانه (عکس/ویدیو/پیامِ صوتی) — فقط در گفت‌وگوی پمپ** (۱۴۰۵/۰۷/۱۵):
+//     سرورِ حساب فقط رله است و رسانه را پس از رسیدن به گیرنده پاک می‌کند؛
+//     نسخهٔ مدیر روی دیسکِ همین کامپیوتر است (‎support-media-cache.js‎).
+//     برنامهٔ دکان رسانه را نشان نمی‌دهد، پس در گفت‌وگوی دکان دکمه‌اش نیست.
 //  ⚠️ زنده است: فهرست و خودِ گفت‌وگو هر دو موضوعِ ‎support‎ را می‌شنوند، پس
 //     پیامِ تازهٔ مشتری همان لحظه می‌نشیند — بی نبضِ کور.
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MessagesSquare, Search, Send } from 'lucide-react';
+import { Mic, MessagesSquare, Paperclip, Search, Send, Square } from 'lucide-react';
 
-import { api } from '../../api';
+import { api, getToken } from '../../api';
 import { Badge, ConfirmDialog, Modal, Skeleton, toast } from '../../components/ui';
 import { ActionButton, Notice as InlineNotice, Select } from '../../control/ui';
 import { APP_LABEL, AppPicker, CloudProblem, day, fa, moment, useLoad, type Scope } from './shared';
@@ -35,6 +35,50 @@ import type { Message, Thread } from './types';
 const THREAD_STATUS: Record<string, string> = {
   open: 'باز', pending: 'منتظرِ مشتری', closed: 'بسته',
 };
+
+/*
+ *  ── رسانه ─────────────────────────────────────────────────────────────
+ *  همان سقفِ سرورِ حساب (۲۵ مگابایت) و همان سه نوع. پیش‌نمایشِ فهرست همان
+ *  جمله‌ای است که سرورِ حساب در ‎lastMessage‎ می‌گذارد.
+ */
+const MAX_MEDIA = 25 * 1024 * 1024;
+const MEDIA_KINDS = ['image', 'video', 'audio'] as const;
+type MediaKind = (typeof MEDIA_KINDS)[number];
+const MEDIA_LABEL: Record<MediaKind, string> = { image: '📷 عکس', video: '🎥 ویدیو', audio: '🎤 پیامِ صوتی' };
+
+function kindOfMime(mime: string): MediaKind | null {
+  const m = (mime || '').toLowerCase();
+  if (m.startsWith('image/')) return 'image';
+  if (m.startsWith('video/')) return 'video';
+  if (m.startsWith('audio/')) return 'audio';
+  return null;
+}
+
+/** نشانیِ رسانه روی خودِ پنل — ‎?token=‎ چون ‎<img>‎ سرآیندِ Authorization ندارد. */
+function mediaUrl(mid: string) {
+  return `/api/account-admin/support/media/${encodeURIComponent(mid)}?token=${encodeURIComponent(getToken() || '')}`;
+}
+
+/** رسانهٔ داخلِ حباب. نشد (گذشته از ۱۵ روز یا جای دیگری گرفته شد) ⇒ یک جملهٔ راست. */
+function MediaView({ kind, mid }: { kind: MediaKind; mid: string }) {
+  const [broken, setBroken] = useState(false);
+  const url = mediaUrl(mid);
+  if (broken) {
+    return <p className="text-[12px] opacity-80">{MEDIA_LABEL[kind]} · رسانه دیگر در دسترس نیست</p>;
+  }
+  if (kind === 'image') {
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="block">
+        <img src={url} alt="عکس" loading="lazy" onError={() => setBroken(true)}
+          className="max-h-72 max-w-full rounded-xl object-contain" style={{ background: 'rgba(0,0,0,.06)' }} />
+      </a>
+    );
+  }
+  if (kind === 'video') {
+    return <video src={url} controls preload="metadata" onError={() => setBroken(true)} className="max-h-72 max-w-full rounded-xl" />;
+  }
+  return <audio src={url} controls preload="metadata" onError={() => setBroken(true)} className="w-64 max-w-full" />;
+}
 
 /** رنگِ آواتار از روی نام — همان قاعدهٔ ‎AvatarKey‎ی برنامهٔ پمپ: یک نام، همیشه یک رنگ. */
 const AVATAR = ['#0f6f83', '#7c4dbe', '#c2410c', '#15803d', '#b91c1c', '#1d4ed8'];
@@ -166,7 +210,7 @@ export default function Support() {
             )}
           </div>
           <p className="border-t border-line px-3 py-2 text-[10.5px] text-ink-muted">
-            پیام‌ها روی سرورِ حساب می‌مانند؛ این‌جا فقط پنجرهٔ مدیر است.
+            پیام‌ها ۱۵ روز روی سرورِ حساب؛ رسانه فقط تا رسیدن به طرفِ دیگر.
           </p>
         </section>
 
@@ -200,6 +244,16 @@ export default function Support() {
 function Conversation({ thread, onChanged }: { thread: Thread; onChanged: () => Promise<void> }) {
   const [text, setText] = useState('');
   const [close, setClose] = useState(false);
+  const [sendingMedia, setSendingMedia] = useState(false);
+  const [recording, setRecording] = useState<{ started: number } | null>(null);
+  const [recSeconds, setRecSeconds] = useState(0);
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  const recorder = useRef<MediaRecorder | null>(null);
+  //  رسانه فقط در گفت‌وگوی پمپ: برنامهٔ دکان نشانش نمی‌دهد و سرورِ حساب هم ردش می‌کند
+  const mediaOk = thread.app === 'pump';
+  //  ضبط در یک رندر شروع و در رندرِ دیگری تمام می‌شود — نوشتهٔ کادر از همین ref
+  const textRef = useRef(text);
+  textRef.current = text;
   //  ⚠️ خودِ گفت‌وگو هم زنده است: پیامِ تازهٔ مشتری وسطِ باز بودن می‌نشیند
   const conv = useLoad<{ thread: Thread; messages: Message[] }>(`/api/account-admin/support/threads/${thread.id}?after=0`, [thread.id], 'support');
   const bottom = useRef<HTMLDivElement | null>(null);
@@ -222,6 +276,83 @@ function Conversation({ thread, onChanged }: { thread: Thread; onChanged: () => 
       toast(e instanceof Error ? e.message : 'نشد', 'bad');
     }
   }
+
+  /** بارگذاریِ خام، بعد پیامی با همان ‎mediaId‎ — و نوشتهٔ کادر به‌عنوانِ توضیح. */
+  async function sendMedia(blob: Blob, mime: string) {
+    const kind = kindOfMime(mime);
+    if (!kind) { toast('فقط عکس، ویدیو و صدا', 'bad'); return; }
+    if (blob.size > MAX_MEDIA) { toast('فایل بزرگ‌تر از ۲۵ مگابایت است', 'bad'); return; }
+    if (!blob.size) { toast('فایل خالی است', 'bad'); return; }
+    setSendingMedia(true);
+    try {
+      const up = await api<{ mediaId: string }>(`/api/account-admin/support/threads/${thread.id}/media`, {
+        method: 'POST', raw: blob, contentType: mime,
+      });
+      await api(`/api/account-admin/support/threads/${thread.id}/messages`, {
+        body: { kind, mediaId: up.mediaId, body: textRef.current.trim() },
+      });
+      setText('');
+      await conv.reload();
+      await onChanged();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'نشد', 'bad');
+    } finally {
+      setSendingMedia(false);
+    }
+  }
+
+  async function pickFile(file: File | undefined) {
+    if (fileInput.current) fileInput.current.value = '';
+    if (file) await sendMedia(file, file.type || '');
+  }
+
+  /*
+   *  پیامِ صوتی — ‎MediaRecorder‎ی خودِ مرورگر؛ هیچ کتابخانه‌ای. ضبط با دکمهٔ
+   *  دوم تمام و همان لحظه فرستاده می‌شود. میکروفون هم همان لحظه آزاد می‌شود.
+   */
+  async function toggleRecord() {
+    if (recorder.current) { recorder.current.stop(); return; }
+    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      toast('این مرورگر ضبطِ صدا ندارد', 'bad');
+      return;
+    }
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      toast('اجازهٔ میکروفون داده نشد', 'bad');
+      return;
+    }
+    const type = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/webm', 'audio/mp4']
+      .find((t) => MediaRecorder.isTypeSupported?.(t)) || '';
+    const rec = type ? new MediaRecorder(stream, { mimeType: type }) : new MediaRecorder(stream);
+    const chunks: BlobPart[] = [];
+    rec.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
+    rec.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      recorder.current = null;
+      setRecording(null);
+      const mime = (rec.mimeType || type || 'audio/webm').split(';')[0];
+      const blob = new Blob(chunks, { type: mime });
+      if (blob.size) void sendMedia(blob, mime);
+    };
+    recorder.current = rec;
+    rec.start();
+    setRecSeconds(0);
+    setRecording({ started: Date.now() });
+  }
+
+  //  شمارندهٔ ضبط — فقط تا وقتی ضبط روشن است
+  useEffect(() => {
+    if (!recording) return;
+    const t = setInterval(() => setRecSeconds(Math.floor((Date.now() - recording.started) / 1000)), 500);
+    return () => clearInterval(t);
+  }, [recording]);
+  //  رفتن از گفت‌وگو وسطِ ضبط ⇒ میکروفون آزاد، چیزی فرستاده نمی‌شود
+  useEffect(() => () => {
+    const r = recorder.current;
+    if (r) { r.onstop = () => r.stream.getTracks().forEach((t) => t.stop()); r.stop(); }
+  }, []);
 
   async function setStatus(status: 'open' | 'pending' | 'closed') {
     try {
@@ -280,7 +411,10 @@ function Conversation({ thread, onChanged }: { thread: Thread; onChanged: () => 
                 data-sender={m.sender}
               >
                 {!mine && <p className="mb-0.5 text-[11.5px] font-extrabold opacity-80">{m.senderName || live.who || m.sender}</p>}
-                <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                {m.mediaId && (MEDIA_KINDS as readonly string[]).includes(m.kind) && (
+                  <div className="mb-1" data-media={m.kind}><MediaView kind={m.kind as MediaKind} mid={m.mediaId} /></div>
+                )}
+                {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
                 <p className="mt-1 text-[10px] opacity-70">{moment(m.createdAt)}{m.kind === 'notice' ? ' · اعلان' : ''}</p>
               </div>
             );
@@ -290,6 +424,37 @@ function Conversation({ thread, onChanged }: { thread: Thread; onChanged: () => 
       </div>
 
       <footer className="flex items-end gap-2 border-t border-line px-3 py-2.5">
+        {mediaOk && (
+          <>
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/*,video/*,audio/*"
+              className="hidden"
+              onChange={(e) => void pickFile(e.target.files?.[0])}
+            />
+            <button
+              type="button"
+              className="btn min-h-[44px] px-3"
+              title="فرستادنِ عکس، ویدیو یا صدا (تا ۲۵ مگابایت)"
+              disabled={sendingMedia || !!recording}
+              onClick={() => fileInput.current?.click()}
+              data-action="attach"
+            >
+              <Paperclip className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              className={`btn min-h-[44px] px-3 ${recording ? 'btn-danger' : ''}`}
+              title={recording ? 'پایان و فرستادن' : 'ضبطِ پیامِ صوتی'}
+              disabled={sendingMedia}
+              onClick={() => void toggleRecord()}
+              data-action="record"
+            >
+              {recording ? <><Square className="h-4 w-4" /> <span className="tnum text-xs">{fa(recSeconds)}ث</span></> : <Mic className="h-4 w-4" />}
+            </button>
+          </>
+        )}
         <textarea
           className="input max-h-40 min-h-[44px] flex-1 resize-y"
           dir="rtl"
@@ -301,7 +466,7 @@ function Conversation({ thread, onChanged }: { thread: Thread; onChanged: () => 
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); }
           }}
         />
-        <ActionButton className="btn btn-primary min-h-[44px]" busyLabel="…" disabled={!text.trim()} onClick={send}>
+        <ActionButton className="btn btn-primary min-h-[44px]" busyLabel="…" disabled={!text.trim() || sendingMedia} onClick={send}>
           <Send className="h-3.5 w-3.5" /> فرستادن
         </ActionButton>
       </footer>
@@ -357,8 +522,10 @@ function PartyCard({ thread: th }: { thread: Thread }) {
       </div>
 
       <InlineNotice tone="info">
-        پشتیبانی همیشه باز است و به اشتراک ربطی ندارد. پیوست (عکس و ویدیو و صدا) از این صندوق نمی‌گذرد؛
-        مسیرِ مدیریتیِ سرورِ حساب فقط متن دارد.
+        پشتیبانی همیشه باز است و به اشتراک ربطی ندارد.
+        {app === 'pump'
+          ? ' عکس، ویدیو و پیامِ صوتی روی سرورِ حساب نمی‌مانند: همین که به طرفِ دیگر رسیدند آن‌جا پاک می‌شوند و نسخهٔ شما ۱۵ روز روی همین کامپیوتر است.'
+          : ' رسانه فقط در گفت‌وگوی پمپ است؛ برنامهٔ دکان نشانش نمی‌دهد.'}
       </InlineNotice>
     </div>
   );

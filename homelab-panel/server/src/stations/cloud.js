@@ -470,6 +470,72 @@ async function authedSend(method, path, { query = {}, body = null, creds, token:
 }
 
 /**
+ * همان در، برای **بایت** — فقط رسانهٔ پشتیبانیِ پمپ.
+ *
+ * ⛔ همان قفلِ ‎/api/admin/‎ و همان دو فعل: ‎POST‎ با بدنهٔ دودویی (بارگذاری،
+ * پاسخ JSON) و ‎GET‎ با پاسخِ دودویی (گرفتن). این تابع دری تازه باز
+ * نمی‌کند؛ فقط شکلِ بدنه و پاسخ فرق دارد. تنها صداکننده‌اش
+ * ‎routes/account-admin.js‎ است و مسیر را خودش از فهرستِ سفید می‌سازد.
+ *
+ * ⚠️ سرورِ حساب رسانه را پس از رسیدن به گیرنده **پاک** می‌کند، پس هر
+ * ‎GET‎ یک بار مصرف است — صداکننده باید همان لحظه روی دیسک نگهش دارد.
+ *
+ * @returns برای POST همان JSON؛ برای GET ‎{ buffer, contentType }‎
+ */
+export async function cloudRawBytes(method, path, { body = null, contentType = '' } = {}) {
+  const m = String(method || 'GET').toUpperCase();
+  const p = String(path || '');
+  if (!['GET', 'POST'].includes(m) || (m === 'POST' && !Buffer.isBuffer(body))
+      || !/^\/api\/admin\/[A-Za-z0-9_\-/]+$/.test(p) || p.includes('..')) {
+    const err = new Error('این مسیر از پنل باز نیست');
+    err.code = 'path_not_allowed';
+    err.status = 400;
+    throw err;
+  }
+  const creds = autoCreds();
+  let t = creds ? await autoToken() : token();
+  if (!t) {
+    const err = new Error('هنوز با حسابِ مدیر به سرورِ حساب وارد نشده‌اید — از پنل ← پمپ‌ها ← تنظیمات و داده‌ها، یا از همین اپ');
+    err.code = 'not_linked';
+    err.status = 409;
+    throw err;
+  }
+  const url = `${cloudTarget()}${p}`;
+  const send = (bearer) => dial(url, {
+    method: m,
+    headers: {
+      authorization: `Bearer ${bearer}`,
+      ...(m === 'POST' ? { 'content-type': String(contentType || 'application/octet-stream') } : {}),
+    },
+    body: m === 'POST' ? body : undefined,
+  });
+
+  let res = await send(t);
+  if (res.status === 401 && creds) {
+    t = await autoToken(true, t);
+    res = await send(t);
+  }
+  if (res.status === 401) {
+    const err = new Error('نشستِ مدیر روی سرورِ حساب تمام شده — دوباره وارد شوید');
+    err.code = 'cloud_session_expired';
+    err.status = 401;
+    throw err;
+  }
+  if (!res.ok || m === 'POST') {
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(out?.error?.message || 'سرورِ حساب جواب نداد');
+      err.code = out?.error?.code || 'cloud_error';
+      err.status = res.status;
+      throw err;
+    }
+    return out;
+  }
+  const buffer = Buffer.from(await res.arrayBuffer());
+  return { buffer, contentType: res.headers.get('content-type') || 'application/octet-stream' };
+}
+
+/**
  * همان در، ولی پاسخ **متن** است نه JSON.
  *
  * ⚠️ یک مصرف بیشتر ندارد و باید همان بماند: رسید و فاکتورِ سرورِ حساب

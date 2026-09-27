@@ -27,9 +27,13 @@
 //     بسته است، نه به آدم. ‎accountId‎ی که اپ می‌خواند شناسهٔ دکان است و
 //     نام/ایمیل/شمارهٔ کنارش مالِ صاحبِ همان دکان.
 //  ⛔ هیچ چیزی این‌جا ذخیره نمی‌شود — نه حساب، نه اشتراک، نه پیام.
+//     تنها استثنا نسخهٔ مدیر از **رسانهٔ پشتیبانیِ پمپ** است
+//     (‎support-media-cache.js‎): سرورِ حساب رسانه را پس از رسیدن پاک
+//     می‌کند، پس «هر طرف روی دستگاهِ خودش نگه می‌دارد» یعنی همین‌جا.
 // ---------------------------------------------------------------------------
 import express from 'express';
-import { cloudRaw, cloudRawText } from '../stations/cloud.js';
+import { cloudRaw, cloudRawText, cloudRawBytes } from '../stations/cloud.js';
+import { fetchOnce, writeCached } from '../support-media-cache.js';
 import { requireRole } from '../control/roles.js';
 import { audit } from '../control/audit.js';
 
@@ -435,10 +439,71 @@ router.get('/support/threads/:id', guard(async (req, res) => {
   }));
 }));
 
+const MEDIA_KINDS = ['image', 'video', 'audio'];
+const MAX_MEDIA = 25 * 1024 * 1024;
+
 router.post('/support/threads/:id/messages', guard(async (req, res) => {
   const id = idOf(req.params.id);
   const body = String(req.body?.body ?? req.body?.text ?? '');
-  res.json(await cloudRaw('POST', `/api/admin/support/threads/${id}/messages`, { body: { body } }));
+  const kind = String(req.body?.kind || 'text');
+  //  ⛔ فقط همین سه فیلد می‌رود — شناسهٔ رسانه از همان قاعدهٔ شناسه
+  const payload = MEDIA_KINDS.includes(kind)
+    ? { body, kind, mediaId: idOf(req.body?.mediaId) }
+    : { body };
+  res.json(await cloudRaw('POST', `/api/admin/support/threads/${id}/messages`, { body: payload }));
+}));
+
+/*
+ *  رسانهٔ پشتیبانیِ پمپ — عکس، ویدیو، پیامِ صوتی.
+ *
+ *  ⛔ سرورِ حساب فقط رله است: رسانه‌ای که پمپ فرستاده همان لحظه که این‌جا
+ *  کاملش را گرفت آن‌طرف پاک می‌شود. پس نسخهٔ مدیر **روی دیسکِ همین
+ *  کامپیوتر** است (‎support-media-cache.js‎، پانزده روز) و هر درخواست اول
+ *  همان‌جا را می‌گردد. رسانه‌ای که مدیر می‌فرستد هم همان‌جا می‌نشیند.
+ */
+function rawMedia(req, res, next) {
+  const len = Number(req.headers['content-length']);
+  if (Number.isFinite(len) && len > MAX_MEDIA) {
+    return res.status(413).json({ error: 'too_large', message: 'فایل بزرگ‌تر از ۲۵ مگابایت است' });
+  }
+  express.raw({ type: () => true, limit: MAX_MEDIA })(req, res, (err) => {
+    if (err) {
+      const big = err.type === 'entity.too.large';
+      return res.status(big ? 413 : 400).json({
+        error: big ? 'too_large' : 'bad_media',
+        message: big ? 'فایل بزرگ‌تر از ۲۵ مگابایت است' : 'فایل درست نرسید',
+      });
+    }
+    next();
+  });
+}
+
+const mediaMime = (value) => String(value || '').toLowerCase().split(';')[0].trim();
+
+router.post('/support/threads/:id/media', rawMedia, guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const mime = mediaMime(req.headers['content-type']);
+  const buf = Buffer.isBuffer(req.body) ? req.body : null;
+  if (!/^(image|video|audio)\/[a-z0-9.+-]+$/.test(mime) || !buf || !buf.length) {
+    return res.status(400).json({ error: 'bad_media', message: 'فقط عکس، ویدیو و صدا' });
+  }
+  const out = await cloudRawBytes('POST', `/api/admin/support/threads/${id}/media`, { body: buf, contentType: mime });
+  //  نسخهٔ خودِ مدیر — تا حبابِ «من» هم رسانه‌اش را نشان بدهد
+  if (out?.mediaId) {
+    await writeCached(String(out.mediaId), buf, out.mime || mime)
+      .catch((err) => console.error('[support-media]', err.message));
+  }
+  res.status(201).json(out);
+}));
+
+router.get('/support/media/:mid', guard(async (req, res) => {
+  const mid = idOf(req.params.mid);
+  const hit = await fetchOnce(mid, (m) => cloudRawBytes('GET', `/api/admin/support/media/${m}`));
+  res.setHeader('Content-Type', hit.mime);
+  res.setHeader('Cache-Control', 'private, max-age=86400');
+  await new Promise((resolve, reject) => {
+    res.sendFile(hit.file, (err) => (err && !res.headersSent ? reject(err) : resolve()));
+  });
 }));
 
 router.post('/support/threads/:id/status', guard(async (req, res) => {

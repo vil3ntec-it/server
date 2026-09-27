@@ -293,6 +293,8 @@ app.use('/api', (req, res, next) =>
 const MSG_LIMIT = `${Math.max(1, Math.round(config.messengerMaxBytes / (1024 * 1024)))}mb`;
 app.use((req, res, next) => {
   if (req.path === '/api/files/upload' || req.path === '/api/settings/logo') return next();
+  // رسانهٔ پشتیبانیِ پمپ (عکس/ویدیو/صدا) خام است — مسیرِ خودش ‎express.raw‎ دارد
+  if (/^\/api\/account-admin\/support\/threads\/[^/]+\/media$/.test(req.path)) return next();
   // پشتیبانِ پمپ فایلِ خامِ SQLite است، نه JSON — مسیرِ خودش ‎express.raw‎ دارد
   if (/^\/api\/stations\/[^/]+\/backup$/.test(req.path)) return next();
   // گزارشِ Agent باید خام بماند تا امضایش قابلِ سنجش باشد
