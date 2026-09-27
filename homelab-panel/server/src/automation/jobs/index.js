@@ -13,8 +13,9 @@ import healthJobs from './health.js';
 import maintenanceJobs from './maintenance.js';
 import agentJobs from './agent.js';
 import botJobs from './bots.js';
+import updateJobs from './update.js';
 
-export const jobs = [...backupJobs, ...healthJobs, ...maintenanceJobs, ...agentJobs, ...botJobs];
+export const jobs = [...backupJobs, ...healthJobs, ...maintenanceJobs, ...agentJobs, ...botJobs, ...updateJobs];
 
 /** نام‌های جدولِ ۱۰.۲ — آزمون همین فهرست را با ثبت‌شده‌ها می‌سنجد */
 export const REQUIRED_JOBS = Object.freeze([
@@ -29,6 +30,8 @@ export const REQUIRED_JOBS = Object.freeze([
   //  نصاب یخ می‌زند — همان چیزی که سرورِ صاحب سامانه را روی ۲.۷.۰ نگه
   //  داشت در حالی که فروشِ اشتراک ۲.۹.۰ می‌خواهد.
   'account-server-update',
+  //  ⛔ و خودِ پنل هم خودش تازه می‌شود و برنامه را دوباره باز می‌کند.
+  'panel-update',
 ]);
 
 export function testJobs() {

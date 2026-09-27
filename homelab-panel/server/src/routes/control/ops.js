@@ -242,6 +242,7 @@ router.post(
     if (req.body?.channel !== undefined) setSetting('cc_update_channel', req.body.channel === 'branch' ? 'branch' : 'release');
     if (req.body?.branch !== undefined) setSetting('cc_update_branch', str(req.body.branch, 80) || 'main');
     if (req.body?.autoCheck !== undefined) setSetting('cc_update_autocheck', bool(req.body.autoCheck, true));
+    if (req.body?.autoInstall !== undefined) setSetting('cc_update_autoinstall', bool(req.body.autoInstall, true));
     if (req.body?.token) {
       putSecret({
         name: updater.GITHUB_TOKEN_SECRET,
@@ -270,35 +271,16 @@ router.post(
     //  ⛔ نصبِ دوم هم‌زمان با اولی راه نمی‌افتد — برگشتن به صفحه و کلیکِ دوباره
     //  همان کارِ در جریان را نشان می‌دهد، نه این‌که از سر شروع کند.
     if (updater.installBusy()) return res.status(409).json({ error: 'install_running', detail: 'نصب در جریان است', progress: updater.installProgress() });
-    updater.markInstall({ running: true, phase: 'check', got: 0, total: 0, why: '' });
-    const info = await updater.checkForUpdate({ force: bool(req.body?.force) });
-    if (!info.available && !bool(req.body?.force)) {
-      updater.markInstall({ running: false, phase: 'idle' });
-      return res.json({ ok: false, reason: 'already_up_to_date', info });
-    }
-    if (info.error) {
-      updater.markInstall({ running: false, phase: 'error', why: info.error });
-      return fail(res, 502, 'github_unreachable', info.error);
-    }
-
-    let downloaded;
     try {
-      downloaded = await updater.downloadUpdate(info);
-    } catch (e) {
-      updater.markInstall({ running: false, phase: 'error', why: e.message });
-      throw e;
-    }
-    try {
-      updater.markInstall({ phase: 'install' });
-      const result = await updater.applyUpdate(info, downloaded, {
+      const out = await updater.installLatest({
         actor: actorOf(req),
+        force: bool(req.body?.force),
         restart: bool(req.body?.restart, true),
       });
-      setSetting('cc_update_pending', null);
-      updater.markInstall({ running: false, phase: 'done' });
-      res.json({ ok: true, info, downloaded: { size: downloaded.size, checksum: downloaded.checksum }, ...result });
+      if (out.reason === 'install_running') return res.status(409).json({ error: 'install_running', detail: 'نصب در جریان است', progress: out.progress });
+      if (out.reason === 'github_unreachable') return fail(res, 502, 'github_unreachable', out.info?.error);
+      res.json(out);
     } catch (e) {
-      updater.markInstall({ running: false, phase: 'error', why: e.message });
       // در برنامهٔ ویندوز، اگر نسخهٔ تازه کتابخانهٔ تازه بخواهد هیچ فایلی
       // جابه‌جا نشده — همین را صریح می‌گوییم تا کاربر دنبالِ فایلِ نصبی برود.
       // بسته‌ای که بخش‌های نصبِ فعلی را ندارد، نصب نمی‌شود. هیچ فایلی هم

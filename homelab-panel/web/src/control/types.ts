@@ -368,6 +368,10 @@ export type UpdateStatus = {
   lastCheck: number | null;
   lastBackup: string | null;
   autoCheck: boolean;
+  /** نصبِ خودکار: نسخهٔ تازه بی کلیک دانلود و نصب می‌شود و برنامه دوباره باز می‌شود */
+  autoInstall?: boolean;
+  /** بسته‌ای که خودکار نشست نشد — ۲۴ ساعت دوباره امتحان نمی‌شود */
+  autoFail?: { latest: string | null; why: string; at: number } | null;
 };
 
 export type UpdateInfo = {

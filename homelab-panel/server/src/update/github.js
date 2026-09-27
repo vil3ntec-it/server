@@ -40,7 +40,9 @@ import {
 /** ریشهٔ نصب — از layout.js می‌آید، چون در برنامهٔ ویندوز جای دیگری است */
 export const INSTALL_ROOT = ROOT;
 const UPDATE_DIR = path.join(config.dataDir, 'updates');
-const API = 'https://api.github.com';
+//  ⚠️ `HLP_GITHUB_API` فقط برای آزمون است (test/update-auto.mjs یک GitHubِ ساختگی
+//  روی همین کامپیوتر بالا می‌آورد)؛ در نصبِ واقعی هیچ‌وقت گذاشته نمی‌شود.
+const API = (process.env.HLP_GITHUB_API || 'https://api.github.com').replace(/\/+$/, '');
 
 /* ------------------------- کدام مخزن؟ ---------------------------------- */
 
@@ -632,16 +634,125 @@ export function updateStatus() {
     lastCheck: getSetting('cc_update_last_check', null),
     lastBackup: getSetting('cc_update_last_backup', null),
     autoCheck: getSetting('cc_update_autocheck', true) !== false,
+    autoInstall: autoInstallEnabled(),
+    autoFail: getSetting('cc_update_autofail', null),
   };
 }
 
-/** بررسیِ خودکارِ روزانه — فقط خبر می‌دهد، خودش نصب نمی‌کند */
+/* ------------------- نصبِ کامل: بررسی ⇒ دانلود ⇒ نصب ------------------- */
+
+/**
+ * ⛔ تنها راهِ نصبِ نسخهٔ تازه — هم دکمهٔ صفحهٔ «به‌روزرسانی» (`/update/install`)
+ * و هم کارِ خودکارِ `panel-update` همین را صدا می‌زنند. دو راه یعنی روزی یکی
+ * بکاپ می‌گیرد و دیگری نه.
+ *
+ * @returns {{ok:boolean, reason?:string, info, downloaded?, ...}}
+ *   خطای نصب با همان ویژگی‌های `applyUpdate` (`incomplete`/`needsInstaller`/`steps`)
+ *   پرتاب می‌شود.
+ */
+export async function installLatest({ actor = 'admin', force = false, restart = true } = {}) {
+  if (install.running) return { ok: false, reason: 'install_running', progress: installProgress() };
+  markInstall({ running: true, phase: 'check', got: 0, total: 0, why: '' });
+  try {
+    const info = await checkForUpdate({ force });
+    if (!info.available && !force) {
+      markInstall({ running: false, phase: 'idle' });
+      return { ok: false, reason: 'already_up_to_date', info };
+    }
+    if (info.error) {
+      markInstall({ running: false, phase: 'error', why: info.error });
+      return { ok: false, reason: 'github_unreachable', info };
+    }
+    const downloaded = await downloadUpdate(info);
+    markInstall({ phase: 'install' });
+    const result = await applyUpdate(info, downloaded, { actor, restart });
+    setSetting('cc_update_pending', null);
+    setSetting('cc_update_autofail', null);
+    markInstall({ running: false, phase: 'done' });
+    return { ok: true, info, downloaded: { size: downloaded.size, checksum: downloaded.checksum }, ...result };
+  } catch (e) {
+    markInstall({ running: false, phase: 'error', why: e.message });
+    throw e;
+  }
+}
+
+/* ------------------------ نصبِ خودکار، بی حضورِ کسی ------------------------ */
+
+/**
+ * خواستهٔ صاحب سامانه (۱۴۰۵/۰۷/۱۵): «به‌روزرسانی که آمد خودش درجا دانلود کند و
+ * برنامه را دوباره اجرا کند… در نبودِ من هم همه‌کار را خودش بکند.»
+ *
+ * ⛔ پیش‌فرض روشن است (`cc_update_autoinstall`)؛ خاموشش فقط از صفحهٔ به‌روزرسانی.
+ * ⛔ فقط به جلو: `force` هرگز این‌جا نیست، پس نسخهٔ عقب‌تر هیچ‌وقت خودکار نمی‌نشیند.
+ * ⛔ بسته‌ای که یک بار نشست نشد (مثلاً کتابخانهٔ تازه می‌خواهد و npm نیست) هر
+ *    ساعت دوباره دانلود نمی‌شود: همان نسخه/کامیت ۲۴ ساعت کنار می‌ماند.
+ */
+export const AUTOFAIL_HOLD_MS = 24 * 3600 * 1000;
+
+/**
+ * پیش‌فرض: روشن در برنامهٔ ویندوز (`packaged`)، خاموش در نصب از روی مخزن — تا
+ * هیچ آزمون یا کپیِ توسعه‌ای بی‌صدا با کدِ GitHub بازنویسی نشود. `HLP_AUTO_UPDATE`
+ * پیش‌فرض را عوض می‌کند (`0` همیشه خاموش)، و انتخابِ صریحِ صفحهٔ به‌روزرسانی
+ * (`cc_update_autoinstall`) از هر دو جلوتر است.
+ */
+export function autoInstallDefault() {
+  const env = process.env.HLP_AUTO_UPDATE;
+  if (env === '0') return false;
+  if (env === '1') return true;
+  return LAYOUT === 'packaged';
+}
+
+export function autoInstallEnabled() {
+  if (process.env.HLP_AUTO_UPDATE === '0') return false;
+  const chosen = getSetting('cc_update_autoinstall', null);
+  return chosen == null ? autoInstallDefault() : chosen !== false;
+}
+
+/** «همین بسته را اخیراً امتحان کردیم و نشد» — خالص، برای آزمون */
+export function heldBack(info, fail, now = Date.now()) {
+  if (!fail || !info) return false;
+  if (now - (Number(fail.at) || 0) > AUTOFAIL_HOLD_MS) return false;
+  const same = (fail.commit && info.commit && fail.commit === info.commit)
+    || (!fail.commit && fail.latest && fail.latest === info.latest);
+  return Boolean(same);
+}
+
+export async function autoUpdateOnce({ actor = 'به‌روزرسانِ خودکار', restart = true } = {}) {
+  if (!autoInstallEnabled()) return { ok: false, skipped: true, reason: 'نصبِ خودکار خاموش است' };
+  if (install.running) return { ok: false, skipped: true, reason: 'نصبِ دیگری در جریان است' };
+
+  //  اول فقط می‌پرسیم — تا چیزی تازه نباشد یک بایت هم دانلود نمی‌شود.
+  const info = await checkForUpdate();
+  if (info.error) return { ok: false, skipped: true, reason: `GitHub در دسترس نیست: ${info.error}` };
+  setSetting('cc_update_pending', info.available ? { latest: info.latest, at: Date.now() } : null);
+  if (!info.available) return { ok: true, skipped: true, reason: `تازه‌ترین است (${info.current})`, current: info.current };
+  const fail = getSetting('cc_update_autofail', null);
+  if (heldBack(info, fail)) {
+    return { ok: false, skipped: true, reason: `نسخهٔ ${info.latest} بارِ پیش نصب نشد (${fail.why}) — تا ۲۴ ساعت دوباره امتحان نمی‌شود` };
+  }
+
+  try {
+    const out = await installLatest({ actor, restart });
+    if (out.ok) {
+      logEvent('info', 'panel', `به‌روزرسانیِ خودکار: ${info.current} ⇒ ${out.version || info.latest}${restart ? ' — پنل دوباره بالا می‌آید' : ''}`);
+    }
+    return { ...out, from: info.current, to: out.version || info.latest };
+  } catch (e) {
+    const why = e.needsInstaller ? 'فایلِ نصبِ تازه لازم است' : e.incomplete ? 'بسته ناقص بود' : e.message;
+    setSetting('cc_update_autofail', { latest: info.latest, commit: info.commit || null, why, at: Date.now() });
+    logEvent('warn', 'panel', `به‌روزرسانیِ خودکار به ${info.latest} نشد: ${why}`);
+    throw Object.assign(new Error(why), { cause: e });
+  }
+}
+
+/** بررسیِ دوره‌ای — فقط وقتی موتورِ اتوماسیون خاموش است (HLP_AUTOMATION=0) */
 let autoTimer = null;
 export function startUpdateWatcher({ intervalMs = 6 * 3600 * 1000 } = {}) {
   if (autoTimer) return;
   autoTimer = setInterval(async () => {
     if (getSetting('cc_update_autocheck', true) === false) return;
     try {
+      if (autoInstallEnabled()) { await autoUpdateOnce(); return; }
       const info = await checkForUpdate();
       if (info.available) {
         logEvent('info', 'panel', `نسخهٔ تازه در دسترس است: ${info.latest}`);

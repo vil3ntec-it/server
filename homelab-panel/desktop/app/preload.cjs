@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('cc', {
 
   updateApplied: () => ipcRenderer.invoke('update-applied'),
   relaunch: () => ipcRenderer.invoke('relaunch'),
+  getAutostart: () => ipcRenderer.invoke('autostart'),
+  setAutostart: (on) => ipcRenderer.invoke('set-autostart', on),
 
   getUi: () => ipcRenderer.invoke('get-ui'),
   setUi: (patch) => ipcRenderer.invoke('set-ui', patch),
