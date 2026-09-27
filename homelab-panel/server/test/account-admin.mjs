@@ -1304,6 +1304,23 @@ try {
     JSON.stringify(offSeen?.body));
   const offRevoke = await api('POST', '/api/account-admin/offline-codes/of1/revoke', {}, auth);
   check('کدِ آفلاین باطل می‌شود', offRevoke.status === 200 && offRevoke.json?.offline?.status === 'revoked', String(offRevoke.status));
+  //  ⛔ برنامهٔ ادمینِ اندروید (‎ui/OfflineCodesTab.kt‎) همین فیلدها را می‌خواند —
+  //  نامِ فیلدی که در سورسِ آن هست باید همان باشد که سرورِ حساب می‌فرستد
+  //  (‎shop/server/src/lib/offline-codes.js‎ ⇒ ‎listCodes‎ / ‎issue‎).
+  {
+    const kt = await fsp.readFile(new URL('../../admin-android/app/src/main/java/ir/vil3ntec/admin/ui/OfflineCodesTab.kt', import.meta.url), 'utf8');
+    const api2 = await fsp.readFile(new URL('../../admin-android/app/src/main/java/ir/vil3ntec/admin/data/Api.kt', import.meta.url), 'utf8');
+    const reads = ['id', 'computer', 'planTitle', 'permanent', 'endsAt', 'note', 'status', 'redeemedAt', 'createdAt']
+      .filter((f) => !kt.includes(`optString("${f}")`) && !kt.includes(`optBoolean("${f}")`) && !kt.includes(`optLong("${f}")`));
+    check('برنامهٔ اندروید همان فیلدهای فهرستِ سرورِ حساب را می‌خواند', reads.length === 0, reads.join(','));
+    check('برنامهٔ اندروید کد، ردیف و فایلِ ‎.pumpkey‎ را از همان کلیدها برمی‌دارد',
+      kt.includes('optString("code")') && kt.includes('optJSONObject("offline")') && kt.includes('optJSONObject("file")') && kt.includes('items("codes")'));
+    check('برنامهٔ اندروید همان سه درِ پنلِ وب را می‌زند',
+      api2.includes('"/api/account-admin/offline-codes?limit=200"') && api2.includes('"/api/account-admin/offline-codes", "POST"') &&
+        api2.includes('/revoke"'));
+    const viaApp = await api('GET', '/api/account-admin/offline-codes?limit=200', undefined, auth);
+    check('درِ فهرستِ برنامهٔ اندروید (با ‎limit‎) هم جواب می‌دهد', viaApp.status === 200 && Array.isArray(viaApp.json?.codes), String(viaApp.status));
+  }
   const offBad = await api('POST', '/api/account-admin/offline-codes/..%2Fx/revoke', {}, auth);
   check('⛔ شناسهٔ ناجور به سرورِ حساب نمی‌رسد', offBad.status === 400 || offBad.status === 404, String(offBad.status));
 
