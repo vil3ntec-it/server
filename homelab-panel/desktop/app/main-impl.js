@@ -17,6 +17,7 @@ import net from 'node:net';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { ensureFirewall } from './firewall.js';
+import { loginItemPlan, restartDelay, shouldRelaunch, HEALTHY_RESET_MS, AUTOSTART_ARG } from './autostart.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -190,6 +191,12 @@ const state = {
   stopping: false,
   appliedWatcher: null,
   appliedSeen: 0,
+  // کارِ بی‌حضور: سرورِ افتاده خودش برمی‌گردد و به‌روزرسانی خودش باز می‌شود
+  crashes: 0,
+  restartTimer: null,
+  healthyAt: 0,
+  relaunching: false,
+  autostarted: process.argv.includes(AUTOSTART_ARG),
 };
 
 const MAX_LOG_LINES = 3000;
@@ -234,6 +241,11 @@ function publicState() {
     platform: process.platform,
     usingOverlay: ctx.usingOverlay,
     shellDir: ctx.overlayDir,
+    pid: state.child?.pid || null,
+    crashes: state.crashes,
+    autoStart: readSettings().autoStart !== false,
+    autoRelaunch: readSettings().autoRelaunch !== false,
+    autostarted: state.autostarted,
   };
 }
 
@@ -304,11 +316,15 @@ async function startServer() {
     setStatus('error', e.message);
   });
 
+  const me = state.child;
   state.child.on('exit', (code, signal) => {
-    state.child = null;
-    if (state.stopping) return;
+    if (state.child === me) state.child = null;
+    if (state.stopping || state.relaunching) return;
+    //  ⛔ پنل پس از نصبِ به‌روزرسانی عمداً بیرون می‌رود. اگر نشانه‌اش تازه
+    //  است، کلِ برنامه دوباره باز می‌شود (پوسته هم عوض شده) — نه فقط سرور.
+    if (maybeRelaunchForUpdate('exit')) return;
     pushLog(`سرور بسته شد (کد ${code ?? signal})`, 'err');
-    setStatus('error', `سرور بسته شد (کد ${code ?? signal})`);
+    scheduleServerRestart(`سرور بسته شد (کد ${code ?? signal})`);
   });
 
   const healthy = await waitForHealth(state.port);
@@ -329,11 +345,37 @@ async function startServer() {
   }
   if (healthy) {
     pushLog(`سرور آماده است: ${state.url}`);
+    state.healthyAt = Date.now();
     setStatus('running');
   } else if (state.child) {
     pushLog('سرور در مهلتِ مقرر جواب نداد.', 'err');
     setStatus('error', 'سرور جواب نداد');
   }
+}
+
+/**
+ * ⛔ سرورِ افتاده خودش برمی‌گردد — کسی پای کامپیوتر نیست که «راه‌اندازی
+ * دوباره» را بزند. فاصله زیاد می‌شود ولی هرگز دست نمی‌کشد (`restartDelay`)، و
+ * سروری که دو دقیقه سالم ماند شمارنده‌اش را از صفر می‌گیرد.
+ */
+function scheduleServerRestart(why) {
+  if (state.restartTimer || state.relaunching) return;
+  if (state.healthyAt && Date.now() - state.healthyAt >= HEALTHY_RESET_MS) state.crashes = 0;
+  state.healthyAt = 0;
+  state.crashes += 1;
+  const wait = restartDelay(state.crashes);
+  pushLog(`سرور خودش دوباره بالا می‌آید — ${Math.round(wait / 1000)} ثانیهٔ دیگر (بارِ ${state.crashes})`, 'err');
+  setStatus('error', `${why} — ${Math.round(wait / 1000)} ثانیهٔ دیگر خودش دوباره بالا می‌آید`);
+  state.restartTimer = setTimeout(() => {
+    state.restartTimer = null;
+    if (state.stopping || state.relaunching || state.child) return;
+    startServer().catch((e) => pushLog(`راه‌اندازیِ دوبارهٔ سرور نشد: ${e.message}`, 'err'));
+  }, wait);
+}
+
+function cancelServerRestart() {
+  if (state.restartTimer) clearTimeout(state.restartTimer);
+  state.restartTimer = null;
 }
 
 function stopServer() {
@@ -353,6 +395,8 @@ function stopServer() {
 
 async function restartServer() {
   pushLog('راه‌اندازی دوباره …');
+  cancelServerRestart();
+  state.crashes = 0;
   stopServer();
   await new Promise((r) => setTimeout(r, 1200));
   state.stopping = false;
@@ -630,22 +674,79 @@ function watchApplied() {
     state.appliedWatcher?.close();
     state.appliedWatcher = fs.watch(dir, (_event, name) => {
       if (name && name !== 'applied.json') return;
-      const applied = readApplied();
-      if (applied?.at && applied.at > state.appliedSeen) {
-        state.appliedSeen = applied.at;
-        pushLog(`به‌روزرسانی نصب شد (نسخهٔ ${applied.version || '؟'}) — برای اعمال، برنامه دوباره باز شود.`);
-        broadcast('update-applied', applied);
-      }
+      maybeRelaunchForUpdate('watch');
     });
   } catch { /* روی بعضی مسیرها watch نداریم؛ کاربر دستی هم می‌تواند ببندد */ }
 }
 
+/**
+ * ⛔ به‌روزرسانی که نشست، برنامه **خودش** دوباره باز می‌شود — خواستهٔ صاحب
+ * سامانه: «لازم نباشه من وایسم… بعد دکمهٔ باز کردنِ دوباره رو بزنم». پیش از این
+ * فقط نواری می‌آمد و منتظرِ کلیک می‌ماند، و سرورِ بیرون‌رفته «بسته شد» می‌گفت.
+ * `autoRelaunch: false` در تنظیماتِ برنامه همان رفتارِ قدیم (فقط نوار) را برمی‌گرداند.
+ * @returns آیا برنامه دارد دوباره باز می‌شود
+ */
+function maybeRelaunchForUpdate(from) {
+  if (state.relaunching) return true;
+  const applied = readApplied();
+  if (!applied?.at || applied.at <= state.appliedSeen) return false;
+  const settings = readSettings();
+  state.appliedSeen = applied.at;
+  broadcast('update-applied', applied);
+  if (!shouldRelaunch(applied, 0, settings)) {
+    pushLog(`به‌روزرسانی نصب شد (نسخهٔ ${applied.version || '؟'}) — برای اعمال، برنامه دوباره باز شود.`);
+    return false;
+  }
+  pushLog(`به‌روزرسانی نصب شد (نسخهٔ ${applied.version || '؟'}) — برنامه همین حالا خودش دوباره باز می‌شود…`);
+  //  پس از «exit» سرور دیگر نیست؛ از «watch» یک مکثِ کوتاه تا پنل خودش بیرون برود.
+  setTimeout(relaunchApp, from === 'exit' ? 300 : 2500);
+  state.relaunching = true;
+  return true;
+}
+
 function relaunchApp() {
+  state.relaunching = true;
   state.stopping = true;
+  cancelServerRestart();
   stopServer();
-  app.relaunch();
+  //  ⚠️ نسخهٔ قابل‌حمل از پوشهٔ موقت اجرا می‌شود؛ دوباره باز کردنِ همان مسیر
+  //  یعنی اجرای فایلی که با بسته شدنِ همین برنامه پاک می‌شود.
+  const exe = portableExe();
+  const args = process.argv.slice(1).filter((a) => a !== AUTOSTART_ARG);
+  app.relaunch(exe ? { execPath: exe, args } : { args });
   setTimeout(() => app.exit(0), 600);
 }
+
+/* --------------------------- روشن شدن با ویندوز --------------------------- */
+
+function applyLoginItem() {
+  const plan = loginItemPlan({
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    settings: readSettings(),
+    execPath: process.execPath,
+    portableFile: portableExe(),
+  });
+  if (!plan) return null;
+  try {
+    app.setLoginItemSettings(plan);
+  } catch (e) {
+    pushLog(`ثبتِ «روشن با ویندوز» نشد: ${e.message}`, 'err');
+  }
+  return plan;
+}
+
+ipcMain.handle('autostart', () => ({
+  enabled: readSettings().autoStart !== false,
+  supported: Boolean(loginItemPlan({ platform: process.platform, isPackaged: true, execPath: process.execPath })),
+}));
+ipcMain.handle('set-autostart', (_event, on) => {
+  writeSettings({ autoStart: Boolean(on) });
+  applyLoginItem();
+  pushLog(on ? '✅ برنامه با روشن شدنِ ویندوز خودش باز می‌شود.' : 'روشن شدن با ویندوز خاموش شد.');
+  broadcast('status', publicState());
+  return { enabled: Boolean(on) };
+});
 
 ipcMain.handle('update-applied', () => readApplied());
 ipcMain.handle('relaunch', () => {
@@ -684,6 +785,10 @@ export async function start(context) {
 
   await app.whenReady();
   Menu.setApplicationMenu(null);
+  //  ⛔ هر بار که برنامه باز می‌شود دوباره نوشته می‌شود: مسیرِ برنامه با نصبِ
+  //  تازه عوض می‌شود و ثبتِ کهنه یعنی فردا صبح ویندوز چیزی را اجرا نمی‌کند.
+  applyLoginItem();
+  if (state.autostarted) pushLog('برنامه با روشن شدنِ ویندوز خودش باز شد.');
   createWindow();
 
   const saved = readSettings();

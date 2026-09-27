@@ -158,6 +158,14 @@ export default function Updates() {
         <KV label={t('ccLastCheck')}>{status.lastCheck ? relative(status.lastCheck, lang) : t('ccNever')}</KV>
         <KV label={t('lastUpdate')}>{status.installedAt ? dateTime(status.installedAt, lang) : t('ccNever')}</KV>
         <KV label={t('path')} mono>{status.installRoot}</KV>
+        <KV label="نصبِ خودکار">{status.autoInstall ? 'روشن — هر ساعت و پس از روشن شدنِ کامپیوتر، بی کلیک' : 'خاموش — فقط با دکمه'}</KV>
+        {status.autoFail?.why && (
+          <div className="mt-3">
+            <Notice tone="warn">
+              نصبِ خودکارِ نسخهٔ {status.autoFail.latest || '؟'} نشد: {status.autoFail.why} — تا ۲۴ ساعت دوباره امتحان نمی‌شود؛ دکمهٔ نصب همین حالا هم کار می‌کند.
+            </Notice>
+          </div>
+        )}
 
         {status.layout === 'packaged' && (
           <div className="mt-3">
@@ -254,10 +262,10 @@ export default function Updates() {
 
 function Settings({ open, onClose, status, onSaved }: { open: boolean; onClose: () => void; status: UpdateStatus; onSaved: () => void }) {
   const { t } = useApp();
-  const [form, setForm] = useState({ repo: status.repo, channel: status.channel, branch: status.branch, autoCheck: status.autoCheck, token: '' });
+  const [form, setForm] = useState({ repo: status.repo, channel: status.channel, branch: status.branch, autoCheck: status.autoCheck, autoInstall: status.autoInstall !== false, token: '' });
 
   useEffect(() => {
-    if (open) setForm({ repo: status.repo, channel: status.channel, branch: status.branch, autoCheck: status.autoCheck, token: '' });
+    if (open) setForm({ repo: status.repo, channel: status.channel, branch: status.branch, autoCheck: status.autoCheck, autoInstall: status.autoInstall !== false, token: '' });
   }, [open, status]);
 
   return (
@@ -277,6 +285,7 @@ function Settings({ open, onClose, status, onSaved }: { open: boolean; onClose: 
                   channel: form.channel,
                   branch: form.branch,
                   autoCheck: form.autoCheck,
+                  autoInstall: form.autoInstall,
                   token: form.token || undefined,
                 });
                 toast(t('ccSave'));
@@ -315,6 +324,10 @@ function Settings({ open, onClose, status, onSaved }: { open: boolean; onClose: 
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={form.autoCheck} onChange={(e) => setForm({ ...form, autoCheck: e.target.checked })} />
         {t('ccAutoCheck')}
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={form.autoInstall} onChange={(e) => setForm({ ...form, autoInstall: e.target.checked })} />
+        نصبِ خودکار — نسخهٔ تازه بی کلیک دانلود و نصب می‌شود و برنامه خودش دوباره باز می‌شود
       </label>
     </Modal>
   );

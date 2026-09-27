@@ -323,13 +323,38 @@ $('btnCopy').addEventListener('click', async () => {
 
 /* ------------------------ به‌روزرسانی نشست ------------------------------ */
 
-function showUpdated(applied) {
+async function showUpdated(applied) {
   if (!applied?.at) return;
-  el.updatedText.textContent = applied.version
-    ? `به‌روزرسانی به نسخهٔ ${applied.version} نصب شد — برای اعمال، برنامه باید دوباره باز شود.`
-    : 'به‌روزرسانی نصب شد — برای اعمال، برنامه باید دوباره باز شود.';
+  const st = await window.cc.getState().catch(() => ({}));
+  const v = applied.version ? ` به نسخهٔ ${applied.version}` : '';
+  //  ⛔ با «باز کردنِ خودکار» (پیش‌فرض) برنامه خودش دوباره باز می‌شود؛ نوار فقط
+  //  می‌گوید چه دارد می‌شود، نه این‌که منتظرِ کلیک بماند.
+  el.updatedText.textContent = st.autoRelaunch !== false
+    ? `به‌روزرسانی${v} نصب شد — برنامه همین حالا خودش دوباره باز می‌شود…`
+    : `به‌روزرسانی${v} نصب شد — برای اعمال، برنامه باید دوباره باز شود.`;
   el.updated.hidden = false;
 }
+
+/* ------------------------ روشن شدن با ویندوز ---------------------------- */
+
+function paintAutostart(on) {
+  const b = $('btnAutostart');
+  b.textContent = on ? 'روشن با ویندوز ✓' : 'روشن با ویندوز: خاموش';
+  b.classList.toggle('primary', on);
+}
+
+(async () => {
+  const a = await window.cc.getAutostart?.().catch(() => null);
+  if (!a?.supported) return;
+  const b = $('btnAutostart');
+  b.hidden = false;
+  paintAutostart(a.enabled);
+  b.addEventListener('click', async () => {
+    const now = await window.cc.getAutostart();
+    const res = await window.cc.setAutostart(!now.enabled);
+    paintAutostart(res.enabled);
+  });
+})();
 
 $('btnRelaunch').addEventListener('click', () => window.cc.relaunch());
 $('btnUpdatedClose').addEventListener('click', () => {

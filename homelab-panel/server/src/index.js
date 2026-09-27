@@ -902,7 +902,8 @@ async function main() {
     // با موتورِ اتوماسیون، تیکِ پایش کارِ «uptime» است (هر دو دقیقه)؛ شمارندهٔ خودِ
     // monitor فقط وقتی روشن می‌شود که موتور با HLP_AUTOMATION=0 خاموش باشد.
     if (!automationEnabled) startMonitor();
-    startUpdateWatcher();
+    //  ⛔ با موتورِ اتوماسیون، بررسی و نصبِ خودکار کارِ «panel-update» است.
+    if (!automationEnabled) startUpdateWatcher();
     // صفِ کدهای شش‌رقمی — ایمیل‌ها پشتِ سرِ درخواست‌ها می‌روند، نه داخلشان
     startQueue();
   } catch (e) {

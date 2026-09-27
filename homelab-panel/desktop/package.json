@@ -1,7 +1,7 @@
 {
   "name": "control-center-desktop",
   "productName": "Control Center",
-  "version": "1.50.25",
+  "version": "1.50.26",
   "private": true,
   "description": "Control Center — Windows desktop app for the home server panel",
   "type": "module",
@@ -10,7 +10,7 @@
     "start": "electron .",
     "build:win": "electron-builder --win --publish never",
     "build:dir": "electron-builder --dir --publish never",
-    "test": "node test/auto-fix.mjs && node test/app.mjs && node test/overlay.mjs"
+    "test": "node test/auto-fix.mjs && node test/app.mjs && node test/overlay.mjs && node test/unattended.mjs"
   },
   "devDependencies": {
     "electron": "^38.0.0",
