@@ -2,4 +2,6 @@
 <paths>
   <!-- فایلِ نصبیِ دانلودشده از همین‌جا به نصب‌کنندهٔ اندروید داده می‌شود -->
   <cache-path name="updates" path="updates/" />
+  <!-- فایلِ ‎.pumpkey‎ِ کدِ آفلاین برای فرستادن به مشتری -->
+  <cache-path name="keys" path="keys/" />
 </paths>

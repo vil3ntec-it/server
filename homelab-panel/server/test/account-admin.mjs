@@ -557,6 +557,10 @@ const fake = http.createServer((req, res) => {
     //  ⚠️ پمپ دفترِ **جدا** دارد؛ اگر پل `app` را نبرد، این هیچ‌وقت صدا نمی‌خورد
     if (p === '/api/admin/pump/vip-codes' && req.method === 'GET') return j(200, { codes: [{ id: 'pv1', app: 'pump', hint: 'P9••••', plan: 'std', status: 'active', createdAt: NOW }] });
     if (p === '/api/admin/pump/vip-codes' && req.method === 'POST') return j(201, { code: 'PUMP01', vipCode: { id: 'pv2', hint: 'PU••••' } });
+    //  کدِ اشتراکِ آفلاین — فقط پمپ (shop/server/src/lib/offline-codes.js)
+    if (p === '/api/admin/pump/offline-codes' && req.method === 'GET') return j(200, { codes: [{ id: 'of1', serial: 'a1b2c3d4e5f6', plan: 'vip', planTitle: 'وی‌آی‌پی', computer: 'C6PJ-6CTR-HPA7-DF35', status: 'issued', createdAt: NOW }] });
+    if (p === '/api/admin/pump/offline-codes' && req.method === 'POST') return j(201, { code: 'ABCDE-FGHJK', offline: { id: 'of2', plan: body?.plan, computer: body?.computer }, file: { format: 'pumpyaqobi-offline-key', code: 'ABCDE-FGHJK' } });
+    if (/^\/api\/admin\/pump\/offline-codes\/[^/]+\/revoke$/.test(p)) return j(200, { offline: { id: 'of1', status: 'revoked' } });
 
     if (p === '/api/admin/purchase-requests') return j(200, { requests: [{ id: 'pr1', shop_id: 's1', user_id: 'u1', plan_code: 'm1', note: '', status: 'pending', created_at: NOW - 3600e3, shop_name: 'دکانِ یک', user_name: 'کریم', phone: '' }] });
     if (/^\/api\/admin\/purchase-requests\/[^/]+\/approve$/.test(p)) return j(200, { subscription: { id: 'sub9' } });
@@ -1284,6 +1288,41 @@ try {
 
   const vipRevoke = await api('POST', '/api/account-admin/vip-codes/v1/revoke', { app: 'shop' }, auth);
   check('کدِ اشتراک باطل می‌شود', vipRevoke.status === 200, String(vipRevoke.status));
+
+  //  🔑 کدِ اشتراکِ آفلاین (۱۴۰۵/۰۷/۱۵) — همه از دفترِ **پمپ**
+  const offList = await api('GET', '/api/account-admin/offline-codes', undefined, auth);
+  check('کدهای آفلاینِ پمپ از پنل دیده می‌شوند',
+    offList.status === 200 && offList.json?.codes?.[0]?.computer === 'C6PJ-6CTR-HPA7-DF35', `${offList.status} ${JSON.stringify(offList.json)}`);
+  const offMake = await api('POST', '/api/account-admin/offline-codes',
+    { plan: 'perm', computer: 'C6PJ-6CTR-HPA7-DF35', days: '', note: 'کامپیوترِ قدیمی', extra: 'x' }, auth);
+  const offSeen = seen.filter((r) => r.path === '/api/admin/pump/offline-codes' && r.method === 'POST').at(-1);
+  check('کدِ آفلاین ساخته می‌شود و کد و فایلِ ‎.pumpkey‎ یک بار برمی‌گردند',
+    offMake.status === 200 && offMake.json?.code === 'ABCDE-FGHJK' && offMake.json?.file?.format === 'pumpyaqobi-offline-key',
+    `${offMake.status} ${JSON.stringify(offMake.json)}`);
+  check('⛔ پل فقط چهار فیلدِ خودش را می‌برد (نه هر چه آمد)، و «روزِ خالی» = null',
+    offSeen && offSeen.body?.plan === 'perm' && offSeen.body?.days === null && !('extra' in (offSeen.body || {})),
+    JSON.stringify(offSeen?.body));
+  const offRevoke = await api('POST', '/api/account-admin/offline-codes/of1/revoke', {}, auth);
+  check('کدِ آفلاین باطل می‌شود', offRevoke.status === 200 && offRevoke.json?.offline?.status === 'revoked', String(offRevoke.status));
+  //  ⛔ برنامهٔ ادمینِ اندروید (‎ui/OfflineCodesTab.kt‎) همین فیلدها را می‌خواند —
+  //  نامِ فیلدی که در سورسِ آن هست باید همان باشد که سرورِ حساب می‌فرستد
+  //  (‎shop/server/src/lib/offline-codes.js‎ ⇒ ‎listCodes‎ / ‎issue‎).
+  {
+    const kt = await fsp.readFile(new URL('../../admin-android/app/src/main/java/ir/vil3ntec/admin/ui/OfflineCodesTab.kt', import.meta.url), 'utf8');
+    const api2 = await fsp.readFile(new URL('../../admin-android/app/src/main/java/ir/vil3ntec/admin/data/Api.kt', import.meta.url), 'utf8');
+    const reads = ['id', 'computer', 'planTitle', 'permanent', 'endsAt', 'note', 'status', 'redeemedAt', 'createdAt']
+      .filter((f) => !kt.includes(`optString("${f}")`) && !kt.includes(`optBoolean("${f}")`) && !kt.includes(`optLong("${f}")`));
+    check('برنامهٔ اندروید همان فیلدهای فهرستِ سرورِ حساب را می‌خواند', reads.length === 0, reads.join(','));
+    check('برنامهٔ اندروید کد، ردیف و فایلِ ‎.pumpkey‎ را از همان کلیدها برمی‌دارد',
+      kt.includes('optString("code")') && kt.includes('optJSONObject("offline")') && kt.includes('optJSONObject("file")') && kt.includes('items("codes")'));
+    check('برنامهٔ اندروید همان سه درِ پنلِ وب را می‌زند',
+      api2.includes('"/api/account-admin/offline-codes?limit=200"') && api2.includes('"/api/account-admin/offline-codes", "POST"') &&
+        api2.includes('/revoke"'));
+    const viaApp = await api('GET', '/api/account-admin/offline-codes?limit=200', undefined, auth);
+    check('درِ فهرستِ برنامهٔ اندروید (با ‎limit‎) هم جواب می‌دهد', viaApp.status === 200 && Array.isArray(viaApp.json?.codes), String(viaApp.status));
+  }
+  const offBad = await api('POST', '/api/account-admin/offline-codes/..%2Fx/revoke', {}, auth);
+  check('⛔ شناسهٔ ناجور به سرورِ حساب نمی‌رسد', offBad.status === 400 || offBad.status === 404, String(offBad.status));
 
   const prs = await api('GET', '/api/account-admin/purchase-requests?status=pending', undefined, auth);
   check('درخواست‌های خرید دیده می‌شوند',

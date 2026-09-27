@@ -1499,6 +1499,48 @@ router.post('/vip-codes/:id/revoke', guard(async (req, res) => {
   res.json(out);
 }));
 
+/* ---------------- کدِ اشتراکِ آفلاینِ پمپ — بسته به یک کامپیوتر ---------------- */
+
+/*
+ *  خواستهٔ صاحب سامانه (۱۴۰۵/۰۷/۱۵): «برای کسانی که نت ندارن هم اشتراک بدم…
+ *  سه نوع کد.» مشتری «کدِ کامپیوتر» را از برنامه می‌خواند، این‌جا با پلن
+ *  زده می‌شود و سرورِ حساب با کلیدِ مجوز امضایش می‌کند
+ *  (`shop/server/src/lib/offline-codes.js`). برنامه بی اینترنت می‌سنجدش.
+ *
+ *  ⛔ فقط پمپ — برنامهٔ دکان گیرنده‌اش را ندارد.
+ *  ⛔ خودِ کد در دفترِ ممیزی نمی‌نشیند؛ فقط پلن و کدِ کامپیوتر.
+ */
+router.get('/offline-codes', guard(async (req, res) => {
+  res.json(await cloudRaw('GET', '/api/admin/pump/offline-codes', {
+    query: { limit: Math.min(500, Math.max(1, Number(req.query.limit) || 100)) },
+  }));
+}));
+
+router.post('/offline-codes', money, guard(async (req, res) => {
+  const body = {
+    plan: String(req.body?.plan || '').slice(0, 10),
+    computer: String(req.body?.computer || '').slice(0, 40),
+    days: req.body?.days === '' || req.body?.days == null ? null : Number(req.body.days),
+    note: String(req.body?.note || '').slice(0, 300),
+  };
+  const out = await cloudRaw('POST', '/api/admin/pump/offline-codes', { body });
+  audit({
+    actor: actorOf(req),
+    action: 'account.offline_code.create',
+    entity: 'offline_code',
+    entityId: out?.offline?.id || '',
+    detail: { plan: body.plan, computer: out?.offline?.computer || body.computer },
+  });
+  res.json(out);
+}));
+
+router.post('/offline-codes/:id/revoke', money, guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const out = await cloudRaw('POST', `/api/admin/pump/offline-codes/${id}/revoke`);
+  audit({ actor: actorOf(req), action: 'account.offline_code.revoke', entity: 'offline_code', entityId: id });
+  res.json(out);
+}));
+
 /* -------------------------- درخواست‌های خرید -------------------------- */
 
 /*

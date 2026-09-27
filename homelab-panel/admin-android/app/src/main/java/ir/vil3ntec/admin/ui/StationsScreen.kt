@@ -81,6 +81,8 @@ private val PUMP_TABS = listOf(
   "حساب‌ها و کاربرها",
   //  ⛔ اشتراک‌های پمپ همین‌جا — روزِ مانده، پایان، دادن/تمدید/تعلیق/لغو
   "💳 اشتراک‌ها",
+  //  ⛔ کدِ اشتراکِ آفلاین — برای کامپیوترِ بی اینترنت، همان درِ پنلِ وب
+  "🔑 کدِ آفلاین",
   "وصل بودن",
   "نرخ‌ها",
   "کد و ربات",
@@ -123,10 +125,11 @@ fun StationsScreen(session: Session) {
     when (tab) {
       0 -> PumpAccountsTab(session, onManage = { q -> subsQuery = q; tab = 1 })
       1 -> SubscriptionsTab(session, "pump", initialQuery = subsQuery)
-      2 -> PumpOnlineTab(session)
-      3 -> PumpPlansTab(session)
-      4 -> PumpCodesTab(session)
-      5 -> PumpDataTab(session)
+      2 -> OfflineCodesTab(session)
+      3 -> PumpOnlineTab(session)
+      4 -> PumpPlansTab(session)
+      5 -> PumpCodesTab(session)
+      6 -> PumpDataTab(session)
     }
   }
 }

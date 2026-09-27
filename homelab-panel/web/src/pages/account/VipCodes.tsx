@@ -21,6 +21,7 @@ import { api } from '../../api';
 import { Badge, Card, ConfirmDialog, Empty, Modal, Skeleton, toast } from '../../components/ui';
 import { ActionButton, Cell, Notice, Row, Table } from '../../control/ui';
 import { APP_LABEL, AppPicker, CloudProblem, PageHead, day, fa, moment, useLoad, type AppId } from './shared';
+import OfflineCodes from './OfflineCodes';
 
 type VipCode = {
   id: string;
@@ -122,6 +123,9 @@ export default function VipCodes() {
           </Table>
         )}
       </Card>
+
+      {/* 🔑 کدِ آفلاین فقط مالِ پمپ است — گیرنده‌اش در برنامهٔ پمپ است */}
+      {app === 'pump' && <OfflineCodes />}
 
       {making && (
         <NewVipCode
