@@ -754,6 +754,13 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
    *  همان فایلِ ریشهٔ مخزن، بی هیچ تغییری؛ نبودش ۴۰۴ است نه یک اسکریپتِ خالی.
    */
   publicApp.get('/install.sh', serveInstaller);
+  /*
+   *  ⛔ هیچ خزنده‌ای — نه موتورِ جست‌وجو و نه هوش مصنوعی — روی درِ عمومیِ سرور
+   *  (api.<دامنه> · admin.<دامنه>) چیزی نمی‌خواند (۱۴۰۵/۰۷/۱۶). همان خواستهٔ
+   *  «هوش مصنوعی نتونه برنامه رو ببینه»؛ و X-Robots-Tag برای هر پاسخ.
+   */
+  publicApp.get('/robots.txt', (req, res) =>
+    res.type('text/plain; charset=utf-8').send('User-agent: *\nDisallow: /\n'));
   publicApp.use((req, res) => res.status(404).type('text/plain; charset=utf-8').send('not found'));
 
   syncOnlyServer = http.createServer(publicApp);

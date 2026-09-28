@@ -158,6 +158,9 @@ export function secureHeaders(req, res, next) {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
   res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
+  // ⛔ هیچ موتورِ جست‌وجو و هیچ خزندهٔ هوش مصنوعی پاسخی از این سرور را
+  // نمایه یا برای آموزش برنمی‌دارد (۱۴۰۵/۰۷/۱۶).
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, noai, noimageai');
 
   // HSTS فقط وقتی که واقعاً پشتِ TLS هستیم. گذاشتنِ آن روی http یعنی
   // مرورگر برای همیشه https را اجبار می‌کند و پنلِ داخلِ شبکهٔ خانگی

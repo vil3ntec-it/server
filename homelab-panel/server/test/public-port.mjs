@@ -125,6 +125,14 @@ try {
   check('مسیرِ ناشناخته زیرِ API، JSONِ ۴۰۴ می‌دهد',
     unknown.status === 404, `${unknown.status} ${unknown.text.slice(0, 60)}`);
 
+  // ⛔ هیچ خزنده‌ای (موتورِ جست‌وجو یا هوش مصنوعی) روی درِ عمومی چیزی نمی‌خواند
+  const robots = await fetch(`http://127.0.0.1:${PUBLIC}/robots.txt`);
+  const robotsText = await robots.text();
+  check('robots.txtِ درِ عمومی همه‌چیز را می‌بندد',
+    robots.status === 200 && /User-agent: \*/.test(robotsText) && /Disallow: \/\n/.test(robotsText), robotsText);
+  check('هر پاسخِ درِ عمومی X-Robots-Tagِ noai دارد',
+    /noai/.test(robots.headers.get('x-robots-tag') || ''), robots.headers.get('x-robots-tag'));
+
   console.log('\n── ولی پنل از اینترنت دیده نمی‌شود ──');
   for (const [label, p] of [
     ['مرکز فرمان', '/api/control/overview'],

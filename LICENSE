@@ -1,24 +1,47 @@
-This is free and unencumbered software released into the public domain.
+پروانهٔ اختصاصی — همهٔ حقوق محفوظ است
+Proprietary License — All Rights Reserved
 
-Anyone is free to copy, modify, publish, use, compile, sell, or
-distribute this software, either in source code form or as a compiled
-binary, for any purpose, commercial or non-commercial, and by any
-means.
+Copyright © 2025–2026 VILL3N. All rights reserved.
 
-In jurisdictions that recognize copyright laws, the author or authors
-of this software dedicate any and all copyright interest in the
-software to the public domain. We make this dedication for the benefit
-of the public at large and to the detriment of our heirs and
-successors. We intend this dedication to be an overt act of
-relinquishment in perpetuity of all present and future rights to this
-software under copyright law.
+فارسی
+-----
+این نرم‌افزار (کدِ منبع، برنامه‌های ساخته‌شده، فایل‌های نصب، اپ‌های گوشی، صفحه‌های
+وب، سندها، طرح‌ها، تصویرها و هر بخشِ دیگرِ این مخزن) مالِ انحصاریِ VILL3N است.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
-OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-OTHER DEALINGS IN THE SOFTWARE.
+بی اجازهٔ کتبیِ صاحبِ حق، هیچ‌کس حق ندارد:
+  ۱. آن را کپی، بازنشر، فروش، اجاره یا واگذار کند؛
+  ۲. آن را تغییر دهد یا از روی آن اثرِ دیگری بسازد؛
+  ۳. آن را مهندسیِ معکوس، دیکامپایل یا بازگشایی کند، یا کوشش کند کدِ منبع را
+     از برنامهٔ ساخته‌شده بیرون بکشد؛
+  ۴. قفلِ اشتراک، مجوز، کدِ فعال‌سازی یا هر سازوکارِ محافظتی را دور بزند، از کار
+     بیندازد، جعل کند یا ابزاری برای این کار بسازد یا پخش کند؛
+  ۵. آن را، یا هر بخشی از آن را، برای آموزش، ارزیابی یا تغذیهٔ هر سامانهٔ
+     هوشِ مصنوعی یا یادگیریِ ماشین به کار ببرد.
 
-For more information, please refer to <https://unlicense.org>
+دیده شدنِ این کد در هر جایی (از جمله مخزنِ عمومی) هیچ اجازه‌ای نمی‌دهد. استفاده
+از برنامه فقط با اشتراک یا مجوزی است که صاحبِ حق صادر کرده، و فقط در همان حدی که
+آن اشتراک اجازه می‌دهد.
+
+English
+-------
+This software — including its source code, compiled programs, installers, mobile
+apps, web pages, documents, designs, images and every other part of this
+repository — is the exclusive property of VILL3N.
+
+Without the prior written permission of the copyright holder, no one may:
+  1. copy, redistribute, sell, rent, sublicense or transfer it;
+  2. modify it or create derivative works from it;
+  3. reverse engineer, decompile, disassemble or otherwise attempt to derive the
+     source code from any compiled form;
+  4. circumvent, disable, forge or tamper with any subscription lock, license,
+     activation code or other protection mechanism, or create or distribute any
+     tool for doing so;
+  5. use it, or any part of it, to train, evaluate, fine-tune or feed any
+     artificial-intelligence or machine-learning system.
+
+The code being visible anywhere (including in a public repository) grants no
+license of any kind. Use of the software is permitted only under a subscription
+or license issued by the copyright holder, and only to the extent that
+subscription allows.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
