@@ -297,6 +297,8 @@ app.use((req, res, next) => {
   if (/^\/api\/account-admin\/support\/threads\/[^/]+\/media$/.test(req.path)) return next();
   // پشتیبانِ پمپ فایلِ خامِ SQLite است، نه JSON — مسیرِ خودش ‎express.raw‎ دارد
   if (/^\/api\/stations\/[^/]+\/backup$/.test(req.path)) return next();
+  // رسانهٔ گروهِ پمپ هم خام است — مسیرِ خودش ‎express.raw‎ دارد
+  if (/^\/api\/(v1\/)?stations\/[^/]+\/chat\/media$/.test(req.path)) return next();
   // گزارشِ Agent باید خام بماند تا امضایش قابلِ سنجش باشد
   if (req.path.startsWith('/api/control/agent')) return next();
   // پیام‌رسان سقفِ خودش را دارد تا پیام‌های بلند رد نشوند
@@ -719,7 +721,7 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
   //  مسیرِ عمومی — حتی بی‌رمز — بدنهٔ چندصد مگابایتی را در حافظه می‌خواند.
   //  دفترِ زندهٔ پمپ هم‌اندازهٔ سقفِ وب‌سوکتِ همان است (۶۴ مگابایت)؛ بقیه ۵.
   const bigBody = (p) => /^\/api\/(v1\/)?(messenger|stations)\b/.test(p);
-  publicApp.use((req, res, next) => express.json({
+  publicApp.use((req, res, next) => /^\/api\/(v1\/)?stations\/[^/]+\/chat\/media$/.test(req.path) ? next() : express.json({
     limit: bigBody(req.path) ? (req.path.includes('messenger') ? MSG_LIMIT : '64mb') : '5mb',
   })(req, res, next));
   /*

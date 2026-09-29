@@ -6,7 +6,8 @@
 //  نیست و پمپ‌های دیگرِ همین سرور هرگز آن را نمی‌بینند.
 //
 //      data/stations/<کدِ پمپ>/chat.json   (۰۶۰۰)
-//        { seq: <آخرین شماره>, messages: [{ seq, cid, from, role, text, at }] }
+//        { seq: <آخرین شماره>, messages: [{ seq, cid, from, role, text, at, kind?, mediaId? }] }
+//      data/stations/<کدِ پمپ>/chat-media/   عکس، ویدیو، صدا — فقط ۴۸ ساعت
 //
 //  ⛔ **سرور فقط رله است، نه بایگانی**: هر پیام حداکثر ‎CHAT_RELAY_DAYS‎ (۱۵
 //  روز) و حداکثر ‎CHAT_KEEP‎ (۲۰۰۰) پیام می‌ماند. برنامه‌ها نسخهٔ خودشان را
@@ -51,6 +52,26 @@ export const CHAT_FILE = 'chat.json';
 export const CHAT_BRANCH = 'chat';
 
 export const CHAT_TEXT_MAX = 2000;
+/** پوشهٔ رسانهٔ گروه داخلِ پوشهٔ پمپ */
+export const CHAT_MEDIA_DIR = 'chat-media';
+/**
+ * ⛔ رسانهٔ گروه فقط در عبور است: ‎CHAT_MEDIA_HOURS‎ (۴۸ ساعت) و بعد پاک —
+ * هر برنامه نسخهٔ خودش را همان لحظهٔ رسیدن نگه می‌دارد. گروه گیرندهٔ یکتا
+ * ندارد، پس «پس از رسیدن پاک» این‌جا یعنی «پس از فرصتی که همه برسند».
+ */
+export const CHAT_MEDIA_HOURS = num(process.env.HLP_CHAT_MEDIA_HOURS, 48);
+export const CHAT_MEDIA_KINDS = ['image', 'video', 'audio'];
+/** سقفِ هر فایل — همان ۲۵ مگابایتِ پشتیبانیِ پمپ */
+export const CHAT_MEDIA_MAX = 25 * 1024 * 1024;
+const MID_RE = /^m[A-Za-z0-9_-]{10,40}$/;
+export const isMediaId = (v) => typeof v === 'string' && MID_RE.test(v);
+/** نوعِ فایل ⇒ ‎image|video|audio‎، وگرنه ‎''‎ */
+export function mediaKindOf(mime) {
+  const m = String(mime || '').toLowerCase().split(';')[0].trim();
+  if (!/^[a-z]+\/[a-z0-9.+-]{1,60}$/.test(m)) return '';
+  const k = m.split('/')[0];
+  return CHAT_MEDIA_KINDS.includes(k) ? k : '';
+}
 export const CHAT_FROM_MAX = 60;
 export const CHAT_ROLES = ['admin', 'mirza', 'staff'];
 export const CHAT_LIMIT_DEFAULT = 200;
@@ -81,11 +102,16 @@ export function validateChatInput(body = {}) {
   const role = b.role === undefined || b.role === null || b.role === '' ? 'staff' : String(b.role).trim();
   if (!CHAT_ROLES.includes(role)) return { error: 'bad_role', message: 'نقش باید admin، mirza یا staff باشد' };
 
+  const kind = b.kind === undefined || b.kind === null || b.kind === '' ? 'text' : String(b.kind).trim();
+  if (kind !== 'text' && !CHAT_MEDIA_KINDS.includes(kind)) return { error: 'bad_kind', message: 'نوعِ پیام باید text، image، video یا audio باشد' };
+  const mediaId = kind === 'text' ? '' : String(b.mediaId ?? '').trim();
+  if (kind !== 'text' && !isMediaId(mediaId)) return { error: 'bad_media', message: 'شناسهٔ رسانه نامعتبر است' };
+
   const text = String(b.text ?? '').replace(CONTROL_RE, '').trim();
-  if (!text) return { error: 'empty', message: 'متنِ پیام خالی است' };
+  if (!text && kind === 'text') return { error: 'empty', message: 'متنِ پیام خالی است' };
   if ([...text].length > CHAT_TEXT_MAX) return { error: 'text_too_long', message: `متن حداکثر ${CHAT_TEXT_MAX} نویسه` };
 
-  return { value: { cid, from, role, text } };
+  return { value: { cid, from, role, text, kind, mediaId } };
 }
 
 /**
@@ -116,6 +142,7 @@ export function createStationChat({ dirFor, onChange = () => {} }) {
               role: CHAT_ROLES.includes(m.role) ? m.role : 'staff',
               text: m.text,
               at: Number(m.at) || 0,
+              ...(CHAT_MEDIA_KINDS.includes(m.kind) && isMediaId(m.mediaId) ? { kind: m.kind, mediaId: m.mediaId } : {}),
             }))
             .sort((a, b) => a.seq - b.seq)
         : [];
@@ -193,6 +220,7 @@ export function createStationChat({ dirFor, onChange = () => {} }) {
         role: input.role,
         text: input.text,
         at: Date.now(),
+        ...(input.kind && input.kind !== 'text' ? { kind: input.kind, mediaId: input.mediaId } : {}),
       };
       state.messages.push(message);
       prune(state);
@@ -211,10 +239,62 @@ export function createStationChat({ dirFor, onChange = () => {} }) {
     });
   }
 
+  // ── رسانهٔ گروه ──────────────────────────────────────────────────────
+  //  ‎chat-media/<mid>‎ (بایت‌ها) + ‎<mid>.json‎ ({mime, kind, size, at})، ۰۶۰۰.
+  //  هرس تنبل است: با هر بارگذاری و هر گرفتن، نه با زمان‌سنج.
+  const mediaDirOf = (code) => path.join(dirFor(code), CHAT_MEDIA_DIR);
+  const mediaMs = () => CHAT_MEDIA_HOURS * 60 * 60 * 1000;
+
+  async function pruneMedia(code, now = Date.now()) {
+    const dir = mediaDirOf(code);
+    let names = [];
+    try { names = await fsp.readdir(dir); } catch { return 0; }
+    let gone = 0;
+    for (const n of names) {
+      if (!n.endsWith('.json')) continue;
+      const id = n.slice(0, -5);
+      let at = 0;
+      try { at = Number(JSON.parse(await fsp.readFile(path.join(dir, n), 'utf8')).at) || 0; } catch { /* خراب ⇒ پاک */ }
+      if (at && now - at < mediaMs()) continue;
+      await fsp.rm(path.join(dir, id), { force: true }).catch(() => {});
+      await fsp.rm(path.join(dir, n), { force: true }).catch(() => {});
+      gone++;
+    }
+    return gone;
+  }
+
+  /** بایت‌های یک رسانه را می‌نشاند؛ ‎{ mediaId, kind, size }‎ */
+  async function putMedia(code, buf, mime) {
+    const kind = mediaKindOf(mime);
+    if (!kind) { const e = new Error('bad_type'); e.code = 'bad_type'; throw e; }
+    if (!Buffer.isBuffer(buf) || !buf.length) { const e = new Error('empty'); e.code = 'empty'; throw e; }
+    if (buf.length > CHAT_MEDIA_MAX) { const e = new Error('too_large'); e.code = 'too_large'; throw e; }
+    await pruneMedia(code).catch(() => {});
+    const dir = mediaDirOf(code);
+    await fsp.mkdir(dir, { recursive: true });
+    const mediaId = 'm' + crypto.randomBytes(15).toString('base64url');
+    const meta = { mime: String(mime).split(';')[0].trim().toLowerCase(), kind, size: buf.length, at: Date.now() };
+    await fsp.writeFile(path.join(dir, mediaId), buf, { mode: 0o600 });
+    await fsp.writeFile(path.join(dir, mediaId + '.json'), JSON.stringify(meta), { encoding: 'utf8', mode: 0o600 });
+    return { mediaId, kind, size: buf.length };
+  }
+
+  /** ‎{ file, mime, size }‎ یا ‎null‎ (نیست، یا مهلتش گذشته) */
+  async function getMedia(code, mediaId) {
+    if (!isMediaId(mediaId)) return null;
+    const dir = mediaDirOf(code);
+    let meta;
+    try { meta = JSON.parse(await fsp.readFile(path.join(dir, mediaId + '.json'), 'utf8')); } catch { return null; }
+    if (!meta || Date.now() - (Number(meta.at) || 0) >= mediaMs()) { pruneMedia(code).catch(() => {}); return null; }
+    const file = path.join(dir, mediaId);
+    try { await fsp.access(file); } catch { return null; }
+    return { file, mime: String(meta.mime || 'application/octet-stream'), size: Number(meta.size) || 0 };
+  }
+
   /** پمپِ پاک‌شده — حالِ حافظه‌اش هم برود */
   function forget(code) {
     cache.delete(code);
   }
 
-  return { list, post, forget };
+  return { list, post, forget, putMedia, getMedia, pruneMedia };
 }
