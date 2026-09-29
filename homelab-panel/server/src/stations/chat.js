@@ -69,6 +69,8 @@ export const isMediaId = (v) => typeof v === 'string' && MID_RE.test(v);
 export function mediaKindOf(mime) {
   const m = String(mime || '').toLowerCase().split(';')[0].trim();
   if (!/^[a-z]+\/[a-z0-9.+-]{1,60}$/.test(m)) return '';
+  //  ⛔ SVG/XML «عکس» نیست — اسکریپت دارد و روی دامنهٔ خودِ سرور اجرا می‌شد
+  if (/svg|xml|html/.test(m)) return '';
   const k = m.split('/')[0];
   return CHAT_MEDIA_KINDS.includes(k) ? k : '';
 }

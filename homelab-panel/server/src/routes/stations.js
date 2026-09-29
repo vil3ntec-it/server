@@ -292,6 +292,7 @@ router.get('/:code/chat/media/:mid', async (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('Content-Disposition', 'inline');
+  res.set('Content-Security-Policy', "default-src 'none'; media-src 'self'; img-src 'self'; sandbox");
   res.sendFile(m.file, { dotfiles: 'allow', acceptRanges: true, cacheControl: false, lastModified: false });
 });
 

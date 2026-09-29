@@ -122,6 +122,7 @@ try {
   const gb = Buffer.from(await g.arrayBuffer());
   check('برنامهٔ کامپیوتر همان بایت‌ها را می‌گیرد', g.status === 200 && gb.equals(PNG) && g.headers.get('content-type') === 'image/png');
   check('no-store و nosniff', g.headers.get('cache-control') === 'no-store' && g.headers.get('x-content-type-options') === 'nosniff');
+  check('CSPِ sandbox — فایل هرگز صفحه نیست', /sandbox/.test(g.headers.get('content-security-policy') || ''));
   const g2 = await get(BASE, 'med1', R1, img.json.mediaId);
   check('گوشیِ دیگرِ همان گروه هم می‌گیرد (گروه چند گیرنده دارد)', g2.status === 200);
 
@@ -136,6 +137,8 @@ try {
   check('فقط عکس/ویدیو/صدا', pdf.status === 400 && pdf.json?.error === 'bad_type');
   const html = await up(BASE, 'med1', R1, 'text/html', Buffer.from('<script>1</script>'));
   check('HTML رد می‌شود', html.status === 400);
+  const svg = await up(BASE, 'med1', R1, 'image/svg+xml', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'));
+  check('⛔ SVG (اسکریپت‌دار) عکس شمرده نمی‌شود', svg.status === 400 && svg.json?.error === 'bad_type', JSON.stringify(svg.json));
   const emp = await up(BASE, 'med1', R1, 'image/png', Buffer.alloc(0));
   check('فایلِ خالی رد می‌شود', emp.status === 400);
   const bogus = await api('POST', `/api/stations/med1/chat`, { from: 'کریم', kind: 'image', mediaId: 'mAAAAAAAAAAAAAAAAAAAA' }, bearer(R1));
