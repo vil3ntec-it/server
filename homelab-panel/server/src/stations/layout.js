@@ -11,6 +11,7 @@
 //        inbox.json                    صندوقِ گوشی‌ها        (شاخهٔ ‎inbox‎)
 //        acct.json                     حساب‌های کیو‌آرِ زنده  (شاخهٔ ‎acct‎)
 //        chat.json                     گروهِ کارکنان، ۱۵ روز (‎chat.js‎)
+//        chat-media/                   رسانهٔ گروه، ۴۸ ساعت در عبور (‎chat.js‎)
 //        token.txt                     رمزِ برنامهٔ کامپیوتر — می‌نویسد
 //        readkey.txt                   رمزِ گوشی‌ها — فقط می‌خواند
 //        backups/                      پشتیبان‌های همان پمپ (‎backups.js‎)
@@ -43,6 +44,7 @@ export const LAYOUT = [
   { name: 'acct.json',    kind: 'file', branch: 'acct',    title: 'حساب‌های کیو‌آرِ زنده' },
   //  ⚠️ شاخهٔ دفترِ ‎sitesync‎ نیست (‎chat.js‎ خودش می‌نویسد)، پس ‎branch‎ ندارد
   { name: 'chat.json',    kind: 'file',                    title: 'گروهِ کارکنان — ۱۵ روزِ آخر' },
+  { name: 'chat-media',   kind: 'dir',                     title: 'رسانهٔ گروه — فقط ۴۸ ساعت در عبور' },
   { name: 'token.txt',    kind: 'file', secret: true,      title: 'رمزِ برنامهٔ کامپیوتر' },
   { name: 'readkey.txt',  kind: 'file', secret: true,      title: 'رمزِ گوشی‌ها (فقط‌خواندنی)' },
   { name: 'backups',      kind: 'dir',                     title: 'پشتیبان‌های همین پمپ' },

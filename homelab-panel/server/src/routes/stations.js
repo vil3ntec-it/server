@@ -26,7 +26,7 @@ import { logEvent } from '../db.js';
 import { isLocalRequest, safeCode, LIVE_BRANCH, INBOX_BRANCH, META_BRANCH } from '../stations/index.js';
 import { listBackups, saveBackup, KEEP_DAYS, MAX_BYTES } from '../stations/backups.js';
 import { describeFolder } from '../stations/layout.js';
-import { validateChatInput, CHAT_RELAY_DAYS } from '../stations/chat.js';
+import { validateChatInput, CHAT_RELAY_DAYS, CHAT_MEDIA_HOURS, CHAT_MEDIA_MAX } from '../stations/chat.js';
 import { cloudStatus, cloudLogin, cloudForget, cloudCall } from '../stations/cloud.js';
 import { noticesFor } from '../announce/store.js';
 
@@ -242,11 +242,58 @@ router.post('/:code/chat', async (req, res) => {
   const v = validateChatInput(req.body);
   if (v.error) return res.status(400).json({ error: v.error, message: v.message });
   try {
+    //  ⛔ پیامِ رسانه فقط با رسانه‌ای که همین حالا روی همین پمپ هست
+    if (v.value.kind !== 'text' && !(await ctx.stations.chat.getMedia(ctx.code, v.value.mediaId))) {
+      return res.status(400).json({ error: 'media_gone', message: 'این فایل روی سرور نیست — دوباره بفرستید' });
+    }
     const out = await ctx.stations.chat.post(ctx.code, v.value);
     res.json({ ok: true, message: out.message, ...(out.duplicate ? { duplicate: true } : {}) });
   } catch (err) {
     res.status(500).json({ error: 'save_failed', message: String(err?.message || err) });
   }
+});
+
+/**
+ * ══ رسانهٔ گروه — عکس، ویدیو، پیامِ صوتی ═════════════════════════════════
+ *
+ *   POST /:code/chat/media   بدنهٔ خام، ‎Content-Type‎ همان نوعِ فایل ⇒ { ok, mediaId, kind, size }
+ *   GET  /:code/chat/media/:mid                                   ⇒ بایت‌ها، ‎no-store‎
+ *
+ * ⛔ **سرور بایگانی نیست**: فایل فقط ‎CHAT_MEDIA_HOURS‎ (۴۸ ساعت) می‌ماند و
+ * هر برنامه همان لحظهٔ رسیدن نسخهٔ خودش را نگه می‌دارد (کامپیوتر: ‎chat-media/‎،
+ * گوشی: IndexedDB). فرستنده هم نسخهٔ خودش را **پیش از** رفتن نگه می‌دارد.
+ * ⛔ همان رمزِ همان پمپ؛ پمپِ دیگر ۴۰۴ می‌گیرد. فقط عکس/ویدیو/صدا تا ۲۵MB.
+ */
+router.post(
+  '/:code/chat/media',
+  (req, res, next) => express.raw({ type: () => true, limit: CHAT_MEDIA_MAX })(req, res, next),
+  async (req, res) => {
+    const ctx = openChat(req, res);
+    if (!ctx) return;
+    try {
+      const out = await ctx.stations.chat.putMedia(ctx.code, Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), req.get('content-type'));
+      res.status(201).json({ ok: true, ...out, keepHours: CHAT_MEDIA_HOURS });
+    } catch (err) {
+      const code = err?.code;
+      if (code === 'bad_type') return res.status(400).json({ error: 'bad_type', message: 'فقط عکس، ویدیو یا صدا' });
+      if (code === 'empty') return res.status(400).json({ error: 'empty', message: 'فایل خالی است' });
+      if (code === 'too_large') return res.status(413).json({ error: 'too_large', message: 'فایل بزرگ‌تر از ۲۵ مگابایت است' });
+      res.status(500).json({ error: 'save_failed', message: 'فایل ذخیره نشد' });
+    }
+  }
+);
+
+router.get('/:code/chat/media/:mid', async (req, res) => {
+  const ctx = openChat(req, res);
+  if (!ctx) return;
+  const m = await ctx.stations.chat.getMedia(ctx.code, String(req.params.mid || '')).catch(() => null);
+  if (!m) return res.status(404).json({ error: 'media_gone', message: 'این فایل دیگر روی سرور نیست — فقط ۴۸ ساعت می‌ماند' });
+  res.set('Content-Type', m.mime);
+  res.set('Cache-Control', 'no-store');
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Content-Disposition', 'inline');
+  res.set('Content-Security-Policy', "default-src 'none'; media-src 'self'; img-src 'self'; sandbox");
+  res.sendFile(m.file, { dotfiles: 'allow', acceptRanges: true, cacheControl: false, lastModified: false });
 });
 
 /** نام و کدِ پمپ — کم‌هزینه‌ترین راهِ «این رمز به کجا می‌خورد؟» */
