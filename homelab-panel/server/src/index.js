@@ -83,6 +83,7 @@ import { startAutomation, stopAutomation, automationEnabled } from './automation
 import automationRoutes from './routes/automation.js';
 import { autostartAccountServer, stopAccountServer } from './account/supervisor.js';
 import accountServerRoutes from './routes/account-server.js';
+import pumpUpdatesAdminRoutes from './routes/pump-updates-admin.js';
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
 import { ensureControlSchema } from './control/schema.js';
@@ -375,6 +376,7 @@ app.use('/api/platform', platformRoutes);
 // دستیارِ هوشمند — فقط پورتِ پنل؛ خواندن برای همه، گفت‌وگو و تأیید دستِ‌کم operator
 app.use('/api/agent', requireAuth, writeNeedsOperator, agentRoutes);
 app.use('/api/account-server', accountServerRoutes);
+app.use('/api/pump-updates-admin', pumpUpdatesAdminRoutes);
 // دیتابیس‌های کاربر (MySQL/MariaDB و PostgreSQL) — رمز در گاوصندوق می‌ماند
 app.use('/api/databases', databaseRoutes);
 // موتورِ اتوماسیون — کارهای داخلیِ پنل (پشتیبان، پایش، نگهداری) با دفترِ اجرا

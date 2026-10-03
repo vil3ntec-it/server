@@ -204,6 +204,44 @@ try {
     check(`رد شد: ${p}`, r.status === 404 || r.status === 400, r.status);
   }
 
+  console.log('\n── ۵ب) 🚦 درِ پخش: «روی سرور باشد ولی تا خودم نخواهم نرود» ──');
+  const adm0 = await call('GET', '/api/pump-updates-admin');
+  check('حالتِ پیش‌فرض خودکار است و همان نسخه پخش می‌شود', adm0.body.mode === 'auto' && adm0.body.served === '3.1.242', JSON.stringify(adm0.body).slice(0, 200));
+  const h = await call('POST', '/api/pump-updates-admin/mode', { mode: 'hold' });
+  check('پخش خاموش شد و همان نسخهٔ امروز قفل ماند', h.status === 200 && h.body.mode === 'hold' && h.body.served === '3.1.242', JSON.stringify(h.body).slice(0, 200));
+  const v3 = publish('3.1.243');
+  const r5 = await runMirror();
+  check('نسخهٔ تازه گرفته شد', r5.status === 200 && r5.body.status === 'ok');
+  const held = await (await fetch(`${PUB}/api/pump-updates/latest`)).json();
+  check('⛔ برنامه‌ها هنوز نسخهٔ قبلی را می‌بینند', held.tag_name === 'v3.1.242', held.tag_name);
+  const heldFile = await fetch(`${PUB}/api/pump-updates/files/3.1.243/PumpYaqobi-Setup.exe`);
+  check('⛔ نسخهٔ نگه‌داشته از درِ عمومی دانلود نمی‌شود', heldFile.status === 404, heldFile.status);
+  const adm1 = await call('GET', '/api/pump-updates-admin');
+  check('پنل می‌گوید نسخهٔ تازه منتظرِ انتشار است', adm1.body.waiting === true && adm1.body.version === '3.1.243'
+    && adm1.body.versions.some((v) => v.version === '3.1.243'), JSON.stringify(adm1.body).slice(0, 300));
+  const test = await fetch(`${BASE}/api/pump-updates-admin/files/3.1.243/PumpYaqobi-Setup.exe?token=${token}`);
+  const testBuf = Buffer.from(await test.arrayBuffer());
+  check('مدیر نسخهٔ نگه‌داشته را برای آزمودن دانلود می‌کند', test.status === 200 && testBuf.equals(v3['PumpYaqobi-Setup.exe']), test.status);
+  const anon = await fetch(`${BASE}/api/pump-updates-admin/files/3.1.243/PumpYaqobi-Setup.exe`);
+  check('بی ورود، درِ آزمایشی بسته است', anon.status === 401, anon.status);
+  const pubAdm = await fetch(`${PUB}/api/pump-updates-admin`);
+  check('درِ مدیریت روی پورتِ عمومی نیست', pubAdm.status === 404 || pubAdm.status === 401, pubAdm.status);
+  const pz = await call('POST', '/api/pump-updates-admin/publish', { version: '3.1.243' });
+  check('انتشار زده شد', pz.status === 200 && pz.body.served === '3.1.243' && pz.body.mode === 'hold', JSON.stringify(pz.body).slice(0, 200));
+  const after = await (await fetch(`${PUB}/api/pump-updates/latest`)).json();
+  check('حالا برنامه‌ها نسخهٔ تازه را می‌بینند', after.tag_name === 'v3.1.243');
+  const back = await call('POST', '/api/pump-updates-admin/publish', { version: '3.1.242' });
+  check('برگرداندن به نسخهٔ قبلی هم شدنی است', back.status === 200 && back.body.served === '3.1.242');
+  check('پس از برگرداندن، نسخهٔ تازه‌ترِ کنارگذاشته از درِ عمومی نمی‌رود',
+    (await fetch(`${PUB}/api/pump-updates/files/3.1.243/PumpYaqobi-Setup.exe`)).status === 404);
+  const nx = await call('POST', '/api/pump-updates-admin/publish', { version: '9.9.9' });
+  check('نسخهٔ نگرفته منتشر نمی‌شود', nx.status === 404);
+  const bm = await call('POST', '/api/pump-updates-admin/mode', { mode: 'whatever' });
+  check('حالتِ ناشناخته رد می‌شود', bm.status === 400);
+  const au = await call('POST', '/api/pump-updates-admin/mode', { mode: 'auto' });
+  check('روشن کردنِ دوبارهٔ پخش ⇒ تازه‌ترین نسخه همان لحظه می‌رود', au.body.mode === 'auto' && au.body.served === '3.1.243');
+  check('…و از درِ عمومی هم', (await (await fetch(`${PUB}/api/pump-updates/latest`)).json()).tag_name === 'v3.1.243');
+
   console.log('\n── ۶) فقط‌خواندنی ──');
   const post = await fetch(`${PUB}/api/pump-updates/latest`, { method: 'POST' });
   check('POST هیچ کاری نمی‌کند', post.status === 404);
