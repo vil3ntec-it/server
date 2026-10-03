@@ -96,6 +96,10 @@ function connectThroughProxy(proxy, target, timeout) {
  */
 export async function get(url, { headers = {}, timeout = 30000, maxRedirects = 5 } = {}) {
   let target = typeof url === 'string' ? new URL(url) : url;
+  //  ⛔ سرآیندِ هویت فقط به همان میزبان می‌رود. دانلودِ انتشارِ گیت‌هاب به
+  //  میزبانِ دیگری (نشانیِ امضاشدهٔ موقت) تغییرِ مسیر می‌دهد؛ فرستادنِ توکن
+  //  به آن‌جا هم راز را بیرون می‌برد و هم آن میزبان درخواست را رد می‌کند.
+  headers = { ...headers };
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const proxy = proxyFor(target);
@@ -130,7 +134,11 @@ export async function get(url, { headers = {}, timeout = 30000, maxRedirects = 5
     const status = res.statusCode || 0;
     if (status >= 300 && status < 400 && res.headers.location) {
       res.resume();
-      target = new URL(res.headers.location, target);
+      const next = new URL(res.headers.location, target);
+      if (next.host !== target.host) {
+        for (const k of Object.keys(headers)) if (k.toLowerCase() === 'authorization') delete headers[k];
+      }
+      target = next;
       continue;
     }
     return { status, headers: res.headers, stream: res, url: target.toString() };

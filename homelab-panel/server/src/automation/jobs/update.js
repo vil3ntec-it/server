@@ -14,6 +14,7 @@
 // ---------------------------------------------------------------------------
 import { defineJob } from '../engine.js';
 import { autoUpdateOnce } from '../../update/github.js';
+import { syncOnce as pumpMirrorOnce, mirrorEnabled } from '../../pumpupdates/mirror.js';
 
 export const panelUpdate = defineJob({
   name: 'panel-update',
@@ -36,4 +37,29 @@ export const panelUpdate = defineJob({
   },
 });
 
-export default [panelUpdate];
+/*
+ *  آینهٔ به‌روزرسانیِ برنامهٔ پمپ (۱۴۰۵/۰۷/۱۹): «درجا که توی گیت‌هاب آپدیت رو
+ *  گذاشتم سرور ببینه و به برنامه بگه.»
+ *
+ *  ⛔ هر دو دقیقه **یک پرسش با ETag** — تا چیزی عوض نشده، گیت‌هاب ۳۰۴ می‌دهد
+ *  و هیچ سهمی از سقفش نمی‌رود و هیچ بایتی دانلود نمی‌شود.
+ *  ⛔ یک تلاش: دورِ بعد دو دقیقهٔ دیگر است؛ نسخهٔ سالمِ قبلی همیشه سرِ جایش.
+ */
+export const pumpUpdateMirror = defineJob({
+  name: 'pump-update-mirror',
+  title: 'آینهٔ به‌روزرسانیِ برنامهٔ پمپ',
+  description: 'هر دو دقیقه از گیت‌هاب می‌پرسد؛ نسخهٔ تازهٔ برنامهٔ پمپ را می‌گیرد، با چک‌سام می‌سنجد و برای برنامه‌ها سرو می‌کند',
+  every: 2 * 60_000,
+  runOnStart: 30_000,
+  timeout: 30 * 60_000,
+  attempts: 1,
+  quiet: true,
+  async run(ctx) {
+    if (!mirrorEnabled()) return { skipped: 'disabled' };
+    const out = await pumpMirrorOnce({ log: (m) => ctx.log(m) });
+    if (out.changed) await ctx.notify('info', `نسخهٔ ${out.version} برنامهٔ پمپ روی سرور آماده شد — برنامه‌ها خودشان می‌گیرند`);
+    return out;
+  },
+});
+
+export default [panelUpdate, pumpUpdateMirror];
