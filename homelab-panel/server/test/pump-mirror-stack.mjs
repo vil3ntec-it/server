@@ -58,9 +58,11 @@ const BASE = `http://127.0.0.1:${PORT}`;
 for (let i = 0; i < 125; i++) { try { if ((await fetch(`${BASE}/health`)).ok) break; } catch { /* */ } await wait(200); }
 const j = async (u, b, t) => (await fetch(BASE + u, { method: 'POST', headers: { 'content-type': 'application/json', ...(t ? { authorization: `Bearer ${t}` } : {}) }, body: JSON.stringify(b) })).json();
 const tok = (await j('/api/auth/setup', { username: 'admin', password: 'ControlCenter!2026' })).token;
+//  MIRROR_HOLD=1 ⇒ پخش پیش از رسیدنِ نسخه خاموش می‌شود (درِ پخشِ ۱.۵۰.۳۱)
+if (process.env.MIRROR_HOLD === '1') console.log('hold:', (await j('/api/pump-updates-admin/mode', { mode: 'hold' }, tok)).mode);
 const run = await j('/api/automation/jobs/pump-update-mirror/run', {}, tok);
 console.log('mirror:', run.status);
-fs.writeFileSync(LIVE, JSON.stringify({ pub: `http://127.0.0.1:${PORT + 1}`, version: VERSION }));
+fs.writeFileSync(LIVE, JSON.stringify({ pub: `http://127.0.0.1:${PORT + 1}`, panel: BASE, token: tok, version: VERSION }));
 console.log('ready', LIVE);
 process.on('SIGINT', () => { child.kill(); process.exit(0); });
 process.on('SIGTERM', () => { child.kill(); process.exit(0); });

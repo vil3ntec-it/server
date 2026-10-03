@@ -122,17 +122,144 @@ export async function current() {
   return cur;
 }
 
+// ---------------------------------------------------------------------------
+//  🚦 درِ پخش — «آپدیت روی سرور باشد ولی تا خودم نخواهم به هیچ برنامه‌ای نرود»
+//
+//  خواستهٔ صاحب سامانه (۱۴۰۵/۰۷/۱۹). دو حالت، در `release.json`:
+//
+//      auto  هر نسخهٔ سالمی که از گیت‌هاب رسید همان لحظه به برنامه‌ها می‌رود
+//            (رفتارِ ۱.۵۰.۳۰ — پیش‌فرض، تا هیچ نصبی بی‌خبر از کار نیفتد)
+//      hold  نسخهٔ تازه گرفته و سنجیده می‌شود ولی برنامه‌ها همان «منتشرشده» را
+//            می‌بینند، تا مدیر خودش «انتشار» را بزند
+//
+//  ⛔ «آن‌چه برنامه‌ها می‌بینند» فقط از `served()` می‌آید — هم `/latest` و هم
+//  درِ فایل‌ها. نسخهٔ نگه‌داشته از درِ عمومی **دانلود هم نمی‌شود**؛ فقط از
+//  درِ پنل (برای آزمودن روی کامپیوترِ خودِ مدیر).
+// ---------------------------------------------------------------------------
+export const MODES = Object.freeze(['auto', 'hold']);
+
+/** حالِ درِ پخش. */
+export async function releaseState() {
+  const r = (await readJson(path.join(mirrorDir(), 'release.json'))) || {};
+  return {
+    mode: MODES.includes(r.mode) ? r.mode : 'auto',
+    published: normalizeVersion(r.published) || null,
+    previous: normalizeVersion(r.previous) || null,
+    at: r.at || null,
+    by: r.by || null,
+  };
+}
+
+async function writeRelease(next) {
+  await fsp.mkdir(mirrorDir(), { recursive: true });
+  await writeJsonAtomic(path.join(mirrorDir(), 'release.json'), next);
+}
+
+/** فهرستِ یک نسخهٔ گرفته‌شده (یا null). */
+export async function manifestOf(version) {
+  if (!normalizeVersion(version)) return null;
+  const m = await readJson(path.join(mirrorDir(), version, 'manifest.json'));
+  if (m && m.version === version && Array.isArray(m.assets)) return m;
+  //  ⚠️ نسخه‌ای که پیش از ۱.۵۰.۳۱ گرفته شده فقط در current.json فهرست دارد
+  const cur = await current();
+  return cur && cur.version === version ? cur : null;
+}
+
+/**
+ * نسخه‌ای که برنامه‌ها همین حالا می‌بینند (یا null = «هیچ چیزی بیرون نمی‌رود»).
+ */
+export async function served() {
+  const r = await releaseState();
+  if (r.mode === 'auto') return current();
+  return r.published ? manifestOf(r.published) : null;
+}
+
+/** حالت را عوض می‌کند. نگه داشتن همان نسخهٔ امروز را «منتشرشده» قفل می‌کند. */
+export async function setMode(mode, { by = null } = {}) {
+  if (!MODES.includes(mode)) throw Object.assign(new Error('bad_mode'), { status: 400 });
+  const r = await releaseState();
+  const cur = await current();
+  const next = { ...r, mode, at: new Date().toISOString(), by };
+  if (mode === 'hold') {
+    //  ⛔ آن‌چه برنامه‌ها امروز می‌گیرند همان بماند — نه بیشتر، نه کمتر
+    if (r.mode === 'auto') {
+      const now = cur?.version || null;
+      if (now !== r.published) { next.previous = r.published; next.published = now; }
+    }
+  } else if (cur && cur.version !== r.published) {
+    next.previous = r.published;
+    next.published = cur.version;
+  }
+  await writeRelease(next);
+  return releaseState();
+}
+
+/** یک نسخهٔ گرفته‌شده را برای همهٔ برنامه‌ها منتشر می‌کند (یا عقب می‌برد). */
+export async function publish(version, { by = null } = {}) {
+  const v = normalizeVersion(version);
+  const m = v ? await manifestOf(v) : null;
+  if (!m) throw Object.assign(new Error('version_not_mirrored'), { status: 404 });
+  const r = await releaseState();
+  const next = { ...r, at: new Date().toISOString(), by };
+  if (r.published !== v) { next.previous = r.published; next.published = v; }
+  //  ⚠️ در حالتِ خودکار، انتشارِ نسخه‌ای جز تازه‌ترین یعنی «عقب بردن» —
+  //  پس خودکار خاموش می‌شود، وگرنه دورِ بعدِ آینه همان را برمی‌گرداند.
+  const cur = await current();
+  if (r.mode === 'auto' && cur && cur.version !== v) next.mode = 'hold';
+  await writeRelease(next);
+  return releaseState();
+}
+
+/** نسخه‌های روی دیسک (تازه‌ترین اول). */
+export async function versions() {
+  const out = [];
+  let entries = [];
+  try { entries = await fsp.readdir(mirrorDir(), { withFileTypes: true }); } catch { return out; }
+  for (const e of entries) {
+    if (!e.isDirectory() || !normalizeVersion(e.name)) continue;
+    const m = await manifestOf(e.name);
+    if (!m) continue;
+    out.push({
+      version: m.version,
+      name: m.name || null,
+      notes: m.notes || '',
+      publishedAt: m.publishedAt || null,
+      mirroredAt: m.mirroredAt || null,
+      assets: m.assets.map((a) => ({ name: a.name, size: a.size })),
+    });
+  }
+  return out.sort((a, b) => compareVersions(b.version, a.version));
+}
+
+export function compareVersions(a, b) {
+  const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
 /** حالِ آینه — برای کارِ اتوماسیون و صفحهٔ پنل. */
 export async function status() {
   const cur = await current();
   const st = (await readJson(path.join(mirrorDir(), 'state.json'))) || {};
+  const r = await releaseState();
+  const out = await served();
   return {
     repo: pumpRepo(),
+    enabled: mirrorEnabled(),
     version: cur?.version || null,
     publishedAt: cur?.publishedAt || null,
     mirroredAt: cur?.mirroredAt || null,
     checkedAt: st.checkedAt || null,
     error: st.error || null,
+    mode: r.mode,
+    served: out?.version || null,
+    previous: r.previous,
+    releaseAt: r.at,
+    releaseBy: r.by,
+    waiting: !!(cur && out?.version !== cur.version && r.mode === 'hold'),
   };
 }
 
@@ -239,9 +366,6 @@ export async function syncOnce({ log = () => {} } = {}) {
     if (!manifest.some((m) => /\.(zip|exe)$/i.test(m.name))) throw new Error('no_packages');
 
     //  ══ ۳) جابه‌جاییِ اتمی ════════════════════════════════════════════════
-    const final = path.join(dir, version);
-    await fsp.rm(final, { recursive: true, force: true });
-    await fsp.rename(part, final);
     const next = {
       version,
       tag: rel.tag_name,
@@ -251,11 +375,24 @@ export async function syncOnce({ log = () => {} } = {}) {
       mirroredAt: new Date().toISOString(),
       assets: manifest,
     };
+    await writeJsonAtomic(path.join(part, 'manifest.json'), next);
+    const final = path.join(dir, version);
+    await fsp.rm(final, { recursive: true, force: true });
+    await fsp.rename(part, final);
     await writeJsonAtomic(path.join(dir, 'current.json'), next);
     await note({ etag, error: null });
 
-    //  ══ ۴) نگه‌داری: نسخهٔ فعلی و یکی پیش از آن ═══════════════════════════
-    const keep = new Set([version, cur?.version].filter(Boolean));
+    //  ══ درِ پخش: خودکار ⇒ همین حالا منتشر؛ نگه‌داشته ⇒ فقط آماده ════════
+    const rel0 = await releaseState();
+    if (rel0.mode === 'auto' && rel0.published !== version) {
+      await writeRelease({ ...rel0, previous: rel0.published, published: version, at: new Date().toISOString(), by: 'auto' });
+    }
+    const rel1 = await releaseState();
+
+    //  ══ ۴) نگه‌داری: تازه‌ترین، منتشرشده و یکی پیش از آن ══════════════════
+    //  ⛔ نسخهٔ منتشرشده هرگز پاک نمی‌شود، وگرنه در حالتِ نگه‌داشته برنامه‌ها
+    //  فهرستی می‌گرفتند که فایلش نیست.
+    const keep = new Set([version, cur?.version, rel1.published, rel1.previous].filter(Boolean));
     for (const entry of await fsp.readdir(dir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const v = entry.name.replace(/\.part$/, '');
@@ -263,8 +400,10 @@ export async function syncOnce({ log = () => {} } = {}) {
         await fsp.rm(path.join(dir, entry.name), { recursive: true, force: true });
       }
     }
-    log(`نسخهٔ ${version} آماده شد`);
-    return { changed: true, version, from: cur?.version || null };
+    log(rel1.mode === 'auto'
+      ? `نسخهٔ ${version} آماده شد و به برنامه‌ها می‌رود`
+      : `نسخهٔ ${version} روی سرور آماده است — پخش خاموش است، تا «انتشار» را نزنید به هیچ برنامه‌ای نمی‌رود`);
+    return { changed: true, version, from: cur?.version || null, held: rel1.mode === 'hold' };
   } catch (e) {
     await fsp.rm(part, { recursive: true, force: true }).catch(() => {});
     await note({ error: String(e.message || e) });
@@ -273,20 +412,28 @@ export async function syncOnce({ log = () => {} } = {}) {
 }
 
 /**
- * مسیرِ یک فایلِ منتشرشده — فقط اگر واقعاً در فهرستِ همان نسخه باشد.
+ * مسیرِ یک فایل — فقط اگر واقعاً در فهرستِ همان نسخه باشد.
  * ⛔ نام و نسخه از درخواست می‌آیند؛ هیچ‌کدام بی سنجش به مسیر نمی‌رسد.
+ *
+ * ⛔ درِ عمومی (`any: false`) فقط نسخهٔ منتشرشده و یکی پیش از آن را می‌دهد
+ * (دانلودی که وسطِ انتشارِ تازه شروع شده نشکند). نسخهٔ نگه‌داشته فقط از درِ
+ * پنل (`any: true`)، برای آزمودن روی کامپیوترِ خودِ مدیر.
  */
-export async function filePath(version, name) {
+export async function filePath(version, name, { any = false } = {}) {
   if (!normalizeVersion(version) || !SAFE_NAME.test(String(name || ''))) return null;
-  const dir = path.join(mirrorDir(), version);
-  const cur = await current();
-  let listed = cur && cur.version === version ? cur.assets : null;
-  if (!listed) {
-    //  نسخهٔ پیشین هم سرو می‌شود تا دانلودی که وسطِ انتشارِ تازه شروع شده نشکند
-    try { listed = (await fsp.readdir(dir)).map((n) => ({ name: n })); } catch { return null; }
+  if (name === 'manifest.json') return null;
+  if (!any) {
+    const r = await releaseState();
+    const out = await served();
+    const allowed = new Set([out?.version].filter(Boolean));
+    //  ⚠️ «یکی پیش از آن» فقط وقتی از منتشرشده کهنه‌تر است — پس از عقب بردن،
+    //  نسخهٔ تازه‌ترِ کنارگذاشته از این در بیرون نمی‌رود.
+    if (r.previous && out && compareVersions(r.previous, out.version) < 0) allowed.add(r.previous);
+    if (!allowed.has(version)) return null;
   }
-  if (!listed.some((a) => a.name === name)) return null;
-  const file = path.join(dir, name);
+  const m = await manifestOf(version);
+  if (!m || !m.assets.some((a) => a.name === name)) return null;
+  const file = path.join(mirrorDir(), version, name);
   try { await fsp.access(file); } catch { return null; }
   return file;
 }

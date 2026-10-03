@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from 'react';
 import { Download, GitBranch, RefreshCw, ServerCog, Tag } from 'lucide-react';
-import { api } from '../../api';
+import { api, getToken } from '../../api';
 import { useApp } from '../../app-context';
 import { Card, Field, Loading, Modal, toast } from '../../components/ui';
 import { dateTime, relative } from '../../format';
@@ -232,6 +232,8 @@ export default function Updates() {
       </Card>
 
       <AccountServerCard info={acct} onDone={loadAcct} />
+
+      <PumpReleaseCard />
 
       <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} status={status} onSaved={() => { setSettingsOpen(false); load(); }} />
 
@@ -512,6 +514,112 @@ function AccountServerCard({ info, onDone }: { info: AcctUpdate | null; onDone: 
       {!running && info?.ok && !info.available && (
         <p className="mt-3 text-sm" style={{ color: 'var(--status-good)' }}>سرورِ حساب به‌روز است.</p>
       )}
+    </Card>
+  );
+}
+
+type PumpVersion = { version: string; name: string | null; notes: string; publishedAt: string | null; mirroredAt: string | null; assets: { name: string; size: number }[] };
+type PumpRelease = {
+  enabled: boolean; mode: 'auto' | 'hold'; version: string | null; served: string | null; previous: string | null;
+  waiting: boolean; checkedAt: string | null; error: string | null; releaseAt: string | null; versions: PumpVersion[];
+};
+
+/**
+ * 🚦 «آپدیت روی سرور باشد ولی تا خودم نخواهم به هیچ برنامه‌ای نرود» (۱۴۰۵/۰۷/۱۹)
+ *
+ * ⛔ این کارت هیچ تصمیمی نمی‌گیرد؛ همه در `pumpupdates/mirror.js` است. فقط حالت را
+ * عوض می‌کند، یک نسخه را منتشر می‌کند، و نصابِ نسخهٔ نگه‌داشته را برای آزمودن روی
+ * کامپیوترِ خودِ مدیر می‌دهد (از درِ پنل، نه درِ عمومی).
+ */
+function PumpReleaseCard() {
+  const [st, setSt] = useState<PumpRelease | null>(null);
+  const [busy, setBusy] = useState('');
+  const load = useCallback(async () => {
+    try { setSt(await api<PumpRelease>('/api/pump-updates-admin')); } catch { setSt(null); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  if (!st) return null;
+
+  const act = async (key: string, url: string, body: unknown, ok: string) => {
+    setBusy(key);
+    try { setSt(await api<PumpRelease>(url, { method: 'POST', body })); toast(ok, 'good'); }
+    catch (e) { toast((e as Error).message, 'bad'); load(); }
+    finally { setBusy(''); }
+  };
+  const token = (() => { try { return getToken() || ''; } catch { return ''; } })();
+  const setupOf = (v: PumpVersion) => v.assets.find((a) => /Setup.*\.exe$/i.test(a.name));
+  const hold = st.mode === 'hold';
+
+  return (
+    <Card title="به‌روزرسانیِ برنامهٔ پمپ — پخش به برنامه‌ها" icon={<Tag className="h-4 w-4" />}>
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm font-medium" style={{ color: hold ? 'var(--status-warning)' : 'var(--status-good)' }}>
+          {hold ? '⏸ پخش خاموش است — هیچ نسخهٔ تازه‌ای به برنامه‌ها نمی‌رود' : '▶ پخش روشن است — نسخهٔ تازه خودکار به برنامه‌ها می‌رود'}
+        </span>
+        <button
+          className={`btn btn-sm ${hold ? 'btn-primary' : ''}`}
+          disabled={!!busy}
+          onClick={() => act('mode', '/api/pump-updates-admin/mode', { mode: hold ? 'auto' : 'hold' },
+            hold ? 'پخش روشن شد' : 'پخش خاموش شد — تا «انتشار» نزنید چیزی نمی‌رود')}
+        >
+          {hold ? 'روشن کردنِ پخشِ خودکار' : 'خاموش کردنِ پخش (اول خودم آزمایش می‌کنم)'}
+        </button>
+      </div>
+
+      <div className="mt-3">
+        <KV label="برنامه‌ها همین حالا می‌گیرند" mono>{st.served || '— (هیچ نسخه‌ای)'}</KV>
+        <KV label="تازه‌ترین نسخهٔ روی سرور" mono>{st.version || '—'}</KV>
+        <KV label="آخرین پرسش از گیت‌هاب">{st.checkedAt ? relative(Date.parse(st.checkedAt), 'fa') : '—'}</KV>
+      </div>
+      {st.error && <p className="mt-2 text-sm" style={{ color: 'var(--status-critical)' }}>{st.error}</p>}
+      {!st.enabled && <Notice tone="warn">آینهٔ آپدیتِ پمپ روی این نصب خاموش است.</Notice>}
+      {st.waiting && (
+        <Notice tone="warn">
+          نسخهٔ {st.version} روی سرور آماده است ولی به هیچ برنامه‌ای نرفته. نصابش را پایین بگیرید و روی کامپیوترِ خودتان آزمایش کنید؛ درست بود «انتشار» را بزنید.
+        </Notice>
+      )}
+
+      <ul className="mt-3 space-y-2">
+        {st.versions.map((v) => {
+          const setup = setupOf(v);
+          const live = v.version === st.served;
+          return (
+            <li key={v.version} className="flex flex-wrap items-center gap-2 rounded-xl border border-line p-2.5 text-sm">
+              <span className="font-mono" dir="ltr">{v.version}</span>
+              {live && <span className="text-xs" style={{ color: 'var(--status-good)' }}>● پخش می‌شود</span>}
+              {!live && <span className="text-xs text-ink-muted">نگه‌داشته</span>}
+              {v.mirroredAt && <span className="text-xs text-ink-muted">· رسید {relative(Date.parse(v.mirroredAt), 'fa')}</span>}
+              <span className="flex-1" />
+              {setup && (
+                <a className="btn btn-sm" href={`/api/pump-updates-admin/files/${v.version}/${encodeURIComponent(setup.name)}?token=${encodeURIComponent(token)}`}>
+                  <Download className="h-4 w-4" /> نصاب برای آزمایش ({MB(setup.size)} MB)
+                </a>
+              )}
+              {!live && (
+                <button
+                  className="btn btn-sm btn-primary"
+                  disabled={!!busy}
+                  onClick={() => {
+                    if (!window.confirm(`نسخهٔ ${v.version} به همهٔ برنامه‌های پمپ برود؟`)) return;
+                    act('pub-' + v.version, '/api/pump-updates-admin/publish', { version: v.version }, `نسخهٔ ${v.version} منتشر شد`);
+                  }}
+                >
+                  انتشار برای همه
+                </button>
+              )}
+            </li>
+          );
+        })}
+        {!st.versions.length && <li className="text-sm text-ink-muted">هنوز هیچ نسخه‌ای از گیت‌هاب نیامده.</li>}
+      </ul>
+
+      <div className="mt-3 flex items-center gap-2">
+        <button className="btn btn-sm" disabled={!!busy || !st.enabled}
+          onClick={() => act('check', '/api/pump-updates-admin/check', {}, 'از گیت‌هاب پرسیده شد')}>
+          <RefreshCw className="h-4 w-4" /> همین حالا از گیت‌هاب بپرس
+        </button>
+        <span className="text-[11px] text-ink-muted">خودش هم هر دو دقیقه می‌پرسد.</span>
+      </div>
     </Card>
   );
 }

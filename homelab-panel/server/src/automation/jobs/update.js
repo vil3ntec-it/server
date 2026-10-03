@@ -57,7 +57,11 @@ export const pumpUpdateMirror = defineJob({
   async run(ctx) {
     if (!mirrorEnabled()) return { skipped: 'disabled' };
     const out = await pumpMirrorOnce({ log: (m) => ctx.log(m) });
-    if (out.changed) await ctx.notify('info', `نسخهٔ ${out.version} برنامهٔ پمپ روی سرور آماده شد — برنامه‌ها خودشان می‌گیرند`);
+    if (out.changed) {
+      await ctx.notify('info', out.held
+        ? `نسخهٔ ${out.version} برنامهٔ پمپ روی سرور آماده است — پخش خاموش است؛ در «به‌روزرسانی» آزمایشش کنید و «انتشار» را بزنید`
+        : `نسخهٔ ${out.version} برنامهٔ پمپ روی سرور آماده شد — برنامه‌ها خودشان می‌گیرند`);
+    }
     return out;
   },
 });
