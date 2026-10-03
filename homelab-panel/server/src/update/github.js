@@ -85,7 +85,7 @@ export function panelReleaseTag() {
 /** توکنِ GitHub (برای مخزنِ خصوصی یا سقفِ درخواستِ بالاتر) از گاوصندوق می‌آید */
 export const GITHUB_TOKEN_SECRET = 'github:update-token';
 
-function githubToken() {
+export function githubToken() {
   try {
     const row = db
       .prepare("SELECT id FROM cc_secrets WHERE scope = 'global' AND name = ?")

@@ -32,6 +32,8 @@ export const REQUIRED_JOBS = Object.freeze([
   'account-server-update',
   //  ⛔ و خودِ پنل هم خودش تازه می‌شود و برنامه را دوباره باز می‌کند.
   'panel-update',
+  //  ⛔ و برنامهٔ پمپ آپدیتش را از همین سرور می‌گیرد (آینهٔ گیت‌هاب).
+  'pump-update-mirror',
 ]);
 
 export function testJobs() {
