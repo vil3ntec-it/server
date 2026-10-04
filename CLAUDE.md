@@ -2800,8 +2800,13 @@ release.json: stable · stablePrevious · candidate {version, since, crashes}
   پیشینِ آن و نامزد هرگز از دیسک پاک نمی‌شوند.
 - پنل: «🛤️ کانالِ پایدار / 🧪 آزمایشی / نامزد» و دکمهٔ «پایدار کن»
   (`POST /api/pump-updates-admin/stable`، فقط مدیر، در دفترِ ممیزی).
-- ⚠️ `HLP_PUMP_STABLE_DAYS` و `HLP_PUMP_CRASHES_FILE` فقط برای آزمون‌اند.
-- آزمون: بخشِ ۷ی `test/pump-mirror.mjs` (۶۲ بند).
+- ⛔ **«صفر کرش» بی نصب، «سالم» نیست** (شورا، د۶، ۱.۵۰.۳۵): نامزد فقط وقتی پایدار
+  می‌شود که دستِ‌کم `minInstalls()` (پیش‌فرض ۳) دستگاه با همان نسخه همگام شده باشند.
+  هر دو عدد از `GET /api/admin/sync/version-health`ِ سرورِ حساب (۲.۱۱.۱۹) با ‎COUNT‎
+  شمرده می‌شوند، نه از فهرستِ ۵۰۰تاییِ خطاها. سرورِ حسابِ کهنه ⇒ «نپرسیدیم» ⇒
+  پایدار نمی‌شود؛ «پایدار کن»ِ پنل سرِ جایش است.
+- ⚠️ `HLP_PUMP_STABLE_DAYS`، `HLP_PUMP_STABLE_MIN_INSTALLS` و `HLP_PUMP_CRASHES_FILE` فقط برای آزمون‌اند.
+- آزمون: بخشِ ۷ی `test/pump-mirror.mjs` (۶۴ بند).
 
 ## 🧑‍💼 شورا، چ۳ — نماینده‌های فروش (از ۱۴۰۵/۰۷/۲۰، نسخهٔ ۱.۵۰.۳۴)
 

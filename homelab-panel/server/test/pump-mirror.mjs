@@ -264,10 +264,21 @@ try {
   check('⛔ نامزدِ کرش‌دار با گذشتِ زمان هم پایدار نشد و تازه‌ترین جایش آمد',
     (await tagOf()) === 'v3.1.240' && stC.candidate?.version === '3.1.243', JSON.stringify(stC.candidate));
 
-  crashes({ '3.1.243': 0, '*': 1 });
+  //  ⛔ شورا، د۶: صفر کرش ولی فقط یک دستگاه ⇒ هنوز معنایی ندارد
+  crashes({ '3.1.243': { crashes: 0, installs: 1 }, '*': 1 });
   await bake();
   await runMirror();
-  check('نامزدی که «هفت روز» بی کرش ماند پایدار شد', (await tagOf()) === 'v3.1.243', await tagOf());
+  const stF = (await call('GET', '/api/pump-updates-admin')).body;
+  check('⛔ «بی کرش» ولی کمتر از کمینهٔ نصب ⇒ پایدار نشد و شمارِ نصب دیده می‌شود',
+    (await tagOf()) === 'v3.1.240' && stF.candidate?.version === '3.1.243' && stF.candidate?.installs === 1
+      && stF.minInstalls === 3, JSON.stringify(stF.candidate));
+  crashes({ '3.1.243': 0, '*': 1 });
+  await runMirror();
+  check('⛔ عددِ خالیِ «صفر کرش» (بی شمارِ نصب) هم پایدار نمی‌کند', (await tagOf()) === 'v3.1.240', await tagOf());
+
+  crashes({ '3.1.243': { crashes: 0, installs: 3 }, '*': 1 });
+  await runMirror();
+  check('نامزدی که «هفت روز» بی کرش و روی سه دستگاه ماند پایدار شد', (await tagOf()) === 'v3.1.243', await tagOf());
 
   publish('3.1.244');
   await runMirror();
