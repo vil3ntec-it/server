@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { WebSocketServer } from 'ws';
+import { createWsGate } from '../lib/ws-gate.js';
 import { attachHeartbeat } from '../lib/ws-heartbeat.js';
 import { createStore } from './store.js';
 import { bumpSoon } from '../live/bus.js';
@@ -157,12 +158,14 @@ export function createSiteSync({ dataDir, token = '' }) {
     return { store: main, reason: 'auth_failed' };
   }
 
+  //  ⛔ شورا، پ۳: رمز پیش از ارتقا سنجیده می‌شود و حدسِ پشتِ سرِ هم سقف دارد (`lib/ws-gate.js`)
+  const gate = createWsGate({ name: 'sitesync-ws' });
+
   function handleUpgrade(req, socket, head) {
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      const { store, reason } = route(req);
-      if (reason || !store) return (store || main).reject(ws, reason || 'auth_failed');
-      store.handleConnection(ws, req);
-    });
+    gate.handle(wss, req, socket, head,
+      (r) => { const x = route(r); return { ...x, ok: !x.reason && Boolean(x.store) }; },
+      (ws, x) => x.store.handleConnection(ws, req),
+      (ws, x) => (x.store || main).reject(ws, x.reason || 'auth_failed'));
   }
 
   // ------------------------------- گزارش -----------------------------------

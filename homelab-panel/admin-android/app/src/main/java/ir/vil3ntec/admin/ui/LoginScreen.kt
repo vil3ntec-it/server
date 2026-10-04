@@ -41,6 +41,7 @@ import ir.vil3ntec.admin.data.ApiError
 import ir.vil3ntec.admin.data.Discovery
 import ir.vil3ntec.admin.data.FoundServer
 import ir.vil3ntec.admin.data.Remote
+import ir.vil3ntec.admin.data.TotpNeeded
 import ir.vil3ntec.admin.data.RemoteAccess
 import ir.vil3ntec.admin.data.Session
 import kotlinx.coroutines.Dispatchers
@@ -72,6 +73,9 @@ fun LoginScreen(
   var url by remember { mutableStateOf(initialUrl) }
   var username by remember { mutableStateOf("") }
   var password by remember { mutableStateOf("") }
+  /* شورا، پ۳: کادرِ کدِ دوعاملی فقط وقتی سرور خواست دیده می‌شود */
+  var totpCode by remember { mutableStateOf("") }
+  var needTotp by remember { mutableStateOf(false) }
   var busy by remember { mutableStateOf(false) }
   var error by remember { mutableStateOf("") }
   var searching by remember { mutableStateOf(false) }
@@ -155,7 +159,7 @@ fun LoginScreen(
          *  همان‌طور که بود.
          */
         suspend fun freshKey(): RemoteAccess? = withContext(Dispatchers.IO) {
-          Remote.enroll(address, username.trim(), password, onDeviceId(), "ویلن ادمین")
+          Remote.enroll(address, username.trim(), password, onDeviceId(), "ویلن ادمین", totpCode)
         }
 
         var gate = remote?.takeIf { it.usable }
@@ -194,8 +198,14 @@ fun LoginScreen(
           )
           withContext(Dispatchers.IO) { Api.health(address, gate) }
         }
-        val reply = withContext(Dispatchers.IO) {
+        var reply = withContext(Dispatchers.IO) {
           Api.login(address, username.trim(), password, gate)
+        }
+        /* ورودِ دوعاملی: رمز درست بود؛ کد گامِ دوم است */
+        if (reply.optBoolean("totpRequired")) {
+          if (totpCode.isBlank()) throw TotpNeeded(false)
+          val ticket = reply.optString("ticket")
+          reply = withContext(Dispatchers.IO) { Api.loginTotp(address, ticket, totpCode, gate) }
         }
         val token = reply.optString("token")
         if (token.isBlank()) {
@@ -228,6 +238,10 @@ fun LoginScreen(
 
           onDone(withRemote)
         }
+      } catch (e: TotpNeeded) {
+        needTotp = true
+        if (e.wrong) totpCode = ""
+        error = e.message ?: "کدِ دوعاملی لازم است"
       } catch (e: Exception) {
         error = e.message ?: "وصل نشد"
       } finally {
@@ -398,6 +412,18 @@ fun LoginScreen(
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
       modifier = Modifier.fillMaxWidth(),
     )
+
+    if (needTotp) {
+      Spacer(Modifier.height(12.dp))
+      OutlinedTextField(
+        value = totpCode,
+        onValueChange = { v -> totpCode = v.filter { it.isLetterOrDigit() || it == '-' }.take(20) },
+        label = { Text("کدِ دوعاملی (اپِ Authenticator یا کدِ بازیابی)") },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+        modifier = Modifier.fillMaxWidth(),
+      )
+    }
 
     if (error.isNotBlank()) {
       Text(

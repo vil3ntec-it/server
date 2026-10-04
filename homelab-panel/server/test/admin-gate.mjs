@@ -361,6 +361,41 @@ try {
   check('پسوندِ دوتکه‌ای هم درست می‌شود',
     adminHostFor('a.b.yaqobi.co.ir') === 'admin.yaqobi.co.ir', adminHostFor('a.b.yaqobi.co.ir'));
 
+  console.log('\n── شورا، پ۳ (M12): مدیرِ دوعاملی کلیدِ در را فقط با کد می‌گیرد ──');
+  {
+    const { totp: totpNow } = await import('../src/lib/totp.js');
+    const setup = await call(PANEL, '/api/auth/totp/setup', { method: 'POST', token });
+    const secret = setup.body?.secret;
+    const en = await call(PANEL, '/api/auth/totp/enable', { method: 'POST', token, body: { code: totpNow(secret) } });
+    check('دوعاملیِ مدیر روشن شد', en.body?.ok === true && (en.body?.recoveryCodes || []).length > 0, en.text.slice(0, 120));
+    const enroll = (extra) => withHost(PUBLIC_PORT, '/api/admin-gate/enroll', AWAY, {}, {
+      method: 'POST',
+      body: { username: 'admin', password: 'ControlCenter!2026', deviceId: 'phone-totp', name: 'گوشیِ دوعاملی', ...extra },
+    });
+    const noCode = await enroll({});
+    check('بی کد: ۴۰۱ و totp_required، بی هیچ کلیدی',
+      noCode.status === 401 && noCode.body?.error === 'totp_required' && !noCode.body?.key, noCode.text.slice(0, 120));
+    const wrong = await enroll({ totp: '000000' === totpNow(secret) ? '111111' : '000000' });
+    check('کدِ غلط: ۴۰۱ و totp_invalid', wrong.status === 401 && wrong.body?.error === 'totp_invalid' && !wrong.body?.key,
+      wrong.text.slice(0, 120));
+    const wrongPass = await withHost(PUBLIC_PORT, '/api/admin-gate/enroll', AWAY, {}, {
+      method: 'POST', body: { username: 'admin', password: 'NotTheRealOne!', deviceId: 'x', totp: totpNow(secret) },
+    });
+    check('رمزِ غلط با کدِ درست همچنان «نبوده» است (۴۰۴)', wrongPass.status === 404, `status ${wrongPass.status}`);
+    const good = await enroll({ totp: totpNow(secret) });
+    check('کدِ درست ⇒ کلید', good.status === 200 && String(good.body?.key || '').length > 20, good.text.slice(0, 120));
+    const rec = en.body.recoveryCodes[0];
+    const viaRec = await enroll({ totp: rec });
+    check('کدِ بازیابی ⇒ کلید', viaRec.status === 200 && Boolean(viaRec.body?.key), viaRec.text.slice(0, 120));
+    const recAgain = await enroll({ totp: rec });
+    check('همان کدِ بازیابی بارِ دوم پذیرفته نمی‌شود', recAgain.status === 401, `status ${recAgain.status}`);
+    await call(PANEL, '/api/settings/remote/device/phone-totp', { method: 'DELETE', token });
+    const off = await call(PANEL, '/api/auth/totp/disable', {
+      method: 'POST', token, body: { password: 'ControlCenter!2026', code: totpNow(secret) },
+    });
+    check('و خاموش شد (بقیهٔ این آزمون بی دوعاملی)', off.body?.ok === true, off.text.slice(0, 120));
+  }
+
   console.log('\n── گوشی‌ای که کلیدش کهنه شده ──');
   /*
    *  همان حالتی که در گوشی دیده شد: سرور روشن، آدرس درست، و برنامه

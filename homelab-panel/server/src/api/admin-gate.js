@@ -23,6 +23,7 @@
 // ---------------------------------------------------------------------------
 import { clientIp } from '../platform/security.js';
 import crypto from 'node:crypto';
+import { verifyTotp, useRecoveryCode } from '../lib/totp.js';
 import http from 'node:http';
 import { config } from '../config.js';
 import { db, logEvent } from '../db.js';
@@ -127,7 +128,14 @@ export function revokeGateDevice(deviceId, actor = 'admin') {
  * @returns {{deviceId:string, key:string}|null} — null یعنی «نه»، بدونِ
  *   اینکه معلوم شود کدام‌یک غلط بوده: نام، رمز، یا نقش.
  */
-export function enrollDevice({ username, password, deviceId, name, ip = '' }) {
+/**
+ * ⛔ شورا، پ۳ (ممیزی M12): مدیری که دوعاملی دارد، کلیدِ در را هم فقط با کدِ
+ * اپِ Authenticator (یا یک کدِ بازیابیِ یک‌بارمصرف) می‌گیرد — همان قاعدهٔ
+ * ‎/api/auth/login/totp‎. بی کد ⇒ ‎{ totp: 'required' }‎، کدِ غلط ⇒ ‎{ totp: 'invalid' }‎.
+ * ⚠️ این دو فقط پس از رمزِ **درست** برمی‌گردند، پس به کسی که رمز را نمی‌داند
+ * چیزی نمی‌گویند (او همان ۴۰۴ را می‌گیرد).
+ */
+export function enrollDevice({ username, password, deviceId, name, ip = '', totp = '' }) {
   const who = String(username || '').trim();
   const user = who ? findUser(who) : null;
 
@@ -138,6 +146,20 @@ export function enrollDevice({ username, password, deviceId, name, ip = '' }) {
   if ((user.role || 'admin') !== 'admin') {
     logEvent('warn', 'panel', `کاربرِ «${user.username}» مدیر نیست و کلیدِ درِ مدیر نگرفت`);
     return null;
+  }
+
+  if (user.totp_enabled) {
+    const code = String(totp || '').trim();
+    if (!code) return { totp: 'required' };
+    if (!verifyTotp(user.totp_secret, code)) {
+      const recovery = useRecoveryCode(JSON.parse(user.totp_recovery || '[]'), code);
+      if (!recovery.ok) {
+        logEvent('warn', 'panel', `کدِ دوعاملیِ غلط هنگامِ گرفتنِ کلیدِ درِ مدیر برای «${user.username}»`);
+        return { totp: 'invalid' };
+      }
+      db.prepare('UPDATE users SET totp_recovery = ? WHERE id = ?').run(JSON.stringify(recovery.remaining), user.id);
+      logEvent('warn', 'panel', `کلیدِ درِ مدیر با کدِ بازیابی گرفته شد (${user.username}، ${recovery.remaining.length} کد مانده)`);
+    }
   }
 
   const issued = issueGateKey({ deviceId, name: name || 'ویلن ادمین', actor: user.username });
@@ -266,8 +288,10 @@ export function adminEnrollRoute(req, res) {
     deviceId: req.body?.deviceId,
     name: req.body?.name,
     ip,
+    totp: req.body?.totp,
   });
   if (!issued) return notFound(res);
+  if (issued.totp) return res.status(401).json({ ok: false, error: issued.totp === 'required' ? 'totp_required' : 'totp_invalid' });
 
   res.json({ ok: true, ...issued, gateHeader: GATE_HEADER, gatePath: '' });
 }

@@ -21,6 +21,15 @@ import java.util.concurrent.TimeUnit
  */
 class ApiError(val status: Int, val code: String, message: String) : IOException(message)
 
+/**
+ * شورا، پ۳: سرور کدِ دوعاملی می‌خواهد (رمز درست بود). ‎wrong‎ یعنی کدی که
+ * فرستاده شد پذیرفته نشد.
+ */
+class TotpNeeded(val wrong: Boolean) : IOException(
+  if (wrong) "کدِ دوعاملی درست نیست — کدِ تازهٔ اپِ Authenticator یا یک کدِ بازیابی را بزنید"
+  else "کدِ شش‌رقمیِ اپِ Authenticator را بزنید"
+)
+
 object Api {
 
   /** چیزی که سرور برگردانده — یا شیء، یا آرایه */
@@ -191,6 +200,21 @@ object Api {
     val probe = Session(serverUrl = serverUrl, token = null, username = "", remote = remote)
     val body = JSONObject().put("username", username).put("password", password)
     return call(probe, "/api/auth/login", "POST", body).o()
+  }
+
+  /**
+   * گامِ دومِ ورودِ دوعاملی — همان ‎/api/auth/login/totp‎ِ پنلِ وب. ‎ticket‎
+   * همانی است که ‎login‎ با ‎totpRequired‎ برگرداند (پنج دقیقه).
+   */
+  fun loginTotp(serverUrl: String, ticket: String, code: String, remote: RemoteAccess? = null): JSONObject {
+    val probe = Session(serverUrl = serverUrl, token = null, username = "", remote = remote)
+    val body = JSONObject().put("ticket", ticket).put("code", code.trim())
+    return try {
+      call(probe, "/api/auth/login/totp", "POST", body).o()
+    } catch (e: ApiError) {
+      if (e.status == 401 && e.code == "totp_invalid") throw TotpNeeded(true)
+      throw e
+    }
   }
 
   /* --------------------------- کدهای شش‌رقمی ---------------------------- */
