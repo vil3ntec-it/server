@@ -1353,13 +1353,14 @@ try {
   check('کدهای آفلاینِ پمپ از پنل دیده می‌شوند',
     offList.status === 200 && offList.json?.codes?.[0]?.computer === 'C6PJ-6CTR-HPA7-DF35', `${offList.status} ${JSON.stringify(offList.json)}`);
   const offMake = await api('POST', '/api/account-admin/offline-codes',
-    { plan: 'perm', computer: 'C6PJ-6CTR-HPA7-DF35', days: '', note: 'کامپیوترِ قدیمی', extra: 'x' }, auth);
+    { plan: 'perm', computer: 'C6PJ-6CTR-HPA7-DF35', account: ' owner@pump.test ', days: '', note: 'کامپیوترِ قدیمی', extra: 'x' }, auth);
   const offSeen = seen.filter((r) => r.path === '/api/admin/pump/offline-codes' && r.method === 'POST').at(-1);
   check('کدِ آفلاین ساخته می‌شود و کد و فایلِ ‎.pumpkey‎ یک بار برمی‌گردند',
     offMake.status === 200 && offMake.json?.code === 'ABCDE-FGHJK' && offMake.json?.file?.format === 'pumpyaqobi-offline-key',
     `${offMake.status} ${JSON.stringify(offMake.json)}`);
-  check('⛔ پل فقط چهار فیلدِ خودش را می‌برد (نه هر چه آمد)، و «روزِ خالی» = null',
-    offSeen && offSeen.body?.plan === 'perm' && offSeen.body?.days === null && !('extra' in (offSeen.body || {})),
+  check('⛔ پل فقط پنج فیلدِ خودش را می‌برد (نه هر چه آمد)، «روزِ خالی» = null، و ایمیلِ حساب (نسخهٔ ۲)',
+    offSeen && offSeen.body?.plan === 'perm' && offSeen.body?.days === null && !('extra' in (offSeen.body || {}))
+      && offSeen.body?.account === 'owner@pump.test',
     JSON.stringify(offSeen?.body));
   const offRevoke = await api('POST', '/api/account-admin/offline-codes/of1/revoke', {}, auth);
   check('کدِ آفلاین باطل می‌شود', offRevoke.status === 200 && offRevoke.json?.offline?.status === 'revoked', String(offRevoke.status));

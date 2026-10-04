@@ -411,9 +411,10 @@ object Api {
   fun offlineCodes(session: Session): Reply =
     call(session, "/api/account-admin/offline-codes?limit=200")
 
-  fun makeOfflineCode(session: Session, plan: String, computer: String, days: Int?, note: String): Reply =
+  fun makeOfflineCode(session: Session, plan: String, computer: String, days: Int?, note: String,
+                      account: String = ""): Reply =
     call(session, "/api/account-admin/offline-codes", "POST",
-      JSONObject().put("plan", plan).put("computer", computer)
+      JSONObject().put("plan", plan).put("computer", computer).put("account", account)
         .put("days", days ?: JSONObject.NULL).put("note", note), timeoutMs = 30_000)
 
   fun revokeOfflineCode(session: Session, id: String): Reply =

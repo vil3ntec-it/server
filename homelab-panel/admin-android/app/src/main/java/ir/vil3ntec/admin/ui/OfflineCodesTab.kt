@@ -64,6 +64,7 @@ import java.io.File
 private data class OfflineRow(
   val id: String,
   val computer: String,
+  val accountEmail: String,
   val planTitle: String,
   val permanent: Boolean,
   val endsAt: Long,
@@ -85,6 +86,7 @@ private val OFFLINE_PLANS = listOf(
 private fun rowOf(o: JSONObject) = OfflineRow(
   id = o.optString("id"),
   computer = o.optString("computer"),
+  accountEmail = o.optString("accountEmail"),
   planTitle = o.optString("planTitle").ifBlank { o.optString("plan") },
   permanent = o.optBoolean("permanent"),
   endsAt = o.optLong("endsAt"),
@@ -198,7 +200,7 @@ private fun OfflineCard(r: OfflineRow, onRevoke: () -> Unit) {
       if (r.permanent) "دائمی" else "تا ${offlineDay(r.endsAt)}",
     )
     Text(
-      r.computer,
+      r.computer + " · " + r.accountEmail.ifBlank { "هر حسابی" },
       Modifier.padding(top = 6.dp),
       style = MonoDigits.copy(textDirection = TextDirection.Ltr),
       color = MaterialTheme.colorScheme.primary,
@@ -226,6 +228,7 @@ private fun NewOfflineDialog(session: Session, onDismiss: () -> Unit, onMade: (M
   var plan by remember { mutableStateOf("vip") }
   var days by remember { mutableStateOf("365") }
   var memo by remember { mutableStateOf("") }
+  var account by remember { mutableStateOf("") }
   var busy by remember { mutableStateOf(false) }
   var error by remember { mutableStateOf("") }
   val scope = rememberCoroutineScope()
@@ -237,7 +240,7 @@ private fun NewOfflineDialog(session: Session, onDismiss: () -> Unit, onMade: (M
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-          "کد فقط روی همان کامپیوتری کار می‌کند که کدش را این‌جا می‌زنید، و بی اینترنت قفل‌ها را باز می‌کند.",
+          "کد فقط روی همان کامپیوتری (و اگر ایمیل بدهید، همان حسابی) کار می‌کند که این‌جا می‌زنید، بی اینترنت قفل‌ها را باز می‌کند و یک بار به کار می‌رود.",
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -266,6 +269,16 @@ private fun NewOfflineDialog(session: Session, onDismiss: () -> Unit, onMade: (M
           modifier = Modifier.fillMaxWidth(),
         )
         OutlinedTextField(
+          value = account,
+          onValueChange = { account = it.trim().take(200) },
+          label = { Text("ایمیلِ حسابِ مشتری") },
+          supportingText = { Text("کامپیوترِ هرگز‌آنلاین‌نشده و بی‌حساب ⇒ خالی") },
+          singleLine = true,
+          textStyle = MonoDigits.copy(textDirection = TextDirection.Ltr),
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+          modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
           value = memo,
           onValueChange = { memo = it.take(300) },
           label = { Text("یادداشت (نامِ مشتری، پمپ…)") },
@@ -282,7 +295,7 @@ private fun NewOfflineDialog(session: Session, onDismiss: () -> Unit, onMade: (M
         scope.launch {
           try {
             val out = withContext(Dispatchers.IO) {
-              Api.makeOfflineCode(session, plan, computer.trim(), if (perm) null else days.toIntOrNull(), memo.trim())
+              Api.makeOfflineCode(session, plan, computer.trim(), if (perm) null else days.toIntOrNull(), memo.trim(), account.trim())
             }.o()
             onMade(MadeCode(
               out.optString("code"),
