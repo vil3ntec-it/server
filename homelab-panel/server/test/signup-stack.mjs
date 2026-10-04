@@ -4,6 +4,7 @@
 //  می‌نویسد.
 //
 //      node test/signup-stack.mjs <live.json>        (تا Ctrl+C روشن می‌ماند)
+//      STACK_ACCOUNT=1 …                            ⇒ یک حسابِ آماده (email/password)
 //
 //  ⚠️ سنجه نیست؛ همان چیزی را بالا می‌آورد که `signuptrial`ِ ریپوی پمپ
 //  می‌خواهد (live.json: public · mailCodes · panel · panelToken). برنامهٔ پمپ
@@ -120,6 +121,31 @@ for (let i = 0; i < 200; i++) {
 await hit(P, 'POST', '/api/auth/setup', { username: 'admin', password: 'Stack-1405-panel' });
 const panelToken = (await hit(P, 'POST', '/api/auth/login', { username: 'admin', password: 'Stack-1405-panel' })).json?.token || '';
 const version = (await hit(`http://127.0.0.1:${PUBLIC}`, 'GET', '/api/health')).json?.version;
-fs.writeFileSync(out, JSON.stringify({ public: `http://127.0.0.1:${PUBLIC}`, panel: P, panelToken, mailCodes, mailRaw, tmp, accountVersion: version }, null, 1));
+
+//  شورا، ت۴: ‎STACK_ACCOUNT=1‎ ⇒ یک حسابِ پمپِ آماده (همان سه‌پلهٔ برنامه، از
+//  پورتِ عمومی) و ‎email/password‎ در live.json — برای سنجهٔ ‎livestack‎.
+let account = {};
+if (process.env.STACK_ACCOUNT === '1') {
+  const U = `http://127.0.0.1:${PUBLIC}`;
+  const email = `live-${Date.now()}@pump.test`;
+  const password = 'Live-Stack-1405';
+  const st = await hit(U, 'POST', '/api/auth/register/start', { name: 'سنجهٔ زنده', email, password, passwordConfirm: password, app: 'pump' });
+  let code = '';
+  for (let i = 0; i < 80 && !code; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    try {
+      code = fs.readFileSync(mailCodes, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+        .reverse().find((m) => m.to.includes(email) && m.code)?.code || '';
+    } catch { /* هنوز نامه‌ای نیامده */ }
+  }
+  const v = await hit(U, 'POST', '/api/auth/register/verify', { email, code, app: 'pump' });
+  const c = await hit(U, 'POST', '/api/auth/register/complete', {
+    ticket: v.json?.ticket, name: 'سنجهٔ زنده', password,
+    terms: { accepted: true, version: v.json?.terms?.version }, app: 'pump',
+  });
+  if (c.status >= 300) { console.error('ساختنِ حساب نشد', st.status, v.status, c.status, JSON.stringify(c.json)); process.exit(3); }
+  account = { email, password };
+}
+fs.writeFileSync(out, JSON.stringify({ public: `http://127.0.0.1:${PUBLIC}`, panel: P, panelToken, mailCodes, mailRaw, tmp, accountVersion: version, ...account }, null, 1));
 console.log(`پشته آماده است — سرورِ حساب ${version} · ${out}`);
 setInterval(() => {}, 1 << 30);
