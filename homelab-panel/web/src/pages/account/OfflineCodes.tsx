@@ -30,6 +30,7 @@ type Offline = {
   plan: string;
   planTitle: string;
   computer: string;
+  accountEmail?: string;
   issuedAt: number;
   endsAt: number;
   permanent: boolean;
@@ -68,10 +69,11 @@ export default function OfflineCodes() {
           <Empty title="کدِ آفلاینی ساخته نشده"
                  hint="کدِ کامپیوتر را از مشتری بگیرید (برنامه ← پروفایل ← اشتراک و پلن‌ها) و «کدِ آفلاینِ تازه» را بزنید." />
         ) : (
-          <Table head={['کامپیوتر', 'پلن', 'تا', 'یادداشت', 'حال', 'سرور دید', 'ساخته شد', '']}>
+          <Table head={['کامپیوتر', 'حساب', 'پلن', 'تا', 'یادداشت', 'حال', 'سرور دید', 'ساخته شد', '']}>
             {(codes.data?.codes || []).map((c) => (
               <Row key={c.id}>
                 <Cell mono>{c.computer}</Cell>
+                <Cell>{c.accountEmail || 'هر حسابی'}</Cell>
                 <Cell>{c.planTitle}</Cell>
                 <Cell>{c.permanent ? 'دائمی' : day(c.endsAt)}</Cell>
                 <Cell>{c.note || '—'}</Cell>
@@ -129,6 +131,7 @@ function NewOffline({ onClose, onMade }: { onClose: () => void; onMade: (out: Ma
   const [plan, setPlan] = useState('vip');
   const [days, setDays] = useState('365');
   const [note, setNote] = useState('');
+  const [account, setAccount] = useState('');
   const perm = plan === 'perm';
 
   return (
@@ -145,7 +148,7 @@ function NewOffline({ onClose, onMade }: { onClose: () => void; onMade: (out: Ma
             onClick={async () => {
               try {
                 const out = await api<Made>('/api/account-admin/offline-codes', {
-                  body: { computer: computer.trim(), plan, days: perm || days === '' ? null : Number(days), note },
+                  body: { computer: computer.trim(), account: account.trim(), plan, days: perm || days === '' ? null : Number(days), note },
                 });
                 onClose();
                 await onMade(out);
@@ -160,7 +163,8 @@ function NewOffline({ onClose, onMade }: { onClose: () => void; onMade: (out: Ma
       }
     >
       <Notice tone="info">
-        کد فقط روی <b>همان کامپیوتری</b> کار می‌کند که کدش را این‌جا می‌زنید، و بی اینترنت قفل‌ها را باز می‌کند.
+        کد فقط روی <b>همان کامپیوتری</b> (و اگر ایمیل بدهید، همان حسابی) کار می‌کند که این‌جا می‌زنید، بی اینترنت قفل‌ها را
+        باز می‌کند و <b>یک بار</b> به کار می‌رود.
       </Notice>
 
       <label className="label">کدِ کامپیوترِ مشتری (۱۶ نویسه)</label>
@@ -181,6 +185,13 @@ function NewOffline({ onClose, onMade }: { onClose: () => void; onMade: (out: Ma
                  value={perm ? 'همیشه' : days} onChange={(e) => setDays(e.target.value)} />
         </div>
       </div>
+
+      <label className="label">ایمیلِ حسابِ مشتری</label>
+      <input className="input w-full" dir="ltr" type="email" placeholder="name@example.com"
+             value={account} onChange={(e) => setAccount(e.target.value)} />
+      <p className="mb-3 mt-1 text-xs text-ink-muted">
+        کد فقط با همین حساب کار می‌کند. اگر آن کامپیوتر هرگز آنلاین نشده و حسابی ندارد، خالی بگذارید.
+      </p>
 
       <label className="label">یادداشت (نامِ مشتری، پمپ…)</label>
       <input className="input w-full" value={note} onChange={(e) => setNote(e.target.value)} />

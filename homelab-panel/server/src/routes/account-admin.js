@@ -1633,6 +1633,8 @@ router.post('/offline-codes', money, guard(async (req, res) => {
   const body = {
     plan: String(req.body?.plan || '').slice(0, 10),
     computer: String(req.body?.computer || '').slice(0, 40),
+    //  نسخهٔ ۲ (۱۴۰۵/۰۷/۲۰): ایمیلِ حسابی که کد به آن بسته می‌شود — خالی ⇒ هر حسابی
+    account: String(req.body?.account || '').trim().slice(0, 200),
     days: req.body?.days === '' || req.body?.days == null ? null : Number(req.body.days),
     note: String(req.body?.note || '').slice(0, 300),
   };
@@ -1642,7 +1644,7 @@ router.post('/offline-codes', money, guard(async (req, res) => {
     action: 'account.offline_code.create',
     entity: 'offline_code',
     entityId: out?.offline?.id || '',
-    detail: { plan: body.plan, computer: out?.offline?.computer || body.computer },
+    detail: { plan: body.plan, computer: out?.offline?.computer || body.computer, account: body.account },
   });
   res.json(out);
 }));
