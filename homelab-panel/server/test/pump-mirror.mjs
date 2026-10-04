@@ -95,6 +95,11 @@ await new Promise((r) => ghServer.listen(GH_PORT, '127.0.0.1', r));
 
 // ── سرورِ واقعی ────────────────────────────────────────────────────────────
 const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'hlp-pumpmirror-'));
+//  🛤️ ت۱: «گزارشِ کرش»ِ ساختگی — تا بخشِ ۷ هر نسخه کرش دارد، پس هیچ نامزدی پایدار نمی‌شود
+const CRASHES = path.join(tmp, 'crashes.json');
+const crashes = (m) => fs.writeFileSync(CRASHES, typeof m === 'string' ? m : JSON.stringify(m));
+crashes({ '*': 1 });
+const STABLE_DAYS = 0.00003;                         // ~۲٫۶ ثانیه به‌جای هفت روز
 fs.mkdirSync(path.join(tmp, 'sites'), { recursive: true });
 const child = spawn(process.execPath,
   ['--disable-warning=ExperimentalWarning', path.join(import.meta.dirname, '..', 'src', 'index.js')], {
@@ -104,6 +109,7 @@ const child = spawn(process.execPath,
       HLP_DATA_DIR: path.join(tmp, 'data'), HLP_SITES_ROOT: path.join(tmp, 'sites'),
       HLP_TUNNEL: '0', HLP_AI_ENABLED: '0', HLP_SITESYNC: '1', HLP_ACCOUNT_AUTOSTART: '0',
       HLP_PUMP_MIRROR: '1', HLP_GITHUB_API: `http://127.0.0.1:${GH_PORT}`,
+      HLP_PUMP_CRASHES_FILE: CRASHES, HLP_PUMP_STABLE_DAYS: String(STABLE_DAYS),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -140,7 +146,7 @@ try {
   const v1 = publish('3.1.240');
   const r1 = await runMirror();
   check('کار با موفقیت دوید', r1.status === 200 && r1.body.status === 'ok', JSON.stringify(r1.body).slice(0, 300));
-  const latest = await (await fetch(`${PUB}/api/pump-updates/latest`)).json();
+  const latest = await (await fetch(`${PUB}/api/pump-updates/latest?channel=testing`)).json();
   check('نسخهٔ تازه از پورتِ عمومی', latest.tag_name === 'v3.1.240', JSON.stringify(latest));
   check('یادداشتِ انتشار هم آمد', latest.body === 'یادداشتِ 3.1.240');
   const names = (latest.assets || []).map((a) => a.name).sort();
@@ -175,7 +181,7 @@ try {
   publish('3.1.241', { corrupt: true });
   const r3 = await runMirror();
   check('کار شکست را گزارش کرد', r3.status === 200 && r3.body.status === 'failed', JSON.stringify(r3.body).slice(0, 200));
-  const still = await (await fetch(`${PUB}/api/pump-updates/latest`)).json();
+  const still = await (await fetch(`${PUB}/api/pump-updates/latest?channel=testing`)).json();
   check('همان نسخهٔ سالمِ قبلی سرو می‌شود', still.tag_name === 'v3.1.240', still.tag_name);
   const bad = await fetch(`${PUB}/api/pump-updates/files/3.1.241/PumpYaqobi-Setup.exe`);
   check('فایلِ نسخهٔ خراب هیچ‌جا سرو نمی‌شود', bad.status === 404);
@@ -185,7 +191,7 @@ try {
   const v2 = publish('3.1.242');
   const r4 = await runMirror();
   check('کار موفق', r4.status === 200 && r4.body.status === 'ok');
-  const l2 = await (await fetch(`${PUB}/api/pump-updates/latest`)).json();
+  const l2 = await (await fetch(`${PUB}/api/pump-updates/latest?channel=testing`)).json();
   check('نسخهٔ تازه سرو می‌شود', l2.tag_name === 'v3.1.242');
   const s2 = Buffer.from(await (await fetch(PUB + l2.assets.find((a) => a.name === 'PumpYaqobi-Setup.exe').browser_download_url)).arrayBuffer());
   check('نصابِ تازه بایت‌به‌بایت', s2.equals(v2['PumpYaqobi-Setup.exe']));
@@ -212,7 +218,7 @@ try {
   const v3 = publish('3.1.243');
   const r5 = await runMirror();
   check('نسخهٔ تازه گرفته شد', r5.status === 200 && r5.body.status === 'ok');
-  const held = await (await fetch(`${PUB}/api/pump-updates/latest`)).json();
+  const held = await (await fetch(`${PUB}/api/pump-updates/latest?channel=testing`)).json();
   check('⛔ برنامه‌ها هنوز نسخهٔ قبلی را می‌بینند', held.tag_name === 'v3.1.242', held.tag_name);
   const heldFile = await fetch(`${PUB}/api/pump-updates/files/3.1.243/PumpYaqobi-Setup.exe`);
   check('⛔ نسخهٔ نگه‌داشته از درِ عمومی دانلود نمی‌شود', heldFile.status === 404, heldFile.status);
@@ -228,7 +234,7 @@ try {
   check('درِ مدیریت روی پورتِ عمومی نیست', pubAdm.status === 404 || pubAdm.status === 401, pubAdm.status);
   const pz = await call('POST', '/api/pump-updates-admin/publish', { version: '3.1.243' });
   check('انتشار زده شد', pz.status === 200 && pz.body.served === '3.1.243' && pz.body.mode === 'hold', JSON.stringify(pz.body).slice(0, 200));
-  const after = await (await fetch(`${PUB}/api/pump-updates/latest`)).json();
+  const after = await (await fetch(`${PUB}/api/pump-updates/latest?channel=testing`)).json();
   check('حالا برنامه‌ها نسخهٔ تازه را می‌بینند', after.tag_name === 'v3.1.243');
   const back = await call('POST', '/api/pump-updates-admin/publish', { version: '3.1.242' });
   check('برگرداندن به نسخهٔ قبلی هم شدنی است', back.status === 200 && back.body.served === '3.1.242');
@@ -240,7 +246,59 @@ try {
   check('حالتِ ناشناخته رد می‌شود', bm.status === 400);
   const au = await call('POST', '/api/pump-updates-admin/mode', { mode: 'auto' });
   check('روشن کردنِ دوبارهٔ پخش ⇒ تازه‌ترین نسخه همان لحظه می‌رود', au.body.mode === 'auto' && au.body.served === '3.1.243');
-  check('…و از درِ عمومی هم', (await (await fetch(`${PUB}/api/pump-updates/latest`)).json()).tag_name === 'v3.1.243');
+  check('…و از درِ عمومی هم', (await (await fetch(`${PUB}/api/pump-updates/latest?channel=testing`)).json()).tag_name === 'v3.1.243');
+
+  console.log('\n── ۷) 🛤️ دو کانال: پایدار (پیش‌فرض) و آزمایشی — شورا، ت۱ ──');
+  const tagOf = async (q = '') => (await (await fetch(`${PUB}/api/pump-updates/latest${q}`)).json()).tag_name;
+  const bake = () => wait(STABLE_DAYS * 86_400_000 + 600);
+  check('⛔ نصبِ پیش‌فرض (بی کانال) هنوز نخستین نسخه را می‌بیند — هر مرج به همه نمی‌رسد',
+    (await tagOf()) === 'v3.1.240' && (await tagOf('?channel=stable')) === 'v3.1.240', await tagOf());
+  check('کانالِ آزمایشی تازه‌ترین را می‌بیند', (await tagOf('?channel=testing')) === 'v3.1.243');
+  const st0 = (await call('GET', '/api/pump-updates-admin')).body;
+  check('پنل: پایدار و نامزد (نخستین نسخهٔ پس از پایدار؛ ۲۴۳ جایش را نگرفت)', st0.stable === '3.1.240' && st0.candidate?.version === '3.1.242', JSON.stringify(st0).slice(0, 400));
+  check('فایلِ نسخهٔ پایدار از درِ عمومی دانلود می‌شود',
+    (await fetch(`${PUB}/api/pump-updates/files/3.1.240/PumpYaqobi-Setup.exe`)).status === 200);
+  await bake();
+  await runMirror();
+  const stC = (await call('GET', '/api/pump-updates-admin')).body;
+  check('⛔ نامزدِ کرش‌دار با گذشتِ زمان هم پایدار نشد و تازه‌ترین جایش آمد',
+    (await tagOf()) === 'v3.1.240' && stC.candidate?.version === '3.1.243', JSON.stringify(stC.candidate));
+
+  crashes({ '3.1.243': 0, '*': 1 });
+  await bake();
+  await runMirror();
+  check('نامزدی که «هفت روز» بی کرش ماند پایدار شد', (await tagOf()) === 'v3.1.243', await tagOf());
+
+  publish('3.1.244');
+  await runMirror();
+  publish('3.1.245');
+  await runMirror();
+  const st1 = (await call('GET', '/api/pump-updates-admin')).body;
+  check('⛔ نامزد ثابت می‌ماند — نسخهٔ تازه‌تر جایش را نمی‌گیرد (هفته‌ای حداکثر یک بار)',
+    st1.candidate?.version === '3.1.244' && st1.stable === '3.1.243', JSON.stringify(st1.candidate));
+  check('پایدار هنوز همان است، آزمایشی تازه‌ترین', (await tagOf()) === 'v3.1.243' && (await tagOf('?channel=testing')) === 'v3.1.245');
+
+  crashes('not-json');
+  await bake();
+  await runMirror();
+  const st2 = (await call('GET', '/api/pump-updates-admin')).body;
+  check('⛔ سرورِ حساب نرسید ⇒ پایدار نمی‌شود و نامزد سرِ جایش', st2.stable === '3.1.243' && st2.candidate?.version === '3.1.244', JSON.stringify(st2.candidate));
+
+  crashes({ '3.1.244': 2 });
+  await runMirror();
+  const st3 = (await call('GET', '/api/pump-updates-admin')).body;
+  check('نامزدِ کرش‌دار کنار رفت و تازه‌ترین نامزد شد', st3.stable === '3.1.243' && st3.candidate?.version === '3.1.245', JSON.stringify(st3.candidate));
+  check('فایلِ پایدار (۲۴۳) هنوز روی دیسک است', (await fetch(`${PUB}/api/pump-updates/files/3.1.243/PumpYaqobi-Setup.exe`)).status === 200);
+
+  const pr = await call('POST', '/api/pump-updates-admin/stable', { version: '3.1.245' });
+  check('«همین را پایدار کن» از پنل', pr.status === 200 && pr.body.stable === '3.1.245' && !pr.body.candidate, JSON.stringify(pr.body).slice(0, 300));
+  check('…و نصبِ پیش‌فرض همان را می‌بیند', (await tagOf()) === 'v3.1.245');
+  check('نسخهٔ نگرفته پایدار نمی‌شود', (await call('POST', '/api/pump-updates-admin/stable', { version: '9.9.9' })).status === 404);
+
+  await call('POST', '/api/pump-updates-admin/publish', { version: '3.1.244' });
+  check('⛔ پخشِ خاموش هر دو کانال را می‌بندد', (await tagOf()) === 'v3.1.244' && (await tagOf('?channel=testing')) === 'v3.1.244', await tagOf());
+  await call('POST', '/api/pump-updates-admin/mode', { mode: 'auto' });
+  check('پخشِ روشن ⇒ پایدار دوباره همان پایدار', (await tagOf()) === 'v3.1.245');
 
   console.log('\n── ۶) فقط‌خواندنی ──');
   const post = await fetch(`${PUB}/api/pump-updates/latest`, { method: 'POST' });

@@ -4,6 +4,7 @@
 //      GET  /api/pump-updates-admin               حال، حالت و نسخه‌های روی سرور
 //      POST /api/pump-updates-admin/mode {mode}   auto | hold        (فقط مدیر)
 //      POST /api/pump-updates-admin/publish {version}                (فقط مدیر)
+//      POST /api/pump-updates-admin/stable {version}                 «همین را پایدار کن» (فقط مدیر)
 //      POST /api/pump-updates-admin/check         «همین حالا از گیت‌هاب بپرس» (فقط مدیر)
 //      GET  /api/pump-updates-admin/files/:v/:n   دانلودِ نسخهٔ نگه‌داشته برای آزمودن
 //
@@ -14,7 +15,7 @@ import { Router } from 'express';
 import { requireAuth, requireWriteRole } from '../auth.js';
 import { audit } from '../control/audit.js';
 import {
-  status, versions, setMode, publish, syncOnce, filePath, mirrorEnabled,
+  status, versions, setMode, publish, syncOnce, filePath, mirrorEnabled, promoteStable,
 } from '../pumpupdates/mirror.js';
 
 const router = Router();
@@ -41,6 +42,14 @@ router.post('/publish', async (req, res) => {
   try {
     const r = await publish(String(req.body?.version || ''), { by: actorOf(req) });
     audit({ actor: actorOf(req), action: 'pump_update.publish', entity: 'pump-update', entityId: r.published, detail: { previous: r.previous, mode: r.mode } });
+    res.json({ ok: true, ...(await status()), versions: await versions() });
+  } catch (e) { fail(res, e); }
+});
+
+router.post('/stable', async (req, res) => {
+  try {
+    const r = await promoteStable(String(req.body?.version || ''), { by: actorOf(req) });
+    audit({ actor: actorOf(req), action: 'pump_update.stable', entity: 'pump-update', entityId: r.stable, detail: { previous: r.stablePrevious } });
     res.json({ ok: true, ...(await status()), versions: await versions() });
   } catch (e) { fail(res, e); }
 });
