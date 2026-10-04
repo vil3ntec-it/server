@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import { bumpSoon } from './live/bus.js';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { box, unbox, isBoxed } from './lib/secret-box.js';
 import { paths } from './config.js';
 import { runMigrations } from './db/migrate.js';
 import { vacuumInto, backupFileName, applyPendingRestore } from './backup/sqlite.js';
@@ -114,30 +115,98 @@ const upSetting = db.prepare(
   'INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
 );
 
+// ── شورا، پ۳ (ممیزی L3): رازهای جدولِ settings رمزشده روی دیسک ─────────────
+//  ⛔ تنها فهرست: کلیدی که کلِ مقدارش راز است، و کلیدی که فقط چند خانهٔ
+//  داخلش راز است (رمزِ SMTP، کلیدِ پیامک). بقیهٔ آن تنظیم‌ها خوانا می‌ماند تا
+//  پشتیبانِ پنل روی کامپیوترِ دیگر هم بی کلیدِ گاوصندوق بیشترش را برگرداند.
+//  رمزنگاری با همان کلیدِ ‎data/vault.key‎ (‎lib/secret-box.js‎). بقیهٔ کد هیچ
+//  فرقی نمی‌بیند: ‎getSetting‎ همان مقدارِ خام را پس می‌دهد.
+export const SECRET_SETTINGS = Object.freeze({
+  whole: ['tunnel_token', 'jwt_secret', 'messenger_secret', 'notify_read_key'],
+  fields: {
+    codes_settings: [['email', 'password']],
+    otp_settings: [['email', 'password'], ['sms', 'password'], ['sms', 'apiKey']],
+  },
+});
+
+function mapFields(value, paths, fn) {
+  if (!value || typeof value !== 'object') return value;
+  const out = structuredClone(value);
+  for (const p of paths) {
+    let o = out;
+    for (let i = 0; i < p.length - 1 && o; i++) o = o[p[i]];
+    const leaf = p[p.length - 1];
+    if (o && typeof o === 'object' && typeof o[leaf] === 'string' && o[leaf] !== '') o[leaf] = fn(o[leaf]);
+  }
+  return out;
+}
+
+/** مقدارِ خام ⇒ شکلِ روی دیسک */
+export function sealSetting(key, value) {
+  if (SECRET_SETTINGS.whole.includes(key)) {
+    return value == null || value === '' ? value : box(JSON.stringify(value));
+  }
+  const paths = SECRET_SETTINGS.fields[key];
+  return paths ? mapFields(value, paths, (v) => (isBoxed(v) ? v : box(v))) : value;
+}
+
+/** شکلِ روی دیسک ⇒ مقدارِ خام. بازنشد (کلیدِ گاوصندوق نیست) ⇒ ‎undefined‎/خالی */
+export function openSetting(key, stored) {
+  if (SECRET_SETTINGS.whole.includes(key) && isBoxed(stored)) {
+    const t = unbox(stored);
+    if (t == null) return undefined;
+    try { return JSON.parse(t); } catch { return undefined; }
+  }
+  const paths = SECRET_SETTINGS.fields[key];
+  return paths ? mapFields(stored, paths, (v) => (isBoxed(v) ? (unbox(v) ?? '') : v)) : stored;
+}
+
+function parseStored(raw) {
+  try { return JSON.parse(raw); } catch { return raw; }
+}
+
 export function getSetting(key, fallback = null) {
   const row = selSetting.get(key);
   if (!row) return fallback;
-  try {
-    return JSON.parse(row.value);
-  } catch {
-    return row.value;
-  }
+  const v = openSetting(key, parseStored(row.value));
+  return v === undefined ? fallback : v;
 }
 
 export function setSetting(key, value) {
-  upSetting.run(key, JSON.stringify(value));
+  upSetting.run(key, JSON.stringify(sealSetting(key, value)));
   return value;
 }
+
+/**
+ * رازهای خامِ کهنه را یک بار رمز می‌کند (نصب‌های پیش از ۱.۵۰.۳۲). خوانا
+ * نماندنِ هیچ چیزی را نمی‌خواهد: مقدارِ رمزشده دوباره رمز نمی‌شود.
+ * @returns {number} شمارِ کلیدهایی که همین حالا رمز شدند
+ */
+export function sealPlainSecrets() {
+  let n = 0;
+  for (const key of [...SECRET_SETTINGS.whole, ...Object.keys(SECRET_SETTINGS.fields)]) {
+    const row = selSetting.get(key);
+    if (!row) continue;
+    const stored = parseStored(row.value);
+    const sealed = SECRET_SETTINGS.whole.includes(key)
+      ? (isBoxed(stored) || stored == null || stored === '' ? stored : box(JSON.stringify(stored)))
+      : sealSetting(key, stored);
+    const text = JSON.stringify(sealed);
+    if (text !== row.value) { upSetting.run(key, text); n++; }
+  }
+  return n;
+}
+try {
+  const sealed = sealPlainSecrets();
+  if (sealed) console.log(`[panel] ${sealed} رازِ جدولِ settings رمز شد (شورا، پ۳)`);
+} catch (e) { console.warn('[panel] رمز کردنِ رازهای settings نشد:', e?.message || e); }
 
 export function allSettings() {
   const rows = db.prepare('SELECT key, value FROM settings').all();
   const out = {};
   for (const r of rows) {
-    try {
-      out[r.key] = JSON.parse(r.value);
-    } catch {
-      out[r.key] = r.value;
-    }
+    const v = openSetting(r.key, parseStored(r.value));
+    if (v !== undefined) out[r.key] = v;
   }
   return out;
 }

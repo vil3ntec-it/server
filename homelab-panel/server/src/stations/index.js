@@ -34,6 +34,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { WebSocketServer } from 'ws';
+import { createWsGate } from '../lib/ws-gate.js';
 import { attachHeartbeat } from '../lib/ws-heartbeat.js';
 import { createStore } from '../sitesync/store.js';
 import { bumpSoon } from '../live/bus.js';
@@ -442,19 +443,20 @@ export function createStations({ dataDir, enroll = 'lan' } = {}) {
     return { store, readOnly: access === 'read' };
   }
 
+  //  ⛔ شورا، پ۳: رمز پیش از ارتقا سنجیده می‌شود و حدسِ پشتِ سرِ هم سقف دارد (`lib/ws-gate.js`)
+  const gate = createWsGate({ name: 'stations-ws' });
+
   function handleUpgrade(req, socket, head) {
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      const { store, reason, readOnly } = route(req);
-      if (reason || !store) {
+    gate.handle(wss, req, socket, head,
+      (r) => { const x = route(r); return { ...x, ok: !x.reason && Boolean(x.store) }; },
+      (ws, x) => x.store.handleConnection(ws, req, { readOnly: Boolean(x.readOnly) }),
+      (ws, x) => {
         // دفتری در کار نیست که پیام خطا را بفرستد، پس دستی می‌فرستیم
         try {
-          ws.send(JSON.stringify({ op: 'error', msg: reason || 'auth_failed' }));
+          ws.send(JSON.stringify({ op: 'error', msg: x.reason || 'auth_failed' }));
           ws.close();
         } catch { /* بسته شد */ }
-        return;
-      }
-      store.handleConnection(ws, req, { readOnly: Boolean(readOnly) });
-    });
+      });
   }
 
   /** آیا این مسیرِ ارتقا مالِ همین بخش است؟ */

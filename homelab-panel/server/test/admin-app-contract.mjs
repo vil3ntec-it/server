@@ -190,5 +190,18 @@ try {
   await fsp.rm(tmp, { recursive: true, force: true });
 }
 
+// ── شورا، پ۳ (M12): اپِ ادمین کادرِ کدِ دوعاملی دارد — قراردادش با سرور
+{
+  const kt = (f) => fs.readFileSync(new URL('../../admin-android/app/src/main/java/ir/vil3ntec/admin/' + f, import.meta.url), 'utf8');
+  const remote = kt('data/Remote.kt'); const api = kt('data/Api.kt'); const login = kt('ui/LoginScreen.kt');
+  check('کلیدِ در: کد در فیلدِ «totp» می‌رود (همان نامِ admin-gate.js)', /body\.put\("totp"/.test(remote));
+  check('کلیدِ در: totp_required و totp_invalid فهمیده می‌شوند',
+    remote.includes('"totp_required"') && remote.includes('"totp_invalid"'));
+  check('ورود: گامِ دوم همان /api/auth/login/totp با ticket و code',
+    api.includes('/api/auth/login/totp') && /put\("ticket"/.test(api) && /put\("code"/.test(api));
+  check('صفحهٔ ورود totpRequired را می‌خواند و کادرِ کد را نشان می‌دهد',
+    login.includes('optBoolean("totpRequired")') && login.includes('if (needTotp)'));
+}
+
 console.log(`\n${failed ? '❌' : '✅'} ${passed} سبز، ${failed} قرمز\n`);
 process.exit(failed ? 1 : 0);

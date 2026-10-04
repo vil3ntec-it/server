@@ -87,6 +87,8 @@ object Remote {
     password: String,
     deviceId: String,
     deviceName: String,
+    /** کدِ اپِ Authenticator یا کدِ بازیابی — فقط وقتی مدیر دوعاملی دارد */
+    totp: String = "",
   ): RemoteAccess? {
     val base = serverUrl.trim().trimEnd('/')
     if (base.isBlank()) return null
@@ -96,6 +98,7 @@ object Remote {
       .put("password", password)
       .put("deviceId", deviceId)
       .put("name", deviceName)
+    if (totp.isNotBlank()) body.put("totp", totp.trim())
 
     val conn = URL("$base/api/admin-gate/enroll").openConnection() as HttpURLConnection
     val text = try {
@@ -106,8 +109,23 @@ object Remote {
       conn.setRequestProperty("Accept", "application/json")
       conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
       conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+      /*
+       *  ⛔ شورا، پ۳: مدیری که دوعاملی دارد، کلیدِ در را با کد می‌گیرد. این ۴۰۱
+       *  فقط پس از نام و رمزِ **درست** می‌آید، پس صفحه باید کادرِ کد را نشان
+       *  بدهد — نه «نام یا رمز غلط است».
+       */
+      if (conn.responseCode == 401) {
+        val err = runCatching {
+          JSONObject((conn.errorStream ?: return null).bufferedReader(Charsets.UTF_8).use(BufferedReader::readText))
+            .optString("error")
+        }.getOrDefault("")
+        if (err == "totp_required" || err == "totp_invalid") throw TotpNeeded(err == "totp_invalid")
+        return null
+      }
       if (conn.responseCode !in 200..299) return null
       conn.inputStream.bufferedReader(Charsets.UTF_8).use(BufferedReader::readText)
+    } catch (e: TotpNeeded) {
+      throw e
     } catch (_: Exception) {
       return null
     } finally {

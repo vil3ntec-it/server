@@ -11,40 +11,18 @@
 //    • رمزِ کاربرانِ عادی و کدهای یک‌بارمصرف اینجا ذخیره نمی‌شوند.
 // ---------------------------------------------------------------------------
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
 import { config } from '../config.js';
 import { db } from '../db.js';
 import { audit } from './audit.js';
+import { vaultKey } from '../lib/secret-box.js';
 
-const KEY_FILE = path.join(config.dataDir, 'vault.key');
 const ALGO = 'aes-256-gcm';
 
 export const SECRET_KINDS = ['cf_token', 'api_key', 'database', 'server', 'deploy', 'ssh', 'other'];
 
-let cachedKey = null;
-
-function masterKey() {
-  if (cachedKey) return cachedKey;
-  try {
-    if (fs.existsSync(KEY_FILE)) {
-      const hex = fs.readFileSync(KEY_FILE, 'utf8').trim();
-      if (/^[0-9a-f]{64}$/i.test(hex)) {
-        cachedKey = Buffer.from(hex, 'hex');
-        return cachedKey;
-      }
-    }
-  } catch { /* پایین ساخته می‌شود */ }
-
-  const key = crypto.randomBytes(32);
-  fs.mkdirSync(path.dirname(KEY_FILE), { recursive: true });
-  fs.writeFileSync(KEY_FILE, key.toString('hex'), { encoding: 'utf8', mode: 0o600 });
-  try {
-    fs.chmodSync(KEY_FILE, 0o600);
-  } catch { /* ویندوز chmod ندارد */ }
-  cachedKey = key;
-  return cachedKey;
-}
+//  ⛔ کلیدِ اصلی یک سازنده دارد: ‎lib/secret-box.js‎ (رازهای جدولِ settings هم با همان)
+const masterKey = vaultKey;
 
 /** آیا کلیدِ گاوصندوق ساخته شده؟ (برای صفحهٔ وضعیت) */
 export function vaultReady() {
@@ -221,5 +199,5 @@ export function vaultHealth() {
       broken.push({ id: r.id, name: r.name });
     }
   }
-  return { ready: vaultReady(), total: rows.length, readable, broken, keyFile: KEY_FILE };
+  return { ready: vaultReady(), total: rows.length, readable, broken, keyFile: path.join(config.dataDir, 'vault.key') };
 }
