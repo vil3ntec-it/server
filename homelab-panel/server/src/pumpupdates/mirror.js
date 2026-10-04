@@ -147,6 +147,13 @@ export async function releaseState() {
     previous: normalizeVersion(r.previous) || null,
     at: r.at || null,
     by: r.by || null,
+    stable: normalizeVersion(r.stable) || null,
+    stablePrevious: normalizeVersion(r.stablePrevious) || null,
+    stableAt: r.stableAt || null,
+    stableBy: r.stableBy || null,
+    candidate: r.candidate && normalizeVersion(r.candidate.version)
+      ? { version: normalizeVersion(r.candidate.version), since: r.candidate.since || null, crashes: Number(r.candidate.crashes) || 0 }
+      : null,
   };
 }
 
@@ -172,6 +179,119 @@ export async function served() {
   const r = await releaseState();
   if (r.mode === 'auto') return current();
   return r.published ? manifestOf(r.published) : null;
+}
+
+// ---------------------------------------------------------------------------
+//  🛤️ دو کانال — شورا، ت۱ (۱۴۰۵/۰۷/۲۰)
+//
+//  «هر مرج یک نسخه است و همه همان لحظه می‌گیرند — برای حسابداری زیاد.»
+//
+//      آزمایشی  (‎?channel=testing‎) همان رفتارِ امروز: تازه‌ترین نسخهٔ سالم
+//      پایدار   (پیش‌فرض — برنامه‌ای که هیچ کانالی نمی‌گوید همین است)
+//
+//  ⛔ **نسخهٔ پایدار فقط از «نامزد» می‌آید**: نخستین نسخهٔ تازه‌ای که پس از
+//  پایدارِ امروز رسید نامزد می‌شود و **هفت روز ثابت می‌ماند** — نسخه‌های تازه‌تر
+//  جایش را نمی‌گیرند. پس پایدار هفته‌ای حداکثر یک بار عوض می‌شود، هر قدر هم
+//  نسخه بیاید.
+//  ⛔ **هفت روز بی گزارشِ کرش** (`client_errors`ِ سرورِ حساب با همان نسخه):
+//  صفر ⇒ پایدار می‌شود؛ بیش از صفر ⇒ کنار می‌رود و تازه‌ترین نامزد می‌شود؛
+//  نتوانستیم بپرسیم (سرورِ حساب خاموش) ⇒ **پایدار نمی‌شود**، دورِ بعد دوباره.
+//  ⛔ **پخشِ خاموش هر دو کانال را می‌بندد** (۱.۵۰.۳۱ سرِ جایش): در حالتِ
+//  «hold» هر دو همان «منتشرشده» را می‌بینند.
+//  ⚠️ نخستین بار پایدار همان تازه‌ترینِ امروز است — هیچ نصبی عقب نمی‌رود.
+// ---------------------------------------------------------------------------
+export const CHANNELS = Object.freeze(['stable', 'testing']);
+
+/** روزهای ماندن روی آزمایشی (‎HLP_PUMP_STABLE_DAYS‎ فقط برای آزمون). */
+export function stableDays() {
+  const n = Number(process.env.HLP_PUMP_STABLE_DAYS);
+  return Number.isFinite(n) && n >= 0 ? n : 7;
+}
+
+/** شمارِ گزارشِ کرشِ یک نسخه — یا null وقتی نشد پرسید. */
+export async function crashCountFor(version) {
+  try {
+    const file = process.env.HLP_PUMP_CRASHES_FILE;          // فقط آزمون
+    if (file) {
+      const m = await readJson(file);
+      if (!m) return null;                                  // «سرورِ حساب نرسید»
+      const n = m[version] ?? m['*'] ?? 0;
+      return Number.isFinite(Number(n)) ? Number(n) : 0;
+    }
+    const { cloudRaw } = await import('../stations/cloud.js');
+    const out = await cloudRaw('GET', '/api/admin/sync/errors', { query: { app: 'pump', limit: 500 } });
+    const rows = Array.isArray(out?.errors) ? out.errors : null;
+    if (!rows) return null;
+    return rows.filter((e) => normalizeVersion(e.app_version) === version).length;
+  } catch {
+    return null;
+  }
+}
+
+/** آن‌چه یک کانال همین حالا می‌بیند (یا null). */
+export async function servedFor(channel = 'stable') {
+  const r = await releaseState();
+  if (r.mode !== 'auto' || channel === 'testing') return served();
+  if (r.stable) {
+    const m = await manifestOf(r.stable);
+    if (m) return m;
+  }
+  return served();
+}
+
+/**
+ * گامِ کانالِ پایدار — پس از هر دورِ آینه (حتی «چیزی عوض نشده»: زمان می‌گذرد).
+ * ⛔ هیچ فایلی این‌جا دانلود یا پاک نمی‌شود؛ فقط ‎release.json‎.
+ */
+export async function advanceStable({ now = Date.now(), log = () => {} } = {}) {
+  const r = await releaseState();
+  const cur = await current();
+  if (!cur) return r;
+  const iso = new Date(now).toISOString();
+  const next = { ...r };
+  const save = async () => { await writeRelease(next); return releaseState(); };
+
+  if (!r.stable || !(await manifestOf(r.stable))) {
+    next.stable = cur.version; next.stableAt = iso; next.stableBy = 'first'; next.candidate = null;
+    return save();
+  }
+  if (cur.version === r.stable || compareVersions(cur.version, r.stable) < 0) {
+    if (r.candidate) { next.candidate = null; return save(); }
+    return r;
+  }
+  const cand = r.candidate;
+  if (!cand || compareVersions(cand.version, r.stable) <= 0 || !(await manifestOf(cand.version))) {
+    next.candidate = { version: cur.version, since: iso, crashes: 0 };
+    return save();
+  }
+  const age = now - Date.parse(cand.since || iso);
+  if (age < stableDays() * 86_400_000) return r;
+  const crashes = await crashCountFor(cand.version);
+  if (crashes === null) return r;                       // نپرسیدیم ⇒ پایدار نمی‌شود
+  if (crashes === 0) {
+    next.stablePrevious = r.stable; next.stable = cand.version; next.stableAt = iso; next.stableBy = 'auto';
+    next.candidate = cur.version !== cand.version ? { version: cur.version, since: iso, crashes: 0 } : null;
+    log(`نسخهٔ ${cand.version} هفت روز بی کرش ماند و پایدار شد`);
+    return save();
+  }
+  //  کرش داشت ⇒ کنار، و تازه‌ترین نامزد (اگر همان است، می‌ماند و شمرده می‌شود)
+  next.candidate = cur.version !== cand.version
+    ? { version: cur.version, since: iso, crashes: 0 }
+    : { ...cand, crashes };
+  log(`نسخهٔ ${cand.version} ${crashes} گزارشِ کرش داشت و پایدار نشد`);
+  return save();
+}
+
+/** «همین را پایدار کن» از پنل — فقط نسخهٔ گرفته‌شده. */
+export async function promoteStable(version, { by = null } = {}) {
+  const v = normalizeVersion(version);
+  if (!v || !(await manifestOf(v))) throw Object.assign(new Error('version_not_mirrored'), { status: 404 });
+  const r = await releaseState();
+  const next = { ...r, stableAt: new Date().toISOString(), stableBy: by || 'admin' };
+  if (r.stable !== v) { next.stablePrevious = r.stable; next.stable = v; }
+  if (r.candidate && compareVersions(r.candidate.version, v) <= 0) next.candidate = null;
+  await writeRelease(next);
+  return releaseState();
 }
 
 /** حالت را عوض می‌کند. نگه داشتن همان نسخهٔ امروز را «منتشرشده» قفل می‌کند. */
@@ -246,7 +366,13 @@ export async function status() {
   const st = (await readJson(path.join(mirrorDir(), 'state.json'))) || {};
   const r = await releaseState();
   const out = await served();
+  const stv = await servedFor('stable');
   return {
+    stable: stv?.version || null,
+    stableAt: r.stableAt,
+    stableBy: r.stableBy,
+    candidate: r.candidate,
+    stableDays: stableDays(),
     repo: pumpRepo(),
     enabled: mirrorEnabled(),
     version: cur?.version || null,
@@ -288,6 +414,14 @@ async function download(asset, file) {
  * می‌نشیند و بارِ بعد دوباره.
  */
 export async function syncOnce({ log = () => {} } = {}) {
+  try {
+    return await syncCore({ log });
+  } finally {
+    await advanceStable({ log }).catch(() => {});
+  }
+}
+
+async function syncCore({ log = () => {} } = {}) {
   const dir = mirrorDir();
   await fsp.mkdir(dir, { recursive: true });
   const stateFile = path.join(dir, 'state.json');
@@ -392,7 +526,8 @@ export async function syncOnce({ log = () => {} } = {}) {
     //  ══ ۴) نگه‌داری: تازه‌ترین، منتشرشده و یکی پیش از آن ══════════════════
     //  ⛔ نسخهٔ منتشرشده هرگز پاک نمی‌شود، وگرنه در حالتِ نگه‌داشته برنامه‌ها
     //  فهرستی می‌گرفتند که فایلش نیست.
-    const keep = new Set([version, cur?.version, rel1.published, rel1.previous].filter(Boolean));
+    const keep = new Set([version, cur?.version, rel1.published, rel1.previous,
+      rel1.stable, rel1.stablePrevious, rel1.candidate?.version].filter(Boolean));
     for (const entry of await fsp.readdir(dir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const v = entry.name.replace(/\.part$/, '');
@@ -425,10 +560,12 @@ export async function filePath(version, name, { any = false } = {}) {
   if (!any) {
     const r = await releaseState();
     const out = await served();
-    const allowed = new Set([out?.version].filter(Boolean));
+    const st = await servedFor('stable');
+    const allowed = new Set([out?.version, st?.version].filter(Boolean));
     //  ⚠️ «یکی پیش از آن» فقط وقتی از منتشرشده کهنه‌تر است — پس از عقب بردن،
     //  نسخهٔ تازه‌ترِ کنارگذاشته از این در بیرون نمی‌رود.
     if (r.previous && out && compareVersions(r.previous, out.version) < 0) allowed.add(r.previous);
+    if (r.mode === 'auto' && r.stablePrevious && st && compareVersions(r.stablePrevious, st.version) < 0) allowed.add(r.stablePrevious);
     if (!allowed.has(version)) return null;
   }
   const m = await manifestOf(version);

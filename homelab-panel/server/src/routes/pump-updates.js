@@ -1,7 +1,8 @@
 // ---------------------------------------------------------------------------
 //  درِ عمومیِ به‌روزرسانیِ برنامهٔ پمپ — فقط خواندنی
 //
-//      GET /api/pump-updates/latest             ⇒ همان شکلِ پاسخِ «آخرین انتشار»
+//      GET /api/pump-updates/latest[?channel=testing] ⇒ همان شکلِ پاسخِ «آخرین انتشار»
+//                                                (بی کانال = پایدار؛ شورا، ت۱)
 //      GET /api/pump-updates/files/<نسخه>/<نام>  ⇒ خودِ فایل (Range پشتیبانی می‌شود)
 //
 //  ⚠️ نشانیِ فایل‌ها **نسبی** است (`/api/pump-updates/files/…`): برنامه آن را
@@ -10,13 +11,15 @@
 //  ⛔ هیچ نوشتنی این‌جا نیست، و هیچ چیزی از درخواست بی سنجش به مسیر نمی‌رسد.
 // ---------------------------------------------------------------------------
 import { Router } from 'express';
-import { served, releaseState, filePath } from '../pumpupdates/mirror.js';
+import { servedFor, releaseState, filePath } from '../pumpupdates/mirror.js';
 
 const router = Router();
 
 router.get('/latest', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  const cur = await served();
+  //  🛤️ کانال (شورا، ت۱): برنامه‌ای که نگوید ⇒ پایدار
+  const channel = req.query.channel === 'testing' ? 'testing' : 'stable';
+  const cur = await servedFor(channel);
   if (!cur) {
     //  ⛔ پخش خاموش و هنوز هیچ نسخه‌ای منتشر نشده ⇒ «تازه‌ای نیست»، نه خطا.
     //  خطا یعنی برنامه سراغِ راهِ دیگر می‌رفت — همان چیزی که مدیر بسته است.
@@ -31,6 +34,7 @@ router.get('/latest', async (req, res) => {
     name: cur.name || `v${cur.version}`,
     body: cur.notes || '',
     published_at: cur.publishedAt,
+    channel,
     assets: cur.assets.map((a) => ({
       name: a.name,
       size: a.size,
