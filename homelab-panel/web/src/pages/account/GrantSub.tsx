@@ -81,6 +81,8 @@ export default function GrantSub({ open, onClose, onDone, startApp, startQuery }
   const [picked, setPicked] = useState<Target | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [note, setNote] = useState('');
+  //  شورا چ۳: کدِ تخفیف (مثلاً کدِ یک نماینده) — قیمتِ نهایی را سرورِ حساب می‌سازد
+  const [discountCode, setDiscountCode] = useState('');
   const [busy, setBusy] = useState(false);
   /*
    *  ⛔ «دلخواه چند وقته به طرف داد» (۱۴۰۵/۰۷/۱۳): مدت به‌طورِ پیش‌فرض همان
@@ -136,7 +138,8 @@ export default function GrantSub({ open, onClose, onDone, startApp, startQuery }
         ? periodEnd(picked.status === 'active' ? picked.endsAt : 0, n, spanUnit)
         : undefined;
       await api(`/api/account-admin/subs/${picked.app}/grant`, {
-        body: { tenantId: picked.tenantId, plan: plan.code, note: note.trim() || undefined, ...(endsAt ? { endsAt } : {}) },
+        body: { tenantId: picked.tenantId, plan: plan.code, note: note.trim() || undefined, ...(endsAt ? { endsAt } : {}),
+                ...(discountCode.trim() ? { discountCode: discountCode.trim() } : {}) },
       });
       toast(`اشتراکِ «${plan.title}» برای ${picked.tenantName || picked.ownerName} ثبت شد`);
       reset();
@@ -324,6 +327,15 @@ export default function GrantSub({ open, onClose, onDone, startApp, startQuery }
               value={note}
               onChange={(e) => setNote(e.target.value)}
               maxLength={300}
+            />
+            <input
+              className="input w-full"
+              dir="ltr"
+              placeholder="کدِ تخفیف (اختیاری) — مثلاً کدِ نماینده"
+              value={discountCode}
+              onChange={(e) => setDiscountCode(e.target.value)}
+              maxLength={40}
+              data-testid="grant-discount"
             />
           </div>
         )}

@@ -24,6 +24,7 @@ import Discounts from './Discounts';
 import VipCodes from './VipCodes';
 import PurchaseRequests from './PurchaseRequests';
 import Visitors from './Visitors';
+import SalesReps from './SalesReps';
 
 const TABS = [
   { id: 'subs', label: 'اشتراک‌ها' },
@@ -32,6 +33,8 @@ const TABS = [
   { id: 'codes', label: 'کدهای اشتراک' },
   { id: 'requests', label: 'درخواست‌های خرید' },
   { id: 'visitors', label: 'بازدیدکننده‌ها' },
+  //  شورا چ۳ — کدِ تخفیفِ هر نماینده، فروش‌هایش و کمیسیون (درصد از همین‌جا)
+  { id: 'reps', label: 'نماینده‌ها' },
 ];
 
 export default function SubscriptionsHub() {
@@ -63,6 +66,7 @@ export default function SubscriptionsHub() {
       {active === 'codes' && <VipCodes />}
       {active === 'requests' && <PurchaseRequests />}
       {active === 'visitors' && <Visitors />}
+      {active === 'reps' && <SalesReps />}
     </div>
   );
 }

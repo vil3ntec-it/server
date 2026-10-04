@@ -152,7 +152,8 @@ export async function releaseState() {
     stableAt: r.stableAt || null,
     stableBy: r.stableBy || null,
     candidate: r.candidate && normalizeVersion(r.candidate.version)
-      ? { version: normalizeVersion(r.candidate.version), since: r.candidate.since || null, crashes: Number(r.candidate.crashes) || 0 }
+      ? { version: normalizeVersion(r.candidate.version), since: r.candidate.since || null, crashes: Number(r.candidate.crashes) || 0,
+          installs: Number(r.candidate.installs) || 0 }
       : null,
   };
 }
@@ -196,6 +197,12 @@ export async function served() {
 //  ⛔ **هفت روز بی گزارشِ کرش** (`client_errors`ِ سرورِ حساب با همان نسخه):
 //  صفر ⇒ پایدار می‌شود؛ بیش از صفر ⇒ کنار می‌رود و تازه‌ترین نامزد می‌شود؛
 //  نتوانستیم بپرسیم (سرورِ حساب خاموش) ⇒ **پایدار نمی‌شود**، دورِ بعد دوباره.
+//  ⛔ **«صفر کرش» به‌تنهایی کافی نیست** (شورا، د۶): نسخه‌ای که هیچ‌کس نصبش
+//  نکرده هم صفر کرش دارد. دستِ‌کم `minInstalls()` دستگاهِ واقعی باید با همان
+//  نسخه با سرورِ حساب همگام شده باشند (‎sync_devices.app_version‎). و هر دو عدد
+//  **شمرده** می‌شوند (‎COUNT‎ روی سرورِ حساب)، نه از فهرستِ ۵۰۰تاییِ آخرین خطاها
+//  که نسخهٔ کهنه را از قلم می‌انداخت. سرورِ حسابِ کهنه که این در را ندارد ⇒
+//  «نتوانستیم بپرسیم» ⇒ پایدار نمی‌شود (دکمهٔ «پایدار کن» در پنل سرِ جایش).
 //  ⛔ **پخشِ خاموش هر دو کانال را می‌بندد** (۱.۵۰.۳۱ سرِ جایش): در حالتِ
 //  «hold» هر دو همان «منتشرشده» را می‌بینند.
 //  ⚠️ نخستین بار پایدار همان تازه‌ترینِ امروز است — هیچ نصبی عقب نمی‌رود.
@@ -208,21 +215,34 @@ export function stableDays() {
   return Number.isFinite(n) && n >= 0 ? n : 7;
 }
 
-/** شمارِ گزارشِ کرشِ یک نسخه — یا null وقتی نشد پرسید. */
-export async function crashCountFor(version) {
+/** کمینهٔ دستگاه‌های واقعی روی نامزد (‎HLP_PUMP_STABLE_MIN_INSTALLS‎). */
+export function minInstalls() {
+  const n = Number(process.env.HLP_PUMP_STABLE_MIN_INSTALLS);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 3;
+}
+
+/**
+ * حالِ یک نسخه: ‎{ crashes, installs }‎ — یا null وقتی نشد پرسید.
+ * ‎installs‎ = دستگاه‌هایی که با همین نسخه همگام شده‌اند؛ ‎crashes‎ = گزارش‌های خطا.
+ */
+export async function versionHealth(version) {
   try {
     const file = process.env.HLP_PUMP_CRASHES_FILE;          // فقط آزمون
     if (file) {
       const m = await readJson(file);
       if (!m) return null;                                  // «سرورِ حساب نرسید»
-      const n = m[version] ?? m['*'] ?? 0;
-      return Number.isFinite(Number(n)) ? Number(n) : 0;
+      const v = m[version] ?? m['*'] ?? 0;
+      if (v && typeof v === 'object') {
+        return { crashes: Number(v.crashes) || 0, installs: Number(v.installs) || 0 };
+      }
+      return { crashes: Number.isFinite(Number(v)) ? Number(v) : 0, installs: 0 };
     }
     const { cloudRaw } = await import('../stations/cloud.js');
-    const out = await cloudRaw('GET', '/api/admin/sync/errors', { query: { app: 'pump', limit: 500 } });
-    const rows = Array.isArray(out?.errors) ? out.errors : null;
-    if (!rows) return null;
-    return rows.filter((e) => normalizeVersion(e.app_version) === version).length;
+    const out = await cloudRaw('GET', '/api/admin/sync/version-health', { query: { app: 'pump', version } });
+    const crashes = Number(out?.crashes);
+    const installs = Number(out?.installs);
+    if (!Number.isFinite(crashes) || !Number.isFinite(installs)) return null;
+    return { crashes, installs };
   } catch {
     return null;
   }
@@ -266,8 +286,16 @@ export async function advanceStable({ now = Date.now(), log = () => {} } = {}) {
   }
   const age = now - Date.parse(cand.since || iso);
   if (age < stableDays() * 86_400_000) return r;
-  const crashes = await crashCountFor(cand.version);
-  if (crashes === null) return r;                       // نپرسیدیم ⇒ پایدار نمی‌شود
+  const health = await versionHealth(cand.version);
+  if (health === null) return r;                        // نپرسیدیم ⇒ پایدار نمی‌شود
+  const { crashes, installs } = health;
+  if (crashes === 0 && installs < minInstalls()) {
+    //  ⛔ د۶: کسی هنوز نصبش نکرده ⇒ «بی کرش» معنایی ندارد؛ نامزد می‌ماند
+    if (cand.installs === installs && cand.crashes === 0) return r;
+    next.candidate = { ...cand, crashes: 0, installs };
+    log(`نسخهٔ ${cand.version} هنوز روی ${installs} دستگاه است (کمینه ${minInstalls()}) و پایدار نشد`);
+    return save();
+  }
   if (crashes === 0) {
     next.stablePrevious = r.stable; next.stable = cand.version; next.stableAt = iso; next.stableBy = 'auto';
     next.candidate = cur.version !== cand.version ? { version: cur.version, since: iso, crashes: 0 } : null;
@@ -277,7 +305,7 @@ export async function advanceStable({ now = Date.now(), log = () => {} } = {}) {
   //  کرش داشت ⇒ کنار، و تازه‌ترین نامزد (اگر همان است، می‌ماند و شمرده می‌شود)
   next.candidate = cur.version !== cand.version
     ? { version: cur.version, since: iso, crashes: 0 }
-    : { ...cand, crashes };
+    : { ...cand, crashes, installs };
   log(`نسخهٔ ${cand.version} ${crashes} گزارشِ کرش داشت و پایدار نشد`);
   return save();
 }
@@ -373,6 +401,7 @@ export async function status() {
     stableBy: r.stableBy,
     candidate: r.candidate,
     stableDays: stableDays(),
+    minInstalls: minInstalls(),
     repo: pumpRepo(),
     enabled: mirrorEnabled(),
     version: cur?.version || null,

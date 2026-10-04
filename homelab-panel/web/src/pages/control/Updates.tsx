@@ -523,7 +523,8 @@ type PumpRelease = {
   enabled: boolean; mode: 'auto' | 'hold'; version: string | null; served: string | null; previous: string | null;
   waiting: boolean; checkedAt: string | null; error: string | null; releaseAt: string | null; versions: PumpVersion[];
   stable?: string | null; stableAt?: string | null; stableDays?: number;
-  candidate?: { version: string; since: string | null; crashes: number } | null;
+  candidate?: { version: string; since: string | null; crashes: number; installs?: number } | null;
+  minInstalls?: number;
 };
 
 /**
@@ -577,7 +578,8 @@ function PumpReleaseCard() {
             {' · '}{st.candidate.since ? `از ${relative(Date.parse(st.candidate.since), 'fa')}` : ''}
             {st.candidate.crashes > 0
               ? <span style={{ color: 'var(--status-critical)' }}> · {st.candidate.crashes} گزارشِ کرش — پایدار نمی‌شود</span>
-              : <span className="text-ink-muted"> · پس از {st.stableDays ?? 7} روز بی کرش خودش پایدار می‌شود</span>}
+              : <span className="text-ink-muted"> · پس از {st.stableDays ?? 7} روز بی کرش و دستِ‌کم روی {st.minInstalls ?? 3} دستگاه خودش پایدار می‌شود
+                  {st.candidate.installs ? ` (تا حالا ${st.candidate.installs} دستگاه)` : ''}</span>}
           </KV>
         )}
         <KV label="تازه‌ترین نسخهٔ روی سرور" mono>{st.version || '—'}</KV>
