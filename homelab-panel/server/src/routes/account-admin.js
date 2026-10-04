@@ -902,6 +902,8 @@ router.post('/subs/:app/grant', money, guard(async (req, res) => {
   if (b.maxDevices) body.maxDevices = Number(b.maxDevices);
   if (b.graceDays !== undefined && b.graceDays !== null && b.graceDays !== '') body.graceDays = Number(b.graceDays);
   if (b.endsAt) body.endsAt = Number(b.endsAt);
+  //  شورا چ۳: کدِ تخفیف (و نمایندهٔ صاحبِ کد) — قیمتِ نهایی را سرورِ حساب از قیمتِ روزِ پلن می‌سازد
+  if (b.discountCode) body.discountCode = String(b.discountCode).trim().slice(0, 40);
   const out = await cloudRaw('POST', subsPath(app), { body });
   audit({ actor: actorOf(req), action: 'account.subscription.grant', entity: app, entityId: tenantId, detail: { plan: body.plan } });
   res.json({ ok: true, subscription: out.subscription || null, state: out.state || null });
@@ -1045,6 +1047,7 @@ router.get('/discount-codes', guard(async (req, res) => {
       app: scopeOf(req.query.app) === 'both' ? '' : scopeOf(req.query.app),
       status: String(req.query.status || '').slice(0, 20),
       limit: Math.min(1000, Math.max(1, Number(req.query.limit) || 200)),
+      repId: req.query.repId ? idOf(req.query.repId) : '',
     },
   }));
 }));
@@ -1063,6 +1066,8 @@ router.post('/discount-codes', money, guard(async (req, res) => {
       maxUses: b.maxUses === '' || b.maxUses === undefined || b.maxUses === null ? null : Number(b.maxUses),
       oncePerCustomer: b.oncePerCustomer !== false,
       note: String(b.note || '').slice(0, 200),
+      //  شورا چ۳: کدِ نماینده — سرورِ حساب می‌سنجد که نمایندهٔ فعالِ همین بخش است
+      repId: b.repId ? idOf(b.repId) : '',
     },
   });
   audit({ actor: actorOf(req), action: 'account.discount.create', entity: 'discount_code', entityId: out.code?.id || '', detail: { app: out.code?.app, kind: out.code?.kind } });
@@ -1074,6 +1079,49 @@ router.post('/discount-codes/:id/revoke', guard(async (req, res) => {
   const out = await cloudRaw('POST', `/api/admin/discount-codes/${id}/revoke`);
   audit({ actor: actorOf(req), action: 'account.discount.revoke', entity: 'discount_code', entityId: id });
   res.json(out);
+}));
+
+/* ------------------------- نماینده‌های فروش (شورا چ۳) -------------------------
+ * ⛔ پل است، نه دفتر: نماینده، درصد و فروش‌هایش همه روی سرورِ حساب‌اند.
+ * ⛔ درصدِ کمیسیون فقط همین‌جا نوشته می‌شود و پیش‌فرض ندارد — هر چه مدیر نوشت
+ *    همان می‌رود (`commissionPct` خام، سنجشش دستِ سرورِ حساب).
+ * ⛔ ساختن و عوض کردن فقط `admin` (`money`) — پول است.
+ */
+router.get('/reps', guard(async (req, res) => {
+  const scope = scopeOf(req.query.app);
+  res.json(await cloudRaw('GET', '/api/admin/reps', { query: { app: scope === 'both' ? '' : scope } }));
+}));
+
+router.post('/reps', money, guard(async (req, res) => {
+  const b = req.body || {};
+  const out = await cloudRaw('POST', '/api/admin/reps', {
+    body: {
+      app: sectionOf(b.app || 'shop'),
+      email: String(b.email || '').trim().slice(0, 200),
+      name: String(b.name || '').slice(0, 120),
+      commissionPct: b.commissionPct === undefined || b.commissionPct === null ? '' : String(b.commissionPct).slice(0, 12),
+    },
+  });
+  audit({ actor: actorOf(req), action: 'account.rep.create', entity: 'sales_rep', entityId: out.rep?.id || '', detail: { app: out.rep?.app, pct: out.rep?.commissionPct } });
+  res.json(out);
+}));
+
+router.patch('/reps/:id', money, guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const b = req.body || {};
+  const body = {};
+  if (b.commissionPct !== undefined) body.commissionPct = String(b.commissionPct).slice(0, 12);
+  if (b.status === 'active' || b.status === 'disabled') body.status = b.status;
+  if (b.name !== undefined) body.name = String(b.name || '').slice(0, 120);
+  const out = await cloudRaw('PATCH', `/api/admin/reps/${id}`, { body });
+  audit({ actor: actorOf(req), action: 'account.rep.update', entity: 'sales_rep', entityId: id, detail: body });
+  res.json(out);
+}));
+
+router.get('/reps/:id/report', guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const n = (v) => (Number(v) > 0 ? Math.trunc(Number(v)) : '');
+  res.json(await cloudRaw('GET', `/api/admin/reps/${id}/report`, { query: { from: n(req.query.from), to: n(req.query.to) } }));
 }));
 
 /** سنجیدنِ یک کد پیش از دادنش — همان `quote`ی که خودِ برنامه می‌زند. */

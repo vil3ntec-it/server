@@ -117,6 +117,7 @@ const addons = [
 const priceHistory = [
   { id: 'pph1', app: 'shop', plan: 'm1', prevPrice: 400, price: 500, currency: 'AFN', changedAt: NOW - 10 * DAY, changedBy: 'a1' },
 ];
+const reps = [];                 // شورا چ۳
 const codes = [
   { id: 'dsc1', code: 'NOWRUZ', app: 'shop', plan: '', kind: 'percent', value: 20, currency: 'AFN', userId: '',
     expiresAt: NOW + 30 * DAY, maxUses: 100, oncePerCustomer: true, uses: 3, note: '', status: 'active', createdBy: 'a1', createdAt: NOW - DAY },
@@ -410,8 +411,31 @@ const fake = http.createServer((req, res) => {
       const want = u.searchParams.get('app') || '';
       return j(200, { codes: codes.filter((c) => !want || c.app === want) });
     }
+    //  شورا چ۳: نماینده‌ها — مثلِ سرورِ واقعی، درصد بی پیش‌فرض
+    if (p === '/api/admin/reps' && req.method === 'GET') {
+      const want = u.searchParams.get('app') || '';
+      return j(200, { reps: reps.filter((r) => !want || r.app === want) });
+    }
+    if (p === '/api/admin/reps' && req.method === 'POST') {
+      if (body.commissionPct === undefined || body.commissionPct === '') return j(400, { error: { code: 'commission_required', message: 'درصدِ کمیسیون را از پنل بنویسید' } });
+      const row = { id: `rep${reps.length + 1}`, app: body.app, email: body.email, name: body.name || '', commissionPct: Number(body.commissionPct), status: 'active', createdAt: NOW };
+      reps.push(row);
+      return j(201, { rep: row });
+    }
+    if ((m = /^\/api\/admin\/reps\/([^/]+)$/.exec(p)) && req.method === 'PATCH') {
+      const row = reps.find((r) => r.id === m[1]);
+      if (!row) return j(404, { error: { code: 'rep_not_found', message: 'نماینده پیدا نشد' } });
+      if (body.commissionPct !== undefined) row.commissionPct = Number(body.commissionPct);
+      if (body.status) row.status = body.status;
+      return j(200, { rep: row });
+    }
+    if ((m = /^\/api\/admin\/reps\/([^/]+)\/report$/.exec(p)) && req.method === 'GET') {
+      const row = reps.find((r) => r.id === m[1]);
+      return j(200, { rep: row, totals: { count: 1, customers: 1, byCurrency: [{ currency: 'AFN', count: 1, sales: 450, commission: 45 }] },
+        sales: [{ id: 'dsu1', app: 'shop', code: 'REP10', customer: 'دکانِ الف', plan: 'm1', finalPrice: 450, currency: 'AFN', commissionPct: 10, commission: 45, at: NOW }] });
+    }
     if (p === '/api/admin/discount-codes' && req.method === 'POST') {
-      const row = { id: `dsc${codes.length + 1}`, code: body.code || 'AUTO-1', app: body.app, plan: body.plan || '', kind: body.kind, value: body.value, currency: body.app === 'pump' ? 'USD' : 'AFN', userId: body.userId || '', expiresAt: body.expiresAt || null, maxUses: body.maxUses, oncePerCustomer: body.oncePerCustomer, uses: 0, note: body.note || '', status: 'active', createdBy: 'a1', createdAt: NOW };
+      const row = { id: `dsc${codes.length + 1}`, code: body.code || 'AUTO-1', app: body.app, repId: body.repId || '', plan: body.plan || '', kind: body.kind, value: body.value, currency: body.app === 'pump' ? 'USD' : 'AFN', userId: body.userId || '', expiresAt: body.expiresAt || null, maxUses: body.maxUses, oncePerCustomer: body.oncePerCustomer, uses: 0, note: body.note || '', status: 'active', createdBy: 'a1', createdAt: NOW };
       codes.push(row);
       return j(201, { code: row });
     }
@@ -902,6 +926,10 @@ try {
       && last()?.body?.stationId === 'st1' && last()?.body?.shopId === undefined, JSON.stringify(last()?.body));
   const grantShop = await api('POST', '/api/account-admin/subs/shop/grant', { tenantId: 's2', plan: 'm1' }, auth);
   check('اشتراکِ دکان با ‎shopId‎', grantShop.status === 200 && last()?.path === '/api/admin/subscriptions' && last()?.body?.shopId === 's2');
+  //  شورا چ۳: کدِ تخفیف (و نمایندهٔ صاحبش) با «اشتراک بده» می‌رود؛ قیمت را سرورِ حساب می‌سازد
+  const grantCode = await api('POST', '/api/account-admin/subs/shop/grant', { tenantId: 's2', plan: 'm1', discountCode: ' REP10 ' }, auth);
+  check('کدِ تخفیف همراهِ «اشتراک بده» به سرورِ حساب می‌رسد — بی هیچ قیمتی از پنل',
+    grantCode.status === 200 && last()?.body?.discountCode === 'REP10' && last()?.body?.price === undefined, JSON.stringify(last()?.body));
 
   const { addPeriod } = await import('../src/routes/account-admin.js');
   const pumpEnd = pumpSubs.find((s) => s.id === 90).ends_at;
@@ -962,6 +990,34 @@ try {
       && last()?.body?.discount?.value === 20, JSON.stringify(last()?.body));
   const campStats = await api('GET', `/api/account-admin/campaigns/${campNew.json?.campaign?.id}/stats`, undefined, auth);
   check('گزارشِ کمپین عدد می‌دهد، نه حدس', campStats.status === 200 && campStats.json?.codeUses === 1 && campStats.json?.renewed === 1);
+
+  console.log('\n── نماینده‌های فروش (شورا چ۳) ──');
+  const repNoPct = await api('POST', '/api/account-admin/reps', { app: 'shop', email: 'rep@x.af' }, auth);
+  check('⛔ نمایندهٔ بی درصد ساخته نمی‌شود — پیش‌فرضی در پنل نیست',
+    repNoPct.status === 400 && repNoPct.json?.error === 'commission_required' && last()?.body?.commissionPct === '',
+    `${repNoPct.status} ${JSON.stringify(repNoPct.json)} ${JSON.stringify(last()?.body)}`);
+  const repNew = await api('POST', '/api/account-admin/reps', { app: 'pump', email: ' rep@x.af ', name: 'علی', commissionPct: 7.5 }, auth);
+  check('نمایندهٔ تازه با همان درصدی که مدیر نوشت می‌رود',
+    repNew.status === 200 && last()?.body?.commissionPct === '7.5' && last()?.body?.app === 'pump' && last()?.body?.email === 'rep@x.af',
+    JSON.stringify(last()?.body));
+  const repId = repNew.json?.rep?.id;
+  const repList = await api('GET', '/api/account-admin/reps?app=pump', undefined, auth);
+  check('فهرستِ نماینده‌ها با بخشِ خودش', repList.status === 200 && repList.json?.reps?.length === 1 && last()?.query?.app === 'pump');
+  const repPatch = await api('PATCH', `/api/account-admin/reps/${repId}`, { commissionPct: 12, status: 'disabled', evil: 'x' }, auth);
+  check('عوض کردنِ درصد و حال — و هیچ کلیدِ دیگری نمی‌رود',
+    repPatch.status === 200 && last()?.method === 'PATCH' && last()?.body?.commissionPct === '12'
+      && last()?.body?.status === 'disabled' && !('evil' in (last()?.body || {})), JSON.stringify(last()?.body));
+  const repRep = await api('GET', `/api/account-admin/reps/${repId}/report?from=5&to=x`, undefined, auth);
+  check('گزارشِ نماینده عددش از خودِ سرورِ حساب می‌آید',
+    repRep.status === 200 && repRep.json?.totals?.byCurrency?.[0]?.commission === 45 && last()?.query?.from === '5' && !last()?.query?.to,
+    JSON.stringify(last()?.query));
+  const repCode = await api('POST', '/api/account-admin/discount-codes', { app: 'pump', kind: 'percent', value: 10, code: 'REP10', repId }, auth);
+  check('کدِ تخفیفِ نماینده با شناسهٔ نماینده می‌رود', repCode.status === 200 && last()?.body?.repId === repId, JSON.stringify(last()?.body));
+  const repSeen = seen.length;
+  const badRep = await api('POST', '/api/account-admin/discount-codes', { app: 'pump', kind: 'percent', value: 10, repId: '../x' }, auth);
+  check('⛔ شناسهٔ بدشکلِ نماینده به سرورِ حساب نمی‌رسد', badRep.status === 400 && seen.length === repSeen, `${badRep.status} ${seen.length - repSeen}`);
+  const unknownRep = await api('GET', `/api/account-admin/reps/${repId}/delete`, undefined, auth);
+  check('⛔ زیرِ /reps هر مسیرِ نانوشته ۴۰۴ — فهرستِ سفید', unknownRep.status === 404);
 
   console.log('\n── مرکزِ اعلان ──');
   const tpl = await api('GET', '/api/account-admin/notice-templates', undefined, auth);
@@ -1243,6 +1299,9 @@ try {
     //  ⛔ نمایشِ کد هم فقط admin — operator با همان نشستِ سالم رد می‌شود
     const oReveal = await api('POST', '/api/account-admin/logins/req1/reveal', {}, oAuth);
     check('⛔ نمایشِ کد فقط برای admin است', oReveal.status === 403, String(oReveal.status));
+    //  شورا چ۳: نماینده و درصدِ کمیسیون پول است — فقط admin
+    const oRep = await api('POST', '/api/account-admin/reps', { app: 'shop', email: 'x@y.af', commissionPct: 5 }, oAuth);
+    check('⛔ ساختنِ نماینده و درصدِ کمیسیون فقط admin', oRep.status === 403, String(oRep.status));
     /*
      *  ⛔ و آینهٔ میزِ کدها همان مرز را دارد: فهرست برای operator باز است
      *  (شمارِ کدها راز نیست) ولی **خودِ کد** نه. بی این بند، اصلاحِ

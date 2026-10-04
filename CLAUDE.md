@@ -2802,3 +2802,23 @@ release.json: stable · stablePrevious · candidate {version, since, crashes}
   (`POST /api/pump-updates-admin/stable`، فقط مدیر، در دفترِ ممیزی).
 - ⚠️ `HLP_PUMP_STABLE_DAYS` و `HLP_PUMP_CRASHES_FILE` فقط برای آزمون‌اند.
 - آزمون: بخشِ ۷ی `test/pump-mirror.mjs` (۶۲ بند).
+
+## 🧑‍💼 شورا، چ۳ — نماینده‌های فروش (از ۱۴۰۵/۰۷/۲۰، نسخهٔ ۱.۵۰.۳۴)
+
+«نقشِ نماینده در سرورِ حساب و پنل: کدِ تخفیفِ هر نماینده، فروش‌های او، و گزارشِ
+کمیسیون (درصد از پنل). نماینده فقط مشتری‌های خودش را می‌بیند.» منطق روی سرورِ
+حساب است (ریپوی `shop` ⇒ `lib/sales-reps.js`، ۲.۱۱.۱۸)؛ این‌جا فقط پل و صفحه:
+
+```
+/subscriptions?tab=reps  ⇒ GET/POST /api/account-admin/reps · PATCH /reps/:id · GET /reps/:id/report
+«اشتراک بده» + کدِ تخفیف (discountCode) ⇒ فروشِ همان نماینده
+خودِ نماینده ⇒ پورتالِ سرورِ حساب ← «نمایندگی» (/api/rep/me، از درگاهِ همین پنل)
+```
+
+- ⛔ **درصدِ کمیسیون پیش‌فرض ندارد** — کادر خالی باز می‌شود و پل `''` می‌فرستد تا
+  سرورِ حساب `commission_required` بدهد. ساختن و عوض کردن فقط `admin` (`money`).
+- ⛔ **پل است، نه دفتر**: نماینده، درصد و فروش همه روی سرورِ حساب؛ هیچ عددی در
+  پنل حساب نمی‌شود. فهرستِ سفید: زیرِ `/reps` هر مسیرِ نانوشته ۴۰۴.
+- ⛔ **`rep` در `ACCOUNT_PREFIXES`** — همان قاعدهٔ «پیشوندِ تازه در `apiRouter` ⇒ همین‌جا».
+- آزمون: بخشِ «نماینده‌های فروش» در `account-admin.mjs` (۲۳۶ سبز) و
+  `/subscriptions?tab=reps` در `control-ui.mjs` (۱۱۳ بند).

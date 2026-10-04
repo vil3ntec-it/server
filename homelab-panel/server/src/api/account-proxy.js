@@ -62,7 +62,7 @@ export const ACCOUNT_PREFIXES = Object.freeze([
   'health', 'ready', 'config', 'plans', 'terms',
   'auth', 'location', 'me', 'shop', 'pump', 'events', 'sync', 'errors',
   'admin', 'license', 'support', 'visit', 'vip', 'billing',
-  'portal', 'downloads',
+  'portal', 'downloads', 'rep',
 ]);
 
 /** زیرِ ‎/api/v1‎ این‌ها مالِ خودِ این سرورند و هرگز رد نمی‌شوند. */
