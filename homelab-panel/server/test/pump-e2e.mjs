@@ -742,6 +742,160 @@ try {
       check('⛔ و برنامهٔ پمپ همان لحظه قابلیتِ پولی را از دست داد',
         !(lic.json?.features || []).includes('kar_app'), JSON.stringify(lic.json?.features || []).slice(0, 160));
     }
+
+    // ── ۸د) سه پلن، روی سرورِ حسابِ واقعی — همان دری که برنامه می‌زند ─────
+    //
+    //  خواستهٔ صاحب سامانه (۱۴۰۵/۰۷/۲۰): استاندارد «اصلن به سرور وصل نشه
+    //  ولی از سرور اشتراک بتونه دریافت کنه»؛ وی‌آی‌پی «همه رو داشته باشه»؛
+    //  دائمی همه‌چیز، ولی «خدماتشو از سرور بشه تمدید کرد» — سالِ اول رایگان.
+    //
+    //  ⛔ ملاک هم فهرستِ `feat`ِ **مجوزِ امضاشده** است (همان که قفل‌های
+    //  برنامه از آن باز و بسته می‌شوند) و هم پاسخِ **خودِ درهای سرور** —
+    //  یعنی پلنِ استاندارد نه فقط در برنامه بسته است، روی سرور هم.
+    console.log('\n── ۸د) سه پلن: استاندارد بی‌سرور · وی‌آی‌پی همه · دائمی با خدماتِ ساله ──');
+    {
+      const ONLINE = ['kar_app', 'bot', 'messenger', 'cloud', 'cloudbackup'];
+      const payload = (tok) => {
+        try { return JSON.parse(Buffer.from(String(tok).split('.')[1], 'base64url').toString('utf8')); }
+        catch { return null; }
+      };
+      const license = async () => {
+        const r = await call('POST', '/api/pump/device/license', { token: devTok, body: {} });
+        return { r, p: payload(r.json?.license || '') };
+      };
+      const grantPlan = (plan) => panel('POST', '/api/account-admin/subs/pump/grant',
+        { tenantId: target?.tenantId, plan });
+      const noServices = (r) => r.status === 403 && r.json?.error?.code === 'plan_no_services';
+      //  هر پنج درِ «خدماتِ سرور» که برنامه می‌زند
+      const doors = async () => ({
+        state: await call('POST', '/api/pump/device/state', { token: devTok, body: { alerts: [], tank: {} } }),
+        backups: await call('POST', '/api/pump/device/backups', { token: devTok, body: {} }),
+        events: await call('POST', '/api/pump/device/events',
+          { token: devTok, body: { events: [{ clientId: 'p' + Date.now(), kind: 'debt_out', title: 'سنجهٔ پلن' }] } }),
+        //  همان شکلِ ‎CloudLink.Sync.Wire‎ — یک ردیفِ واقعی، نه فهرستِ خالی
+        push: await call('POST', '/api/sync/v1/push', {
+          token: devTok,
+          body: {
+            device_id: uid, schema_version: 1, queued: 1,
+            ops: [{ op_id: crypto.randomUUID(), table: 'SafeEntry', row_id: 'PLAN' + crypto.randomBytes(6).toString('hex'),
+              type: 'insert', ts: Date.now(), fields: { Title: 'سنجهٔ پلن', Amount: '1', MonthKey: '1405-07' } }],
+          },
+        }),
+        pull: await call('GET', `/api/sync/v1/pull?device_id=${encodeURIComponent(uid + '-B')}&since=0&limit=10`, { token: devTok }),
+      });
+      const show = (d) => Object.entries(d).map(([k, r]) => `${k}=${r.status}${r.json?.error?.code ? ':' + r.json.error.code : ''}`).join(' ');
+
+      // ── استاندارد ──
+      const gs = await grantPlan('std');
+      check('اشتراکِ «استاندارد» از پنل داده شد', gs.status === 200, `${gs.status} ${gs.text.slice(0, 200)}`);
+      const s = await license();
+      const sf = s.p?.feat || [];
+      check('استاندارد: مجوزِ امضاشده از سرور می‌رسد (اشتراک را می‌گیرد)',
+        s.r.status === 200 && s.p?.plan === 'std', `${s.r.status} plan=${s.p?.plan} ${s.r.text.slice(0, 160)}`);
+      check('استاندارد: داشبورد و تاریخچه باز (در مجوز)',
+        sf.includes('dashboard') && sf.includes('history'), JSON.stringify(sf));
+      check('⛔ استاندارد: هیچ قابلیتِ سرور در مجوز نیست (کیو‌آر، اپ، بات، پیام‌رسان، بکاپِ سرور)',
+        !ONLINE.some((k) => sf.includes(k)), JSON.stringify(sf));
+      check('⛔ استاندارد: مفاد/ضرر در مجوز نیست (برنامه تارش می‌کند)', !sf.includes('profit'), JSON.stringify(sf));
+      const sd = await doors();
+      check('⛔ استاندارد: هر پنج درِ سرور (عکسِ زنده، بکاپ، خبر، همگام‌سازیِ فرستادن و گرفتن) ۴۰۳ plan_no_services',
+        Object.values(sd).every(noServices), show(sd));
+
+      // ── وی‌آی‌پی ──
+      const gv = await grantPlan('vip');
+      check('اشتراکِ «وی‌آی‌پی» از پنل داده شد', gv.status === 200, `${gv.status} ${gv.text.slice(0, 200)}`);
+      const v = await license();
+      const vf = v.p?.feat || [];
+      check('وی‌آی‌پی: همهٔ قابلیت‌های سرور و مفاد/ضرر در مجوز',
+        v.p?.plan === 'vip' && ONLINE.every((k) => vf.includes(k)) && vf.includes('profit'), `plan=${v.p?.plan} ${JSON.stringify(vf)}`);
+      check('وی‌آی‌پی: مهرِ خدماتِ جدا ندارد (بی‌محدودیت تا پایانِ اشتراک)', !Number(v.p?.svc_ends || 0), `svc_ends=${v.p?.svc_ends}`);
+      const vd = await doors();
+      check('وی‌آی‌پی: هیچ درِ سروری بسته نیست', !Object.values(vd).some(noServices), show(vd));
+      check('وی‌آی‌پی: عکسِ زنده، خبر و همگام‌سازی واقعاً نشستند (۲۰۰/۲۰۱)',
+        [vd.state, vd.events, vd.push, vd.pull].every((r) => r.status === 200 || r.status === 201)
+        && Number(vd.push.json?.applied) === 1, show(vd));
+
+      // ── دائمی ──
+      const gp = await grantPlan('perm');
+      check('اشتراکِ «دائمی» از پنل داده شد', gp.status === 200, `${gp.status} ${gp.text.slice(0, 200)}`);
+      const permId = gp.json?.subscription?.id || '';
+      const p1 = await license();
+      const pf = p1.p?.feat || [];
+      const year = Date.now() + 365 * 86400000;
+      const svc = Number(p1.p?.svc_ends || 0);
+      check('دائمی: همه‌چیز در مجوز (همهٔ خدماتِ سرور و مفاد/ضرر)',
+        p1.p?.plan === 'perm' && ONLINE.every((k) => pf.includes(k)) && pf.includes('profit'), `plan=${p1.p?.plan} ${JSON.stringify(pf)}`);
+      check('دائمی: سالِ اول خدمات رایگان — پایانِ خدمات حدودِ یک سال دیگر',
+        Math.abs(svc - year) < 3 * 86400000, `svc_ends=${svc ? new Date(svc).toISOString() : svc}`);
+      const ps = (await panel('GET', '/api/account-admin/customers?app=pump&limit=500')).json?.subscriptions || [];
+      const prow = ps.find((r) => String(r.id) === String(permId));
+      check('دائمی: پنل «خدماتِ سرور تا» را نشان می‌دهد',
+        Math.abs(Number(prow?.servicesUntil || 0) - year) < 3 * 86400000, JSON.stringify(prow || {}).slice(0, 220));
+      const pd = await doors();
+      check('دائمی (خدمات فعال): هیچ درِ سروری بسته نیست', !Object.values(pd).some(noServices), show(pd));
+
+      //  مدیر خدمات را قطع می‌کند ⇒ همه‌چیزِ برنامه باز، ولی سرور نه
+      const cut = await panel('POST', `/api/account-admin/subs/pump/${encodeURIComponent(permId)}/services`,
+        { until: Date.now() - 60000 });
+      check('پنل: «قطعِ خدمات» پذیرفته شد', cut.status === 200, `${cut.status} ${cut.text.slice(0, 200)}`);
+      const p2 = await license();
+      const pf2 = p2.p?.feat || [];
+      check('⛔ دائمی با خدماتِ تمام‌شده: هیچ قابلیتِ سرور در مجوز نیست',
+        !ONLINE.some((k) => pf2.includes(k)), JSON.stringify(pf2));
+      check('⛔ ولی بقیهٔ برنامه بی‌محدودیت می‌ماند (مفاد/ضرر، داشبورد، تاریخچه)',
+        p2.r.status === 200 && ['profit', 'dashboard', 'history'].every((k) => pf2.includes(k)), JSON.stringify(pf2));
+      const pd2 = await doors();
+      check('⛔ دائمی با خدماتِ تمام‌شده: هر پنج درِ سرور ۴۰۳ plan_no_services', Object.values(pd2).every(noServices), show(pd2));
+
+      //  تمدیدِ یک‌ماهه از پنل ⇒ همان لحظه برمی‌گردد
+      const ext = await panel('POST', `/api/account-admin/subs/pump/${encodeURIComponent(permId)}/services`,
+        { amount: 1, unit: 'month' });
+      check('پنل: «تمدیدِ خدمات یک ماه» پذیرفته شد', ext.status === 200, `${ext.status} ${ext.text.slice(0, 200)}`);
+      const p3 = await license();
+      const svc3 = Number(p3.p?.svc_ends || 0);
+      check('دائمی پس از تمدید: قابلیت‌های سرور همان لحظه برگشتند',
+        ONLINE.every((k) => (p3.p?.feat || []).includes(k)), JSON.stringify(p3.p?.feat || []));
+      check('و پایانِ خدمات حدودِ یک ماه دیگر است (۲۸ تا ۳۲ روز)',
+        svc3 > Date.now() + 27 * 86400000 && svc3 < Date.now() + 32 * 86400000, `svc_ends=${svc3 ? new Date(svc3).toISOString() : svc3}`);
+      const pd3 = await doors();
+      check('دائمی پس از تمدید: درهای سرور دوباره بازند', !Object.values(pd3).some(noServices), show(pd3));
+
+      //  مدتِ دلخواه با تاریخ
+      const until = Date.now() + 200 * 86400000;
+      const custom = await panel('POST', `/api/account-admin/subs/pump/${encodeURIComponent(permId)}/services`, { until });
+      const p4 = await license();
+      check('پنل: «تا تاریخِ دلخواه» همان تاریخ را روی مجوز می‌نشاند',
+        custom.status === 200 && Math.abs(Number(p4.p?.svc_ends || 0) - until) < 86400000,
+        `${custom.status} svc_ends=${p4.p?.svc_ends}`);
+
+      //  ⛔ از دائمی به وی‌آی‌پی: یک دورهٔ وی‌آی‌پیِ تازه از امروز — نه وی‌آی‌پیِ
+      //  پنجاه‌ساله‌ای که سرور «دائمی» بخواندش و یک سال بعد خدماتش را ببرد.
+      const gv2 = await grantPlan('vip');
+      const vipId = gv2.json?.subscription?.id || '';
+      const vEnd = Number(gv2.json?.subscription?.ends_at || 0);
+      check('⛔ دائمی ⇒ وی‌آی‌پی: پایانِ اشتراک یک سال از امروز است، نه از ۲۰۷۹',
+        gv2.status === 200 && vEnd > Date.now() + 360 * 86400000 && vEnd < Date.now() + 370 * 86400000,
+        `${gv2.status} ends_at=${vEnd ? new Date(vEnd).toISOString() : vEnd}`);
+      const v2 = await license();
+      check('⛔ و وی‌آی‌پی هیچ مهرِ خدماتی ندارد (همهٔ خدمات تا پایانِ اشتراک)',
+        !Number(v2.p?.svc_ends || 0) && ONLINE.every((k) => (v2.p?.feat || []).includes(k)),
+        `svc_ends=${v2.p?.svc_ends} ${JSON.stringify(v2.p?.feat || [])}`);
+      //  و دکمهٔ خدمات فقط مالِ دائمی است
+      const notPerm = await panel('POST', `/api/account-admin/subs/pump/${encodeURIComponent(vipId)}/services`,
+        { amount: 1, unit: 'month' });
+      check('⛔ «خدماتِ سرور» روی اشتراکِ غیرِدائمی پذیرفته نمی‌شود',
+        notPerm.status === 400, `${notPerm.status} ${notPerm.text.slice(0, 200)}`);
+
+      //  «دائمی کن» روی همان وی‌آی‌پی ⇒ پلن «دائمی» و سالِ اولِ خدماتِ رایگان
+      const mk = await panel('POST', `/api/account-admin/subs/pump/${encodeURIComponent(vipId)}/permanent`);
+      const p5 = await license();
+      const svc5 = Number(p5.p?.svc_ends || 0);
+      check('«دائمی کن» روی وی‌آی‌پی ⇒ پلنِ مجوز «دائمی» می‌شود',
+        mk.status === 200 && p5.p?.plan === 'perm', `${mk.status} plan=${p5.p?.plan} ${mk.text.slice(0, 160)}`);
+      check('و سالِ اولِ خدماتِ رایگان از همین لحظه',
+        Math.abs(svc5 - (Date.now() + 365 * 86400000)) < 3 * 86400000,
+        `svc_ends=${svc5 ? new Date(svc5).toISOString() : svc5}`);
+    }
   }
 
   // ── ۹) فهرستِ سفید، از خودِ shop خوانده می‌شود ───────────────────────────
