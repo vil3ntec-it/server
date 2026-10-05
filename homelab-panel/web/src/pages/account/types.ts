@@ -21,6 +21,8 @@ export type SubRow = {
   endsAt: number;
   daysLeft: number;
   permanent: boolean;
+  /** پمپِ دائمی: پایانِ خدماتِ سرور (۰ ⇒ محدودیتی نیست) — سرورِ حساب ۲.۱۱.۲۳ */
+  servicesUntil?: number;
   price: number | null;
   currency: string;
   paid: number;

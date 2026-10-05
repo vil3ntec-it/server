@@ -339,6 +339,9 @@ const fake = http.createServer((req, res) => {
     if ((m = /^\/api\/admin(\/pump)?\/subscriptions\/([^/]+)\/permanent$/.exec(p)) && req.method === 'POST') {
       return j(200, { subscription: { id: m[2], plan: 'perm', app: m[1] ? 'pump' : 'shop' }, state: { active: true }, permanent: true });
     }
+    if ((m = /^\/api\/admin\/pump\/subscriptions\/([^/]+)\/services$/.exec(p)) && req.method === 'POST') {
+      return j(200, { subscription: { id: m[1] }, servicesUntil: body.until ?? (NOW + 365 * DAY), previous: NOW });
+    }
     if ((m = /^\/api\/admin(\/pump)?\/subscriptions\/([^/]+)\/discount$/.exec(p)) && req.method === 'POST') {
       return j(200, { subscription: { id: m[2] }, price: 500, finalPrice: 400, savings: 100, state: { active: true } });
     }
@@ -949,6 +952,18 @@ try {
   await api('POST', '/api/account-admin/subs/pump/90/status', { status: 'active' }, auth);
   const perm = await api('POST', '/api/account-admin/subs/shop/7/permanent', {}, auth);
   check('دائمی', perm.status === 200 && perm.json?.permanent === true && last()?.path === '/api/admin/subscriptions/7/permanent');
+  //  ⛔ خدماتِ سرورِ دائمیِ پمپ (۱۴۰۵/۰۷/۲۰) — فقط دو شکلِ بدنه، فقط پمپ
+  const svcY = await api('POST', '/api/account-admin/subs/pump/90/services', { amount: 1, unit: 'year', plan: 'vip', features: ['cloud'] }, auth);
+  check('تمدیدِ خدمات ⇒ همان مسیرِ پمپ با amount/unit و نه چیزِ دیگر',
+    svcY.status === 200 && last()?.path === '/api/admin/pump/subscriptions/90/services'
+      && last()?.body?.amount === 1 && last()?.body?.unit === 'year' && !('plan' in (last()?.body || {})) && !('features' in (last()?.body || {})),
+    JSON.stringify(last()?.body));
+  const svcU = await api('POST', '/api/account-admin/subs/pump/90/services', { until: NOW + 40 * DAY }, auth);
+  check('خدمات تا تاریخِ دلخواه', svcU.status === 200 && last()?.body?.until === NOW + 40 * DAY && !('amount' in (last()?.body || {})));
+  const beforeShopSvc = seen.length;
+  const svcShop = await api('POST', '/api/account-admin/subs/shop/7/services', { amount: 1, unit: 'year' }, auth);
+  check('⛔ خدماتِ جدا برای دکان نیست — و به سرورِ حساب هم نمی‌رسد',
+    svcShop.status === 400 && seen.length === beforeShopSvc, `${svcShop.status} ${seen.length - beforeShopSvc}`);
   const dsc = await api('POST', '/api/account-admin/subs/shop/7/discount', { percent: 30, reason: 'مشتریِ قدیمی' }, auth);
   check('تخفیفِ مستقیم با دلیل', dsc.status === 200 && dsc.json?.finalPrice === 400 && last()?.body?.reason === 'مشتریِ قدیمی', JSON.stringify(last()?.body));
 
@@ -1295,6 +1310,8 @@ try {
     const oAuth = { Authorization: `Bearer ${o.json?.token}` };
     const oWrite = await api('POST', '/api/account-admin/subscriptions/7/status', { status: 'active' }, oAuth);
     const oDisable = await api('POST', '/api/account-admin/shop-accounts/s1/disable', { disabled: true }, oAuth);
+    const oSvc = await api('POST', '/api/account-admin/subs/pump/90/services', { amount: 1, unit: 'year' }, oAuth);
+    check('⛔ تمدیدِ خدماتِ سرور پول است — فقط admin', oSvc.status === 403, `${oSvc.status}`);
     check('operator اشتراک می‌دهد ولی حساب نمی‌بندد (فقط admin)', oWrite.status === 200 && oDisable.status === 403, `${oWrite.status} ${oDisable.status}`);
     //  ⛔ نمایشِ کد هم فقط admin — operator با همان نشستِ سالم رد می‌شود
     const oReveal = await api('POST', '/api/account-admin/logins/req1/reveal', {}, oAuth);

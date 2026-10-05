@@ -955,6 +955,30 @@ router.post('/subs/:app/:id/permanent', money, guard(async (req, res) => {
   res.json(out);
 }));
 
+/**
+ * ⛔ خدماتِ سرورِ اشتراکِ **دائمیِ پمپ** — تمدید یا قطع (۱۴۰۵/۰۷/۲۰).
+ * «برای حساب‌های دائمی بشه خدمات رو فعال کرد برای یک سال یا ماه یا کاستم.»
+ * فقط پمپ؛ فقط دو شکلِ بدنه — ‎{amount, unit}‎ یا ‎{until}‎ — و هیچ چیزِ دیگری
+ * به سرورِ حساب نمی‌رود. قاعده آن‌جاست (‎lib/pump-services.js‎).
+ */
+router.post('/subs/:app/:id/services', money, guard(async (req, res) => {
+  const app = sectionOf(req.params.app);
+  if (app !== 'pump') {
+    const err = new Error('خدماتِ سرور فقط برای پمپ است');
+    err.code = 'bad_app';
+    err.status = 400;
+    throw err;
+  }
+  const id = idOf(req.params.id);
+  const b = req.body || {};
+  const body = b.until !== undefined && b.until !== null && b.until !== ''
+    ? { until: Number(b.until) }
+    : { amount: Number(b.amount), unit: String(b.unit || '') };
+  const out = await cloudRaw('POST', `${subsPath(app)}/${id}/services`, { body });
+  audit({ actor: actorOf(req), action: 'account.subscription.services', entity: 'subscription', entityId: id, detail: { app, ...body } });
+  res.json(out);
+}));
+
 /** تخفیفِ مستقیم روی همین یک اشتراک، با دلیل (بندِ ۱۱.۳.۲). */
 router.post('/subs/:app/:id/discount', money, guard(async (req, res) => {
   const app = sectionOf(req.params.app);
