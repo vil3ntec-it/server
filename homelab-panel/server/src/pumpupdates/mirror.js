@@ -259,6 +259,49 @@ export async function servedFor(channel = 'stable') {
   return served();
 }
 
+// ---------------------------------------------------------------------------
+//  🧪 کامپیوترهای آزمایشی (۱۴۰۵/۰۷/۲۱)
+//
+//  «نسخهٔ آزمایشی را دونه‌دونه دستی نصب می‌کنم؛ همین را توی برنامه آپدیت بشه،
+//  و اگر خواستم بعداً با روشن کردن به همه برود.»
+//
+//  فهرستِ کدِ چند پمپِ ثبت‌شده (کامپیوترهای خودِ مدیر)، در ‎testers.json‎ کنارِ
+//  ‎release.json‎. برنامهٔ پمپی که با **رمزِ برنامهٔ همان پمپ** (نه رمزِ خواندنِ
+//  کیو‌آر) بپرسد و کدش در این فهرست باشد، تازه‌ترین نسخهٔ سالمِ روی سرور
+//  (‎current()‎) را می‌گیرد — پخشِ خاموش و کانالِ پایدار برایش نیست.
+//  ⛔ بقیه — رمزِ غلط، رمزِ خواندن، پمپِ بیرونِ فهرست — مو‌به‌مو همان پاسخِ
+//  همیشگی را می‌گیرند، نه خطایی که بگوید کدام کد هست.
+//  ⛔ سنجیدنِ رمز کارِ درِ عمومی است (‎routes/pump-updates.js‎)؛ این‌جا فقط
+//  فهرست نگه داشته می‌شود.
+// ---------------------------------------------------------------------------
+export const MAX_TESTERS = 50;
+const TESTER_CODE = /^[a-z0-9_-]{1,48}$/;
+
+/** فهرستِ پمپ‌های آزمایشی. */
+export async function testerState() {
+  const t = (await readJson(path.join(mirrorDir(), 'testers.json'))) || {};
+  const codes = Array.isArray(t.codes) ? t.codes.filter((c) => typeof c === 'string' && TESTER_CODE.test(c)) : [];
+  return { codes: [...new Set(codes)].slice(0, MAX_TESTERS), at: t.at || null, by: t.by || null };
+}
+
+export async function testers() { return (await testerState()).codes; }
+
+/** فهرست را عوض می‌کند (کدها پیش از این در روتر با دفترِ پمپ‌ها سنجیده شده‌اند). */
+export async function setTesters(codes, { by = null } = {}) {
+  if (!Array.isArray(codes)) throw Object.assign(new Error('bad_testers'), { status: 400 });
+  const clean = [...new Set(codes.map((c) => String(c || '').trim().toLowerCase()))];
+  if (clean.some((c) => !TESTER_CODE.test(c))) throw Object.assign(new Error('bad_station_code'), { status: 400 });
+  if (clean.length > MAX_TESTERS) throw Object.assign(new Error('too_many_testers'), { status: 400 });
+  await fsp.mkdir(mirrorDir(), { recursive: true });
+  await writeJsonAtomic(path.join(mirrorDir(), 'testers.json'), { codes: clean, at: new Date().toISOString(), by: by || 'admin' });
+  return testerState();
+}
+
+/** آن‌چه یک پمپِ آزمایشی می‌بیند: تازه‌ترین نسخهٔ سنجیده‌شده (یا null). */
+export async function servedForTester() {
+  return current();
+}
+
 /**
  * گامِ کانالِ پایدار — پس از هر دورِ آینه (حتی «چیزی عوض نشده»: زمان می‌گذرد).
  * ⛔ هیچ فایلی این‌جا دانلود یا پاک نمی‌شود؛ فقط ‎release.json‎.
@@ -415,6 +458,7 @@ export async function status() {
     releaseAt: r.at,
     releaseBy: r.by,
     waiting: !!(cur && out?.version !== cur.version && r.mode === 'hold'),
+    testers: (await testerState()).codes,
   };
 }
 
@@ -583,7 +627,7 @@ async function syncCore({ log = () => {} } = {}) {
  * (دانلودی که وسطِ انتشارِ تازه شروع شده نشکند). نسخهٔ نگه‌داشته فقط از درِ
  * پنل (`any: true`)، برای آزمودن روی کامپیوترِ خودِ مدیر.
  */
-export async function filePath(version, name, { any = false } = {}) {
+export async function filePath(version, name, { any = false, tester = false } = {}) {
   if (!normalizeVersion(version) || !SAFE_NAME.test(String(name || ''))) return null;
   if (name === 'manifest.json') return null;
   if (!any) {
@@ -595,6 +639,11 @@ export async function filePath(version, name, { any = false } = {}) {
     //  نسخهٔ تازه‌ترِ کنارگذاشته از این در بیرون نمی‌رود.
     if (r.previous && out && compareVersions(r.previous, out.version) < 0) allowed.add(r.previous);
     if (r.mode === 'auto' && r.stablePrevious && st && compareVersions(r.stablePrevious, st.version) < 0) allowed.add(r.stablePrevious);
+    //  🧪 پمپِ آزمایشیِ سنجیده‌شده (روتر رمزش را سنجیده) — فقط تازه‌ترین نسخه
+    if (tester) {
+      const t = await servedForTester();
+      if (t) allowed.add(t.version);
+    }
     if (!allowed.has(version)) return null;
   }
   const m = await manifestOf(version);

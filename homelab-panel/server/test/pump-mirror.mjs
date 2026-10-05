@@ -311,6 +311,83 @@ try {
   await call('POST', '/api/pump-updates-admin/mode', { mode: 'auto' });
   check('پخشِ روشن ⇒ پایدار دوباره همان پایدار', (await tagOf()) === 'v3.1.245');
 
+  console.log('\n── ۸) 🧪 پمپ‌های آزمایشی: نسخهٔ نگه‌داشته فقط به کامپیوترهای خودِ مدیر ──');
+  const enroll = async (code) => (await call('POST', '/api/stations/enroll', { code, name: 'پمپ ' + code })).body;
+  const A = await enroll('tst-a');            // کامپیوترِ آزمایشیِ مدیر
+  const B = await enroll('reg-b');            // پمپِ معمولیِ یک مشتری
+  check('دو پمپ ثبت شد (رمزِ برنامه و رمزِ خواندن)', A.token && A.readKey && B.token, JSON.stringify(A).slice(0, 200));
+  await call('POST', '/api/pump-updates-admin/mode', { mode: 'hold' });
+  const v8 = publish('3.1.246');
+  await runMirror();
+  const raw = async (u, h = {}) => { const r = await fetch(PUB + u, { headers: h }); return { status: r.status, text: await r.text(), buf: null }; };
+  const L = '/api/pump-updates/latest';
+  const anonL = await raw(L);
+  check('پخش خاموش: همه هنوز نسخهٔ منتشرشده را می‌بینند', JSON.parse(anonL.text).tag_name === 'v3.1.245', anonL.text.slice(0, 100));
+  const credA = { 'x-station-code': 'tst-a', 'x-station-token': A.token };
+  const preList = await raw(L, credA);
+  check('⛔ پیش از گذاشتن در فهرست، رمزِ درست هم همان پاسخِ همیشگی را می‌گیرد', preList.text === anonL.text);
+
+  //  نوشتنِ فهرست: بی ورود ⇒ ۴۰۱؛ کارگزار ⇒ ۴۰۳؛ کدِ نبوده ⇒ ۴۰۰
+  const noAuth = await fetch(`${BASE}/api/pump-updates-admin/testers`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ codes: ['tst-a'] }) });
+  check('بی ورود فهرست عوض نمی‌شود', noAuth.status === 401, noAuth.status);
+  await call('POST', '/api/auth/users', { username: 'op-tester', password: 'Operator-1405-tst', role: 'operator' });
+  const opTok = (await call('POST', '/api/auth/login', { username: 'op-tester', password: 'Operator-1405-tst' })).body?.token;
+  const opW = await fetch(`${BASE}/api/pump-updates-admin/testers`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${opTok}` }, body: JSON.stringify({ codes: ['tst-a'] }) });
+  check('⛔ کارگزار (نه مدیر) فهرست را عوض نمی‌کند', Boolean(opTok) && opW.status === 403, `${Boolean(opTok)} ${opW.status}`);
+  const unk = await call('POST', '/api/pump-updates-admin/testers', { codes: ['nobody-here'] });
+  check('کدِ پمپی که ثبت نشده رد می‌شود', unk.status === 400 && unk.body.error === 'unknown_station', JSON.stringify(unk.body));
+  const setT = await call('POST', '/api/pump-updates-admin/testers', { codes: ['tst-a'] });
+  check('مدیر پمپِ آزمایشی را گذاشت و پنل فهرست و پمپ‌ها را نشان می‌دهد', setT.status === 200
+    && JSON.stringify(setT.body.testers) === '["tst-a"]' && setT.body.stations?.some((x) => x.code === 'reg-b'), JSON.stringify(setT.body).slice(0, 300));
+  const auditRows = (await call('GET', '/api/control/audit?limit=50&action=pump_update.testers')).body;
+  check('در دفترِ ممیزی نشست', JSON.stringify(auditRows).includes('pump_update.testers'), JSON.stringify(auditRows).slice(0, 200));
+
+  const tA = await raw(L, credA);
+  const jA = JSON.parse(tA.text);
+  check('🧪 پمپِ آزمایشی با رمزِ برنامه‌اش تازه‌ترین نسخه را می‌گیرد، با نشانِ tester',
+    jA.tag_name === 'v3.1.246' && jA.tester === true, tA.text.slice(0, 120));
+  const tA1 = JSON.parse((await raw('/api/v1/pump-updates/latest', credA)).text);
+  check('همان از /api/v1 هم', tA1.tag_name === 'v3.1.246' && tA1.tester === true);
+  const tAstable = JSON.parse((await raw(L + '?channel=stable', credA)).text);
+  check('کانال برای پمپِ آزمایشی فرقی نمی‌کند', tAstable.tag_name === 'v3.1.246');
+  for (const [label, h] of [
+    ['رمزِ غلط', { 'x-station-code': 'tst-a', 'x-station-token': 'x'.repeat(A.token.length) }],
+    ['رمزِ خواندنِ کیو‌آر', { 'x-station-code': 'tst-a', 'x-station-token': A.readKey }],
+    ['پمپِ بیرونِ فهرست با رمزِ درستِ خودش', { 'x-station-code': 'reg-b', 'x-station-token': B.token }],
+    ['رمزِ پمپِ دیگر با کدِ آزمایشی', { 'x-station-code': 'tst-a', 'x-station-token': B.token }],
+    ['کدِ نبوده', { 'x-station-code': 'ghost', 'x-station-token': A.token }],
+    ['فقط کد', { 'x-station-code': 'tst-a' }],
+  ]) {
+    const r = await raw(L, h);
+    check(`⛔ ${label} ⇒ بایت‌به‌بایت همان پاسخِ همیشگی`, r.status === anonL.status && r.text === anonL.text, r.text.slice(0, 100));
+  }
+
+  const F = '/api/pump-updates/files/3.1.246/PumpYaqobi-Setup.exe';
+  const fA = await fetch(PUB + F, { headers: credA });
+  const fABuf = Buffer.from(await fA.arrayBuffer());
+  check('🧪 پمپِ آزمایشی نصابِ نسخهٔ تازه را بایت‌به‌بایت می‌گیرد', fA.status === 200 && fABuf.equals(v8['PumpYaqobi-Setup.exe']), fA.status);
+  const fSums = await fetch(PUB + '/api/pump-updates/files/3.1.246/SHA256SUMS.txt', { headers: credA });
+  check('…و چک‌سامش را', fSums.status === 200 && (await fSums.text()) === v8['SHA256SUMS.txt'].toString());
+  for (const [label, h] of [
+    ['بی رمز', {}],
+    ['رمزِ خواندن', { 'x-station-code': 'tst-a', 'x-station-token': A.readKey }],
+    ['پمپِ بیرونِ فهرست', { 'x-station-code': 'reg-b', 'x-station-token': B.token }],
+    ['رمزِ غلط', { 'x-station-code': 'tst-a', 'x-station-token': 'nope' }],
+  ]) {
+    check(`⛔ درِ فایل: ${label} ⇒ ۴۰۴`, (await fetch(PUB + F, { headers: h })).status === 404);
+  }
+  check('پمپِ آزمایشی نسخهٔ منتشرشده را هم می‌تواند بگیرد (دانلودِ وسطِ کار نمی‌شکند)',
+    (await fetch(PUB + '/api/pump-updates/files/3.1.245/PumpYaqobi-Setup.exe', { headers: credA })).status === 200);
+
+  const clr = await call('POST', '/api/pump-updates-admin/testers', { codes: [] });
+  check('فهرست خالی شد', clr.status === 200 && clr.body.testers.length === 0);
+  check('⛔ پس از برداشتن از فهرست، همان پمپ دوباره نسخهٔ منتشرشده را می‌بیند',
+    (await raw(L, credA)).text === anonL.text && (await fetch(PUB + F, { headers: credA })).status === 404);
+  await call('POST', '/api/pump-updates-admin/testers', { codes: ['tst-a'] });
+  await call('POST', '/api/pump-updates-admin/mode', { mode: 'auto' });
+  check('روشن کردنِ پخش ⇒ نسخهٔ تازه به همه می‌رسد (کانالِ آزمایشی)',
+    JSON.parse((await raw(L + '?channel=testing')).text).tag_name === 'v3.1.246');
+
   console.log('\n── ۶) فقط‌خواندنی ──');
   const post = await fetch(`${PUB}/api/pump-updates/latest`, { method: 'POST' });
   check('POST هیچ کاری نمی‌کند', post.status === 404);
