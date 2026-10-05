@@ -525,6 +525,7 @@ type PumpRelease = {
   stable?: string | null; stableAt?: string | null; stableDays?: number;
   candidate?: { version: string; since: string | null; crashes: number; installs?: number } | null;
   minInstalls?: number;
+  testers?: string[]; stations?: { code: string; name: string }[];
 };
 
 /**
@@ -589,9 +590,41 @@ function PumpReleaseCard() {
       {!st.enabled && <Notice tone="warn">آینهٔ آپدیتِ پمپ روی این نصب خاموش است.</Notice>}
       {st.waiting && (
         <Notice tone="warn">
-          نسخهٔ {st.version} روی سرور آماده است ولی به هیچ برنامه‌ای نرفته. نصابش را پایین بگیرید و روی کامپیوترِ خودتان آزمایش کنید؛ درست بود «انتشار» را بزنید.
+          نسخهٔ {st.version} روی سرور آماده است ولی به هیچ برنامه‌ای نرفته
+          {(st.testers?.length ?? 0) > 0 ? ' — جز پمپ‌های آزمایشیِ پایین، که خودشان از داخلِ برنامه می‌گیرندش' : ''}.
+          {' '}درست بود «انتشار» را بزنید.
         </Notice>
       )}
+
+      {/* 🧪 پمپ‌های آزمایشی (۱۴۰۵/۰۷/۲۱): تازه‌ترین نسخه از درونِ برنامه، فقط به همین‌ها */}
+      <div className="mt-3 rounded-xl border border-line p-2.5">
+        <p className="text-sm font-medium">🧪 کامپیوترهای آزمایشی</p>
+        <p className="mt-1 text-[11px] text-ink-muted">
+          پمپ‌های تیک‌خورده تازه‌ترین نسخهٔ روی سرور را از به‌روزرسانیِ خودِ برنامه می‌گیرند — حتی وقتی پخش خاموش است. بقیه همان نسخهٔ منتشرشده را می‌بینند.
+        </p>
+        <div className="mt-2 flex flex-wrap gap-3">
+          {(st.stations || []).map((p) => {
+            const on = (st.testers || []).includes(p.code);
+            return (
+              <label key={p.code} className="flex items-center gap-1.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={on}
+                  disabled={!!busy}
+                  onChange={() => {
+                    const cur = st.testers || [];
+                    const next = on ? cur.filter((c) => c !== p.code) : [...cur, p.code];
+                    act('testers', '/api/pump-updates-admin/testers', { codes: next },
+                      on ? `${p.name} دیگر آزمایشی نیست` : `${p.name} آزمایشی شد — نسخهٔ تازه از داخلِ برنامه می‌رسد`);
+                  }}
+                />
+                {p.name} <span className="font-mono text-[11px] text-ink-muted" dir="ltr">{p.code}</span>
+              </label>
+            );
+          })}
+          {!(st.stations || []).length && <span className="text-sm text-ink-muted">هنوز هیچ پمپی به این سرور وصل نشده.</span>}
+        </div>
+      </div>
 
       <ul className="mt-3 space-y-2">
         {st.versions.map((v) => {

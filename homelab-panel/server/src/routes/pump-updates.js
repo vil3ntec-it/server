@@ -9,17 +9,42 @@
 //  روی همان نشانی‌ای که از آن پرسیده می‌نشاند، پس این سرور لازم نیست بداند از
 //  بیرون با چه دامنه‌ای دیده می‌شود.
 //  ⛔ هیچ نوشتنی این‌جا نیست، و هیچ چیزی از درخواست بی سنجش به مسیر نمی‌رسد.
+//
+//  🧪 پمپِ آزمایشی (۱۴۰۵/۰۷/۲۱): برنامه‌ای که ‎X-Station-Code‎ + ‎X-Station-Token‎
+//  (رمزِ **برنامهٔ** همان پمپ در سرورِ خانگی) بفرستد و کدش در فهرستِ آزمایشیِ
+//  پنل باشد، تازه‌ترین نسخهٔ سنجیده‌شده را می‌گیرد، با ‎tester: true‎.
+//  ⛔ رمزِ غلط، رمزِ خواندن (کیو‌آر) یا پمپِ بیرونِ فهرست ⇒ مو‌به‌مو همان پاسخِ
+//  همیشگی — هیچ خطایی که بگوید کدام کد هست یا رمز غلط است.
 // ---------------------------------------------------------------------------
 import { Router } from 'express';
-import { servedFor, releaseState, filePath } from '../pumpupdates/mirror.js';
+import { servedFor, releaseState, filePath, testers, servedForTester } from '../pumpupdates/mirror.js';
+import { getStations } from '../state.js';
+import { safeCode } from '../stations/index.js';
 
 const router = Router();
+
+/** این درخواست از یک پمپِ آزمایشی است؟ (رمزِ برنامهٔ همان پمپ، نه رمزِ خواندن) */
+async function isTester(req) {
+  try {
+    const code = safeCode(req.get('x-station-code'));
+    const token = String(req.get('x-station-token') || '').trim();
+    if (!code || !token) return false;
+    const stations = getStations();
+    if (!stations) return false;
+    //  ⛔ اول رمز (زمان‌ثابت)، بعد فهرست — رمزِ خواندن ‎'read'‎ است، نه ‎'owner'‎
+    if (stations.accessOf(code, token) !== 'owner') return false;
+    return (await testers()).includes(code);
+  } catch {
+    return false;
+  }
+}
 
 router.get('/latest', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   //  🛤️ کانال (شورا، ت۱): برنامه‌ای که نگوید ⇒ پایدار
   const channel = req.query.channel === 'testing' ? 'testing' : 'stable';
-  const cur = await servedFor(channel);
+  const t = (await isTester(req)) ? await servedForTester() : null;
+  const cur = t || (await servedFor(channel));
   if (!cur) {
     //  ⛔ پخش خاموش و هنوز هیچ نسخه‌ای منتشر نشده ⇒ «تازه‌ای نیست»، نه خطا.
     //  خطا یعنی برنامه سراغِ راهِ دیگر می‌رفت — همان چیزی که مدیر بسته است.
@@ -35,6 +60,7 @@ router.get('/latest', async (req, res) => {
     body: cur.notes || '',
     published_at: cur.publishedAt,
     channel,
+    ...(t ? { tester: true } : {}),
     assets: cur.assets.map((a) => ({
       name: a.name,
       size: a.size,
@@ -44,7 +70,7 @@ router.get('/latest', async (req, res) => {
 });
 
 router.get('/files/:version/:name', async (req, res) => {
-  const file = await filePath(req.params.version, req.params.name);
+  const file = await filePath(req.params.version, req.params.name, { tester: await isTester(req) });
   if (!file) return res.status(404).json({ error: 'not_found' });
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
