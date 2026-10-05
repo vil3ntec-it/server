@@ -457,6 +457,106 @@ function ExtendDialog({ row, onClose, onDone }: { row: SubRow; onClose: () => vo
   );
 }
 
+/* ------------------- خدماتِ سرورِ اشتراکِ دائمیِ پمپ ------------------- */
+
+const SVC_PRESETS: { amount: number; unit: string; label: string }[] = [
+  { amount: 1, unit: 'month', label: '۱ ماه' },
+  { amount: 3, unit: 'month', label: '۳ ماه' },
+  { amount: 6, unit: 'month', label: '۶ ماه' },
+  { amount: 1, unit: 'year', label: '۱ سال' },
+];
+const SVC_UNITS: Record<string, string> = { day: 'روز', month: 'ماه', year: 'سال' };
+
+/**
+ *  ⛔ «برای حساب‌های دائمی بشه خدمات رو فعال کرد برای یک سال یا ماه یا کاستم»
+ *  (۱۴۰۵/۰۷/۲۰). خدماتِ سرور = همگام‌سازی، کیو‌آر، اپِ گوشی، بات و بکاپِ سرور.
+ *  دائمی بی آن‌ها هم دفتر و همهٔ بخش‌ها را دارد. ⛔ عدد را سرورِ حساب حساب
+ *  می‌کند (`/services`)؛ تاریخِ این‌جا فقط پیش‌نمایشِ همان قاعده است.
+ */
+function ServicesDialog({ row, onClose, onDone }: { row: SubRow; onClose: () => void; onDone: () => Promise<void> }) {
+  const [amount, setAmount] = useState('1');
+  const [unit, setUnit] = useState('year');
+  const [date, setDate] = useState('');
+  const n = Math.max(1, Math.floor(Number(amount) || 0));
+  const cur = row.servicesUntil || 0;
+  const live = cur > Date.now();
+  const preview = periodEnd(Math.max(cur, Date.now()), n, unit);
+  const send = async (body: Record<string, unknown>, done: string) => {
+    try {
+      await api(`/api/account-admin/subs/${row.app}/${row.id}/services`, { body });
+      toast(done);
+      await onDone();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'نشد', 'bad');
+    }
+  };
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`خدماتِ سرور — ${row.tenantName || row.ownerName || '—'}`}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>انصراف</button>
+          <ActionButton className="btn btn-primary" busyLabel="…"
+            onClick={() => send({ amount: n, unit }, `خدمات تمدید شد — ${fa(n)} ${SVC_UNITS[unit] || unit}`)}>
+            تمدید کن
+          </ActionButton>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <Notice tone={live ? 'info' : 'warn'}>
+          خدماتِ سرورِ این دائمی {cur ? (live ? <>تا <b>{day(cur)}</b> فعال است</> : <>از <b>{day(cur)}</b> تمام شده</>) : 'هنوز ثبت نشده'}.
+          {' '}بی خدمات، دفتر و همهٔ بخش‌ها روی کامپیوترِ مشتری کار می‌کنند؛ فقط همگام‌سازی، کیو‌آر، اپِ گوشی، بات و بکاپِ سرور می‌ایستند.
+        </Notice>
+        <div className="flex flex-wrap gap-1.5">
+          {SVC_PRESETS.map((p) => {
+            const on = n === p.amount && unit === p.unit;
+            return (
+              <button key={p.label} className={on ? 'btn btn-sm btn-primary' : 'btn btn-sm'}
+                      onClick={() => { setAmount(String(p.amount)); setUnit(p.unit); }}>
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-end gap-2">
+          <div className="w-28">
+            <label className="label">مدتِ دلخواه</label>
+            <input className="input w-full" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </div>
+          <div className="w-32">
+            <Select value={unit} onChange={setUnit} options={Object.entries(SVC_UNITS).map(([value, label]) => ({ value, label }))} />
+          </div>
+        </div>
+        <Notice tone="info">
+          پایانِ تازه: <b>{day(preview)}</b> — از پایانِ فعلی جلو می‌رود (و اگر تمام شده، از امروز).
+          برنامهٔ مشتری در اولین اتصال آن را می‌گیرد.
+        </Notice>
+        <div className="flex flex-wrap items-end gap-2 border-t border-line pt-3">
+          <div>
+            <label className="label">یا تا تاریخِ دلخواه</label>
+            <input className="input" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </div>
+          <ActionButton className="btn btn-sm" busyLabel="…"
+            onClick={async () => {
+              const t = date ? new Date(date + 'T23:59:59').getTime() : NaN;
+              if (!Number.isFinite(t)) { toast('تاریخ را بزنید', 'bad'); return; }
+              await send({ until: t }, `خدمات تا ${day(t)}`);
+            }}>
+            تا این تاریخ
+          </ActionButton>
+          <ActionButton className="btn btn-sm btn-danger" busyLabel="…"
+            onClick={() => send({ until: Date.now() }, 'خدماتِ سرور همین حالا قطع شد')}>
+            قطعِ خدمات
+          </ActionButton>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 /* --------------------------- پروندهٔ یک مشتری --------------------------- */
 
 function Profile({
@@ -485,6 +585,7 @@ function Profile({
   const busy = (app === 'shop' ? shop.busy : pump.busy) && !shop.data && !pump.data;
   const tone = daysTone(row.daysLeft, row.permanent, row.status);
   const [deleting, setDeleting] = useState(false);
+  const [services, setServices] = useState(false);
 
   return (
     <Modal
@@ -500,6 +601,10 @@ function Profile({
         </div>
       ) : undefined}
     >
+      {services && (
+        <ServicesDialog row={row} onClose={() => setServices(false)}
+                        onDone={async () => { setServices(false); await onChanged(); }} />
+      )}
       {deleting && row.ownerUserId && (
         <DeleteAccount userId={row.ownerUserId} onClose={() => setDeleting(false)}
                        onDone={async () => { await onChanged(); onClose(); }} />
@@ -529,6 +634,13 @@ function Profile({
               <KV label="از">{day(row.startsAt)}</KV>
               <KV label="تا">{row.permanent ? 'دائمی ✓' : day(row.endsAt)}</KV>
               <KV label="مانده"><Badge tone={tone.tone}>{tone.text}</Badge></KV>
+              {app === 'pump' && row.permanent && (row.servicesUntil || 0) > 0 && (
+                <KV label="خدماتِ سرور تا">
+                  <Badge tone={(row.servicesUntil || 0) > Date.now() ? 'good' : 'bad'}>
+                    {(row.servicesUntil || 0) > Date.now() ? day(row.servicesUntil || 0) : `تمام شد · ${day(row.servicesUntil || 0)}`}
+                  </Badge>
+                </KV>
+              )}
               <KV label="قیمتِ روزِ خرید">{row.price == null ? '—' : money(row.price, row.currency)}</KV>
               <KV label="پرداخت‌شده">{money(row.paid, row.currency)}</KV>
               {app === 'pump' && <KV label="کدِ اپِ کارمندان" mono>{pump.data?.accessCode || '—'}</KV>}
@@ -563,6 +675,9 @@ function Profile({
                 </button>
               ))}
               <DiscountButton row={row} onDone={onChanged} />
+              {app === 'pump' && row.permanent && (
+                <button className="btn btn-sm" onClick={() => setServices(true)}>خدماتِ سرور…</button>
+              )}
             </div>
             </>)}
           </div>
