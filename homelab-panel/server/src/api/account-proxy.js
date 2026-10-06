@@ -227,6 +227,84 @@ export function accountProxy(req, res, next) {
 }
 
 /**
+ * ══ سوکتِ زندهٔ همگام‌سازی — «چیزی عوض شد» از سرورِ حساب (۱۴۰۵/۰۷/۲۲) ══════
+ *
+ * گزارشِ صاحب ریپو: «حسابی اضافه کردم یا حذف، درجا نرفت.» با پشتهٔ واقعی
+ * (‎livesync‎ِ ریپوی پمپ) سنجیده شد: هر تغییر ۵۰ میلی‌ثانیه‌ای روی سرورِ
+ * حساب می‌نشست ولی کامپیوترِ دیگرِ همان حساب **سی ثانیه** بعد می‌دیدش. چون
+ * درِ ارتقای WebSocketِ همین پورتِ عمومی ‎/api/sync/v1/live‎ را به دفترِ
+ * سرورِ سایت می‌داد، نه به سرورِ حساب — پس سوکتِ «changed» از تونل هرگز
+ * باز نمی‌شد و برنامه فقط به pullِ سی‌ثانیه‌ای تکیه داشت.
+ *
+ * ⛔ **فقط همین چهار مسیر** (همان ‎PATHS‎ِ ‎shop/server/src/lib/sync-v1-live.js‎)،
+ * نه هر مسیرِ سرورِ حساب: هر ارتقای دیگری همان راهِ همیشگی را می‌رود.
+ * ⛔ کوکی رد نمی‌شود؛ حساب فقط از ‎Authorization‎ یا ‎?token=‎ِ خودِ درخواست.
+ * ⚠️ خاموش بودنِ سرورِ حساب ⇒ ‎503‎ و بستن — برنامه همان pullِ سی‌ثانیه‌ای را دارد.
+ */
+export const SYNC_LIVE_PATHS = Object.freeze([
+  '/sync/live', '/api/sync/live', '/api/sync/v1/live', '/api/v1/sync/v1/live',
+]);
+
+const WS_HEADERS = ['sec-websocket-key', 'sec-websocket-version', 'sec-websocket-protocol', 'sec-websocket-extensions'];
+
+/** ارتقای WebSocketِ همگام‌سازی را به سرورِ حساب می‌سپارد. خروجی: «مالِ من بود». */
+export function accountUpgrade(req, socket, head) {
+  const target = accountApiUrl();
+  if (!target) return false;
+  const pathname = String(req.url || '').split('?')[0];
+  if (!SYNC_LIVE_PATHS.includes(pathname)) return false;
+
+  const close = (status, text) => {
+    try { socket.write(`HTTP/1.1 ${status} ${text}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); } catch { /* رفته */ }
+    socket.destroy();
+  };
+
+  const headers = { host: target.host, connection: 'Upgrade', upgrade: req.headers.upgrade || 'websocket' };
+  for (const h of [...PASS_HEADERS, ...WS_HEADERS]) {
+    if (req.headers[h] !== undefined) headers[h] = req.headers[h];
+  }
+  try { headers['x-forwarded-for'] = clientIp(req); } catch { /* نشد */ }
+  headers['x-forwarded-proto'] = String(req.headers['x-forwarded-proto'] || 'https');
+
+  const secure = target.protocol === 'https:';
+  const up = (secure ? https : http).request({
+    host: target.hostname,
+    port: Number(target.port) || (secure ? 443 : 80),
+    method: 'GET',
+    path: req.url,
+    headers,
+  });
+  up.setTimeout(15_000, () => { up.destroy(); close(504, 'Gateway Timeout'); });
+
+  up.on('upgrade', (res, upSocket, upHead) => {
+    up.setTimeout(0);
+    const lines = ['HTTP/1.1 101 Switching Protocols'];
+    for (let i = 0; i + 1 < res.rawHeaders.length; i += 2) {
+      const k = res.rawHeaders[i];
+      if (k.toLowerCase().startsWith('access-control-') || k.toLowerCase() === 'set-cookie') continue;
+      lines.push(`${k}: ${res.rawHeaders[i + 1]}`);
+    }
+    try {
+      socket.write(lines.join('\r\n') + '\r\n\r\n');
+      if (upHead && upHead.length) socket.write(upHead);
+      if (head && head.length) upSocket.write(head);
+    } catch { upSocket.destroy(); socket.destroy(); return; }
+    upSocket.setTimeout(0);
+    socket.setTimeout(0);
+    upSocket.pipe(socket);
+    socket.pipe(upSocket);
+    const end = () => { upSocket.destroy(); socket.destroy(); };
+    upSocket.on('error', end); socket.on('error', end);
+    upSocket.on('close', end); socket.on('close', end);
+  });
+  //  ارتقا رد شد (۴۰۱ِ توکن، ۴۰۴) ⇒ همان کد به برنامه
+  up.on('response', (res) => { res.resume(); close(res.statusCode || 502, res.statusMessage || 'Bad Gateway'); });
+  up.on('error', (e) => close(DOWN.has(e.code) ? 503 : 502, DOWN.has(e.code) ? 'Service Unavailable' : 'Bad Gateway'));
+  up.end();
+  return true;
+}
+
+/**
  * یک بار سرِ بالا آمدن می‌پرسد سرورِ حساب هست یا نه — و در لاگ می‌گوید.
  * چیزی را نمی‌بندد؛ فقط تا صاحبِ سرور همان اول بفهمد چرا برنامه‌ها وصل
  * نمی‌شوند، نه بعد از یک ساعت گشتن.

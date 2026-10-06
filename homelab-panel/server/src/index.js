@@ -77,7 +77,7 @@ import { readyPayload } from './platform/health.js';
 import { createBackup } from './backup/index.js';
 import * as notify from './notify/index.js';
 import * as messenger from './messenger/index.js';
-import { accountProxy, probeAccountServer } from './api/account-proxy.js';
+import { accountProxy, accountUpgrade, probeAccountServer } from './api/account-proxy.js';
 import { startAgent, stopAgent } from './agent/index.js';
 import { startAutomation, stopAutomation, automationEnabled } from './automation/index.js';
 import automationRoutes from './routes/automation.js';
@@ -769,6 +769,8 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
 
   syncOnlyServer = http.createServer(publicApp);
   syncOnlyServer.on('upgrade', (req, socket, head) => {
+    //  ⛔ سوکتِ «changed»ِ همگام‌سازی مالِ سرورِ حساب است — شرحش بالای ‎accountUpgrade‎
+    if (accountUpgrade(req, socket, head)) return;
     // پیام‌رسان هم باید از راه تونل در دسترس باشد
     let pathname = '/';
     try {
