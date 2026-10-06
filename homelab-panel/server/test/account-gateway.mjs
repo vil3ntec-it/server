@@ -12,6 +12,8 @@
 //  سرورِ حساب یک سرویسِ ساختگی روی پورتِ آزاد است که هرچه دید را پس می‌دهد.
 // ---------------------------------------------------------------------------
 import http from 'node:http';
+import net from 'node:net';
+import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
@@ -105,6 +107,20 @@ const fake = http.createServer((req, res) => {
     res.statusCode = 404;
     res.end(JSON.stringify({ error: { code: 'not_found', message: 'این مسیر وجود ندارد' } }));
   });
+});
+//  سوکتِ زندهٔ همگام‌سازی — همان دستِ دادنِ ‎ws‎ و یک قابِ «changed»
+const seenUpgrades = [];
+const upSockets = [];
+fake.on('upgrade', (req, socket) => {
+  seenUpgrades.push({ url: req.url, headers: req.headers });
+  upSockets.push(socket);
+  const key = req.headers['sec-websocket-key'] || '';
+  const accept = crypto.createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+  socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
+    + `Sec-WebSocket-Accept: ${accept}\r\nAccess-Control-Allow-Origin: *\r\n\r\n`);
+  const payload = Buffer.from(JSON.stringify({ event: 'changed', cursor: 7 }));
+  socket.write(Buffer.concat([Buffer.from([0x81, payload.length]), payload]));
+  socket.on('error', () => {});
 });
 await new Promise((r) => fake.listen(0, '127.0.0.1', r));
 const FAKE_URL = `http://127.0.0.1:${fake.address().port}`;
@@ -366,8 +382,43 @@ try {
     check('حدسِ کلیدِ درِ مدیر همچنان بعد از بیست تلاش ۴۲۹ می‌گیرد', gate === 429, String(gate));
   }
 
+  console.log('\n── سوکتِ زندهٔ همگام‌سازی از پورتِ عمومی (۱۴۰۵/۰۷/۲۲) ──');
+  {
+    //  ⛔ پیش از این ‎/api/sync/v1/live‎ به دفترِ سرورِ سایت می‌رفت و کامپیوترِ دیگر
+    //  هر تغییر را سی ثانیه بعد می‌دید — سنجهٔ ‎livesync‎ِ ریپوی پمپ گرفتش.
+    const upgrade = (p, extra = '') => new Promise((resolve) => {
+      const sock = net.connect(PUBLIC, '127.0.0.1');
+      let got = Buffer.alloc(0);
+      const done = () => { sock.destroy(); resolve(got.toString('latin1')); };
+      sock.on('connect', () => sock.write(`GET ${p} HTTP/1.1\r\nHost: api.example\r\nUpgrade: websocket\r\n`
+        + 'Connection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n'
+        + `Authorization: Bearer pd_test_token_123456789\r\nCookie: hlp_session=secret\r\n${extra}\r\n`));
+      sock.on('data', (d) => { got = Buffer.concat([got, d]); if (got.includes(Buffer.from('changed'))) done(); });
+      sock.on('error', done);
+      setTimeout(done, 3000);
+    });
+    const before = seenUpgrades.length;
+    const txt = await upgrade('/api/sync/v1/live?device_id=pc-1&app=pump');
+    check('ارتقا به ‎101‎ و قابِ «changed» از سرورِ حساب می‌رسد',
+      txt.startsWith('HTTP/1.1 101') && txt.includes('"changed"'), txt.slice(0, 120));
+    const up = seenUpgrades[before];
+    check('و همان مسیر و توکن به سرورِ حساب رسید', up?.url === '/api/sync/v1/live?device_id=pc-1&app=pump'
+      && up?.headers.authorization === 'Bearer pd_test_token_123456789', JSON.stringify(up?.url));
+    check('⛔ کوکی رد نشد', up && up.headers.cookie === undefined, String(up?.headers.cookie));
+    check('⛔ ‎access-control-*‎ِ آن‌طرف دور ریخته شد', !/access-control-allow-origin/i.test(txt), txt.slice(0, 200));
+    for (const p of ['/api/v1/sync/v1/live', '/api/sync/live']) {
+      const t = await upgrade(p);
+      check(`${p} هم به سرورِ حساب می‌رسد`, t.startsWith('HTTP/1.1 101'), t.slice(0, 60));
+    }
+    const n = seenUpgrades.length;
+    await upgrade('/api/pump/me');
+    check('⛔ ارتقای مسیرِ دیگرِ سرورِ حساب رد نمی‌شود', seenUpgrades.length === n, String(seenUpgrades.length - n));
+    for (const so of upSockets) so.destroy();
+  }
+
   console.log('\n── سرورِ حساب خاموش ──');
   {
+    fake.closeAllConnections?.();
     await new Promise((r) => fake.close(r));
     const r = await hit(PUBLIC, '/api/auth/login', { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
     const j = JSON.parse(r.text);
@@ -375,6 +426,17 @@ try {
       r.status === 503 && j.error?.code === 'account_server_down' && /سرورِ حساب/.test(j.error?.message || '') && !/docker/.test(j.error?.message || ''), r.text.slice(0, 160));
     const h = await hit(PUBLIC, '/api/v1/health');
     check('و سرورِ خانگی خودش سالم می‌ماند', h.status === 200, `${h.status}`);
+    const ws = await new Promise((resolve) => {
+      const sock = net.connect(PUBLIC, '127.0.0.1');
+      let got = '';
+      sock.on('connect', () => sock.write('GET /api/sync/v1/live HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\n'
+        + 'Connection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n'));
+      sock.on('data', (d) => (got += d));
+      sock.on('close', () => resolve(got));
+      sock.on('error', () => resolve(got));
+      setTimeout(() => { sock.destroy(); resolve(got); }, 3000);
+    });
+    check('سوکتِ زنده با سرورِ حسابِ خاموش ⇒ ‎503‎ و بستن، نه آویزان', ws.startsWith('HTTP/1.1 503'), ws.slice(0, 60));
   }
 } catch (e) {
   check('خطای غیرمنتظره', false, e.stack || e.message);
