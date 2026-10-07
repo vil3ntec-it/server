@@ -249,13 +249,13 @@ export async function versionHealth(version) {
 }
 
 /** آن‌چه یک کانال همین حالا می‌بیند (یا null). */
-export async function servedFor(channel = 'stable') {
-  const r = await releaseState();
-  if (r.mode !== 'auto' || channel === 'testing') return served();
-  if (r.stable) {
-    const m = await manifestOf(r.stable);
-    if (m) return m;
-  }
+//  ⛔ از ۱۴۰۵/۰۷/۲۲ هر دو کانال **همان نسخهٔ منتشرشده** را می‌بینند — خواستهٔ
+//  صاحب سامانه: «درجا که توی گیت‌هاب گذاشتم سرور ببینه و به برنامه بگه».
+//  نگه‌داشتنِ هفت‌روزه بن‌بست بود: «کمینهٔ نصب» از دستگاه‌هایی شمرده می‌شد که
+//  روی همان کانالِ پایدار بودند و نامزد را هرگز نمی‌گرفتند، پس پایدار هیچ‌وقت
+//  جلو نمی‌رفت و برنامه‌ها روی نسخهٔ کهنه «به‌روز است» می‌گفتند. کنترلِ مدیر
+//  همان «پخشِ خاموش» و «کامپیوترهای آزمایشی» است. ⛔ دوباره جدایش نکنید.
+export async function servedFor(_channel = 'stable') {
   return served();
 }
 
@@ -442,7 +442,7 @@ export async function status() {
     stable: stv?.version || null,
     stableAt: r.stableAt,
     stableBy: r.stableBy,
-    candidate: r.candidate,
+    candidate: null,
     stableDays: stableDays(),
     minInstalls: minInstalls(),
     repo: pumpRepo(),
@@ -487,11 +487,7 @@ async function download(asset, file) {
  * می‌نشیند و بارِ بعد دوباره.
  */
 export async function syncOnce({ log = () => {} } = {}) {
-  try {
-    return await syncCore({ log });
-  } finally {
-    await advanceStable({ log }).catch(() => {});
-  }
+  return syncCore({ log });
 }
 
 async function syncCore({ log = () => {} } = {}) {

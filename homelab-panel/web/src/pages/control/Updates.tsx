@@ -571,18 +571,7 @@ function PumpReleaseCard() {
       </div>
 
       <div className="mt-3">
-        <KV label="🛤️ کانالِ پایدار (پیش‌فرضِ همهٔ پمپ‌ها)" mono>{hold ? (st.served || '—') : (st.stable || st.served || '—')}</KV>
-        <KV label="🧪 کانالِ آزمایشی" mono>{st.served || '— (هیچ نسخه‌ای)'}</KV>
-        {!hold && st.candidate && (
-          <KV label="نامزدِ پایدار">
-            <span className="font-mono" dir="ltr">{st.candidate.version}</span>
-            {' · '}{st.candidate.since ? `از ${relative(Date.parse(st.candidate.since), 'fa')}` : ''}
-            {st.candidate.crashes > 0
-              ? <span style={{ color: 'var(--status-critical)' }}> · {st.candidate.crashes} گزارشِ کرش — پایدار نمی‌شود</span>
-              : <span className="text-ink-muted"> · پس از {st.stableDays ?? 7} روز بی کرش و دستِ‌کم روی {st.minInstalls ?? 3} دستگاه خودش پایدار می‌شود
-                  {st.candidate.installs ? ` (تا حالا ${st.candidate.installs} دستگاه)` : ''}</span>}
-          </KV>
-        )}
+        <KV label="نسخه‌ای که به همهٔ برنامه‌های پمپ می‌رود" mono>{st.served || '— (هیچ نسخه‌ای)'}</KV>
         <KV label="تازه‌ترین نسخهٔ روی سرور" mono>{st.version || '—'}</KV>
         <KV label="آخرین پرسش از گیت‌هاب">{st.checkedAt ? relative(Date.parse(st.checkedAt), 'fa') : '—'}</KV>
       </div>
@@ -635,25 +624,12 @@ function PumpReleaseCard() {
               <span className="font-mono" dir="ltr">{v.version}</span>
               {live && <span className="text-xs" style={{ color: 'var(--status-good)' }}>● پخش می‌شود</span>}
               {!live && <span className="text-xs text-ink-muted">نگه‌داشته</span>}
-              {!hold && v.version === st.stable && <span className="text-xs" style={{ color: 'var(--status-good)' }}>● پایدار</span>}
               {v.mirroredAt && <span className="text-xs text-ink-muted">· رسید {relative(Date.parse(v.mirroredAt), 'fa')}</span>}
               <span className="flex-1" />
               {setup && (
                 <a className="btn btn-sm" href={`/api/pump-updates-admin/files/${v.version}/${encodeURIComponent(setup.name)}?token=${encodeURIComponent(token)}`}>
                   <Download className="h-4 w-4" /> نصاب برای آزمایش ({MB(setup.size)} MB)
                 </a>
-              )}
-              {!hold && v.version !== st.stable && (
-                <button
-                  className="btn btn-sm"
-                  disabled={!!busy}
-                  onClick={() => {
-                    if (!window.confirm(`نسخهٔ ${v.version} همین حالا برای همهٔ پمپ‌هایی که کانالِ پایدار دارند برود؟`)) return;
-                    act('st-' + v.version, '/api/pump-updates-admin/stable', { version: v.version }, `نسخهٔ ${v.version} پایدار شد`);
-                  }}
-                >
-                  پایدار کن
-                </button>
               )}
               {!live && (
                 <button
