@@ -286,6 +286,37 @@ fs.appendFileSync(${JSON.stringify(path.join(tmp, 'push.log'))}, \`\${process.en
       && st.restoreTest !== null && st.offsite?.kind === 'command',
     JSON.stringify({ e: st.encryption?.method, k: st.keep, o: st.offsite?.kind }));
   check('صفِ خالی هم گزارش می‌شود', Array.isArray(st.offsite.queue) && st.offsite.queue.length === 0);
+
+  /* ═══════════════ ۷) دادهٔ سرورِ حساب در پشتیبان ═══════════════ */
+  //  ⛔ همهٔ مشتری‌ها، اشتراک‌ها و بکاپِ ابریِ پمپ‌ها در همین پوشه‌اند و تا
+  //  ۱۴۰۵/۰۷/۱۹ در هیچ پشتیبانی نبودند. `app/` (کدِ دانلودی) عمداً نه.
+  console.log('\n۷) سرورِ حساب — pg · backups · secrets.json، و app دست نمی‌خورد');
+  const acct = path.join(tmp, 'data', 'account-server');
+  await fsp.mkdir(path.join(acct, 'pg', 'base'), { recursive: true });
+  await fsp.mkdir(path.join(acct, 'backups'), { recursive: true });
+  await fsp.mkdir(path.join(acct, 'app'), { recursive: true });
+  await fsp.writeFile(path.join(acct, 'pg', 'base', 'page'), 'مشتری‌ها-نسخهٔ-اول');
+  await fsp.writeFile(path.join(acct, 'backups', 'dump.sql'), 'dump-1');
+  await fsp.writeFile(path.join(acct, 'secrets.json'), '{"apiSecret":"s1"}');
+  await fsp.writeFile(path.join(acct, 'app', 'index.js'), 'کدِ-تازه');
+  const made = await store.createBackup({ kind: 'Manual', note: 'سرورِ حساب' });
+  const inc = made.included || [];
+  check('دیتابیسِ سرورِ حساب در پشتیبان است', inc.includes('account-server/pg'), inc.join('، '));
+  check('رازها و پشتیبان‌های درونیِ سرورِ حساب هم', inc.includes('account-server/secrets.json') && inc.includes('account-server/backups'), inc.join('، '));
+  check('کدِ سرورِ حساب (app) در پشتیبان نیست', !fs.existsSync(path.join(made.path, 'account-server', 'app')));
+  check('سرورِ حسابِ خاموش ⇒ کپیِ ساکن، نه «زنده»', made.accountHot === false, String(made.accountHot));
+  check('محتوای دیتابیس واقعاً کپی شد',
+    fs.readFileSync(path.join(made.path, 'account-server', 'pg', 'base', 'page'), 'utf8') === 'مشتری‌ها-نسخهٔ-اول');
+
+  await fsp.writeFile(path.join(acct, 'pg', 'base', 'page'), 'خراب');
+  await fsp.writeFile(path.join(acct, 'secrets.json'), '{"apiSecret":"s2"}');
+  await fsp.writeFile(path.join(acct, 'pg', 'base', 'junk'), 'بعد-از-پشتیبان');
+  const acctBack = await store.restoreBackup(made.path);
+  check('بازگرداندن پذیرفته شد', acctBack.ok === true, JSON.stringify(acctBack).slice(0, 200));
+  check('دیتابیسِ سرورِ حساب برگشت', fs.readFileSync(path.join(acct, 'pg', 'base', 'page'), 'utf8') === 'مشتری‌ها-نسخهٔ-اول');
+  check('فایلِ پس از پشتیبان از دیتابیس رفت (نه قاطی)', !fs.existsSync(path.join(acct, 'pg', 'base', 'junk')));
+  check('رازها همان رازهای همان دیتابیس‌اند', fs.readFileSync(path.join(acct, 'secrets.json'), 'utf8').includes('s1'));
+  check('کدِ سرورِ حساب (app) دست نخورد', fs.readFileSync(path.join(acct, 'app', 'index.js'), 'utf8') === 'کدِ-تازه');
 } finally {
   delete process.env.HLP_OFFSITE_CMD;
   await fsp.rm(tmp, { recursive: true, force: true }).catch(() => {});
