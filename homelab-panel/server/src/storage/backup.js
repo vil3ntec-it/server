@@ -6,6 +6,8 @@
 //      دادهٔ سایت‌ها   · دفترهای site-sync
 //      دادهٔ پمپ‌ها    · پوشهٔ هر پمپ بنزین
 //      فایلِ .env     · رمزهای پیامک و ایمیل
+//      سرورِ حساب    · دیتابیسِ PGlite، رازها و پشتیبان‌های درونیِ خودش —
+//                     همهٔ مشتری‌ها، اشتراک‌ها و بکاپ‌های ابریِ پمپ‌ها
 //
 //  قانون‌ها:
 //    • هر پشتیبان یک پوشهٔ تاریخ‌دار است، نه یک فایلِ درهم
@@ -105,7 +107,45 @@ function sources() {
     // دادهٔ هر پمپ بنزین — پوشهٔ جدا برای هرکدام
     { name: 'stations', from: config.stations.dataDir, kind: 'dir' },
     { name: '.env', from: path.join(path.dirname(paths.db), '..', '.env'), kind: 'file' },
+    //  ⛔ سرورِ حساب: همهٔ حساب‌ها و اشتراک‌ها و بکاپِ ابریِ پمپ‌ها همین‌جاست.
+    //  سه تکهٔ جدا، نه کلِ پوشه — `app/` کدِ دانلودی است و بازگرداندنِ کلِ
+    //  پوشه آن را پاک می‌کرد. `secrets.json` بی دیتابیس بی‌معناست و برعکس:
+    //  عوض شدنِ `API_SECRET` یعنی همهٔ نشست‌ها یک‌شبه بی‌اعتبار.
+    ...ACCOUNT_PARTS.map(([name, kind]) => ({
+      name: `account-server/${name}`, from: path.join(accountDir(), name), kind, account: true,
+    })),
   ];
+}
+
+/** تکه‌های سرورِ حساب که پشتیبان می‌شوند — `pg` باید پیش از کپی ساکن باشد. */
+const ACCOUNT_PARTS = [['pg', 'dir'], ['backups', 'dir'], ['secrets.json', 'file']];
+
+/** همان `accountDataDir()`ِ ناظر — بی import، تا این فایل به ناظر بند نباشد. */
+function accountDir() {
+  return path.join(config.dataDir, 'account-server');
+}
+
+/**
+ * ⛔ دیتابیسِ PGlite وسطِ نوشتن کپیِ سالم نمی‌دهد. اگر خودِ پنل سرورِ حساب را
+ * روشن کرده، چند ثانیه خاموش می‌شود، کپی می‌رود و **همیشه** دوباره روشن می‌شود
+ * (حتی اگر کپی شکست بخورد). سرورِ بیرونی (داکر، نصبِ دستی) دست نمی‌خورد و کپیِ
+ * زنده می‌گیرد. پروسهٔ خودمان که در ده ثانیه نمرد ⇒ `accountHot` در manifest،
+ * نه پنهان.
+ */
+async function withAccountPaused(fn) {
+  let sup = null;
+  try { sup = await import('../account/supervisor.js'); } catch { /* ناظر نیست */ }
+  const running = !!sup?.accountStatus?.()?.running;
+  if (!running) return { result: await fn(), hot: false };
+  sup.stopAccountServer();
+  const stopped = await sup.waitAccountServerExit(10000);
+  try {
+    return { result: await fn(), hot: !stopped };
+  } finally {
+    try { sup.startAccountServer(); } catch (e) {
+      logEvent('error', 'panel', `سرورِ حساب پس از پشتیبان روشن نشد: ${e.message}`);
+    }
+  }
 }
 
 async function copyInto(from, to, kind) {
@@ -149,13 +189,23 @@ export async function createBackup({ kind = 'Manual', note = null } = {}) {
   } catch { /* اهمیتی ندارد */ }
 
   const included = [];
-  for (const item of sources()) {
-    try {
-      const copied = await copyInto(item.from, path.join(target, item.name), item.kind);
-      if (copied) included.push(item.name);
-    } catch (e) {
-      logEvent('warn', 'panel', `پشتیبانِ «${item.name}» ناقص ماند: ${e.message}`);
+  const copyAll = async (items) => {
+    for (const item of items) {
+      try {
+        const copied = await copyInto(item.from, path.join(target, item.name), item.kind);
+        if (copied) included.push(item.name);
+      } catch (e) {
+        logEvent('warn', 'panel', `پشتیبانِ «${item.name}» ناقص ماند: ${e.message}`);
+      }
     }
+  };
+  const all = sources();
+  await copyAll(all.filter((i) => !i.account));
+  const account = all.filter((i) => i.account && fs.existsSync(i.from));
+  let accountHot = false;
+  if (account.length) {
+    const { hot } = await withAccountPaused(() => copyAll(account));
+    accountHot = hot;
   }
 
   const size = await folderSize(target);
@@ -169,6 +219,8 @@ export async function createBackup({ kind = 'Manual', note = null } = {}) {
     version: getSetting('last_version', null),
     // شمارِ ردیفِ هر جدول در لحظهٔ پشتیبان — تستِ بازیابی همین را می‌سنجد
     tables: tableCounts(),
+    // سرورِ حسابی که پنل روشنش نکرده بود زنده کپی شد (ممکن است ناسازگار باشد)
+    accountHot,
     encrypted: null,
   };
   await fsp.writeFile(path.join(target, 'backup.json'), JSON.stringify(manifest, null, 2), 'utf8');
@@ -269,22 +321,33 @@ export async function restoreBackup(folderPath) {
   const safety = await createBackup({ kind: 'Manual', note: 'خودکار — پیش از بازگرداندن' });
 
   const restored = [];
-  for (const item of sources()) {
-    const from = path.join(source, item.name);
-    if (!fs.existsSync(from)) continue;
-    try {
-      if (item.kind === 'file') {
-        await fsp.mkdir(path.dirname(item.from), { recursive: true });
-        await fsp.copyFile(from, item.from);
-      } else {
-        await fsp.rm(item.from, { recursive: true, force: true });
-        await fsp.cp(from, item.from, { recursive: true, force: true, dereference: false });
+  const putBack = async (items) => {
+    for (const item of items) {
+      const from = path.join(source, item.name);
+      try {
+        if (item.kind === 'file') {
+          await fsp.mkdir(path.dirname(item.from), { recursive: true });
+          await fsp.copyFile(from, item.from);
+        } else {
+          await fsp.rm(item.from, { recursive: true, force: true });
+          await fsp.cp(from, item.from, { recursive: true, force: true, dereference: false });
+        }
+        restored.push(item.name);
+      } catch (e) {
+        logEvent('error', 'panel', `بازگرداندنِ «${item.name}» ناموفق بود: ${e.message}`);
+        return { ok: false, error: 'restore_failed', message: e.message, restored, safety: safety.path };
       }
-      restored.push(item.name);
-    } catch (e) {
-      logEvent('error', 'panel', `بازگرداندنِ «${item.name}» ناموفق بود: ${e.message}`);
-      return { ok: false, error: 'restore_failed', message: e.message, restored, safety: safety.path };
     }
+    return null;
+  };
+  const present = sources().filter((i) => fs.existsSync(path.join(source, i.name)));
+  let fail = await putBack(present.filter((i) => !i.account));
+  if (fail) return fail;
+  //  ⛔ دیتابیسِ سرورِ حسابِ روشن زیرِ پایش پاک نمی‌شود — همان خاموش/روشن
+  const account = present.filter((i) => i.account);
+  if (account.length) {
+    fail = (await withAccountPaused(() => putBack(account))).result;
+    if (fail) return fail;
   }
 
   logEvent('warn', 'panel', `از پشتیبان بازگردانده شد: ${path.basename(source)}`);
