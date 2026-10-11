@@ -927,7 +927,11 @@ export async function syncTunnelRoutes({ restart = true } = {}) {
       for (const route of routedHostnames()) {
         if (route.main || alreadyRouted.has(route.hostname)) continue;
         const routed = await runCf(['tunnel', 'route', 'dns', '--overwrite-dns', name, route.hostname]);
-        if (routed.ok || /already exists|record with the same/i.test(routed.output)) {
+        // گواهیِ دامنهٔ دیگر: cloudflared با کدِ صفر «x.vill3n.top.yaqobipump.top» می‌سازد
+        const wrong = misroutedHost(routed.output, route.hostname);
+        if (wrong) {
+          failures.push({ hostname: route.hostname, detail: `رکورد در دامنهٔ دیگری ساخته شد: ${wrong} — گواهیِ ورودِ cloudflared مالِ این دامنه نیست` });
+        } else if (routed.ok || /already exists|record with the same/i.test(routed.output)) {
           alreadyRouted.add(route.hostname);
         } else {
           failures.push({ hostname: route.hostname, detail: routed.output.slice(-200) });

@@ -401,6 +401,18 @@ async function main() {
   r = await api('GET', '/api/settings');
   check('ریشه بعد از رد شدن دست‌نخورده مانده', r.json?.paths?.sitesRoot === newRoot);
 
+  console.log('\n── site.json: پورت، دامنه و فرمانِ خودِ پروژه ──');
+  const manifestDir = path.join(tmp, 'manifest-site');
+  fs.mkdirSync(manifestDir, { recursive: true });
+  fs.writeFileSync(path.join(manifestDir, 'package.json'), JSON.stringify({ name: 'manifest-site', scripts: { start: 'node server.js' } }));
+  fs.writeFileSync(path.join(manifestDir, 'site.json'), JSON.stringify({ port: 4780, domain: 'manifest.example.com', start: 'node server.js' }));
+  r = await api('POST', '/api/sites', { path: manifestDir });
+  const mSite = r.json?.site;
+  check('پورتِ site.json گرفته شد', mSite?.port === 4780, String(mSite?.port));
+  check('دامنهٔ site.json وصل شد', mSite?.domain === 'manifest.example.com', String(mSite?.domain));
+  check('فرمانِ site.json جای npm start نشست', mSite?.start_command === 'node server.js', String(mSite?.start_command));
+  await api('DELETE', `/api/sites/${mSite?.id}`);
+
   console.log('\n── حذف سایت، دادهٔ سایت‌های دیگر را نمی‌برد ──');
   await api('DELETE', `/api/sites/${alpha.id}`);
   check('پوشهٔ دادهٔ سایتِ حذف‌شده پاک شد', !fs.existsSync(alphaSrv.dataDir));

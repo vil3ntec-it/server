@@ -135,7 +135,7 @@ export async function addSite({ rootPath, name, domain, port, kind, startCommand
     slug,
     name: finalName,
     root_path: resolved,
-    domain: normalizeDomain(domain),
+    domain: normalizeDomain(domain || detected.domain),
     port: await allocatePort(port || detected.port),
     kind: kind || detected.kind || 'static',
     start_command: startCommand ?? detected.startCommand ?? null,
@@ -164,6 +164,13 @@ export async function addSite({ rootPath, name, domain, port, kind, startCommand
 
   // پوشهٔ داده، رمز، دامنه و آدرس اینترنتی — همه خودکار، از همان لحظهٔ افزودن
   const provisioned = await provisionSite(site);
+
+  // ⚠️ دامنه‌ای که همان لحظهٔ افزودن داده شد، تا امروز فقط در جدول می‌نشست و
+  // تا بالا آمدنِ دوبارهٔ پنل نه در ingress می‌رفت نه رکوردِ DNS می‌گرفت.
+  if (site.domain && !provisioned.domain) {
+    const { syncTunnelRoutes } = await import('../tunnel.js');
+    syncTunnelRoutes().catch(() => {});
+  }
 
   logEvent('info', 'panel', `سایت «${site.name}» از مسیر ${resolved} اضافه شد`, site.id);
   return { ok: true, site: getSite(site.id), provisioned };
