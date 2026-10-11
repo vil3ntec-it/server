@@ -55,23 +55,6 @@ jobs:
         working-directory: homelab-panel/server
         run: npm test
 
-  vill3n-site:
-    name: سایتِ vill3n
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      # ⚠️ سایت‌ها از روی همین release.json خودشان را به‌روز می‌کنند؛ اگر با فایل‌ها نخواند، به‌روزرسانی شکست می‌خورد
-      - name: فهرستِ نسخه (release.json)
-        working-directory: sites/vill3n-top
-        run: node scripts/make-release.js --check
-      - name: آزمون‌ها
-        working-directory: sites/vill3n-top
-        run: npm test
-
   typecheck:
     name: بررسی نوع‌ها و ساخت رابط کاربری
     runs-on: ubuntu-latest

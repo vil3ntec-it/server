@@ -4,7 +4,7 @@
 //  خواستهٔ صاحب سامانه (۱۴۰۵/۰۷/۱۹): «اپدیت رو از سرور بگیره؛ هر تغییری توی سایت
 //  میدم باید توی سرور به سایت برسه … میخام گیت هاب دیده نشه توی سایت.»
 //
-//      گیت‌هاب (sites/<شناسه>/release.json) ──(هر ۱۰ دقیقه)──▶ <dataDir>/site-updates/<شناسه>/<نسخه>/
+//      ریپوی خودِ سایت (مثلاً vill3n-web، release.json) ──(هر ۱۰ دقیقه)──▶ <dataDir>/site-updates/<شناسه>/<نسخه>/
 //      سایت ──GET http://127.0.0.1:<پورتِ پنل>/site-updates/<شناسه>/…──▶ همین سرور (فقط از خودِ کامپیوتر)
 //
 //  ⛔ سایت هیچ نشانیِ گیت‌هاب نمی‌شناسد: پنل نشانیِ آینه را در SITE_UPDATE_URL به
@@ -23,8 +23,11 @@ import { get as httpGet } from '../update/http.js';
 import { githubToken } from '../update/github.js';
 import { LAYOUT } from '../update/layout.js';
 
-/** سایت‌هایی که آینه برایشان نگه داشته می‌شود: شناسهٔ site.json → پوشه در ریپو */
-export const SOURCES = { 'vill3n-top': 'sites/vill3n-top' };
+/**
+ * سایت‌هایی که آینه برایشان نگه داشته می‌شود: شناسهٔ site.json → ریپوی خودِ سایت.
+ * ⛔ هر سایت ریپوی جدای خودش را دارد (خواستهٔ صاحب سامانه)، نه پوشه‌ای در ریپوی server.
+ */
+export const SOURCES = { 'vill3n-top': { repo: 'vil3ntec-it/vill3n-web', branch: 'main' } };
 
 const VERSION = /^\d+(?:\.\d+){1,3}$/;
 const MAX_FILE = 20 * 1024 * 1024;
@@ -39,11 +42,10 @@ export function siteMirrorEnabled() {
   return LAYOUT === 'packaged';
 }
 
-//  ⚠️ HLP_SITE_RAW فقط برای آزمون است
-function rawBase() {
-  const repo = String(process.env.HLP_SITES_REPO || 'vil3ntec-it/server').trim();
-  const branch = String(process.env.HLP_SITES_BRANCH || 'main').trim();
-  return (process.env.HLP_SITE_RAW || `https://raw.githubusercontent.com/${repo}/${branch}/`).replace(/\/*$/, '/');
+//  ⚠️ HLP_SITE_RAW فقط برای آزمون است (به‌جای https://raw.githubusercontent.com/)
+function rawBase({ repo, branch }) {
+  const root = (process.env.HLP_SITE_RAW || 'https://raw.githubusercontent.com/').replace(/\/*$/, '/');
+  return `${root}${repo}/${branch}/`;
 }
 
 export function mirrorRoot() {
@@ -97,9 +99,9 @@ function readCurrent(id) {
 /** یک دور: برای هر سایت، اگر نسخهٔ تازه‌ای روی گیت‌هاب هست، بگیر و بسنج */
 export async function syncOnce({ log = () => {} } = {}) {
   const out = [];
-  for (const [id, dir] of Object.entries(SOURCES)) {
+  for (const [id, src] of Object.entries(SOURCES)) {
     try {
-      out.push(await syncSite(id, `${rawBase()}${dir}/`, log));
+      out.push(await syncSite(id, rawBase(src), log));
     } catch (e) {
       log(`آینهٔ سایتِ ${id}: ${e.message}`);
       out.push({ id, error: e.message });

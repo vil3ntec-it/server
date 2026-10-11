@@ -24,7 +24,7 @@ const check = (name, ok, extra = '') => {
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
 
-// «گیت‌هابِ» ساختگی: raw.githubusercontent.com/<repo>/main/sites/vill3n-top/…
+// «گیت‌هابِ» ساختگی: raw.githubusercontent.com/vil3ntec-it/vill3n-web/main/…
 const gh = { files: new Map(), hits: [] };
 function publish(version, files, { tamper } = {}) {
   gh.files = new Map(Object.entries(files).map(([p, c]) => [p, Buffer.from(c)]));
@@ -34,7 +34,7 @@ function publish(version, files, { tamper } = {}) {
 }
 const ghServer = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
-  const m = /^\/sites\/vill3n-top\/(.+)$/.exec(decodeURIComponent(u.pathname));
+  const m = /^\/vil3ntec-it\/vill3n-web\/main\/(.+)$/.exec(decodeURIComponent(u.pathname));
   const b = m && gh.files.get(m[1]);
   if (m) gh.hits.push(m[1]);
   if (!b) { res.writeHead(404); return res.end(); }
