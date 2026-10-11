@@ -34,6 +34,7 @@ export const REQUIRED_JOBS = Object.freeze([
   'panel-update',
   //  ⛔ و برنامهٔ پمپ آپدیتش را از همین سرور می‌گیرد (آینهٔ گیت‌هاب).
   'pump-update-mirror',
+  'site-update-mirror',
 ]);
 
 export function testJobs() {

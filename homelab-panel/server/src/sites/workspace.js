@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { paths } from '../config.js';
+import { updateUrlFor } from '../siteupdates/mirror.js';
 
 export function slugify(name) {
   const base = String(name || '')
@@ -82,5 +83,7 @@ export function siteEnv(site) {
     SITE_DB_DIR: p.db,
     SITE_BACKUP_DIR: p.backups,
     SITE_LOG_DIR: p.logs,
+    // سایتی که آینه دارد، آپدیتش را فقط از همین سرور می‌گیرد (siteupdates/mirror.js)
+    ...(updateUrlFor(site.root_path) ? { SITE_UPDATE_URL: updateUrlFor(site.root_path) } : {}),
   };
 }
