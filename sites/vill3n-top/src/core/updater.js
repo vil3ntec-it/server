@@ -1,11 +1,12 @@
 'use strict';
 /*
-  به‌روزرسانی از GitHub — بی git، بی npm.
+  به‌روزرسانی از سرورِ خانگی (کنترول سنتر) — بی git، بی npm، و بی هیچ نشانیِ GitHub.
 
-  روی GitHub کنارِ کد یک فهرست هست: release.json  ←  { version, files: [{ path, size, sha256 }] }
-  (با `node scripts/make-release.js` ساخته می‌شود و CI می‌سنجد که با فایل‌ها یکی باشد.)
+  کنترول سنتر نسخهٔ تازه را خودش می‌گیرد و نشانیِ آینه‌اش را در SITE_UPDATE_URL به این سایت
+  می‌دهد (http://127.0.0.1:<پورت>/site-updates/vill3n-top/). فهرستِ هر نسخه:
+  release.json  ←  { version, files: [{ path, size, sha256 }] }   (scripts/make-release.js)
 
-  ۱) فهرستِ GitHub خوانده می‌شود؛ اگر نسخه‌اش از نسخهٔ همین‌جا تازه‌تر نبود، کاری نمی‌شود.
+  ۱) فهرستِ سرور خوانده می‌شود؛ اگر نسخه‌اش از نسخهٔ همین‌جا تازه‌تر نبود، کاری نمی‌شود.
   ۲) فقط فایل‌هایی که فرق دارند گرفته می‌شوند، هر کدام با sha256 و اندازه سنجیده و اول در
      data/update/ گذاشته می‌شوند. اگر حتی یکی نخورد، هیچ فایلی عوض نمی‌شود.
   ۳) بعد همه سرِ جایشان می‌نشینند و release.json آخر از همه نوشته می‌شود.
@@ -15,7 +16,6 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const DEFAULT_URL = 'https://raw.githubusercontent.com/vil3ntec-it/server/main/sites/vill3n-top/';
 const MAX_MANIFEST = 1024 * 1024;
 const MAX_FILE = 20 * 1024 * 1024;
 const MAX_FILES = 2000;
@@ -79,12 +79,13 @@ function writeAtomic(file, buf) {
 /**
  * @returns {Promise<{ status: 'up-to-date'|'updated', version: string, changed?: number }>}
  */
-async function checkAndApply({ root, dataDir, baseUrl = DEFAULT_URL, log = () => {} }) {
+async function checkAndApply({ root, dataDir, baseUrl, log = () => {} }) {
+  if (!baseUrl) throw new Error('نشانیِ به‌روزرسانی نیست (سایت را از کنترول سنتر اجرا کنید)');
   const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
   const raw = await get(`${base}release.json?t=${Date.now()}`, MAX_MANIFEST);
   let rel;
-  try { rel = JSON.parse(raw.toString('utf8')); } catch (_) { throw new Error('release.json روی GitHub خراب است'); }
-  if (!rel || typeof rel.version !== 'string' || !Array.isArray(rel.files) || rel.files.length > MAX_FILES) throw new Error('release.json روی GitHub درست نیست');
+  try { rel = JSON.parse(raw.toString('utf8')); } catch (_) { throw new Error('release.json روی سرور خراب است'); }
+  if (!rel || typeof rel.version !== 'string' || !Array.isArray(rel.files) || rel.files.length > MAX_FILES) throw new Error('release.json روی سرور درست نیست');
 
   const current = localVersion(root);
   if (!newer(rel.version, current)) return { status: 'up-to-date', version: current };
@@ -118,4 +119,4 @@ async function checkAndApply({ root, dataDir, baseUrl = DEFAULT_URL, log = () =>
   return { status: 'updated', version: rel.version, from: current, changed: changed.length };
 }
 
-module.exports = { checkAndApply, newer, safePath, localVersion, DEFAULT_URL };
+module.exports = { checkAndApply, newer, safePath, localVersion };

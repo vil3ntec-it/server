@@ -84,6 +84,7 @@ import automationRoutes from './routes/automation.js';
 import { autostartAccountServer, stopAccountServer } from './account/supervisor.js';
 import accountServerRoutes from './routes/account-server.js';
 import pumpUpdatesAdminRoutes from './routes/pump-updates-admin.js';
+import siteUpdatesRoutes from './routes/site-updates.js';
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
 import { ensureControlSchema } from './control/schema.js';
@@ -322,6 +323,9 @@ app.get('/health', (req, res) => {
     time: new Date().toISOString(),
   });
 });
+
+// ------------------- آینهٔ به‌روزرسانیِ سایت‌ها (فقط لوکال) -------------------
+app.use('/site-updates', siteUpdatesRoutes);
 
 // -------------------------------- API --------------------------------------
 app.use('/api/auth', authRoutes);

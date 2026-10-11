@@ -148,8 +148,8 @@
   },
   {
    "path": "server.js",
-   "size": 10487,
-   "sha256": "9283ab8b3c13932237d18c03a1e0b36a6bb6b3e6882e8df47bd2ccc4d342d6bb"
+   "size": 10710,
+   "sha256": "53d504fda5ebd63b1a065dd8c0fd01412cb99c4cc21a6625d9f494cc5cdf68bc"
   },
   {
    "path": "site.json",
@@ -168,8 +168,8 @@
   },
   {
    "path": "src/app.js",
-   "size": 18204,
-   "sha256": "58a966296f9c8d4a90aa782f1a7a38f23624e370fbd623da27280e8f65fc2885"
+   "size": 18449,
+   "sha256": "3e69801a51530197533214d09d3dcbe5403e127d4d2d73d6051a222a6139c4c4"
   },
   {
    "path": "src/blocks.js",
@@ -208,8 +208,8 @@
   },
   {
    "path": "src/core/updater.js",
-   "size": 6305,
-   "sha256": "a5ddd082a7ac57cc41390762cc15f6713c6174d483d2fcc1a7d4088e9843d549"
+   "size": 6501,
+   "sha256": "dcd4ae71dc1443dc4524393031932426682444471e07ee8072b434fb55732ff2"
   },
   {
    "path": "src/core/util.js",
@@ -278,8 +278,8 @@
   },
   {
    "path": "اتصال-به-کنترول-سنتر.txt",
-   "size": 3356,
-   "sha256": "0b17fabea94a83755f4139eb701091b61402533bad399c303eddf799697cfa39"
+   "size": 3662,
+   "sha256": "8a2c38c6add35c4fa473a094f220be4571b17146ce4b248d169ff176771f6b13"
   }
  ]
 }

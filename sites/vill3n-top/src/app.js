@@ -110,7 +110,8 @@ function createSite({ dataDir, publicDir, config = {} }) {
     const s = db.data.settings;
     ctx.send(200, JSON.stringify({ name: `${s.brand} — ${s.slogan}`, short_name: s.brand, lang: 'fa', dir: 'rtl', start_url: '/', display: 'browser', background_color: '#000000', theme_color: '#000000', icons: [{ src: assets.url('favicon.svg'), sizes: 'any', type: 'image/svg+xml' }] }), 'application/manifest+json', { 'Cache-Control': 'public, max-age=3600' });
   });
-  app.get('/healthz', (ctx) => ctx.json({ ok: true, instance: db.data.meta.instance.slice(0, 8), version: VERSION }));
+  // نسخه فقط برای خودِ همین کامپیوتر؛ بیرون فقط «زنده‌ام» (نسخه نشان نمی‌دهد چه چیزی وصله نشده)
+  app.get('/healthz', (ctx) => ctx.json(ctx.local ? { ok: true, instance: db.data.meta.instance.slice(0, 8), version: VERSION } : { ok: true, instance: db.data.meta.instance.slice(0, 8) }));
 
   /* ───────────── صفحه‌ها ───────────── */
 

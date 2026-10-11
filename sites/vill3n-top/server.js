@@ -82,9 +82,11 @@ function takeLock() {
 }
 function dropLock() { try { if (readLock()?.pid === process.pid) fs.unlinkSync(LOCK); } catch (_) { /* نبود */ } }
 
+function updateUrl() { return process.env.SITE_UPDATE_URL || fileConfig.updateUrl || ''; }
+
 /* ───── به‌روزرسانیِ دستی: node server.js update ───── */
 if (args[0] === 'update') {
-  require('./src/core/updater').checkAndApply({ root: ROOT, dataDir: config.dataDir, baseUrl: fileConfig.updateUrl, log: console.log })
+  require('./src/core/updater').checkAndApply({ root: ROOT, dataDir: config.dataDir, baseUrl: updateUrl(), log: console.log })
     .then((r) => { console.log(r.status === 'updated' ? `\nنسخهٔ ${r.version} نصب شد (${r.changed} فایل). سایت را دوباره اجرا کنید.\n` : `\nهمین نسخه (${r.version}) تازه‌ترین است.\n`); process.exit(0); })
     .catch((e) => { console.error(`\nبه‌روزرسانی نشد: ${e.message}\n`); process.exit(1); });
   return;
@@ -113,17 +115,18 @@ if (held !== true) {
 const { createSite, listen, VERSION } = require('./src/app');
 const site = createSite({ dataDir: config.dataDir, publicDir: path.join(ROOT, 'public'), config });
 
-/* ───── به‌روزرسانیِ خودکار از GitHub ─────
-   دو دقیقه بعد از روشن شدن و بعد هر ۶ ساعت. با "autoUpdate": false در config.json خاموش می‌شود. */
+/* ───── به‌روزرسانیِ خودکار از سرورِ خانگی ─────
+   دو دقیقه بعد از روشن شدن و بعد هر ساعت، فقط از آینهٔ کنترول سنتر (SITE_UPDATE_URL).
+   سایت هیچ نشانیِ GitHub نمی‌شناسد. با "autoUpdate": false در config.json خاموش می‌شود. */
 function scheduleUpdates() {
-  if (passenger || fileConfig.autoUpdate === false) return;
+  if (passenger || fileConfig.autoUpdate === false || !updateUrl()) return;
   const { checkAndApply } = require('./src/core/updater');
   let busy = false;
   const tick = async () => {
     if (busy || closing) return;
     busy = true;
     try {
-      const r = await checkAndApply({ root: ROOT, dataDir: config.dataDir, baseUrl: fileConfig.updateUrl, log: console.log });
+      const r = await checkAndApply({ root: ROOT, dataDir: config.dataDir, baseUrl: updateUrl(), log: console.log });
       if (r.status === 'updated') {
         if (process.env.VILL3N_CHILD) shutdown(require('./src/supervisor').RESTART_CODE);
         else console.log(`نسخهٔ ${r.version} نصب شد؛ با اجرای دوبارهٔ سایت فعال می‌شود.`);
@@ -131,7 +134,7 @@ function scheduleUpdates() {
     } catch (e) { console.error(`[به‌روزرسانی] ${e.message}`); } finally { busy = false; }
   };
   setTimeout(tick, Number(process.env.VILL3N_UPDATE_DELAY_MS) || 2 * 60 * 1000).unref();
-  setInterval(tick, 6 * 3600 * 1000).unref();
+  setInterval(tick, 3600 * 1000).unref();
 }
 
 function openBrowser(url) {

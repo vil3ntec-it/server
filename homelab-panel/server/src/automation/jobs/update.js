@@ -15,6 +15,7 @@
 import { defineJob } from '../engine.js';
 import { autoUpdateOnce } from '../../update/github.js';
 import { syncOnce as pumpMirrorOnce, mirrorEnabled } from '../../pumpupdates/mirror.js';
+import { syncOnce as siteMirrorOnce, siteMirrorEnabled } from '../../siteupdates/mirror.js';
 
 export const panelUpdate = defineJob({
   name: 'panel-update',
@@ -66,4 +67,27 @@ export const pumpUpdateMirror = defineJob({
   },
 });
 
-export default [panelUpdate, pumpUpdateMirror];
+/*
+ *  آینهٔ به‌روزرسانیِ سایت‌ها (۱۴۰۵/۰۷/۱۹): «اپدیت رو از سرور بگیره … گیت هاب
+ *  دیده نشه توی سایت.» سرور از گیت‌هاب می‌گیرد؛ سایت فقط از همین سرور.
+ */
+export const siteUpdateMirror = defineJob({
+  name: 'site-update-mirror',
+  title: 'آینهٔ به‌روزرسانیِ سایت‌ها',
+  description: 'هر ده دقیقه نسخهٔ تازهٔ سایت‌ها (مثلِ vill3n.top) را از گیت‌هاب می‌گیرد، با sha256 می‌سنجد و فقط به سایت‌های همین کامپیوتر می‌دهد',
+  every: 10 * 60_000,
+  runOnStart: 45_000,
+  timeout: 10 * 60_000,
+  attempts: 1,
+  quiet: true,
+  async run(ctx) {
+    if (!siteMirrorEnabled()) return { skipped: 'disabled' };
+    const out = await siteMirrorOnce({ log: (m) => ctx.log(m) });
+    for (const s of out.sites.filter((x) => x.changed)) {
+      await ctx.notify('info', `نسخهٔ ${s.version} سایتِ ${s.id} روی سرور آماده شد — سایت خودش می‌گیرد`);
+    }
+    return out;
+  },
+});
+
+export default [panelUpdate, pumpUpdateMirror, siteUpdateMirror];
