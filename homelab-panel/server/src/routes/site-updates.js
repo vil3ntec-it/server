@@ -3,12 +3,14 @@
 //
 //      GET /site-updates/<شناسه>/release.json
 //      GET /site-updates/<شناسه>/<مسیرِ فایل>
+//      POST /site-updates/<شناسه>/__refresh   «همین حالا از ریپو بگیر» (دکمهٔ «بررسی» در پنلِ سایت)
 //
 //  ⛔ فقط از خودِ همین کامپیوتر: اتصالِ لوکال‌هاست و بی هیچ نشانِ پراکسی/تونل.
 //     سایت‌ها روی همین کامپیوترند؛ از اینترنت این در بسته است (۴۰۴).
 // ---------------------------------------------------------------------------
 import express from 'express';
-import { servedFile } from '../siteupdates/mirror.js';
+import { servedFile, refreshSite } from '../siteupdates/mirror.js';
+import { logEvent } from '../db.js';
 
 const router = express.Router();
 const LOOPBACK = /^(127\.\d+\.\d+\.\d+|::1|::ffff:127\.\d+\.\d+\.\d+)$/;
@@ -27,6 +29,13 @@ router.get(/^\/([a-z0-9-]{1,40})\/(.+)$/, (req, res) => {
   if (!file) return res.status(404).end();
   res.set('Cache-Control', 'no-store');
   res.sendFile(file, { dotfiles: 'allow' }, (err) => { if (err && !res.headersSent) res.status(404).end(); });
+});
+
+router.post(/^\/([a-z0-9-]{1,40})\/__refresh$/, async (req, res) => {
+  if (!fromThisComputer(req)) return res.status(404).end();
+  const out = await refreshSite(req.params[0], { log: (m) => logEvent('info', 'site-mirror', m) });
+  if (!out) return res.status(404).end();
+  res.set('Cache-Control', 'no-store').json(out);
 });
 
 export default router;

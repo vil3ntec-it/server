@@ -101,13 +101,36 @@ export async function syncOnce({ log = () => {} } = {}) {
   const out = [];
   for (const [id, src] of Object.entries(SOURCES)) {
     try {
-      out.push(await syncSite(id, rawBase(src), log));
+      out.push(await guarded(id, src, log));
     } catch (e) {
       log(`آینهٔ سایتِ ${id}: ${e.message}`);
       out.push({ id, error: e.message });
     }
   }
   return { sites: out, changed: out.some((x) => x.changed) };
+}
+
+/**
+ * یک سایت، همین حالا — برای دکمهٔ «بررسی» در پنلِ خودِ سایت (POST /site-updates/<شناسه>/__refresh).
+ * دو درخواستِ هم‌زمان یکی می‌شوند؛ هر سایت حداکثر هر ۲۰ ثانیه یک بار.
+ */
+const inflight = new Map();
+const lastRefresh = new Map();
+// ⛔ کارِ ۱۰ دقیقه‌ای و دکمه هرگز هم‌زمان در همان پوشهٔ .part نمی‌نویسند
+function guarded(id, src, log) {
+  if (inflight.has(id)) return inflight.get(id);
+  const p = syncSite(id, rawBase(src), log).finally(() => inflight.delete(id));
+  inflight.set(id, p);
+  return p;
+}
+export async function refreshSite(id, { log = () => {} } = {}) {
+  if (!Object.hasOwn(SOURCES, id)) return null;
+  if (!siteMirrorEnabled()) return { id, changed: false, error: 'آینهٔ سایت در این کنترول سنتر خاموش است' };
+  if (inflight.has(id)) return inflight.get(id).catch((e) => ({ id, changed: false, error: e.message }));
+  if (Date.now() - (lastRefresh.get(id) || 0) < 20000) return { id, changed: false, throttled: true, version: readCurrent(id)?.version || null };
+  lastRefresh.set(id, Date.now());
+  return guarded(id, SOURCES[id], log)
+    .catch((e) => { log(`آینهٔ سایتِ ${id}: ${e.message}`); return { id, changed: false, error: e.message, version: readCurrent(id)?.version || null }; });
 }
 
 async function syncSite(id, base, log) {
