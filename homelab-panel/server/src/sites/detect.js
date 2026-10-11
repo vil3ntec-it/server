@@ -40,7 +40,36 @@ function portFromScript(cmd) {
   return m ? Number(m[1]) : null;
 }
 
+/**
+ *  site.json — شناسنامه‌ای که خودِ پروژه کنارِ خودش می‌گذارد (مثلِ vill3n-top).
+ *
+ *  ⚠️ بی این، پنل پورتِ پروژه را نمی‌دانست و از 8100 به بعد یکی می‌داد؛ سایت
+ *  روی همان پورتِ تازه بالا می‌آمد ولی تونلی که صاحب سامانه یک بار برای
+ *  پورتِ نوشته‌شده در راهنمای سایت (4780) ساخته بود، به پورتِ خالی می‌رفت.
+ *  حالا پورت، دامنه و فرمانِ اجرا از همین فایل خوانده می‌شود.
+ */
+function siteManifest(dir) {
+  const m = readJson(path.join(dir, 'site.json'));
+  if (!m || typeof m !== 'object') return null;
+  const port = Number(m.port);
+  return {
+    port: Number.isInteger(port) && port > 0 && port < 65536 ? port : null,
+    domain: typeof m.domain === 'string' && m.domain.trim() ? m.domain.trim() : null,
+    start: typeof m.start === 'string' && m.start.trim() ? m.start.trim() : null,
+  };
+}
+
 export function detectProject(dir) {
+  const result = detectByFiles(dir);
+  const manifest = siteManifest(dir);
+  if (!manifest) return result;
+  if (manifest.port) result.port = manifest.port;
+  if (manifest.domain) result.domain = manifest.domain;
+  if (manifest.start && result.kind && result.kind !== 'static') result.startCommand = manifest.start;
+  return result;
+}
+
+function detectByFiles(dir) {
   const result = {
     kind: null,
     name: path.basename(dir),
