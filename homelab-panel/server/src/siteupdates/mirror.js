@@ -4,7 +4,7 @@
 //  خواستهٔ صاحب سامانه (۱۴۰۵/۰۷/۱۹): «اپدیت رو از سرور بگیره؛ هر تغییری توی سایت
 //  میدم باید توی سرور به سایت برسه … میخام گیت هاب دیده نشه توی سایت.»
 //
-//      ریپوی خودِ سایت (مثلاً vill3n-web، release.json) ──(هر ۱۰ دقیقه)──▶ <dataDir>/site-updates/<شناسه>/<نسخه>/
+//      ریپوی خودِ سایت (مثلاً VILL3N-WEB-، release.json) ──(هر ۱۰ دقیقه)──▶ <dataDir>/site-updates/<شناسه>/<نسخه>/
 //      سایت ──GET http://127.0.0.1:<پورتِ پنل>/site-updates/<شناسه>/…──▶ همین سرور (فقط از خودِ کامپیوتر)
 //
 //  ⛔ سایت هیچ نشانیِ گیت‌هاب نمی‌شناسد: پنل نشانیِ آینه را در SITE_UPDATE_URL به
@@ -27,7 +27,7 @@ import { LAYOUT } from '../update/layout.js';
  * سایت‌هایی که آینه برایشان نگه داشته می‌شود: شناسهٔ site.json → ریپوی خودِ سایت.
  * ⛔ هر سایت ریپوی جدای خودش را دارد (خواستهٔ صاحب سامانه)، نه پوشه‌ای در ریپوی server.
  */
-export const SOURCES = { 'vill3n-top': { repo: 'vil3ntec-it/vill3n-web', branch: 'main' } };
+export const SOURCES = { 'vill3n-top': { repo: 'vil3ntec-it/VILL3N-WEB-', branch: 'main' } };
 
 const VERSION = /^\d+(?:\.\d+){1,3}$/;
 const MAX_FILE = 20 * 1024 * 1024;

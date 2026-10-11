@@ -2929,7 +2929,7 @@ POST /api/pump-updates-admin/testers {codes}   فقط مدیر · دفترِ م�
 بعد: «یک ریپو جدا بساز و اونو روش بزار، نه روی ریپوی سرور.»
 
 ```
-ریپوی vil3ntec-it/vill3n-web (release.json) ──(کارِ site-update-mirror، هر ۱۰ دقیقه)──▶ <dataDir>/site-updates/vill3n-top/<نسخه>/
+ریپوی vil3ntec-it/VILL3N-WEB- (release.json) ──(کارِ site-update-mirror، هر ۱۰ دقیقه)──▶ <dataDir>/site-updates/vill3n-top/<نسخه>/
 سایت ──GET http://127.0.0.1:<پورتِ پنل>/site-updates/vill3n-top/…──▶ پنل (فقط از خودِ کامپیوتر)
 ```
 
