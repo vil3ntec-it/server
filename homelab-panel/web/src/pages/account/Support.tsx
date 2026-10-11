@@ -31,6 +31,7 @@ import { Badge, ConfirmDialog, Modal, Skeleton, toast } from '../../components/u
 import { ActionButton, Notice as InlineNotice, Select } from '../../control/ui';
 import { APP_LABEL, AppPicker, CloudProblem, day, fa, moment, useLoad, type Scope } from './shared';
 import type { Message, Thread } from './types';
+import { SupportTelegramButton } from './SupportTelegram';
 
 const THREAD_STATUS: Record<string, string> = {
   open: 'باز', pending: 'منتظرِ مشتری', closed: 'بسته',
@@ -139,6 +140,7 @@ export default function Support() {
               options={Object.entries(THREAD_STATUS).map(([v, label]) => ({ value: v, label }))}
             />
           </div>
+          <SupportTelegramButton />
           <button className="btn btn-sm" onClick={() => setBroadcast(true)}>پیامِ همگانی</button>
         </div>
       </header>
