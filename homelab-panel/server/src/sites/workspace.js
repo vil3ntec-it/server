@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { paths } from '../config.js';
 import { updateUrlFor } from '../siteupdates/mirror.js';
 
@@ -68,6 +69,24 @@ export async function removeWorkspace(slug) {
   await fsp.rm(workspaceDir(slug), { recursive: true, force: true });
 }
 
+/**
+ * کلیدِ «درِ کنترول سنتر» در هر سایت (SITE_PANEL_KEY) — پنل با آن گفت‌وگوهای سایت را
+ * می‌خواند و جواب می‌فرستد (support/site-chats.js). فایلِ جدا (panel.key، ۰۶۰۰)، نه در
+ * config.json که به رابط برمی‌گردد. ⛔ سایت فقط از لوکال‌هاستِ بی پراکسی آن را می‌پذیرد.
+ */
+export function panelKeyFor(slug, { create = true } = {}) {
+  const file = path.join(workspaceDir(slug), 'panel.key');
+  try {
+    const k = fs.readFileSync(file, 'utf8').trim();
+    if (/^[0-9a-f]{64}$/.test(k)) return k;
+  } catch { /* تازه */ }
+  if (!create) return null;
+  const k = crypto.randomBytes(32).toString('hex');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, k, { mode: 0o600 });
+  return k;
+}
+
 // متغیرهای محیطیِ اختصاصی هر سایت — تضمین می‌کند هیچ سایتی به دادهٔ سایت دیگر نرسد
 export function siteEnv(site) {
   const p = workspacePaths(site.slug);
@@ -85,5 +104,7 @@ export function siteEnv(site) {
     SITE_LOG_DIR: p.logs,
     // سایتی که آینه دارد، آپدیتش را فقط از همین سرور می‌گیرد (siteupdates/mirror.js)
     ...(updateUrlFor(site.root_path) ? { SITE_UPDATE_URL: updateUrlFor(site.root_path) } : {}),
+    // گفت‌وگوهای سایت در کنترول سنتر و تلگرام (support/site-chats.js)
+    SITE_PANEL_KEY: panelKeyFor(site.slug),
   };
 }

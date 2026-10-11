@@ -85,6 +85,7 @@ import { autostartAccountServer, stopAccountServer } from './account/supervisor.
 import accountServerRoutes from './routes/account-server.js';
 import pumpUpdatesAdminRoutes from './routes/pump-updates-admin.js';
 import supportTelegramRoutes from './routes/support-telegram.js';
+import siteChatsRoutes from './routes/site-chats.js';
 import siteUpdatesRoutes from './routes/site-updates.js';
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
@@ -383,6 +384,7 @@ app.use('/api/agent', requireAuth, writeNeedsOperator, agentRoutes);
 app.use('/api/account-server', accountServerRoutes);
 app.use('/api/pump-updates-admin', pumpUpdatesAdminRoutes);
 app.use('/api/support-telegram', supportTelegramRoutes);
+app.use('/api/site-chats', siteChatsRoutes);
 // دیتابیس‌های کاربر (MySQL/MariaDB و PostgreSQL) — رمز در گاوصندوق می‌ماند
 app.use('/api/databases', databaseRoutes);
 // موتورِ اتوماسیون — کارهای داخلیِ پنل (پشتیبان، پایش، نگهداری) با دفترِ اجرا
