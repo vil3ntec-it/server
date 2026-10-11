@@ -32,7 +32,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
 
 // ── گیت‌هابِ ساختگی ─────────────────────────────────────────────────────────
-const gh = { release: null, etag: null, hits: 0, notModified: 0, blobs: new Map(), authSeenOnBlob: [] };
+const gh = { release: null, etag: null, hits: 0, notModified: 0, blobs: new Map(), authSeenOnBlob: [], slowMs: 0, blobHits: 0 };
 function publish(version, { corrupt = false } = {}) {
   const setup = crypto.randomBytes(300_000);
   const small = crypto.randomBytes(40_000);
@@ -84,9 +84,16 @@ const ghServer = http.createServer((req, res) => {
   m = /^\/blob\/(.+)$/.exec(u.pathname);
   if (m) {
     gh.authSeenOnBlob.push(Boolean(req.headers.authorization));
-    const b = gh.blobs.get(decodeURIComponent(m[1]));
+    const name = decodeURIComponent(m[1]);
+    const b = gh.blobs.get(name);
     if (!b) { res.writeHead(404); return res.end(); }
+    gh.blobHits++;
     res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': b.length });
+    //  دانلودِ کندِ نصاب — مثلِ اینترنتِ خانه (بخشِ ۴ب)
+    if (gh.slowMs && name.endsWith('.exe')) {
+      res.write(b.subarray(0, 1000));
+      return setTimeout(() => res.end(b.subarray(1000)), gh.slowMs);
+    }
     return res.end(b);
   }
   res.writeHead(404); res.end();
@@ -349,6 +356,18 @@ try {
   await call('POST', '/api/pump-updates-admin/mode', { mode: 'auto' });
   check('روشن کردنِ پخش ⇒ نسخهٔ تازه به همه می‌رسد (کانالِ آزمایشی)',
     JSON.parse((await raw(L + '?channel=testing')).text).tag_name === 'v3.1.246');
+
+  console.log('\n── ۴ب) دکمهٔ «بررسی» وسطِ دانلودِ کارِ دودقیقه‌ای (ENOENT ۳.۱.۲۶۵) ──');
+  const v2b = publish('3.1.299');
+  gh.slowMs = 1500; gh.blobHits = 0;
+  const [rj, rc] = await Promise.all([runMirror(), (await wait(300), call('POST', '/api/pump-updates-admin/check', {}))]);
+  gh.slowMs = 0;
+  check(`کارِ اتوماسیون موفق (${rj.body.status} ${rj.body.error || ''})`, rj.status === 200 && rj.body.status === 'ok');
+  check(`دکمهٔ «بررسی» هم موفق — به همان دور پیوست (${rc.status} ${rc.body.error || ''})`, rc.status === 200 && rc.body.ok);
+  check(`هر فایل فقط یک بار دانلود شد (${gh.blobHits})`, gh.blobHits === 4);
+  const l2b = await (await fetch(`${PUB}/api/pump-updates/latest?channel=testing`)).json();
+  const s2b = Buffer.from(await (await fetch(PUB + l2b.assets.find((a) => a.name === 'PumpYaqobi-Setup.exe').browser_download_url)).arrayBuffer());
+  check('نسخهٔ ۳.۱.۲۹۹ سرو می‌شود و نصابش بایت‌به‌بایت است', l2b.tag_name === 'v3.1.299' && s2b.equals(v2b['PumpYaqobi-Setup.exe']));
 
   console.log('\n── ۶) فقط‌خواندنی ──');
   const post = await fetch(`${PUB}/api/pump-updates/latest`, { method: 'POST' });

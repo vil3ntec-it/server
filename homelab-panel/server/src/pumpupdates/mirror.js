@@ -486,8 +486,16 @@ async function download(asset, file) {
  * ⛔ هیچ‌وقت نسخهٔ سالمِ قبلی را خراب نمی‌کند: هر شکستی فقط در `state.json`
  * می‌نشیند و بارِ بعد دوباره.
  */
-export async function syncOnce({ log = () => {} } = {}) {
-  return syncCore({ log });
+//  ⛔ (۱۴۰۵/۰۷/۲۳) **یک دور در هر لحظه، برای همهٔ درها.** گزارشِ صاحب سامانه با عکس:
+//  «ENOENT: …\pump-updates\3.1.265.part\PumpYaqobi-Setup.exe» و نسخهٔ تازه هیچ‌وقت نرسید.
+//  کارِ دودقیقه‌ایِ اتوماسیون و دکمهٔ «بررسی»ِ پنل هر کدام قفلِ **خودشان** را داشتند، پس دورِ دوم
+//  وسطِ دانلودِ ۱۵۵ مگابایتیِ اولی پوشهٔ `.part` را پاک و از نو می‌ساخت و هر دو می‌افتادند — روی
+//  اینترنتِ خانه، که دانلود بیش از دو دقیقه طول می‌کشد، **همیشه**. حالا هر صداکننده به همان یک دور
+//  می‌پیوندد.
+let inflight = null;
+export function syncOnce({ log = () => {} } = {}) {
+  inflight ||= syncCore({ log }).finally(() => { inflight = null; });
+  return inflight;
 }
 
 async function syncCore({ log = () => {} } = {}) {
