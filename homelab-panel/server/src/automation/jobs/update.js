@@ -16,6 +16,7 @@ import { defineJob } from '../engine.js';
 import { autoUpdateOnce } from '../../update/github.js';
 import { syncOnce as pumpMirrorOnce, mirrorEnabled } from '../../pumpupdates/mirror.js';
 import { syncOnce as siteMirrorOnce, siteMirrorEnabled } from '../../siteupdates/mirror.js';
+import { syncOnce as supportTelegramOnce } from '../../support/telegram.js';
 
 export const panelUpdate = defineJob({
   name: 'panel-update',
@@ -90,4 +91,22 @@ export const siteUpdateMirror = defineJob({
   },
 });
 
-export default [panelUpdate, pumpUpdateMirror, siteUpdateMirror];
+/*
+ *  پلِ تلگرامِ پشتیبانی (۱۴۰۵/۰۷/۲۰): پیامِ کاربرانِ پمپ و فروشگاه به تلگرامِ مالک،
+ *  و Reply در تلگرام به خودِ کاربر. خاموش تا مالک در «پشتیبانی» روشنش کند.
+ */
+export const supportTelegram = defineJob({
+  name: 'support-telegram',
+  title: 'پلِ تلگرامِ پشتیبانی',
+  description: 'هر ۲۰ ثانیه — پیامِ تازهٔ کاربرانِ پمپ و فروشگاه به تلگرامِ مالک، و جوابِ مالک (Reply) به خودِ کاربر',
+  every: 20_000,
+  runOnStart: 20_000,
+  timeout: 60_000,
+  attempts: 1,
+  quiet: true,
+  async run(ctx) {
+    return supportTelegramOnce({ log: (m) => ctx.log(m) });
+  },
+});
+
+export default [panelUpdate, pumpUpdateMirror, siteUpdateMirror, supportTelegram];

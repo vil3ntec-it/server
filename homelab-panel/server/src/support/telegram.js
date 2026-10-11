@@ -1,0 +1,188 @@
+// ---------------------------------------------------------------------------
+//  پلِ تلگرامِ پشتیبانی — پیامِ کاربرانِ برنامهٔ پمپ و فروشگاه به تلگرامِ مالک،
+//  و جوابِ مالک در تلگرام به خودِ همان کاربر.
+//
+//  خواستهٔ صاحب سامانه (۱۴۰۵/۰۷/۲۰): «وقتی کاربری به پشتیبانیِ برنامه پیام می‌دهد هم
+//  توی سرور بیاید هم توی تلگرام برای باتِ پشتیبانی‌ام، و آن‌جا جوابشان را بدهم و به
+//  خودشان هم برسد.»
+//
+//      سرورِ حساب (گفت‌وگوها) ──(کارِ support-telegram، هر ۲۰ ثانیه)──▶ تلگرامِ مالک
+//      مالک «Reply» می‌زند ──getUpdates──▶ همین پل ──▶ سرورِ حساب ──▶ برنامهٔ کاربر
+//
+//  ⛔ تنها خوانندهٔ getUpdatesِ این ربات همین پل است. سایت (VILL3N-WEB-) فقط
+//     sendMessage می‌زند؛ پس یک ربات برای هر دو کافی است و دعوای ۴۰۹ پیش نمی‌آید.
+//  ⛔ فقط پیامی که از همان chat idِ مالک بیاید جواب حساب می‌شود؛ هر کسِ دیگری که
+//     ربات را پیدا کند هیچ راهی به گفت‌وگوها ندارد.
+//  ⛔ جواب فقط وقتی به کاربر می‌رود که روی پیامِ خودِ او «Reply» شده باشد — نشانیِ
+//     گفت‌وگو از نگاشتِ «پیامِ تلگرام ← گفت‌وگو» می‌آید، نه از متنی که بشود جعل کرد.
+//  ⚠️ بارِ اول فقط پیام‌های از همان لحظه به بعد می‌رود، نه همهٔ تاریخچه.
+//  ⚠️ توکن در گاوصندوق است («telegram:support-bot»)، نه در تنظیمات.
+// ---------------------------------------------------------------------------
+import { db, getSetting, setSetting } from '../db.js';
+import { putSecret, readSecret } from '../control/vault.js';
+import { cloudRaw } from '../stations/cloud.js';
+
+export const TOKEN_SECRET = 'telegram:support-bot';
+const CONFIG = 'support_tg';
+const STATE = 'support_tg_state';
+const MAP_MAX = 2000;
+const TOKEN_RE = /^\d{5,12}:[A-Za-z0-9_-]{30,60}$/;
+const APPS = { pump: '🛢 پمپ', shop: '🛒 فروشگاه' };
+
+//  ⚠️ HLP_TELEGRAM_API فقط برای آزمون است
+const api = () => (process.env.HLP_TELEGRAM_API || 'https://api.telegram.org').replace(/\/+$/, '');
+
+export function validToken(t) { return TOKEN_RE.test(String(t || '')); }
+
+export function config() {
+  const c = getSetting(CONFIG, null) || {};
+  return {
+    enabled: c.enabled === true,
+    chatId: String(c.chatId || ''),
+    apps: Array.isArray(c.apps) && c.apps.length ? c.apps.filter((a) => APPS[a]) : ['pump', 'shop'],
+  };
+}
+
+export function token() {
+  try {
+    const row = db.prepare("SELECT id FROM cc_secrets WHERE scope = 'global' AND name = ?").get(TOKEN_SECRET);
+    return row ? readSecret(row.id) : null;
+  } catch {
+    return null;
+  }
+}
+
+function state() {
+  const s = getSetting(STATE, null) || {};
+  return { offset: Number(s.offset) || 0, startedAt: Number(s.startedAt) || 0, since: s.since && typeof s.since === 'object' ? s.since : {}, map: Array.isArray(s.map) ? s.map : [], last: s.last || null };
+}
+const saveState = (s) => setSetting(STATE, { ...s, map: s.map.slice(-MAP_MAX) });
+
+export async function tg(tok, method, body = {}, timeoutMs = 15000) {
+  if (!validToken(tok)) throw new Error('توکنِ ربات درست نیست (شکلِ 123456:ABC… از BotFather)');
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const r = await fetch(`${api()}/bot${tok}/${method}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ac.signal, redirect: 'error',
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!j.ok) throw new Error(j.description ? `تلگرام: ${String(j.description).slice(0, 160)}` : `تلگرام پاسخ نداد (${r.status})`);
+    return j.result;
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('تلگرام پاسخ نداد');
+    throw e;
+  } finally { clearTimeout(t); }
+}
+
+/** ذخیرهٔ تنظیمات. توکنِ خالی یعنی «همان قبلی». */
+export function saveConfig({ enabled, chatId, apps, token: tok }, actor = 'admin') {
+  const cur = config();
+  if (tok !== undefined && String(tok).trim() !== '') {
+    const t = String(tok).trim();
+    if (!validToken(t)) throw Object.assign(new Error('invalid_token'), { status: 400 });
+    putSecret({ name: TOKEN_SECRET, kind: 'api_key', value: t, note: 'رباتِ تلگرامِ پشتیبانی', actor });
+  }
+  const next = {
+    enabled: enabled === undefined ? cur.enabled : enabled === true,
+    chatId: chatId === undefined ? cur.chatId : String(chatId || '').replace(/[^\d-]/g, '').slice(0, 20),
+    apps: Array.isArray(apps) ? apps.filter((a) => APPS[a]) : cur.apps,
+  };
+  // روشن شدنِ تازه: تاریخچهٔ قدیمی فرستاده نشود
+  if (next.enabled && !cur.enabled) { const s = state(); s.startedAt = Date.now(); s.since = {}; saveState(s); }
+  setSetting(CONFIG, next);
+  return status();
+}
+
+export function status() {
+  const c = config();
+  const t = token();
+  const s = state();
+  return { ...c, hasToken: !!t, tokenHint: t ? `••••${t.slice(-4)}` : '', last: s.last, linked: s.map.length };
+}
+
+/** آخرین گفت‌وگویی که به ربات پیام داده — برای پر کردنِ خودکارِ chat id. */
+export async function findChat(tok = token()) {
+  const ups = await tg(tok, 'getUpdates', { limit: 20, timeout: 0, allowed_updates: ['message'] });
+  for (let i = ups.length - 1; i >= 0; i--) {
+    const c = ups[i].message && ups[i].message.chat;
+    if (c && c.id) return { id: String(c.id), title: c.title || [c.first_name, c.last_name].filter(Boolean).join(' ') || c.username || '' };
+  }
+  return null;
+}
+
+const whoOf = (t) => t.stationName || t.shopName || t.accountName || t.who || t.contact || 'کاربر';
+const KIND = { image: '🖼 عکس', video: '🎬 ویدیو', audio: '🎤 پیامِ صوتی' };
+
+function format(t, m) {
+  const head = `${APPS[t.app] || t.app} · ${whoOf(t)}${t.subject ? ` — ${t.subject}` : ''}`;
+  const body = KIND[m.kind] ? `${KIND[m.kind]} (در پنلِ کنترول سنتر ببینید)${m.body ? `\n${m.body}` : ''}` : (m.body || '');
+  return `${head}\n\n${body}`.slice(0, 3900) + '\n\n↩️ برای جواب، روی همین پیام Reply بزنید.';
+}
+
+/**
+ * یک دور: اول جواب‌های مالک (تلگرام ← کاربر)، بعد پیام‌های تازهٔ کاربران (کاربر ← تلگرام).
+ * @returns {{ skipped?: string, sent?: number, replied?: number }}
+ */
+export async function syncOnce({ log = () => {} } = {}) {
+  const c = config();
+  const tok = token();
+  if (!c.enabled) return { skipped: 'disabled' };
+  if (!tok || !c.chatId) return { skipped: 'not_configured' };
+  const s = state();
+  if (!s.startedAt) s.startedAt = Date.now();
+  const map = new Map(s.map);
+  let replied = 0;
+  let sent = 0;
+
+  // ۱) جوابِ مالک
+  const ups = await tg(tok, 'getUpdates', { offset: s.offset, limit: 50, timeout: 0, allowed_updates: ['message'] });
+  for (const u of ups) {
+    s.offset = Math.max(s.offset, u.update_id + 1);
+    // ⚠️ offset پیش از هر کار ذخیره می‌شود: اگر وسطِ دور چیزی شکست، همان جواب دو بار به کاربر نمی‌رود
+    saveState({ ...s, map: [...map] });
+    const m = u.message;
+    if (!m || String(m.chat && m.chat.id) !== c.chatId) continue; // ⛔ فقط مالک
+    const text = String(m.text || m.caption || '').trim();
+    const threadId = m.reply_to_message && map.get(m.reply_to_message.message_id);
+    if (!threadId) {
+      if (text) await tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, text: 'برای جواب دادن به کاربر، روی پیامِ خودِ او Reply بزنید و بنویسید.' }).catch(() => {});
+      continue;
+    }
+    if (!text) {
+      await tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, text: 'فعلاً فقط متن به کاربر می‌رسد؛ عکس و فایل را از پنلِ کنترول سنتر بفرستید.' }).catch(() => {});
+      continue;
+    }
+    try {
+      await cloudRaw('POST', `/api/admin/support/threads/${encodeURIComponent(threadId)}/messages`, { body: { body: text.slice(0, 4000) } });
+      replied++;
+      await tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, text: '✅ رسید.' }).catch(() => {});
+    } catch (e) {
+      log(`جواب به گفت‌وگوی ${threadId} نرفت: ${e.message}`);
+      await tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, text: `⚠️ نرسید: ${e.message}. دوباره بفرستید.` }).catch(() => {});
+    }
+  }
+
+  // ۲) پیام‌های تازهٔ کاربران
+  const list = await cloudRaw('GET', '/api/admin/support/threads', { query: { limit: 100 } });
+  for (const t of (list && list.threads) || []) {
+    if (!c.apps.includes(t.app)) continue;
+    const since = Number(s.since[t.id]) || s.startedAt;
+    if (!(Number(t.updatedAt) > since) || t.lastSender === 'admin') continue;
+    const conv = await cloudRaw('GET', `/api/admin/support/threads/${encodeURIComponent(t.id)}`, { query: { after: 0 } });
+    const fresh = ((conv && conv.messages) || []).filter((m) => m.sender !== 'admin' && Number(m.createdAt) > since).sort((a, b) => a.createdAt - b.createdAt);
+    for (const m of fresh.slice(-10)) {
+      const out = await tg(tok, 'sendMessage', { chat_id: c.chatId, text: format({ ...t, ...(conv.thread || {}) }, m), disable_web_page_preview: true });
+      map.set(out.message_id, t.id);
+      s.since[t.id] = Math.max(Number(s.since[t.id]) || 0, Number(m.createdAt));
+      sent++;
+    }
+    if (!fresh.length) s.since[t.id] = Number(t.updatedAt);
+  }
+
+  s.map = [...map];
+  s.last = { at: Date.now(), sent, replied };
+  saveState(s);
+  if (sent || replied) log(`تلگرام: ${sent} پیام به مالک، ${replied} جواب به کاربران`);
+  return { sent, replied };
+}

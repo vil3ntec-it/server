@@ -35,6 +35,7 @@ export const REQUIRED_JOBS = Object.freeze([
   //  ⛔ و برنامهٔ پمپ آپدیتش را از همین سرور می‌گیرد (آینهٔ گیت‌هاب).
   'pump-update-mirror',
   'site-update-mirror',
+  'support-telegram',
 ]);
 
 export function testJobs() {
