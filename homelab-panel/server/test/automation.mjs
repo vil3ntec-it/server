@@ -223,12 +223,14 @@ try {
 
   //  ۱) کارِ روشن با وقتِ گذشته باید در تیکِ بعدی بدود
   let mark = maxId(await runsOf());
+  const pushedAt = Date.now();
   pushToPast();
   await wait(TICK_MS * 2 + 500);
   let fresh = (await runsOf()).filter((r) => Number(r.id) > mark);
   check('کارِ روشن با وقتِ گذشته در تیکِ بعدی اجرا شد (trigger=scheduled)', fresh.some((r) => r.trigger === 'scheduled' && r.status === 'ok'), JSON.stringify(fresh));
   const after = (await api('GET', '/api/automation/jobs/test-minutely')).json?.job;
-  check('و next_run_at دوباره به آینده رفت', after?.next_run_at > Date.now() && after?.last_status === 'ok', String(after?.next_run_at));
+  // ⚠️ «آینده» نسبت به لحظهٔ اجرا: اگر کار ثانیهٔ آخرِ دقیقه دویده باشد، سرِ دقیقهٔ بعد ممکن است تا این سنجه گذشته باشد
+  check('و next_run_at دوباره به آینده رفت', after?.next_run_at > pushedAt && after?.next_run_at % 60000 === 0 && after?.last_status === 'ok', String(after?.next_run_at));
 
   //  ۲) حالا که یک اجرای واقعی در دفتر هست، خاموشش می‌کنیم
   mark = maxId(await runsOf());

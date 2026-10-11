@@ -114,6 +114,19 @@ try {
   await runMirror();
   check('هنوز 2.2.1', (await (await get('release.json')).json()).version === '2.2.1');
 
+  console.log('\n── ۵-ب) دکمهٔ «بررسی» در پنلِ سایت ⇒ کنترول سنتر همان لحظه از ریپو می‌گیرد ──');
+  const refresh = (headers = {}) => fetch(`${BASE}/site-updates/vill3n-top/__refresh`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: '{}' });
+  publish('2.3.0', { 'server.js': 'v1-server', 'src/app.js': 'v3-app' });
+  let rr = await refresh();
+  let rb = await rr.json().catch(() => ({}));
+  check('بی انتظارِ ۱۰ دقیقه، 2.3.0 همان لحظه آمد', rr.status === 200 && rb.changed === true && rb.version === '2.3.0', rr.status + ' ' + JSON.stringify(rb));
+  check('و همان را به سایت می‌دهد', (await (await get('release.json')).json()).version === '2.3.0');
+  rr = await refresh();
+  rb = await rr.json().catch(() => ({}));
+  check('پشتِ هم ⇒ فقط یک بار در ۲۰ ثانیه', rr.status === 200 && rb.throttled === true, JSON.stringify(rb));
+  check('از تونل (cf-ray) ⇒ ۴۰۴', (await refresh({ 'cf-ray': 'x' })).status === 404);
+  check('سایتِ ناشناخته ⇒ ۴۰۴', (await fetch(`${BASE}/site-updates/other/__refresh`, { method: 'POST' })).status === 404);
+
   console.log('\n── ۶) سایتِ ثبت‌شده نشانیِ آینه را می‌گیرد، نه گیت‌هاب ──');
   const siteDir = path.join(tmp, 'sites', 'vill3n-top');
   fs.mkdirSync(siteDir, { recursive: true });

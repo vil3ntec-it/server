@@ -7,7 +7,7 @@ import { Modal, toast } from '../../components/ui';
 
 type State = { enabled: boolean; chatId: string; apps: string[]; hasToken: boolean; tokenHint: string; last: { at: number; sent: number; replied: number } | null };
 
-const APPS: Record<string, string> = { pump: 'پمپ', shop: 'فروشگاه' };
+const APPS: Record<string, string> = { pump: 'پمپ', shop: 'فروشگاه', site: 'سایت‌ها' };
 
 export function SupportTelegramButton() {
   const [open, setOpen] = useState(false);
@@ -16,7 +16,7 @@ export function SupportTelegramButton() {
   return (
     <>
       <button className="btn btn-sm" onClick={() => setOpen(true)} title="پیام‌های پشتیبانی در تلگرامِ شما">
-        <Send className="h-3.5 w-3.5" /> تلگرام {st?.enabled ? <span className="text-[10px] text-good">● روشن</span> : null}
+        <Send className="h-3.5 w-3.5" /> تلگرام {st?.enabled ? <span className="text-[10px] text-state-good">● روشن</span> : null}
       </button>
       {open && <SupportTelegramDialog onClose={() => setOpen(false)} />}
     </>
@@ -27,7 +27,7 @@ function SupportTelegramDialog({ onClose }: { onClose: () => void }) {
   const [st, setSt] = useState<State | null>(null);
   const [token, setToken] = useState('');
   const [chatId, setChatId] = useState('');
-  const [apps, setApps] = useState<string[]>(['pump', 'shop']);
+  const [apps, setApps] = useState<string[]>(['pump', 'shop', 'site']);
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState('');
 
@@ -57,7 +57,7 @@ function SupportTelegramDialog({ onClose }: { onClose: () => void }) {
         <button className="btn btn-sm btn-primary" onClick={save} disabled={!!busy}>{busy === 'save' ? '…' : 'ذخیره'}</button>
       </div>}>
       <div className="space-y-4 text-sm">
-        <p className="text-ink-muted">پیامِ هر کاربرِ برنامهٔ پمپ و فروشگاه همان لحظه در تلگرامِ شما هم می‌آید. روی پیام <b>Reply</b> بزنید و بنویسید؛ جوابتان به خودِ همان کاربر در برنامه می‌رسد.</p>
+        <p className="text-ink-muted">پیامِ هر کاربرِ برنامهٔ پمپ و فروشگاه، و هر بازدیدکنندهٔ سایت، همان لحظه در تلگرامِ شما هم می‌آید. روی پیام <b>Reply</b> بزنید و بنویسید؛ جوابتان به خودِ همان کاربر در برنامه یا سایت می‌رسد.</p>
         <ol className="list-decimal space-y-1 pr-5 text-xs text-ink-muted">
           <li>در تلگرام با ‎@BotFather‎ یک ربات بسازید (‎/newbot‎) و توکن را این‌جا بچسبانید. (همان رباتِ اعلانِ سایت هم می‌شود.)</li>
           <li>ربات را باز کنید و Start بزنید، بعد «پیدا کردن».</li>

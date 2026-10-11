@@ -44,7 +44,7 @@ router.post('/find-chat', async (req, res) => {
 router.post('/test', async (req, res) => {
   const c = config();
   try {
-    await tg(token(), 'sendMessage', { chat_id: c.chatId, text: '✅ پلِ پشتیبانیِ کنترول سنتر وصل است. پیامِ کاربرانِ پمپ و فروشگاه این‌جا می‌آید؛ برای جواب روی پیامشان Reply بزنید.' });
+    await tg(token(), 'sendMessage', { chat_id: c.chatId, text: '✅ پلِ پشتیبانیِ کنترول سنتر وصل است. پیامِ کاربرانِ پمپ، فروشگاه و سایت‌ها این‌جا می‌آید؛ برای جواب روی پیامشان Reply بزنید.' });
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });

@@ -21,13 +21,14 @@
 import { db, getSetting, setSetting } from '../db.js';
 import { putSecret, readSecret } from '../control/vault.js';
 import { cloudRaw } from '../stations/cloud.js';
+import * as siteChats from './site-chats.js';
 
 export const TOKEN_SECRET = 'telegram:support-bot';
 const CONFIG = 'support_tg';
 const STATE = 'support_tg_state';
 const MAP_MAX = 2000;
 const TOKEN_RE = /^\d{5,12}:[A-Za-z0-9_-]{30,60}$/;
-const APPS = { pump: '🛢 پمپ', shop: '🛒 فروشگاه' };
+const APPS = { pump: '🛢 پمپ', shop: '🛒 فروشگاه', site: '🌐 سایت' };
 
 //  ⚠️ HLP_TELEGRAM_API فقط برای آزمون است
 const api = () => (process.env.HLP_TELEGRAM_API || 'https://api.telegram.org').replace(/\/+$/, '');
@@ -39,8 +40,13 @@ export function config() {
   return {
     enabled: c.enabled === true,
     chatId: String(c.chatId || ''),
-    apps: Array.isArray(c.apps) && c.apps.length ? c.apps.filter((a) => APPS[a]) : ['pump', 'shop'],
+    apps: appsOf(c),
   };
+}
+// «سایت» از ۱.۵۰.۴۸ آمد: تنظیمی که پیش از آن ذخیره شده، سایت را هم روشن می‌گیرد
+function appsOf(c) {
+  const list = Array.isArray(c.apps) && c.apps.length ? c.apps.filter((a) => APPS[a]) : ['pump', 'shop', 'site'];
+  return c.v === 2 || list.includes('site') ? list : [...list, 'site'];
 }
 
 export function token() {
@@ -90,7 +96,7 @@ export function saveConfig({ enabled, chatId, apps, token: tok }, actor = 'admin
   };
   // روشن شدنِ تازه: تاریخچهٔ قدیمی فرستاده نشود
   if (next.enabled && !cur.enabled) { const s = state(); s.startedAt = Date.now(); s.since = {}; saveState(s); }
-  setSetting(CONFIG, next);
+  setSetting(CONFIG, { ...next, v: 2 });
   return status();
 }
 
@@ -118,6 +124,33 @@ function format(t, m) {
   const head = `${APPS[t.app] || t.app} · ${whoOf(t)}${t.subject ? ` — ${t.subject}` : ''}`;
   const body = KIND[m.kind] ? `${KIND[m.kind]} (در پنلِ کنترول سنتر ببینید)${m.body ? `\n${m.body}` : ''}` : (m.body || '');
   return `${head}\n\n${body}`.slice(0, 3900) + '\n\n↩️ برای جواب، روی همین پیام Reply بزنید.';
+}
+
+async function syncSite(tok, c, s, map, site) {
+  const floorKey = `site:${site.slug}`;
+  const floor = Number(s.since[floorKey]) || s.startedAt;
+  const { chats } = await siteChats.listChats(site, floor);
+  let sent = 0;
+  let top = floor;
+  for (const ch of chats) {
+    const key = `site:${site.slug}:${ch.id}`;
+    const since = Math.max(Number(s.since[key]) || 0, s.startedAt);
+    top = Math.max(top, Number(ch.updatedAt) || 0);
+    if (!(Number(ch.updatedAt) > since) || ch.lastFrom === 'owner') { s.since[key] = Math.max(since, Number(ch.updatedAt) || 0); continue; }
+    const conv = await siteChats.getChat(site.slug, ch.id);
+    const fresh = ((conv && conv.messages) || []).filter((m) => m.from === 'visitor' && Number(m.at) > since);
+    for (const m of fresh.slice(-10)) {
+      const head = `🌐 ${site.name} · ${ch.name || 'بازدیدکننده'}${ch.contact ? ` (${ch.contact})` : ''}`;
+      const text = `${head}\n\n${m.body}`.slice(0, 3900) + '\n\n↩️ برای جواب، روی همین پیام Reply بزنید.';
+      const out = await tg(tok, 'sendMessage', { chat_id: c.chatId, text, disable_web_page_preview: true });
+      map.set(out.message_id, key);
+      s.since[key] = Math.max(Number(s.since[key]) || 0, Number(m.at));
+      sent++;
+    }
+    s.since[key] = Math.max(Number(s.since[key]) || 0, Number(ch.updatedAt) || 0);
+  }
+  s.since[floorKey] = top;
+  return sent;
 }
 
 /**
@@ -154,7 +187,9 @@ export async function syncOnce({ log = () => {} } = {}) {
       continue;
     }
     try {
-      await cloudRaw('POST', `/api/admin/support/threads/${encodeURIComponent(threadId)}/messages`, { body: { body: text.slice(0, 4000) } });
+      const site = /^site:([^:]+):([^:]+)$/.exec(String(threadId));
+      if (site) await siteChats.reply(site[1], site[2], text, 'telegram');
+      else await cloudRaw('POST', `/api/admin/support/threads/${encodeURIComponent(threadId)}/messages`, { body: { body: text.slice(0, 4000) } });
       replied++;
       await tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, text: '✅ رسید.' }).catch(() => {});
     } catch (e) {
@@ -163,8 +198,16 @@ export async function syncOnce({ log = () => {} } = {}) {
     }
   }
 
-  // ۲) پیام‌های تازهٔ کاربران
-  const list = await cloudRaw('GET', '/api/admin/support/threads', { query: { limit: 100 } });
+  // ۲) پیام‌های تازهٔ بازدیدکنندگانِ سایت‌ها (هر سایت جدا؛ خاموش بودنِ یکی بقیه را نمی‌خواباند)
+  if (c.apps.includes('site')) {
+    for (const site of siteChats.chatSites()) {
+      try { sent += await syncSite(tok, c, s, map, site); } catch (e) { log(`گفت‌وگوهای سایتِ ${site.name}: ${e.message}`); }
+    }
+  }
+
+  // ۳) پیام‌های تازهٔ کاربرانِ پمپ و فروشگاه
+  const wantCloud = c.apps.some((a) => a === 'pump' || a === 'shop');
+  const list = wantCloud ? await cloudRaw('GET', '/api/admin/support/threads', { query: { limit: 100 } }) : null;
   for (const t of (list && list.threads) || []) {
     if (!c.apps.includes(t.app)) continue;
     const since = Number(s.since[t.id]) || s.startedAt;
