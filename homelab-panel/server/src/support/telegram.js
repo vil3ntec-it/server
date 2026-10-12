@@ -63,7 +63,7 @@ export function token() {
 
 function state() {
   const s = getSetting(STATE, null) || {};
-  return { offset: Number(s.offset) || 0, startedAt: Number(s.startedAt) || 0, since: s.since && typeof s.since === 'object' ? s.since : {}, map: Array.isArray(s.map) ? s.map : [], last: s.last || null };
+  return { seen: s.seen && typeof s.seen === 'object' ? s.seen : null, offset: Number(s.offset) || 0, startedAt: Number(s.startedAt) || 0, since: s.since && typeof s.since === 'object' ? s.since : {}, map: Array.isArray(s.map) ? s.map : [], last: s.last || null };
 }
 const saveState = (s) => setSetting(STATE, { ...s, map: s.map.slice(-MAP_MAX) });
 
@@ -148,12 +148,19 @@ export function status() {
 }
 
 /** آخرین گفت‌وگویی که به ربات پیام داده — برای پر کردنِ خودکارِ chat id. */
+const chatTitle = (c) => c.title || [c.first_name, c.last_name].filter(Boolean).join(' ') || c.username || '';
+
 export async function findChat(tok = token()) {
   const ups = await tg(tok, 'getUpdates', { limit: 20, timeout: 0, allowed_updates: ['message'] });
   for (let i = ups.length - 1; i >= 0; i--) {
     const c = ups[i].message && ups[i].message.chat;
-    if (c && c.id) return { id: String(c.id), title: c.title || [c.first_name, c.last_name].filter(Boolean).join(' ') || c.username || '' };
+    if (c && c.id) return { id: String(c.id), title: chatTitle(c) };
   }
+  //  ⚠️ وقتی پل روشن است و chat id غلط (مثلاً همان 123456789) ذخیره شده، کارِ هر ۵ ثانیه
+  //  پیامِ Start را پیش از «پیدا کردن» برمی‌دارد (offset). پس آخرین گفت‌وگوی ناآشنا که
+  //  همان کار دیده (`state().seen`، ۲۴ ساعت) هم پیشنهاد می‌شود. ورود با رمز همچنان لازم است.
+  const seen = state().seen;
+  if (seen && seen.id && Date.now() - Number(seen.at) < 24 * 3600e3) return { id: String(seen.id), title: seen.title || '' };
   return null;
 }
 
@@ -224,7 +231,22 @@ export async function syncOnce({ log = () => {} } = {}) {
       continue;
     }
     const m = u.message;
-    if (!m || String(m.chat && m.chat.id) !== c.chatId) continue; // ⛔ فقط مالک
+    if (!m) continue;
+    if (String(m.chat && m.chat.id) !== c.chatId) {
+      // ⛔ فقط مالک. گفت‌وگوی خصوصیِ دیگر: برای «پیدا کردن» به یاد می‌ماند، و یک بار
+      //    (هر ساعت) شناسه‌اش را می‌گیرد تا اگر مالک است و chat id غلط ذخیره شده، بفهمد.
+      if (m.chat && m.chat.type === 'private') {
+        const id = String(m.chat.id);
+        const prev = s.seen && String(s.seen.id) === id ? Number(s.seen.toldAt) || 0 : 0;
+        s.seen = { id, title: chatTitle(m.chat), at: Date.now(), toldAt: prev };
+        if (Date.now() - prev > 3600e3) {
+          s.seen.toldAt = Date.now();
+          await tg(tok, 'sendMessage', { chat_id: id, text: `🔒 این ربات خصوصی است.\nشناسهٔ این گفت‌وگو: ${id}\n(اگر صاحبِ کنترول سنتر هستید، همین عدد را در پنل ← پشتیبانی ← تلگرام بگذارید یا «پیدا کردن» را بزنید.)` }).catch(() => {});
+        }
+        saveState({ ...s, map: [...map] });
+      }
+      continue;
+    }
     // ⛔ قفلِ دوم: بی ورود با نام و رمزِ پنل نه دستور، نه Reply به کاربر
     if (!sessionOf(c.chatId)) {
       try { await handleLogin(tg, tok, c.chatId, m); } catch (e) { log(`ورودِ تلگرام: ${e.message}`); }
