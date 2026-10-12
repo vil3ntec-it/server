@@ -125,7 +125,7 @@ export default function VipCodes() {
       </Card>
 
       {/* 🔑 کدِ آفلاین فقط مالِ پمپ است — گیرنده‌اش در برنامهٔ پمپ است */}
-      {app === 'pump' && <OfflineCodes />}
+      <OfflineCodes key={app} app={app} />
 
       {making && (
         <NewVipCode

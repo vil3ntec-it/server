@@ -41,24 +41,36 @@ type Offline = {
   createdAt: number;
 };
 
-type Made = { code: string; offline: Offline; file: Record<string, unknown> };
+type Made = { code: string; offline: Offline; file?: Record<string, unknown> };
 
-const PLANS = [
-  { code: 'std', title: 'استاندارد', days: '365' },
-  { code: 'vip', title: 'وی‌آی‌پی', days: '365' },
-  { code: 'perm', title: 'دائمی', days: '' },
-];
+type App = 'pump' | 'shop';
 
-export default function OfflineCodes() {
+/** پمپ سه پلن دارد؛ فروشگاه («فروشگاه من») زمان‌دار یا دائمی — ‎shop-offline-codes.js‎ */
+const PLANS_OF: Record<App, { code: string; title: string; days: string }[]> = {
+  pump: [
+    { code: 'std', title: 'استاندارد', days: '365' },
+    { code: 'vip', title: 'وی‌آی‌پی', days: '365' },
+    { code: 'perm', title: 'دائمی', days: '' },
+  ],
+  shop: [
+    { code: 'sub', title: 'زمان‌دار', days: '365' },
+    { code: 'perm', title: 'دائمی', days: '' },
+  ],
+};
+const NAME_OF: Record<App, string> = { pump: 'پمپ بنزین', shop: 'فروشگاه من' };
+const base = (app: App) => `/api/account-admin/offline-codes${app === 'shop' ? '?app=shop' : ''}`;
+const revokeUrl = (app: App, id: string) => `/api/account-admin/offline-codes/${id}/revoke${app === 'shop' ? '?app=shop' : ''}`;
+
+export default function OfflineCodes({ app = 'pump' }: { app?: App }) {
   const [making, setMaking] = useState(false);
   const [made, setMade] = useState<Made | null>(null);
   const [revoke, setRevoke] = useState<Offline | null>(null);
-  const codes = useLoad<{ codes: Offline[] }>('/api/account-admin/offline-codes', []);
+  const codes = useLoad<{ codes: Offline[] }>(base(app), [app]);
 
   return (
     <>
       <Card
-        title="کدِ اشتراکِ آفلاین (بی اینترنت، بسته به یک کامپیوتر)"
+        title={`کدِ اشتراکِ آفلاینِ ${NAME_OF[app]} (بی اینترنت، بسته به یک کامپیوتر)`}
         icon={<KeyRound className="h-4 w-4" />}
         action={<button className="btn btn-sm btn-primary" onClick={() => setMaking(true)}>کدِ آفلاینِ تازه</button>}
       >
@@ -67,7 +79,7 @@ export default function OfflineCodes() {
           <Skeleton rows={3} />
         ) : (codes.data?.codes.length || 0) === 0 ? (
           <Empty title="کدِ آفلاینی ساخته نشده"
-                 hint="کدِ کامپیوتر را از مشتری بگیرید (برنامه ← پروفایل ← اشتراک و پلن‌ها) و «کدِ آفلاینِ تازه» را بزنید." />
+                 hint={app === 'shop' ? 'شناسهٔ کامپیوتر را از مشتری بگیرید (برنامه ← اشتراک ← کدِ اشتراکِ آفلاین) و «کدِ آفلاینِ تازه» را بزنید.' : 'کدِ کامپیوتر را از مشتری بگیرید (برنامه ← پروفایل ← اشتراک و پلن‌ها) و «کدِ آفلاینِ تازه» را بزنید.'} />
         ) : (
           <Table head={['کامپیوتر', 'حساب', 'پلن', 'تا', 'یادداشت', 'حال', 'سرور دید', 'ساخته شد', '']}>
             {(codes.data?.codes || []).map((c) => (
@@ -97,11 +109,12 @@ export default function OfflineCodes() {
 
       {making && (
         <NewOffline
+          app={app}
           onClose={() => setMaking(false)}
           onMade={async (out) => { setMade(out); await codes.reload(); }}
         />
       )}
-      {made && <MadeOffline made={made} onClose={() => setMade(null)} />}
+      {made && <MadeOffline app={app} made={made} onClose={() => setMade(null)} />}
 
       <ConfirmDialog
         open={Boolean(revoke)}
@@ -114,7 +127,7 @@ export default function OfflineCodes() {
           setRevoke(null);
           if (!c) return;
           try {
-            await api(`/api/account-admin/offline-codes/${c.id}/revoke`, { body: {} });
+            await api(revokeUrl(app, c.id), { body: {} });
             toast('کد باطل شد');
             await codes.reload();
           } catch (e) {
@@ -126,9 +139,10 @@ export default function OfflineCodes() {
   );
 }
 
-function NewOffline({ onClose, onMade }: { onClose: () => void; onMade: (out: Made) => Promise<void> }) {
+function NewOffline({ app, onClose, onMade }: { app: App; onClose: () => void; onMade: (out: Made) => Promise<void> }) {
+  const PLANS = PLANS_OF[app];
   const [computer, setComputer] = useState('');
-  const [plan, setPlan] = useState('vip');
+  const [plan, setPlan] = useState(app === 'shop' ? 'sub' : 'vip');
   const [days, setDays] = useState('365');
   const [note, setNote] = useState('');
   const [account, setAccount] = useState('');
@@ -138,7 +152,7 @@ function NewOffline({ onClose, onMade }: { onClose: () => void; onMade: (out: Ma
     <Modal
       open
       onClose={onClose}
-      title="کدِ اشتراکِ آفلاینِ تازه — پمپ"
+      title={`کدِ اشتراکِ آفلاینِ تازه — ${NAME_OF[app]}`}
       footer={
         <>
           <button className="btn" onClick={onClose}>انصراف</button>
@@ -147,7 +161,7 @@ function NewOffline({ onClose, onMade }: { onClose: () => void; onMade: (out: Ma
             busyLabel="…"
             onClick={async () => {
               try {
-                const out = await api<Made>('/api/account-admin/offline-codes', {
+                const out = await api<Made>(base(app), {
                   body: { computer: computer.trim(), account: account.trim(), plan, days: perm || days === '' ? null : Number(days), note },
                 });
                 onClose();
@@ -167,7 +181,7 @@ function NewOffline({ onClose, onMade }: { onClose: () => void; onMade: (out: Ma
         باز می‌کند و <b>یک بار</b> به کار می‌رود.
       </Notice>
 
-      <label className="label">کدِ کامپیوترِ مشتری (۱۶ نویسه)</label>
+      <label className="label">{app === 'shop' ? 'شناسهٔ کامپیوترِ مشتری (۱۶ نویسه)' : 'کدِ کامپیوترِ مشتری (۱۶ نویسه)'}</label>
       <input className="input mb-3 w-full font-mono tracking-widest" dir="ltr" placeholder="XXXX-XXXX-XXXX-XXXX"
              value={computer} onChange={(e) => setComputer(e.target.value.toUpperCase())} />
 
@@ -199,10 +213,11 @@ function NewOffline({ onClose, onMade }: { onClose: () => void; onMade: (out: Ma
   );
 }
 
-function MadeOffline({ made, onClose }: { made: Made; onClose: () => void }) {
+function MadeOffline({ app, made, onClose }: { app: App; made: Made; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
   const o = made.offline;
-  const message = `کدِ اشتراکِ آفلاینِ برنامهٔ پمپ بنزین (${o.planTitle}${o.permanent ? '' : ` تا ${day(o.endsAt)}`}) — فقط برای کامپیوترِ ${o.computer}:\n\n${made.code}\n\nدر برنامه: پروفایل ← اشتراک و پلن‌ها ← کدِ اشتراکِ آفلاین ← چسباندن و «ثبتِ کد».`;
+  const where = app === 'shop' ? 'اشتراک ← کدِ اشتراکِ آفلاین' : 'پروفایل ← اشتراک و پلن‌ها ← کدِ اشتراکِ آفلاین';
+  const message = `کدِ اشتراکِ آفلاینِ برنامهٔ ${NAME_OF[app]} (${o.planTitle}${o.permanent ? '' : ` تا ${day(o.endsAt)}`}) — فقط برای کامپیوترِ ${o.computer}، یک بار:\n\n${made.code}\n\nدر برنامه: ${where} ← چسباندن و «ثبتِ کد».`;
 
   return (
     <Modal
@@ -231,7 +246,7 @@ function MadeOffline({ made, onClose }: { made: Made; onClose: () => void }) {
           {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
           کپیِ پیامِ واتساپ
         </button>
-        <button
+        {made.file && <button
           className="btn btn-sm"
           onClick={() => {
             const blob = new Blob([JSON.stringify(made.file, null, 2)], { type: 'application/json' });
@@ -244,7 +259,7 @@ function MadeOffline({ made, onClose }: { made: Made; onClose: () => void }) {
         >
           <Download className="h-4 w-4" />
           فایلِ ‎.pumpkey‎
-        </button>
+        </button>}
       </div>
     </Modal>
   );
