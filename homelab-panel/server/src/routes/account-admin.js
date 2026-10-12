@@ -1674,31 +1674,40 @@ router.get('/offline-codes', guard(async (req, res) => {
 }));
 
 router.post('/offline-codes', money, guard(async (req, res) => {
+  res.json(await createOfflineCode(req.body || {}, actorOf(req)));
+}));
+
+router.post('/offline-codes/:id/revoke', money, guard(async (req, res) => {
+  res.json(await revokeOfflineCode(req.params.id, actorOf(req)));
+}));
+
+/** ⛔ تنها جای ساختنِ کدِ آفلاین — پنلِ وب و رباتِ تلگرام هر دو همین را صدا می‌زنند. */
+export async function createOfflineCode(b = {}, actor = 'admin') {
   const body = {
-    plan: String(req.body?.plan || '').slice(0, 10),
-    computer: String(req.body?.computer || '').slice(0, 40),
+    plan: String(b.plan || '').slice(0, 10),
+    computer: String(b.computer || '').slice(0, 40),
     //  نسخهٔ ۲ (۱۴۰۵/۰۷/۲۰): ایمیلِ حسابی که کد به آن بسته می‌شود — خالی ⇒ هر حسابی
-    account: String(req.body?.account || '').trim().slice(0, 200),
-    days: req.body?.days === '' || req.body?.days == null ? null : Number(req.body.days),
-    note: String(req.body?.note || '').slice(0, 300),
+    account: String(b.account || '').trim().slice(0, 200),
+    days: b.days === '' || b.days == null ? null : Number(b.days),
+    note: String(b.note || '').slice(0, 300),
   };
   const out = await cloudRaw('POST', '/api/admin/pump/offline-codes', { body });
   audit({
-    actor: actorOf(req),
+    actor,
     action: 'account.offline_code.create',
     entity: 'offline_code',
     entityId: out?.offline?.id || '',
     detail: { plan: body.plan, computer: out?.offline?.computer || body.computer, account: body.account },
   });
-  res.json(out);
-}));
+  return out;
+}
 
-router.post('/offline-codes/:id/revoke', money, guard(async (req, res) => {
-  const id = idOf(req.params.id);
+export async function revokeOfflineCode(idIn, actor = 'admin') {
+  const id = idOf(idIn);
   const out = await cloudRaw('POST', `/api/admin/pump/offline-codes/${id}/revoke`);
-  audit({ actor: actorOf(req), action: 'account.offline_code.revoke', entity: 'offline_code', entityId: id });
-  res.json(out);
-}));
+  audit({ actor, action: 'account.offline_code.revoke', entity: 'offline_code', entityId: id });
+  return out;
+}
 
 /* -------------------------- درخواست‌های خرید -------------------------- */
 

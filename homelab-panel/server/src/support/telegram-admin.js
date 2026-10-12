@@ -23,9 +23,16 @@ import { cloudRaw } from '../stations/cloud.js';
 import { readCpu, readMemory, readDisks } from '../metrics/system.js';
 import { listSitesRaw, getSite } from '../sites/registry.js';
 import { isRunning, startSite, stopSite, restartSite } from '../sites/process.js';
-import { grantSubscription, extendSubscription, setSubscriptionStatus } from '../routes/account-admin.js';
+import { grantSubscription, extendSubscription, setSubscriptionStatus, createOfflineCode, revokeOfflineCode } from '../routes/account-admin.js';
+import { tgFile } from './telegram.js';
 
 const ACTS = 'support_tg_acts';
+const WIZ = 'support_tg_wiz';
+const WIZ_MS = 10 * 60e3;
+//  همان سه پلنِ `OfflineCodes.tsx`
+const OFFLINE_PLANS = [{ code: 'std', title: 'استاندارد', days: 365 }, { code: 'vip', title: 'وی‌آی‌پی', days: 365 }, { code: 'perm', title: 'دائمی', days: null }];
+const COMPUTER_RE = /^[A-Za-z0-9-]{4,40}$/;
+const EMAIL_RE = /^[^\s@]{1,100}@[^\s@]{1,100}\.[^\s@]{1,20}$/;
 const ACTS_MAX = 400;
 const ACT_TTL = 24 * 3600e3;
 const DAY = 24 * 3600e3;
@@ -163,6 +170,55 @@ async function expiringMessage() {
   };
 }
 
+// ── کدِ اشتراکِ آفلاینِ پمپ (همان «اشتراک‌ها ← کدها ← پمپ‌بنزین»ِ پنل) ─────────
+const wiz = () => { const w = getSetting(WIZ, null); return w && Date.now() - w.at < WIZ_MS ? w : null; };
+const setWiz = (w) => setSetting(WIZ, w ? { ...w, at: Date.now() } : null);
+
+async function codesMessage() {
+  const out = await cloudRaw('GET', '/api/admin/pump/offline-codes', { query: { limit: 10 } });
+  const codes = out.codes || [];
+  if (!codes.length) return { text: 'هنوز کدِ آفلاینی ساخته نشده. ‎/offline‎ برای ساختن.' };
+  const stateOf = (c) => (c.status === 'revoked' ? '⛔ باطل' : !c.permanent && c.endsAt < Date.now() ? '⌛ منقضی' : '✅ فعال');
+  return {
+    text: ['🔑 ۱۰ کدِ آفلاینِ آخر', '', ...codes.map((c) => `${stateOf(c)} · ${c.planTitle || c.plan} · کامپیوترِ ${c.computer}${c.accountEmail ? ` · ${c.accountEmail}` : ''}${c.permanent ? ' · دائمی' : c.endsAt ? ` · تا ${dateFa(c.endsAt)}` : ''}${c.redeemedAt ? ' · سرور دید' : ''}${c.note ? ` · ${c.note}` : ''}`)].join('\n'),
+    reply_markup: { inline_keyboard: codes.filter((c) => c.status !== 'revoked').slice(0, 10).map((c) => [btn(`⛔ باطل کن: ${c.computer}${c.note ? ` (${c.note})` : ''}`.slice(0, 60), { k: 'revoke', id: c.id, computer: c.computer })]) },
+  };
+}
+
+const OFFLINE_START = '🔑 کدِ اشتراکِ آفلاینِ پمپ\n\nکدِ کامپیوترِ مشتری را بفرستید.\n(در برنامهٔ پمپ: پروفایل ← اشتراک و پلن‌ها)\n‎/cancel‎ برای انصراف';
+
+/** پاسخِ قدمِ بعدیِ ساختنِ کد — true یعنی پیام مالِ همین بود. */
+async function wizardStep(send, text) {
+  const w = wiz();
+  if (!w || text.startsWith('/')) return false;
+  if (w.step === 'computer') {
+    const computer = text.replace(/\s+/g, '').toUpperCase();
+    if (!COMPUTER_RE.test(computer)) { await send({ text: '❌ کدِ کامپیوتر فقط حرف و رقم و خطِ تیره است (۴ تا ۴۰). دوباره بفرستید یا ‎/cancel‎.' }); return true; }
+    setWiz({ step: 'account', computer });
+    await send({ text: `کامپیوتر: ${computer}\n\nایمیلِ حسابِ مشتری را بفرستید تا کد فقط به همان حساب بخورد،\nیا «-» برای هر حساب.` });
+    return true;
+  }
+  if (w.step === 'account') {
+    const account = text === '-' || text === '—' ? '' : text.toLowerCase();
+    if (account && !EMAIL_RE.test(account)) { await send({ text: '❌ ایمیل درست نیست. دوباره بفرستید، یا «-» برای هر حساب.' }); return true; }
+    setWiz(null);
+    await send({
+      text: `کامپیوتر: ${w.computer}\nحساب: ${account || 'هر حساب'}\n\nکدام پلن؟`,
+      reply_markup: { inline_keyboard: [OFFLINE_PLANS.map((p) => btn(`${p.title}${p.days ? ` · ${fa(p.days)} روز` : ''}`, { k: 'offline', computer: w.computer, account, plan: p.code, planTitle: p.title, days: p.days }))] },
+    });
+    return true;
+  }
+  return false;
+}
+
+async function sendOffline(tok, chatId, out) {
+  const o = out.offline || {};
+  const msg = `کدِ اشتراکِ آفلاینِ برنامهٔ پمپ بنزین (${o.planTitle || o.plan}${o.permanent ? '' : o.endsAt ? ` تا ${dateFa(o.endsAt)}` : ''}) — فقط برای کامپیوترِ ${o.computer}:\n\n${out.code}\n\nدر برنامه: پروفایل ← اشتراک و پلن‌ها ← کدِ اشتراکِ آفلاین ← چسباندن و «ثبتِ کد».`;
+  const tgSend = (body) => tgFile(tok, 'sendDocument', { chat_id: chatId, caption: '📎 فایلِ ‎.pumpkey‎ — همین را هم می‌شود برای مشتری فرستاد', ...body },
+    { name: `pump-${o.computer}.pumpkey`, data: JSON.stringify(out.file || {}, null, 2), type: 'application/json' });
+  return { msg, tgSend };
+}
+
 const MENU_TEXT = [
   '🤖 رباتِ کنترول سنتر',
   '',
@@ -173,8 +229,11 @@ const MENU_TEXT = [
   '/status وضعیتِ سرور',
   '/sites سایت‌ها و ری‌استارت',
   '/expiring اشتراک‌هایی که به‌زودی تمام می‌شوند',
+  '/offline ساختنِ کدِ اشتراکِ آفلاینِ پمپ',
+  '/codes کدهای آفلاین و باطل کردن',
+  '/logout خروج از ربات',
 ].join('\n');
-const MENU_KEYS = () => ({ inline_keyboard: [[btn('🖥 وضعیتِ سرور', { k: 'srv' }), btn('🌐 سایت‌ها', { k: 'sites' })], [btn('⏳ اشتراک‌های رو به پایان', { k: 'expiring' })]] });
+const MENU_KEYS = () => ({ inline_keyboard: [[btn('🖥 وضعیتِ سرور', { k: 'srv' }), btn('🌐 سایت‌ها', { k: 'sites' })], [btn('⏳ اشتراک‌های رو به پایان', { k: 'expiring' })], [btn('🔑 کدِ آفلاینِ تازه', { k: 'offlineStart' }), btn('📋 کدهای آفلاین', { k: 'codes' })]] });
 
 /** دکمهٔ «👤 حساب» زیرِ پیامِ کاربرِ پمپ/فروشگاه. */
 export function threadKeys(t) {
@@ -188,8 +247,12 @@ export async function handleCommand(tg, tok, chatId, m) {
   const text = String(m.text || '').trim();
   if (!text) return false;
   const send = (body) => tg(tok, 'sendMessage', { chat_id: chatId, reply_to_message_id: m.message_id, disable_web_page_preview: true, ...body });
+  if (/^\/cancel(@\w+)?$/i.test(text)) { setWiz(null); await send({ text: 'لغو شد.' }); return true; }
+  if (await wizardStep(send, text)) return true;
   const cmd = /^\/(\w+)(?:@\w+)?\s*(.*)$/s.exec(text);
   const name = cmd ? cmd[1].toLowerCase() : '';
+  if (name === 'offline') { setWiz({ step: 'computer' }); await send({ text: OFFLINE_START }); return true; }
+  if (name === 'codes') { await send(await codesMessage()); return true; }
   if (['start', 'menu', 'help'].includes(name)) { await send({ text: MENU_TEXT, reply_markup: MENU_KEYS() }); return true; }
   if (name === 'status') { await send({ text: await statusText() }); return true; }
   if (name === 'sites') { await send(sitesMessage()); return true; }
@@ -206,12 +269,14 @@ export async function handleCommand(tg, tok, chatId, m) {
 }
 
 // ── دکمه‌ها ────────────────────────────────────────────────────────────
-const CONFIRM = new Set(['extend', 'status', 'grant', 'site']);
+const CONFIRM = new Set(['extend', 'status', 'grant', 'site', 'offline', 'revoke']);
 
 function confirmText(a) {
   if (a.k === 'extend') return `➕ ${fa(a.amount)} ${UNIT[a.unit] || a.unit} به این اشتراک اضافه شود؟`;
   if (a.k === 'status') return { active: '▶ این اشتراک دوباره فعال شود؟', suspended: '⏸ این اشتراک معلق شود؟ برنامهٔ کاربر قفل می‌شود.', cancelled: '✖ این اشتراک لغو شود؟ روزهای مانده صفر می‌شود.' }[a.status] || 'انجام شود؟';
   if (a.k === 'grant') return `🎁 پلنِ «${a.planName || a.plan}» به این حساب داده شود؟`;
+  if (a.k === 'offline') return `🔑 کدِ آفلاینِ «${a.planTitle}»${a.days ? ` (${fa(a.days)} روز)` : ''} برای کامپیوترِ ${a.computer}${a.account ? ` و حسابِ ${a.account}` : ''} ساخته شود؟`;
+  if (a.k === 'revoke') return `⛔ کدِ آفلاینِ کامپیوترِ ${a.computer} باطل شود؟ (روی کامپیوتری که هرگز آنلاین نشود تا پایانِ مهلتش اثر ندارد)`;
   if (a.k === 'site') return `${{ restart: '🔄 ری‌استارت', start: '▶ روشن کردنِ', stop: '⏹ خاموش کردنِ' }[a.op]} سایتِ «${a.siteName || ''}»؟`;
   return 'انجام شود؟';
 }
@@ -220,6 +285,7 @@ async function run(a) {
   if (a.k === 'extend') await extendSubscription(a.app, a.subId, a.amount, a.unit, ACTOR);
   else if (a.k === 'status') await setSubscriptionStatus(a.app, a.subId, a.status, ACTOR);
   else if (a.k === 'grant') await grantSubscription(a.app, a.tenantId, { plan: a.plan, note: 'از رباتِ تلگرام' }, ACTOR);
+  else if (a.k === 'revoke') await revokeOfflineCode(a.id, ACTOR);
   else if (a.k === 'site') {
     const site = getSite(a.id);
     if (!site) throw new Error('سایت پیدا نشد');
@@ -244,6 +310,8 @@ export async function handleCallback(tg, tok, chatId, cq) {
     if (a.k === 'srv') { await answer(); await send({ text: await statusText() }); return; }
     if (a.k === 'sites') { await answer(); await send(sitesMessage()); return; }
     if (a.k === 'expiring') { await answer(); await send(await expiringMessage()); return; }
+    if (a.k === 'offlineStart') { await answer(); setWiz({ step: 'computer' }); await send({ text: OFFLINE_START }); return; }
+    if (a.k === 'codes') { await answer(); await send(await codesMessage()); return; }
     if (a.k === 'card') { await answer(); const acc = await accountOf(a.app, a.tenantId); await send({ text: cardText(acc), reply_markup: cardKeys(acc) }); return; }
     if (a.k === 'plans') {
       await answer();
@@ -267,7 +335,17 @@ export async function handleCallback(tg, tok, chatId, cq) {
     // ⛔ دکمهٔ تأیید یک بار: پیش از کار پاک می‌شود ⇒ دو بار زدن دو بار تمدید نمی‌کند
     const all = acts(); delete all[m[2]]; setSetting(ACTS, all);
     await answer('در حالِ انجام…');
+    if (a.k === 'offline') {
+      // ⛔ خودِ کد فقط در تلگرامِ مالک — نه در لاگ، نه در دفترِ ممیزی
+      const out = await createOfflineCode({ plan: a.plan, computer: a.computer, account: a.account, days: a.days, note: 'از رباتِ تلگرام' }, ACTOR);
+      const { msg, tgSend } = await sendOffline(tok, chatId, out);
+      await edit({ text: '✅ کد ساخته شد. پیامِ زیر را برای مشتری Forward کنید:' });
+      await send({ text: msg });
+      await tgSend({}).catch((e) => send({ text: `⚠️ فایلِ ‎.pumpkey‎ نرفت: ${e.message}` }));
+      return;
+    }
     await run(a);
+    if (a.k === 'revoke') { await edit({ text: `✅ کدِ کامپیوترِ ${a.computer} باطل شد.` }); return; }
     if (a.k === 'site') { await edit({ text: `✅ انجام شد: ${confirmText(a).replace(/؟$/, '')}` }); await send(sitesMessage()); return; }
     const acc = await accountOf(a.app, a.tenantId);
     await edit({ text: `✅ انجام شد.\n\n${cardText(acc)}`, reply_markup: cardKeys(acc) });

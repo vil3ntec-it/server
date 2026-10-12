@@ -89,7 +89,15 @@ const call = async (method, url, body) => {
   return { status: res.status, body: await res.json().catch(() => ({})) };
 };
 const site = async (p, body) => (await fetch(SITE + p, { method: body ? 'POST' : 'GET', body: body ? JSON.stringify(body) : undefined })).json();
-const run = () => call('POST', '/api/automation/jobs/support-telegram/run', {});
+//  ⚠️ کار هر ۵ ثانیه خودش هم می‌چرخد؛ «already_running» ⇒ دوباره
+const run = async () => {
+  for (let i = 0; i < 100; i++) {
+    const r = await call('POST', '/api/automation/jobs/support-telegram/run', {});
+    if (r.body?.error !== 'already_running') return r;
+    await wait(100);
+  }
+  throw new Error('کارِ support-telegram آزاد نشد');
+};
 
 try {
   for (let i = 0; i < 120; i++) { try { if ((await fetch(`${BASE}/health`)).ok) break; } catch { /* */ } await wait(250); }
@@ -135,6 +143,9 @@ try {
   r = await call('GET', '/api/support-telegram');
   check('«سایت» به‌طورِ پیش‌فرض روشن است', r.body.apps?.includes('site'), JSON.stringify(r.body.apps));
   await call('PUT', '/api/support-telegram', { apps: ['site'] });
+  //  ⛔ از 1.50.51 Replyِ مالک فقط پس از ورود با نام و رمزِ پنل (telegram-auth.js)
+  for (const [id, text] of [[60, '/login'], [61, 'admin'], [62, 'SiteChat-1405-ok']]) { pushUpdate({ message_id: id, chat: { id: OWNER }, text }); await run(); }
+  check('ربات با نام و رمزِ پنل وارد شد', /خوش آمدید/.test(tgSent.at(-1)?.text || ''), JSON.stringify(tgSent.at(-1)));
   await wait(20);
   await site('/__visitor', { id: 'c2', name: 'رضا', text: 'برنامهٔ فروشگاه را می‌خواهم' });
   r = await run();

@@ -26,6 +26,7 @@ const threads = new Map([
   ['th_old', { id: 'th_old', app: 'pump', who: 'قدیمی', stationName: 'پمپ قدیمی', status: 'open', lastSender: 'user', updatedAt: now - 3600e3, messages: [{ id: 'm0', sender: 'user', body: 'پیامِ قدیمی', kind: 'text', createdAt: now - 3600e3 }] }],
 ]);
 const posts = [];
+const offline = [];
 const acct = { status: 'active', endsAt: now + 3 * 864e5, grants: [], statuses: [] };
 const fake = http.createServer((req, res) => {
   let raw = ''; req.on('data', (d) => (raw += d)); req.on('end', () => {
@@ -57,6 +58,16 @@ const fake = http.createServer((req, res) => {
       const body = JSON.parse(raw || '{}'); acct.statuses.push(body.status); acct.status = body.status;
       return j(200, { subscription: { id: 'sub1' } });
     }
+    if (p === '/api/admin/pump/offline-codes' && req.method === 'GET') return j(200, { codes: offline });
+    if (p === '/api/admin/pump/offline-codes' && req.method === 'POST') {
+      const body = JSON.parse(raw || '{}');
+      const o = { id: `oc${offline.length + 1}`, plan: body.plan, planTitle: body.plan === 'vip' ? 'وی‌آی‌پی' : body.plan, computer: body.computer, accountEmail: body.account, issuedAt: Date.now(), endsAt: Date.now() + (body.days || 0) * 864e5, permanent: body.days == null, note: body.note, status: 'active', body };
+      offline.unshift(o);
+      return j(200, { code: 'PUMP1-SECRET-CODE-XYZ', offline: o, file: { v: 2, code: 'PUMP1-SECRET-CODE-XYZ' } });
+    }
+    if ((m = /^\/api\/admin\/pump\/offline-codes\/([^/]+)\/revoke$/.exec(p)) && req.method === 'POST') {
+      const o = offline.find((x) => x.id === m[1]); if (o) o.status = 'revoked'; return j(200, { ok: true });
+    }
     if (p === '/api/admin/plans') return j(200, { plans: [{ code: 'pro', name: 'حرفه‌ای', amount: 1, unit: 'month', active: 1 }, { code: 'free', name: 'رایگان', active: true }], config: {} });
     if ((m = /^\/api\/admin\/support\/threads\/([^/]+)$/.exec(p)) && req.method === 'GET') {
       const t = threads.get(m[1]); if (!t) return j(404, { error: { code: 'not_found', message: 'x' } });
@@ -75,17 +86,21 @@ await new Promise((r) => fake.listen(0, '127.0.0.1', r));
 
 // ── تلگرامِ ساختگی ──
 const tgSent = [];
+const tgDeleted = [];
+const tgDocs = [];
 const tgAnswers = [];
 const tgEdits = [];
 let updates = [];
 let nextUpdate = 1;
 const tg = http.createServer((req, res) => {
   let raw = ''; req.on('data', (d) => (raw += d)); req.on('end', () => {
-    const m = /^\/bot([^/]+)\/(\w+)$/.exec(req.url); const body = JSON.parse(raw || '{}');
+    const m = /^\/bot([^/]+)\/(\w+)$/.exec(req.url); let body = {}; try { body = JSON.parse(raw || '{}'); } catch { body = { raw }; }
     res.setHeader('content-type', 'application/json');
     if (!m || m[1] !== TOKEN) return res.end(JSON.stringify({ ok: false, description: 'Unauthorized' }));
     if (m[2] === 'getUpdates') return res.end(JSON.stringify({ ok: true, result: updates.filter((u) => u.update_id >= (body.offset || 0)) }));
     if (m[2] === 'sendMessage') { tgSent.push(body); return res.end(JSON.stringify({ ok: true, result: { message_id: 1000 + tgSent.length } })); }
+    if (m[2] === 'deleteMessage') { tgDeleted.push(body.message_id); return res.end(JSON.stringify({ ok: true, result: true })); }
+    if (m[2] === 'sendDocument') { tgDocs.push(body.raw || ''); return res.end(JSON.stringify({ ok: true, result: { message_id: 5000 + tgDocs.length } })); }
     if (m[2] === 'answerCallbackQuery') { tgAnswers.push(body); return res.end(JSON.stringify({ ok: true, result: true })); }
     if (m[2] === 'editMessageText') { tgEdits.push(body); return res.end(JSON.stringify({ ok: true, result: { message_id: body.message_id } })); }
     res.end(JSON.stringify({ ok: false, description: 'unknown' }));
@@ -111,7 +126,15 @@ const call = async (method, url, body) => {
   const res = await fetch(BASE + url, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
   return { status: res.status, body: await res.json().catch(() => ({})) };
 };
-const run = () => call('POST', '/api/automation/jobs/support-telegram/run', {});
+//  ⚠️ کار هر ۵ ثانیه خودش هم می‌چرخد؛ اگر همان لحظه در حالِ اجرا بود («already_running») دوباره بزن
+const run = async () => {
+  for (let i = 0; i < 100; i++) {
+    const r = await call('POST', '/api/automation/jobs/support-telegram/run', {});
+    if (r.body?.error !== 'already_running') return r;
+    await wait(100);
+  }
+  throw new Error('کارِ support-telegram آزاد نشد');
+};
 
 try {
   for (let i = 0; i < 120; i++) { try { if ((await fetch(`${BASE}/health`)).ok) break; } catch { /* */ } await wait(250); }
@@ -150,15 +173,37 @@ try {
   r = await run();
   check('دورِ دوم چیزی را دوباره نمی‌فرستد', tgSent.filter((x) => /باز نمی‌شود/.test(x.text || '')).length === 1);
 
+  console.log('\n── ۲ب) قفلِ ورود: نام و رمزِ پنل ──');
+  const say = (message_id, text, chat = OWNER) => pushUpdate({ message_id, chat: { id: chat }, text });
+  let n0 = tgSent.length;
+  say(40, '/status');
+  await run();
+  check('بی ورود: /status جواب نمی‌دهد، فقط «/login»', !tgSent.slice(n0).some((x) => /وضعیتِ سرور/.test(x.text || '')) && tgSent.slice(n0).some((x) => /قفل/.test(x.text || '') && /login/.test(x.text)), JSON.stringify(tgSent.slice(n0)));
+  pushUpdate({ message_id: 41, chat: { id: OWNER }, text: 'بی ورود جواب', reply_to_message: { message_id: pumpMsgId } });
+  await run();
+  check('بی ورود: Reply به کاربر نمی‌رود', posts.length === 0, JSON.stringify(posts));
+  updates.push({ update_id: nextUpdate++, callback_query: { id: 'cq-locked', from: { id: OWNER }, data: 'a:AAAAAAAA', message: { message_id: 1, chat: { id: OWNER } } } });
+  await run();
+  check('بی ورود: دکمه «🔒»', tgAnswers.some((a) => a.callback_query_id === 'cq-locked' && /login/.test(a.text || '')));
+  say(42, '/login'); await run(); say(43, 'admin'); await run(); say(44, 'wrong-pass-1'); await run();
+  check('رمزِ غلط ⇒ رد و پیامِ رمز پاک شد', tgDeleted.includes(44) && /درست نیست/.test(tgSent.at(-1)?.text || ''), JSON.stringify(tgSent.at(-1)));
+  say(45, '/login'); await run(); say(46, 'ghost'); await run(); say(47, 'Support-1405-tg'); await run();
+  check('کاربرِ ناموجود با همان رمز رد شد', /درست نیست/.test(tgSent.at(-1)?.text || ''));
+  say(48, '/login'); await run(); say(49, 'admin'); await run(); say(50, 'Support-1405-tg'); await run();
+  check('ورود با نام و رمزِ درست', /خوش آمدید admin/.test(tgSent.at(-1)?.text || '') && tgDeleted.includes(50), JSON.stringify(tgSent.at(-1)));
+  r = await call('GET', '/api/support-telegram');
+  check('پنل می‌بیند ربات وارد شده', r.body.bot?.loggedIn === true && r.body.bot.username === 'admin', JSON.stringify(r.body.bot));
+  check('رمز هیچ‌جا در پیام‌های ربات نیامد', !tgSent.some((x) => /Support-1405-tg|wrong-pass-1/.test(x.text || '')));
+
   console.log('\n── ۳) Replyِ مالک ⇒ همان کاربر ──');
-  pushUpdate({ message_id: 50, chat: { id: OWNER }, text: 'سلام احمد، برنامه را دوباره نصب کنید', reply_to_message: { message_id: pumpMsgId } });
-  pushUpdate({ message_id: 51, chat: { id: 1234567 }, text: 'من غریبه‌ام', reply_to_message: { message_id: pumpMsgId } });
-  pushUpdate({ message_id: 52, chat: { id: OWNER }, text: 'بی Reply' });
+  pushUpdate({ message_id: 150, chat: { id: OWNER }, text: 'سلام احمد، برنامه را دوباره نصب کنید', reply_to_message: { message_id: pumpMsgId } });
+  pushUpdate({ message_id: 151, chat: { id: 1234567 }, text: 'من غریبه‌ام', reply_to_message: { message_id: pumpMsgId } });
+  pushUpdate({ message_id: 152, chat: { id: OWNER }, text: 'بی Reply' });
   r = await run();
   check('جوابِ مالک به گفت‌وگوی درست رسید', posts.length === 1 && posts[0].thread === 'th_pump' && /دوباره نصب/.test(posts[0].body.body), JSON.stringify(posts));
   check('پیامِ غریبه به هیچ کاربری نرفت', !posts.some((p) => /غریبه/.test(p.body.body)));
-  check('«✅ رسید» برای مالک', tgSent.some((x) => x.reply_to_message_id === 50 && /رسید/.test(x.text)));
-  check('پیامِ بی Reply راهنما گرفت', tgSent.some((x) => x.reply_to_message_id === 52 && /Reply/.test(x.text)));
+  check('«✅ رسید» برای مالک', tgSent.some((x) => x.reply_to_message_id === 150 && /رسید/.test(x.text)));
+  check('پیامِ بی Reply راهنما گرفت', tgSent.some((x) => x.reply_to_message_id === 152 && /Reply/.test(x.text)));
   check('جوابِ خودِ مالک دوباره به تلگرام برنمی‌گردد', !tgSent.some((x) => !x.reply_to_message_id && /دوباره نصب/.test(x.text)));
   r = await run();
   check('همان Reply دو بار نمی‌رود', posts.length === 1, posts.length);
@@ -238,6 +283,55 @@ try {
   await run();
   check('/sites', /سایتی ثبت نشده|سایت‌ها/.test(tgSent.at(-1)?.text || ''), tgSent.at(-1)?.text);
   check('پیام‌های تحتِ دستور هیچ‌وقت به کاربر نرفت', posts.length === 1, posts.length);
+
+  console.log('\n── ۶) کدِ اشتراکِ آفلاینِ پمپ ──');
+  say(70, '/offline'); await run();
+  check('/offline کدِ کامپیوتر می‌خواهد', /کدِ کامپیوترِ مشتری/.test(tgSent.at(-1)?.text || ''));
+  say(71, 'bad code!'); await run();
+  check('کدِ کامپیوترِ نادرست رد شد', /❌/.test(tgSent.at(-1)?.text || '') && offline.length === 0);
+  say(72, 'ab12-cd34'); await run();
+  check('ایمیلِ حساب پرسیده شد', /AB12-CD34/.test(tgSent.at(-1)?.text || '') && /ایمیل/.test(tgSent.at(-1).text));
+  say(73, 'Ahmad@X.af'); await run();
+  check('سه پلن', !!btnOf(/استاندارد/) && !!btnOf(/وی‌آی‌پی/) && !!btnOf(/دائمی/));
+  press(btnOf(/وی‌آی‌پی/)); await run();
+  check('پیش از تأیید کدی ساخته نشد', offline.length === 0 && /ساخته شود/.test(tgSent.at(-1)?.text || ''));
+  press(btnOf(/بله، انجام بده/)); await run();
+  const oc = offline[0]?.body || {};
+  check('کد برای همان کامپیوتر، حساب و پلن', oc.computer === 'AB12-CD34' && oc.account === 'ahmad@x.af' && oc.plan === 'vip' && oc.days === 365, JSON.stringify(oc));
+  check('پیامِ آمادهٔ مشتری با خودِ کد', tgSent.some((x) => /PUMP1-SECRET-CODE-XYZ/.test(x.text || '') && /AB12-CD34/.test(x.text)));
+  check('فایلِ ‎.pumpkey‎ فرستاده شد', tgDocs.some((d) => /pump-AB12-CD34\.pumpkey/.test(d) && /PUMP1-SECRET-CODE-XYZ/.test(d)), tgDocs.length);
+  r = await call('GET', '/api/control/audit?limit=50');
+  check('خودِ کد در دفترِ ممیزی نیست', r.status === 200 && /offline_code/.test(JSON.stringify(r.body)) && !JSON.stringify(r.body).includes('PUMP1-SECRET-CODE-XYZ'));
+  say(74, '/codes'); await run();
+  check('/codes فهرست با «باطل کن»', /AB12-CD34/.test(tgSent.at(-1)?.text || '') && !!btnOf(/باطل کن: AB12-CD34/));
+  press(btnOf(/باطل کن: AB12-CD34/)); await run();
+  press(btnOf(/بله، انجام بده/)); await run();
+  check('باطل از تلگرام', offline[0].status === 'revoked');
+  say(75, '/offline'); await run(); say(76, '/cancel'); await run(); say(77, 'XYZ-9999'); await run();
+  check('/cancel ⇒ متنِ بعدی دیگر کدِ کامپیوتر نیست', offline.length === 1 && !/ایمیلِ حسابِ مشتری/.test(tgSent.at(-1)?.text || ''));
+
+  console.log('\n── ۷) خروج، عوض شدنِ رمز، و قفلِ ۵ بار ──');
+  say(80, '/logout'); await run();
+  n0 = tgSent.length;
+  say(81, '/status'); await run();
+  check('پس از /logout قفل', !tgSent.slice(n0).some((x) => /وضعیتِ سرور/.test(x.text || '')));
+  say(82, '/login'); await run(); say(83, 'admin'); await run(); say(84, 'Support-1405-tg'); await run();
+  check('ورودِ دوباره', /خوش آمدید/.test(tgSent.at(-1)?.text || ''));
+  r = await call('POST', '/api/auth/change-password', { oldPassword: 'Support-1405-tg', newPassword: 'Support-1405-new' });
+  //  عوض کردنِ رمز نشست‌های پنل را هم می‌بندد ⇒ آزمون دوباره وارد می‌شود
+  const pwStatus = r.status;
+  token = (await call('POST', '/api/auth/login', { username: 'admin', password: 'Support-1405-new' })).body?.token;
+  n0 = tgSent.length;
+  say(85, '/status'); await run();
+  check('رمزِ پنل عوض شد ⇒ نشستِ ربات باطل', pwStatus === 200 && !!token && !tgSent.slice(n0).some((x) => /وضعیتِ سرور/.test(x.text || '')), pwStatus + JSON.stringify(tgSent.slice(n0)));
+  for (let i = 0; i < 5; i++) { say(90 + i * 3, '/login'); await run(); say(91 + i * 3, 'admin'); await run(); say(92 + i * 3, `nope-${i}`); await run(); }
+  check('۵ رمزِ غلط ⇒ قفلِ ۱۵ دقیقه', /۱۵ دقیقه/.test(tgSent.at(-1)?.text || ''), tgSent.at(-1)?.text);
+  say(110, '/login'); await run(); say(111, 'admin'); await run(); say(112, 'Support-1405-new'); await run();
+  check('در قفل حتی رمزِ درست هم راه نمی‌دهد', !tgSent.slice(-3).some((x) => /خوش آمدید/.test(x.text || '')) && tgDeleted.includes(112), JSON.stringify(tgSent.slice(-3)));
+  r = await call('PUT', '/api/support-telegram', { chatId: '999' });
+  await call('PUT', '/api/support-telegram', { chatId: String(OWNER) });
+  r = await call('GET', '/api/support-telegram');
+  check('عوض شدنِ chat id ⇒ قفل و نشست پاک', r.body.bot?.loggedIn === false);
   void before5;
 } catch (e) {
   failed++; console.error('\n❌ آزمون شکست:', e.message); console.error(out.slice(-2000));
