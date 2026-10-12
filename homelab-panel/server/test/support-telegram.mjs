@@ -95,12 +95,17 @@ const tgAnswers = [];
 const tgEdits = [];
 let updates = [];
 let nextUpdate = 1;
+let confirmed = 0;
 const tg = http.createServer((req, res) => {
   let raw = ''; req.on('data', (d) => (raw += d)); req.on('end', () => {
     const m = /^\/bot([^/]+)\/(\w+)$/.exec(req.url); let body = {}; try { body = JSON.parse(raw || '{}'); } catch { body = { raw }; }
     res.setHeader('content-type', 'application/json');
     if (!m || m[1] !== TOKEN) return res.end(JSON.stringify({ ok: false, description: 'Unauthorized' }));
-    if (m[2] === 'getUpdates') return res.end(JSON.stringify({ ok: true, result: updates.filter((u) => u.update_id >= (body.offset || 0)) }));
+    if (m[2] === 'getUpdates') {
+      //  مثلِ تلگرامِ واقعی: offset یعنی «تا این‌جا تأیید شد» و بعدها دیگر برنمی‌گردد
+      confirmed = Math.max(confirmed, body.offset || 0);
+      return res.end(JSON.stringify({ ok: true, result: updates.filter((u) => u.update_id >= confirmed) }));
+    }
     if (m[2] === 'sendMessage') { tgSent.push(body); return res.end(JSON.stringify({ ok: true, result: { message_id: 1000 + tgSent.length } })); }
     if (m[2] === 'pinChatMessage') { tgPins.push(body.message_id); return res.end(JSON.stringify({ ok: true, result: true })); }
     if (m[2] === 'getMe') return res.end(JSON.stringify({ ok: true, result: { id: 1, is_bot: true, username: 'ControlCenterBot' } }));
@@ -362,6 +367,18 @@ try {
   const back = tgSent.find((x) => /دوباره روشن شد/.test(x.text || ''));
   check('روشن شدنِ دوباره ⇒ «🟢 دوباره روشن شد» با مدتِ خاموشی، با زنگ', !!back && /خاموش بود/.test(back.text) && !back.disable_notification, JSON.stringify(back));
   check('و پیامِ سنجاق‌شدهٔ تازهٔ 🟢', tgPins.length >= 2);
+
+  console.log('\n── ۹) chat idِ غلط ذخیره شده (مثلاً 123456789) ⇒ «پیدا کردن» باز هم پیدا می‌کند ──');
+  await call('PUT', '/api/support-telegram', { chatId: '123456789', enabled: true });
+  pushUpdate({ message_id: 300, chat: { id: OWNER, type: 'private', first_name: 'Owner' }, text: '/start' });
+  await run();
+  check('کارِ پل Start را برداشت و شناسه را به خودِ او گفت', tgSent.some((x) => x.chat_id === String(OWNER) && /خصوصی است/.test(x.text || '') && x.text.includes(String(OWNER))));
+  r = await call('POST', '/api/support-telegram/find-chat', {});
+  check('«پیدا کردن» همان گفت‌وگو را پیشنهاد می‌کند', r.status === 200 && r.body.chat?.id === String(OWNER), r.status + JSON.stringify(r.body));
+  pushUpdate({ message_id: 301, chat: { id: OWNER, type: 'private' }, text: 'دوباره' });
+  const nTold = tgSent.filter((x) => /خصوصی است/.test(x.text || '')).length;
+  await run();
+  check('همان شناسه هر ساعت فقط یک بار گفته می‌شود', tgSent.filter((x) => /خصوصی است/.test(x.text || '')).length === nTold);
 } catch (e) {
   failed++; console.error('\n❌ آزمون شکست:', e.message); console.error(out.slice(-2000));
 } finally {
