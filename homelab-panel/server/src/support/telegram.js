@@ -99,6 +99,23 @@ export async function tgFile(tok, method, fields, { field = 'document', name, da
   } finally { clearTimeout(t); }
 }
 
+/**
+ * ⛔ رباتِ مالک **جدا** از رباتِ پمپ بنزین است (خواستهٔ صاحب سامانه، ۱۴۰۵/۰۷/۲۰).
+ * رباتِ پمپ روی سرورِ حساب (shop، `lib/telegram.js`) getUpdates می‌زند؛ همان توکن
+ * این‌جا یعنی دعوای ۴۰۹ و از کار افتادنِ هر دو، و پیامِ صاحبانِ پمپ در دستِ دیگری.
+ * پس نامِ ربات (getMe) با نامِ رباتِ پمپ (`/api/admin/telegram`) سنجیده می‌شود.
+ * ⚠️ اگر سرورِ حساب در دسترس نباشد جلوی ذخیره گرفته نمی‌شود (فقط سنجه رد می‌شود).
+ */
+export async function assertNotPumpBot(tok) {
+  const me = await tg(tok, 'getMe');
+  let pump = '';
+  try { pump = String(((await cloudRaw('GET', '/api/admin/telegram')).telegram || {}).username || ''); } catch { /* سرورِ حساب خاموش */ }
+  if (pump && me && String(me.username || '').toLowerCase() === pump.toLowerCase()) {
+    throw Object.assign(new Error(`این توکنِ رباتِ پمپ بنزین (‎@${pump}‎) است. رباتِ کنترول سنتر باید جدا باشد: در ‎@BotFather‎ با ‎/newbot‎ یک رباتِ تازه بسازید و توکنِ آن را بچسبانید.`), { status: 409, code: 'pump_bot' });
+  }
+  return me;
+}
+
 /** ذخیرهٔ تنظیمات. توکنِ خالی یعنی «همان قبلی». */
 export function saveConfig({ enabled, chatId, apps, token: tok }, actor = 'admin') {
   const cur = config();

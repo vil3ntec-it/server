@@ -64,6 +64,7 @@ const tg = http.createServer((req, res) => {
     if (!m || m[1] !== TOKEN) return res.end(JSON.stringify({ ok: false, description: 'Unauthorized' }));
     if (m[2] === 'getUpdates') return res.end(JSON.stringify({ ok: true, result: updates.filter((u) => u.update_id >= (body.offset || 0)) }));
     if (m[2] === 'sendMessage') { tgSent.push(body); return res.end(JSON.stringify({ ok: true, result: { message_id: 2000 + tgSent.length } })); }
+    if (m[2] === 'getMe') return res.end(JSON.stringify({ ok: true, result: { id: 1, is_bot: true, username: 'ControlCenterBot' } }));
     res.end(JSON.stringify({ ok: false, description: 'unknown' }));
   });
 });

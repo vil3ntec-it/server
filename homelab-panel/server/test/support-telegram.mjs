@@ -27,6 +27,7 @@ const threads = new Map([
 ]);
 const posts = [];
 const offline = [];
+let pumpBot = 'controlcenterbot';
 const acct = { status: 'active', endsAt: now + 3 * 864e5, grants: [], statuses: [] };
 const fake = http.createServer((req, res) => {
   let raw = ''; req.on('data', (d) => (raw += d)); req.on('end', () => {
@@ -58,6 +59,7 @@ const fake = http.createServer((req, res) => {
       const body = JSON.parse(raw || '{}'); acct.statuses.push(body.status); acct.status = body.status;
       return j(200, { subscription: { id: 'sub1' } });
     }
+    if (p === '/api/admin/telegram') return j(200, { telegram: { username: pumpBot } });
     if (p === '/api/admin/pump/offline-codes' && req.method === 'GET') return j(200, { codes: offline });
     if (p === '/api/admin/pump/offline-codes' && req.method === 'POST') {
       const body = JSON.parse(raw || '{}');
@@ -99,6 +101,7 @@ const tg = http.createServer((req, res) => {
     if (!m || m[1] !== TOKEN) return res.end(JSON.stringify({ ok: false, description: 'Unauthorized' }));
     if (m[2] === 'getUpdates') return res.end(JSON.stringify({ ok: true, result: updates.filter((u) => u.update_id >= (body.offset || 0)) }));
     if (m[2] === 'sendMessage') { tgSent.push(body); return res.end(JSON.stringify({ ok: true, result: { message_id: 1000 + tgSent.length } })); }
+    if (m[2] === 'getMe') return res.end(JSON.stringify({ ok: true, result: { id: 1, is_bot: true, username: 'ControlCenterBot' } }));
     if (m[2] === 'deleteMessage') { tgDeleted.push(body.message_id); return res.end(JSON.stringify({ ok: true, result: true })); }
     if (m[2] === 'sendDocument') { tgDocs.push(body.raw || ''); return res.end(JSON.stringify({ ok: true, result: { message_id: 5000 + tgDocs.length } })); }
     if (m[2] === 'answerCallbackQuery') { tgAnswers.push(body); return res.end(JSON.stringify({ ok: true, result: true })); }
@@ -147,6 +150,11 @@ try {
   check('خاموش ⇒ کاری نمی‌کند', r.status === 200 && (r.body.status === 'skipped' || /disabled/.test(JSON.stringify(r.body))), JSON.stringify(r.body).slice(0, 200));
   r = await call('PUT', '/api/support-telegram', { token: 'bad' });
   check('توکنِ نادرست رد می‌شود', r.status === 400, r.status);
+  r = await call('PUT', '/api/support-telegram', { token: TOKEN });
+  check('⛔ توکنِ رباتِ پمپ بنزین پذیرفته نمی‌شود', r.status === 409 && /پمپ بنزین/.test(r.body.error || '') && !r.body.hasToken, r.status + JSON.stringify(r.body));
+  r = await call('POST', '/api/support-telegram/find-chat', { token: TOKEN });
+  check('⛔ find-chat هم با رباتِ پمپ کار نمی‌کند', r.status === 409, r.status);
+  pumpBot = 'PumpYaqobiBot';
   r = await call('PUT', '/api/support-telegram', { token: TOKEN });
   check('توکن در گاوصندوق، فقط چهار نویسهٔ آخر', r.status === 200 && r.body.hasToken && r.body.tokenHint === `••••${TOKEN.slice(-4)}` && !JSON.stringify(r.body).includes(TOKEN), JSON.stringify(r.body));
   pushUpdate({ message_id: 1, chat: { id: OWNER, first_name: 'Owner' }, text: '/start' });

@@ -3028,3 +3028,4 @@ POST /api/pump-updates-admin/testers {codes}   فقط مدیر · دفترِ م�
 - پنل («پشتیبانی ← تلگرام») نشان می‌دهد ربات با چه کسی و تا کی وارد است (`status().bot`).
 - آزمون: `test/support-telegram.mjs` بخش‌های ۲ب، ۶ و ۷ (۶۳ بند)؛ `test/site-chats.mjs` پیش از Reply وارد می‌شود.
 - ⚠️ درگاه: `releases` (توزیعِ نسخه از سرورِ حساب، shop 2.11.36) به `ACCOUNT_PREFIXES` اضافه شد — بندِ ۹ِ `pump-e2e` روی `main` هم سرخ بود.
+- ⛔ **رباتِ مالک جدا از رباتِ پمپ بنزین است**: `assertNotPumpBot` نامِ ربات (getMe) را با `/api/admin/telegram`ِ سرورِ حساب می‌سنجد؛ توکنِ رباتِ پمپ در ذخیره و find-chat با ۴۰۹ رد می‌شود (همان توکن یعنی دعوای getUpdates و از کار افتادنِ هر دو).
