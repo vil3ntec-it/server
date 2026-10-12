@@ -22,7 +22,12 @@ import { db, getSetting, setSetting } from '../db.js';
 import { putSecret, readSecret } from '../control/vault.js';
 import { cloudRaw } from '../stations/cloud.js';
 import * as siteChats from './site-chats.js';
-import { handleCommand, handleCallback, threadKeys } from './telegram-admin.js';
+import { handleCommand, handleCallback, wizActive, COMMANDS } from './telegram-admin.js';
+import { resolveKey } from './telegram-menus.js';
+import { replyTo, compose, touchCompose, messageKeys, labelOf, sendIncomingMedia } from './telegram-inbox.js';
+import { watch, prefs } from './telegram-watch.js';
+import * as topics from './telegram-topics.js';
+import { syncCodes } from './telegram-codes.js';
 import { beat } from './telegram-heartbeat.js';
 import { sessionOf, handleLogin, resetAuth, authStatus, logout } from './telegram-auth.js';
 
@@ -37,6 +42,8 @@ const APPS = { pump: '🛢 پمپ', shop: '🛒 فروشگاه', site: '🌐 س�
 const api = () => (process.env.HLP_TELEGRAM_API || 'https://api.telegram.org').replace(/\/+$/, '');
 
 export function validToken(t) { return TOKEN_RE.test(String(t || '')); }
+/** نشانیِ دانلودِ فایلی که getFile داد. */
+export const fileUrl = (tok, filePath) => `${api()}/file/bot${tok}/${String(filePath).split('/').map(encodeURIComponent).join('/')}`;
 
 export function config() {
   const c = getSetting(CONFIG, null) || {};
@@ -135,7 +142,7 @@ export function saveConfig({ enabled, chatId, apps, token: tok }, actor = 'admin
   // روشن شدنِ تازه: تاریخچهٔ قدیمی فرستاده نشود
   if (next.enabled && !cur.enabled) { const s = state(); s.startedAt = Date.now(); s.since = {}; saveState(s); }
   // ⛔ ربات یا گفت‌وگوی دیگر ⇒ نشستِ ورودِ ربات باطل (telegram-auth.js)
-  if (reset || next.chatId !== cur.chatId) resetAuth();
+  if (reset || next.chatId !== cur.chatId) { resetAuth(); topics.unlinkGroup(); }
   setSetting(CONFIG, { ...next, v: 2 });
   return status();
 }
@@ -151,7 +158,8 @@ export function status() {
 const chatTitle = (c) => c.title || [c.first_name, c.last_name].filter(Boolean).join(' ') || c.username || '';
 
 export async function findChat(tok = token()) {
-  const ups = await tg(tok, 'getUpdates', { limit: 20, timeout: 0, allowed_updates: ['message'] });
+  // ⚠️ شنوندهٔ همیشگی روشن ⇒ getUpdateِ دوم یعنی ۴۰۹؛ همان «seen»ِ او کافی است
+  const ups = pollerActive() && tok === token() ? [] : await tg(tok, 'getUpdates', { limit: 20, timeout: 0, allowed_updates: ['message'] });
   for (let i = ups.length - 1; i >= 0; i--) {
     const c = ups[i].message && ups[i].message.chat;
     if (c && c.id) return { id: String(c.id), title: chatTitle(c) };
@@ -167,10 +175,10 @@ export async function findChat(tok = token()) {
 const whoOf = (t) => t.stationName || t.shopName || t.accountName || t.who || t.contact || 'کاربر';
 const KIND = { image: '🖼 عکس', video: '🎬 ویدیو', audio: '🎤 پیامِ صوتی' };
 
-function format(t, m) {
-  const head = `${APPS[t.app] || t.app} · ${whoOf(t)}${t.subject ? ` — ${t.subject}` : ''}`;
-  const body = KIND[m.kind] ? `${KIND[m.kind]} (در پنلِ کنترول سنتر ببینید)${m.body ? `\n${m.body}` : ''}` : (m.body || '');
-  return `${head}\n\n${body}`.slice(0, 3900) + '\n\n↩️ برای جواب، روی همین پیام Reply بزنید.';
+function format(t, m, asCaption = false) {
+  const head = `${APPS[t.app] || t.app} · ${whoOf(t)}${t.accountEmail ? ` · ${t.accountEmail}` : ''}${t.subject ? ` — ${t.subject}` : ''}`;
+  const body = KIND[m.kind] && !asCaption ? `${KIND[m.kind]} (در پنلِ کنترول سنتر ببینید)${m.body ? `\n${m.body}` : ''}` : (m.body || '');
+  return `${head}\n\n${body}`.slice(0, asCaption ? 900 : 3900);
 }
 
 async function syncSite(tok, c, s, map, site) {
@@ -188,9 +196,12 @@ async function syncSite(tok, c, s, map, site) {
     const fresh = ((conv && conv.messages) || []).filter((m) => m.from === 'visitor' && Number(m.at) > since);
     for (const m of fresh.slice(-10)) {
       const head = `🌐 ${site.name} · ${ch.name || 'بازدیدکننده'}${ch.contact ? ` (${ch.contact})` : ''}`;
-      const text = `${head}\n\n${m.body}`.slice(0, 3900) + '\n\n↩️ برای جواب، روی همین پیام Reply بزنید.';
-      const out = await tg(tok, 'sendMessage', { chat_id: c.chatId, text, disable_web_page_preview: true });
-      map.set(out.message_id, key);
+      const text = `${head}\n\n${m.body}`.slice(0, 3900);
+      const label = `🌐 ${site.name} · ${ch.name || 'بازدیدکننده'}`;
+      const inGroup = topics.groupOk();
+      const d = await topics.deliver(tg, tok, c.chatId, key, label, 'site',
+        async (where) => (await tg(tok, 'sendMessage', { ...where, text, disable_web_page_preview: true, reply_markup: messageKeys(key, null, label, { inGroup }) })).message_id);
+      map.set(d.inGroup ? `g:${d.messageId}` : d.messageId, key);
       s.since[key] = Math.max(Number(s.since[key]) || 0, Number(m.at));
       sent++;
     }
@@ -204,34 +215,35 @@ async function syncSite(tok, c, s, map, site) {
  * یک دور: اول جواب‌های مالک (تلگرام ← کاربر)، بعد پیام‌های تازهٔ کاربران (کاربر ← تلگرام).
  * @returns {{ skipped?: string, sent?: number, replied?: number }}
  */
-export async function syncOnce({ log = () => {} } = {}) {
-  const c = config();
-  const tok = token();
-  if (!c.enabled) return { skipped: 'disabled' };
-  if (!tok || !c.chatId) return { skipped: 'not_configured' };
-  // 🟢/🔴 پیامِ سنجاق‌شدهٔ «سرور روشن است» (telegram-heartbeat.js)
-  await beat(tg, tok, c.chatId).catch((e) => log(`چراغِ تلگرام: ${e.message}`));
-  const s = state();
-  if (!s.startedAt) s.startedAt = Date.now();
-  const map = new Map(s.map);
+/**
+ * پیام‌ها و دکمه‌های رسیده از تلگرام — از شنوندهٔ همیشگی یا از کارِ ۵ ثانیه‌ای.
+ * ⛔ همیشه زیرِ `withLock` (هر دو مسیر)، چون `s` و نگاشت مشترک‌اند.
+ * @returns {Promise<number>} تعدادِ جواب‌هایی که به کاربران رفت
+ */
+async function processUpdates(tok, c, ups, s, map, log) {
   let replied = 0;
-  let sent = 0;
-
-  // ۱) جوابِ مالک
-  //  ⚠️ callback_query = دکمه‌های رباتِ مالک (`telegram-admin.js`)
-  const ups = await tg(tok, 'getUpdates', { offset: s.offset, limit: 50, timeout: 0, allowed_updates: ['message', 'callback_query'] });
   for (const u of ups) {
     s.offset = Math.max(s.offset, u.update_id + 1);
     // ⚠️ offset پیش از هر کار ذخیره می‌شود: اگر وسطِ دور چیزی شکست، همان جواب دو بار به کاربر نمی‌رود
     saveState({ ...s, map: [...map] });
     if (u.callback_query) {
+      const cq = u.callback_query;
+      const g = topics.group();
+      // دکمه در گروهِ صندوق: فقط از خودِ مالک
+      const inBox = g && String(cq.message && cq.message.chat && cq.message.chat.id) === g.id;
+      if (inBox && String(cq.from && cq.from.id) !== c.chatId) { await tg(tok, 'answerCallbackQuery', { callback_query_id: cq.id, text: 'اجازه ندارید' }).catch(() => {}); continue; }
       // ⛔ دکمه فقط با نشستِ ورود (نام و رمزِ پنل)
-      if (!sessionOf(c.chatId)) { await tg(tok, 'answerCallbackQuery', { callback_query_id: u.callback_query.id, text: '🔒 اول ‎/login‎ بزنید' }).catch(() => {}); continue; }
-      try { await handleCallback(tg, tok, c.chatId, u.callback_query); } catch (e) { log(`دکمهٔ تلگرام: ${e.message}`); }
+      if (!sessionOf(c.chatId)) { await tg(tok, 'answerCallbackQuery', { callback_query_id: cq.id, text: '🔒 اول در گفت‌وگوی خصوصی ‎/login‎ بزنید' }).catch(() => {}); continue; }
+      try { await handleCallback(tg, tok, inBox ? g.id : c.chatId, cq); } catch (e) { log(`دکمهٔ تلگرام: ${e.message}`); }
       continue;
     }
     const m = u.message;
     if (!m) continue;
+    // 📥 پیام در گروه (صندوق یا گروهی که می‌خواهد صندوق شود)
+    if (m.chat && (m.chat.type === 'supergroup' || m.chat.type === 'group')) {
+      try { replied += await groupMessage(tok, c, m, map, log); } catch (e) { log(`صندوقِ تلگرام: ${e.message}`); }
+      continue;
+    }
     if (String(m.chat && m.chat.id) !== c.chatId) {
       // ⛔ فقط مالک. گفت‌وگوی خصوصیِ دیگر: برای «پیدا کردن» به یاد می‌ماند، و یک بار
       //    (هر ساعت) شناسه‌اش را می‌گیرد تا اگر مالک است و chat id غلط ذخیره شده، بفهمد.
@@ -254,32 +266,185 @@ export async function syncOnce({ log = () => {} } = {}) {
     }
     if (/^\/logout(@\w+)?$/i.test(String(m.text || '').trim())) {
       logout();
-      await tg(tok, 'sendMessage', { chat_id: c.chatId, text: '🔒 خارج شدید. برای ورودِ دوباره ‎/login‎.' }).catch(() => {});
+      await tg(tok, 'sendMessage', { chat_id: c.chatId, text: '🔒 خارج شدید. برای ورودِ دوباره ‎/login‎.', reply_markup: { remove_keyboard: true } }).catch(() => {});
       continue;
     }
     const text = String(m.text || m.caption || '').trim();
-    const threadId = m.reply_to_message && map.get(m.reply_to_message.message_id);
-    if (!threadId) {
-      // پیامِ بی Reply = دستور یا جست‌وجوی حساب (هیچ‌وقت به کاربری نمی‌رود)
-      let done = false;
-      if (m.text) { try { done = await handleCommand(tg, tok, c.chatId, m); } catch (e) { log(`دستورِ تلگرام: ${e.message}`); await tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, text: `⚠️ نشد: ${String(e.message).slice(0, 200)}` }).catch(() => {}); done = true; } }
-      if (!done && text) await tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, text: 'برای جواب دادن به کاربر، روی پیامِ خودِ او Reply بزنید و بنویسید.' }).catch(() => {});
+    const say = (t2, extra = {}) => tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, allow_sending_without_reply: true, text: t2, ...extra }).catch(() => {});
+    // ⛔ دستور («/…») و دکمهٔ منو هرگز به کاربر نمی‌رود — حتی در حالِ نوشتن یا با Reply
+    const isCommand = !!m.text && (/^\//.test(text) || !!resolveKey(text));
+    const threadId = !isCommand && m.reply_to_message && map.get(m.reply_to_message.message_id);
+    const writing = !isCommand && !threadId && !wizActive() && compose();
+    const target = threadId || (writing && writing.ref);
+    if (target) {
+      try {
+        const what = await replyTo(tok, target, m);
+        if (writing) touchCompose();
+        replied++;
+        await say(writing ? `✅ ${what} به ${writing.label} رسید. (ادامه بدهید، یا ‎/done‎)` : `✅ ${what} رسید.`);
+      } catch (e) {
+        log(`جواب به گفت‌وگوی ${target} نرفت: ${e.message}`);
+        await say(`⚠️ نرسید: ${e.message}`);
+      }
       continue;
     }
-    if (!text) {
-      await tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, text: 'فعلاً فقط متن به کاربر می‌رسد؛ عکس و فایل را از پنلِ کنترول سنتر بفرستید.' }).catch(() => {});
-      continue;
-    }
+    // پیامِ بی Reply = دستور، دکمه، پرسشِ نیمه‌کاره یا جست‌وجوی حساب (هیچ‌وقت به کاربری نمی‌رود)
+    if (!m.text) { await say('برای فرستادنِ عکس، ویدیو یا صدا به کاربر، روی پیامِ خودِ او Reply بزنید یا «✍️ جواب» را بزنید.'); continue; }
     try {
-      const site = /^site:([^:]+):([^:]+)$/.exec(String(threadId));
-      if (site) await siteChats.reply(site[1], site[2], text, 'telegram');
-      else await cloudRaw('POST', `/api/admin/support/threads/${encodeURIComponent(threadId)}/messages`, { body: { body: text.slice(0, 4000) } });
-      replied++;
-      await tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, text: '✅ رسید.' }).catch(() => {});
+      await handleCommand(tg, tok, c.chatId, m);
     } catch (e) {
-      log(`جواب به گفت‌وگوی ${threadId} نرفت: ${e.message}`);
-      await tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, text: `⚠️ نرسید: ${e.message}. دوباره بفرستید.` }).catch(() => {});
+      log(`دستورِ تلگرام: ${e.message}`);
+      await say(`⚠️ نشد: ${String(e.message).slice(0, 200)}`);
     }
+  }
+  return replied;
+}
+
+/**
+ * پیامی در یک گروه. ⛔ فقط از خودِ مالک (from.id = chat idِ خصوصیِ او)، فقط با ورود.
+ *   /link  ⇒ همین گروه صندوق شود       /unlink ⇒ صندوق برگردد به گفت‌وگوی خصوصی
+ *   پیام در تاپیکِ یک کاربر ⇒ جواب به همان کاربر (متن، عکس، ویدیو، صدا)
+ * @returns {Promise<number>} ۱ اگر جوابی به کاربر رفت
+ */
+async function groupMessage(tok, c, m, map, log) {
+  const from = String(m.from && m.from.id);
+  if (from !== c.chatId || (m.from && m.from.is_bot)) return 0; // ⛔ فقط مالک
+  const text = String(m.text || m.caption || '').trim();
+  const where = { chat_id: m.chat.id, ...(m.message_thread_id ? { message_thread_id: m.message_thread_id } : {}) };
+  const say = (t2) => tg(tok, 'sendMessage', { ...where, reply_to_message_id: m.message_id, allow_sending_without_reply: true, text: t2 }).catch(() => {});
+  if (!sessionOf(c.chatId)) { await say('🔒 اول در گفت‌وگوی خصوصی با ربات ‎/login‎ بزنید.'); return 0; }
+  if (/^\/link(@\w+)?$/i.test(text)) {
+    const r = await topics.linkGroup(tg, tok, m.chat);
+    await tg(tok, 'sendMessage', { chat_id: m.chat.id, text: r.text }).catch(() => {});
+    if (r.ok) await tg(tok, 'sendMessage', { chat_id: c.chatId, text: `📥 گروهِ «${m.chat.title || ''}» صندوقِ پیام‌ها و کدها شد. این‌جا فقط کنترلِ سرور می‌ماند.` }).catch(() => {});
+    return 0;
+  }
+  const g = topics.group();
+  if (!g || g.id !== String(m.chat.id)) return 0; // گروهِ دیگر
+  if (/^\/unlink(@\w+)?$/i.test(text)) {
+    topics.unlinkGroup();
+    await say('✅ این گروه دیگر صندوق نیست؛ پیام‌ها دوباره در گفت‌وگوی خصوصی می‌آیند.');
+    return 0;
+  }
+  if (/^\//.test(text)) { await say('دستورهای سرور در گفت‌وگوی خصوصی با ربات است. این‌جا فقط جواب به کاربران.'); return 0; }
+  // ↩️ Reply هم کار می‌کند (اختیاری): Reply روی پیامِ یک کاربر ⇒ همان کاربر، حتی بیرون از تاپیکش.
+  //  ⚠️ در تاپیک هر پیام reply_to_messageِ «سرِ تاپیک» را دارد؛ Replyِ واقعی آن نیست.
+  const rt = m.reply_to_message;
+  const explicit = !!(rt && Number(rt.message_id) !== Number(m.message_thread_id || 0) && !rt.forum_topic_created);
+  const byReply = explicit ? map.get(`g:${rt.message_id}`) : null;
+  const ref = byReply || (m.message_thread_id && topics.refOfThread(m.message_thread_id));
+  // حالتِ «فقط با Reply» (⚙️ تنظیمات): پیامِ بی Reply در تاپیک یادداشتِ خودِ مالک است
+  if (ref && ref !== topics.CODES_REF && prefs().replyOnly && !explicit) return 0;
+  if (!ref || ref === topics.CODES_REF) {
+    if (!m.message_thread_id || ref === topics.CODES_REF) await say(ref ? 'این تاپیکِ کدهاست؛ برای جواب به کاربر در تاپیکِ خودِ او بنویسید.' : 'برای جواب به کاربر در تاپیکِ خودِ او بنویسید.');
+    return 0;
+  }
+  try {
+    await replyTo(tok, ref, m);
+    // ✅ بی پیامِ اضافه: یک واکنش روی همان پیام
+    await tg(tok, 'setMessageReaction', { chat_id: m.chat.id, message_id: m.message_id, reaction: [{ type: 'emoji', emoji: '👍' }] })
+      .catch(() => say('✅ رسید.'));
+    return 1;
+  } catch (e) {
+    log(`جواب به گفت‌وگوی ${ref} نرفت: ${e.message}`);
+    await say(`⚠️ نرسید: ${e.message}`);
+    return 0;
+  }
+}
+
+const UPDATES = ['message', 'callback_query'];
+
+//  ⛔ یک کار در هر لحظه روی وضعیتِ پل (offset، نگاشتِ پیام ⇒ گفت‌وگو)
+let lock = Promise.resolve();
+function withLock(fn) {
+  const run = lock.then(fn, fn);
+  lock = run.catch(() => {});
+  return run;
+}
+
+// ── شنوندهٔ همیشگی (long-poll): جوابِ زیرِ یک ثانیه ─────────────────────────
+//  خواستهٔ صاحب سامانه: «خیلی زود جواب بده و سریع باشه نه کند.»
+//  به‌جای «هر ۵ ثانیه یک بار بپرس»، یک getUpdates با timeout=25 همیشه باز است و
+//  تلگرام همان لحظه که پیامی برسد جوابش را برمی‌گرداند. کارِ ۵ ثانیه‌ای فقط
+//  پیام‌های کاربران را به تلگرام می‌برد. HLP_TG_LONGPOLL=0 ⇒ خاموش (آزمون‌ها).
+const poller = { started: false, stopped: false, active: false, abort: null };
+export const pollerActive = () => poller.active;
+const sleep = (ms) => new Promise((r) => { const t = setTimeout(r, ms); t.unref?.(); });
+
+export function startPoller({ log = () => {} } = {}) {
+  if (poller.started || process.env.HLP_TG_LONGPOLL === '0') return false;
+  poller.started = true;
+  (async () => {
+    while (!poller.stopped) {
+      const c = config();
+      const tok = token();
+      if (!c.enabled || !tok || !c.chatId) { poller.active = false; await sleep(3000); continue; }
+      poller.active = true;
+      const t0 = Date.now();
+      let ups;
+      try {
+        ups = await tg(tok, 'getUpdates', { offset: state().offset, limit: 50, timeout: 25, allowed_updates: UPDATES }, 35000);
+      } catch (e) {
+        if (!poller.stopped) { log(`شنوندهٔ تلگرام: ${e.message}`); await sleep(3000); }
+        continue;
+      }
+      if (poller.stopped) break;
+      if (ups.length) {
+        await withLock(async () => {
+          const s = state();
+          if (!s.startedAt) s.startedAt = Date.now();
+          const map = new Map(s.map);
+          // ⚠️ دوباره با config/token تازه — ممکن است در این ۲۵ ثانیه عوض شده باشند
+          const cfg = config();
+          const fresh = ups.filter((u) => u.update_id >= s.offset);
+          if (!cfg.enabled || token() !== tok || cfg.chatId !== c.chatId) {
+            // پل همین حالا خاموش یا عوض شد ⇒ این‌ها کنار می‌روند، نه اجرا (دکمهٔ «بله»ِ کهنه بعداً اجرا نشود)
+            for (const u of fresh) s.offset = Math.max(s.offset, u.update_id + 1);
+          } else {
+            await processUpdates(tok, cfg, fresh, s, map, log);
+          }
+          s.map = [...map];
+          saveState(s);
+        }).catch((e) => log(`شنوندهٔ تلگرام: ${e.message}`));
+      } else if (Date.now() - t0 < 1000) {
+        await sleep(1000); // تلگرامی که بی‌درنگ خالی برگرداند (نباید)، حلقهٔ داغ نسازد
+      }
+    }
+    poller.active = false;
+  })();
+  return true;
+}
+export function stopPoller() { poller.stopped = true; poller.active = false; }
+
+let commandsFor = '';
+export function syncOnce(opts = {}) { return withLock(() => syncInner(opts)); }
+
+async function syncInner({ log = () => {} } = {}) {
+  const c = config();
+  const tok = token();
+  if (!c.enabled) return { skipped: 'disabled' };
+  if (!tok || !c.chatId) return { skipped: 'not_configured' };
+  // 🟢/🔴 پیامِ سنجاق‌شدهٔ «سرور روشن است» (telegram-heartbeat.js)
+  await beat(tg, tok, c.chatId).catch((e) => log(`چراغِ تلگرام: ${e.message}`));
+  // پیشنهادِ دستورها («/») فقط در گفت‌وگوی مالک — یک بار برای هر ربات/گفت‌وگو در هر اجرا
+  if (commandsFor !== `${tok}|${c.chatId}`) {
+    try {
+      await tg(tok, 'setMyCommands', { commands: COMMANDS, scope: { type: 'chat', chat_id: Number(c.chatId) || c.chatId } });
+      await tg(tok, 'setChatMenuButton', { chat_id: Number(c.chatId) || c.chatId, menu_button: { type: 'commands' } }).catch(() => {});
+      commandsFor = `${tok}|${c.chatId}`;
+    } catch (e) { log(`دستورهای تلگرام: ${e.message}`); }
+  }
+  const s = state();
+  if (!s.startedAt) s.startedAt = Date.now();
+  const map = new Map(s.map);
+  let replied = 0;
+  let sent = 0;
+
+  // ۱) جوابِ مالک — اگر شنوندهٔ همیشگی (long-poll) روشن است، کارِ اوست؛ وگرنه همین‌جا
+  //  ⚠️ دو getUpdatesِ هم‌زمان روی یک ربات ⇒ ۴۰۹ از تلگرام. پس فقط یکی.
+  if (!pollerActive()) {
+    const ups = await tg(tok, 'getUpdates', { offset: s.offset, limit: 50, timeout: 0, allowed_updates: UPDATES });
+    replied += await processUpdates(tok, c, ups, s, map, log);
   }
 
   // ۲) پیام‌های تازهٔ بازدیدکنندگانِ سایت‌ها (هر سایت جدا؛ خاموش بودنِ یکی بقیه را نمی‌خواباند)
@@ -291,7 +456,11 @@ export async function syncOnce({ log = () => {} } = {}) {
 
   // ۳) پیام‌های تازهٔ کاربرانِ پمپ و فروشگاه
   const wantCloud = c.apps.some((a) => a === 'pump' || a === 'shop');
-  const list = wantCloud ? await cloudRaw('GET', '/api/admin/support/threads', { query: { limit: 100 } }) : null;
+  //  ⚠️ سرورِ حساب خاموش نباید بقیهٔ دور (سایت‌ها، هشدارها) را بخواباند
+  let list = null;
+  if (wantCloud) {
+    try { list = await cloudRaw('GET', '/api/admin/support/threads', { query: { limit: 100 } }); } catch (e) { log(`گفت‌وگوهای پمپ و فروشگاه: ${e.message}`); }
+  }
   for (const t of (list && list.threads) || []) {
     if (!c.apps.includes(t.app)) continue;
     const since = Number(s.since[t.id]) || s.startedAt;
@@ -300,12 +469,30 @@ export async function syncOnce({ log = () => {} } = {}) {
     const fresh = ((conv && conv.messages) || []).filter((m) => m.sender !== 'admin' && Number(m.createdAt) > since).sort((a, b) => a.createdAt - b.createdAt);
     for (const m of fresh.slice(-10)) {
       const full = { ...t, ...(conv.thread || {}) };
-      const out = await tg(tok, 'sendMessage', { chat_id: c.chatId, text: format(full, m), disable_web_page_preview: true, reply_markup: threadKeys(full) });
-      map.set(out.message_id, t.id);
+      const label = labelOf(full);
+      const keys = messageKeys(t.id, full, label, { inGroup: topics.groupOk() });
+      // 📥 صندوق: تاپیکِ همین کاربر در گروه (یا خصوصی اگر گروه نیست)
+      // عکس/ویدیو/صدا خودش می‌آید؛ اگر نشد، همان متنِ «در پنل ببینید»
+      const d = await topics.deliver(tg, tok, c.chatId, t.id, label, full.app, async (where) => {
+        const { chat_id: to, ...extra } = where;
+        const id = KIND[m.kind] ? await sendIncomingMedia(tok, to, m, format(full, m, true), keys, extra) : null;
+        return id || (await tg(tok, 'sendMessage', { ...where, text: format(full, m), disable_web_page_preview: true, reply_markup: keys })).message_id;
+      });
+      map.set(d.inGroup ? `g:${d.messageId}` : d.messageId, t.id);
       s.since[t.id] = Math.max(Number(s.since[t.id]) || 0, Number(m.createdAt));
       sent++;
     }
     if (!fresh.length) s.since[t.id] = Number(t.updatedAt);
+  }
+
+  // 🚨 هشدارها و 📊 گزارشِ روزانه (telegram-watch.js) — فقط برای مالکِ واردشده
+  if (sessionOf(c.chatId)) {
+    await watch(tg, tok, c.chatId, log).catch((e) => log(`نگهبانِ تلگرام: ${e.message}`));
+    // 📥 گروهِ صندوق فقط دو نفره بماند (هر ۱۰ دقیقه)
+    const warn = await topics.guardGroup(tg, tok).catch(() => null);
+    if (warn) await tg(tok, 'sendMessage', { chat_id: c.chatId, text: warn }).catch(() => {});
+    // 🔐 کدهای شش‌رقمی در صندوق
+    await syncCodes(tg, tok, c.chatId, { enabled: prefs().codes, log }).catch((e) => log(`کدها: ${e.message}`));
   }
 
   s.map = [...map];
