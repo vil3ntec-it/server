@@ -131,7 +131,7 @@ const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 
     HLP_ACCOUNT_AUTOSTART: '0', HLP_PUMP_MIRROR: '0', HLP_SITE_MIRROR: '0',
     HLP_ACCOUNT_API: `http://127.0.0.1:${fake.address().port}`, HLP_ACCOUNT_ADMIN_USER: 'boss', HLP_ACCOUNT_ADMIN_PASSWORD: 'top-secret',
     HLP_TG_HEARTBEAT_MS: '0', HLP_TG_WATCH_MS: '1', HLP_GITHUB_API: `http://127.0.0.1:${fake.address().port}/gh`,
-    HLP_TELEGRAM_API: `http://127.0.0.1:${tg.address().port}` },
+    HLP_TG_LONGPOLL: '0', HLP_TELEGRAM_API: `http://127.0.0.1:${tg.address().port}` },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let out = ''; child.stdout.on('data', (d) => (out += d)); child.stderr.on('data', (d) => (out += d));

@@ -155,7 +155,8 @@ export function status() {
 const chatTitle = (c) => c.title || [c.first_name, c.last_name].filter(Boolean).join(' ') || c.username || '';
 
 export async function findChat(tok = token()) {
-  const ups = await tg(tok, 'getUpdates', { limit: 20, timeout: 0, allowed_updates: ['message'] });
+  // ⚠️ شنوندهٔ همیشگی روشن ⇒ getUpdateِ دوم یعنی ۴۰۹؛ همان «seen»ِ او کافی است
+  const ups = pollerActive() && tok === token() ? [] : await tg(tok, 'getUpdates', { limit: 20, timeout: 0, allowed_updates: ['message'] });
   for (let i = ups.length - 1; i >= 0; i--) {
     const c = ups[i].message && ups[i].message.chat;
     if (c && c.id) return { id: String(c.id), title: chatTitle(c) };
@@ -209,31 +210,13 @@ async function syncSite(tok, c, s, map, site) {
  * یک دور: اول جواب‌های مالک (تلگرام ← کاربر)، بعد پیام‌های تازهٔ کاربران (کاربر ← تلگرام).
  * @returns {{ skipped?: string, sent?: number, replied?: number }}
  */
-let commandsFor = '';
-export async function syncOnce({ log = () => {} } = {}) {
-  const c = config();
-  const tok = token();
-  if (!c.enabled) return { skipped: 'disabled' };
-  if (!tok || !c.chatId) return { skipped: 'not_configured' };
-  // 🟢/🔴 پیامِ سنجاق‌شدهٔ «سرور روشن است» (telegram-heartbeat.js)
-  await beat(tg, tok, c.chatId).catch((e) => log(`چراغِ تلگرام: ${e.message}`));
-  // پیشنهادِ دستورها («/») فقط در گفت‌وگوی مالک — یک بار برای هر ربات/گفت‌وگو در هر اجرا
-  if (commandsFor !== `${tok}|${c.chatId}`) {
-    try {
-      await tg(tok, 'setMyCommands', { commands: COMMANDS, scope: { type: 'chat', chat_id: Number(c.chatId) || c.chatId } });
-      await tg(tok, 'setChatMenuButton', { chat_id: Number(c.chatId) || c.chatId, menu_button: { type: 'commands' } }).catch(() => {});
-      commandsFor = `${tok}|${c.chatId}`;
-    } catch (e) { log(`دستورهای تلگرام: ${e.message}`); }
-  }
-  const s = state();
-  if (!s.startedAt) s.startedAt = Date.now();
-  const map = new Map(s.map);
+/**
+ * پیام‌ها و دکمه‌های رسیده از تلگرام — از شنوندهٔ همیشگی یا از کارِ ۵ ثانیه‌ای.
+ * ⛔ همیشه زیرِ `withLock` (هر دو مسیر)، چون `s` و نگاشت مشترک‌اند.
+ * @returns {Promise<number>} تعدادِ جواب‌هایی که به کاربران رفت
+ */
+async function processUpdates(tok, c, ups, s, map, log) {
   let replied = 0;
-  let sent = 0;
-
-  // ۱) جوابِ مالک
-  //  ⚠️ callback_query = دکمه‌های رباتِ مالک (`telegram-admin.js`)
-  const ups = await tg(tok, 'getUpdates', { offset: s.offset, limit: 50, timeout: 0, allowed_updates: ['message', 'callback_query'] });
   for (const u of ups) {
     s.offset = Math.max(s.offset, u.update_id + 1);
     // ⚠️ offset پیش از هر کار ذخیره می‌شود: اگر وسطِ دور چیزی شکست، همان جواب دو بار به کاربر نمی‌رود
@@ -298,6 +281,103 @@ export async function syncOnce({ log = () => {} } = {}) {
       log(`دستورِ تلگرام: ${e.message}`);
       await say(`⚠️ نشد: ${String(e.message).slice(0, 200)}`);
     }
+  }
+  return replied;
+}
+
+const UPDATES = ['message', 'callback_query'];
+
+//  ⛔ یک کار در هر لحظه روی وضعیتِ پل (offset، نگاشتِ پیام ⇒ گفت‌وگو)
+let lock = Promise.resolve();
+function withLock(fn) {
+  const run = lock.then(fn, fn);
+  lock = run.catch(() => {});
+  return run;
+}
+
+// ── شنوندهٔ همیشگی (long-poll): جوابِ زیرِ یک ثانیه ─────────────────────────
+//  خواستهٔ صاحب سامانه: «خیلی زود جواب بده و سریع باشه نه کند.»
+//  به‌جای «هر ۵ ثانیه یک بار بپرس»، یک getUpdates با timeout=25 همیشه باز است و
+//  تلگرام همان لحظه که پیامی برسد جوابش را برمی‌گرداند. کارِ ۵ ثانیه‌ای فقط
+//  پیام‌های کاربران را به تلگرام می‌برد. HLP_TG_LONGPOLL=0 ⇒ خاموش (آزمون‌ها).
+const poller = { started: false, stopped: false, active: false, abort: null };
+export const pollerActive = () => poller.active;
+const sleep = (ms) => new Promise((r) => { const t = setTimeout(r, ms); t.unref?.(); });
+
+export function startPoller({ log = () => {} } = {}) {
+  if (poller.started || process.env.HLP_TG_LONGPOLL === '0') return false;
+  poller.started = true;
+  (async () => {
+    while (!poller.stopped) {
+      const c = config();
+      const tok = token();
+      if (!c.enabled || !tok || !c.chatId) { poller.active = false; await sleep(3000); continue; }
+      poller.active = true;
+      const t0 = Date.now();
+      let ups;
+      try {
+        ups = await tg(tok, 'getUpdates', { offset: state().offset, limit: 50, timeout: 25, allowed_updates: UPDATES }, 35000);
+      } catch (e) {
+        if (!poller.stopped) { log(`شنوندهٔ تلگرام: ${e.message}`); await sleep(3000); }
+        continue;
+      }
+      if (poller.stopped) break;
+      if (ups.length) {
+        await withLock(async () => {
+          const s = state();
+          if (!s.startedAt) s.startedAt = Date.now();
+          const map = new Map(s.map);
+          // ⚠️ دوباره با config/token تازه — ممکن است در این ۲۵ ثانیه عوض شده باشند
+          const cfg = config();
+          const fresh = ups.filter((u) => u.update_id >= s.offset);
+          if (!cfg.enabled || token() !== tok || cfg.chatId !== c.chatId) {
+            // پل همین حالا خاموش یا عوض شد ⇒ این‌ها کنار می‌روند، نه اجرا (دکمهٔ «بله»ِ کهنه بعداً اجرا نشود)
+            for (const u of fresh) s.offset = Math.max(s.offset, u.update_id + 1);
+          } else {
+            await processUpdates(tok, cfg, fresh, s, map, log);
+          }
+          s.map = [...map];
+          saveState(s);
+        }).catch((e) => log(`شنوندهٔ تلگرام: ${e.message}`));
+      } else if (Date.now() - t0 < 1000) {
+        await sleep(1000); // تلگرامی که بی‌درنگ خالی برگرداند (نباید)، حلقهٔ داغ نسازد
+      }
+    }
+    poller.active = false;
+  })();
+  return true;
+}
+export function stopPoller() { poller.stopped = true; poller.active = false; }
+
+let commandsFor = '';
+export function syncOnce(opts = {}) { return withLock(() => syncInner(opts)); }
+
+async function syncInner({ log = () => {} } = {}) {
+  const c = config();
+  const tok = token();
+  if (!c.enabled) return { skipped: 'disabled' };
+  if (!tok || !c.chatId) return { skipped: 'not_configured' };
+  // 🟢/🔴 پیامِ سنجاق‌شدهٔ «سرور روشن است» (telegram-heartbeat.js)
+  await beat(tg, tok, c.chatId).catch((e) => log(`چراغِ تلگرام: ${e.message}`));
+  // پیشنهادِ دستورها («/») فقط در گفت‌وگوی مالک — یک بار برای هر ربات/گفت‌وگو در هر اجرا
+  if (commandsFor !== `${tok}|${c.chatId}`) {
+    try {
+      await tg(tok, 'setMyCommands', { commands: COMMANDS, scope: { type: 'chat', chat_id: Number(c.chatId) || c.chatId } });
+      await tg(tok, 'setChatMenuButton', { chat_id: Number(c.chatId) || c.chatId, menu_button: { type: 'commands' } }).catch(() => {});
+      commandsFor = `${tok}|${c.chatId}`;
+    } catch (e) { log(`دستورهای تلگرام: ${e.message}`); }
+  }
+  const s = state();
+  if (!s.startedAt) s.startedAt = Date.now();
+  const map = new Map(s.map);
+  let replied = 0;
+  let sent = 0;
+
+  // ۱) جوابِ مالک — اگر شنوندهٔ همیشگی (long-poll) روشن است، کارِ اوست؛ وگرنه همین‌جا
+  //  ⚠️ دو getUpdatesِ هم‌زمان روی یک ربات ⇒ ۴۰۹ از تلگرام. پس فقط یکی.
+  if (!pollerActive()) {
+    const ups = await tg(tok, 'getUpdates', { offset: s.offset, limit: 50, timeout: 0, allowed_updates: UPDATES });
+    replied += await processUpdates(tok, c, ups, s, map, log);
   }
 
   // ۲) پیام‌های تازهٔ بازدیدکنندگانِ سایت‌ها (هر سایت جدا؛ خاموش بودنِ یکی بقیه را نمی‌خواباند)

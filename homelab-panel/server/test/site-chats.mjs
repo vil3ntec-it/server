@@ -80,7 +80,7 @@ const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 
   env: { ...process.env, HLP_PORT: String(PORT), HLP_SITESYNC_PORT: String(PORT + 1), HLP_HOST: '127.0.0.1',
     HLP_DATA_DIR: path.join(tmp, 'data'), HLP_SITES_ROOT: path.join(tmp, 'sites'), HLP_TUNNEL: '0', HLP_AI_ENABLED: '0',
     HLP_ACCOUNT_AUTOSTART: '0', HLP_PUMP_MIRROR: '0', HLP_SITE_MIRROR: '0',
-    HLP_ACCOUNT_API: 'http://127.0.0.1:9', HLP_TG_HEARTBEAT_MS: '0', HLP_TG_WATCH_MS: '0', HLP_TELEGRAM_API: `http://127.0.0.1:${tg.address().port}` },
+    HLP_ACCOUNT_API: 'http://127.0.0.1:9', HLP_TG_HEARTBEAT_MS: '0', HLP_TG_WATCH_MS: '0', HLP_TG_LONGPOLL: '0', HLP_TELEGRAM_API: `http://127.0.0.1:${tg.address().port}` },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let out = ''; child.stdout.on('data', (d) => (out += d)); child.stderr.on('data', (d) => (out += d));

@@ -86,6 +86,7 @@ import accountServerRoutes from './routes/account-server.js';
 import pumpUpdatesAdminRoutes from './routes/pump-updates-admin.js';
 import supportTelegramRoutes from './routes/support-telegram.js';
 import { markOffline as markTelegramOffline } from './support/telegram-heartbeat.js';
+import { startPoller as startTelegramPoller, stopPoller as stopTelegramPoller } from './support/telegram.js';
 import siteChatsRoutes from './routes/site-chats.js';
 import siteUpdatesRoutes from './routes/site-updates.js';
 
@@ -950,6 +951,9 @@ async function main() {
     logEvent('error', 'panel', `راه‌اندازی موتورِ اتوماسیون: ${e.message}`);
   }
 
+  // رباتِ تلگرامِ مالک: شنوندهٔ همیشگی (long-poll) ⇒ جوابِ زیرِ یک ثانیه
+  try { startTelegramPoller({ log: (m) => logEvent('warn', 'telegram', m) }); } catch (e) { console.warn(`⚠️  شنوندهٔ تلگرام: ${e.message}`); }
+
   if (syncOnlyServer) {
     syncOnlyServer.listen(config.siteSync.port, config.host);
   }
@@ -1090,6 +1094,7 @@ async function shutdown(signal) {
   shuttingDown = true;
   console.log(`\n[خاموش‌سازی] ${signal} — ذخیرهٔ نهایی...`);
   // چراغِ رباتِ تلگرام همان لحظه 🔴 (پیش از بستنِ دیتابیس؛ حداکثر ۳ ثانیه)
+  stopTelegramPoller();
   try { await markTelegramOffline(signal === 'SIGINT' ? 'برنامه بسته شد' : 'خاموش‌سازی یا ری‌استارت'); } catch { /* بی‌خیال */ }
   clearInterval(housekeeping);
   stopCollector();
