@@ -60,12 +60,13 @@ const tg = http.createServer((req, res) => {
       polls++;
       concurrent++; maxConcurrent = Math.max(maxConcurrent, concurrent);
       confirmed = Math.max(confirmed, body.offset || 0);
+      let timer = null;
       const done = (list) => { concurrent--; clearTimeout(timer); ok(list); };
       const ready = updates.filter((u) => u.update_id >= confirmed);
       if (ready.length || !body.timeout) return done(ready);
       const w = (list) => done(list); w.offset = confirmed;
       pending.push(w);
-      const timer = setTimeout(() => { pending = pending.filter((x) => x !== w); done([]); }, Math.min(body.timeout, 3) * 1000);
+      timer = setTimeout(() => { pending = pending.filter((x) => x !== w); done([]); }, Math.min(body.timeout, 3) * 1000);
       res.on('close', () => { if (!res.writableEnded) { pending = pending.filter((x) => x !== w); concurrent--; clearTimeout(timer); } });
       return;
     }
