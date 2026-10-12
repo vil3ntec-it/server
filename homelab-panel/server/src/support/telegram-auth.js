@@ -17,6 +17,7 @@ import { db, getSetting, setSetting, logEvent } from '../db.js';
 import { findUser, verifyPassword } from '../auth.js';
 import { verifyTotp, useRecoveryCode } from '../lib/totp.js';
 import { audit } from '../control/audit.js';
+import { KEYBOARD } from './telegram-admin.js';
 
 const KEY = 'support_tg_auth';
 const MAX_FAILS = 5;
@@ -57,7 +58,7 @@ export function logout() { const a = load(); save({ ...a, session: null, stage: 
  */
 export async function handleLogin(tg, tok, chatId, m) {
   const a = load();
-  const send = (text) => tg(tok, 'sendMessage', { chat_id: chatId, reply_to_message_id: m.message_id, allow_sending_without_reply: true, text }).catch(() => {});
+  const send = (text, extra = {}) => tg(tok, 'sendMessage', { chat_id: chatId, reply_to_message_id: m.message_id, allow_sending_without_reply: true, text, ...extra }).catch(() => {});
   const wipe = () => tg(tok, 'deleteMessage', { chat_id: chatId, message_id: m.message_id }).catch(() => {});
   const text = String(m.text || '').trim();
   const now = Date.now();
@@ -95,7 +96,7 @@ export async function handleLogin(tg, tok, chatId, m) {
     save({ session: { chatId: String(chatId), uid: user.id, fp: fpOf(user), until: now + sessionMs() }, stage: null, fails: 0, lockUntil: 0 });
     logEvent('info', 'telegram', `«${user.username}» وارد رباتِ تلگرام شد`);
     audit({ actor: user.username, action: 'telegram.login', entity: 'user', entityId: String(user.id) });
-    await send(`✅ خوش آمدید ${user.username}. این ورود ${Math.round(sessionMs() / 864e5)} روز می‌ماند؛ ‎/logout‎ برای خروج.\n\n‎/start‎ برای منو.`);
+    await send(`✅ خوش آمدید ${user.username}. این ورود ${Math.round(sessionMs() / 864e5)} روز می‌ماند؛ ‎/logout‎ برای خروج.\n\nدکمه‌های پایینِ صفحه منوی شماست؛ ‎/start‎ راهنما.`, { reply_markup: KEYBOARD });
   };
 
   if (st.step === 'username') {

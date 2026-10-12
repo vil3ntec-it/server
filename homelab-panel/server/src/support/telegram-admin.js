@@ -25,6 +25,8 @@ import { listSitesRaw, getSite } from '../sites/registry.js';
 import { isRunning, startSite, stopSite, restartSite } from '../sites/process.js';
 import { grantSubscription, extendSubscription, setSubscriptionStatus, createOfflineCode, revokeOfflineCode } from '../routes/account-admin.js';
 import { tgFile } from './telegram.js';
+import * as inbox from './telegram-inbox.js';
+import { settingsMessage, reportText, setPrefs } from './telegram-watch.js';
 
 const ACTS = 'support_tg_acts';
 const WIZ = 'support_tg_wiz';
@@ -36,12 +38,12 @@ const EMAIL_RE = /^[^\s@]{1,100}@[^\s@]{1,100}\.[^\s@]{1,20}$/;
 const ACTS_MAX = 400;
 const ACT_TTL = 24 * 3600e3;
 const DAY = 24 * 3600e3;
-const APP = { pump: '🛢 پمپ', shop: '🛒 فروشگاه' };
+export const APP = { pump: '🛢 پمپ', shop: '🛒 فروشگاه' };
 const STATUS = { active: '✅ فعال', trial: '🎁 آزمایشی', suspended: '⏸ معلق', cancelled: '✖ لغو شده', canceled: '✖ لغو شده', expired: '⌛ منقضی', none: '— بی اشتراک' };
 const UNIT = { day: 'روز', week: 'هفته', month: 'ماه', year: 'سال' };
 const ACTOR = 'telegram';
 
-const fa = (n) => Number(n).toLocaleString('fa-IR');
+export const fa = (n) => Number(n).toLocaleString('fa-IR');
 const dateFa = (ms) => { try { return new Date(ms).toLocaleDateString('fa-IR-u-ca-persian'); } catch { return new Date(ms).toISOString().slice(0, 10); } };
 const gb = (b) => `${(Number(b) / 1024 ** 3).toFixed(1)}GB`;
 
@@ -50,7 +52,7 @@ function acts() {
   const a = getSetting(ACTS, null);
   return a && typeof a === 'object' ? a : {};
 }
-function btn(text, act) {
+export function btn(text, act) {
   const all = acts();
   const now = Date.now();
   for (const [k, v] of Object.entries(all)) if (!v || now - v.at > ACT_TTL) delete all[k];
@@ -65,18 +67,18 @@ const actOf = (id) => { const v = acts()[id]; return v && Date.now() - v.at <= A
 
 // ── حساب‌ها ────────────────────────────────────────────────────────────
 /** همان شکلِ `grant-targets`ِ پنل. */
-async function search(app, q, limit = 8) {
+export async function search(app, q, limit = 8) {
   if (app === 'pump') {
     const out = await cloudRaw('GET', '/api/admin/pump/stations', { query: { q, limit } });
     return (out.stations || []).map((s) => ({
       app, tenantId: s.id, name: s.name || '', code: s.code || '', ownerName: s.owner_name || '', ownerEmail: s.owner_email || '', ownerPhone: s.owner_phone || '',
-      subscriptionId: s.subscription_id || '', plan: s.plan || '', status: s.sub_status || 'none', endsAt: Number(s.ends_at) || 0,
+      subscriptionId: s.subscription_id || '', plan: s.plan || '', status: s.sub_status || 'none', endsAt: Number(s.ends_at) || 0, createdAt: Number(s.created_at) || 0,
     }));
   }
   const out = await cloudRaw('GET', '/api/admin/shops', { query: { q, limit } });
   return (out.shops || []).map((s) => ({
     app, tenantId: s.id, name: s.name || '', code: '', ownerName: s.owner_name || '', ownerEmail: s.owner_email || '', ownerPhone: s.owner_phone || '',
-    subscriptionId: s.subscription_id || '', plan: s.plan || '', status: s.sub_status || 'none', endsAt: Number(s.ends_at) || 0,
+    subscriptionId: s.subscription_id || '', plan: s.plan || '', status: s.sub_status || 'none', endsAt: Number(s.ends_at) || 0, createdAt: Number(s.created_at) || 0,
   }));
 }
 
@@ -89,7 +91,7 @@ async function accountOf(app, tenantId) {
   return hit || { app, tenantId, name: base.name || '', code: base.code || '', ownerName: '', ownerEmail: '', ownerPhone: '', subscriptionId: '', plan: '', status: 'none', endsAt: 0 };
 }
 
-function daysLeft(a) {
+export function daysLeft(a) {
   if (!['active', 'trial'].includes(a.status) || !a.endsAt) return 0;
   return Math.max(0, Math.ceil((a.endsAt - Date.now()) / DAY));
 }
@@ -121,7 +123,7 @@ function cardKeys(a) {
 }
 
 // ── سرور و سایت‌ها ──────────────────────────────────────────────────────
-async function statusText() {
+export async function statusText() {
   const cpu = readCpu();
   const mem = await readMemory();
   const disks = ((await readDisks().catch(() => null)) || {}).disks || [];
@@ -172,7 +174,8 @@ async function expiringMessage() {
 
 // ── کدِ اشتراکِ آفلاینِ پمپ (همان «اشتراک‌ها ← کدها ← پمپ‌بنزین»ِ پنل) ─────────
 const wiz = () => { const w = getSetting(WIZ, null); return w && Date.now() - w.at < WIZ_MS ? w : null; };
-const setWiz = (w) => setSetting(WIZ, w ? { ...w, at: Date.now() } : null);
+const setWiz = (w) => { setSetting(WIZ, w ? { ...w, at: Date.now() } : null); if (w) inbox.setCompose(null); };
+export const wizActive = () => !!wiz();
 
 async function codesMessage() {
   const out = await cloudRaw('GET', '/api/admin/pump/offline-codes', { query: { limit: 10 } });
@@ -191,6 +194,20 @@ const OFFLINE_START = '🔑 کدِ اشتراکِ آفلاینِ پمپ\n\nکد�
 async function wizardStep(send, text) {
   const w = wiz();
   if (!w || text.startsWith('/')) return false;
+  if (w.step === 'quick_add') {
+    setWiz(null);
+    inbox.addQuick(text);
+    await send({ text: '✅ افزوده شد.' });
+    await send(inbox.quickManage());
+    return true;
+  }
+  if (w.step === 'bc_text') {
+    setWiz(null);
+    const body = text.slice(0, 4000);
+    const yes = btn('📤 بله، بفرست', { k: 'bcSend', app: w.app, target: w.target, body });
+    await send({ text: `📣 پیش‌نمایش — ${inbox.BC_APPS[w.app]} · ${inbox.BC_TARGETS[w.target]}\n\n${body}\n\nبه همه فرستاده شود؟`, reply_markup: { inline_keyboard: [[{ ...yes, callback_data: yes.callback_data.replace(/^a:/, 'y:') }]] } });
+    return true;
+  }
   if (w.step === 'computer') {
     const computer = text.replace(/\s+/g, '').toUpperCase();
     if (!COMPUTER_RE.test(computer)) { await send({ text: '❌ کدِ کامپیوتر فقط حرف و رقم و خطِ تیره است (۴ تا ۴۰). دوباره بفرستید یا ‎/cancel‎.' }); return true; }
@@ -219,57 +236,89 @@ async function sendOffline(tok, chatId, out) {
   return { msg, tgSend };
 }
 
+//  ⛔ منوی ثابتِ پایینِ صفحه: هر دکمه همان دستور است و هرگز به کاربری نمی‌رود.
+export const KEYS = {
+  inbox: '💬 صندوقِ پیام‌ها', find: '🔎 جست‌وجوی حساب',
+  expiring: '⏳ اشتراک‌های رو به پایان', offline: '🔑 کدِ آفلاین',
+  status: '🖥 وضعیتِ سرور', sites: '🌐 سایت‌ها',
+  report: '📊 گزارش', broadcast: '📣 پیامِ همگانی',
+  settings: '⚙️ تنظیمات', help: '❓ راهنما',
+};
+export const KEYBOARD = {
+  keyboard: [[KEYS.inbox, KEYS.find], [KEYS.expiring, KEYS.offline], [KEYS.status, KEYS.sites], [KEYS.report, KEYS.broadcast], [KEYS.settings, KEYS.help]].map((r) => r.map((text) => ({ text }))),
+  resize_keyboard: true,
+  is_persistent: true,
+  input_field_placeholder: 'نام، ایمیل یا شمارهٔ حساب… یا یک دکمه',
+};
+const BY_KEY = Object.fromEntries(Object.entries(KEYS).map(([k, v]) => [v, k]));
+/** متنِ یک دکمهٔ منو ⇒ نامِ دستور (یا ''). */
+export const keyCommand = (text) => BY_KEY[String(text || '').trim()] || '';
+
+//  پیشنهادِ دستورها در تلگرام («/» را که بزنید) — فقط برای گفت‌وگوی مالک
+export const COMMANDS = [
+  ['start', 'منو'], ['inbox', 'گفت‌وگوهای منتظرِ جواب'], ['find', 'جست‌وجوی حساب'], ['expiring', 'اشتراک‌های رو به پایان'],
+  ['offline', 'کدِ اشتراکِ آفلاینِ پمپ'], ['codes', 'کدهای آفلاین و باطل کردن'], ['status', 'وضعیتِ سرور'], ['sites', 'سایت‌ها و ری‌استارت'],
+  ['report', 'گزارشِ امروز'], ['broadcast', 'پیامِ همگانی'], ['quick', 'جواب‌های آماده'], ['settings', 'تنظیماتِ ربات'],
+  ['done', 'پایانِ «در حالِ نوشتن»'], ['cancel', 'انصراف'], ['logout', 'خروج'],
+].map(([command, description]) => ({ command, description }));
+
 const MENU_TEXT = [
   '🤖 رباتِ کنترول سنتر',
   '',
-  '💬 پیامِ کاربرانِ پمپ، فروشگاه و سایت‌ها خودش این‌جا می‌آید. برای جواب، روی همان پیام Reply بزنید؛ جواب به همان حساب و همان پشتیبانی می‌رود.',
-  '👤 زیرِ هر پیامِ کاربر دکمهٔ «حساب» هست: اشتراک، تمدید، تعلیق.',
-  '🔎 برای پیدا کردنِ هر حساب فقط نام، ایمیل، شماره یا کدش را بنویسید.',
+  '💬 پیامِ هر کاربرِ پمپ، فروشگاه و سایت‌ها همان لحظه این‌جا می‌آید، با عکس و صدایش.',
+  'زیرِ هر پیام: ✍️ جواب · ⚡ جوابِ آماده · 💬 کلِ گفت‌وگو · 👤 حساب و اشتراک · ✅ بستن.',
+  'یا روی خودِ پیام Reply بزنید — متن، عکس، ویدیو یا پیامِ صوتی (صدا و تصویر فقط برای پمپ).',
   '',
-  '/status وضعیتِ سرور',
-  '/sites سایت‌ها و ری‌استارت',
-  '/expiring اشتراک‌هایی که به‌زودی تمام می‌شوند',
-  '/offline ساختنِ کدِ اشتراکِ آفلاینِ پمپ',
-  '/codes کدهای آفلاین و باطل کردن',
-  '/logout خروج از ربات',
+  '🔎 هر متنی که بنویسید (بی Reply) جست‌وجوی حساب است: نام، ایمیل، شماره یا کد.',
+  '🔑 کدِ آفلاین · 📣 پیامِ همگانی · 📊 گزارشِ روزانه · 🚨 هشدارِ دیسک، سرورِ حساب و سایت‌ها.',
+  '🟢 پیامِ سنجاق‌شدهٔ بالا یعنی سرور روشن است.',
+  '',
+  'دکمه‌های پایینِ صفحه همیشه هستند؛ «/» را بزنید تا همهٔ دستورها پیشنهاد شود.',
 ].join('\n');
-const MENU_KEYS = () => ({ inline_keyboard: [[btn('🖥 وضعیتِ سرور', { k: 'srv' }), btn('🌐 سایت‌ها', { k: 'sites' })], [btn('⏳ اشتراک‌های رو به پایان', { k: 'expiring' })], [btn('🔑 کدِ آفلاینِ تازه', { k: 'offlineStart' }), btn('📋 کدهای آفلاین', { k: 'codes' })]] });
-
-/** دکمهٔ «👤 حساب» زیرِ پیامِ کاربرِ پمپ/فروشگاه. */
-export function threadKeys(t) {
-  const tenantId = t.app === 'pump' ? t.stationId : t.shopId;
-  if (!tenantId || !APP[t.app]) return undefined;
-  return { inline_keyboard: [[btn('👤 حساب و اشتراک', { k: 'card', app: t.app, tenantId })]] };
-}
 
 // ── پیامِ مالک (نه Reply) ──────────────────────────────────────────────
 export async function handleCommand(tg, tok, chatId, m) {
   const text = String(m.text || '').trim();
   if (!text) return false;
   const send = (body) => tg(tok, 'sendMessage', { chat_id: chatId, reply_to_message_id: m.message_id, disable_web_page_preview: true, ...body });
-  if (/^\/cancel(@\w+)?$/i.test(text)) { setWiz(null); await send({ text: 'لغو شد.' }); return true; }
-  if (await wizardStep(send, text)) return true;
+  if (/^\/(cancel|done)(@\w+)?$/i.test(text)) {
+    const c = inbox.compose();
+    setWiz(null); inbox.setCompose(null);
+    await send({ text: c ? `✅ نوشتن به ${c.label} تمام شد.` : 'لغو شد.', reply_markup: KEYBOARD });
+    return true;
+  }
+  const keyName = keyCommand(text);
+  // ⛔ دکمهٔ منو = تغییرِ کار ⇒ «در حالِ نوشتن» و پرسش‌های نیمه‌کاره بسته می‌شوند
+  if (keyName) { setWiz(null); inbox.setCompose(null); }
+  if (!keyName && await wizardStep(send, text)) return true;
   const cmd = /^\/(\w+)(?:@\w+)?\s*(.*)$/s.exec(text);
-  const name = cmd ? cmd[1].toLowerCase() : '';
+  const name = keyName || (cmd ? cmd[1].toLowerCase() : '');
+  if (name === 'find' && !(cmd && cmd[2].trim())) { await send({ text: '🔎 نام، ایمیل، شماره یا کدِ حساب را بنویسید و بفرستید.' }); return true; }
+  if (name === 'inbox') { await send(await inbox.inboxMessage()); return true; }
+  if (name === 'quick') { await send(inbox.quickManage()); return true; }
+  if (name === 'broadcast') { await send(inbox.broadcastStart()); return true; }
+  if (name === 'report') { await send({ text: await reportText() }); return true; }
+  if (name === 'settings') { await send(settingsMessage()); return true; }
   if (name === 'offline') { setWiz({ step: 'computer' }); await send({ text: OFFLINE_START }); return true; }
   if (name === 'codes') { await send(await codesMessage()); return true; }
-  if (['start', 'menu', 'help'].includes(name)) { await send({ text: MENU_TEXT, reply_markup: MENU_KEYS() }); return true; }
+  if (['start', 'menu', 'help'].includes(name)) { await send({ text: MENU_TEXT, reply_markup: KEYBOARD }); return true; }
   if (name === 'status') { await send({ text: await statusText() }); return true; }
   if (name === 'sites') { await send(sitesMessage()); return true; }
   if (name === 'expiring') { await send(await expiringMessage()); return true; }
   const q = (name === 'find' ? cmd[2] : cmd ? '' : text).trim().slice(0, 60);
-  if (!q) { await send({ text: MENU_TEXT, reply_markup: MENU_KEYS() }); return true; }
+  if (!q) { await send({ text: `دستورِ «${text.slice(0, 30)}» را نمی‌شناسم.\n\n${MENU_TEXT}`, reply_markup: KEYBOARD }); return true; }
   const found = [];
   for (const app of ['pump', 'shop']) {
     try { found.push(...await search(app, q, 6)); } catch (e) { await send({ text: `⚠️ ${APP[app]}: ${e.message}` }); }
   }
-  if (!found.length) { await send({ text: `🔎 «${q}» — حسابی پیدا نشد.\n(برای جواب به کاربر، روی پیامِ خودِ او Reply بزنید.)` }); return true; }
+  if (!found.length) { await send({ text: `🔎 «${q}» — حسابی پیدا نشد.\n(برای جواب به کاربر، روی پیامِ خودِ او Reply یا «✍️ جواب» بزنید.)` }); return true; }
+  if (found.length > 8) await send({ text: `🔎 ${fa(found.length)} حساب پیدا شد؛ ۸ تای اول — برای دقیق‌تر، ایمیل یا کد را بنویسید.` });
   for (const a of found.slice(0, 8)) await send({ text: cardText(a), reply_markup: cardKeys(a) });
   return true;
 }
 
 // ── دکمه‌ها ────────────────────────────────────────────────────────────
-const CONFIRM = new Set(['extend', 'status', 'grant', 'site', 'offline', 'revoke']);
+const CONFIRM = new Set(['extend', 'status', 'grant', 'site', 'offline', 'revoke', 'quickSend', 'quickDel', 'bcSend']);
 
 function confirmText(a) {
   if (a.k === 'extend') return `➕ ${fa(a.amount)} ${UNIT[a.unit] || a.unit} به این اشتراک اضافه شود؟`;
@@ -277,6 +326,9 @@ function confirmText(a) {
   if (a.k === 'grant') return `🎁 پلنِ «${a.planName || a.plan}» به این حساب داده شود؟`;
   if (a.k === 'offline') return `🔑 کدِ آفلاینِ «${a.planTitle}»${a.days ? ` (${fa(a.days)} روز)` : ''} برای کامپیوترِ ${a.computer}${a.account ? ` و حسابِ ${a.account}` : ''} ساخته شود؟`;
   if (a.k === 'revoke') return `⛔ کدِ آفلاینِ کامپیوترِ ${a.computer} باطل شود؟ (روی کامپیوتری که هرگز آنلاین نشود تا پایانِ مهلتش اثر ندارد)`;
+  if (a.k === 'quickSend') return `⚡ این جواب به ${a.label} برود؟\n\n«${a.text}»`;
+  if (a.k === 'quickDel') return `🗑 این جوابِ آماده پاک شود؟\n\n«${a.text}»`;
+  if (a.k === 'bcSend') return `📣 به ${inbox.BC_APPS[a.app]} · ${inbox.BC_TARGETS[a.target]} فرستاده شود؟`;
   if (a.k === 'site') return `${{ restart: '🔄 ری‌استارت', start: '▶ روشن کردنِ', stop: '⏹ خاموش کردنِ' }[a.op]} سایتِ «${a.siteName || ''}»؟`;
   return 'انجام شود؟';
 }
@@ -308,6 +360,27 @@ export async function handleCallback(tg, tok, chatId, cq) {
   const send = (body) => tg(tok, 'sendMessage', { chat_id: chatId, disable_web_page_preview: true, ...body });
   try {
     if (a.k === 'srv') { await answer(); await send({ text: await statusText() }); return; }
+    if (a.k === 'conv') { await answer(); await send(await inbox.conversation(a.ref)); return; }
+    if (a.k === 'compose') {
+      setWiz(null);
+      inbox.setCompose(a.ref, a.label);
+      await answer('بنویسید…');
+      await send({ text: `✍️ در حالِ نوشتن به ${a.label}\n\nهر پیامی که حالا بفرستید (متن، عکس، ویدیو، پیامِ صوتی) به همین کاربر می‌رود.\nبرای پایان ‎/done‎ یا یکی از دکمه‌های منو. (۱۰ دقیقه بی‌کاری ⇒ خودش تمام می‌شود)` });
+      return;
+    }
+    if (a.k === 'quick') { await answer(); await send(inbox.quickPick(a.ref, a.label)); return; }
+    if (a.k === 'quickManage') { await answer(); await send(inbox.quickManage()); return; }
+    if (a.k === 'quickAdd') { await answer(); setWiz({ step: 'quick_add' }); await send({ text: '➕ متنِ جوابِ آمادهٔ تازه را بفرستید. (‎/cancel‎ برای انصراف)' }); return; }
+    if (a.k === 'close' || a.k === 'reopen') {
+      await inbox.setThreadStatus(a.ref, a.k === 'close' ? 'closed' : 'open');
+      await answer(a.k === 'close' ? '✅ بسته شد' : '↩️ باز شد');
+      await send({ text: a.k === 'close' ? `✅ گفت‌وگوی ${a.label} بسته شد. اگر کاربر دوباره بنویسد در صندوق برمی‌گردد.` : `↩️ گفت‌وگوی ${a.label} دوباره باز شد.` });
+      return;
+    }
+    if (a.k === 'bcApp') { await answer(); await send(inbox.broadcastTargets(a.app)); return; }
+    if (a.k === 'bcTarget') { await answer(); setWiz({ step: 'bc_text', app: a.app, target: a.target }); await send({ text: `📣 ${inbox.BC_APPS[a.app]} · ${inbox.BC_TARGETS[a.target]}\n\nمتنِ پیام را بفرستید. پیش از فرستادن پیش‌نمایش می‌بینید. (‎/cancel‎ برای انصراف)` }); return; }
+    if (a.k === 'pref') { setPrefs(a.patch || {}); await answer('ذخیره شد'); await edit(settingsMessage()); return; }
+    if (a.k === 'inbox') { await answer(); await send(await inbox.inboxMessage()); return; }
     if (a.k === 'sites') { await answer(); await send(sitesMessage()); return; }
     if (a.k === 'expiring') { await answer(); await send(await expiringMessage()); return; }
     if (a.k === 'offlineStart') { await answer(); setWiz({ step: 'computer' }); await send({ text: OFFLINE_START }); return; }
@@ -342,6 +415,13 @@ export async function handleCallback(tg, tok, chatId, cq) {
       await edit({ text: '✅ کد ساخته شد. پیامِ زیر را برای مشتری Forward کنید:' });
       await send({ text: msg });
       await tgSend({}).catch((e) => send({ text: `⚠️ فایلِ ‎.pumpkey‎ نرفت: ${e.message}` }));
+      return;
+    }
+    if (a.k === 'quickSend') { await inbox.replyTo(tok, a.ref, { text: a.text }); await edit({ text: `✅ به ${a.label} رسید:\n«${a.text}»` }); return; }
+    if (a.k === 'quickDel') { inbox.removeQuick(inbox.quickList().indexOf(a.text)); await edit({ text: '🗑 پاک شد.' }); await send(inbox.quickManage()); return; }
+    if (a.k === 'bcSend') {
+      const out = await inbox.broadcastSend(a.app, a.target, a.body);
+      await edit({ text: `✅ پیامِ همگانی به ${fa(Number(out.sent) || 0)} نفر رسید${Number(out.failed) ? ` (${fa(out.failed)} نرسید)` : ''}.` });
       return;
     }
     await run(a);

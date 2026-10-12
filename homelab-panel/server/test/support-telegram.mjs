@@ -127,7 +127,7 @@ const start = () => spawn(process.execPath, ['--disable-warning=ExperimentalWarn
     HLP_DATA_DIR: path.join(tmp, 'data'), HLP_SITES_ROOT: path.join(tmp, 'sites'), HLP_TUNNEL: '0', HLP_AI_ENABLED: '0',
     HLP_ACCOUNT_AUTOSTART: '0', HLP_PUMP_MIRROR: '0', HLP_SITE_MIRROR: '0',
     HLP_ACCOUNT_API: `http://127.0.0.1:${fake.address().port}`, HLP_ACCOUNT_ADMIN_USER: 'boss', HLP_ACCOUNT_ADMIN_PASSWORD: 'top-secret',
-    HLP_TELEGRAM_API: `http://127.0.0.1:${tg.address().port}` },
+    HLP_TG_WATCH_MS: '0', HLP_TELEGRAM_API: `http://127.0.0.1:${tg.address().port}` },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let child = start();
@@ -291,7 +291,7 @@ try {
   press(btnOf(/بله، انجام بده/));
   await run();
   check('اشتراک با پلن از تلگرام', acct.grants.length === 2 && acct.grants[1].plan === 'pro' && acct.grants[1].stationId === 'st1', JSON.stringify(acct.grants));
-  press(btnOf(/حساب و اشتراک/));
+  press(btnOf(/👤 حساب/));
   await run();
   check('دکمهٔ «حساب» زیرِ پیامِ کاربر کارتِ همان پمپ را می‌آورد', /پمپ یعقوبی/.test(tgSent.at(-1)?.text || '') && /فعال/.test(tgSent.at(-1).text), tgSent.at(-1)?.text);
   pushUpdate({ message_id: 63, chat: { id: 1234567 }, text: '/status' });
