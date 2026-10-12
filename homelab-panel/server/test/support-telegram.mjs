@@ -26,6 +26,7 @@ const threads = new Map([
   ['th_old', { id: 'th_old', app: 'pump', who: 'قدیمی', stationName: 'پمپ قدیمی', status: 'open', lastSender: 'user', updatedAt: now - 3600e3, messages: [{ id: 'm0', sender: 'user', body: 'پیامِ قدیمی', kind: 'text', createdAt: now - 3600e3 }] }],
 ]);
 const posts = [];
+const acct = { status: 'active', endsAt: now + 3 * 864e5, grants: [], statuses: [] };
 const fake = http.createServer((req, res) => {
   let raw = ''; req.on('data', (d) => (raw += d)); req.on('end', () => {
     const u = new URL(req.url, 'http://x'); const p = u.pathname;
@@ -37,6 +38,26 @@ const fake = http.createServer((req, res) => {
       return j(200, { threads: [...threads.values()].map(({ messages, ...t }) => ({ ...t, lastMessage: messages.at(-1)?.body || '' })), unread: 0 });
     }
     let m;
+    // ── رباتِ مالک: حساب‌ها، اشتراک‌ها، پلن‌ها ──
+    const st = () => ({ id: 'st1', code: 'P-100', name: 'پمپ یعقوبی', owner_name: 'احمد', owner_email: 'ahmad@x.af', owner_phone: '0700', subscription_id: 'sub1', plan: 'pro', sub_status: acct.status, ends_at: acct.endsAt });
+    if (p === '/api/admin/pump/stations' && req.method === 'GET') {
+      const q = String(u.searchParams.get('q') || '').toLowerCase();
+      const s = st(); const hit = !q || [s.name, s.code, s.owner_email].some((x) => x.toLowerCase().includes(q));
+      return j(200, { stations: hit ? [s] : [], total: 1 });
+    }
+    if (p === '/api/admin/pump/stations/st1') return j(200, { station: { id: 'st1', code: 'P-100', name: 'پمپ یعقوبی' } });
+    if (p === '/api/admin/shops' && req.method === 'GET') return j(200, { shops: [], total: 0 });
+    if (p === '/api/admin/pump/subscriptions' && req.method === 'GET') return j(200, { subscriptions: [{ id: 'sub1', station_id: 'st1', plan: 'pro', status: acct.status, ends_at: acct.endsAt, max_devices: 5, grace_days: 0, note: '' }] });
+    if (p === '/api/admin/pump/subscriptions' && req.method === 'POST') {
+      const body = JSON.parse(raw || '{}'); acct.grants.push(body);
+      acct.status = 'active'; acct.endsAt = body.endsAt || Date.now() + 30 * 864e5;
+      return j(200, { subscription: { id: 'sub1' } });
+    }
+    if (p === '/api/admin/pump/subscriptions/sub1/status' && req.method === 'POST') {
+      const body = JSON.parse(raw || '{}'); acct.statuses.push(body.status); acct.status = body.status;
+      return j(200, { subscription: { id: 'sub1' } });
+    }
+    if (p === '/api/admin/plans') return j(200, { plans: [{ code: 'pro', name: 'حرفه‌ای', amount: 1, unit: 'month', active: 1 }, { code: 'free', name: 'رایگان', active: true }], config: {} });
     if ((m = /^\/api\/admin\/support\/threads\/([^/]+)$/.exec(p)) && req.method === 'GET') {
       const t = threads.get(m[1]); if (!t) return j(404, { error: { code: 'not_found', message: 'x' } });
       const { messages, ...thread } = t; return j(200, { thread, messages });
@@ -54,6 +75,8 @@ await new Promise((r) => fake.listen(0, '127.0.0.1', r));
 
 // ── تلگرامِ ساختگی ──
 const tgSent = [];
+const tgAnswers = [];
+const tgEdits = [];
 let updates = [];
 let nextUpdate = 1;
 const tg = http.createServer((req, res) => {
@@ -63,6 +86,8 @@ const tg = http.createServer((req, res) => {
     if (!m || m[1] !== TOKEN) return res.end(JSON.stringify({ ok: false, description: 'Unauthorized' }));
     if (m[2] === 'getUpdates') return res.end(JSON.stringify({ ok: true, result: updates.filter((u) => u.update_id >= (body.offset || 0)) }));
     if (m[2] === 'sendMessage') { tgSent.push(body); return res.end(JSON.stringify({ ok: true, result: { message_id: 1000 + tgSent.length } })); }
+    if (m[2] === 'answerCallbackQuery') { tgAnswers.push(body); return res.end(JSON.stringify({ ok: true, result: true })); }
+    if (m[2] === 'editMessageText') { tgEdits.push(body); return res.end(JSON.stringify({ ok: true, result: { message_id: body.message_id } })); }
     res.end(JSON.stringify({ ok: false, description: 'unknown' }));
   });
 });
@@ -113,7 +138,7 @@ try {
   const before = tgSent.length;
   await wait(20);
   const t1 = Date.now();
-  threads.set('th_pump', { id: 'th_pump', app: 'pump', who: 'احمد', stationName: 'پمپ یعقوبی', status: 'open', lastSender: 'user', updatedAt: t1, messages: [{ id: 'u1', sender: 'user', body: 'برنامه باز نمی‌شود', kind: 'text', createdAt: t1 }] });
+  threads.set('th_pump', { id: 'th_pump', app: 'pump', who: 'احمد', stationName: 'پمپ یعقوبی', stationId: 'st1', status: 'open', lastSender: 'user', updatedAt: t1, messages: [{ id: 'u1', sender: 'user', body: 'برنامه باز نمی‌شود', kind: 'text', createdAt: t1 }] });
   threads.set('th_shop', { id: 'th_shop', app: 'shop', who: 'کریم', shopName: 'دکان کریم', status: 'open', lastSender: 'user', updatedAt: t1, messages: [{ id: 'u2', sender: 'user', body: '', kind: 'image', createdAt: t1 }] });
   r = await run();
   const fresh = tgSent.slice(before).filter((x) => !x.reply_to_message_id);
@@ -145,6 +170,75 @@ try {
   threads.get('th_shop').updatedAt = t2; threads.get('th_shop').lastSender = 'user';
   await run();
   check('فروشگاه خاموش ⇒ نرفت', !tgSent.some((x) => /فروشگاه دوباره/.test(x.text || '')));
+
+  console.log('\n── ۵) رباتِ مالک: دستورها و دکمه‌ها ──');
+  let cqN = 0;
+  const btnOf = (re) => {
+    const all = [...tgSent.map((x, i) => ({ ...x, message_id: 1000 + i + 1 })), ...tgEdits];
+    for (let i = all.length - 1; i >= 0; i--) {
+      for (const row of all[i].reply_markup?.inline_keyboard || []) for (const b of row) if (re.test(b.text)) return { msg: all[i], b };
+    }
+    return null;
+  };
+  const press = (hit, from = OWNER) => updates.push({ update_id: nextUpdate++, callback_query: { id: `cq${++cqN}`, from: { id: from }, data: hit.b.callback_data, message: { message_id: hit.msg.message_id, chat: { id: from } } } });
+  const pumpMsg = tgSent.find((x) => /باز نمی‌شود/.test(x.text || ''));
+  check('زیرِ پیامِ کاربرِ پمپ دکمهٔ «حساب» هست', /حساب/.test(JSON.stringify(pumpMsg?.reply_markup || {})), JSON.stringify(pumpMsg?.reply_markup));
+  pushUpdate({ message_id: 60, chat: { id: OWNER }, text: '/status' });
+  await run();
+  check('/status وضعیتِ سرور و سرورِ حساب', tgSent.some((x) => /وضعیتِ سرور/.test(x.text || '') && /سرورِ حساب: ✅/.test(x.text)), JSON.stringify(tgSent.at(-1)));
+  pushUpdate({ message_id: 61, chat: { id: OWNER }, text: '/expiring' });
+  await run();
+  check('/expiring پمپی که ۳ روزِ دیگر تمام می‌شود', !!btnOf(/پمپ یعقوبی — ۳ روز/), JSON.stringify(tgSent.at(-1)));
+  pushUpdate({ message_id: 62, chat: { id: OWNER }, text: 'ahmad@x' });
+  await run();
+  const card = tgSent.at(-1);
+  check('جست‌وجو با ایمیل ⇒ کارتِ حساب', /پمپ یعقوبی/.test(card?.text || '') && /احمد/.test(card.text) && /۳ روز مانده/.test(card.text), card?.text);
+  check('شناسهٔ حساب در دکمه نیست', !JSON.stringify(card?.reply_markup || {}).includes('st1') && !JSON.stringify(card?.reply_markup || {}).includes('sub1'));
+  const before5 = Date.now();
+  press(btnOf(/➕ ۳ ماه/));
+  await run();
+  check('دکمهٔ تمدید فقط تأیید می‌خواهد', acct.grants.length === 0 && /۳ ماه به این اشتراک/.test(tgSent.at(-1)?.text || ''), tgSent.at(-1)?.text);
+  const yes = btnOf(/بله، انجام بده/);
+  press(yes, 1234567);
+  await run();
+  check('دکمهٔ غریبه کاری نمی‌کند', acct.grants.length === 0 && tgAnswers.some((a) => /اجازه/.test(a.text || '')));
+  press(yes);
+  await run();
+  const g = acct.grants[0] || {};
+  const months3 = new Date(now + 3 * 864e5); months3.setUTCMonth(months3.getUTCMonth() + 3);
+  check('تمدیدِ ۳ ماه از پایانِ فعلی، برای همان پمپ', acct.grants.length === 1 && g.stationId === 'st1' && Math.abs(g.endsAt - months3.getTime()) < 60e3 && g.maxDevices === 5, JSON.stringify(g));
+  check('پیام به «✅ انجام شد» و کارتِ تازه عوض شد', tgEdits.some((e) => /انجام شد/.test(e.text) && /پمپ یعقوبی/.test(e.text)));
+  press(yes);
+  await run();
+  check('همان تأیید دو بار تمدید نمی‌کند', acct.grants.length === 1, acct.grants.length);
+  updates.push({ update_id: nextUpdate++, callback_query: { id: 'cqx', from: { id: OWNER }, data: 'y:AAAAAAAA', message: { message_id: 1, chat: { id: OWNER } } } });
+  await run();
+  check('دکمهٔ جعلی کاری نمی‌کند', acct.grants.length === 1 && acct.statuses.length === 0);
+  press(btnOf(/تعلیق/));
+  await run();
+  press(btnOf(/بله، انجام بده/));
+  await run();
+  check('تعلیق از تلگرام', acct.statuses.at(-1) === 'suspended', JSON.stringify(acct.statuses));
+  press(btnOf(/اشتراکِ تازه با پلن/));
+  await run();
+  check('پلنِ رایگان در فهرست نیست', !!btnOf(/حرفه‌ای/) && !btnOf(/رایگان/));
+  press(btnOf(/حرفه‌ای/));
+  await run();
+  press(btnOf(/بله، انجام بده/));
+  await run();
+  check('اشتراک با پلن از تلگرام', acct.grants.length === 2 && acct.grants[1].plan === 'pro' && acct.grants[1].stationId === 'st1', JSON.stringify(acct.grants));
+  press(btnOf(/حساب و اشتراک/));
+  await run();
+  check('دکمهٔ «حساب» زیرِ پیامِ کاربر کارتِ همان پمپ را می‌آورد', /پمپ یعقوبی/.test(tgSent.at(-1)?.text || '') && /فعال/.test(tgSent.at(-1).text), tgSent.at(-1)?.text);
+  pushUpdate({ message_id: 63, chat: { id: 1234567 }, text: '/status' });
+  const n63 = tgSent.length;
+  await run();
+  check('دستورِ غریبه جواب نمی‌گیرد', tgSent.length === n63);
+  pushUpdate({ message_id: 64, chat: { id: OWNER }, text: '/sites' });
+  await run();
+  check('/sites', /سایتی ثبت نشده|سایت‌ها/.test(tgSent.at(-1)?.text || ''), tgSent.at(-1)?.text);
+  check('پیام‌های تحتِ دستور هیچ‌وقت به کاربر نرفت', posts.length === 1, posts.length);
+  void before5;
 } catch (e) {
   failed++; console.error('\n❌ آزمون شکست:', e.message); console.error(out.slice(-2000));
 } finally {

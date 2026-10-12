@@ -895,7 +895,17 @@ async function subscriptionOf(app, id) {
 router.post('/subs/:app/grant', money, guard(async (req, res) => {
   const app = sectionOf(req.params.app);
   const tenantId = idOf(req.body?.tenantId);
-  const b = req.body || {};
+  const out = await grantSubscription(app, tenantId, req.body || {}, actorOf(req));
+  res.json({ ok: true, subscription: out.subscription || null, state: out.state || null });
+}));
+
+/**
+ * ⛔ تنها جای «اشتراک دادن» — پنلِ وب و رباتِ تلگرام (`support/telegram-admin.js`)
+ * هر دو همین را صدا می‌زنند، نه درِ دوم.
+ */
+export async function grantSubscription(appIn, tenantIdIn, b = {}, actor = 'admin') {
+  const app = sectionOf(appIn);
+  const tenantId = idOf(tenantIdIn);
   const body = { [app === 'pump' ? 'stationId' : 'shopId']: tenantId, plan: String(b.plan || 'custom').slice(0, 20) };
   if (Array.isArray(b.features) && b.features.length) body.features = b.features;
   if (b.note) body.note = String(b.note).slice(0, 300);
@@ -905,9 +915,9 @@ router.post('/subs/:app/grant', money, guard(async (req, res) => {
   //  شورا چ۳: کدِ تخفیف (و نمایندهٔ صاحبِ کد) — قیمتِ نهایی را سرورِ حساب از قیمتِ روزِ پلن می‌سازد
   if (b.discountCode) body.discountCode = String(b.discountCode).trim().slice(0, 40);
   const out = await cloudRaw('POST', subsPath(app), { body });
-  audit({ actor: actorOf(req), action: 'account.subscription.grant', entity: app, entityId: tenantId, detail: { plan: body.plan } });
-  res.json({ ok: true, subscription: out.subscription || null, state: out.state || null });
-}));
+  audit({ actor, action: 'account.subscription.grant', entity: app, entityId: tenantId, detail: { plan: body.plan } });
+  return out;
+}
 
 /**
  * تمدید — «یک ماه یعنی یک ماه» (`addPeriod`)، از پایانِ اشتراکِ فعلی.
@@ -917,10 +927,15 @@ router.post('/subs/:app/grant', money, guard(async (req, res) => {
  * می‌روند، وگرنه پیش‌فرض‌های سرور روی اشتراکِ زنده می‌نشستند.
  */
 router.post('/subs/:app/:id/extend', money, guard(async (req, res) => {
-  const app = sectionOf(req.params.app);
-  const id = idOf(req.params.id);
-  const amount = Number(req.body?.amount) || 1;
-  const unit = String(req.body?.unit || 'month');
+  const out = await extendSubscription(req.params.app, req.params.id, req.body?.amount, req.body?.unit, actorOf(req));
+  res.json({ ok: true, subscription: out.subscription || null, state: out.state || null });
+}));
+
+export async function extendSubscription(appIn, idIn, amountIn, unitIn, actor = 'admin') {
+  const app = sectionOf(appIn);
+  const id = idOf(idIn);
+  const amount = Number(amountIn) || 1;
+  const unit = String(unitIn || 'month');
   const current = await subscriptionOf(app, id);
   const endsAt = addPeriod(Math.max(Number(current.ends_at) || 0, Date.now()), amount, unit);
   const out = app === 'pump'
@@ -932,19 +947,24 @@ router.post('/subs/:app/:id/extend', money, guard(async (req, res) => {
       },
     })
     : await cloudRaw('PUT', `${subsPath(app)}/${id}`, { body: { endsAt } });
-  audit({ actor: actorOf(req), action: 'account.subscription.extend', entity: 'subscription', entityId: id, detail: { app, amount, unit } });
-  res.json({ ok: true, subscription: out.subscription || null, state: out.state || null });
-}));
+  audit({ actor, action: 'account.subscription.extend', entity: 'subscription', entityId: id, detail: { app, amount, unit } });
+  return out;
+}
 
 /** تعلیق · لغو · برگرداندن به فعال. */
 router.post('/subs/:app/:id/status', guard(async (req, res) => {
-  const app = sectionOf(req.params.app);
-  const id = idOf(req.params.id);
-  const status = String(req.body?.status || '');
-  const out = await cloudRaw('POST', `${subsPath(app)}/${id}/status`, { body: { status } });
-  audit({ actor: actorOf(req), action: 'account.subscription.status', entity: 'subscription', entityId: id, detail: { app, status } });
+  const out = await setSubscriptionStatus(req.params.app, req.params.id, req.body?.status, actorOf(req));
   res.json({ ok: true, subscription: out.subscription || null, state: out.state || null });
 }));
+
+export async function setSubscriptionStatus(appIn, idIn, statusIn, actor = 'admin') {
+  const app = sectionOf(appIn);
+  const id = idOf(idIn);
+  const status = String(statusIn || '');
+  const out = await cloudRaw('POST', `${subsPath(app)}/${id}/status`, { body: { status } });
+  audit({ actor, action: 'account.subscription.status', entity: 'subscription', entityId: id, detail: { app, status } });
+  return out;
+}
 
 /** تبدیل به دائمی — بی شمارشِ روز، ولی همچنان با تپش و پشتیبانی. */
 router.post('/subs/:app/:id/permanent', money, guard(async (req, res) => {

@@ -22,6 +22,7 @@ import { db, getSetting, setSetting } from '../db.js';
 import { putSecret, readSecret } from '../control/vault.js';
 import { cloudRaw } from '../stations/cloud.js';
 import * as siteChats from './site-chats.js';
+import { handleCommand, handleCallback, threadKeys } from './telegram-admin.js';
 
 export const TOKEN_SECRET = 'telegram:support-bot';
 const CONFIG = 'support_tg';
@@ -169,17 +170,25 @@ export async function syncOnce({ log = () => {} } = {}) {
   let sent = 0;
 
   // ۱) جوابِ مالک
-  const ups = await tg(tok, 'getUpdates', { offset: s.offset, limit: 50, timeout: 0, allowed_updates: ['message'] });
+  //  ⚠️ callback_query = دکمه‌های رباتِ مالک (`telegram-admin.js`)
+  const ups = await tg(tok, 'getUpdates', { offset: s.offset, limit: 50, timeout: 0, allowed_updates: ['message', 'callback_query'] });
   for (const u of ups) {
     s.offset = Math.max(s.offset, u.update_id + 1);
     // ⚠️ offset پیش از هر کار ذخیره می‌شود: اگر وسطِ دور چیزی شکست، همان جواب دو بار به کاربر نمی‌رود
     saveState({ ...s, map: [...map] });
+    if (u.callback_query) {
+      try { await handleCallback(tg, tok, c.chatId, u.callback_query); } catch (e) { log(`دکمهٔ تلگرام: ${e.message}`); }
+      continue;
+    }
     const m = u.message;
     if (!m || String(m.chat && m.chat.id) !== c.chatId) continue; // ⛔ فقط مالک
     const text = String(m.text || m.caption || '').trim();
     const threadId = m.reply_to_message && map.get(m.reply_to_message.message_id);
     if (!threadId) {
-      if (text) await tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, text: 'برای جواب دادن به کاربر، روی پیامِ خودِ او Reply بزنید و بنویسید.' }).catch(() => {});
+      // پیامِ بی Reply = دستور یا جست‌وجوی حساب (هیچ‌وقت به کاربری نمی‌رود)
+      let done = false;
+      if (m.text) { try { done = await handleCommand(tg, tok, c.chatId, m); } catch (e) { log(`دستورِ تلگرام: ${e.message}`); await tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, text: `⚠️ نشد: ${String(e.message).slice(0, 200)}` }).catch(() => {}); done = true; } }
+      if (!done && text) await tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, text: 'برای جواب دادن به کاربر، روی پیامِ خودِ او Reply بزنید و بنویسید.' }).catch(() => {});
       continue;
     }
     if (!text) {
@@ -215,7 +224,8 @@ export async function syncOnce({ log = () => {} } = {}) {
     const conv = await cloudRaw('GET', `/api/admin/support/threads/${encodeURIComponent(t.id)}`, { query: { after: 0 } });
     const fresh = ((conv && conv.messages) || []).filter((m) => m.sender !== 'admin' && Number(m.createdAt) > since).sort((a, b) => a.createdAt - b.createdAt);
     for (const m of fresh.slice(-10)) {
-      const out = await tg(tok, 'sendMessage', { chat_id: c.chatId, text: format({ ...t, ...(conv.thread || {}) }, m), disable_web_page_preview: true });
+      const full = { ...t, ...(conv.thread || {}) };
+      const out = await tg(tok, 'sendMessage', { chat_id: c.chatId, text: format(full, m), disable_web_page_preview: true, reply_markup: threadKeys(full) });
       map.set(out.message_id, t.id);
       s.since[t.id] = Math.max(Number(s.since[t.id]) || 0, Number(m.createdAt));
       sent++;

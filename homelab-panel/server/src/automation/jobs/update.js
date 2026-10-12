@@ -98,8 +98,9 @@ export const siteUpdateMirror = defineJob({
 export const supportTelegram = defineJob({
   name: 'support-telegram',
   title: 'پلِ تلگرامِ پشتیبانی',
-  description: 'هر ۲۰ ثانیه — پیامِ تازهٔ کاربرانِ پمپ و فروشگاه به تلگرامِ مالک، و جوابِ مالک (Reply) به خودِ کاربر',
-  every: 20_000,
+  description: 'هر ۵ ثانیه — پیامِ تازهٔ کاربرانِ پمپ، فروشگاه و سایت‌ها به تلگرامِ مالک، جوابِ مالک (Reply) به خودِ کاربر، و دستورها و دکمه‌های رباتِ مالک',
+  //  ⚠️ ۵ ثانیه، نه ۲۰: دکمه‌های رباتِ مالک (اشتراک، سایت‌ها) باید درجا جواب بدهند
+  every: 5_000,
   runOnStart: 20_000,
   timeout: 60_000,
   attempts: 1,

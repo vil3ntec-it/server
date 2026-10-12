@@ -62,6 +62,7 @@ function SupportTelegramDialog({ onClose }: { onClose: () => void }) {
           <li>در تلگرام با ‎@BotFather‎ یک ربات بسازید (‎/newbot‎) و توکن را این‌جا بچسبانید. (همان رباتِ اعلانِ سایت هم می‌شود.)</li>
           <li>ربات را باز کنید و Start بزنید، بعد «پیدا کردن».</li>
           <li>«روشن» را بزنید، ذخیره کنید و «پیامِ آزمایشی» را امتحان کنید.</li>
+          <li>در ربات ‎/start‎ بزنید: نام، ایمیل، شماره یا کدِ هر حساب را بنویسید تا اشتراکش را ببینید، تمدید، تعلیق یا پلنِ تازه بدهید؛ ‎/status‎ وضعیتِ سرور، ‎/sites‎ ری‌استارتِ سایت‌ها، ‎/expiring‎ اشتراک‌های رو به پایان.</li>
         </ol>
         <label className="block">
           <span className="mb-1 block text-xs font-semibold">توکنِ ربات {st?.hasToken ? <span className="font-normal text-ink-muted">(ذخیره شده: <bdi dir="ltr">{st.tokenHint}</bdi> — برای عوض کردن، تازه بچسبانید)</span> : null}</span>
