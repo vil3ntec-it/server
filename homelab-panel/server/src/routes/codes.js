@@ -344,6 +344,22 @@ export async function accountOtpCodes(app, limit) {
 }
 
 adminRouter.get('/live', async (req, res) => {
+  const out = await liveCodes({
+    app: req.query.app || null,
+    limit: req.query.limit,
+    reveal: atLeast(roleOf(req), 'admin'),
+    actor: req.user?.username || 'admin',
+  });
+  res.json(out);
+});
+
+/**
+ * ⛔ تنها خوانندهٔ «کدهای زنده» — صفحهٔ پنل (`/live`) و رباتِ تلگرامِ مالک
+ * (`support/telegram-codes.js`) هر دو همین را صدا می‌زنند؛ همان سه دفتر، همان
+ * آینهٔ یک‌بارپرس، همان ممیزی. `reveal` فقط برای نقشِ admin (ربات = مالکِ واردشده).
+ */
+export async function liveCodes({ app = null, limit = 60, reveal = false, actor = 'admin' } = {}) {
+  const req = { query: { app: app || '', limit } };
   const now = Date.now();
   const rows = recentRequests({
     app: req.query.app ? cleanSlug(req.query.app) : null,
@@ -423,8 +439,7 @@ adminRouter.get('/live', async (req, res) => {
    *  برای operator هم خواندنی است و او کد نمی‌بیند)، فقط پورتِ پنل، و
    *  فقط کدِ **زنده**.
    */
-  if (account.length && atLeast(roleOf(req), 'admin')) {
-    const actor = req.user?.username || 'admin';
+  if (account.length && reveal) {
     account = await mirrorAccountCodes(
       account,
       async (source, id) => {
@@ -446,8 +461,8 @@ adminRouter.get('/live', async (req, res) => {
   const all = [...items.map((r) => ({ ...r, source: 'panel' })), ...account]
     .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
 
-  res.json({ ok: true, items: all, queue: queueStatus(), accountError, now });
-});
+  return { ok: true, items: all, queue: queueStatus(), accountError, now };
+}
 
 /**
  *  فرستادنِ کد از خودِ پنل — «ربات، برای این ایمیل کد بفرست».

@@ -28,18 +28,19 @@ const every = () => { const v = process.env.HLP_TG_WATCH_MS; return v === undefi
 
 export function prefs() {
   const p = getSetting(SETTINGS, null) || {};
-  return { alerts: p.alerts !== false, report: p.report !== false, hour: HOURS.includes(Number(p.hour)) ? Number(p.hour) : 9 };
+  return { alerts: p.alerts !== false, report: p.report !== false, codes: p.codes !== false, hour: HOURS.includes(Number(p.hour)) ? Number(p.hour) : 9 };
 }
 export function setPrefs(patch) { setSetting(SETTINGS, { ...prefs(), ...patch }); return prefs(); }
 
 export function settingsMessage() {
   const p = prefs();
   return {
-    text: ['⚙️ تنظیماتِ ربات', '', `🚨 هشدارها (دیسک، سرورِ حساب، سایت‌ها): ${p.alerts ? '✅ روشن' : '⛔ خاموش'}`, `📊 گزارشِ روزانه: ${p.report ? `✅ ساعتِ ${fa(p.hour)}` : '⛔ خاموش'}`].join('\n'),
+    text: ['⚙️ تنظیماتِ ربات', '', `🚨 هشدارها (دیسک، سرورِ حساب، سایت‌ها): ${p.alerts ? '✅ روشن' : '⛔ خاموش'}`, `📊 گزارشِ روزانه: ${p.report ? `✅ ساعتِ ${fa(p.hour)}` : '⛔ خاموش'}`, `🔐 کدهای شش‌رقمی در صندوق: ${p.codes ? '✅ روشن' : '⛔ خاموش'}`, '', '📥 صندوقِ جدا برای پیام‌ها و کدها: یک گروهِ تلگرام بسازید، Topics را روشن کنید، ربات را ادمین با «Manage Topics» کنید و در همان گروه ‎/link‎ بزنید.'].join('\n'),
     reply_markup: {
       inline_keyboard: [
         [btn(p.alerts ? '🔕 خاموش کردنِ هشدارها' : '🔔 روشن کردنِ هشدارها', { k: 'pref', patch: { alerts: !p.alerts } })],
         [btn(p.report ? '🔕 خاموش کردنِ گزارشِ روزانه' : '🔔 روشن کردنِ گزارشِ روزانه', { k: 'pref', patch: { report: !p.report } })],
+        [btn(p.codes ? '🔕 کدها را نفرست' : '🔔 کدها را بفرست', { k: 'pref', patch: { codes: !p.codes } })],
         HOURS.map((h) => btn(`${h === p.hour ? '• ' : ''}${fa(h)}`, { k: 'pref', patch: { hour: h, report: true } })),
         [btn('⚡ جواب‌های آماده', { k: 'quickManage' })],
       ],

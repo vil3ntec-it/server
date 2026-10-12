@@ -25,6 +25,7 @@ import { audit } from '../control/audit.js';
 import * as siteChats from './site-chats.js';
 import { tg as tgCall, tgFile, fileUrl } from './telegram.js';
 import { btn, fa } from './telegram-admin.js';
+import { topicUrl, groupOk } from './telegram-topics.js';
 
 const COMPOSE = 'support_tg_compose';
 const COMPOSE_MS = 10 * 60e3;
@@ -167,7 +168,7 @@ export async function replyTo(tok, ref, m) {
  * پیامِ رسانه‌ایِ کاربر ⇒ خودِ عکس/ویدیو/صدا در تلگرام (با همان سرخط به‌عنوانِ caption).
  * @returns {Promise<number|null>} message_id یا null اگر نشد (آن‌وقت متن می‌رود)
  */
-export async function sendIncomingMedia(tok, chatId, m, caption, reply_markup) {
+export async function sendIncomingMedia(tok, chatId, m, caption, reply_markup, extra = {}) {
   if (!m || !KIND[m.kind] || !m.mediaId) return null;
   try {
     const hit = await fetchOnce(String(m.mediaId), (mid) => cloudRawBytes('GET', `/api/admin/support/media/${mid}`));
@@ -177,7 +178,7 @@ export async function sendIncomingMedia(tok, chatId, m, caption, reply_markup) {
     const [method, field, ext] = m.kind === 'image' ? ['sendPhoto', 'photo', 'jpg']
       : m.kind === 'video' ? ['sendVideo', 'video', 'mp4']
         : /ogg|opus/.test(mime) ? ['sendVoice', 'voice', 'ogg'] : ['sendAudio', 'audio', 'mp3'];
-    const out = await tgFile(tok, method, { chat_id: chatId, caption: caption.slice(0, 1000), reply_markup }, { field, name: `${m.kind}.${ext}`, data, type: mime || 'application/octet-stream' });
+    const out = await tgFile(tok, method, { chat_id: chatId, ...extra, caption: caption.slice(0, 1000), reply_markup }, { field, name: `${m.kind}.${ext}`, data, type: mime || 'application/octet-stream' });
     return out && out.message_id;
   } catch {
     return null;
@@ -185,8 +186,9 @@ export async function sendIncomingMedia(tok, chatId, m, caption, reply_markup) {
 }
 
 // ── دکمه‌های زیرِ هر پیامِ کاربر ────────────────────────────────────────
-export function messageKeys(ref, t, label) {
-  const row1 = [btn('✍️ جواب', { k: 'compose', ref, label }), btn('⚡ آماده', { k: 'quick', ref, label }), btn('💬 گفت‌وگو', { k: 'conv', ref })];
+export function messageKeys(ref, t, label, { inGroup = false } = {}) {
+  // در تاپیکِ صندوق هر پیامِ مالک خودش جواب است ⇒ «✍️ جواب» لازم نیست
+  const row1 = [...(inGroup ? [] : [btn('✍️ جواب', { k: 'compose', ref, label })]), btn('⚡ آماده', { k: 'quick', ref, label }), btn('💬 گفت‌وگو', { k: 'conv', ref })];
   const row2 = [];
   if (!isSite(ref)) {
     const tenantId = t && (t.app === 'pump' ? t.stationId : t.shopId);
@@ -256,7 +258,8 @@ export async function inboxMessage(f = {}) {
   if (!list.length) return { text: `📭 هیچ گفت‌وگویی منتظرِ جواب نیست.${list.error ? `\n⚠️ سرورِ حساب: ${list.error}` : ''}` };
   return {
     text: [`📬 ${fa(list.length)} گفت‌وگو منتظرِ جوابِ شماست${list.error ? `\n⚠️ سرورِ حساب: ${list.error}` : ''}`, '', ...list.slice(0, 15).map((w, i) => `${fa(i + 1)}. ${w.label} — ${clock(w.at)}${w.last ? `\n    «${String(w.last).slice(0, 70)}»` : ''}`)].join('\n').slice(0, 4000),
-    reply_markup: { inline_keyboard: list.slice(0, 15).map((w, i) => [btn(`${fa(i + 1)}. ${w.label}`.slice(0, 60), { k: 'conv', ref: w.ref })]) },
+    // صندوق در گروه ⇒ دکمه همان تاپیک را باز می‌کند
+    reply_markup: { inline_keyboard: list.slice(0, 15).map((w, i) => { const url = groupOk() && topicUrl(w.ref); const t = `${fa(i + 1)}. ${w.label}`.slice(0, 60); return [url ? { text: `📥 ${t}`.slice(0, 60), url } : btn(t, { k: 'conv', ref: w.ref })]; }) },
   };
 }
 

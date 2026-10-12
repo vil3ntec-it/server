@@ -87,6 +87,10 @@ let updates = [];
 let nextUpdate = 1;
 let confirmed = 0;
 let nextMsg = 100;
+let memberCount = 2;
+let nextTopic = 700;
+const topicsMade = [];
+const GROUP = -1001234567890;
 const tg = http.createServer((req, res) => {
   const chunks = []; req.on('data', (d) => chunks.push(d)); req.on('end', () => {
     const raw = Buffer.concat(chunks);
@@ -102,6 +106,9 @@ const tg = http.createServer((req, res) => {
       case 'getMe': return ok({ id: 1, is_bot: true, username: 'OwnerControlBot' });
       case 'getFile': return ok({ file_id: body.file_id, file_size: JPEG.length, file_path: 'photos/file_1.jpg' });
       case 'answerCallbackQuery': answers.push(body); return ok(true);
+      case 'getChatMember': return ok({ status: 'administrator', can_manage_topics: true, user: { id: 1 } });
+      case 'getChatMemberCount': return ok(memberCount);
+      case 'createForumTopic': { const id = ++nextTopic; topicsMade.push({ ...body, id }); return ok({ message_thread_id: id, name: body.name }); }
       default: { const id = ++nextMsg; sent.push({ method: m[2], body, id }); return ok(m[2] === 'editMessageText' ? { message_id: body.message_id } : { message_id: id }); }
     }
   });
@@ -130,7 +137,7 @@ const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 
     HLP_DATA_DIR: path.join(tmp, 'data'), HLP_SITES_ROOT: path.join(tmp, 'sites'), HLP_TUNNEL: '0', HLP_AI_ENABLED: '0',
     HLP_ACCOUNT_AUTOSTART: '0', HLP_PUMP_MIRROR: '0', HLP_SITE_MIRROR: '0',
     HLP_ACCOUNT_API: `http://127.0.0.1:${fake.address().port}`, HLP_ACCOUNT_ADMIN_USER: 'boss', HLP_ACCOUNT_ADMIN_PASSWORD: 'top-secret',
-    HLP_TG_HEARTBEAT_MS: '0', HLP_TG_WATCH_MS: '1', HLP_GITHUB_API: `http://127.0.0.1:${fake.address().port}/gh`,
+    HLP_TG_HEARTBEAT_MS: '0', HLP_TG_WATCH_MS: '1', HLP_TG_GUARD_MS: '1', HLP_GITHUB_API: `http://127.0.0.1:${fake.address().port}/gh`,
     HLP_TG_LONGPOLL: '0', HLP_TELEGRAM_API: `http://127.0.0.1:${tg.address().port}` },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -317,6 +324,75 @@ try {
     await run();
   }
   check('⛔ برچسبِ منو با Reply هم به کاربر نرفت', posts.length === nPosts12 && kb().includes('⛽ پمپ بنزین'), JSON.stringify(posts.slice(nPosts12)));
+
+  console.log('\n── ۱۳) 📥 صندوقِ جدا: گروه با تاپیک برای هر کاربر ──');
+  const gsay = (text, extra = {}) => updates.push({ update_id: nextUpdate++, message: { message_id: 8000 + nextUpdate, chat: { id: GROUP, type: 'supergroup', is_forum: true, title: 'صندوق' }, from: { id: OWNER, is_bot: false }, text, ...extra } });
+  const inGroup = () => sent.filter((x) => String(x.body.chat_id) === String(GROUP));
+  memberCount = 3;
+  gsay('/link'); await run();
+  check('⛔ گروهِ سه نفره صندوق نمی‌شود', /عضو هست/.test(inGroup().at(-1)?.body.text || ''), inGroup().at(-1)?.body.text);
+  memberCount = 2;
+  updates.push({ update_id: nextUpdate++, message: { message_id: 8500, chat: { id: GROUP, type: 'supergroup', is_forum: true }, from: { id: 1234567 }, text: '/link' } });
+  await run();
+  check('⛔ /linkِ غریبه نادیده', !/صندوقِ پیام‌ها» شد/.test(inGroup().at(-1)?.body.text || ''));
+  gsay('/link'); await run();
+  check('/linkِ مالک ⇒ گروه صندوق شد', inGroup().some((x) => /صندوقِ پیام‌ها» شد/.test(x.body.text || '')) && msgs().some((x) => String(x.body.chat_id) === String(OWNER) && /صندوقِ پیام‌ها و کدها شد/.test(x.body.text || '')));
+  const t3 = Date.now() + 10;
+  threads.set('th3', { id: 'th3', app: 'pump', who: 'رحیم', stationName: 'پمپ رحیمی', stationId: 'st3', status: 'open', lastSender: 'user', unreadAdmin: 1, updatedAt: t3, messages: [{ id: 'u3', sender: 'user', body: 'سلام از رحیمی', kind: 'text', createdAt: t3 }] });
+  await wait(20);
+  const privBefore = msgs().filter((x) => String(x.body.chat_id) === String(OWNER)).length;
+  await run();
+  const topic = topicsMade.find((x) => /پمپ رحیمی/.test(x.name));
+  const inTopic = inGroup().find((x) => /سلام از رحیمی/.test(x.body.text || ''));
+  check('پیامِ کاربر ⇒ تاپیکِ تازهٔ خودش در گروه', !!topic && !!inTopic && inTopic.body.message_thread_id === topic.id, JSON.stringify({ topic, t: inTopic?.body.message_thread_id }));
+  check('⛔ و در گفت‌وگوی خصوصیِ سرور نیامد', !msgs().slice(0).some((x) => String(x.body.chat_id) === String(OWNER) && /سلام از رحیمی/.test(x.body.text || '')) && msgs().filter((x) => String(x.body.chat_id) === String(OWNER)).length === privBefore);
+  check('در تاپیک «✍️ جواب» لازم نیست', !JSON.stringify(inTopic.body.reply_markup).includes('✍️') && JSON.stringify(inTopic.body.reply_markup).includes('⚡'));
+  const nP = posts.length;
+  gsay('سلام رحیم، بررسی می‌کنم', { message_thread_id: topic.id }); await run();
+  check('نوشتن در تاپیک ⇒ همان کاربر (بی Reply)', posts.length === nP + 1 && posts.at(-1).thread === 'th3' && /بررسی می‌کنم/.test(posts.at(-1).body), JSON.stringify(posts.at(-1)));
+  check('رسید با واکنشِ 👍، بی پیامِ اضافه', sent.some((x) => x.method === 'setMessageReaction'));
+  updates.push({ update_id: nextUpdate++, message: { message_id: 8600, chat: { id: GROUP, type: 'supergroup', is_forum: true }, from: { id: 999 }, message_thread_id: topic.id, text: 'من غریبه' } });
+  await run();
+  check('⛔ پیامِ غریبه در تاپیک به کاربر نرفت', !posts.some((x) => /غریبه/.test(x.body || '')));
+  gsay('/status', { message_thread_id: topic.id }); await run();
+  check('⛔ دستور در صندوق به کاربر نمی‌رود', !posts.some((x) => /status/.test(x.body || '')) && /گفت‌وگوی خصوصی/.test(inGroup().at(-1)?.body.text || ''));
+  const t3b = Date.now() + 10;
+  threads.get('th3').messages.push({ id: 'u3b', sender: 'user', body: 'دوباره سلام', kind: 'text', createdAt: t3b }); threads.get('th3').updatedAt = t3b; threads.get('th3').lastSender = 'user';
+  await wait(20); await run();
+  check('پیامِ بعدی همان تاپیک (تاپیکِ تازه ساخته نشد)', topicsMade.filter((x) => /پمپ رحیمی/.test(x.name)).length === 1 && inGroup().some((x) => /دوباره سلام/.test(x.body.text || '') && x.body.message_thread_id === topic.id));
+  const closeBtn = inGroup().filter((x) => /دوباره سلام/.test(x.body.text || '')).at(-1).body.reply_markup.inline_keyboard.flat().find((b) => /بستن/.test(b.text));
+  updates.push({ update_id: nextUpdate++, callback_query: { id: 'cq-g1', from: { id: OWNER }, data: closeBtn.callback_data, message: { message_id: 1, chat: { id: GROUP }, message_thread_id: topic.id } } });
+  await run();
+  check('✅ بستن ⇒ گفت‌وگو و تاپیک بسته', statuses.some((x) => x.thread === 'th3' && x.status === 'closed') && sent.some((x) => x.method === 'closeForumTopic' && x.body.message_thread_id === topic.id));
+  check('جوابِ دکمه در همان تاپیک', inGroup().at(-1)?.body.message_thread_id === topic.id, JSON.stringify(inGroup().at(-1)?.body));
+  updates.push({ update_id: nextUpdate++, callback_query: { id: 'cq-g2', from: { id: 999 }, data: closeBtn.callback_data, message: { message_id: 1, chat: { id: GROUP }, message_thread_id: topic.id } } });
+  await run();
+  check('⛔ دکمهٔ غریبه در گروه', answers.some((a) => a.callback_query_id === 'cq-g2' && /اجازه/.test(a.text || '')));
+
+  console.log('\n── ۱۴) 🔐 کدهای شش‌رقمی در صندوق ──');
+  r = await call('POST', '/api/codes-admin/send', { app: 'pump-app', email: 'karim@example.af', purpose: 'login' });
+  check('کد ساخته شد', r.status === 200 || r.status === 201 || r.body.ok, r.status + JSON.stringify(r.body).slice(0, 200));
+  await wait(2600); await run();
+  const codesTopic = topicsMade.find((x) => /کدهای شش‌رقمی/.test(x.name));
+  const codeMsg = inGroup().find((x) => /karim@example\.af/.test(x.body.text || ''));
+  check('کد در تاپیکِ «🔐 کدها» با ایمیل', !!codesTopic && !!codeMsg && codeMsg.body.message_thread_id === codesTopic.id && /<code>\d{6}<\/code>/.test(codeMsg.body.text) && codeMsg.body.parse_mode === 'HTML', codeMsg?.body.text);
+  check('و حالِ ارسالِ ایمیل در همان پیام', /(ایمیل|لاگ)/.test(codeMsg?.body.text || ''), codeMsg?.body.text);
+  await wait(2600); await run();
+  check('همان کد دو بار نمی‌آید', inGroup().filter((x) => /karim@example\.af/.test(x.body.text || '')).length === 1);
+
+  console.log('\n── ۱۵) عضوِ سوم ⇒ صندوق می‌ایستد ──');
+  memberCount = 3;
+  await wait(5); await run();
+  check('عضوِ سوم ⇒ هشدار در خصوصی', msgs().some((x) => String(x.body.chat_id) === String(OWNER) && /کسی جز شما و ربات آمده/.test(x.body.text || '')));
+  const t4 = Date.now() + 10;
+  threads.set('th4', { id: 'th4', app: 'shop', who: 'نادر', shopName: 'دکان نادر', shopId: 'sh4', status: 'open', lastSender: 'user', unreadAdmin: 1, updatedAt: t4, messages: [{ id: 'u4', sender: 'user', body: 'پیامِ محرمانه', kind: 'text', createdAt: t4 }] });
+  await wait(20); await run();
+  check('⛔ و پیامِ کاربر دیگر به گروه نمی‌رود، به خصوصی می‌رود', !inGroup().some((x) => /پیامِ محرمانه/.test(x.body.text || '')) && msgs().some((x) => String(x.body.chat_id) === String(OWNER) && /پیامِ محرمانه/.test(x.body.text || '')));
+  memberCount = 2;
+  await wait(5); await run();
+  check('بیرون رفت ⇒ صندوق برگشت', msgs().some((x) => /دوباره فقط مالِ شماست/.test(x.body.text || '')));
+  gsay('/unlink'); await run();
+  check('/unlink ⇒ دوباره خصوصی', /دیگر صندوق نیست/.test(inGroup().at(-1)?.body.text || ''));
 } catch (e) {
   failed++; console.error('\n❌ آزمون شکست:', e.stack); console.error(out.slice(-2500));
 } finally {

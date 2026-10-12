@@ -29,6 +29,7 @@ import * as inbox from './telegram-inbox.js';
 import { settingsMessage, reportText, setPrefs } from './telegram-watch.js';
 import { serverMenu, serverPage, needsConfirm, confirmServer, runServer } from './telegram-server.js';
 import * as menus from './telegram-menus.js';
+import * as topics from './telegram-topics.js';
 
 const ACTS = 'support_tg_acts';
 const WIZ = 'support_tg_wiz';
@@ -375,7 +376,9 @@ export async function handleCallback(tg, tok, chatId, cq) {
   if (!a) { await answer('این دکمه کهنه شده؛ دوباره بگردید'); return; }
   const edit = (body) => tg(tok, 'editMessageText', { chat_id: chatId, message_id: msg.message_id, disable_web_page_preview: true, ...body })
     .catch(() => tg(tok, 'sendMessage', { chat_id: chatId, disable_web_page_preview: true, ...body }));
-  const send = (body) => tg(tok, 'sendMessage', { chat_id: chatId, disable_web_page_preview: true, ...body });
+  // دکمه‌ای که در تاپیکِ صندوق زده شد ⇒ جواب در همان تاپیک
+  const thread = msg.message_thread_id ? { message_thread_id: msg.message_thread_id } : {};
+  const send = (body) => tg(tok, 'sendMessage', { chat_id: chatId, disable_web_page_preview: true, ...thread, ...body });
   try {
     if (a.k === 'srv') { await answer(); await send({ text: await statusText() }); return; }
     if (a.k === 'conv') { await answer(); await send(await inbox.conversation(a.ref)); return; }
@@ -391,6 +394,7 @@ export async function handleCallback(tg, tok, chatId, cq) {
     if (a.k === 'quickAdd') { await answer(); setWiz({ step: 'quick_add' }); await send({ text: '➕ متنِ جوابِ آمادهٔ تازه را بفرستید. (‎/cancel‎ برای انصراف)' }); return; }
     if (a.k === 'close' || a.k === 'reopen') {
       await inbox.setThreadStatus(a.ref, a.k === 'close' ? 'closed' : 'open');
+      if (a.k === 'close') await topics.closeTopic(tg, tok, a.ref); else await topics.reopenTopic(tg, tok, a.ref);
       await answer(a.k === 'close' ? '✅ بسته شد' : '↩️ باز شد');
       await send({ text: a.k === 'close' ? `✅ گفت‌وگوی ${a.label} بسته شد. اگر کاربر دوباره بنویسد در صندوق برمی‌گردد.` : `↩️ گفت‌وگوی ${a.label} دوباره باز شد.` });
       return;

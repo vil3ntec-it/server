@@ -25,7 +25,9 @@ import * as siteChats from './site-chats.js';
 import { handleCommand, handleCallback, wizActive, COMMANDS } from './telegram-admin.js';
 import { resolveKey } from './telegram-menus.js';
 import { replyTo, compose, touchCompose, messageKeys, labelOf, sendIncomingMedia } from './telegram-inbox.js';
-import { watch } from './telegram-watch.js';
+import { watch, prefs } from './telegram-watch.js';
+import * as topics from './telegram-topics.js';
+import { syncCodes } from './telegram-codes.js';
 import { beat } from './telegram-heartbeat.js';
 import { sessionOf, handleLogin, resetAuth, authStatus, logout } from './telegram-auth.js';
 
@@ -140,7 +142,7 @@ export function saveConfig({ enabled, chatId, apps, token: tok }, actor = 'admin
   // روشن شدنِ تازه: تاریخچهٔ قدیمی فرستاده نشود
   if (next.enabled && !cur.enabled) { const s = state(); s.startedAt = Date.now(); s.since = {}; saveState(s); }
   // ⛔ ربات یا گفت‌وگوی دیگر ⇒ نشستِ ورودِ ربات باطل (telegram-auth.js)
-  if (reset || next.chatId !== cur.chatId) resetAuth();
+  if (reset || next.chatId !== cur.chatId) { resetAuth(); topics.unlinkGroup(); }
   setSetting(CONFIG, { ...next, v: 2 });
   return status();
 }
@@ -196,8 +198,10 @@ async function syncSite(tok, c, s, map, site) {
       const head = `🌐 ${site.name} · ${ch.name || 'بازدیدکننده'}${ch.contact ? ` (${ch.contact})` : ''}`;
       const text = `${head}\n\n${m.body}`.slice(0, 3900);
       const label = `🌐 ${site.name} · ${ch.name || 'بازدیدکننده'}`;
-      const out = await tg(tok, 'sendMessage', { chat_id: c.chatId, text, disable_web_page_preview: true, reply_markup: messageKeys(key, null, label) });
-      map.set(out.message_id, key);
+      const inGroup = topics.groupOk();
+      const d = await topics.deliver(tg, tok, c.chatId, key, label, 'site',
+        async (where) => (await tg(tok, 'sendMessage', { ...where, text, disable_web_page_preview: true, reply_markup: messageKeys(key, null, label, { inGroup }) })).message_id);
+      if (!d.inGroup) map.set(d.messageId, key);
       s.since[key] = Math.max(Number(s.since[key]) || 0, Number(m.at));
       sent++;
     }
@@ -223,13 +227,23 @@ async function processUpdates(tok, c, ups, s, map, log) {
     // ⚠️ offset پیش از هر کار ذخیره می‌شود: اگر وسطِ دور چیزی شکست، همان جواب دو بار به کاربر نمی‌رود
     saveState({ ...s, map: [...map] });
     if (u.callback_query) {
+      const cq = u.callback_query;
+      const g = topics.group();
+      // دکمه در گروهِ صندوق: فقط از خودِ مالک
+      const inBox = g && String(cq.message && cq.message.chat && cq.message.chat.id) === g.id;
+      if (inBox && String(cq.from && cq.from.id) !== c.chatId) { await tg(tok, 'answerCallbackQuery', { callback_query_id: cq.id, text: 'اجازه ندارید' }).catch(() => {}); continue; }
       // ⛔ دکمه فقط با نشستِ ورود (نام و رمزِ پنل)
-      if (!sessionOf(c.chatId)) { await tg(tok, 'answerCallbackQuery', { callback_query_id: u.callback_query.id, text: '🔒 اول ‎/login‎ بزنید' }).catch(() => {}); continue; }
-      try { await handleCallback(tg, tok, c.chatId, u.callback_query); } catch (e) { log(`دکمهٔ تلگرام: ${e.message}`); }
+      if (!sessionOf(c.chatId)) { await tg(tok, 'answerCallbackQuery', { callback_query_id: cq.id, text: '🔒 اول در گفت‌وگوی خصوصی ‎/login‎ بزنید' }).catch(() => {}); continue; }
+      try { await handleCallback(tg, tok, inBox ? g.id : c.chatId, cq); } catch (e) { log(`دکمهٔ تلگرام: ${e.message}`); }
       continue;
     }
     const m = u.message;
     if (!m) continue;
+    // 📥 پیام در گروه (صندوق یا گروهی که می‌خواهد صندوق شود)
+    if (m.chat && (m.chat.type === 'supergroup' || m.chat.type === 'group')) {
+      try { replied += await groupMessage(tok, c, m, log); } catch (e) { log(`صندوقِ تلگرام: ${e.message}`); }
+      continue;
+    }
     if (String(m.chat && m.chat.id) !== c.chatId) {
       // ⛔ فقط مالک. گفت‌وگوی خصوصیِ دیگر: برای «پیدا کردن» به یاد می‌ماند، و یک بار
       //    (هر ساعت) شناسه‌اش را می‌گیرد تا اگر مالک است و chat id غلط ذخیره شده، بفهمد.
@@ -284,6 +298,51 @@ async function processUpdates(tok, c, ups, s, map, log) {
     }
   }
   return replied;
+}
+
+/**
+ * پیامی در یک گروه. ⛔ فقط از خودِ مالک (from.id = chat idِ خصوصیِ او)، فقط با ورود.
+ *   /link  ⇒ همین گروه صندوق شود       /unlink ⇒ صندوق برگردد به گفت‌وگوی خصوصی
+ *   پیام در تاپیکِ یک کاربر ⇒ جواب به همان کاربر (متن، عکس، ویدیو، صدا)
+ * @returns {Promise<number>} ۱ اگر جوابی به کاربر رفت
+ */
+async function groupMessage(tok, c, m, log) {
+  const from = String(m.from && m.from.id);
+  if (from !== c.chatId || (m.from && m.from.is_bot)) return 0; // ⛔ فقط مالک
+  const text = String(m.text || m.caption || '').trim();
+  const where = { chat_id: m.chat.id, ...(m.message_thread_id ? { message_thread_id: m.message_thread_id } : {}) };
+  const say = (t2) => tg(tok, 'sendMessage', { ...where, reply_to_message_id: m.message_id, allow_sending_without_reply: true, text: t2 }).catch(() => {});
+  if (!sessionOf(c.chatId)) { await say('🔒 اول در گفت‌وگوی خصوصی با ربات ‎/login‎ بزنید.'); return 0; }
+  if (/^\/link(@\w+)?$/i.test(text)) {
+    const r = await topics.linkGroup(tg, tok, m.chat);
+    await tg(tok, 'sendMessage', { chat_id: m.chat.id, text: r.text }).catch(() => {});
+    if (r.ok) await tg(tok, 'sendMessage', { chat_id: c.chatId, text: `📥 گروهِ «${m.chat.title || ''}» صندوقِ پیام‌ها و کدها شد. این‌جا فقط کنترلِ سرور می‌ماند.` }).catch(() => {});
+    return 0;
+  }
+  const g = topics.group();
+  if (!g || g.id !== String(m.chat.id)) return 0; // گروهِ دیگر
+  if (/^\/unlink(@\w+)?$/i.test(text)) {
+    topics.unlinkGroup();
+    await say('✅ این گروه دیگر صندوق نیست؛ پیام‌ها دوباره در گفت‌وگوی خصوصی می‌آیند.');
+    return 0;
+  }
+  if (/^\//.test(text)) { await say('دستورهای سرور در گفت‌وگوی خصوصی با ربات است. این‌جا فقط جواب به کاربران.'); return 0; }
+  const ref = m.message_thread_id && topics.refOfThread(m.message_thread_id);
+  if (!ref || ref === topics.CODES_REF) {
+    if (!m.message_thread_id || ref === topics.CODES_REF) await say(ref ? 'این تاپیکِ کدهاست؛ برای جواب به کاربر در تاپیکِ خودِ او بنویسید.' : 'برای جواب به کاربر در تاپیکِ خودِ او بنویسید.');
+    return 0;
+  }
+  try {
+    await replyTo(tok, ref, m);
+    // ✅ بی پیامِ اضافه: یک واکنش روی همان پیام
+    await tg(tok, 'setMessageReaction', { chat_id: m.chat.id, message_id: m.message_id, reaction: [{ type: 'emoji', emoji: '👍' }] })
+      .catch(() => say('✅ رسید.'));
+    return 1;
+  } catch (e) {
+    log(`جواب به گفت‌وگوی ${ref} نرفت: ${e.message}`);
+    await say(`⚠️ نرسید: ${e.message}`);
+    return 0;
+  }
 }
 
 const UPDATES = ['message', 'callback_query'];
@@ -403,11 +462,16 @@ async function syncInner({ log = () => {} } = {}) {
     const fresh = ((conv && conv.messages) || []).filter((m) => m.sender !== 'admin' && Number(m.createdAt) > since).sort((a, b) => a.createdAt - b.createdAt);
     for (const m of fresh.slice(-10)) {
       const full = { ...t, ...(conv.thread || {}) };
-      const keys = messageKeys(t.id, full, labelOf(full));
+      const label = labelOf(full);
+      const keys = messageKeys(t.id, full, label, { inGroup: topics.groupOk() });
+      // 📥 صندوق: تاپیکِ همین کاربر در گروه (یا خصوصی اگر گروه نیست)
       // عکس/ویدیو/صدا خودش می‌آید؛ اگر نشد، همان متنِ «در پنل ببینید»
-      let msgId = KIND[m.kind] ? await sendIncomingMedia(tok, c.chatId, m, format(full, m, true), keys) : null;
-      if (!msgId) msgId = (await tg(tok, 'sendMessage', { chat_id: c.chatId, text: format(full, m), disable_web_page_preview: true, reply_markup: keys })).message_id;
-      map.set(msgId, t.id);
+      const d = await topics.deliver(tg, tok, c.chatId, t.id, label, full.app, async (where) => {
+        const { chat_id: to, ...extra } = where;
+        const id = KIND[m.kind] ? await sendIncomingMedia(tok, to, m, format(full, m, true), keys, extra) : null;
+        return id || (await tg(tok, 'sendMessage', { ...where, text: format(full, m), disable_web_page_preview: true, reply_markup: keys })).message_id;
+      });
+      if (!d.inGroup) map.set(d.messageId, t.id);
       s.since[t.id] = Math.max(Number(s.since[t.id]) || 0, Number(m.createdAt));
       sent++;
     }
@@ -415,7 +479,14 @@ async function syncInner({ log = () => {} } = {}) {
   }
 
   // 🚨 هشدارها و 📊 گزارشِ روزانه (telegram-watch.js) — فقط برای مالکِ واردشده
-  if (sessionOf(c.chatId)) await watch(tg, tok, c.chatId, log).catch((e) => log(`نگهبانِ تلگرام: ${e.message}`));
+  if (sessionOf(c.chatId)) {
+    await watch(tg, tok, c.chatId, log).catch((e) => log(`نگهبانِ تلگرام: ${e.message}`));
+    // 📥 گروهِ صندوق فقط دو نفره بماند (هر ۱۰ دقیقه)
+    const warn = await topics.guardGroup(tg, tok).catch(() => null);
+    if (warn) await tg(tok, 'sendMessage', { chat_id: c.chatId, text: warn }).catch(() => {});
+    // 🔐 کدهای شش‌رقمی در صندوق
+    await syncCodes(tg, tok, c.chatId, { enabled: prefs().codes, log }).catch((e) => log(`کدها: ${e.message}`));
+  }
 
   s.map = [...map];
   s.last = { at: Date.now(), sent, replied };
