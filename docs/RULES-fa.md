@@ -3027,3 +3027,4 @@ POST /api/pump-updates-admin/testers {codes}   فقط مدیر · دفترِ م�
 - ⛔ کدِ آفلاین فقط از `createOfflineCode`/`revokeOfflineCode`ِ `routes/account-admin.js` (همان درِ پنل)؛ خودِ کد در ممیزی و لاگ نیست.
 - پنل («پشتیبانی ← تلگرام») نشان می‌دهد ربات با چه کسی و تا کی وارد است (`status().bot`).
 - آزمون: `test/support-telegram.mjs` بخش‌های ۲ب، ۶ و ۷ (۶۳ بند)؛ `test/site-chats.mjs` پیش از Reply وارد می‌شود.
+- ⚠️ درگاه: `releases` (توزیعِ نسخه از سرورِ حساب، shop 2.11.36) به `ACCOUNT_PREFIXES` اضافه شد — بندِ ۹ِ `pump-e2e` روی `main` هم سرخ بود.
