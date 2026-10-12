@@ -89,6 +89,7 @@ await new Promise((r) => fake.listen(0, '127.0.0.1', r));
 // ── تلگرامِ ساختگی ──
 const tgSent = [];
 const tgDeleted = [];
+const tgPins = [];
 const tgDocs = [];
 const tgAnswers = [];
 const tgEdits = [];
@@ -101,6 +102,7 @@ const tg = http.createServer((req, res) => {
     if (!m || m[1] !== TOKEN) return res.end(JSON.stringify({ ok: false, description: 'Unauthorized' }));
     if (m[2] === 'getUpdates') return res.end(JSON.stringify({ ok: true, result: updates.filter((u) => u.update_id >= (body.offset || 0)) }));
     if (m[2] === 'sendMessage') { tgSent.push(body); return res.end(JSON.stringify({ ok: true, result: { message_id: 1000 + tgSent.length } })); }
+    if (m[2] === 'pinChatMessage') { tgPins.push(body.message_id); return res.end(JSON.stringify({ ok: true, result: true })); }
     if (m[2] === 'getMe') return res.end(JSON.stringify({ ok: true, result: { id: 1, is_bot: true, username: 'ControlCenterBot' } }));
     if (m[2] === 'deleteMessage') { tgDeleted.push(body.message_id); return res.end(JSON.stringify({ ok: true, result: true })); }
     if (m[2] === 'sendDocument') { tgDocs.push(body.raw || ''); return res.end(JSON.stringify({ ok: true, result: { message_id: 5000 + tgDocs.length } })); }
@@ -115,7 +117,7 @@ const pushUpdate = (message) => updates.push({ update_id: nextUpdate++, message 
 // ── پنل ──
 const PORT = 4900 + Math.floor(Math.random() * 60);
 const BASE = `http://127.0.0.1:${PORT}`;
-const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', path.join(import.meta.dirname, '..', 'src', 'index.js')], {
+const start = () => spawn(process.execPath, ['--disable-warning=ExperimentalWarning', path.join(import.meta.dirname, '..', 'src', 'index.js')], {
   env: { ...process.env, HLP_PORT: String(PORT), HLP_SITESYNC_PORT: String(PORT + 1), HLP_HOST: '127.0.0.1',
     HLP_DATA_DIR: path.join(tmp, 'data'), HLP_SITES_ROOT: path.join(tmp, 'sites'), HLP_TUNNEL: '0', HLP_AI_ENABLED: '0',
     HLP_ACCOUNT_AUTOSTART: '0', HLP_PUMP_MIRROR: '0', HLP_SITE_MIRROR: '0',
@@ -123,6 +125,7 @@ const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 
     HLP_TELEGRAM_API: `http://127.0.0.1:${tg.address().port}` },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
+let child = start();
 let out = ''; child.stdout.on('data', (d) => (out += d)); child.stderr.on('data', (d) => (out += d));
 let token = null;
 const call = async (method, url, body) => {
@@ -172,7 +175,10 @@ try {
   threads.set('th_pump', { id: 'th_pump', app: 'pump', who: 'احمد', stationName: 'پمپ یعقوبی', stationId: 'st1', status: 'open', lastSender: 'user', updatedAt: t1, messages: [{ id: 'u1', sender: 'user', body: 'برنامه باز نمی‌شود', kind: 'text', createdAt: t1 }] });
   threads.set('th_shop', { id: 'th_shop', app: 'shop', who: 'کریم', shopName: 'دکان کریم', status: 'open', lastSender: 'user', updatedAt: t1, messages: [{ id: 'u2', sender: 'user', body: '', kind: 'image', createdAt: t1 }] });
   r = await run();
-  const fresh = tgSent.slice(before).filter((x) => !x.reply_to_message_id);
+  const fresh = tgSent.slice(before).filter((x) => !x.reply_to_message_id && !/کنترول سنتر روشن است/.test(x.text || ''));
+  const beatIdx = tgSent.findIndex((x) => /🟢 کنترول سنتر روشن است/.test(x.text || ''));
+  check('🟢 پیامِ «روشن است» فرستاده و سنجاق شد (بی زنگ)', beatIdx >= 0 && tgPins.includes(1000 + beatIdx + 1) && tgSent[beatIdx].disable_notification === true, JSON.stringify(tgPins));
+  check('پیامِ «دوباره روشن شد» بارِ اول نمی‌آید', !tgSent.some((x) => /دوباره روشن شد/.test(x.text || '')));
   check('دو پیامِ تازه به تلگرام رفت', fresh.length === 2, JSON.stringify(r.body) + ' ' + JSON.stringify(fresh));
   check('پیامِ قدیمی (پیش از روشن شدن) نرفت', !tgSent.some((x) => /پیامِ قدیمی/.test(x.text)));
   check('نامِ پمپ و متن در پیام', fresh.some((x) => /پمپ یعقوبی/.test(x.text) && /باز نمی‌شود/.test(x.text)));
@@ -341,6 +347,21 @@ try {
   r = await call('GET', '/api/support-telegram');
   check('عوض شدنِ chat id ⇒ قفل و نشست پاک', r.body.bot?.loggedIn === false);
   void before5;
+
+  console.log('\n── ۸) چراغِ قرمز هنگامِ خاموش شدن ──');
+  child.kill('SIGTERM');
+  for (let i = 0; i < 40 && !tgEdits.some((e) => /🔴/.test(e.text || '')); i++) await wait(100);
+  const red = tgEdits.find((e) => /🔴/.test(e.text || ''));
+  check('خاموش شدن ⇒ همان پیامِ سنجاق‌شده 🔴 شد', !!red && red.message_id === 1000 + tgSent.findIndex((x) => /🟢 کنترول سنتر روشن است/.test(x.text || '')) + 1, JSON.stringify(red));
+  await new Promise((r) => (child.exitCode !== null ? r() : child.once('exit', r)));
+  child = start();
+  child.stdout.on('data', (d) => (out += d)); child.stderr.on('data', (d) => (out += d));
+  for (let i = 0; i < 120; i++) { try { if ((await fetch(`${BASE}/health`)).ok) break; } catch { /* */ } await wait(250); }
+  token = (await call('POST', '/api/auth/login', { username: 'admin', password: 'Support-1405-new' })).body?.token;
+  await run();
+  const back = tgSent.find((x) => /دوباره روشن شد/.test(x.text || ''));
+  check('روشن شدنِ دوباره ⇒ «🟢 دوباره روشن شد» با مدتِ خاموشی، با زنگ', !!back && /خاموش بود/.test(back.text) && !back.disable_notification, JSON.stringify(back));
+  check('و پیامِ سنجاق‌شدهٔ تازهٔ 🟢', tgPins.length >= 2);
 } catch (e) {
   failed++; console.error('\n❌ آزمون شکست:', e.message); console.error(out.slice(-2000));
 } finally {

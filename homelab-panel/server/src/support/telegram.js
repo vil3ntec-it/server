@@ -23,6 +23,7 @@ import { putSecret, readSecret } from '../control/vault.js';
 import { cloudRaw } from '../stations/cloud.js';
 import * as siteChats from './site-chats.js';
 import { handleCommand, handleCallback, threadKeys } from './telegram-admin.js';
+import { beat } from './telegram-heartbeat.js';
 import { sessionOf, handleLogin, resetAuth, authStatus, logout } from './telegram-auth.js';
 
 export const TOKEN_SECRET = 'telegram:support-bot';
@@ -201,6 +202,8 @@ export async function syncOnce({ log = () => {} } = {}) {
   const tok = token();
   if (!c.enabled) return { skipped: 'disabled' };
   if (!tok || !c.chatId) return { skipped: 'not_configured' };
+  // 🟢/🔴 پیامِ سنجاق‌شدهٔ «سرور روشن است» (telegram-heartbeat.js)
+  await beat(tg, tok, c.chatId).catch((e) => log(`چراغِ تلگرام: ${e.message}`));
   const s = state();
   if (!s.startedAt) s.startedAt = Date.now();
   const map = new Map(s.map);

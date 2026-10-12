@@ -131,7 +131,7 @@ async function statusText() {
   //  ⚠️ cloudRaw فقط `/api/admin/…` را باز می‌کند؛ سبک‌ترین درِ مدیر = ورود هم سنجیده می‌شود
   try { await cloudRaw('GET', '/api/admin/support/threads', { query: { limit: 1 } }); cloud = '✅ روشن'; } catch (e) { cloud = `❌ ${String(e.message).slice(0, 80)}`; }
   const lines = [
-    '🖥 وضعیتِ سرور',
+    '🖥 وضعیتِ سرور — 🟢 روشن',
     `⚙️ پردازنده: ${fa(cpu.usage)}٪ (${fa(cpu.count)} هسته)`,
     `🧠 حافظه: ${fa(mem.usage)}٪ — ${gb(mem.used)} از ${gb(mem.total)}`,
     ...disks.slice(0, 4).map((d) => `💽 ${d.mount}: ${fa(d.usage)}٪ — ${gb(d.free)} خالی${d.usage >= 90 ? ' ⚠️' : ''}`),

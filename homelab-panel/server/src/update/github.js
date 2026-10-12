@@ -25,6 +25,7 @@ import { extractZip, readZipIndex, createZip, walk } from '../control/zip.js';
 import { versionInfo } from '../version.js';
 import { run } from '../lib/exec.js';
 import { get as httpGet, getJson } from './http.js';
+import { markOffline } from '../support/telegram-heartbeat.js';
 import {
   LAYOUT,
   SERVER_ROOT,
@@ -588,7 +589,9 @@ export function scheduleRestart(delayMs = 1200) {
     fs.writeFileSync(marker, String(Date.now()), 'utf8');
   } catch { /* بی‌خیال */ }
 
-  setTimeout(() => {
+  setTimeout(async () => {
+    // چراغِ رباتِ تلگرام: 🔴 «آپدیت» تا دوباره بالا بیاید (حداکثر ۳ ثانیه)
+    await markOffline('نصبِ آپدیت — چند لحظهٔ دیگر خودش برمی‌گردد').catch(() => {});
     // در برنامهٔ ویندوز، خودِ برنامه سرور را دوباره بالا می‌آورد — و چون
     // پوستهٔ برنامه هم عوض شده، کلِ برنامه دوباره باز می‌شود.
     if (LAYOUT === 'packaged') process.exit(0);
