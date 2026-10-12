@@ -79,13 +79,20 @@ router.post('/stable', async (req, res) => {
 });
 
 let checking = null;
+const CHECK_WAIT_MS = Number(process.env.HLP_PUMP_CHECK_WAIT_MS) || 8_000;
 router.post('/check', async (req, res) => {
   if (!mirrorEnabled()) return res.status(409).json({ error: 'mirror_disabled', message: 'آینهٔ آپدیتِ پمپ روی این نصب خاموش است' });
   try {
     //  ⛔ یک پرسش در هر لحظه — کلیکِ دوم به همان می‌پیوندد
     checking ||= syncOnce().finally(() => { checking = null; });
-    const out = await checking;
-    res.json({ ok: true, result: out, ...(await full()) });
+    //  ⛔ (۱۴۰۵/۰۷/۲۰) «میزنم از گیت‌هاب بپرس و همون جا میمونه»: دانلودِ نصابِ
+    //  ۱۶۰ مگابایتی روی اینترنتِ خانه ده‌ها دقیقه است و تونل درخواست را زودتر
+    //  می‌بُرد. پس حداکثر چند ثانیه منتظر می‌مانیم؛ بقیه پشتِ صحنه ادامه می‌دهد
+    //  و پنل پیشرفت را از ‎syncing‎ می‌خواند.
+    const run = checking;
+    run.catch(() => {});                                   // شکست در state.json می‌نشیند
+    const out = await Promise.race([run, new Promise((r) => setTimeout(() => r(null), CHECK_WAIT_MS))]);
+    res.json({ ok: true, result: out, running: out === null, ...(await full()) });
   } catch (e) {
     res.status(502).json({ error: String(e.message || e), ...(await full()) });
   }

@@ -522,6 +522,7 @@ type PumpVersion = { version: string; name: string | null; notes: string; publis
 type PumpRelease = {
   enabled: boolean; mode: 'auto' | 'hold'; version: string | null; served: string | null; previous: string | null;
   waiting: boolean; checkedAt: string | null; error: string | null; releaseAt: string | null; versions: PumpVersion[];
+  syncing?: { version: string | null; file: string | null; got: number; total: number } | null;
   stable?: string | null; stableAt?: string | null; stableDays?: number;
   candidate?: { version: string; since: string | null; crashes: number; installs?: number } | null;
   minInstalls?: number;
@@ -542,6 +543,13 @@ function PumpReleaseCard() {
     try { setSt(await api<PumpRelease>('/api/pump-updates-admin')); } catch { setSt(null); }
   }, []);
   useEffect(() => { load(); }, [load]);
+  //  ⛔ دورِ گرفتن پشتِ صحنه است ⇒ تا تمام نشده هر دو ثانیه حالش را بخوان
+  const syncing = !!st?.syncing;
+  useEffect(() => {
+    if (!syncing) return;
+    const t = setInterval(load, 2000);
+    return () => clearInterval(t);
+  }, [syncing, load]);
   if (!st) return null;
 
   const act = async (key: string, url: string, body: unknown, ok: string) => {
@@ -651,11 +659,22 @@ function PumpReleaseCard() {
 
       <div className="mt-3 flex items-center gap-2">
         <button className="btn btn-sm" disabled={!!busy || !st.enabled}
-          onClick={() => act('check', '/api/pump-updates-admin/check', {}, 'از گیت‌هاب پرسیده شد')}>
+          onClick={() => act('check', '/api/pump-updates-admin/check', {}, 'از گیت‌هاب پرسیده شد')}
+          title={st.syncing ? 'گرفتن در جریان است — دوباره زدن همان را نشان می‌دهد' : undefined}>
           <RefreshCw className="h-4 w-4" /> همین حالا از گیت‌هاب بپرس
         </button>
         <span className="text-[11px] text-ink-muted">خودش هم هر دو دقیقه می‌پرسد.</span>
       </div>
+      {st.syncing && (
+        <p className="mt-2 text-sm" style={{ color: 'var(--status-warning)' }}>
+          ⏬ در حالِ گرفتنِ {st.syncing.version ? `نسخهٔ ${st.syncing.version}` : 'نسخهٔ تازه'}
+          {st.syncing.file ? ` — ${st.syncing.file}` : ''}
+          {st.syncing.total > 0
+            ? ` — ${Math.floor(st.syncing.got / 1048576)} از ${Math.ceil(st.syncing.total / 1048576)} مگابایت (${Math.floor((st.syncing.got / st.syncing.total) * 100)}٪)`
+            : ''}
+          {' '}— اگر اینترنت قطع شد، دورِ بعد از همین‌جا ادامه می‌دهد.
+        </p>
+      )}
     </Card>
   );
 }

@@ -32,7 +32,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
 
 // ── گیت‌هابِ ساختگی ─────────────────────────────────────────────────────────
-const gh = { release: null, etag: null, hits: 0, notModified: 0, blobs: new Map(), authSeenOnBlob: [], slowMs: 0, blobHits: 0 };
+const gh = { release: null, etag: null, hits: 0, notModified: 0, blobs: new Map(), authSeenOnBlob: [], slowMs: 0, blobHits: 0, cutExeAt: 0, ranges: [] };
 function publish(version, { corrupt = false } = {}) {
   const setup = crypto.randomBytes(300_000);
   const small = crypto.randomBytes(40_000);
@@ -88,6 +88,22 @@ const ghServer = http.createServer((req, res) => {
     const b = gh.blobs.get(name);
     if (!b) { res.writeHead(404); return res.end(); }
     gh.blobHits++;
+    //  Range — مثلِ گیت‌هاب (ادامهٔ دانلودِ نیمه‌کاره)
+    const rg = /^bytes=(\d+)-$/.exec(req.headers.range || '');
+    if (rg) {
+      const from = Number(rg[1]);
+      gh.ranges.push({ name, from });
+      if (from >= b.length) { res.writeHead(416); return res.end(); }
+      res.writeHead(206, { 'content-type': 'application/octet-stream', 'content-length': b.length - from,
+        'content-range': `bytes ${from}-${b.length - 1}/${b.length}` });
+      return res.end(b.subarray(from));
+    }
+    //  اینترنتِ خانه وسطِ نصاب قطع شد
+    if (gh.cutExeAt && name.endsWith('.exe')) {
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': b.length });
+      res.write(b.subarray(0, gh.cutExeAt));
+      return setTimeout(() => res.destroy(), 50);
+    }
     res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': b.length });
     //  دانلودِ کندِ نصاب — مثلِ اینترنتِ خانه (بخشِ ۴ب)
     if (gh.slowMs && name.endsWith('.exe')) {
@@ -117,6 +133,7 @@ const child = spawn(process.execPath,
       HLP_TUNNEL: '0', HLP_AI_ENABLED: '0', HLP_SITESYNC: '1', HLP_ACCOUNT_AUTOSTART: '0',
       HLP_PUMP_MIRROR: '1', HLP_GITHUB_API: `http://127.0.0.1:${GH_PORT}`,
       HLP_PUMP_CRASHES_FILE: CRASHES, HLP_PUMP_STABLE_DAYS: String(STABLE_DAYS),
+      HLP_PUMP_CHECK_WAIT_MS: '600',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -368,6 +385,41 @@ try {
   const l2b = await (await fetch(`${PUB}/api/pump-updates/latest?channel=testing`)).json();
   const s2b = Buffer.from(await (await fetch(PUB + l2b.assets.find((a) => a.name === 'PumpYaqobi-Setup.exe').browser_download_url)).arrayBuffer());
   check('نسخهٔ ۳.۱.۲۹۹ سرو می‌شود و نصابش بایت‌به‌بایت است', l2b.tag_name === 'v3.1.299' && s2b.equals(v2b['PumpYaqobi-Setup.exe']));
+
+  console.log('\n── ۴ج) اینترنت وسطِ نصاب قطع شد ⇒ دورِ بعد از همان‌جا (۱۴۰۵/۰۷/۲۰) ──');
+  const v300 = publish('3.1.300');
+  gh.cutExeAt = 120_000; gh.ranges = [];
+  const f1 = await runMirror();
+  check(`دورِ قطع‌شده شکست خورد (${f1.body.status})`, f1.body.status === 'failed');
+  const keep = path.join(tmp, 'data', 'pump-updates', '.dl', '3.1.300', 'PumpYaqobi-Setup.exe');
+  const kept = fs.existsSync(keep) ? fs.statSync(keep).size : 0;
+  check(`تکهٔ گرفته‌شده ماند (${kept} بایت)`, kept >= 100_000 && kept < v300['PumpYaqobi-Setup.exe'].length);
+  gh.cutExeAt = 0;
+  const f2 = await runMirror();
+  check(`دورِ بعد موفق (${f2.body.status} ${f2.body.error || ''})`, f2.body.status === 'ok');
+  check(`از همان بایت ادامه داد، نه از صفر (${JSON.stringify(gh.ranges)})`,
+    gh.ranges.some((r) => r.name === 'PumpYaqobi-Setup.exe' && r.from === kept));
+  const l3 = await (await fetch(`${PUB}/api/pump-updates/latest?channel=testing`)).json();
+  const s3 = Buffer.from(await (await fetch(PUB + l3.assets.find((a) => a.name === 'PumpYaqobi-Setup.exe').browser_download_url)).arrayBuffer());
+  check('نصابِ ادامه‌دار بایت‌به‌بایت همان', l3.tag_name === 'v3.1.300' && s3.equals(v300['PumpYaqobi-Setup.exe']));
+  check('پوشهٔ ادامه پس از موفقیت پاک شد', !fs.existsSync(path.join(tmp, 'data', 'pump-updates', '.dl')));
+
+  console.log('\n── ۴د) دکمهٔ «بپرس» منتظرِ دانلودِ کامل نمی‌ماند و پیشرفت را نشان می‌دهد ──');
+  publish('3.1.301');
+  gh.slowMs = 3000;
+  const t0c = Date.now();
+  const rc2 = await call('POST', '/api/pump-updates-admin/check', {});
+  const took = Date.now() - t0c;
+  check(`دکمه زود جواب داد (${took}ms) و گفت «در جریان است»`, rc2.status === 200 && rc2.body.running === true && took < 2500);
+  check(`پیشرفت دیده می‌شود (${JSON.stringify(rc2.body.syncing)})`, rc2.body.syncing && rc2.body.syncing.version === '3.1.301');
+  let done = null;
+  for (let i = 0; i < 40 && !done; i++) {
+    await wait(250);
+    const s = await call('GET', '/api/pump-updates-admin');
+    if (!s.body.syncing && s.body.version === '3.1.301') done = s.body;
+  }
+  gh.slowMs = 0;
+  check('پشتِ صحنه تمام شد و نسخهٔ تازه آمد', Boolean(done));
 
   console.log('\n── ۶) فقط‌خواندنی ──');
   const post = await fetch(`${PUB}/api/pump-updates/latest`, { method: 'POST' });

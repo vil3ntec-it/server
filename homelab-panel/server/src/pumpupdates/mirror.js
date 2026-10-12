@@ -452,6 +452,7 @@ export async function status() {
     mirroredAt: cur?.mirroredAt || null,
     checkedAt: st.checkedAt || null,
     error: st.error || null,
+    syncing: syncProgress(),
     mode: r.mode,
     served: out?.version || null,
     previous: r.previous,
@@ -462,22 +463,59 @@ export async function status() {
   };
 }
 
-/** یک فایلِ انتشار را دانلود می‌کند (با توکن، اگر هست) و اندازه را می‌سنجد. */
-async function download(asset, file) {
+/**
+ * پیشرفتِ دورِ جاری — برای پنل (‎status().syncing‎).
+ * ⛔ (۱۴۰۵/۰۷/۲۰) گزارشِ صاحب سامانه: «میزنم از گیت‌هاب بپرس و همون جا میمونه و
+ * دیگه نه دکمه کار میکنه نه اپدیتی رو نشون میده». دکمه منتظرِ دانلودِ کاملِ
+ * نصابِ ۱۶۰ مگابایتی می‌ماند و هیچ نشانه‌ای نبود؛ حالا پنل همین را می‌خواند.
+ */
+let progress = null;
+
+/** پوشهٔ دانلودِ ادامه‌دار یک نسخه — جدا از ‎.part‎، تا شکست آن را پاک نکند. */
+function resumeDir(version) {
+  return path.join(mirrorDir(), '.dl', version);
+}
+
+/**
+ * یک فایلِ انتشار را دانلود می‌کند (با توکن، اگر هست) و اندازه را می‌سنجد.
+ * ⛔ **ادامه‌دار**: اینترنتِ خانه وسطِ ۱۶۰ مگابایت قطع می‌شود و هر دور از صفر
+ * شروع می‌کرد ⇒ نسخهٔ تازه هرگز نمی‌رسید. تکهٔ گرفته‌شده در ‎.dl/<نسخه>/‎ می‌ماند
+ * و دورِ بعد با ‎Range‎ از همان‌جا ادامه می‌دهد؛ سرورِ بی‌Range (۲۰۰) ⇒ از نو.
+ */
+async function download(asset, file, version) {
   //  ⛔ درِ API دارایی، نه `browser_download_url`: همین در برای مخزنِ **خصوصی**
   //  هم کار می‌کند (با توکن). تغییرِ مسیرِ بعدی توکن را نمی‌برد (http.js).
   const url = asset.url || asset.browser_download_url;
-  const res = await httpGet(url, {
-    headers: headers({ accept: 'application/octet-stream' }),
-    timeout: 120_000,
-  });
-  if (res.status < 200 || res.status >= 300) {
-    res.stream.resume();
-    throw new Error(`download_http_${res.status}:${asset.name}`);
+  const keep = version ? path.join(resumeDir(version), asset.name) : file;
+  await fsp.mkdir(path.dirname(keep), { recursive: true });
+  let have = 0;
+  try { have = (await fsp.stat(keep)).size; } catch { have = 0; }
+  if (asset.size && have > asset.size) { await fsp.rm(keep, { force: true }); have = 0; }
+  if (progress) Object.assign(progress, { file: asset.name, got: have, total: asset.size || 0 });
+
+  if (!asset.size || have < asset.size) {
+    const h = headers({ accept: 'application/octet-stream' });
+    if (have > 0) h.range = `bytes=${have}-`;
+    const res = await httpGet(url, { headers: h, timeout: 120_000 });
+    if (res.status === 416 && have > 0) {
+      res.stream.resume();
+    } else {
+      if (res.status < 200 || res.status >= 300) {
+        res.stream.resume();
+        throw new Error(`download_http_${res.status}:${asset.name}`);
+      }
+      const append = res.status === 206 && have > 0;
+      if (!append) have = 0;
+      res.stream.on('data', (c) => { if (progress) progress.got = (have += c.length); });
+      await pipeline(res.stream, fs.createWriteStream(keep, { flags: append ? 'a' : 'w' }));
+    }
   }
-  await pipeline(res.stream, fs.createWriteStream(file));
-  const size = (await fsp.stat(file)).size;
-  if (asset.size && size !== asset.size) throw new Error(`size_mismatch:${asset.name}`);
+  const size = (await fsp.stat(keep)).size;
+  if (asset.size && size !== asset.size) {
+    if (size > asset.size) await fsp.rm(keep, { force: true });
+    throw new Error(`size_mismatch:${asset.name}`);
+  }
+  if (keep !== file) await fsp.copyFile(keep, file);
 }
 
 /**
@@ -494,8 +532,16 @@ async function download(asset, file) {
 //  می‌پیوندد.
 let inflight = null;
 export function syncOnce({ log = () => {} } = {}) {
-  inflight ||= syncCore({ log }).finally(() => { inflight = null; });
+  if (!inflight) {
+    progress = { startedAt: new Date().toISOString(), version: null, file: null, got: 0, total: 0 };
+    inflight = syncCore({ log }).finally(() => { inflight = null; progress = null; });
+  }
   return inflight;
+}
+
+/** دورِ جاری (یا null) — پنل بی منتظر ماندن پیشرفت را می‌خواند. */
+export function syncProgress() {
+  return progress ? { ...progress } : null;
 }
 
 async function syncCore({ log = () => {} } = {}) {
@@ -538,7 +584,10 @@ async function syncCore({ log = () => {} } = {}) {
   }
 
   //  ══ ۲) فهرستِ چک‌سام — بی آن هیچ چیزی منتشر نمی‌شود ═════════════════
-  const assets = (rel.assets || []).filter((a) => a && wanted(a.name));
+  //  ⚠️ کوچک‌ها اول: بسته‌های چندمگابایتی پیش از نصابِ ۱۶۰ مگابایتی تمام شوند
+  const assets = (rel.assets || []).filter((a) => a && wanted(a.name))
+    .sort((a, b) => (a.size || 0) - (b.size || 0));
+  if (progress) progress.version = version;
   const sumsAsset = assets.find((a) => a.name === SUMS);
   if (!sumsAsset) {
     await note({ error: 'no_checksums' });
@@ -551,7 +600,7 @@ async function syncCore({ log = () => {} } = {}) {
 
   try {
     log(`نسخهٔ ${version} — گرفتنِ فهرستِ چک‌سام`);
-    await download(sumsAsset, path.join(part, SUMS));
+    await download(sumsAsset, path.join(part, SUMS));      // فهرست هر بار تازه
     const sums = parseSums(await fsp.readFile(path.join(part, SUMS), 'utf8'));
     if (sums.size === 0) throw new Error('empty_checksums');
 
@@ -560,13 +609,17 @@ async function syncCore({ log = () => {} } = {}) {
       const file = path.join(part, a.name);
       if (a.name !== SUMS) {
         log(`گرفتنِ ${a.name} (${Math.round((a.size || 0) / 1048576)} MB)`);
-        await download(a, file);
+        await download(a, file, version);
       }
       const size = (await fsp.stat(file)).size;
       let sha = null;
       if (sums.has(a.name)) {
         sha = await sha256Of(file);
-        if (sha !== sums.get(a.name)) throw new Error(`checksum_mismatch:${a.name}`);
+        if (sha !== sums.get(a.name)) {
+          //  تکهٔ خراب نباید دورِ بعد ادامه داده شود
+          await fsp.rm(path.join(resumeDir(version), a.name), { force: true });
+          throw new Error(`checksum_mismatch:${a.name}`);
+        }
       } else if (/\.(zip|exe)$/i.test(a.name)) {
         //  ⛔ بسته‌ای که در فهرست نیست منتشر نمی‌شود — برنامه هم نصبش نمی‌کرد.
         await fsp.rm(file, { force: true });
@@ -592,6 +645,7 @@ async function syncCore({ log = () => {} } = {}) {
     await fsp.rename(part, final);
     await writeJsonAtomic(path.join(dir, 'current.json'), next);
     await note({ etag, error: null });
+    await fsp.rm(path.join(dir, '.dl'), { recursive: true, force: true });
 
     //  ══ درِ پخش: خودکار ⇒ همین حالا منتشر؛ نگه‌داشته ⇒ فقط آماده ════════
     const rel0 = await releaseState();
@@ -606,7 +660,7 @@ async function syncCore({ log = () => {} } = {}) {
     const keep = new Set([version, cur?.version, rel1.published, rel1.previous,
       rel1.stable, rel1.stablePrevious, rel1.candidate?.version].filter(Boolean));
     for (const entry of await fsp.readdir(dir, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
+      if (!entry.isDirectory() || entry.name === '.dl') continue;
       const v = entry.name.replace(/\.part$/, '');
       if (entry.name.endsWith('.part') || !keep.has(v)) {
         await fsp.rm(path.join(dir, entry.name), { recursive: true, force: true });
