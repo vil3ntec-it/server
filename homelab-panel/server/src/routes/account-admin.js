@@ -1664,25 +1664,29 @@ router.post('/vip-codes/:id/revoke', guard(async (req, res) => {
  *  زده می‌شود و سرورِ حساب با کلیدِ مجوز امضایش می‌کند
  *  (`shop/server/src/lib/offline-codes.js`). برنامه بی اینترنت می‌سنجدش.
  *
- *  ⛔ فقط پمپ — برنامهٔ دکان گیرنده‌اش را ندارد.
+ *  ‎?app=shop‎ همان را برای «فروشگاه من» می‌کند (‎/api/admin/shop-offline-codes‎،
+ *  ‎shop/server/src/lib/shop-offline-codes.js‎) — نبود ⇒ پمپ، مثلِ همیشه.
  *  ⛔ خودِ کد در دفترِ ممیزی نمی‌نشیند؛ فقط پلن و کدِ کامپیوتر.
  */
+const offlineBase = (app) => (app === 'shop' ? '/api/admin/shop-offline-codes' : '/api/admin/pump/offline-codes');
+const offlineApp = (req) => (req.query.app === 'shop' ? 'shop' : 'pump');
+
 router.get('/offline-codes', guard(async (req, res) => {
-  res.json(await cloudRaw('GET', '/api/admin/pump/offline-codes', {
+  res.json(await cloudRaw('GET', offlineBase(offlineApp(req)), {
     query: { limit: Math.min(500, Math.max(1, Number(req.query.limit) || 100)) },
   }));
 }));
 
 router.post('/offline-codes', money, guard(async (req, res) => {
-  res.json(await createOfflineCode(req.body || {}, actorOf(req)));
+  res.json(await createOfflineCode(req.body || {}, actorOf(req), offlineApp(req)));
 }));
 
 router.post('/offline-codes/:id/revoke', money, guard(async (req, res) => {
-  res.json(await revokeOfflineCode(req.params.id, actorOf(req)));
+  res.json(await revokeOfflineCode(req.params.id, actorOf(req), offlineApp(req)));
 }));
 
 /** ⛔ تنها جای ساختنِ کدِ آفلاین — پنلِ وب و رباتِ تلگرام هر دو همین را صدا می‌زنند. */
-export async function createOfflineCode(b = {}, actor = 'admin') {
+export async function createOfflineCode(b = {}, actor = 'admin', app = 'pump') {
   const body = {
     plan: String(b.plan || '').slice(0, 10),
     computer: String(b.computer || '').slice(0, 40),
@@ -1691,20 +1695,20 @@ export async function createOfflineCode(b = {}, actor = 'admin') {
     days: b.days === '' || b.days == null ? null : Number(b.days),
     note: String(b.note || '').slice(0, 300),
   };
-  const out = await cloudRaw('POST', '/api/admin/pump/offline-codes', { body });
+  const out = await cloudRaw('POST', offlineBase(app), { body });
   audit({
     actor,
     action: 'account.offline_code.create',
     entity: 'offline_code',
     entityId: out?.offline?.id || '',
-    detail: { plan: body.plan, computer: out?.offline?.computer || body.computer, account: body.account },
+    detail: { app, plan: body.plan, computer: out?.offline?.computer || body.computer, account: body.account },
   });
   return out;
 }
 
-export async function revokeOfflineCode(idIn, actor = 'admin') {
+export async function revokeOfflineCode(idIn, actor = 'admin', app = 'pump') {
   const id = idOf(idIn);
-  const out = await cloudRaw('POST', `/api/admin/pump/offline-codes/${id}/revoke`);
+  const out = await cloudRaw('POST', `${offlineBase(app)}/${id}/revoke`);
   audit({ actor, action: 'account.offline_code.revoke', entity: 'offline_code', entityId: id });
   return out;
 }
