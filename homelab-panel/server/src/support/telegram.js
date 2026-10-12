@@ -201,7 +201,7 @@ async function syncSite(tok, c, s, map, site) {
       const inGroup = topics.groupOk();
       const d = await topics.deliver(tg, tok, c.chatId, key, label, 'site',
         async (where) => (await tg(tok, 'sendMessage', { ...where, text, disable_web_page_preview: true, reply_markup: messageKeys(key, null, label, { inGroup }) })).message_id);
-      if (!d.inGroup) map.set(d.messageId, key);
+      map.set(d.inGroup ? `g:${d.messageId}` : d.messageId, key);
       s.since[key] = Math.max(Number(s.since[key]) || 0, Number(m.at));
       sent++;
     }
@@ -241,7 +241,7 @@ async function processUpdates(tok, c, ups, s, map, log) {
     if (!m) continue;
     // 📥 پیام در گروه (صندوق یا گروهی که می‌خواهد صندوق شود)
     if (m.chat && (m.chat.type === 'supergroup' || m.chat.type === 'group')) {
-      try { replied += await groupMessage(tok, c, m, log); } catch (e) { log(`صندوقِ تلگرام: ${e.message}`); }
+      try { replied += await groupMessage(tok, c, m, map, log); } catch (e) { log(`صندوقِ تلگرام: ${e.message}`); }
       continue;
     }
     if (String(m.chat && m.chat.id) !== c.chatId) {
@@ -306,7 +306,7 @@ async function processUpdates(tok, c, ups, s, map, log) {
  *   پیام در تاپیکِ یک کاربر ⇒ جواب به همان کاربر (متن، عکس، ویدیو، صدا)
  * @returns {Promise<number>} ۱ اگر جوابی به کاربر رفت
  */
-async function groupMessage(tok, c, m, log) {
+async function groupMessage(tok, c, m, map, log) {
   const from = String(m.from && m.from.id);
   if (from !== c.chatId || (m.from && m.from.is_bot)) return 0; // ⛔ فقط مالک
   const text = String(m.text || m.caption || '').trim();
@@ -327,7 +327,14 @@ async function groupMessage(tok, c, m, log) {
     return 0;
   }
   if (/^\//.test(text)) { await say('دستورهای سرور در گفت‌وگوی خصوصی با ربات است. این‌جا فقط جواب به کاربران.'); return 0; }
-  const ref = m.message_thread_id && topics.refOfThread(m.message_thread_id);
+  // ↩️ Reply هم کار می‌کند (اختیاری): Reply روی پیامِ یک کاربر ⇒ همان کاربر، حتی بیرون از تاپیکش.
+  //  ⚠️ در تاپیک هر پیام reply_to_messageِ «سرِ تاپیک» را دارد؛ Replyِ واقعی آن نیست.
+  const rt = m.reply_to_message;
+  const explicit = !!(rt && Number(rt.message_id) !== Number(m.message_thread_id || 0) && !rt.forum_topic_created);
+  const byReply = explicit ? map.get(`g:${rt.message_id}`) : null;
+  const ref = byReply || (m.message_thread_id && topics.refOfThread(m.message_thread_id));
+  // حالتِ «فقط با Reply» (⚙️ تنظیمات): پیامِ بی Reply در تاپیک یادداشتِ خودِ مالک است
+  if (ref && ref !== topics.CODES_REF && prefs().replyOnly && !explicit) return 0;
   if (!ref || ref === topics.CODES_REF) {
     if (!m.message_thread_id || ref === topics.CODES_REF) await say(ref ? 'این تاپیکِ کدهاست؛ برای جواب به کاربر در تاپیکِ خودِ او بنویسید.' : 'برای جواب به کاربر در تاپیکِ خودِ او بنویسید.');
     return 0;
@@ -471,7 +478,7 @@ async function syncInner({ log = () => {} } = {}) {
         const id = KIND[m.kind] ? await sendIncomingMedia(tok, to, m, format(full, m, true), keys, extra) : null;
         return id || (await tg(tok, 'sendMessage', { ...where, text: format(full, m), disable_web_page_preview: true, reply_markup: keys })).message_id;
       });
-      if (!d.inGroup) map.set(d.messageId, t.id);
+      map.set(d.inGroup ? `g:${d.messageId}` : d.messageId, t.id);
       s.since[t.id] = Math.max(Number(s.since[t.id]) || 0, Number(m.createdAt));
       sent++;
     }

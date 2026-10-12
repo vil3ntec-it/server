@@ -351,6 +351,25 @@ try {
   gsay('سلام رحیم، بررسی می‌کنم', { message_thread_id: topic.id }); await run();
   check('نوشتن در تاپیک ⇒ همان کاربر (بی Reply)', posts.length === nP + 1 && posts.at(-1).thread === 'th3' && /بررسی می‌کنم/.test(posts.at(-1).body), JSON.stringify(posts.at(-1)));
   check('رسید با واکنشِ 👍، بی پیامِ اضافه', sent.some((x) => x.method === 'setMessageReaction'));
+  const root = { message_id: topic.id, forum_topic_created: { name: topic.name } }; // تلگرام: هر پیامِ تاپیک reply_to_messageِ سرِ تاپیک را دارد
+  let nP2 = posts.length;
+  gsay('با Reply جواب می‌دهم', { message_thread_id: topic.id, reply_to_message: { message_id: inTopic.id } }); await run();
+  check('↩️ Reply روی پیامِ کاربر در تاپیک ⇒ همان کاربر', posts.length === nP2 + 1 && posts.at(-1).thread === 'th3', JSON.stringify(posts.at(-1)));
+  nP2 = posts.length;
+  gsay('از بیرونِ تاپیک با Reply', { reply_to_message: { message_id: inTopic.id } }); await run();
+  check('↩️ Reply از «General» روی پیامِ کاربر هم ⇒ همان کاربر', posts.length === nP2 + 1 && posts.at(-1).thread === 'th3' && /بیرونِ تاپیک/.test(posts.at(-1).body), JSON.stringify(posts.at(-1)));
+  await step('⚙️ تنظیمات');
+  press(btnOf(/جواب: فقط با Reply/)); await run();
+  check('تنظیم: «فقط با Reply»', /فقط با Reply \(بقیه یادداشتِ خودتان است\)/.test(lastText()), lastText());
+  nP2 = posts.length;
+  gsay('یادداشتِ خودم', { message_thread_id: topic.id, reply_to_message: root }); await run();
+  check('در حالتِ «فقط با Reply» پیامِ ساده یادداشت می‌ماند (نرفت)', posts.length === nP2, JSON.stringify(posts.slice(nP2)));
+  gsay('این با Reply است', { message_thread_id: topic.id, reply_to_message: { message_id: inTopic.id } }); await run();
+  check('و Reply همچنان می‌رود', posts.length === nP2 + 1 && /با Reply است/.test(posts.at(-1).body));
+  press(btnOf(/جواب: هر پیام در تاپیک/)); await run();
+  nP2 = posts.length;
+  gsay('دوباره بی Reply', { message_thread_id: topic.id, reply_to_message: root }); await run();
+  check('برگشت به «هر پیام» ⇒ پیامِ ساده (با سرِ تاپیک) می‌رود', posts.length === nP2 + 1 && /دوباره بی Reply/.test(posts.at(-1).body));
   updates.push({ update_id: nextUpdate++, message: { message_id: 8600, chat: { id: GROUP, type: 'supergroup', is_forum: true }, from: { id: 999 }, message_thread_id: topic.id, text: 'من غریبه' } });
   await run();
   check('⛔ پیامِ غریبه در تاپیک به کاربر نرفت', !posts.some((x) => /غریبه/.test(x.body || '')));
