@@ -47,15 +47,15 @@ export function settingsMessage() {
   };
 }
 
-export async function reportText() {
+export async function reportText(only = null) {
   const now = Date.now();
-  const lines = ['📊 گزارشِ کنترول سنتر', ''];
+  const lines = only ? [] : ['📊 گزارشِ کنترول سنتر', ''];
   try {
-    const w = await waiting();
+    const w = await waiting(only ? { app: only } : {});
     lines.push(w.length ? `📬 ${fa(w.length)} گفت‌وگو منتظرِ جوابِ شماست` : '📭 گفت‌وگوی بی‌جواب نیست');
   } catch { lines.push('📬 گفت‌وگوها: ⚠️ خوانده نشد'); }
   let soon = 0; let fresh = 0; let bad = false;
-  for (const app of ['pump', 'shop']) {
+  for (const app of only ? [only] : ['pump', 'shop']) {
     try {
       const all = await search(app, '', 200);
       soon += all.filter((a) => ['active', 'trial'].includes(a.status) && a.endsAt && a.endsAt <= now + 7 * DAY).length;
@@ -64,6 +64,7 @@ export async function reportText() {
   }
   lines.push(`⏳ ${fa(soon)} اشتراک تا ۷ روزِ دیگر تمام می‌شود${soon ? ' (‎/expiring‎)' : ''}`);
   lines.push(`🆕 ${fa(fresh)} حسابِ تازه در ۲۴ ساعتِ گذشته${bad ? ' (⚠️ سرورِ حساب کامل جواب نداد)' : ''}`);
+  if (only) return lines.join('\n');
   const sites = listSitesRaw();
   const down = sites.filter((s) => !isRunning(s.slug));
   lines.push(`🌐 سایت‌ها: ${fa(sites.length - down.length)} روشن از ${fa(sites.length)}${down.length ? ` — خاموش: ${down.map((s) => s.name).join('، ')}` : ''}`);

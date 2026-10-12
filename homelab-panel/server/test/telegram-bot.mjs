@@ -186,7 +186,7 @@ try {
   check('پیامِ متنیِ فروشگاه با ایمیل/نام و دکمه‌ها', !!shopMsg && !!shopMsg.body.reply_markup?.inline_keyboard);
 
   console.log('\n── ۳) صندوق و کلِ گفت‌وگو ──');
-  await step('💬 صندوقِ پیام‌ها');
+  await step('💬 همهٔ پیام‌ها');
   check('صندوق: ۲ گفت‌وگوی منتظر', /۲ گفت‌وگو منتظر/.test(lastText()) && /پمپ یعقوبی/.test(lastText()) && /دکان کریم/.test(lastText()), lastText());
   press(btnOf(/پمپ یعقوبی/)); await run();
   check('باز کردنِ گفت‌وگو: پیام‌ها و ایمیلِ حساب', /💬/.test(lastText()) && /a@x\.af/.test(lastText()) && /عکس/.test(lastText()), lastText());
@@ -204,7 +204,7 @@ try {
   check('«✅ عکس به … رسید»', /عکس به 🛢 پمپ · پمپ یعقوبی رسید/.test(lastText()), lastText());
   await step('/status');
   check('⛔ دستور در حالِ نوشتن به کاربر نرفت', !posts.some((x) => /status/.test(x.body || '')) && /وضعیتِ سرور/.test(lastText()));
-  await step('🔎 جست‌وجوی حساب');
+  await step('🔎 جست‌وجو');
   await step('یعقوبی');
   check('⛔ دکمهٔ منو حالتِ نوشتن را بست ⇒ متنِ بعدی جست‌وجو است، نه پیام به کاربر', !posts.some((x) => x.body === 'یعقوبی') && /پمپ یعقوبی/.test(lastText()), lastText());
 
@@ -239,8 +239,8 @@ try {
   check('بستنِ گفت‌وگو روی سرورِ حساب', statuses.some((x) => x.status === 'closed'), JSON.stringify(statuses));
 
   console.log('\n── ۸) پیامِ همگانی ──');
-  await step('📣 پیامِ همگانی');
-  press(btnOf(/🛢 پمپ‌ها/)); await run();
+  await step('⛽ پمپ بنزین');
+  await step('📣 پیام به همهٔ پمپ‌ها');
   press(btnOf(/رو به پایان/)); await run();
   await step('اشتراکتان رو به پایان است؛ برای تمدید پیام بدهید.');
   check('پیش‌نمایش پیش از فرستادن', /پیش‌نمایش/.test(lastText()) && broadcasts.length === 0, lastText());
@@ -267,37 +267,56 @@ try {
   await run();
   check('برگشت ⇒ 🟢', /سرورِ حساب برگشت/.test(lastText()), lastText());
 
-  console.log('\n── ۱۱) 🛠 مدیریتِ سرور ──');
-  await step('🛠 مدیریتِ سرور');
-  check('منوی مدیریتِ سرور با همهٔ بخش‌ها', ['آپدیتِ کنترول سنتر', 'سرورِ حساب', 'آپدیتِ برنامهٔ پمپ', 'آپدیتِ سایت‌ها', 'پشتیبان‌ها', 'کارهای خودکار', 'تونل و دامنه', 'خطاهای اخیر', 'ری‌استارتِ کنترول سنتر'].every((t) => !!btnOf(new RegExp(t))), lastText());
-  press(btnOf(/⬆️ آپدیتِ کنترول سنتر/)); await run();
+  console.log('\n── ۱۱) 🛠 منوی سرور ──');
+  const kb = () => (msgs().at(-1)?.body.reply_markup?.keyboard || []).flat().map((x) => x.text);
+  await step('🛠 سرور');
+  check('منوی پایینِ صفحه به منوی سرور عوض شد', ['⬆️ آپدیتِ کنترول سنتر', '🗄 سرورِ حساب', '💾 پشتیبان‌ها', '⚙️ کارهای خودکار', '🌍 تونل و دامنه', '📜 خطاهای اخیر', '🔄 ری‌استارتِ کنترول سنتر', '🏠 منوی اصلی'].every((t) => kb().includes(t)) && /وضعیتِ سرور/.test(lastText()), JSON.stringify(kb()));
+  await step('⬆️ آپدیتِ کنترول سنتر');
   check('آپدیتِ کنترول سنتر: نسخهٔ نصب‌شده و پیغامِ گیت‌هاب', /نسخهٔ نصب‌شده/.test(lastText()) && /گیت‌هاب/.test(lastText()) && /نصبِ خودکار/.test(lastText()), lastText());
   await step('/update');
   check('/update همان صفحه', /آپدیتِ کنترول سنتر/.test(lastText()));
   press(btnOf(/نصبِ خودکار (روشن|خاموش)/)); await run();
   check('روشن/خاموش کردنِ نصبِ خودکار', /نصبِ خودکار \(هر ساعت\): (✅ روشن|⛔ خاموش)/.test(lastText()), lastText());
-  await step('🛠 مدیریتِ سرور');
-  press(btnOf(/ری‌استارتِ کنترول سنتر/)); await run();
+  await step('🔄 ری‌استارتِ کنترول سنتر');
   check('ری‌استارت فقط با تأیید (این‌جا زده نمی‌شود)', /ری‌استارت شود؟/.test(lastText()) && !!btnOf(/بله، انجام بده/));
-  await step('🛠 مدیریتِ سرور');
-  press(btnOf(/💾 پشتیبان‌ها/)); await run();
+  await step('💾 پشتیبان‌ها');
   press(btnOf(/پشتیبانِ تازه/)); await run();
   check('پشتیبانِ تازه از تلگرام', /پشتیبان ساخته شد/.test(lastText()), lastText());
-  await step('🛠 مدیریتِ سرور');
-  press(btnOf(/⚙️ کارهای خودکار/)); await run();
+  await step('⚙️ کارهای خودکار');
   check('فهرستِ کارهای خودکار', /کارهای خودکار/.test(lastText()) && !!btnOf(/^▶ /), lastText());
   press(btnOf(/^▶ .*پشتیبان/) || btnOf(/^▶ /)); await run();
   for (let i = 0; i < 40 && !msgs().slice(-3).some((x) => /^(✅|⚠️) «/.test(x.body.text || '')); i++) await wait(250);
   check('اجرای یک کارِ خودکار و نتیجه‌اش', msgs().slice(-4).some((x) => /^(✅|⚠️) «/.test(x.body.text || '')), msgs().slice(-3).map((x) => x.body.text).join(' | '));
-  await step('🛠 مدیریتِ سرور');
-  press(btnOf(/⛽ آپدیتِ برنامهٔ پمپ/)); await run();
-  check('آپدیتِ پمپ (آینه در آزمون خاموش است)', /آینهٔ آپدیتِ پمپ روی این نصب خاموش است/.test(lastText()), lastText());
-  await step('🛠 مدیریتِ سرور');
-  press(btnOf(/📜 خطاهای اخیر/)); await run();
+  await step('📜 خطاهای اخیر');
   check('خطاهای اخیر', /📜/.test(lastText()), lastText());
-  await step('🛠 مدیریتِ سرور');
-  press(btnOf(/🗄 سرورِ حساب/)); await run();
+  await step('🗄 سرورِ حساب');
   check('سرورِ حساب: روشن/خاموش و نسخه', /سرورِ حساب/.test(lastText()) && /(🟢 روشن|🔴 خاموش)/.test(lastText()), lastText());
+
+  console.log('\n── ۱۲) هر برنامه منوی خودش ──');
+  await step('🏠 منوی اصلی');
+  check('منوی اصلی: پمپ، فروشگاه، سایت‌ها، سرور', ['⛽ پمپ بنزین', '🛒 فروشگاه', '🌐 سایت‌ها', '🛠 سرور'].every((t) => kb().includes(t)), JSON.stringify(kb()));
+  await step('⛽ پمپ بنزین');
+  check('منوی پمپ: پیام‌ها، جست‌وجو، اشتراک‌ها، کدِ آفلاین، آپدیت، همگانی، گزارش', ['💬 پیام‌های پمپ', '🔎 جست‌وجوی پمپ', '⏳ اشتراک‌های پمپ', '🔑 کدِ آفلاین', '📋 کدهای آفلاین', '⬆️ آپدیتِ برنامهٔ پمپ', '📣 پیام به همهٔ پمپ‌ها', '📊 گزارشِ پمپ', '🏠 منوی اصلی'].every((t) => kb().includes(t)) && /پمپ بنزین/.test(lastText()), JSON.stringify(kb()));
+  threads.get('th2').status = 'open'; threads.get('th2').lastSender = 'user';
+  threads.get('th1').status = 'open'; threads.get('th1').lastSender = 'user';
+  await step('💬 پیام‌های پمپ');
+  check('پیام‌های پمپ فقط پمپ', /پمپ یعقوبی/.test(lastText()) && !/دکان کریم/.test(lastText()), lastText());
+  await step('یعقوبی');
+  check('جست‌وجو در منوی پمپ ⇒ کارتِ پمپ', /پمپ یعقوبی/.test(lastText()) && /فعال/.test(lastText()), lastText());
+  await step('🛒 فروشگاه');
+  await step('💬 پیام‌های فروشگاه');
+  check('پیام‌های فروشگاه فقط فروشگاه', /دکان کریم/.test(lastText()) && !/پمپ یعقوبی/.test(lastText()), lastText());
+  await step('🌐 سایت‌ها');
+  check('منوی سایت‌ها', /سایت/.test(lastText()) && kb().includes('⬆️ آپدیتِ سایت‌ها') && kb().includes('💬 پیام‌های سایت‌ها'), JSON.stringify(kb()));
+  await step('/pump');
+  check('/pump همان منوی پمپ', kb().includes('💬 پیام‌های پمپ'));
+  const nPosts12 = posts.length;
+  {
+    // ⛔ برچسبِ منو حتی با Reply روی پیامِ کاربر هرگز به کاربر نمی‌رود
+    updates.push({ update_id: nextUpdate++, message: { message_id: 7001, chat: { id: OWNER, type: 'private' }, text: '🏠 منوی اصلی', reply_to_message: { message_id: photo ? photo.id : 1 } } });
+    await run();
+  }
+  check('⛔ برچسبِ منو با Reply هم به کاربر نرفت', posts.length === nPosts12 && kb().includes('⛽ پمپ بنزین'), JSON.stringify(posts.slice(nPosts12)));
 } catch (e) {
   failed++; console.error('\n❌ آزمون شکست:', e.stack); console.error(out.slice(-2500));
 } finally {

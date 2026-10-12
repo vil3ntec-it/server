@@ -17,7 +17,7 @@ import { db, getSetting, setSetting, logEvent } from '../db.js';
 import { findUser, verifyPassword } from '../auth.js';
 import { verifyTotp, useRecoveryCode } from '../lib/totp.js';
 import { audit } from '../control/audit.js';
-import { KEYBOARD } from './telegram-admin.js';
+import { mainKeyboard, setMenu } from './telegram-menus.js';
 
 const KEY = 'support_tg_auth';
 const MAX_FAILS = 5;
@@ -96,7 +96,7 @@ export async function handleLogin(tg, tok, chatId, m) {
     save({ session: { chatId: String(chatId), uid: user.id, fp: fpOf(user), until: now + sessionMs() }, stage: null, fails: 0, lockUntil: 0 });
     logEvent('info', 'telegram', `«${user.username}» وارد رباتِ تلگرام شد`);
     audit({ actor: user.username, action: 'telegram.login', entity: 'user', entityId: String(user.id) });
-    await send(`✅ خوش آمدید ${user.username}. این ورود ${Math.round(sessionMs() / 864e5)} روز می‌ماند؛ ‎/logout‎ برای خروج.\n\nدکمه‌های پایینِ صفحه منوی شماست؛ ‎/start‎ راهنما.`, { reply_markup: KEYBOARD });
+    await send(`✅ خوش آمدید ${user.username}. این ورود ${Math.round(sessionMs() / 864e5)} روز می‌ماند؛ ‎/logout‎ برای خروج.\n\nدکمه‌های پایینِ صفحه منوی شماست؛ ‎/start‎ راهنما.`, { reply_markup: (setMenu('main'), mainKeyboard()) });
   };
 
   if (st.step === 'username') {

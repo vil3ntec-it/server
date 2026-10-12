@@ -22,7 +22,8 @@ import { db, getSetting, setSetting } from '../db.js';
 import { putSecret, readSecret } from '../control/vault.js';
 import { cloudRaw } from '../stations/cloud.js';
 import * as siteChats from './site-chats.js';
-import { handleCommand, handleCallback, wizActive, keyCommand, COMMANDS } from './telegram-admin.js';
+import { handleCommand, handleCallback, wizActive, COMMANDS } from './telegram-admin.js';
+import { resolveKey } from './telegram-menus.js';
 import { replyTo, compose, touchCompose, messageKeys, labelOf, sendIncomingMedia } from './telegram-inbox.js';
 import { watch } from './telegram-watch.js';
 import { beat } from './telegram-heartbeat.js';
@@ -257,7 +258,7 @@ async function processUpdates(tok, c, ups, s, map, log) {
     const text = String(m.text || m.caption || '').trim();
     const say = (t2, extra = {}) => tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, allow_sending_without_reply: true, text: t2, ...extra }).catch(() => {});
     // ⛔ دستور («/…») و دکمهٔ منو هرگز به کاربر نمی‌رود — حتی در حالِ نوشتن یا با Reply
-    const isCommand = !!m.text && (/^\//.test(text) || !!keyCommand(text));
+    const isCommand = !!m.text && (/^\//.test(text) || !!resolveKey(text));
     const threadId = !isCommand && m.reply_to_message && map.get(m.reply_to_message.message_id);
     const writing = !isCommand && !threadId && !wizActive() && compose();
     const target = threadId || (writing && writing.ref);

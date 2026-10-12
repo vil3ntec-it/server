@@ -28,6 +28,7 @@ import { tgFile } from './telegram.js';
 import * as inbox from './telegram-inbox.js';
 import { settingsMessage, reportText, setPrefs } from './telegram-watch.js';
 import { serverMenu, serverPage, needsConfirm, confirmServer, runServer } from './telegram-server.js';
+import * as menus from './telegram-menus.js';
 
 const ACTS = 'support_tg_acts';
 const WIZ = 'support_tg_wiz';
@@ -159,10 +160,10 @@ function sitesMessage() {
   return { text: `🌐 سایت‌ها (${fa(sites.length)})\n🔄 ری‌استارت · ▶ روشن · ⏹ خاموش`, reply_markup: { inline_keyboard: rows } };
 }
 
-async function expiringMessage() {
+async function expiringMessage(only = null) {
   const soon = Date.now() + 7 * DAY;
   const list = [];
-  for (const app of ['pump', 'shop']) {
+  for (const app of only ? [only] : ['pump', 'shop']) {
     try { list.push(...(await search(app, '', 200)).filter((a) => ['active', 'trial'].includes(a.status) && a.endsAt && a.endsAt <= soon)); } catch { /* یک برنامه خاموش، بقیه می‌آید */ }
   }
   list.sort((x, y) => x.endsAt - y.endsAt);
@@ -237,47 +238,66 @@ async function sendOffline(tok, chatId, out) {
   return { msg, tgSend };
 }
 
-//  ⛔ منوی ثابتِ پایینِ صفحه: هر دکمه همان دستور است و هرگز به کاربری نمی‌رود.
-export const KEYS = {
-  inbox: '💬 صندوقِ پیام‌ها', find: '🔎 جست‌وجوی حساب',
-  expiring: '⏳ اشتراک‌های رو به پایان', offline: '🔑 کدِ آفلاین',
-  status: '🖥 وضعیتِ سرور', sites: '🌐 سایت‌ها',
-  report: '📊 گزارش', broadcast: '📣 پیامِ همگانی',
-  settings: '⚙️ تنظیمات', help: '❓ راهنما',
-  server: '🛠 مدیریتِ سرور',
-};
-export const KEYBOARD = {
-  keyboard: [[KEYS.inbox, KEYS.find], [KEYS.expiring, KEYS.offline], [KEYS.server, KEYS.status], [KEYS.sites, KEYS.report], [KEYS.broadcast, KEYS.settings], [KEYS.help]].map((r) => r.map((text) => ({ text }))),
-  resize_keyboard: true,
-  is_persistent: true,
-  input_field_placeholder: 'نام، ایمیل یا شمارهٔ حساب… یا یک دکمه',
-};
-const BY_KEY = Object.fromEntries(Object.entries(KEYS).map(([k, v]) => [v, k]));
-/** متنِ یک دکمهٔ منو ⇒ نامِ دستور (یا ''). */
-export const keyCommand = (text) => BY_KEY[String(text || '').trim()] || '';
-
 //  پیشنهادِ دستورها در تلگرام («/» را که بزنید) — فقط برای گفت‌وگوی مالک
 export const COMMANDS = [
-  ['start', 'منو'], ['inbox', 'گفت‌وگوهای منتظرِ جواب'], ['find', 'جست‌وجوی حساب'], ['expiring', 'اشتراک‌های رو به پایان'],
-  ['offline', 'کدِ اشتراکِ آفلاینِ پمپ'], ['codes', 'کدهای آفلاین و باطل کردن'], ['status', 'وضعیتِ سرور'], ['sites', 'سایت‌ها و ری‌استارت'],
-  ['server', 'مدیریتِ سرور: آپدیت، ری‌استارت، پشتیبان…'], ['update', 'آپدیتِ کنترول سنتر'], ['report', 'گزارشِ امروز'], ['broadcast', 'پیامِ همگانی'], ['quick', 'جواب‌های آماده'], ['settings', 'تنظیماتِ ربات'],
+  ['start', 'منوی اصلی'], ['pump', 'منوی پمپ بنزین'], ['shop', 'منوی فروشگاه'], ['sites', 'منوی سایت‌ها'], ['server', 'منوی سرور'], ['inbox', 'گفت‌وگوهای منتظرِ جواب'], ['find', 'جست‌وجوی حساب'], ['expiring', 'اشتراک‌های رو به پایان'],
+  ['offline', 'کدِ اشتراکِ آفلاینِ پمپ'], ['codes', 'کدهای آفلاین و باطل کردن'], ['status', 'وضعیتِ سرور'],
+  ['update', 'آپدیتِ کنترول سنتر'], ['report', 'گزارشِ امروز'], ['broadcast', 'پیامِ همگانی'], ['quick', 'جواب‌های آماده'], ['settings', 'تنظیماتِ ربات'],
   ['done', 'پایانِ «در حالِ نوشتن»'], ['cancel', 'انصراف'], ['logout', 'خروج'],
 ].map(([command, description]) => ({ command, description }));
 
 const MENU_TEXT = [
-  '🤖 رباتِ کنترول سنتر',
+  '🤖 رباتِ کنترول سنتر — راهنما',
   '',
-  '💬 پیامِ هر کاربرِ پمپ، فروشگاه و سایت‌ها همان لحظه این‌جا می‌آید، با عکس و صدایش.',
-  'زیرِ هر پیام: ✍️ جواب · ⚡ جوابِ آماده · 💬 کلِ گفت‌وگو · 👤 حساب و اشتراک · ✅ بستن.',
-  'یا روی خودِ پیام Reply بزنید — متن، عکس، ویدیو یا پیامِ صوتی (صدا و تصویر فقط برای پمپ).',
+  'پایینِ صفحه منوی شماست و هر بخش منوی خودش را دارد:',
+  '⛽ پمپ بنزین — پیام‌ها، جست‌وجو، اشتراک‌ها، کدِ آفلاین، آپدیتِ برنامه، پیامِ همگانی، گزارش',
+  '🛒 فروشگاه — پیام‌ها، جست‌وجو، اشتراک‌ها، پیامِ همگانی، گزارش',
+  '🌐 سایت‌ها — هر سایت: گفت‌وگوها، وضعیت، ری‌استارت، روشن/خاموش؛ و آپدیتِ سایت‌ها',
+  '🛠 سرور — وضعیت، آپدیتِ کنترول سنتر، سرورِ حساب، پشتیبان، کارهای خودکار، تونل، خطاها، ری‌استارت',
   '',
-  '🔎 هر متنی که بنویسید (بی Reply) جست‌وجوی حساب است: نام، ایمیل، شماره یا کد.',
-  '🛠 مدیریتِ سرور: آپدیتِ کنترول سنتر، سرورِ حساب، برنامهٔ پمپ و سایت‌ها · ری‌استارت · پشتیبان · کارهای خودکار · تونل · خطاها.',
-  '🔑 کدِ آفلاین · 📣 پیامِ همگانی · 📊 گزارشِ روزانه · 🚨 هشدارِ دیسک، سرورِ حساب و سایت‌ها.',
-  '🟢 پیامِ سنجاق‌شدهٔ بالا یعنی سرور روشن است.',
-  '',
-  'دکمه‌های پایینِ صفحه همیشه هستند؛ «/» را بزنید تا همهٔ دستورها پیشنهاد شود.',
+  '💬 پیامِ هر کاربر همان لحظه این‌جا می‌آید (با عکس و صدا). زیرش: ✍️ جواب · ⚡ آماده · 💬 گفت‌وگو · 👤 حساب · ✅ بستن. یا روی خودِ پیام Reply بزنید.',
+  '🔎 هر متنی که بی Reply بنویسید جست‌وجوی حساب است — در منوی پمپ فقط پمپ‌ها، در فروشگاه فقط فروشگاه‌ها.',
+  '🟢 پیامِ سنجاق‌شدهٔ بالا یعنی سرور روشن است. «/» همهٔ دستورها را پیشنهاد می‌کند.',
 ].join('\n');
+
+// ── دکمه‌های منوی پایینِ صفحه ────────────────────────────────────────────
+async function handleKey(key, send) {
+  const ctx = { reportText, statusText };
+  switch (key.a) {
+    case 'menu': {
+      menus.setMenu(key.to, key.siteId || null);
+      await send({ text: (await menus.menuText(key.to, ctx)).slice(0, 4000), reply_markup: menus.keyboardFor(key.to) });
+      return true;
+    }
+    case 'help': await send({ text: MENU_TEXT, reply_markup: menus.keyboardFor() }); return true;
+    case 'start': menus.setMenu('main'); await send({ text: MENU_TEXT, reply_markup: menus.keyboardFor('main') }); return true;
+    case 'inbox': await send(await inbox.inboxMessage(key.app ? { app: key.app } : {})); return true;
+    case 'find': await send({ text: `🔎 نام، ایمیل، شماره یا کدِ ${key.app === 'pump' ? 'پمپ' : key.app === 'shop' ? 'فروشگاه' : 'حساب'} را بنویسید و بفرستید.` }); return true;
+    case 'expiring': await send(await expiringMessage(key.app || null)); return true;
+    case 'offline': setWiz({ step: 'computer' }); await send({ text: OFFLINE_START }); return true;
+    case 'codes': await send(await codesMessage()); return true;
+    case 'broadcast': await send(key.app ? inbox.broadcastTargets(key.app) : inbox.broadcastStart()); return true;
+    case 'report': await send({ text: await reportText(key.app || null) }); return true;
+    case 'settings': await send(settingsMessage()); return true;
+    case 'status': await send({ text: await statusText() }); return true;
+    case 'sv': await send(await serverPage(key.p)); return true;
+    case 'panelRestart': {
+      const act = { k: 'svDo', op: 'panelRestart' };
+      const yes = btn('✅ بله، انجام بده', act);
+      await send({ text: confirmServer(act), reply_markup: { inline_keyboard: [[{ ...yes, callback_data: yes.callback_data.replace(/^a:/, 'y:') }]] } });
+      return true;
+    }
+    case 'siteChats': case 'siteInfo': case 'siteOp': {
+      const site = menus.currentSite();
+      if (!site) { menus.setMenu('sites'); await send({ text: 'اول یک سایت را بزنید.', reply_markup: menus.keyboardFor('sites') }); return true; }
+      if (key.a === 'siteChats') await send(await inbox.inboxMessage({ app: 'site', slug: site.slug }));
+      else if (key.a === 'siteInfo') await send({ text: menus.siteInfo(site) });
+      else await send(menus.siteOpConfirm(site, key.op));
+      return true;
+    }
+    default: return false;
+  }
+}
 
 // ── پیامِ مالک (نه Reply) ──────────────────────────────────────────────
 export async function handleCommand(tg, tok, chatId, m) {
@@ -287,33 +307,26 @@ export async function handleCommand(tg, tok, chatId, m) {
   if (/^\/(cancel|done)(@\w+)?$/i.test(text)) {
     const c = inbox.compose();
     setWiz(null); inbox.setCompose(null);
-    await send({ text: c ? `✅ نوشتن به ${c.label} تمام شد.` : 'لغو شد.', reply_markup: KEYBOARD });
+    await send({ text: c ? `✅ نوشتن به ${c.label} تمام شد.` : 'لغو شد.', reply_markup: menus.keyboardFor() });
     return true;
   }
-  const keyName = keyCommand(text);
+  const key = menus.resolveKey(text);
   // ⛔ دکمهٔ منو = تغییرِ کار ⇒ «در حالِ نوشتن» و پرسش‌های نیمه‌کاره بسته می‌شوند
-  if (keyName) { setWiz(null); inbox.setCompose(null); }
-  if (!keyName && await wizardStep(send, text)) return true;
+  if (key) { setWiz(null); inbox.setCompose(null); return handleKey(key, send); }
+  if (await wizardStep(send, text)) return true;
   const cmd = /^\/(\w+)(?:@\w+)?\s*(.*)$/s.exec(text);
-  const name = keyName || (cmd ? cmd[1].toLowerCase() : '');
-  if (name === 'find' && !(cmd && cmd[2].trim())) { await send({ text: '🔎 نام، ایمیل، شماره یا کدِ حساب را بنویسید و بفرستید.' }); return true; }
-  if (name === 'server') { await send(serverMenu()); return true; }
-  if (name === 'update') { await send(await serverPage('panel')); return true; }
-  if (name === 'inbox') { await send(await inbox.inboxMessage()); return true; }
+  const name = cmd ? cmd[1].toLowerCase() : '';
+  const SLASH = { pump: { a: 'menu', to: 'pump' }, shop: { a: 'menu', to: 'shop' }, sites: { a: 'menu', to: 'sites' }, server: { a: 'menu', to: 'server' }, start: { a: 'start' }, menu: { a: 'menu', to: 'main' }, help: { a: 'help' }, inbox: { a: 'inbox' }, report: { a: 'report' }, settings: { a: 'settings' }, broadcast: { a: 'broadcast' }, expiring: { a: 'expiring' }, status: { a: 'status' }, update: { a: 'sv', p: 'panel' } };
+  if (SLASH[name] && !(name === 'find')) { setWiz(null); inbox.setCompose(null); return handleKey(SLASH[name], send); }
+  if (name === 'find' && !(cmd && cmd[2].trim())) return handleKey({ a: 'find', app: menus.menuApp() }, send);
   if (name === 'quick') { await send(inbox.quickManage()); return true; }
-  if (name === 'broadcast') { await send(inbox.broadcastStart()); return true; }
-  if (name === 'report') { await send({ text: await reportText() }); return true; }
-  if (name === 'settings') { await send(settingsMessage()); return true; }
   if (name === 'offline') { setWiz({ step: 'computer' }); await send({ text: OFFLINE_START }); return true; }
   if (name === 'codes') { await send(await codesMessage()); return true; }
-  if (['start', 'menu', 'help'].includes(name)) { await send({ text: MENU_TEXT, reply_markup: KEYBOARD }); return true; }
-  if (name === 'status') { await send({ text: await statusText() }); return true; }
-  if (name === 'sites') { await send(sitesMessage()); return true; }
-  if (name === 'expiring') { await send(await expiringMessage()); return true; }
   const q = (name === 'find' ? cmd[2] : cmd ? '' : text).trim().slice(0, 60);
-  if (!q) { await send({ text: `دستورِ «${text.slice(0, 30)}» را نمی‌شناسم.\n\n${MENU_TEXT}`, reply_markup: KEYBOARD }); return true; }
+  if (!q) { await send({ text: `دستورِ «${text.slice(0, 30)}» را نمی‌شناسم.\n\n${MENU_TEXT}`, reply_markup: menus.keyboardFor() }); return true; }
   const found = [];
-  for (const app of ['pump', 'shop']) {
+  const only = menus.menuApp();
+  for (const app of only ? [only] : ['pump', 'shop']) {
     try { found.push(...await search(app, q, 6)); } catch (e) { await send({ text: `⚠️ ${APP[app]}: ${e.message}` }); }
   }
   if (!found.length) { await send({ text: `🔎 «${q}» — حسابی پیدا نشد.\n(برای جواب به کاربر، روی پیامِ خودِ او Reply یا «✍️ جواب» بزنید.)` }); return true; }

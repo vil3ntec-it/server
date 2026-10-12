@@ -125,14 +125,16 @@ try {
   t = say('/status');
   const dStatus = await replyAfter(t, /وضعیتِ سرور/);
   check('/status زیرِ یک ثانیه', dStatus !== null && dStatus < 1000, dStatus);
-  t = say('🛠 مدیریتِ سرور');
-  const dMenu = await replyAfter(t, /مدیریتِ سرور/);
-  check('منوی مدیریتِ سرور زیرِ یک ثانیه', dMenu !== null && dMenu < 1000, dMenu);
+  t = say('⛽ پمپ بنزین');
+  const dMenu = await replyAfter(t, /پمپ بنزین/);
+  check('عوض شدنِ منو (پمپ) زیرِ یک ثانیه', dMenu !== null && dMenu < 1000, dMenu);
+  t = say('💾 پشتیبان‌ها');
+  await replyAfter(t, /پشتیبان‌های کنترول سنتر/);
   const menu = sent.filter((x) => x.body.reply_markup?.inline_keyboard).at(-1);
-  const b = menu.body.reply_markup.inline_keyboard.flat().find((x) => /پشتیبان‌ها/.test(x.text));
+  const b = menu.body.reply_markup.inline_keyboard.flat().find((x) => /پشتیبانِ تازه/.test(x.text));
   t = Date.now();
   updates.push({ update_id: nextUpdate++, callback_query: { id: 'cq1', from: { id: OWNER }, data: b.callback_data, message: { message_id: 1, chat: { id: OWNER } } } }); flush();
-  const dBtn = await replyAfter(t, /پشتیبان‌های کنترول سنتر/);
+  const dBtn = await replyAfter(t, /پشتیبان ساخته شد/);
   const ans = answers.find((a) => a.callback_query_id === 'cq1');
   check('دکمه زیرِ یک ثانیه (و چرخکِ دکمه همان لحظه بسته شد)', dBtn !== null && dBtn < 1000 && ans && ans.at - t < 1000, `${dBtn} ${ans && ans.at - t}`);
 

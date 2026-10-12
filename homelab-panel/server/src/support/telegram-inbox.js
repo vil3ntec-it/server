@@ -227,21 +227,23 @@ export async function conversation(ref) {
 }
 
 /** گفت‌وگوهایی که منتظرِ جوابِ شما هستند — پمپ، فروشگاه و سایت‌ها. */
-export async function waiting() {
+export async function waiting(f = {}) {
   const out = [];
-  try {
+  if (!f.app || f.app === 'pump' || f.app === 'shop') try {
     const list = await cloudRaw('GET', '/api/admin/support/threads', { query: { status: 'open', limit: 100 } });
     for (const t of list.threads || []) {
       if (t.lastSender === 'admin' || !t.lastSender) continue;
-      out.push({ ref: t.id, label: labelOf(t), at: Number(t.updatedAt) || 0, last: t.lastMessage || '', unread: Number(t.unreadAdmin) || 0 });
+      if (f.app && t.app !== f.app) continue;
+      out.push({ app: t.app, ref: t.id, label: labelOf(t), at: Number(t.updatedAt) || 0, last: t.lastMessage || '', unread: Number(t.unreadAdmin) || 0 });
     }
   } catch (e) { out.error = e.message; }
-  for (const s of siteChats.chatSites()) {
+  for (const s of (!f.app || f.app === 'site' ? siteChats.chatSites() : [])) {
+    if (f.slug && s.slug !== f.slug) continue;
     try {
       const { chats } = await siteChats.listChats(s, 0);
       for (const c of chats) {
         if (c.lastFrom === 'owner') continue;
-        out.push({ ref: `site:${s.slug}:${c.id}`, label: `🌐 ${s.name} · ${c.name || 'بازدیدکننده'}`, at: Number(c.updatedAt) || 0, last: c.last || c.lastMessage || '', unread: Number(c.unread) || 0 });
+        out.push({ app: 'site', ref: `site:${s.slug}:${c.id}`, label: `🌐 ${s.name} · ${c.name || 'بازدیدکننده'}`, at: Number(c.updatedAt) || 0, last: c.last || c.lastMessage || '', unread: Number(c.unread) || 0 });
       }
     } catch { /* سایتِ خاموش */ }
   }
@@ -249,8 +251,8 @@ export async function waiting() {
   return out;
 }
 
-export async function inboxMessage() {
-  const list = await waiting();
+export async function inboxMessage(f = {}) {
+  const list = await waiting(f);
   if (!list.length) return { text: `📭 هیچ گفت‌وگویی منتظرِ جواب نیست.${list.error ? `\n⚠️ سرورِ حساب: ${list.error}` : ''}` };
   return {
     text: [`📬 ${fa(list.length)} گفت‌وگو منتظرِ جوابِ شماست${list.error ? `\n⚠️ سرورِ حساب: ${list.error}` : ''}`, '', ...list.slice(0, 15).map((w, i) => `${fa(i + 1)}. ${w.label} — ${clock(w.at)}${w.last ? `\n    «${String(w.last).slice(0, 70)}»` : ''}`)].join('\n').slice(0, 4000),
