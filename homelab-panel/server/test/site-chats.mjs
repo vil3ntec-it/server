@@ -64,6 +64,7 @@ const tg = http.createServer((req, res) => {
     if (!m || m[1] !== TOKEN) return res.end(JSON.stringify({ ok: false, description: 'Unauthorized' }));
     if (m[2] === 'getUpdates') return res.end(JSON.stringify({ ok: true, result: updates.filter((u) => u.update_id >= (body.offset || 0)) }));
     if (m[2] === 'sendMessage') { tgSent.push(body); return res.end(JSON.stringify({ ok: true, result: { message_id: 2000 + tgSent.length } })); }
+    if (m[2] === 'getMe') return res.end(JSON.stringify({ ok: true, result: { id: 1, is_bot: true, username: 'ControlCenterBot' } }));
     res.end(JSON.stringify({ ok: false, description: 'unknown' }));
   });
 });
@@ -79,7 +80,7 @@ const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 
   env: { ...process.env, HLP_PORT: String(PORT), HLP_SITESYNC_PORT: String(PORT + 1), HLP_HOST: '127.0.0.1',
     HLP_DATA_DIR: path.join(tmp, 'data'), HLP_SITES_ROOT: path.join(tmp, 'sites'), HLP_TUNNEL: '0', HLP_AI_ENABLED: '0',
     HLP_ACCOUNT_AUTOSTART: '0', HLP_PUMP_MIRROR: '0', HLP_SITE_MIRROR: '0',
-    HLP_ACCOUNT_API: 'http://127.0.0.1:9', HLP_TELEGRAM_API: `http://127.0.0.1:${tg.address().port}` },
+    HLP_ACCOUNT_API: 'http://127.0.0.1:9', HLP_TG_HEARTBEAT_MS: '0', HLP_TELEGRAM_API: `http://127.0.0.1:${tg.address().port}` },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let out = ''; child.stdout.on('data', (d) => (out += d)); child.stderr.on('data', (d) => (out += d));
@@ -89,7 +90,15 @@ const call = async (method, url, body) => {
   return { status: res.status, body: await res.json().catch(() => ({})) };
 };
 const site = async (p, body) => (await fetch(SITE + p, { method: body ? 'POST' : 'GET', body: body ? JSON.stringify(body) : undefined })).json();
-const run = () => call('POST', '/api/automation/jobs/support-telegram/run', {});
+//  ⚠️ کار هر ۵ ثانیه خودش هم می‌چرخد؛ «already_running» ⇒ دوباره
+const run = async () => {
+  for (let i = 0; i < 100; i++) {
+    const r = await call('POST', '/api/automation/jobs/support-telegram/run', {});
+    if (r.body?.error !== 'already_running') return r;
+    await wait(100);
+  }
+  throw new Error('کارِ support-telegram آزاد نشد');
+};
 
 try {
   for (let i = 0; i < 120; i++) { try { if ((await fetch(`${BASE}/health`)).ok) break; } catch { /* */ } await wait(250); }
@@ -135,6 +144,9 @@ try {
   r = await call('GET', '/api/support-telegram');
   check('«سایت» به‌طورِ پیش‌فرض روشن است', r.body.apps?.includes('site'), JSON.stringify(r.body.apps));
   await call('PUT', '/api/support-telegram', { apps: ['site'] });
+  //  ⛔ از 1.50.51 Replyِ مالک فقط پس از ورود با نام و رمزِ پنل (telegram-auth.js)
+  for (const [id, text] of [[60, '/login'], [61, 'admin'], [62, 'SiteChat-1405-ok']]) { pushUpdate({ message_id: id, chat: { id: OWNER }, text }); await run(); }
+  check('ربات با نام و رمزِ پنل وارد شد', /خوش آمدید/.test(tgSent.at(-1)?.text || ''), JSON.stringify(tgSent.at(-1)));
   await wait(20);
   await site('/__visitor', { id: 'c2', name: 'رضا', text: 'برنامهٔ فروشگاه را می‌خواهم' });
   r = await run();

@@ -22,6 +22,9 @@ import { db, getSetting, setSetting } from '../db.js';
 import { putSecret, readSecret } from '../control/vault.js';
 import { cloudRaw } from '../stations/cloud.js';
 import * as siteChats from './site-chats.js';
+import { handleCommand, handleCallback, threadKeys } from './telegram-admin.js';
+import { beat } from './telegram-heartbeat.js';
+import { sessionOf, handleLogin, resetAuth, authStatus, logout } from './telegram-auth.js';
 
 export const TOKEN_SECRET = 'telegram:support-bot';
 const CONFIG = 'support_tg';
@@ -81,12 +84,47 @@ export async function tg(tok, method, body = {}, timeoutMs = 15000) {
   } finally { clearTimeout(t); }
 }
 
+/** فرستادنِ فایل (sendDocument) — multipart، چون JSON فایل نمی‌برد. */
+export async function tgFile(tok, method, fields, { field = 'document', name, data, type = 'application/octet-stream' }, timeoutMs = 30000) {
+  if (!validToken(tok)) throw new Error('توکنِ ربات درست نیست');
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(fields)) if (v !== undefined && v !== null) fd.append(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
+  fd.append(field, new Blob([data], { type }), name);
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const r = await fetch(`${api()}/bot${tok}/${method}`, { method: 'POST', body: fd, signal: ac.signal, redirect: 'error' });
+    const j = await r.json().catch(() => ({}));
+    if (!j.ok) throw new Error(j.description ? `تلگرام: ${String(j.description).slice(0, 160)}` : `تلگرام پاسخ نداد (${r.status})`);
+    return j.result;
+  } finally { clearTimeout(t); }
+}
+
+/**
+ * ⛔ رباتِ مالک **جدا** از رباتِ پمپ بنزین است (خواستهٔ صاحب سامانه، ۱۴۰۵/۰۷/۲۰).
+ * رباتِ پمپ روی سرورِ حساب (shop، `lib/telegram.js`) getUpdates می‌زند؛ همان توکن
+ * این‌جا یعنی دعوای ۴۰۹ و از کار افتادنِ هر دو، و پیامِ صاحبانِ پمپ در دستِ دیگری.
+ * پس نامِ ربات (getMe) با نامِ رباتِ پمپ (`/api/admin/telegram`) سنجیده می‌شود.
+ * ⚠️ اگر سرورِ حساب در دسترس نباشد جلوی ذخیره گرفته نمی‌شود (فقط سنجه رد می‌شود).
+ */
+export async function assertNotPumpBot(tok) {
+  const me = await tg(tok, 'getMe');
+  let pump = '';
+  try { pump = String(((await cloudRaw('GET', '/api/admin/telegram')).telegram || {}).username || ''); } catch { /* سرورِ حساب خاموش */ }
+  if (pump && me && String(me.username || '').toLowerCase() === pump.toLowerCase()) {
+    throw Object.assign(new Error(`این توکنِ رباتِ پمپ بنزین (‎@${pump}‎) است. رباتِ کنترول سنتر باید جدا باشد: در ‎@BotFather‎ با ‎/newbot‎ یک رباتِ تازه بسازید و توکنِ آن را بچسبانید.`), { status: 409, code: 'pump_bot' });
+  }
+  return me;
+}
+
 /** ذخیرهٔ تنظیمات. توکنِ خالی یعنی «همان قبلی». */
 export function saveConfig({ enabled, chatId, apps, token: tok }, actor = 'admin') {
   const cur = config();
+  let reset = false;
   if (tok !== undefined && String(tok).trim() !== '') {
     const t = String(tok).trim();
     if (!validToken(t)) throw Object.assign(new Error('invalid_token'), { status: 400 });
+    reset = t !== token();
     putSecret({ name: TOKEN_SECRET, kind: 'api_key', value: t, note: 'رباتِ تلگرامِ پشتیبانی', actor });
   }
   const next = {
@@ -96,6 +134,8 @@ export function saveConfig({ enabled, chatId, apps, token: tok }, actor = 'admin
   };
   // روشن شدنِ تازه: تاریخچهٔ قدیمی فرستاده نشود
   if (next.enabled && !cur.enabled) { const s = state(); s.startedAt = Date.now(); s.since = {}; saveState(s); }
+  // ⛔ ربات یا گفت‌وگوی دیگر ⇒ نشستِ ورودِ ربات باطل (telegram-auth.js)
+  if (reset || next.chatId !== cur.chatId) resetAuth();
   setSetting(CONFIG, { ...next, v: 2 });
   return status();
 }
@@ -104,7 +144,7 @@ export function status() {
   const c = config();
   const t = token();
   const s = state();
-  return { ...c, hasToken: !!t, tokenHint: t ? `••••${t.slice(-4)}` : '', last: s.last, linked: s.map.length };
+  return { ...c, hasToken: !!t, tokenHint: t ? `••••${t.slice(-4)}` : '', last: s.last, linked: s.map.length, bot: c.chatId ? authStatus(c.chatId) : { loggedIn: false } };
 }
 
 /** آخرین گفت‌وگویی که به ربات پیام داده — برای پر کردنِ خودکارِ chat id. */
@@ -162,6 +202,8 @@ export async function syncOnce({ log = () => {} } = {}) {
   const tok = token();
   if (!c.enabled) return { skipped: 'disabled' };
   if (!tok || !c.chatId) return { skipped: 'not_configured' };
+  // 🟢/🔴 پیامِ سنجاق‌شدهٔ «سرور روشن است» (telegram-heartbeat.js)
+  await beat(tg, tok, c.chatId).catch((e) => log(`چراغِ تلگرام: ${e.message}`));
   const s = state();
   if (!s.startedAt) s.startedAt = Date.now();
   const map = new Map(s.map);
@@ -169,17 +211,37 @@ export async function syncOnce({ log = () => {} } = {}) {
   let sent = 0;
 
   // ۱) جوابِ مالک
-  const ups = await tg(tok, 'getUpdates', { offset: s.offset, limit: 50, timeout: 0, allowed_updates: ['message'] });
+  //  ⚠️ callback_query = دکمه‌های رباتِ مالک (`telegram-admin.js`)
+  const ups = await tg(tok, 'getUpdates', { offset: s.offset, limit: 50, timeout: 0, allowed_updates: ['message', 'callback_query'] });
   for (const u of ups) {
     s.offset = Math.max(s.offset, u.update_id + 1);
     // ⚠️ offset پیش از هر کار ذخیره می‌شود: اگر وسطِ دور چیزی شکست، همان جواب دو بار به کاربر نمی‌رود
     saveState({ ...s, map: [...map] });
+    if (u.callback_query) {
+      // ⛔ دکمه فقط با نشستِ ورود (نام و رمزِ پنل)
+      if (!sessionOf(c.chatId)) { await tg(tok, 'answerCallbackQuery', { callback_query_id: u.callback_query.id, text: '🔒 اول ‎/login‎ بزنید' }).catch(() => {}); continue; }
+      try { await handleCallback(tg, tok, c.chatId, u.callback_query); } catch (e) { log(`دکمهٔ تلگرام: ${e.message}`); }
+      continue;
+    }
     const m = u.message;
     if (!m || String(m.chat && m.chat.id) !== c.chatId) continue; // ⛔ فقط مالک
+    // ⛔ قفلِ دوم: بی ورود با نام و رمزِ پنل نه دستور، نه Reply به کاربر
+    if (!sessionOf(c.chatId)) {
+      try { await handleLogin(tg, tok, c.chatId, m); } catch (e) { log(`ورودِ تلگرام: ${e.message}`); }
+      continue;
+    }
+    if (/^\/logout(@\w+)?$/i.test(String(m.text || '').trim())) {
+      logout();
+      await tg(tok, 'sendMessage', { chat_id: c.chatId, text: '🔒 خارج شدید. برای ورودِ دوباره ‎/login‎.' }).catch(() => {});
+      continue;
+    }
     const text = String(m.text || m.caption || '').trim();
     const threadId = m.reply_to_message && map.get(m.reply_to_message.message_id);
     if (!threadId) {
-      if (text) await tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, text: 'برای جواب دادن به کاربر، روی پیامِ خودِ او Reply بزنید و بنویسید.' }).catch(() => {});
+      // پیامِ بی Reply = دستور یا جست‌وجوی حساب (هیچ‌وقت به کاربری نمی‌رود)
+      let done = false;
+      if (m.text) { try { done = await handleCommand(tg, tok, c.chatId, m); } catch (e) { log(`دستورِ تلگرام: ${e.message}`); await tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, text: `⚠️ نشد: ${String(e.message).slice(0, 200)}` }).catch(() => {}); done = true; } }
+      if (!done && text) await tg(tok, 'sendMessage', { chat_id: c.chatId, reply_to_message_id: m.message_id, text: 'برای جواب دادن به کاربر، روی پیامِ خودِ او Reply بزنید و بنویسید.' }).catch(() => {});
       continue;
     }
     if (!text) {
@@ -215,7 +277,8 @@ export async function syncOnce({ log = () => {} } = {}) {
     const conv = await cloudRaw('GET', `/api/admin/support/threads/${encodeURIComponent(t.id)}`, { query: { after: 0 } });
     const fresh = ((conv && conv.messages) || []).filter((m) => m.sender !== 'admin' && Number(m.createdAt) > since).sort((a, b) => a.createdAt - b.createdAt);
     for (const m of fresh.slice(-10)) {
-      const out = await tg(tok, 'sendMessage', { chat_id: c.chatId, text: format({ ...t, ...(conv.thread || {}) }, m), disable_web_page_preview: true });
+      const full = { ...t, ...(conv.thread || {}) };
+      const out = await tg(tok, 'sendMessage', { chat_id: c.chatId, text: format(full, m), disable_web_page_preview: true, reply_markup: threadKeys(full) });
       map.set(out.message_id, t.id);
       s.since[t.id] = Math.max(Number(s.since[t.id]) || 0, Number(m.createdAt));
       sent++;

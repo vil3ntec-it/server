@@ -9,7 +9,7 @@
 import { Router } from 'express';
 import { requireAuth, requireWriteRole } from '../auth.js';
 import { audit } from '../control/audit.js';
-import { status, saveConfig, findChat, tg, token, config, validToken } from '../support/telegram.js';
+import { status, saveConfig, findChat, tg, token, config, validToken, assertNotPumpBot } from '../support/telegram.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -19,9 +19,12 @@ const actorOf = (req) => req.user?.username || 'admin';
 
 router.get('/', (req, res) => res.json(status()));
 
-router.put('/', (req, res) => {
+router.put('/', async (req, res) => {
   try {
     const b = req.body || {};
+    const t = String(b.token || '').trim();
+    // ⛔ نه رباتِ پمپ بنزین — رباتِ مالک جداست
+    if (t && validToken(t)) await assertNotPumpBot(t);
     const out = saveConfig({ enabled: b.enabled, chatId: b.chatId, apps: b.apps, token: b.token }, actorOf(req));
     audit({ actor: actorOf(req), action: 'support-telegram.config', entity: 'setting', detail: { enabled: out.enabled, apps: out.apps } });
     res.json(out);
@@ -33,11 +36,13 @@ router.put('/', (req, res) => {
 router.post('/find-chat', async (req, res) => {
   const t = String(req.body?.token || '').trim();
   try {
-    const chat = await findChat(t && validToken(t) ? t : token());
+    const use = t && validToken(t) ? t : token();
+    await assertNotPumpBot(use);
+    const chat = await findChat(use);
     if (!chat) return res.status(404).json({ error: 'هنوز پیامی به ربات نرسیده. ربات را در تلگرام باز کنید، Start را بزنید و دوباره امتحان کنید.' });
     res.json({ chat });
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    res.status(e.status || 400).json({ error: e.message });
   }
 });
 

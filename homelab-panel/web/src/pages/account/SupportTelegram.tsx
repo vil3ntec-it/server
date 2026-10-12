@@ -5,7 +5,7 @@ import { Send } from 'lucide-react';
 import { api } from '../../api';
 import { Modal, toast } from '../../components/ui';
 
-type State = { enabled: boolean; chatId: string; apps: string[]; hasToken: boolean; tokenHint: string; last: { at: number; sent: number; replied: number } | null };
+type State = { enabled: boolean; chatId: string; apps: string[]; hasToken: boolean; tokenHint: string; last: { at: number; sent: number; replied: number } | null; bot?: { loggedIn: boolean; username?: string; until?: number } };
 
 const APPS: Record<string, string> = { pump: 'پمپ', shop: 'فروشگاه', site: 'سایت‌ها' };
 
@@ -59,10 +59,17 @@ function SupportTelegramDialog({ onClose }: { onClose: () => void }) {
       <div className="space-y-4 text-sm">
         <p className="text-ink-muted">پیامِ هر کاربرِ برنامهٔ پمپ و فروشگاه، و هر بازدیدکنندهٔ سایت، همان لحظه در تلگرامِ شما هم می‌آید. روی پیام <b>Reply</b> بزنید و بنویسید؛ جوابتان به خودِ همان کاربر در برنامه یا سایت می‌رسد.</p>
         <ol className="list-decimal space-y-1 pr-5 text-xs text-ink-muted">
-          <li>در تلگرام با ‎@BotFather‎ یک ربات بسازید (‎/newbot‎) و توکن را این‌جا بچسبانید. (همان رباتِ اعلانِ سایت هم می‌شود.)</li>
+          <li>در تلگرام با ‎@BotFather‎ یک <b>رباتِ تازه و جدا</b> بسازید (‎/newbot‎) و توکن را این‌جا بچسبانید. ⛔ نه رباتِ پمپ بنزین — آن برای صاحبانِ پمپ است و پنل توکنش را نمی‌پذیرد. (رباتِ اعلانِ سایت را می‌شود همین گذاشت.)</li>
           <li>ربات را باز کنید و Start بزنید، بعد «پیدا کردن».</li>
           <li>«روشن» را بزنید، ذخیره کنید و «پیامِ آزمایشی» را امتحان کنید.</li>
+          <li>🔐 در ربات ‎/login‎ بزنید و <b>نام و رمزِ همین پنل</b> را بدهید (و کدِ دوعاملی اگر روشن است). بی ورود هیچ دستور، دکمه یا جوابی کار نمی‌کند؛ پیامِ رمز همان لحظه از تلگرام پاک می‌شود.</li>
+          <li>در ربات ‎/start‎ بزنید: نام، ایمیل، شماره یا کدِ هر حساب را بنویسید تا اشتراکش را ببینید، تمدید، تعلیق یا پلنِ تازه بدهید؛ ‎/status‎ وضعیتِ سرور، ‎/sites‎ ری‌استارتِ سایت‌ها، ‎/expiring‎ اشتراک‌های رو به پایان، ‎/offline‎ کدِ اشتراکِ آفلاینِ پمپ، ‎/codes‎ کدها و باطل کردن، ‎/logout‎ خروج.</li>
         </ol>
+        {st?.chatId && (
+          <p className="text-xs">{st.bot?.loggedIn
+            ? <>🔓 ربات با «<bdi>{st.bot.username}</bdi>» وارد شده — تا {new Date(st.bot.until || 0).toLocaleDateString('fa-IR')}. عوض کردنِ رمزِ پنل همان لحظه بیرونش می‌کند.</>
+            : <>🔒 ربات قفل است؛ در تلگرام ‎/login‎ بزنید.</>}</p>
+        )}
         <label className="block">
           <span className="mb-1 block text-xs font-semibold">توکنِ ربات {st?.hasToken ? <span className="font-normal text-ink-muted">(ذخیره شده: <bdi dir="ltr">{st.tokenHint}</bdi> — برای عوض کردن، تازه بچسبانید)</span> : null}</span>
           <input className="input w-full" dir="ltr" autoComplete="off" placeholder="123456789:AA…" value={token} onChange={(e) => setToken(e.target.value.trim())} />

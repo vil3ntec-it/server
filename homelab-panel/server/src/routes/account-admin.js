@@ -895,7 +895,17 @@ async function subscriptionOf(app, id) {
 router.post('/subs/:app/grant', money, guard(async (req, res) => {
   const app = sectionOf(req.params.app);
   const tenantId = idOf(req.body?.tenantId);
-  const b = req.body || {};
+  const out = await grantSubscription(app, tenantId, req.body || {}, actorOf(req));
+  res.json({ ok: true, subscription: out.subscription || null, state: out.state || null });
+}));
+
+/**
+ * ⛔ تنها جای «اشتراک دادن» — پنلِ وب و رباتِ تلگرام (`support/telegram-admin.js`)
+ * هر دو همین را صدا می‌زنند، نه درِ دوم.
+ */
+export async function grantSubscription(appIn, tenantIdIn, b = {}, actor = 'admin') {
+  const app = sectionOf(appIn);
+  const tenantId = idOf(tenantIdIn);
   const body = { [app === 'pump' ? 'stationId' : 'shopId']: tenantId, plan: String(b.plan || 'custom').slice(0, 20) };
   if (Array.isArray(b.features) && b.features.length) body.features = b.features;
   if (b.note) body.note = String(b.note).slice(0, 300);
@@ -905,9 +915,9 @@ router.post('/subs/:app/grant', money, guard(async (req, res) => {
   //  شورا چ۳: کدِ تخفیف (و نمایندهٔ صاحبِ کد) — قیمتِ نهایی را سرورِ حساب از قیمتِ روزِ پلن می‌سازد
   if (b.discountCode) body.discountCode = String(b.discountCode).trim().slice(0, 40);
   const out = await cloudRaw('POST', subsPath(app), { body });
-  audit({ actor: actorOf(req), action: 'account.subscription.grant', entity: app, entityId: tenantId, detail: { plan: body.plan } });
-  res.json({ ok: true, subscription: out.subscription || null, state: out.state || null });
-}));
+  audit({ actor, action: 'account.subscription.grant', entity: app, entityId: tenantId, detail: { plan: body.plan } });
+  return out;
+}
 
 /**
  * تمدید — «یک ماه یعنی یک ماه» (`addPeriod`)، از پایانِ اشتراکِ فعلی.
@@ -917,10 +927,15 @@ router.post('/subs/:app/grant', money, guard(async (req, res) => {
  * می‌روند، وگرنه پیش‌فرض‌های سرور روی اشتراکِ زنده می‌نشستند.
  */
 router.post('/subs/:app/:id/extend', money, guard(async (req, res) => {
-  const app = sectionOf(req.params.app);
-  const id = idOf(req.params.id);
-  const amount = Number(req.body?.amount) || 1;
-  const unit = String(req.body?.unit || 'month');
+  const out = await extendSubscription(req.params.app, req.params.id, req.body?.amount, req.body?.unit, actorOf(req));
+  res.json({ ok: true, subscription: out.subscription || null, state: out.state || null });
+}));
+
+export async function extendSubscription(appIn, idIn, amountIn, unitIn, actor = 'admin') {
+  const app = sectionOf(appIn);
+  const id = idOf(idIn);
+  const amount = Number(amountIn) || 1;
+  const unit = String(unitIn || 'month');
   const current = await subscriptionOf(app, id);
   const endsAt = addPeriod(Math.max(Number(current.ends_at) || 0, Date.now()), amount, unit);
   const out = app === 'pump'
@@ -932,19 +947,24 @@ router.post('/subs/:app/:id/extend', money, guard(async (req, res) => {
       },
     })
     : await cloudRaw('PUT', `${subsPath(app)}/${id}`, { body: { endsAt } });
-  audit({ actor: actorOf(req), action: 'account.subscription.extend', entity: 'subscription', entityId: id, detail: { app, amount, unit } });
-  res.json({ ok: true, subscription: out.subscription || null, state: out.state || null });
-}));
+  audit({ actor, action: 'account.subscription.extend', entity: 'subscription', entityId: id, detail: { app, amount, unit } });
+  return out;
+}
 
 /** تعلیق · لغو · برگرداندن به فعال. */
 router.post('/subs/:app/:id/status', guard(async (req, res) => {
-  const app = sectionOf(req.params.app);
-  const id = idOf(req.params.id);
-  const status = String(req.body?.status || '');
-  const out = await cloudRaw('POST', `${subsPath(app)}/${id}/status`, { body: { status } });
-  audit({ actor: actorOf(req), action: 'account.subscription.status', entity: 'subscription', entityId: id, detail: { app, status } });
+  const out = await setSubscriptionStatus(req.params.app, req.params.id, req.body?.status, actorOf(req));
   res.json({ ok: true, subscription: out.subscription || null, state: out.state || null });
 }));
+
+export async function setSubscriptionStatus(appIn, idIn, statusIn, actor = 'admin') {
+  const app = sectionOf(appIn);
+  const id = idOf(idIn);
+  const status = String(statusIn || '');
+  const out = await cloudRaw('POST', `${subsPath(app)}/${id}/status`, { body: { status } });
+  audit({ actor, action: 'account.subscription.status', entity: 'subscription', entityId: id, detail: { app, status } });
+  return out;
+}
 
 /** تبدیل به دائمی — بی شمارشِ روز، ولی همچنان با تپش و پشتیبانی. */
 router.post('/subs/:app/:id/permanent', money, guard(async (req, res) => {
@@ -1654,31 +1674,40 @@ router.get('/offline-codes', guard(async (req, res) => {
 }));
 
 router.post('/offline-codes', money, guard(async (req, res) => {
+  res.json(await createOfflineCode(req.body || {}, actorOf(req)));
+}));
+
+router.post('/offline-codes/:id/revoke', money, guard(async (req, res) => {
+  res.json(await revokeOfflineCode(req.params.id, actorOf(req)));
+}));
+
+/** ⛔ تنها جای ساختنِ کدِ آفلاین — پنلِ وب و رباتِ تلگرام هر دو همین را صدا می‌زنند. */
+export async function createOfflineCode(b = {}, actor = 'admin') {
   const body = {
-    plan: String(req.body?.plan || '').slice(0, 10),
-    computer: String(req.body?.computer || '').slice(0, 40),
+    plan: String(b.plan || '').slice(0, 10),
+    computer: String(b.computer || '').slice(0, 40),
     //  نسخهٔ ۲ (۱۴۰۵/۰۷/۲۰): ایمیلِ حسابی که کد به آن بسته می‌شود — خالی ⇒ هر حسابی
-    account: String(req.body?.account || '').trim().slice(0, 200),
-    days: req.body?.days === '' || req.body?.days == null ? null : Number(req.body.days),
-    note: String(req.body?.note || '').slice(0, 300),
+    account: String(b.account || '').trim().slice(0, 200),
+    days: b.days === '' || b.days == null ? null : Number(b.days),
+    note: String(b.note || '').slice(0, 300),
   };
   const out = await cloudRaw('POST', '/api/admin/pump/offline-codes', { body });
   audit({
-    actor: actorOf(req),
+    actor,
     action: 'account.offline_code.create',
     entity: 'offline_code',
     entityId: out?.offline?.id || '',
     detail: { plan: body.plan, computer: out?.offline?.computer || body.computer, account: body.account },
   });
-  res.json(out);
-}));
+  return out;
+}
 
-router.post('/offline-codes/:id/revoke', money, guard(async (req, res) => {
-  const id = idOf(req.params.id);
+export async function revokeOfflineCode(idIn, actor = 'admin') {
+  const id = idOf(idIn);
   const out = await cloudRaw('POST', `/api/admin/pump/offline-codes/${id}/revoke`);
-  audit({ actor: actorOf(req), action: 'account.offline_code.revoke', entity: 'offline_code', entityId: id });
-  res.json(out);
-}));
+  audit({ actor, action: 'account.offline_code.revoke', entity: 'offline_code', entityId: id });
+  return out;
+}
 
 /* -------------------------- درخواست‌های خرید -------------------------- */
 
