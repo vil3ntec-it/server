@@ -27,6 +27,7 @@ import { grantSubscription, extendSubscription, setSubscriptionStatus, createOff
 import { tgFile } from './telegram.js';
 import * as inbox from './telegram-inbox.js';
 import { settingsMessage, reportText, setPrefs } from './telegram-watch.js';
+import { serverMenu, serverPage, needsConfirm, confirmServer, runServer } from './telegram-server.js';
 
 const ACTS = 'support_tg_acts';
 const WIZ = 'support_tg_wiz';
@@ -243,9 +244,10 @@ export const KEYS = {
   status: '🖥 وضعیتِ سرور', sites: '🌐 سایت‌ها',
   report: '📊 گزارش', broadcast: '📣 پیامِ همگانی',
   settings: '⚙️ تنظیمات', help: '❓ راهنما',
+  server: '🛠 مدیریتِ سرور',
 };
 export const KEYBOARD = {
-  keyboard: [[KEYS.inbox, KEYS.find], [KEYS.expiring, KEYS.offline], [KEYS.status, KEYS.sites], [KEYS.report, KEYS.broadcast], [KEYS.settings, KEYS.help]].map((r) => r.map((text) => ({ text }))),
+  keyboard: [[KEYS.inbox, KEYS.find], [KEYS.expiring, KEYS.offline], [KEYS.server, KEYS.status], [KEYS.sites, KEYS.report], [KEYS.broadcast, KEYS.settings], [KEYS.help]].map((r) => r.map((text) => ({ text }))),
   resize_keyboard: true,
   is_persistent: true,
   input_field_placeholder: 'نام، ایمیل یا شمارهٔ حساب… یا یک دکمه',
@@ -258,7 +260,7 @@ export const keyCommand = (text) => BY_KEY[String(text || '').trim()] || '';
 export const COMMANDS = [
   ['start', 'منو'], ['inbox', 'گفت‌وگوهای منتظرِ جواب'], ['find', 'جست‌وجوی حساب'], ['expiring', 'اشتراک‌های رو به پایان'],
   ['offline', 'کدِ اشتراکِ آفلاینِ پمپ'], ['codes', 'کدهای آفلاین و باطل کردن'], ['status', 'وضعیتِ سرور'], ['sites', 'سایت‌ها و ری‌استارت'],
-  ['report', 'گزارشِ امروز'], ['broadcast', 'پیامِ همگانی'], ['quick', 'جواب‌های آماده'], ['settings', 'تنظیماتِ ربات'],
+  ['server', 'مدیریتِ سرور: آپدیت، ری‌استارت، پشتیبان…'], ['update', 'آپدیتِ کنترول سنتر'], ['report', 'گزارشِ امروز'], ['broadcast', 'پیامِ همگانی'], ['quick', 'جواب‌های آماده'], ['settings', 'تنظیماتِ ربات'],
   ['done', 'پایانِ «در حالِ نوشتن»'], ['cancel', 'انصراف'], ['logout', 'خروج'],
 ].map(([command, description]) => ({ command, description }));
 
@@ -270,6 +272,7 @@ const MENU_TEXT = [
   'یا روی خودِ پیام Reply بزنید — متن، عکس، ویدیو یا پیامِ صوتی (صدا و تصویر فقط برای پمپ).',
   '',
   '🔎 هر متنی که بنویسید (بی Reply) جست‌وجوی حساب است: نام، ایمیل، شماره یا کد.',
+  '🛠 مدیریتِ سرور: آپدیتِ کنترول سنتر، سرورِ حساب، برنامهٔ پمپ و سایت‌ها · ری‌استارت · پشتیبان · کارهای خودکار · تونل · خطاها.',
   '🔑 کدِ آفلاین · 📣 پیامِ همگانی · 📊 گزارشِ روزانه · 🚨 هشدارِ دیسک، سرورِ حساب و سایت‌ها.',
   '🟢 پیامِ سنجاق‌شدهٔ بالا یعنی سرور روشن است.',
   '',
@@ -294,6 +297,8 @@ export async function handleCommand(tg, tok, chatId, m) {
   const cmd = /^\/(\w+)(?:@\w+)?\s*(.*)$/s.exec(text);
   const name = keyName || (cmd ? cmd[1].toLowerCase() : '');
   if (name === 'find' && !(cmd && cmd[2].trim())) { await send({ text: '🔎 نام، ایمیل، شماره یا کدِ حساب را بنویسید و بفرستید.' }); return true; }
+  if (name === 'server') { await send(serverMenu()); return true; }
+  if (name === 'update') { await send(await serverPage('panel')); return true; }
   if (name === 'inbox') { await send(await inbox.inboxMessage()); return true; }
   if (name === 'quick') { await send(inbox.quickManage()); return true; }
   if (name === 'broadcast') { await send(inbox.broadcastStart()); return true; }
@@ -380,6 +385,20 @@ export async function handleCallback(tg, tok, chatId, cq) {
     if (a.k === 'bcApp') { await answer(); await send(inbox.broadcastTargets(a.app)); return; }
     if (a.k === 'bcTarget') { await answer(); setWiz({ step: 'bc_text', app: a.app, target: a.target }); await send({ text: `📣 ${inbox.BC_APPS[a.app]} · ${inbox.BC_TARGETS[a.target]}\n\nمتنِ پیام را بفرستید. پیش از فرستادن پیش‌نمایش می‌بینید. (‎/cancel‎ برای انصراف)` }); return; }
     if (a.k === 'pref') { setPrefs(a.patch || {}); await answer('ذخیره شد'); await edit(settingsMessage()); return; }
+    if (a.k === 'sv') { await answer(); await send(await serverPage(a.p)); return; }
+    if (a.k === 'svDo') {
+      if (needsConfirm(a) && m[1] === 'a') {
+        await answer();
+        const yes = btn('✅ بله، انجام بده', a);
+        await send({ text: confirmServer(a), reply_markup: { inline_keyboard: [[{ ...yes, callback_data: yes.callback_data.replace(/^a:/, 'y:') }]] } });
+        return;
+      }
+      // ⛔ تأیید یک بار: پیش از کار پاک می‌شود
+      if (needsConfirm(a)) { const all = acts(); delete all[m[2]]; setSetting(ACTS, all); }
+      await answer('در حالِ انجام…');
+      await send(await runServer(a, { tg, tok, chatId }));
+      return;
+    }
     if (a.k === 'inbox') { await answer(); await send(await inbox.inboxMessage()); return; }
     if (a.k === 'sites') { await answer(); await send(sitesMessage()); return; }
     if (a.k === 'expiring') { await answer(); await send(await expiringMessage()); return; }

@@ -14,6 +14,7 @@
 //  ⚠️ HLP_TG_HEARTBEAT_MS (پیش‌فرض ۶۰ ثانیه؛ ۰ = خاموش).
 // ---------------------------------------------------------------------------
 import { getSetting, setSetting } from '../db.js';
+import { versionInfo } from '../version.js';
 
 const KEY = 'support_tg_beat';
 const GAP_MS = 3 * 60e3;
@@ -37,7 +38,7 @@ function span(ms) {
 }
 
 const greenText = (now) => [
-  '🟢 کنترول سنتر روشن است',
+  `🟢 کنترول سنتر روشن است — نسخهٔ ${versionInfo.version}`,
   `🕒 آخرین تپش: ${clock(now)}`,
   `⏱ روشن از ${span(now - BOOT)} پیش`,
   '',
@@ -64,7 +65,7 @@ export async function beat(tg, tok, chatId) {
     // برگشت پس از خاموشی (عادی یا قطعِ برق): پیامِ زنگ‌دار با مدتِ خاموشی
     const since = b.offlineAt || (b.at && now - b.at > GAP_MS ? b.at : 0);
     if (since) {
-      await tg(tok, 'sendMessage', { chat_id: chatId, text: `🟢 سرور دوباره روشن شد.\n🔴 از ${clock(since)} حدودِ ${span(now - since)} خاموش${b.offlineAt ? '' : ' یا بی‌اینترنت'} بود.` }).catch(() => {});
+      await tg(tok, 'sendMessage', { chat_id: chatId, text: `🟢 سرور دوباره روشن شد — نسخهٔ ${versionInfo.version}\n🔴 از ${clock(since)} حدودِ ${span(now - since)} خاموش${b.offlineAt ? '' : ' یا بی‌اینترنت'} بود.` }).catch(() => {});
     }
     const msgId = await pinNew(tg, tok, chatId, b, greenText(now));
     save({ chatId, msgId, at: now, offlineAt: 0 });

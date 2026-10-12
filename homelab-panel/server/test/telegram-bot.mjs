@@ -130,7 +130,7 @@ const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 
     HLP_DATA_DIR: path.join(tmp, 'data'), HLP_SITES_ROOT: path.join(tmp, 'sites'), HLP_TUNNEL: '0', HLP_AI_ENABLED: '0',
     HLP_ACCOUNT_AUTOSTART: '0', HLP_PUMP_MIRROR: '0', HLP_SITE_MIRROR: '0',
     HLP_ACCOUNT_API: `http://127.0.0.1:${fake.address().port}`, HLP_ACCOUNT_ADMIN_USER: 'boss', HLP_ACCOUNT_ADMIN_PASSWORD: 'top-secret',
-    HLP_TG_HEARTBEAT_MS: '0', HLP_TG_WATCH_MS: '1',
+    HLP_TG_HEARTBEAT_MS: '0', HLP_TG_WATCH_MS: '1', HLP_GITHUB_API: `http://127.0.0.1:${fake.address().port}/gh`,
     HLP_TELEGRAM_API: `http://127.0.0.1:${tg.address().port}` },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -266,6 +266,38 @@ try {
   cloudDown = false;
   await run();
   check('برگشت ⇒ 🟢', /سرورِ حساب برگشت/.test(lastText()), lastText());
+
+  console.log('\n── ۱۱) 🛠 مدیریتِ سرور ──');
+  await step('🛠 مدیریتِ سرور');
+  check('منوی مدیریتِ سرور با همهٔ بخش‌ها', ['آپدیتِ کنترول سنتر', 'سرورِ حساب', 'آپدیتِ برنامهٔ پمپ', 'آپدیتِ سایت‌ها', 'پشتیبان‌ها', 'کارهای خودکار', 'تونل و دامنه', 'خطاهای اخیر', 'ری‌استارتِ کنترول سنتر'].every((t) => !!btnOf(new RegExp(t))), lastText());
+  press(btnOf(/⬆️ آپدیتِ کنترول سنتر/)); await run();
+  check('آپدیتِ کنترول سنتر: نسخهٔ نصب‌شده و پیغامِ گیت‌هاب', /نسخهٔ نصب‌شده/.test(lastText()) && /گیت‌هاب/.test(lastText()) && /نصبِ خودکار/.test(lastText()), lastText());
+  await step('/update');
+  check('/update همان صفحه', /آپدیتِ کنترول سنتر/.test(lastText()));
+  press(btnOf(/نصبِ خودکار (روشن|خاموش)/)); await run();
+  check('روشن/خاموش کردنِ نصبِ خودکار', /نصبِ خودکار \(هر ساعت\): (✅ روشن|⛔ خاموش)/.test(lastText()), lastText());
+  await step('🛠 مدیریتِ سرور');
+  press(btnOf(/ری‌استارتِ کنترول سنتر/)); await run();
+  check('ری‌استارت فقط با تأیید (این‌جا زده نمی‌شود)', /ری‌استارت شود؟/.test(lastText()) && !!btnOf(/بله، انجام بده/));
+  await step('🛠 مدیریتِ سرور');
+  press(btnOf(/💾 پشتیبان‌ها/)); await run();
+  press(btnOf(/پشتیبانِ تازه/)); await run();
+  check('پشتیبانِ تازه از تلگرام', /پشتیبان ساخته شد/.test(lastText()), lastText());
+  await step('🛠 مدیریتِ سرور');
+  press(btnOf(/⚙️ کارهای خودکار/)); await run();
+  check('فهرستِ کارهای خودکار', /کارهای خودکار/.test(lastText()) && !!btnOf(/^▶ /), lastText());
+  press(btnOf(/^▶ .*پشتیبان/) || btnOf(/^▶ /)); await run();
+  for (let i = 0; i < 40 && !msgs().slice(-3).some((x) => /^(✅|⚠️) «/.test(x.body.text || '')); i++) await wait(250);
+  check('اجرای یک کارِ خودکار و نتیجه‌اش', msgs().slice(-4).some((x) => /^(✅|⚠️) «/.test(x.body.text || '')), msgs().slice(-3).map((x) => x.body.text).join(' | '));
+  await step('🛠 مدیریتِ سرور');
+  press(btnOf(/⛽ آپدیتِ برنامهٔ پمپ/)); await run();
+  check('آپدیتِ پمپ (آینه در آزمون خاموش است)', /آینهٔ آپدیتِ پمپ روی این نصب خاموش است/.test(lastText()), lastText());
+  await step('🛠 مدیریتِ سرور');
+  press(btnOf(/📜 خطاهای اخیر/)); await run();
+  check('خطاهای اخیر', /📜/.test(lastText()), lastText());
+  await step('🛠 مدیریتِ سرور');
+  press(btnOf(/🗄 سرورِ حساب/)); await run();
+  check('سرورِ حساب: روشن/خاموش و نسخه', /سرورِ حساب/.test(lastText()) && /(🟢 روشن|🔴 خاموش)/.test(lastText()), lastText());
 } catch (e) {
   failed++; console.error('\n❌ آزمون شکست:', e.stack); console.error(out.slice(-2500));
 } finally {
