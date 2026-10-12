@@ -45,6 +45,19 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/vil3ntec-it/shop.git /tmp/shop
           test -f /tmp/shop/server/src/index.js
+          #  🤖 باتِ تلگرامِ پمپ در ریپوی پمپ است (telegram-bot/) و افزونهٔ همین سرورِ حساب
+          #  است (shop: src/lib/bots.js ⇐ bots/pump/). shopِ تازه بی بات ⇒ ساخت سرخ، تا
+          #  سرورِ حسابِ بی‌بات به مشتری نرسد. shopِ کهنه (بی bots.js) ⇒ رد می‌شود.
+          if [ -f /tmp/shop/server/src/lib/bots.js ]; then
+            git clone -q --depth 1 --filter=blob:none --sparse https://github.com/vil3ntec-it/pump-staion-yaqobi.git /tmp/pumpbot
+            git -C /tmp/pumpbot sparse-checkout set telegram-bot
+            test -f /tmp/pumpbot/telegram-bot/index.js || { echo '::error::باتِ پمپ (telegram-bot/index.js) در ریپوی پمپ نیست'; exit 1; }
+            mkdir -p /tmp/shop/server/bots/pump
+            cp /tmp/pumpbot/telegram-bot/index.js /tmp/shop/server/bots/pump/index.js
+            echo "باتِ پمپ از ریپوی پمپ: $(git -C /tmp/pumpbot rev-parse --short HEAD)"
+          else
+            echo "::notice::این سرورِ حساب هنوز جای بات (bots.js) ندارد — باتِ خودش را دارد"
+          fi
 
       - uses: actions/setup-node@v4
         with:
@@ -94,6 +107,10 @@ jobs:
             || { echo '::error::node_modules در بسته نیست'; exit 1; }
           grep -q '^account-server/src/index.js$' /tmp/pack/list.txt \
             || { echo '::error::src/index.js در بسته نیست'; exit 1; }
+          if [ -f /tmp/shop/server/src/lib/bots.js ]; then
+            grep -q '^account-server/bots/pump/index.js$' /tmp/pack/list.txt \
+              || { echo '::error::باتِ پمپ (bots/pump) در بسته نیست'; exit 1; }
+          fi
 
       - name: انتشار
         env:

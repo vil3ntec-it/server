@@ -95,6 +95,19 @@ jobs:
           rm -rf homelab-panel/account-server
           mkdir -p homelab-panel/account-server
           cp -r /tmp/shop/server/. homelab-panel/account-server/
+          #  🤖 باتِ تلگرامِ پمپ در ریپوی پمپ است (telegram-bot/) و افزونهٔ همین سرورِ حساب
+          #  است (shop: src/lib/bots.js ⇐ bots/pump/). shopِ تازه بی بات ⇒ ساخت سرخ، تا
+          #  سرورِ حسابِ بی‌بات به مشتری نرسد. shopِ کهنه (بی bots.js) ⇒ رد می‌شود.
+          if [ -f homelab-panel/account-server/src/lib/bots.js ]; then
+            git clone -q --depth 1 --filter=blob:none --sparse https://github.com/vil3ntec-it/pump-staion-yaqobi.git /tmp/pumpbot
+            git -C /tmp/pumpbot sparse-checkout set telegram-bot
+            test -f /tmp/pumpbot/telegram-bot/index.js || { echo '::error::باتِ پمپ (telegram-bot/index.js) در ریپوی پمپ نیست'; exit 1; }
+            mkdir -p homelab-panel/account-server/bots/pump
+            cp /tmp/pumpbot/telegram-bot/index.js homelab-panel/account-server/bots/pump/index.js
+            echo "باتِ پمپ از ریپوی پمپ: $(git -C /tmp/pumpbot rev-parse --short HEAD)"
+          else
+            echo "::notice::این سرورِ حساب هنوز جای بات (bots.js) ندارد — باتِ خودش را دارد"
+          fi
           rm -rf homelab-panel/account-server/test homelab-panel/account-server/data homelab-panel/account-server/.env homelab-panel/account-server/node_modules
           cd homelab-panel/account-server
           npm ci --omit=dev
