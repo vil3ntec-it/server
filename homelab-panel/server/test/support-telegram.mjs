@@ -294,6 +294,14 @@ try {
   press(btnOf(/👤 حساب/));
   await run();
   check('دکمهٔ «حساب» زیرِ پیامِ کاربر کارتِ همان پمپ را می‌آورد', /پمپ یعقوبی/.test(tgSent.at(-1)?.text || '') && /فعال/.test(tgSent.at(-1).text), tgSent.at(-1)?.text);
+  // 🎁 فهرستِ همهٔ حساب‌ها از منو — درِ اشتراک دادن بی جست‌وجو
+  pushUpdate({ message_id: 70, chat: { id: OWNER }, text: '🎁 اشتراک و حساب‌های پمپ' });
+  await run();
+  const list = btnOf(/✅ پمپ یعقوبی \(P-100\)/);
+  check('منوی «🎁 اشتراک و حساب‌ها» همهٔ پمپ‌ها را با وضعیت می‌آورد', !!list && /۱ حساب/.test(list.msg.text || ''), JSON.stringify(tgSent.at(-1)));
+  press(list);
+  await run();
+  check('ردیفِ فهرست ⇒ کارتِ همان حساب با «اشتراکِ تازه»', /پمپ یعقوبی/.test(tgSent.at(-1)?.text || '') && /اشتراکِ تازه با پلن/.test(JSON.stringify(tgSent.at(-1)?.reply_markup || {})), tgSent.at(-1)?.text);
   pushUpdate({ message_id: 63, chat: { id: 1234567 }, text: '/status' });
   const n63 = tgSent.length;
   await run();
