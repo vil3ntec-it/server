@@ -30,6 +30,7 @@ const MENUS = {
   ],
   pump: [
     [['💬 پیام‌های پمپ', { a: 'inbox', app: 'pump' }], ['🔎 جست‌وجوی پمپ', { a: 'find', app: 'pump' }]],
+    [['🎁 اشتراک و حساب‌های پمپ', { a: 'accounts', app: 'pump' }]],
     [['⏳ اشتراک‌های پمپ', { a: 'expiring', app: 'pump' }], ['🔑 کدِ آفلاین', { a: 'offline' }]],
     [['📋 کدهای آفلاین', { a: 'codes' }], ['⬆️ آپدیتِ برنامهٔ پمپ', { a: 'sv', p: 'pump' }]],
     [['📣 پیام به همهٔ پمپ‌ها', { a: 'broadcast', app: 'pump' }], ['📊 گزارشِ پمپ', { a: 'report', app: 'pump' }]],
@@ -37,6 +38,7 @@ const MENUS = {
   ],
   shop: [
     [['💬 پیام‌های فروشگاه', { a: 'inbox', app: 'shop' }], ['🔎 جست‌وجوی فروشگاه', { a: 'find', app: 'shop' }]],
+    [['🎁 اشتراک و حساب‌های فروشگاه', { a: 'accounts', app: 'shop' }]],
     [['⏳ اشتراک‌های فروشگاه', { a: 'expiring', app: 'shop' }], ['📣 پیام به همهٔ فروشگاه‌ها', { a: 'broadcast', app: 'shop' }]],
     [['📊 گزارشِ فروشگاه', { a: 'report', app: 'shop' }], ['🏠 منوی اصلی', { a: 'menu', to: 'main' }]],
   ],

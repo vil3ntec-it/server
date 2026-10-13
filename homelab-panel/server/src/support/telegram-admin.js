@@ -164,14 +164,44 @@ function sitesMessage() {
 async function expiringMessage(only = null) {
   const soon = Date.now() + 7 * DAY;
   const list = [];
+  const bad = [];
   for (const app of only ? [only] : ['pump', 'shop']) {
-    try { list.push(...(await search(app, '', 200)).filter((a) => ['active', 'trial'].includes(a.status) && a.endsAt && a.endsAt <= soon)); } catch { /* یک برنامه خاموش، بقیه می‌آید */ }
+    // ⚠️ خطا دیده شود: پیش‌تر «اشتراکی تمام نمی‌شود» می‌گفت وقتی سرورِ حساب اصلاً جواب نداده بود
+    try { list.push(...(await search(app, '', 200)).filter((a) => ['active', 'trial'].includes(a.status) && a.endsAt && a.endsAt <= soon)); } catch (e) { bad.push(`⚠️ ${APP[app]}: سرورِ حساب جواب نداد — ${String(e.message || e).slice(0, 150)}`); }
   }
   list.sort((x, y) => x.endsAt - y.endsAt);
-  if (!list.length) return { text: '✅ در ۷ روزِ آینده اشتراکی تمام نمی‌شود.' };
+  const warn = bad.length ? `\n\n${bad.join('\n')}` : '';
+  if (!list.length) return { text: bad.length ? bad.join('\n') : '✅ در ۷ روزِ آینده اشتراکی تمام نمی‌شود.' };
   return {
-    text: `⏳ اشتراک‌هایی که تا ۷ روزِ دیگر تمام می‌شوند (${fa(list.length)}):`,
+    text: `⏳ اشتراک‌هایی که تا ۷ روزِ دیگر تمام می‌شوند (${fa(list.length)}):${warn}`,
     reply_markup: { inline_keyboard: list.slice(0, 25).map((a) => [btn(`${APP[a.app]} ${a.name} — ${fa(daysLeft(a))} روز`.slice(0, 60), { k: 'card', app: a.app, tenantId: a.tenantId })]) },
+  };
+}
+
+// ── 🎁 همهٔ حساب‌های یک برنامه — درِ اشتراک دادن (از ۱۴۰۵/۰۷/۲۱) ─────────────
+//  گزارشِ صاحب سامانه: «ربات به اشتراک‌ها دسترسی ندارد، نمی‌توانم اشتراک بدهم».
+//  تا این‌جا تنها راه رسیدن به کارتِ حساب نوشتنِ جست‌وجو بود و «⏳ اشتراک‌ها» فقط
+//  ۷ روزِ آینده را نشان می‌داد. ⇒ فهرستِ همهٔ حساب‌ها (تازه‌ترین اول)، هر ردیف ⇒ کارت.
+const PAGE = 10;
+async function accountsMessage(app, page = 0) {
+  const all = (await search(app, '', 200)).sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
+  if (!all.length) return { text: `${APP[app]}: هنوز حسابی ثبت نشده.` };
+  const pages = Math.ceil(all.length / PAGE);
+  const p = Math.min(Math.max(0, Number(page) || 0), pages - 1);
+  const mark = (a) => ({ active: '✅', trial: '🎁', suspended: '⏸', expired: '⌛' }[a.status] || '⚪');
+  const rows = all.slice(p * PAGE, p * PAGE + PAGE).map((a) => [btn(
+    `${mark(a)} ${a.name || a.ownerEmail || 'بی‌نام'}${a.code ? ` (${a.code})` : ''}${daysLeft(a) ? ` — ${fa(daysLeft(a))} روز` : ''}`.slice(0, 60),
+    { k: 'card', app, tenantId: a.tenantId })]);
+  const nav = [];
+  if (p > 0) nav.push(btn('◀ قبلی', { k: 'accts', app, page: p - 1 }));
+  if (p < pages - 1) nav.push(btn('بعدی ▶', { k: 'accts', app, page: p + 1 }));
+  if (nav.length) rows.push(nav);
+  return {
+    text: `🎁 ${APP[app]} — ${fa(all.length)} حساب${pages > 1 ? ` (صفحهٔ ${fa(p + 1)} از ${fa(pages)})` : ''}
+✅ فعال · 🎁 آزمایشی · ⏸ معلق · ⌛ منقضی · ⚪ بی اشتراک
+
+یک حساب را بزنید ⇒ «🎁 اشتراکِ تازه با پلن» یا تمدید. برای پیدا کردنِ سریع، نام/ایمیل/کد را بنویسید.`,
+    reply_markup: { inline_keyboard: rows },
   };
 }
 
@@ -275,6 +305,11 @@ async function handleKey(key, send) {
     case 'inbox': await send(await inbox.inboxMessage(key.app ? { app: key.app } : {})); return true;
     case 'find': await send({ text: `🔎 نام، ایمیل، شماره یا کدِ ${key.app === 'pump' ? 'پمپ' : key.app === 'shop' ? 'فروشگاه' : 'حساب'} را بنویسید و بفرستید.` }); return true;
     case 'expiring': await send(await expiringMessage(key.app || null)); return true;
+    case 'accounts': {
+      // ⚠️ سرورِ حساب جواب نداد ⇒ همان خطا دیده شود، نه سکوت
+      try { await send(await accountsMessage(key.app || 'pump')); } catch (e) { await send({ text: `⚠️ ${APP[key.app] || ''}: سرورِ حساب جواب نداد — ${String(e.message || e).slice(0, 200)}` }); }
+      return true;
+    }
     case 'offline': setWiz({ step: 'computer' }); await send({ text: OFFLINE_START }); return true;
     case 'codes': await send(await codesMessage()); return true;
     case 'broadcast': await send(key.app ? inbox.broadcastTargets(key.app) : inbox.broadcastStart()); return true;
@@ -419,6 +454,7 @@ export async function handleCallback(tg, tok, chatId, cq) {
     if (a.k === 'inbox') { await answer(); await send(await inbox.inboxMessage()); return; }
     if (a.k === 'sites') { await answer(); await send(sitesMessage()); return; }
     if (a.k === 'expiring') { await answer(); await send(await expiringMessage()); return; }
+    if (a.k === 'accts') { await answer(); await edit(await accountsMessage(a.app, a.page)); return; }
     if (a.k === 'offlineStart') { await answer(); setWiz({ step: 'computer' }); await send({ text: OFFLINE_START }); return; }
     if (a.k === 'codes') { await answer(); await send(await codesMessage()); return; }
     if (a.k === 'card') { await answer(); const acc = await accountOf(a.app, a.tenantId); await send({ text: cardText(acc), reply_markup: cardKeys(acc) }); return; }
