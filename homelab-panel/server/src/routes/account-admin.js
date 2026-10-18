@@ -1690,6 +1690,8 @@ export async function createOfflineCode(b = {}, actor = 'admin', app = 'pump') {
   const body = {
     plan: String(b.plan || '').slice(0, 10),
     computer: String(b.computer || '').slice(0, 40),
+    //  🎁 گیفت‌کارت (۱۴۰۵/۰۷/۲۶): بی کدِ کامپیوتر — سرورِ حساب هشت بایتِ صفر می‌گذارد
+    gift: b.gift === true || b.gift === 'true',
     //  نسخهٔ ۲ (۱۴۰۵/۰۷/۲۰): ایمیلِ حسابی که کد به آن بسته می‌شود — خالی ⇒ هر حسابی
     account: String(b.account || '').trim().slice(0, 200),
     days: b.days === '' || b.days == null ? null : Number(b.days),
@@ -1701,7 +1703,7 @@ export async function createOfflineCode(b = {}, actor = 'admin', app = 'pump') {
     action: 'account.offline_code.create',
     entity: 'offline_code',
     entityId: out?.offline?.id || '',
-    detail: { app, plan: body.plan, computer: out?.offline?.computer || body.computer, account: body.account },
+    detail: { app, plan: body.plan, computer: out?.offline?.computer || body.computer, gift: body.gift, account: body.account },
   });
   return out;
 }

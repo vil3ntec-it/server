@@ -31,6 +31,7 @@ type Offline = {
   planTitle: string;
   computer: string;
   accountEmail?: string;
+  gift?: boolean;
   issuedAt: number;
   endsAt: number;
   permanent: boolean;
@@ -84,7 +85,7 @@ export default function OfflineCodes({ app = 'pump' }: { app?: App }) {
           <Table head={['کامپیوتر', 'حساب', 'پلن', 'تا', 'یادداشت', 'حال', 'سرور دید', 'ساخته شد', '']}>
             {(codes.data?.codes || []).map((c) => (
               <Row key={c.id}>
-                <Cell mono>{c.computer}</Cell>
+                <Cell mono>{c.gift ? '🎁 گیفت' : c.computer}</Cell>
                 <Cell>{c.accountEmail || 'هر حسابی'}</Cell>
                 <Cell>{c.planTitle}</Cell>
                 <Cell>{c.permanent ? 'دائمی' : day(c.endsAt)}</Cell>
@@ -146,6 +147,8 @@ function NewOffline({ app, onClose, onMade }: { app: App; onClose: () => void; o
   const [days, setDays] = useState('365');
   const [note, setNote] = useState('');
   const [account, setAccount] = useState('');
+  //  🎁 گیفت‌کارت (۱۴۰۵/۰۷/۲۶): بی کدِ کامپیوتر، روی هر برنامه یک بار — فقط پمپ
+  const [gift, setGift] = useState(false);
   const perm = plan === 'perm';
 
   return (
@@ -162,7 +165,7 @@ function NewOffline({ app, onClose, onMade }: { app: App; onClose: () => void; o
             onClick={async () => {
               try {
                 const out = await api<Made>(base(app), {
-                  body: { computer: computer.trim(), account: account.trim(), plan, days: perm || days === '' ? null : Number(days), note },
+                  body: { computer: gift ? '' : computer.trim(), gift, account: account.trim(), plan, days: perm || days === '' ? null : Number(days), note },
                 });
                 onClose();
                 await onMade(out);
@@ -181,9 +184,18 @@ function NewOffline({ app, onClose, onMade }: { app: App; onClose: () => void; o
         باز می‌کند و <b>یک بار</b> به کار می‌رود.
       </Notice>
 
+      {app === 'pump' && (
+        <label className="mb-3 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={gift} onChange={(e) => setGift(e.target.checked)} />
+          🎁 گیفت‌کارت — بی کدِ کامپیوتر؛ روی هر برنامه‌ای یک بار می‌نشیند و کدِ دیگر دوباره
+        </label>
+      )}
+
+      {!gift && <>
       <label className="label">{app === 'shop' ? 'شناسهٔ کامپیوترِ مشتری (۱۶ نویسه)' : 'کدِ کامپیوترِ مشتری (۱۶ نویسه)'}</label>
       <input className="input mb-3 w-full font-mono tracking-widest" dir="ltr" placeholder="XXXX-XXXX-XXXX-XXXX"
              value={computer} onChange={(e) => setComputer(e.target.value.toUpperCase())} />
+      </>}
 
       <div className="mb-3 grid grid-cols-2 gap-3">
         <div>
@@ -217,7 +229,7 @@ function MadeOffline({ app, made, onClose }: { app: App; made: Made; onClose: ()
   const [copied, setCopied] = useState(false);
   const o = made.offline;
   const where = app === 'shop' ? 'اشتراک ← کدِ اشتراکِ آفلاین' : 'پروفایل ← اشتراک و پلن‌ها ← کدِ اشتراکِ آفلاین';
-  const message = `کدِ اشتراکِ آفلاینِ برنامهٔ ${NAME_OF[app]} (${o.planTitle}${o.permanent ? '' : ` تا ${day(o.endsAt)}`}) — فقط برای کامپیوترِ ${o.computer}، یک بار:\n\n${made.code}\n\nدر برنامه: ${where} ← چسباندن و «ثبتِ کد».`;
+  const message = `کدِ اشتراکِ آفلاینِ برنامهٔ ${NAME_OF[app]} (${o.planTitle}${o.permanent ? '' : ` تا ${day(o.endsAt)}`}) — ${o.gift ? 'گیفت‌کارت، روی هر کامپیوتر یک بار' : `فقط برای کامپیوترِ ${o.computer}، یک بار`}:\n\n${made.code}\n\nدر برنامه: ${where} ← چسباندن و «ثبتِ کد».`;
 
   return (
     <Modal
@@ -229,7 +241,7 @@ function MadeOffline({ app, made, onClose }: { app: App; made: Made; onClose: ()
       <Notice tone="warn">این کد را همین حالا بردارید — با بستنِ این پنجره دیگر دیده نمی‌شود.</Notice>
 
       <div className="my-3 text-sm">
-        {o.planTitle} · {o.permanent ? 'دائمی' : `${fa(Math.round((o.endsAt - o.issuedAt) / 86400000))} روز، تا ${day(o.endsAt)}`} · کامپیوترِ <span className="font-mono" dir="ltr">{o.computer}</span>
+        {o.planTitle} · {o.permanent ? 'دائمی' : `${fa(Math.round((o.endsAt - o.issuedAt) / 86400000))} روز، تا ${day(o.endsAt)}`} · {o.gift ? '🎁 گیفت‌کارت (هر کامپیوتر)' : <>کامپیوترِ <span className="font-mono" dir="ltr">{o.computer}</span></>}
       </div>
 
       <pre className="whitespace-pre-wrap break-all rounded-xl p-3 font-mono text-sm leading-7" dir="ltr"
@@ -252,7 +264,7 @@ function MadeOffline({ app, made, onClose }: { app: App; made: Made; onClose: ()
             const blob = new Blob([JSON.stringify(made.file, null, 2)], { type: 'application/json' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `pump-${o.computer}.pumpkey`;
+            a.download = `pump-${o.gift ? 'gift-' + o.serial : o.computer}.pumpkey`;
             a.click();
             setTimeout(() => URL.revokeObjectURL(a.href), 1000);
           }}

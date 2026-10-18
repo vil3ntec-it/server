@@ -1379,6 +1379,11 @@ try {
     offSeen && offSeen.body?.plan === 'perm' && offSeen.body?.days === null && !('extra' in (offSeen.body || {}))
       && offSeen.body?.account === 'owner@pump.test',
     JSON.stringify(offSeen?.body));
+  check('پیش‌فرض گیفت نیست', offSeen?.body?.gift === false, JSON.stringify(offSeen?.body));
+  await api('POST', '/api/account-admin/offline-codes', { plan: 'vip', gift: true, days: 30 }, auth);
+  const giftSeen = seen.filter((r) => r.path === '/api/admin/pump/offline-codes' && r.method === 'POST').at(-1);
+  check('🎁 گیفت‌کارت بی کدِ کامپیوتر به سرورِ حساب می‌رود',
+    giftSeen?.body?.gift === true && giftSeen?.body?.computer === '', JSON.stringify(giftSeen?.body));
   const offRevoke = await api('POST', '/api/account-admin/offline-codes/of1/revoke', {}, auth);
   check('کدِ آفلاین باطل می‌شود', offRevoke.status === 200 && offRevoke.json?.offline?.status === 'revoked', String(offRevoke.status));
   //  ⛔ برنامهٔ ادمینِ اندروید (‎ui/OfflineCodesTab.kt‎) همین فیلدها را می‌خواند —
