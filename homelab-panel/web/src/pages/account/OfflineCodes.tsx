@@ -108,6 +108,8 @@ export default function OfflineCodes({ app = 'pump' }: { app?: App }) {
         )}
       </Card>
 
+      {app === 'pump' && <ShortCodes />}
+
       {making && (
         <NewOffline
           app={app}
@@ -274,5 +276,82 @@ function MadeOffline({ app, made, onClose }: { app: App; made: Made; onClose: ()
         </button>}
       </div>
     </Modal>
+  );
+}
+
+/* ── 🔢 کدِ ۸ رقمیِ روزدار (۱۴۰۵/۰۷/۲۶) ─────────────────────────────────
+ *  «کدش در حد شش یا هشت رقمی باشه… مشتری‌هایی که نت ندارن… مقدار روز که
+ *  می‌خوام رو بزارم و بعد با کد بدم به برنامه.» بی کدِ کامپیوتر؛ مهلت از روزِ
+ *  زدن در برنامه؛ هر کد روی هر برنامه یک بار. */
+type Short = { id: string; code: string; days: number; note: string; createdAt: number };
+
+function ShortCodes() {
+  const list = useLoad<{ codes: Short[] }>('/api/account-admin/short-codes', []);
+  const [days, setDays] = useState('30');
+  const [note, setNote] = useState('');
+  const [made, setMade] = useState<Short | null>(null);
+
+  return (
+    <Card title="🔢 کدِ ۸ رقمی — فقط روز، بی کدِ کامپیوتر" icon={<KeyRound className="h-4 w-4" />}>
+      <Notice tone="info">
+        روز را بزنید (۱ تا ۳۶۵) ⇒ یک کدِ ۸ رقمی. مشتری در برنامه «پروفایل ← اشتراک و پلن‌ها» می‌زند؛ مهلت از همان روز
+        شمرده می‌شود (وی‌آی‌پی). هر کد روی هر برنامه <b>یک بار</b>؛ برای همان مشتری دوباره، کدِ تازه بسازید.
+      </Notice>
+      <div className="my-3 flex flex-wrap items-end gap-2">
+        <div>
+          <label className="label">روز</label>
+          <input className="input w-28" inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value)} />
+        </div>
+        <div className="min-w-48 flex-1">
+          <label className="label">یادداشت (نامِ مشتری…)</label>
+          <input className="input w-full" value={note} onChange={(e) => setNote(e.target.value)} />
+        </div>
+        <ActionButton
+          className="btn btn-primary"
+          busyLabel="…"
+          onClick={async () => {
+            try {
+              const out = await api<{ short: Short }>('/api/account-admin/short-codes', { body: { days: Number(days), note } });
+              setMade(out.short);
+              setNote('');
+              await list.reload();
+            } catch (e) {
+              toast(e instanceof Error ? e.message : 'نشد', 'bad');
+            }
+          }}
+        >
+          ساختنِ کدِ ۸ رقمی
+        </ActionButton>
+      </div>
+      {made && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl p-3" style={{ background: 'var(--surface-raised)' }}>
+          <span className="font-mono text-2xl font-black tracking-widest" dir="ltr">{made.code}</span>
+          <span className="text-sm">{fa(made.days)} روز</span>
+          <button
+            className="btn btn-sm"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(`کدِ اشتراکِ برنامهٔ پمپ بنزین (${made.days} روز): ${made.code}\nدر برنامه: پروفایل ← اشتراک و پلن‌ها ← کادرِ کد ← «ثبتِ کد».`);
+                toast('کپی شد');
+              } catch { toast('کپی نشد — دستی برش دارید', 'bad'); }
+            }}
+          >
+            <Copy className="h-4 w-4" /> کپی
+          </button>
+        </div>
+      )}
+      {(list.data?.codes.length || 0) > 0 && (
+        <Table head={['کد', 'روز', 'یادداشت', 'ساخته شد']}>
+          {(list.data?.codes || []).map((c) => (
+            <Row key={c.id}>
+              <Cell mono>{c.code}</Cell>
+              <Cell>{fa(c.days)}</Cell>
+              <Cell>{c.note || '—'}</Cell>
+              <Cell>{moment(c.createdAt)}</Cell>
+            </Row>
+          ))}
+        </Table>
+      )}
+    </Card>
   );
 }

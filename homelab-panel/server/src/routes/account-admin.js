@@ -1685,6 +1685,24 @@ router.post('/offline-codes/:id/revoke', money, guard(async (req, res) => {
   res.json(await revokeOfflineCode(req.params.id, actorOf(req), offlineApp(req)));
 }));
 
+/*
+ *  🔢 کدِ ۸ رقمیِ روزدارِ پمپ (۱۴۰۵/۰۷/۲۶، shop/server/src/lib/pump-short-codes.js):
+ *  «کدش در حد شش یا هشت رقمی باشه… مقدار روز که می‌خوام.» فقط `days` و `note` می‌رود.
+ */
+router.get('/short-codes', guard(async (req, res) => {
+  res.json(await cloudRaw('GET', '/api/admin/pump/short-codes', {
+    query: { limit: Math.min(500, Math.max(1, Number(req.query.limit) || 100)) },
+  }));
+}));
+
+router.post('/short-codes', money, guard(async (req, res) => {
+  const b = req.body || {};
+  const body = { days: Number(b.days), note: String(b.note || '').slice(0, 300) };
+  const out = await cloudRaw('POST', '/api/admin/pump/short-codes', { body });
+  audit({ actor: actorOf(req), action: 'account.short_code.create', entity: 'short_code', entityId: out?.short?.id || '', detail: { days: body.days } });
+  res.json(out);
+}));
+
 /** ⛔ تنها جای ساختنِ کدِ آفلاین — پنلِ وب و رباتِ تلگرام هر دو همین را صدا می‌زنند. */
 export async function createOfflineCode(b = {}, actor = 'admin', app = 'pump') {
   const body = {
