@@ -587,6 +587,8 @@ const fake = http.createServer((req, res) => {
     //  کدِ اشتراکِ آفلاین — فقط پمپ (shop/server/src/lib/offline-codes.js)
     if (p === '/api/admin/pump/offline-codes' && req.method === 'GET') return j(200, { codes: [{ id: 'of1', serial: 'a1b2c3d4e5f6', plan: 'vip', planTitle: 'وی‌آی‌پی', computer: 'C6PJ-6CTR-HPA7-DF35', status: 'issued', createdAt: NOW }] });
     if (p === '/api/admin/pump/offline-codes' && req.method === 'POST') return j(201, { code: 'ABCDE-FGHJK', offline: { id: 'of2', plan: body?.plan, computer: body?.computer }, file: { format: 'pumpyaqobi-offline-key', code: 'ABCDE-FGHJK' } });
+    if (p === '/api/admin/pump/short-codes' && req.method === 'GET') return j(200, { codes: [{ id: 'psc1', code: '0471-8293', days: 30, note: '', createdAt: NOW }] });
+    if (p === '/api/admin/pump/short-codes' && req.method === 'POST') return j(201, { short: { id: 'psc2', code: '9409-6184', days: body?.days, note: body?.note } });
     if (/^\/api\/admin\/pump\/offline-codes\/[^/]+\/revoke$/.test(p)) return j(200, { offline: { id: 'of1', status: 'revoked' } });
 
     if (p === '/api/admin/purchase-requests') return j(200, { requests: [{ id: 'pr1', shop_id: 's1', user_id: 'u1', plan_code: 'm1', note: '', status: 'pending', created_at: NOW - 3600e3, shop_name: 'دکانِ یک', user_name: 'کریم', phone: '' }] });
@@ -1379,6 +1381,18 @@ try {
     offSeen && offSeen.body?.plan === 'perm' && offSeen.body?.days === null && !('extra' in (offSeen.body || {}))
       && offSeen.body?.account === 'owner@pump.test',
     JSON.stringify(offSeen?.body));
+  check('پیش‌فرض گیفت نیست', offSeen?.body?.gift === false, JSON.stringify(offSeen?.body));
+  await api('POST', '/api/account-admin/offline-codes', { plan: 'vip', gift: true, days: 30 }, auth);
+  const giftSeen = seen.filter((r) => r.path === '/api/admin/pump/offline-codes' && r.method === 'POST').at(-1);
+  check('🎁 گیفت‌کارت بی کدِ کامپیوتر به سرورِ حساب می‌رود',
+    giftSeen?.body?.gift === true && giftSeen?.body?.computer === '', JSON.stringify(giftSeen?.body));
+  const scList = await api('GET', '/api/account-admin/short-codes', undefined, auth);
+  check('🔢 کدهای ۸ رقمی از پنل دیده می‌شوند', scList.status === 200 && scList.json?.codes?.[0]?.code === '0471-8293', JSON.stringify(scList.json));
+  const scMake = await api('POST', '/api/account-admin/short-codes', { days: '45', note: 'بی‌نت', computer: 'x' }, auth);
+  const scSeen = seen.filter((r) => r.path === '/api/admin/pump/short-codes' && r.method === 'POST').at(-1);
+  check('🔢 کدِ ۸ رقمی ساخته می‌شود و پل فقط روز و یادداشت می‌برد',
+    scMake.status === 200 && scMake.json?.short?.code === '9409-6184' && scSeen?.body?.days === 45 && !('computer' in (scSeen?.body || {})),
+    `${scMake.status} ${JSON.stringify(scSeen?.body)}`);
   const offRevoke = await api('POST', '/api/account-admin/offline-codes/of1/revoke', {}, auth);
   check('کدِ آفلاین باطل می‌شود', offRevoke.status === 200 && offRevoke.json?.offline?.status === 'revoked', String(offRevoke.status));
   //  ⛔ برنامهٔ ادمینِ اندروید (‎ui/OfflineCodesTab.kt‎) همین فیلدها را می‌خواند —
