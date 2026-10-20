@@ -23,7 +23,7 @@ import { cloudRaw } from '../stations/cloud.js';
 import { readCpu, readMemory, readDisks } from '../metrics/system.js';
 import { listSitesRaw, getSite } from '../sites/registry.js';
 import { isRunning, startSite, stopSite, restartSite } from '../sites/process.js';
-import { grantSubscription, extendSubscription, setSubscriptionStatus, createOfflineCode, revokeOfflineCode } from '../routes/account-admin.js';
+import { grantSubscription, extendSubscription, setSubscriptionStatus, createOfflineCode, createShortCode, revokeOfflineCode } from '../routes/account-admin.js';
 import { tgFile } from './telegram.js';
 import * as inbox from './telegram-inbox.js';
 import { settingsMessage, reportText, setPrefs } from './telegram-watch.js';
@@ -221,7 +221,22 @@ async function codesMessage() {
   };
 }
 
-const OFFLINE_START = '🔑 کدِ اشتراکِ آفلاینِ پمپ\n\nکدِ کامپیوترِ مشتری را بفرستید.\n(در برنامهٔ پمپ: پروفایل ← اشتراک و پلن‌ها)\n‎/cancel‎ برای انصراف';
+const OFFLINE_START = '🔑 کدِ اشتراکِ آفلاینِ پمپ\n\nکدِ کامپیوترِ مشتری را بفرستید.\n(در برنامهٔ پمپ: پروفایل ← اشتراک و پلن‌ها)\nیا «گیفت» برای 🎁 گیفت‌کارت — بی کدِ کامپیوتر، روی هر برنامه یک بار.\n‎/cancel‎ برای انصراف';
+
+// ── 🎁 گیفت‌کارت و 🔢 کدِ ۸ رقمیِ روزدار (۱۴۰۵/۰۷/۲۸) ──────────────────────
+//  «ببین ربات کدِ گیفت‌کارتِ هشت رقمی را می‌دهد یا نه» — همان دو کارِ پنل
+//  (‎OfflineCodes.tsx‎)، از همان دو تابعِ یگانه (‎createOfflineCode‎ با ‎gift‎، ‎createShortCode‎).
+const GIFT_RE = /^(گیفت|گیفت‌کارت|gift)$/i;
+const GIFT_START = '🎁 گیفت‌کارتِ اشتراکِ پمپ — بی کدِ کامپیوتر، روی هر برنامه فقط یک بار.\n\nایمیلِ حسابِ مشتری را بفرستید تا کد فقط به همان حساب بخورد،\nیا «-» برای هر حساب.\n‎/cancel‎ برای انصراف';
+const SHORT_DAYS = [7, 15, 30, 90, 180, 365];
+const SHORT_MAX = 365;
+const faDigits = (s) => String(s).replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+function shortStart() {
+  return {
+    text: '🔢 کدِ ۸ رقمیِ روزدارِ پمپ — برای مشتریِ بی‌اینترنت؛ مهلت از روزی که در برنامه زده شود.\n\nچند روز؟ یکی از دکمه‌ها، یا عدد (۱ تا ۳۶۵) را بفرستید.\n‎/cancel‎ برای انصراف',
+    reply_markup: { inline_keyboard: [SHORT_DAYS.slice(0, 3), SHORT_DAYS.slice(3)].map((row) => row.map((d) => btn(`${fa(d)} روز`, { k: 'short', days: d }))) },
+  };
+}
 
 /** پاسخِ قدمِ بعدیِ ساختنِ کد — true یعنی پیام مالِ همین بود. */
 async function wizardStep(send, text) {
@@ -241,6 +256,20 @@ async function wizardStep(send, text) {
     await send({ text: `📣 پیش‌نمایش — ${inbox.BC_APPS[w.app]} · ${inbox.BC_TARGETS[w.target]}\n\n${body}\n\nبه همه فرستاده شود؟`, reply_markup: { inline_keyboard: [[{ ...yes, callback_data: yes.callback_data.replace(/^a:/, 'y:') }]] } });
     return true;
   }
+  if (w.step === 'short_days') {
+    const days = Number(faDigits(text.trim()));
+    if (!Number.isInteger(days) || days < 1 || days > SHORT_MAX) { await send({ text: '❌ روز باید عددِ ۱ تا ۳۶۵ باشد. دوباره بفرستید یا ‎/cancel‎.' }); return true; }
+    setWiz(null);
+    const a = { k: 'short', days };
+    const yes = btn('✅ بله، انجام بده', a);
+    await send({ text: confirmText(a), reply_markup: { inline_keyboard: [[{ ...yes, callback_data: yes.callback_data.replace(/^a:/, 'y:') }]] } });
+    return true;
+  }
+  if (w.step === 'computer' && GIFT_RE.test(text.trim())) {
+    setWiz({ step: 'account', computer: '', gift: true });
+    await send({ text: GIFT_START });
+    return true;
+  }
   if (w.step === 'computer') {
     const computer = text.replace(/\s+/g, '').toUpperCase();
     if (!COMPUTER_RE.test(computer)) { await send({ text: '❌ کدِ کامپیوتر فقط حرف و رقم و خطِ تیره است (۴ تا ۴۰). دوباره بفرستید یا ‎/cancel‎.' }); return true; }
@@ -252,27 +281,29 @@ async function wizardStep(send, text) {
     const account = text === '-' || text === '—' ? '' : text.toLowerCase();
     if (account && !EMAIL_RE.test(account)) { await send({ text: '❌ ایمیل درست نیست. دوباره بفرستید، یا «-» برای هر حساب.' }); return true; }
     setWiz(null);
+    const gift = w.gift === true;
     await send({
-      text: `کامپیوتر: ${w.computer}\nحساب: ${account || 'هر حساب'}\n\nکدام پلن؟`,
-      reply_markup: { inline_keyboard: [OFFLINE_PLANS.map((p) => btn(`${p.title}${p.days ? ` · ${fa(p.days)} روز` : ''}`, { k: 'offline', computer: w.computer, account, plan: p.code, planTitle: p.title, days: p.days }))] },
+      text: `${gift ? '🎁 گیفت‌کارت (بی کدِ کامپیوتر)' : `کامپیوتر: ${w.computer}`}\nحساب: ${account || 'هر حساب'}\n\nکدام پلن؟`,
+      reply_markup: { inline_keyboard: [OFFLINE_PLANS.map((p) => btn(`${p.title}${p.days ? ` · ${fa(p.days)} روز` : ''}`, { k: 'offline', computer: gift ? '' : w.computer, gift, account, plan: p.code, planTitle: p.title, days: p.days }))] },
     });
     return true;
   }
   return false;
 }
 
-async function sendOffline(tok, chatId, out) {
+async function sendOffline(tok, chatId, out, gift = false) {
   const o = out.offline || {};
-  const msg = `کدِ اشتراکِ آفلاینِ برنامهٔ پمپ بنزین (${o.planTitle || o.plan}${o.permanent ? '' : o.endsAt ? ` تا ${dateFa(o.endsAt)}` : ''}) — فقط برای کامپیوترِ ${o.computer}:\n\n${out.code}\n\nدر برنامه: پروفایل ← اشتراک و پلن‌ها ← کدِ اشتراکِ آفلاین ← چسباندن و «ثبتِ کد».`;
+  const who = gift ? 'گیفت‌کارت — روی هر برنامه فقط یک بار' : `فقط برای کامپیوترِ ${o.computer}`;
+  const msg = `کدِ اشتراکِ آفلاینِ برنامهٔ پمپ بنزین (${o.planTitle || o.plan}${o.permanent ? '' : o.endsAt ? ` تا ${dateFa(o.endsAt)}` : ''}) — ${who}:\n\n${out.code}\n\nدر برنامه: پروفایل ← اشتراک و پلن‌ها ← کدِ اشتراکِ آفلاین ← چسباندن و «ثبتِ کد».`;
   const tgSend = (body) => tgFile(tok, 'sendDocument', { chat_id: chatId, caption: '📎 فایلِ ‎.pumpkey‎ — همین را هم می‌شود برای مشتری فرستاد', ...body },
-    { name: `pump-${o.computer}.pumpkey`, data: JSON.stringify(out.file || {}, null, 2), type: 'application/json' });
+    { name: gift ? 'pump-gift.pumpkey' : `pump-${o.computer}.pumpkey`, data: JSON.stringify(out.file || {}, null, 2), type: 'application/json' });
   return { msg, tgSend };
 }
 
 //  پیشنهادِ دستورها در تلگرام («/» را که بزنید) — فقط برای گفت‌وگوی مالک
 export const COMMANDS = [
   ['start', 'منوی اصلی'], ['pump', 'منوی پمپ بنزین'], ['shop', 'منوی فروشگاه'], ['sites', 'منوی سایت‌ها'], ['server', 'منوی سرور'], ['inbox', 'گفت‌وگوهای منتظرِ جواب'], ['find', 'جست‌وجوی حساب'], ['expiring', 'اشتراک‌های رو به پایان'],
-  ['offline', 'کدِ اشتراکِ آفلاینِ پمپ'], ['codes', 'کدهای آفلاین و باطل کردن'], ['status', 'وضعیتِ سرور'],
+  ['offline', 'کدِ اشتراکِ آفلاینِ پمپ'], ['short', 'کدِ ۸ رقمیِ روزدارِ پمپ'], ['gift', 'گیفت‌کارتِ پمپ'], ['codes', 'کدهای آفلاین و باطل کردن'], ['status', 'وضعیتِ سرور'],
   ['update', 'آپدیتِ کنترول سنتر'], ['report', 'گزارشِ امروز'], ['broadcast', 'پیامِ همگانی'], ['quick', 'جواب‌های آماده'], ['settings', 'تنظیماتِ ربات'],
   ['done', 'پایانِ «در حالِ نوشتن»'], ['cancel', 'انصراف'], ['logout', 'خروج'],
 ].map(([command, description]) => ({ command, description }));
@@ -311,6 +342,8 @@ async function handleKey(key, send) {
       return true;
     }
     case 'offline': setWiz({ step: 'computer' }); await send({ text: OFFLINE_START }); return true;
+    case 'short': setWiz({ step: 'short_days' }); await send(shortStart()); return true;
+    case 'gift': setWiz({ step: 'account', computer: '', gift: true }); await send({ text: GIFT_START }); return true;
     case 'codes': await send(await codesMessage()); return true;
     case 'broadcast': await send(key.app ? inbox.broadcastTargets(key.app) : inbox.broadcastStart()); return true;
     case 'report': await send({ text: await reportText(key.app || null) }); return true;
@@ -357,6 +390,8 @@ export async function handleCommand(tg, tok, chatId, m) {
   if (name === 'find' && !(cmd && cmd[2].trim())) return handleKey({ a: 'find', app: menus.menuApp() }, send);
   if (name === 'quick') { await send(inbox.quickManage()); return true; }
   if (name === 'offline') { setWiz({ step: 'computer' }); await send({ text: OFFLINE_START }); return true; }
+  if (name === 'short') return handleKey({ a: 'short' }, send);
+  if (name === 'gift') return handleKey({ a: 'gift' }, send);
   if (name === 'codes') { await send(await codesMessage()); return true; }
   const q = (name === 'find' ? cmd[2] : cmd ? '' : text).trim().slice(0, 60);
   if (!q) { await send({ text: `دستورِ «${text.slice(0, 30)}» را نمی‌شناسم.\n\n${MENU_TEXT}`, reply_markup: menus.keyboardFor() }); return true; }
@@ -372,13 +407,14 @@ export async function handleCommand(tg, tok, chatId, m) {
 }
 
 // ── دکمه‌ها ────────────────────────────────────────────────────────────
-const CONFIRM = new Set(['extend', 'status', 'grant', 'site', 'offline', 'revoke', 'quickSend', 'quickDel', 'bcSend']);
+const CONFIRM = new Set(['extend', 'status', 'grant', 'site', 'offline', 'short', 'revoke', 'quickSend', 'quickDel', 'bcSend']);
 
 function confirmText(a) {
   if (a.k === 'extend') return `➕ ${fa(a.amount)} ${UNIT[a.unit] || a.unit} به این اشتراک اضافه شود؟`;
   if (a.k === 'status') return { active: '▶ این اشتراک دوباره فعال شود؟', suspended: '⏸ این اشتراک معلق شود؟ برنامهٔ کاربر قفل می‌شود.', cancelled: '✖ این اشتراک لغو شود؟ روزهای مانده صفر می‌شود.' }[a.status] || 'انجام شود؟';
   if (a.k === 'grant') return `🎁 پلنِ «${a.planName || a.plan}» به این حساب داده شود؟`;
-  if (a.k === 'offline') return `🔑 کدِ آفلاینِ «${a.planTitle}»${a.days ? ` (${fa(a.days)} روز)` : ''} برای کامپیوترِ ${a.computer}${a.account ? ` و حسابِ ${a.account}` : ''} ساخته شود؟`;
+  if (a.k === 'offline') return `${a.gift ? '🎁 گیفت‌کارتِ' : '🔑 کدِ آفلاینِ'} «${a.planTitle}»${a.days ? ` (${fa(a.days)} روز)` : ''} ${a.gift ? 'بی کدِ کامپیوتر' : `برای کامپیوترِ ${a.computer}`}${a.account ? ` و حسابِ ${a.account}` : ''} ساخته شود؟`;
+  if (a.k === 'short') return `🔢 کدِ ۸ رقمیِ ${fa(a.days)} روزه ساخته شود؟ (مهلت از روزی که در برنامه زده شود)`;
   if (a.k === 'revoke') return `⛔ کدِ آفلاینِ کامپیوترِ ${a.computer} باطل شود؟ (روی کامپیوتری که هرگز آنلاین نشود تا پایانِ مهلتش اثر ندارد)`;
   if (a.k === 'quickSend') return `⚡ این جواب به ${a.label} برود؟\n\n«${a.text}»`;
   if (a.k === 'quickDel') return `🗑 این جوابِ آماده پاک شود؟\n\n«${a.text}»`;
@@ -482,11 +518,21 @@ export async function handleCallback(tg, tok, chatId, cq) {
     await answer('در حالِ انجام…');
     if (a.k === 'offline') {
       // ⛔ خودِ کد فقط در تلگرامِ مالک — نه در لاگ، نه در دفترِ ممیزی
-      const out = await createOfflineCode({ plan: a.plan, computer: a.computer, account: a.account, days: a.days, note: 'از رباتِ تلگرام' }, ACTOR);
-      const { msg, tgSend } = await sendOffline(tok, chatId, out);
+      const out = await createOfflineCode({ plan: a.plan, computer: a.computer, gift: a.gift === true, account: a.account, days: a.days, note: 'از رباتِ تلگرام' }, ACTOR);
+      const { msg, tgSend } = await sendOffline(tok, chatId, out, a.gift === true);
       await edit({ text: '✅ کد ساخته شد. پیامِ زیر را برای مشتری Forward کنید:' });
       await send({ text: msg });
       await tgSend({}).catch((e) => send({ text: `⚠️ فایلِ ‎.pumpkey‎ نرفت: ${e.message}` }));
+      return;
+    }
+    if (a.k === 'short') {
+      setWiz(null);
+      // ⛔ خودِ کد فقط در تلگرامِ مالک — نه در لاگ، نه در دفترِ ممیزی
+      const out = await createShortCode({ days: a.days, note: 'از رباتِ تلگرام' }, ACTOR);
+      const code = out?.short?.code || '';
+      if (!code) throw new Error('سرورِ حساب کدی نداد');
+      await edit({ text: '✅ کد ساخته شد. پیامِ زیر را برای مشتری Forward کنید:' });
+      await send({ text: `کدِ اشتراکِ برنامهٔ پمپ بنزین — ${fa(a.days)} روز از روزی که زده شود (وی‌آی‌پی، بی‌اینترنت):\n\n${code}\n\nدر برنامه: پروفایل ← اشتراک و پلن‌ها ← کادرِ «کدِ ۸ رقمی…» ← همین ۸ رقم و «ثبتِ کد».` });
       return;
     }
     if (a.k === 'quickSend') { await inbox.replyTo(tok, a.ref, { text: a.text }); await edit({ text: `✅ به ${a.label} رسید:\n«${a.text}»` }); return; }

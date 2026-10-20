@@ -1696,12 +1696,16 @@ router.get('/short-codes', guard(async (req, res) => {
 }));
 
 router.post('/short-codes', money, guard(async (req, res) => {
-  const b = req.body || {};
+  res.json(await createShortCode(req.body || {}, actorOf(req)));
+}));
+
+/** ⛔ تنها جای ساختنِ کدِ ۸ رقمی — پنلِ وب و رباتِ تلگرام (۱۴۰۵/۰۷/۲۸) هر دو همین را صدا می‌زنند. */
+export async function createShortCode(b = {}, actor = 'admin') {
   const body = { days: Number(b.days), note: String(b.note || '').slice(0, 300) };
   const out = await cloudRaw('POST', '/api/admin/pump/short-codes', { body });
-  audit({ actor: actorOf(req), action: 'account.short_code.create', entity: 'short_code', entityId: out?.short?.id || '', detail: { days: body.days } });
-  res.json(out);
-}));
+  audit({ actor, action: 'account.short_code.create', entity: 'short_code', entityId: out?.short?.id || '', detail: { days: body.days } });
+  return out;
+}
 
 /** ⛔ تنها جای ساختنِ کدِ آفلاین — پنلِ وب و رباتِ تلگرام هر دو همین را صدا می‌زنند. */
 export async function createOfflineCode(b = {}, actor = 'admin', app = 'pump') {
