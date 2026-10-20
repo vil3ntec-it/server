@@ -65,6 +65,8 @@ export const ACCOUNT_PREFIXES = Object.freeze([
   'portal', 'downloads', 'rep', 'releases',
   //  ویترین و پیک (shop ۲۲.۲، پشتِ پرچم): ‎/api/store‎ و ‎/api/courier‎
   'store', 'courier',
+  //  بازارچه (shop #324، پشتِ پرچمِ market.directory): ‎/api/market‎
+  'market',
 ]);
 
 /** زیرِ ‎/api/v1‎ این‌ها مالِ خودِ این سرورند و هرگز رد نمی‌شوند. */

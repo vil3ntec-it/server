@@ -27,6 +27,7 @@ const threads = new Map([
 ]);
 const posts = [];
 const offline = [];
+const shorts = [];
 let pumpBot = 'controlcenterbot';
 const acct = { status: 'active', endsAt: now + 3 * 864e5, grants: [], statuses: [] };
 const fake = http.createServer((req, res) => {
@@ -61,6 +62,11 @@ const fake = http.createServer((req, res) => {
     }
     if (p === '/api/admin/telegram') return j(200, { telegram: { username: pumpBot } });
     if (p === '/api/admin/pump/offline-codes' && req.method === 'GET') return j(200, { codes: offline });
+    if (p === '/api/admin/pump/short-codes' && req.method === 'POST') {
+      const body = JSON.parse(raw || '{}');
+      shorts.push(body);
+      return j(201, { short: { id: `psc${shorts.length}`, code: '4718-2930', days: body.days, note: body.note, createdAt: Date.now() } });
+    }
     if (p === '/api/admin/pump/offline-codes' && req.method === 'POST') {
       const body = JSON.parse(raw || '{}');
       const o = { id: `oc${offline.length + 1}`, plan: body.plan, planTitle: body.plan === 'vip' ? 'وی‌آی‌پی' : body.plan, computer: body.computer, accountEmail: body.account, issuedAt: Date.now(), endsAt: Date.now() + (body.days || 0) * 864e5, permanent: body.days == null, note: body.note, status: 'active', body };
@@ -336,6 +342,31 @@ try {
   check('باطل از تلگرام', offline[0].status === 'revoked');
   say(75, '/offline'); await run(); say(76, '/cancel'); await run(); say(77, 'XYZ-9999'); await run();
   check('/cancel ⇒ متنِ بعدی دیگر کدِ کامپیوتر نیست', offline.length === 1 && !/ایمیلِ حسابِ مشتری/.test(tgSent.at(-1)?.text || ''));
+
+  console.log('\n── ۶ب) 🎁 گیفت‌کارت و 🔢 کدِ ۸ رقمیِ روزدار (۱۴۰۵/۰۷/۲۸) ──');
+  say(90, '/offline'); await run(); say(91, 'گیفت'); await run();
+  check('«گیفت» به‌جای کدِ کامپیوتر ⇒ گیفت‌کارت، ایمیل می‌خواهد', /گیفت‌کارت/.test(tgSent.at(-1)?.text || '') && /ایمیل/.test(tgSent.at(-1).text));
+  say(92, '-'); await run();
+  press(btnOf(/وی‌آی‌پی/)); await run();
+  check('تأییدِ گیفت بی کدِ کامپیوتر', /گیفت‌کارتِ/.test(tgSent.at(-1)?.text || '') && /بی کدِ کامپیوتر/.test(tgSent.at(-1).text));
+  press(btnOf(/بله، انجام بده/)); await run();
+  const gc = offline[0]?.body || {};
+  check('گیفت با gift:true و بی کامپیوتر به سرور رفت', gc.gift === true && gc.computer === '' && gc.plan === 'vip', JSON.stringify(gc));
+  check('پیامِ مشتری می‌گوید روی هر برنامه یک بار', tgSent.some((x) => /PUMP1-SECRET-CODE-XYZ/.test(x.text || '') && /هر برنامه فقط یک بار/.test(x.text)));
+  say(93, '/short'); await run();
+  check('/short روزها را می‌پرسد با دکمه‌های آماده', /۸ رقمی/.test(tgSent.at(-1)?.text || '') && !!btnOf(/۳۰ روز/));
+  say(94, '400'); await run();
+  check('روزِ بیرون از ۱ تا ۳۶۵ رد شد', /❌/.test(tgSent.at(-1)?.text || '') && shorts.length === 0);
+  say(95, '۴۵'); await run();
+  check('رقمِ فارسی پذیرفته و پیش از تأیید کدی ساخته نشد', shorts.length === 0 && /۴۵ روزه/.test(tgSent.at(-1)?.text || ''), tgSent.at(-1)?.text);
+  press(btnOf(/بله، انجام بده/)); await run();
+  check('کدِ ۸ رقمیِ ۴۵ روزه ساخته شد', shorts.length === 1 && shorts[0].days === 45, JSON.stringify(shorts));
+  check('پیامِ آمادهٔ مشتری با خودِ ۸ رقم', tgSent.some((x) => /4718-2930/.test(x.text || '') && /۴۵ روز/.test(x.text)));
+  press(btnOf(/۳۰ روز/)); await run();
+  press(btnOf(/بله، انجام بده/)); await run();
+  check('دکمهٔ «۳۰ روز» هم با تأیید ساخت', shorts.length === 2 && shorts[1].days === 30, JSON.stringify(shorts));
+  r = await call('GET', '/api/control/audit?limit=50');
+  check('کدِ ۸ رقمی در دفترِ ممیزی هست ولی خودِ کد نه', /short_code/.test(JSON.stringify(r.body)) && !JSON.stringify(r.body).includes('4718-2930'));
 
   console.log('\n── ۷) خروج، عوض شدنِ رمز، و قفلِ ۵ بار ──');
   say(80, '/logout'); await run();
