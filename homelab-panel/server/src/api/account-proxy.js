@@ -67,6 +67,8 @@ export const ACCOUNT_PREFIXES = Object.freeze([
   'store', 'courier',
   //  بازارچه (shop #324، پشتِ پرچمِ market.directory): ‎/api/market‎
   'market',
+  //  رسیدِ عمومیِ هر فاکتور (shop #369، QRِ فاکتور): ‎/api/receipt‎
+  'receipt',
 ]);
 
 /** زیرِ ‎/api/v1‎ این‌ها مالِ خودِ این سرورند و هرگز رد نمی‌شوند. */
