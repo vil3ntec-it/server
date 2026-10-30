@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'قاعدهٔ اسکیل‌ها (بندِ ۴ِ CLAUDE.md): پیش از نخستین پاسخ، هر سه اسکیل را با ابزارِ Skill بخوان: anthropic-skills:smart-coding-core و anthropic-skills:exact-implementation-pro-max و anthropic-skills:elite-product-engineering-ultimate-memory. یک بار در هر سیزن (و دوباره پس از compact)؛ تا پایانِ سیزن در حافظه نگه‌دار و در همهٔ کارها به کار ببر.'"
+          }
+        ]
+      }
+    ]
+  }
+}
