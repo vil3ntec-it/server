@@ -128,6 +128,22 @@ async function main() {
   check('/ready نوشتن روی دیسک را می‌زند', r.json?.checks?.some((c) => c.name === 'storage' && c.ok));
   check('/ready هیچ مسیرِ فایلی لو نمی‌دهد', !r.text.includes(dataDir));
 
+  /*
+   *  ⛔ هر روتری که در ‎routes/v1.js‎ سوار است نگهبانِ خودش را دارد — نگهبانِ
+   *  ‎index.js‎ روی ‎/api/panel/v1‎ نمی‌نشیند. دستیار (‎agent‎) نداشت و بی نشست
+   *  باز بود (۱۴۰۵/۰۸/۰۹). روتری که فردا این‌جا اضافه شود همین را می‌گذراند.
+   */
+  console.log('\n── درِ نسخه‌دار: هیچ روتری بی نشست باز نیست ──');
+  const V1_PRIVATE = ['users', 'system', 'dashboard', 'sites', 'services', 'domains', 'files', 'logs',
+    'network', 'settings', 'backups', 'site-server', 'messenger/me', 'notify-admin/x', 'agent/status',
+    'agent/conversations', 'agent/facts'];
+  const open = [];
+  for (const p of V1_PRIVATE) {
+    const res = await api('GET', `/api/v1/${p}`, undefined, { noAuth: true, token: '' });
+    if (res.status !== 401) open.push(`${p}=${res.status}`);
+  }
+  check('همهٔ روترهای خصوصیِ ‎/api/panel/v1‎ بی نشست ۴۰۱ می‌دهند', open.length === 0, open.join(' '));
+
   // ── هدرهای امن ────────────────────────────────────────────────────────
   console.log('\n── هدرهای امن ──');
   r = await api('GET', '/health');
