@@ -304,9 +304,10 @@ class Recorder(
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
                 setInteger(MediaFormat.KEY_BIT_RATE, p.bitrate)
                 setInteger(MediaFormat.KEY_FRAME_RATE, p.fps)
-                // 3 s GOP: key frames are expensive; 1.0's 1 s GOP with CBR spent the budget on them
-                // every second and starved the frames in between ("pulsing" blockiness).
-                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 3)
+                // 5 s GOP: key frames are the most expensive frames; 1.0's 1 s GOP with CBR spent the
+                // budget on them every second and starved the frames in between ("pulsing"
+                // blockiness). A pause, a part split or a recovery asks for one when it is needed.
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5)
                 // Static screens still produce frames, but only after two frame periods, so normal
                 // frame-time jitter never inserts duplicate frames (judder).
                 setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 2_000_000L / p.fps)
@@ -317,13 +318,19 @@ class Recorder(
                     if (p.mode == RecordConfig.MODE_VBR) setInteger("max-bitrate", p.peakBitrate)
                 }
                 if ("qp" !in drop && p.qpMax > 0) {
-                    // Quality floor per frame type (Android 12+ encoders): key frames a bit better,
-                    // B-frames a bit cheaper. The QP minimum stops static screens from wasting bits.
+                    // Quality range per frame type (Android 12+ encoders): key frames a bit better,
+                    // B-frames a bit cheaper. The maximum holds the quality in fast motion; the
+                    // minimum stops still screens from wasting bits (see Planner.qpFloor).
+                    val lo = if (p.qpMin > 0) p.qpMin else 10
+                    // The generic pair is what an encoder without per-type keys uses: the P values.
                     setInteger(MediaFormat.KEY_VIDEO_QP_MAX, p.qpMax)
                     setInteger(MediaFormat.KEY_VIDEO_QP_I_MAX, p.qpMax - 2)
                     setInteger(MediaFormat.KEY_VIDEO_QP_P_MAX, p.qpMax)
                     setInteger(MediaFormat.KEY_VIDEO_QP_B_MAX, p.qpMax + 2)
-                    setInteger(MediaFormat.KEY_VIDEO_QP_MIN, 10)
+                    setInteger(MediaFormat.KEY_VIDEO_QP_MIN, lo)
+                    setInteger(MediaFormat.KEY_VIDEO_QP_I_MIN, (lo - 2).coerceAtLeast(1))
+                    setInteger(MediaFormat.KEY_VIDEO_QP_P_MIN, lo)
+                    setInteger(MediaFormat.KEY_VIDEO_QP_B_MIN, lo + 2)
                 }
                 if ("complexity" !in drop && p.complexity >= 0) setInteger(MediaFormat.KEY_COMPLEXITY, p.complexity)
                 // B-frames save size at equal quality; encoders that can't do them ignore the key.

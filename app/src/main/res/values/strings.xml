@@ -172,7 +172,7 @@
     <string name="ap_bitrate_fmt">بیت‌ریت: %1$s</string>
     <string name="ap_mode_default">" (انکودر حالت را نپذیرفت؛ پیش‌فرضِ خودش)"</string>
     <string name="ap_peak_fmt">" • اوج تا %1$s"</string>
-    <string name="ap_qp_fmt">" • کفِ کیفیت QP≤%1$s"</string>
+    <string name="ap_qp_fmt">" • کیفیتِ ثابت QP %1$s"</string>
     <string name="ap_color">رنگ: BT.709، محدودهٔ استاندارد</string>
     <string name="ap_color_default">رنگ: پیش‌فرضِ انکودر</string>
     <string name="ap_audio_fmt">صدا: %1$s</string>

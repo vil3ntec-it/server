@@ -160,7 +160,7 @@
     <string name="ap_bitrate_fmt">Bitrate: %1$s</string>
     <string name="ap_mode_default">" (encoder refused the mode; its own default)"</string>
     <string name="ap_peak_fmt">" • peaks up to %1$s"</string>
-    <string name="ap_qp_fmt">" • quality floor QP≤%1$s"</string>
+    <string name="ap_qp_fmt">" • constant quality QP %1$s"</string>
     <string name="ap_color">Colour: BT.709, limited (standard) range</string>
     <string name="ap_color_default">Colour: encoder default</string>
     <string name="ap_audio_fmt">Audio: %1$s</string>

@@ -85,6 +85,7 @@ data class CapturePlan(
     val requestedMode: Int,
     val quality: Int,            // CQ quality, -1 when not CQ
     val qpMax: Int,              // quality floor for VBR (P frames; I −2, B +2), -1 = none
+    val qpMin: Int = -1,         // waste floor (P frames; I −2, B +2): no frame is made better than this, -1 = none
     val complexity: Int = -1,    // encoder effort, when the encoder offers a range
     val profile: Int,            // -1 = encoder default
     val level: Int,              // -1 = encoder default
@@ -382,40 +383,52 @@ object Planner {
      * VBR target (average) for the automatic levels, in bits per second. Reference: bits per pixel
      * at 60 fps, × (fps/60)^0.6: higher frame rates cost less than linearly (consecutive frames are more alike).
      * HEVC values; AVC ×1.4, AV1 ×0.9 (hardware AV1 encoders gain less over HEVC than software ones).
-     *   High (default): 0.17 bpp → 1920×1080@60 ≈ 21 Mbps (160 MB/min), 1504×2400@120 ≈ 56 Mbps (420 MB/min)
+     *   High (default): 0.11 bpp → 1920×1080@60 ≈ 14 Mbps, 1504×2400@120 ≈ 36 Mbps
      *   Light:          0.045 bpp → 1920×1080@30 ≈ 4 Mbps
-     *   «بی‌افت»:        0.34 bpp  → 1920×1080@60 ≈ 42 Mbps (318 MB/min)
-     * 1.4 used 0.075 bpp (9 Mbps for 1080p60) with a QP ceiling of 30: small text and fast game motion
-     * came out soft and blocky. 1.5's 0.11 bpp with QP 26 still softened fine text and showed banding
-     * in smooth gradients (wallpapers, shadows) — the owner: «the video is not what I see». Screen
-     * content (sharp edges, text, UI, 8-bit gradients) needs far more than camera video.
-     * Peaks may reach 3× the target (max-bitrate) and the per-frame-type QP ceiling lets the encoder
-     * spend more rather than smear detail; the codec level and the encoder's maximum cap both.
+     *   «بی‌افت»:        0.20 bpp  → 1920×1080@60 ≈ 25 Mbps
+     * Since 1.8 the target is only a guide: quality is held by a narrow QP range per frame
+     * ([qpCeiling]..[qpFloor]), like a CRF encode. The owner wants «the pixels I see, but not a bigger
+     * file»: a fixed bit rate does both badly — it smears fast motion and pads still screens with bits
+     * nobody can see (1.5 allowed QP 10 on a still screen just to reach the target). With the range,
+     * every frame lands at the same visible quality: still screens and UI cost almost nothing, fast
+     * motion takes what it needs, up to 3× the target (max-bitrate). The codec level and the encoder's
+     * maximum cap the peak.
      */
     fun autoBitrate(w: Int, h: Int, fps: Int, mime: String, level: Int): Int {
-        val base = when (level) { RecordConfig.BR_MAX -> 0.34; RecordConfig.BR_AUTO_BALANCED -> 0.045; else -> 0.17 }
+        val base = when (level) { RecordConfig.BR_MAX -> 0.20; RecordConfig.BR_AUTO_BALANCED -> 0.045; else -> 0.11 }
         val bps = w.toDouble() * h * 60 * base * codecFactor(mime) * (fps / 60.0).pow(0.6)
         return (bps / 1_000_000).roundToInt().coerceAtLeast(3) * 1_000_000
     }
 
     private fun codecFactor(mime: String) = when (mime) { Encoders.AVC -> 1.4; Encoders.AV1 -> 0.9; else -> 1.0 }
 
-    /** Range that keeps screen content faithful (rule of thumb, shown for reference): 0.10–0.24 bpp HEVC at 60 fps. */
+    /** Range that keeps screen content faithful (rule of thumb, shown for reference): 0.06–0.16 bpp HEVC at 60 fps. */
     fun referenceRange(w: Int, h: Int, fps: Int, mime: String): Pair<Int, Int> {
         val k = w.toDouble() * h * 60 * codecFactor(mime) * (fps / 60.0).pow(0.6) / 1_000_000
-        return (k * 0.10).roundToInt() to (k * 0.24).roundToInt()
+        return (k * 0.06).roundToInt() to (k * 0.16).roundToInt()
     }
 
     /**
      * Quality floor (QP ceiling of P frames; I −2, B +2) for VBR: rather than go above it the encoder
-     * spends more than the target. 21 keeps text edges and smooth 8-bit gradients clean on HEVC/AV1/AVC
+     * spends more than the target. 20 keeps text edges and smooth 8-bit gradients clean on HEVC/AV1/AVC
      * hardware encoders (26 in 1.5 showed banding and soft text); 17 is visually lossless.
      */
     fun qpCeiling(bitrateLevel: Int): Int = when (bitrateLevel) {
         RecordConfig.BR_MAX -> 17
         RecordConfig.BR_AUTO_BALANCED -> 34
-        RecordConfig.BR_AUTO_HIGH -> 21
+        RecordConfig.BR_AUTO_HIGH -> 20
         else -> 23                      // a fixed Mbps chosen by the owner
+    }
+
+    /**
+     * Waste floor for VBR (P frames; I −2, B +2): no frame is encoded better than this, so a still or
+     * simple screen is not padded up to the target with detail no eye can see. Three steps under the
+     * ceiling keeps the quality steady (no «breathing») while the size follows the content. A fixed
+     * Mbps chosen by the owner keeps the old wide range: there the owner asked for that size.
+     */
+    fun qpFloor(bitrateLevel: Int): Int = when (bitrateLevel) {
+        RecordConfig.BR_MAX, RecordConfig.BR_AUTO_BALANCED, RecordConfig.BR_AUTO_HIGH -> qpCeiling(bitrateLevel) - 3
+        else -> 10
     }
 
     fun plan(cfg: RecordConfig, d: DisplayInfo): CapturePlan? {
@@ -489,6 +502,7 @@ object Planner {
             if (ceiling < peak) { peak = ceiling; bitrate = min(bitrate.toLong(), ceiling).toInt() }
         }
         val qpMax = if (mode == RecordConfig.MODE_VBR) qpCeiling(cfg.bitrate) else -1
+        val qpMin = if (mode == RecordConfig.MODE_VBR) qpFloor(cfg.bitrate) else -1
         return CapturePlan(
             mime = mime, encoder = info.name, hardware = Encoders.isHardware(info),
             width = fit.width, height = fit.height,
@@ -499,7 +513,7 @@ object Planner {
             peakBitrate = peak.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
             mode = mode, requestedMode = cfg.mode,
             quality = if (mode == RecordConfig.MODE_CQ) Encoders.maxQuality(info, mime) else -1,
-            qpMax = qpMax,
+            qpMax = qpMax, qpMin = qpMin,
             complexity = Encoders.maxComplexity(info, mime),
             profile = pl?.first ?: -1, level = level,
             dpi = d.dpi, codecFallback = fallback,

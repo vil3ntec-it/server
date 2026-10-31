@@ -87,7 +87,7 @@ object Texts {
         sb.append('\n').append(ctx.getString(R.string.ap_bitrate_fmt, Fmt.iso(bitrateText(p))))
         if ("mode" in dropped) sb.append(ctx.getString(R.string.ap_mode_default))
         if (p.mode == RecordConfig.MODE_VBR && "mode" !in dropped) sb.append(ctx.getString(R.string.ap_peak_fmt, Fmt.mbps(p.peakBitrate)))
-        if (p.qpMax > 0 && "qp" !in dropped) sb.append(ctx.getString(R.string.ap_qp_fmt, Fmt.num(p.qpMax)))
+        if (p.qpMax > 0 && "qp" !in dropped) sb.append(ctx.getString(R.string.ap_qp_fmt, if (p.qpMin > 0) Fmt.num(p.qpMin) + "–" + Fmt.num(p.qpMax) else "≤" + Fmt.num(p.qpMax)))
         sb.append('\n').append(ctx.getString(if ("color" in dropped) R.string.ap_color_default else R.string.ap_color))
         if (p.complexity >= 0 && "complexity" !in dropped) sb.append('\n').append(ctx.getString(R.string.ap_complexity_fmt, Fmt.num(p.complexity)))
         sb.append('\n').append(ctx.getString(R.string.ap_audio_fmt, audioText(ctx, cfg, audioKbps, audioOk)))
