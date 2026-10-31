@@ -600,6 +600,48 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
   check(`سه‌زبانه (فارسی، انگلیسی، پشتو): ${keys.length} کلیدِ کنسول`, keys.length > 50 && thin.length === 0, thin.join(' '));
 }
 
+/*
+ *  ══ 🛠 ماژول‌های عملیات (۴.۸ · ۴.۹ · ۴.۱۰ · ۴.۱۱ · ۴.۱۳) — ‎ConsoleOps.tsx‎ و ‎routes/console-ops.js‎ ══
+ *  همان قاعده‌های کنسول روی خودِ کد: عددی ساخته نمی‌شود، هر کارت منبع دارد، «توانایی» نیامده «در دسترس نیست»،
+ *  نوشتنِ حساس با دلیل/تأیید/رمز، «برگشت» وانمود نمی‌شود، توکن در نشانی نمی‌رود، سه‌زبانه.
+ */
+{
+  console.log('\n── کنسولِ فروشگاه: ماژول‌های عملیات ──');
+  const ops = read('pages/account/ConsoleOps.tsx');
+  const desk = read('pages/account/ShopDesk.tsx');
+  const bridgeOps = fs.readFileSync(path.join(here, '..', 'src', 'routes', 'console-ops.js'), 'utf8');
+  check('⛔ عملیات خودش جمع نمی‌زند و نیامده را صفر نمی‌کند (نه reduce، نه «|| 0»، نه «?? 0»)',
+    !/\.reduce\(/.test(ops) && !/\|\|\s*0\b/.test(ops) && !/\?\?\s*0\b/.test(ops));
+  check('⛔ هر کارت منبع و زمان (SourceLine) و خطا با کد (Problem)', (ops.match(/<SourceLine /g) || []).length >= 7 && (ops.match(/<Problem /g) || []).length >= 6);
+  check('⛔ «توانایی» نیامده ⇒ «داده در دسترس نیست»', (ops.match(/isUnavailable\(/g) || []).length >= 5 && /capabilityMissing/.test(ops));
+  check('⛔ انتشارِ مرحله‌ای: دلیل + رمز + confirm: true؛ دکمه فقط برای مالک/فنی (canChange)؛ «برگشت» فقط متنِ «پشتیبانی نمی‌شود»',
+    /confirm: true, password/.test(ops) && /reasonOk\(reason\) && Boolean\(password\)/.test(ops) && /canChange/.test(ops)
+      && /rollbackNo/.test(ops) && !/rollback'/.test(ops) && !/\/rollback/.test(ops));
+  check('⛔ یادداشتِ رخداد با یک کلیدِ یکتایی برای هر یادداشت', /useState\(\(\) => newIdemKey\(\)\)/.test(ops) && /idempotencyKey: noteKey/.test(ops));
+  check('⛔ بستنِ هشدار دلیل می‌خواهد', /ready=\{resolveOf \? reasonOk\(text\) : true\}/.test(ops));
+  check('⛔ خروجیِ CSV با سرآیندِ Authorization، نه ‎?token=‎ در نشانی', /Authorization: `Bearer/.test(ops) && !/[?&]token=\$\{/.test(ops) && !/downloadUrl\(/.test(ops));
+  const opsPaths = ['ops/releases', 'ops/health', 'ops/integrations', 'ops/incidents', 'ops/incidents.csv', 'ops/incidents/:id',
+    'ops/incidents/:id/status', 'ops/incidents/:id/priority', 'ops/incidents/:id/notes', 'ops/incidents/:id/link', 'ops/alerts',
+    'ops/alerts/evaluate', 'ops/alerts/:id/ack', 'ops/alerts/:id/resolve', 'ops/alerts/telegram', 'release/stage', 'release/stage/end'];
+  const lostOps = opsPaths.filter((w) => !bridgeOps.includes(`'/console/${w}'`));
+  check('هر درِ عملیات یک خطِ فهرستِ سفید در پل دارد', lostOps.length === 0, lostOps.join(' '));
+  check('⛔ رمزِ احرازِ دوباره به سرورِ حساب نمی‌رود (بدنهٔ بالادستِ مرحله فقط همان چهار فیلد)',
+    /cloudRaw\('PUT', '\/api\/admin\/release\/stage', \{ body: input \}\)/.test(bridgeOps) && /return \{ tag, version, percent, reason \}/.test(bridgeOps));
+  check('میزِ فروشگاه زبانه‌های «رخدادها» و «هشدارها» را دارد', ["'incidents'", "'alerts'"].every((x) => desk.includes(x)) && /<IncidentsTab /.test(desk) && /<AlertsTab /.test(desk));
+  let tr = null;
+  try { tr = await import(new URL('file://' + path.join(webSrc, 'pages', 'account', 'consoleOpsI18n.ts')).href); }
+  catch (e) { console.log('   ', e.message); }
+  const used = [...new Set([...ops.matchAll(/\bt\('([A-Za-z_0-9]+)'/g)].map((x) => x[1]))];
+  const dyn = ['st_ok', 'st_warn', 'st_down', 'st_unknown', 'inc_open', 'inc_investigating', 'inc_resolved', 'al_open', 'al_acknowledged',
+    'al_resolved', 'sev_critical', 'sev_high', 'sev_medium', 'sev_low', 'rs_ok', 'rs_unavailable', 'rs_error', 'wh_live', 'wh_blocked',
+    'wh_unknown', 'ev_created', 'ev_status', 'ev_priority', 'ev_note', 'ev_link', 'ev_reopened'];
+  const thinOps = tr ? [...used, ...dyn].filter((k) => ['fa', 'en', 'ps'].some((l) => {
+    const v = tr.opsText(l, k);
+    return !v || (l !== 'en' && v === k) || (l !== 'en' && v === tr.opsText('en', k) && !/^[A-Za-z0-9 ()·.,%‎-]+$/.test(v));
+  })) : ['(import failed)'];
+  check(`سه‌زبانه (فارسی، انگلیسی، پشتو): ${used.length + dyn.length} کلیدِ عملیات`, used.length > 60 && thinOps.length === 0, thinOps.join(' '));
+}
+
 console.log('\n════════════════════════════════════');
 console.log(`  ✅ ${pass} سبز، ${fail} قرمز`);
 console.log('════════════════════════════════════\n');

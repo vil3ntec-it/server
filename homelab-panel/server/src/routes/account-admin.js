@@ -41,6 +41,7 @@ import { audit } from '../control/audit.js';
 import * as panelAuth from '../auth.js';
 import { db } from '../db.js';
 import { rateLimit } from '../platform/rate-limit.js';
+import { mountConsoleOps } from './console-ops.js';
 import {
   withPanelActor, readServiceKey, storeServiceKey, forgetServiceKey, publicServiceKey, SERVICE_KEY_RE,
 } from '../account/service-key.js';
@@ -2035,6 +2036,9 @@ export const PHASE3 = Object.freeze({
   'flags.v1': 'GET /api/admin/flags · GET /api/admin/flags/history',
   'actor.v1': 'سرآیندهای X-Actor-Id/Role/Name ⇒ «انجام‌دهنده» در سابقهٔ سرورِ حساب',
   'service-key.v1': 'Bearer vsk_… · /api/admin/service-keys',
+  //  ماژول‌های عملیات (‎routes/console-ops.js‎) و انتشارِ مرحله‌ایِ OPS-01 (shop #559)
+  'ops.v1': 'GET /api/admin/ops/releases|health|integrations · /api/admin/ops/incidents* · /api/admin/ops/alerts*',
+  'release-stage.v1': 'GET|PUT|DELETE /api/admin/release/stage (OPS-01، shop #559)',
 });
 const CAP_RE = /^[a-z][a-z0-9-]{0,40}\.v\d{1,3}$/;
 
@@ -2242,7 +2246,9 @@ function reauth(req, res, next) {
     const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(Number(req.user.id));
     if (!row || !panelAuth.verifyPassword(password, row.password_hash)) {
       res.locals.reauthFailed = true;
-      audit({ actor: actorOf(req), action: 'account.service_key.reauth_failed', entity: 'service_key', result: 'forbidden' });
+      //  همان احرازِ دوباره برای انتشارِ مرحله‌ای (‎console-ops.js‎) — ردیفِ دفتر نامِ همان کار را می‌گیرد
+      const what = String(req.path || '').includes('/release/stage') ? 'release_stage' : 'service_key';
+      audit({ actor: actorOf(req), action: `account.${what}.reauth_failed`, entity: what, result: 'forbidden' });
       return res.status(403).json({ error: 'reauth_failed', message: 'رمزِ پنل درست نیست' });
     }
     if (typeof panelAuth.markFresh === 'function' && req.user?.sessionId) panelAuth.markFresh(req.user.sessionId);
@@ -2345,6 +2351,11 @@ router.post('/console/service-key/revoke', requireRole('admin'), ownerOnly, reau
   audit({ actor: actorOf(req), action: 'account.service_key.revoked', entity: 'service_key', entityId: prev.id, detail: { reason } });
   res.json({ ok: true, revoked: prev.id, ...(await serviceKeyStatus()) });
 }));
+
+/* ═══ 🛠 ماژول‌های عملیات (۴.۸ · ۴.۹ · ۴.۱۰ · ۴.۱۱ · ۴.۱۳) — ‎routes/console-ops.js‎، روی همین روتر ═══ */
+mountConsoleOps(router, {
+  guard, capabilities, unavailable, missingErr, badInput, stamped, actorOf, isPanelOwner, reauthLimit, reauth,
+});
 
 /* --------------------------- خواندنی‌های دیگر -------------------------- */
 
