@@ -51,6 +51,17 @@ const seen = [];                 // { method, path, query, body, bearer }
 let otpOff = false;
 //  «رباتِ ارسالِ سرورِ حساب تنظیم نیست» — فقط برای یک بند
 let otpSendBroken = false;
+/*
+ *  ══ کنسولِ فروشگاه (فاز ۲) ══
+ *  `caps`: تواناییِ اعلام‌شده در ‎GET /api/admin/me‎ (قراردادِ فاز ۳)؛ خالی = سرورِ حسابِ امروز.
+ *  `oldServer`: سرورِ حسابِ کهنه که ‎system/*‎ را ندارد — و مثلِ سرورِ **واقعی** برای مسیرِ ناشناختهٔ
+ *  مدیر ‎401 invalid_token‎ می‌دهد، نه ۴۰۴ (روی shop@2.14.4 سنجیده شد).
+ *  `logins`: شمارِ ورودهای پل، تا «۴۰۱ِ مسیرِ نبوده ورودِ تازه نمی‌سازد» سنجیده شود.
+ */
+let caps = [];
+let oldServer = false;
+let versionsDown = false;
+let logins = 0;
 const users = {
   u1: { id: 'u1', name: 'کریم', email: 'karim@x.com', phone: '0700', status: 'active', created_at: NOW - 40 * DAY, last_login_at: NOW - DAY },
   u2: { id: 'u2', name: 'زهرا', email: 'z@x.com', phone: '0711', status: 'active', created_at: NOW - 3 * DAY, last_login_at: null },
@@ -143,6 +154,7 @@ const fake = http.createServer((req, res) => {
     const j = (code, obj) => { res.statusCode = code; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(obj)); };
     if (p === '/api/health') return j(200, { ok: true, server: 'online', version: '9.9.9' });
     if (p === '/api/admin/login') {
+      logins++;
       if (body?.username !== 'boss' || body?.password !== 'top-secret') return j(401, { error: { code: 'bad_credentials', message: 'رمز غلط' } });
       return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
     }
@@ -610,6 +622,57 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/push') return j(200, { push: { enabled: false, project: '', tokens: 0 } });
     if (p === '/api/admin/sms') return j(200, { sms: { provider: 'none', ready: false, keySet: false } });
     if (p === '/api/admin/audit') return j(200, { entries: [{ id: 1, action: 'admin.vip_code_created', target_id: 'v1', created_at: NOW }] });
+
+    /* ─── کنسولِ فروشگاه (فاز ۲) — همان شکلِ ‎lib/system-health.js‎ و ‎admin-release/sync/pump‎ ─── */
+    const unknownRoute = () => j(401, { error: { code: 'invalid_token', message: 'نشست شما منقضی شده است، دوباره وارد شوید' } });
+    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, serverTime: NOW, ...(caps.length ? { capabilities: caps } : {}) });
+    if (p.startsWith('/api/admin/system/') && oldServer) return unknownRoute();
+    if (p === '/api/admin/system/health') {
+      return j(200, { status: 'warn', checkedAt: NOW - 5000, api: { status: 'ok', version: '2.14.4', uptimeSeconds: 99 },
+        database: { status: 'ok', latencyMs: 3, driver: 'pglite' },
+        queues: { email: { status: 'warn', worker: 'down', queued: 2, sending: 0, failed24h: 1, oldestAgeMs: 400000 },
+                  telegram: { status: 'ok', pending: 0, failed24h: 0, oldestAgeMs: null } },
+        sync: { status: 'ok', clientErrors24h: 4, conflicts24h: 0 },
+        storage: { status: 'ok', freeBytes: 5e10, totalBytes: 1e11, freePct: 50 },
+        backups: { status: 'warn', enabled: false, encryption: false, count: 0, last: null, ageMs: null } });
+    }
+    if (p === '/api/admin/system/providers') {
+      return j(200, { checkedAt: NOW - 4000, production: true, counts: { live: 1, mock: 1, incomplete: 1, off: 0, none: 2, unknown: 0 },
+        providers: [{ id: 'sms', mode: 'log', state: 'mock', missing: [] }, { id: 'email', mode: 'smtp', state: 'incomplete', missing: ['email_pass'] },
+                    { id: 'push', mode: 'fcm', state: 'live', missing: [] }, { id: 'payment', mode: 'cod', state: 'none', missing: [], decision: 'D-08' },
+                    { id: 'image_ai', mode: '', state: 'none', missing: [], steps: [] }] });
+    }
+    if (p === '/api/admin/system/versions') {
+      if (versionsDown) return j(503, { error: { code: 'db_unavailable', message: 'دیتابیس در دسترس نیست' } });
+      return j(200, { checkedAt: NOW - 3000, activeDays: 30, truncated: false, status: 'warn',
+        apps: [{ app: 'shop', latest: '2.14.5', minVersion: '2.10.0', devices: 7, unknown: 1, belowMin: 0, outdated: 2, status: 'warn',
+                 versions: [{ version: '2.14.5', devices: 4, lastSeenAt: NOW - 60e3, state: 'current' },
+                            { version: '2.14.4', devices: 2, lastSeenAt: NOW - 3600e3, state: 'outdated' },
+                            { version: '', devices: 1, lastSeenAt: null, state: 'unknown' }], versionsTruncated: false },
+               { app: 'pump', latest: '', minVersion: '', devices: 0, unknown: 0, belowMin: 0, outdated: null, status: 'ok', versions: [], versionsTruncated: false }] });
+    }
+    if (p === '/api/admin/system/chain-verify' && req.method === 'POST') {
+      return j(200, { ok: true, checkedAt: NOW, enabled: true, rows: true, total: 3, okCount: 3, brokenCount: 0, broken: [], healthy: [], truncated: false });
+    }
+    if (p === '/api/admin/release/beta' && req.method === 'GET') {
+      return j(200, { shops: { ids: ['s1'], updatedAt: NOW - DAY, updatedBy: 'boss' }, devices: { ids: [], updatedAt: 0, updatedBy: '' }, version: 3 });
+    }
+    if (p === '/api/admin/sync/version-health') {
+      return j(200, { app: u.searchParams.get('app'), version: u.searchParams.get('version'), installs: 2, crashes: 0 });
+    }
+    if (p === '/api/admin/pump/live-config' && req.method === 'GET') {
+      return j(200, { scope: u.searchParams.get('scope'), version: 2, items: [{ key: 'shop.orders', value: false, updatedAt: NOW - DAY, updatedBy: 'boss' }] });
+    }
+    //  مسیرهای فاز ۳ — فقط وقتی «هستند» که توانایی‌شان اعلام شده؛ وگرنه مثلِ سرورِ واقعی ۴۰۱
+    if ((m = /^\/api\/admin\/shops\/([^/]+)\/health$/.exec(p))) {
+      if (!caps.includes('shop-health.v1')) return unknownRoute();
+      return j(200, { shopId: m[1], checkedAt: NOW - 1000, online: true, onlineWithinMs: 600000, lastSyncAt: NOW - 120e3,
+        devices: [{ deviceId: 'd1', app: 'shop', appVersion: '2.14.5', lastSeenAt: NOW - 60e3, online: true }] });
+    }
+    if (p === '/api/admin/flags') {
+      if (!caps.includes('flags.v1')) return unknownRoute();
+      return j(200, { checkedAt: NOW, flags: [{ key: 'shop.orders', value: false, updatedAt: NOW - DAY, updatedBy: 'boss', reason: 'هنوز نه' }] });
+    }
 
     if (p === '/api/admin/admins') return j(200, { admins: ['NEVER'] });
     if (p === '/api/admin/backups') return j(200, { backups: ['NEVER'] });
@@ -1127,8 +1190,10 @@ try {
   check('تعارض بی شناسهٔ حساب، همان ۴۰۰ی خودِ سرورِ حساب', syncNoAcc.status === 400 && syncNoAcc.json?.error === 'account_required', `${syncNoAcc.status}`);
   const syncCf = await api('GET', '/api/account-admin/sync/conflicts?app=shop&account=s1', undefined, auth);
   check('تعارض‌ها با جدول، ردیف و خانه', syncCf.status === 200 && syncCf.json?.conflicts?.[0]?.field === 'price');
-  const syncRestore = await api('POST', '/api/account-admin/sync/conflicts/5/restore', {}, auth);
+  const syncRestore = await api('POST', '/api/account-admin/sync/conflicts/5/restore', { reason: 'دلیلِ آزمون' }, auth);
   check('بازگرداندنِ تعارض', syncRestore.status === 200 && last()?.path === '/api/admin/sync/conflicts/5/restore');
+  //  ⛔ سرورِ حساب بی دلیل ۴۰۰ می‌دهد (reason_required) — پل دلیل را می‌برد
+  check('⛔ دلیلِ بازگرداندن به سرورِ حساب می‌رسد', last()?.body?.reason === 'دلیلِ آزمون', JSON.stringify(last()?.body));
   const syncErr = await api('GET', '/api/account-admin/sync/errors?app=shop', undefined, auth);
   check('خطاهای گزارش‌شدهٔ برنامه', syncErr.status === 200 && syncErr.json?.errors?.[0]?.message === 'خطای آزمایشی');
 
@@ -1338,6 +1403,31 @@ try {
     //  ⛔ نمایشِ کد هم فقط admin — operator با همان نشستِ سالم رد می‌شود
     const oReveal = await api('POST', '/api/account-admin/logins/req1/reveal', {}, oAuth);
     check('⛔ نمایشِ کد فقط برای admin است', oReveal.status === 403, String(oReveal.status));
+    /*
+     *  ⛔ «آزمون»هایی که می‌فرستند، نگاه کردن نیستند (۱۴۰۵/۰۸/۰۹): `writeNeedsOperator`
+     *  هر POSTِ ‎…/test‎ را برای viewer باز می‌گذاشت ⇒ viewer با حسابِ ارشدِ پل پیامک
+     *  (پول، و در سرورِ حساب فقط ارشد) و ایمیل و اعلانِ آزمایشی به هر نشانی می‌فرستاد.
+     *  و بازگرداندنِ تعارض (تغییرِ دادهٔ یک حساب؛ در سرورِ حساب فقط ارشد) برای operator باز بود.
+     */
+    const vSends = [
+      await api('POST', '/api/account-admin/sms/test', { to: '+93700000000' }, vAuth),
+      await api('POST', '/api/account-admin/email/test', { to: 'x@y.af' }, vAuth),
+      await api('POST', '/api/account-admin/notices/n1/test', { to: 'x@y.af' }, vAuth),
+    ];
+    check('⛔ viewer نه پیامک، نه ایمیل، نه اعلانِ آزمایشی می‌فرستد', vSends.every((r) => r.status === 403), vSends.map((r) => r.status).join(' '));
+    const beforeOp = seen.length;
+    const oSms = await api('POST', '/api/account-admin/sms/test', { to: '+93700000000' }, oAuth);
+    const oRestore = await api('POST', '/api/account-admin/sync/conflicts/5/restore', { reason: 'آزمون' }, oAuth);
+    check('⛔ پیامکِ آزمایشی و بازگرداندنِ تعارض فقط admin', oSms.status === 403 && oRestore.status === 403
+      && !seen.slice(beforeOp).some((x) => /sms\/test|conflicts\/5\/restore/.test(x.path)), `${oSms.status} ${oRestore.status}`);
+    //  ⛔ و درِ دومِ پمپ (`/api/stations-admin/cloud/*`) همان مرزِ پول را دارد
+    const beforePump = seen.length;
+    const oPumpCode = await api('POST', '/api/stations-admin/cloud/vip-codes', { plan: 'm1', email: 'x@y.af' }, oAuth);
+    const oPumpGrant = await api('POST', '/api/stations-admin/cloud/grant', { stationId: 'st1', plan: 'm1' }, oAuth);
+    check('⛔ کدِ اشتراک و اشتراکِ پمپ از درِ پمپ هم فقط admin', oPumpCode.status === 403 && oPumpGrant.status === 403
+      && !seen.slice(beforePump).some((x) => /pump\/(vip-codes|subscriptions)$/.test(x.path)), `${oPumpCode.status} ${oPumpGrant.status}`);
+    const oMail = await api('POST', '/api/account-admin/email/test', { to: 'k@x.com' }, oAuth);
+    check('operator ایمیلِ آزمایشی می‌فرستد', oMail.status === 200, String(oMail.status));
     //  شورا چ۳: نماینده و درصدِ کمیسیون پول است — فقط admin
     const oRep = await api('POST', '/api/account-admin/reps', { app: 'shop', email: 'x@y.af', commissionPct: 5 }, oAuth);
     check('⛔ ساختنِ نماینده و درصدِ کمیسیون فقط admin', oRep.status === 403, String(oRep.status));
@@ -1548,6 +1638,143 @@ try {
   const bogus = await api('GET', '/api/account-admin/shop-desk/anything', undefined, auth);
   check('⛔ مسیرِ نانوشته ۴۰۴ می‌گیرد و به سرورِ حساب هم نمی‌رسد',
     bogus.status === 404 && seen.length === before, `${bogus.status} ${seen.length - before}`);
+
+  /* ===================================================================
+     🏪 کنسولِ فروشگاه — فاز ۲ ِ پنلِ مرکزیِ مالک (OWNER-CONSOLE-AUDIT §۸)
+     هر پلِ تازه: شکلِ پاسخ، نقش، پورتِ عمومی؛ و خطای بالادست با کدِ خودش.
+     =================================================================== */
+  console.log('\n── کنسولِ فروشگاه (فاز ۲) ──');
+  await api('POST', '/api/auth/users', { username: 'view-con', password: 'Viewer-1405-con', role: 'viewer' }, auth);
+  await api('POST', '/api/auth/users', { username: 'op-con', password: 'Operator-1405-con', role: 'operator' }, auth);
+  const c_vCon = { Authorization: `Bearer ${(await api('POST', '/api/auth/login', { username: 'view-con', password: 'Viewer-1405-con' })).json?.token}` };
+  const c_oCon = { Authorization: `Bearer ${(await api('POST', '/api/auth/login', { username: 'op-con', password: 'Operator-1405-con' })).json?.token}` };
+
+  const c_hl = await api('GET', '/api/account-admin/console/system/health', undefined, c_vCon);
+  check('سلامتِ سرورِ حساب برای viewer هم خواندنی است، همان شکلِ بالادست',
+    c_hl.status === 200 && c_hl.json?.status === 'warn' && c_hl.json?.queues?.email?.queued === 2 && c_hl.json?.api?.version === '2.14.4',
+    `${c_hl.status} ${JSON.stringify(c_hl.json).slice(0, 200)}`);
+  check('⛔ زمانِ سنجش همانِ سرورِ حساب است (checkedAt) و زمانِ رسیدن کنارش (fetchedAt)',
+    c_hl.json?.checkedAt === NOW - 5000 && Number(c_hl.json?.fetchedAt) >= NOW, `${c_hl.json?.checkedAt} ${c_hl.json?.fetchedAt}`);
+  check('⚠️ «نیامده» نیامده می‌ماند: پشتیبانِ بی ردیف ‎last: null‎ است، نه صفر یا تاریخِ ساختگی',
+    c_hl.json?.backups?.last === null && c_hl.json?.backups?.ageMs === null, JSON.stringify(c_hl.json?.backups));
+  const c_pv = await api('GET', '/api/account-admin/console/system/providers', undefined, auth);
+  check('سرویس‌های بیرونی با حالتِ واقعی (mock ≠ live) و نامِ فیلدِ کم، بی هیچ راز',
+    c_pv.status === 200 && c_pv.json?.providers?.find((x) => x.id === 'sms')?.state === 'mock'
+      && c_pv.json?.providers?.find((x) => x.id === 'email')?.missing?.[0] === 'email_pass', `${c_pv.status} ${JSON.stringify(c_pv.json).slice(0, 200)}`);
+  const c_vs = await api('GET', '/api/account-admin/console/system/versions', undefined, auth);
+  check('نسخهٔ دستگاه‌ها: شمار و حالت از سرورِ حساب',
+    c_vs.status === 200 && c_vs.json?.apps?.[0]?.outdated === 2 && c_vs.json?.apps?.[1]?.outdated === null, `${c_vs.status} ${JSON.stringify(c_vs.json).slice(0, 160)}`);
+
+  //  ⛔ کانالِ آزمایشی: سرورِ حساب حتی خواندنش را فقط به ارشد می‌دهد ⇒ فقط admin ِ پنل
+  const c_rbA = await api('GET', '/api/account-admin/console/release/beta', undefined, auth);
+  check('کانالِ آزمایشیِ دکان برای admin', c_rbA.status === 200 && c_rbA.json?.shops?.ids?.[0] === 's1' && last()?.path === '/api/admin/release/beta',
+    `${c_rbA.status} ${JSON.stringify(c_rbA.json).slice(0, 120)}`);
+  let c_mark = seen.length;
+  const c_rbO = await api('GET', '/api/account-admin/console/release/beta', undefined, c_oCon);
+  const c_rbV = await api('GET', '/api/account-admin/console/release/beta', undefined, c_vCon);
+  check('⛔ و operator/viewer ۴۰۳، بی هیچ درخواستی به سرورِ حساب', c_rbO.status === 403 && c_rbV.status === 403 && seen.length === c_mark,
+    `${c_rbO.status} ${c_rbV.status} ${seen.length - c_mark}`);
+
+  const c_vh = await api('GET', '/api/account-admin/console/version-health?app=shop&version=v2.14.4', undefined, c_vCon);
+  check('سلامتِ یک نسخه: برنامه و نسخه به بالادست می‌رسد (بی «v»)',
+    c_vh.status === 200 && last()?.query?.app === 'shop' && last()?.query?.version === '2.14.4' && c_vh.json?.installs === 2, JSON.stringify(last()?.query));
+  c_mark = seen.length;
+  const c_vhBad = await api('GET', '/api/account-admin/console/version-health?app=shop&version=latest', undefined, auth);
+  const c_vhApp = await api('GET', '/api/account-admin/console/version-health?app=evil&version=2.1', undefined, auth);
+  check('⛔ نسخه/برنامهٔ ناجور همین‌جا ۴۰۰ می‌شود و به سرورِ حساب نمی‌رود',
+    c_vhBad.status === 400 && c_vhApp.status === 400 && seen.length === c_mark, `${c_vhBad.status} ${c_vhApp.status}`);
+
+  const c_lc = await api('GET', '/api/account-admin/console/live-config?scope=s1', undefined, c_vCon);
+  check('تنظیماتِ زندهٔ یک دکان (scope) از سرورِ حساب، با زمان و نویسنده',
+    c_lc.status === 200 && last()?.query?.scope === 's1' && c_lc.json?.items?.[0]?.updatedBy === 'boss', `${c_lc.status} ${JSON.stringify(last()?.query)}`);
+  c_mark = seen.length;
+  const c_lcRel = await api('GET', '/api/account-admin/console/live-config?scope=release', undefined, auth);
+  const c_lcBad = await api('GET', '/api/account-admin/console/live-config?scope=../x', undefined, auth);
+  check('⛔ ‎scope=release‎ از این در نه (کانالِ آزمایشی درِ admin ِ خودش را دارد)، و scope ِ ناجور ۴۰۰',
+    c_lcRel.status === 400 && c_lcRel.json?.error === 'use_release_beta' && c_lcBad.status === 400 && seen.length === c_mark,
+    `${c_lcRel.status} ${c_lcBad.status} ${seen.length - c_mark}`);
+
+  c_mark = seen.length;
+  const c_cvO = await api('POST', '/api/account-admin/console/system/chain-verify', {}, c_oCon);
+  check('⛔ وارسیِ زنجیرهٔ سابقه فقط admin (سرورِ حساب: فقط ارشد)', c_cvO.status === 403 && seen.length === c_mark, `${c_cvO.status}`);
+  const c_cv = await api('POST', '/api/account-admin/console/system/chain-verify', { chain: 'shop:s1', rows: false }, auth);
+  check('admin می‌سنجد؛ ⛔ بدنهٔ کاربر نمی‌رود (همیشه «همه، با ردیف‌ها»)',
+    c_cv.status === 200 && c_cv.json?.ok === true && JSON.stringify(last()?.body) === '{}', `${c_cv.status} ${JSON.stringify(last()?.body)}`);
+  const c_cvLog = await api('GET', '/api/control/audit?limit=20&q=account.chain_verified', undefined, auth);
+  check('⛔ و یک ردیف در دفترِ پنل', JSON.stringify(c_cvLog.json || {}).includes('account.chain_verified'), String(c_cvLog.status));
+
+  const c_au = await api('GET', '/api/account-admin/account-audit?shopId=s1&limit=300', undefined, c_vCon);
+  check('دفترِ سرورِ حساب برای یک دکان: پالایش سمتِ سرورِ حساب (shopId) و سقفِ ۵۰۰',
+    c_au.status === 200 && last()?.query?.shopId === 's1' && last()?.query?.limit === '300', JSON.stringify(last()?.query));
+  c_mark = seen.length;
+  const c_auBad = await api('GET', '/api/account-admin/account-audit?shopId=a%20b', undefined, auth);
+  check('⛔ شناسهٔ ناجورِ دکان ۴۰۰، به سرورِ حساب نمی‌رود', c_auBad.status === 400 && seen.length === c_mark, String(c_auBad.status));
+
+  //  ⛔ فاز ۳: بی تواناییِ اعلام‌شده، مسیرِ نبوده **هرگز** صدا زده نمی‌شود
+  caps = [];
+  c_mark = seen.length;
+  const c_sh0 = await api('GET', '/api/account-admin/console/shops/s1/health', undefined, c_vCon);
+  const c_fl0 = await api('GET', '/api/account-admin/console/flags', undefined, c_vCon);
+  const c_asked = seen.slice(c_mark).map((x) => x.path);
+  check('فاز ۳ نیامده ⇒ «داده در دسترس نیست» با دلیل و نامِ توانایی، نه عددِ ساختگی',
+    c_sh0.status === 200 && c_sh0.json?.available === false && c_sh0.json?.reason === 'capability_missing' && c_sh0.json?.capability === 'shop-health.v1'
+      && c_fl0.json?.available === false && c_fl0.json?.capability === 'flags.v1' && !('devices' in (c_sh0.json || {})),
+    `${c_sh0.status} ${JSON.stringify(c_sh0.json).slice(0, 200)}`);
+  check('⛔ و فقط ‎/api/admin/me‎ پرسیده شد — نه مسیرِ نبوده', c_asked.length === 2 && c_asked.every((x) => x === '/api/admin/me'), c_asked.join(' '));
+  caps = ['shop-health.v1', 'flags.v1'];
+  const c_sh1 = await api('GET', '/api/account-admin/console/shops/s1/health', undefined, c_vCon);
+  check('فاز ۳ آمد ⇒ همان در دادهٔ واقعی را می‌آورد (بی به‌روزرسانیِ پنل)',
+    c_sh1.status === 200 && c_sh1.json?.available === true && c_sh1.json?.devices?.[0]?.appVersion === '2.14.5' && last()?.path === '/api/admin/shops/s1/health',
+    `${c_sh1.status} ${JSON.stringify(c_sh1.json).slice(0, 160)}`);
+  const c_cp = await api('GET', '/api/account-admin/console/capabilities', undefined, c_vCon);
+  check('فهرستِ توانایی‌ها: هر درِ فاز ۳ با «هست/نیست»',
+    c_cp.status === 200 && c_cp.json?.known?.find((k) => k.id === 'shop-health.v1')?.available === true
+      && c_cp.json?.known?.find((k) => k.id === 'shop-suspension.v1')?.available === false, JSON.stringify(c_cp.json).slice(0, 200));
+  caps = [];
+
+  //  ⛔ خطای بالادست با کدِ خودش، نه ۵۰۰ی گنگ
+  versionsDown = true;
+  const c_vd = await api('GET', '/api/account-admin/console/system/versions', undefined, auth);
+  versionsDown = false;
+  check('⛔ خطای بالادست با کد و وضعیتِ خودش می‌رسد', c_vd.status === 503 && c_vd.json?.error === 'db_unavailable', `${c_vd.status} ${JSON.stringify(c_vd.json)}`);
+
+  /*
+   *  ⛔ سرورِ حسابِ کهنه: مسیرِ نبودهٔ مدیر ‎401 invalid_token‎ می‌دهد (سرورِ واقعی، نه ۴۰۴).
+   *  پیش از اصلاحِ `cloud.js` پل آن را «نشست تمام شد» می‌خواند: یک ورودِ تازه برای **هر** درخواست، و
+   *  ۴۰۱ به مرورگر ⇒ `api.ts` صاحب سامانه را از **پنل** بیرون می‌انداخت.
+   */
+  oldServer = true;
+  const c_loginsBefore = logins;
+  const c_od = await api('GET', '/api/account-admin/console/system/providers', undefined, auth);
+  const c_od2 = await api('GET', '/api/account-admin/console/system/health', undefined, auth);
+  oldServer = false;
+  check('⛔ مسیرِ نبوده روی سرورِ حسابِ کهنه ⇒ ‎501 account_server_outdated‎، نه ۴۰۱',
+    c_od.status === 501 && c_od.json?.error === 'account_server_outdated' && c_od2.status === 501, `${c_od.status} ${JSON.stringify(c_od.json)} ${c_od2.status}`);
+  check('⛔ و هیچ ورودِ تازه‌ای به سرورِ حساب نساخت (سقفِ نرخِ ورود)', logins === c_loginsBefore, `${logins - c_loginsBefore} ورود`);
+  const c_still = await api('GET', '/api/auth/me', undefined, auth);
+  const c_after = await api('GET', '/api/account-admin/console/system/health', undefined, auth);
+  check('⛔ نشستِ پنل سالم ماند و پل با همان توکن کار می‌کند', c_still.status === 200 && c_after.status === 200, `${c_still.status} ${c_after.status}`);
+
+  //  ⛔ هر درِ کنسول، یکی‌یکی — نه نمونه
+  const c_pubSeen = seen.length;
+  const c_pubBad = [];
+  for (const [method, p] of [
+    ['GET', 'system/health'], ['GET', 'system/providers'], ['GET', 'system/versions'], ['POST', 'system/chain-verify'],
+    ['GET', 'release/beta'], ['GET', 'version-health?app=shop&version=2.14.4'], ['GET', 'live-config?scope=all'],
+    ['GET', 'capabilities'], ['GET', 'shops/s1/health'], ['GET', 'shops/s1/suspension'], ['GET', 'flags'], ['GET', 'flags/history'],
+  ]) {
+    const r = await api(method, `/api/account-admin/console/${p}`, method === 'POST' ? {} : undefined, auth, `http://127.0.0.1:${PUBLIC}`);
+    if (r.status !== 404) c_pubBad.push(`${method} ${p} ⇒ ${r.status}`);
+  }
+  const c_pubAudit = await api('GET', '/api/account-admin/account-audit?shopId=s1', undefined, auth, `http://127.0.0.1:${PUBLIC}`);
+  if (c_pubAudit.status !== 404) c_pubBad.push(`account-audit ⇒ ${c_pubAudit.status}`);
+  check('⛔ هیچ درِ کنسول (۱۲ در + دفتر) روی پورتِ عمومی «نبوده» است و به سرورِ حساب نمی‌رسد',
+    c_pubBad.length === 0 && seen.length === c_pubSeen, c_pubBad.join(' · '));
+  const c_noAuthCon = await api('GET', '/api/account-admin/console/system/health');
+  check('و بی نشستِ پنل ۴۰۱', c_noAuthCon.status === 401, String(c_noAuthCon.status));
+  c_mark = seen.length;
+  const c_bogusCon = await api('GET', '/api/account-admin/console/system/anything', undefined, auth);
+  check('⛔ مسیرِ نانوشتهٔ کنسول ۴۰۴ و به سرورِ حساب نمی‌رسد', c_bogusCon.status === 404 && seen.length === c_mark, `${c_bogusCon.status}`);
 
   console.log('\n── سرورِ حساب خاموش ──');
   fake.close();

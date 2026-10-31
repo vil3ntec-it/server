@@ -114,7 +114,11 @@ export function daysTone(daysLeft: number | null | undefined, permanent?: boolea
 
 /* ------------------------- خواندن از سرورِ حساب ------------------------- */
 
-export type Load<T> = { data: T | null; error: string | null; code: string; busy: boolean; reload: () => Promise<void> };
+/**
+ * `at`: لحظه‌ای که آخرین پاسخِ سالم به **همین صفحه** رسید (کنسولِ فروشگاه آن را «دریافت در این صفحه»
+ * می‌نامد، جدا از زمانِ سنجشِ خودِ سرورِ حساب). خواندنِ ناموفق آن را عوض نمی‌کند.
+ */
+export type Load<T> = { data: T | null; error: string | null; code: string; busy: boolean; at: number | null; reload: () => Promise<void> };
 
 /**
  * یک خواندنِ ساده با حالِ خودش.
@@ -156,6 +160,7 @@ export function useLoad<T>(path: string | null, deps: unknown[] = [], live?: Liv
   const [error, setError] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(Boolean(path));
+  const [at, setAt] = useState<number | null>(null);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -175,6 +180,7 @@ export function useLoad<T>(path: string | null, deps: unknown[] = [], live?: Liv
       if (!alive.current) return;
       tries.current = 0;
       setData(res);
+      setAt(Date.now());
       setError(null);
       setCode('');
     } catch (e) {
@@ -224,7 +230,7 @@ export function useLoad<T>(path: string | null, deps: unknown[] = [], live?: Liv
    */
   useLive(live ?? [], () => { void reload(); });
 
-  return { data, error, code, busy, reload };
+  return { data, error, code, busy, at, reload };
 }
 
 /**

@@ -428,6 +428,60 @@ export async function cloudRaw(method, path, { query = {}, body = null } = {}) {
   return authedSend(m, p, { query, body, creds, token: t });
 }
 
+/*
+ *  ⛔ **۴۰۱ِ سرورِ حساب دو معنا دارد** (۱۴۰۵/۰۸/۰۹، فاز ۲ ِ پنلِ مرکزی — با سرورِ حسابِ واقعی سنجیده شد):
+ *
+ *    ۱) توکنِ مدیر مرده است؛
+ *    ۲) **این مسیر روی این نسخهٔ سرورِ حساب نیست.** مسیرِ ناشناختهٔ ‎/api/admin/*‎ از روترهای مدیر رد
+ *       می‌شود و به ‎routes/data‎ (روی ‎/‎ ِ همان ‎apiRouter‎) می‌رسد، که توکنِ **کاربر** می‌خواهد ⇒
+ *       ‎401 invalid_token‎ — نه ۴۰۴. (‎GET /api/admin/shops/x/health‎ روی ‎shop@2.14.4‎: همین.)
+ *
+ *  تا امروز هر دو «نشست تمام شد» خوانده می‌شد و دو زخم داشت:
+ *    • پل برای **هر** درخواست به مسیرِ نبوده یک ورودِ تازه می‌زد (`autoToken(true)`) — و `useLoad`
+ *      روی `cloud_session_expired` دوباره تلاش می‌کند ⇒ همان سقفِ نرخِ ورود که «ازدحامِ سرد» بست؛
+ *    • ۴۰۱ تا مرورگر می‌رسید و `web/src/api.ts` آن را «نشستِ **پنل** تمام شد» می‌خواند و صاحب سامانه
+ *      را از پنل بیرون می‌انداخت — با این‌که نشستِ پنلش سالم بود.
+ *
+ *  حالا: ۴۰۱ ⇒ یک پرسشِ ‎GET /api/admin/me‎ با **همان** توکن (این مسیر در همهٔ نسخه‌ها هست).
+ *    زنده ⇒ ‎501 account_server_outdated‎ — بی ورود، بی تکرار؛ صفحه می‌گوید «سرورِ حساب را به‌روز کنید».
+ *    مرده ⇒ همان راهِ قبلی: یک ورودِ تک‌پرواز (`stale`) و یک بارِ دیگر.
+ *  ⛔ و `cloud_session_expired` دیگر ۴۰۱ نیست بلکه ۴۰۹ — همان قاعدهٔ `doLogin` (۴۰۱ِ ورود ⇒ ۴۰۹).
+ */
+async function tokenAlive(bearer) {
+  try {
+    const r = await fetch(`${cloudTarget()}/api/admin/me`, { headers: { authorization: `Bearer ${bearer}` } });
+    return r.status === 200;
+  } catch { return false; }
+}
+
+function outdatedErr(path) {
+  const err = new Error('این بخش روی نسخهٔ فعلیِ سرورِ حساب نیست — سرورِ حساب را به‌روز کنید');
+  err.code = 'account_server_outdated';
+  err.status = 501;
+  err.path = String(path || '');
+  return err;
+}
+
+function expiredErr() {
+  const err = new Error('نشستِ مدیر روی سرورِ حساب تمام شده — دوباره وارد شوید');
+  err.code = 'cloud_session_expired';
+  err.status = 409;
+  return err;
+}
+
+/** فرستادن با قاعدهٔ بالا؛ پاسخِ غیرِ ۴۰۱ همان‌طور که آمد برمی‌گردد. */
+async function send401(send, t, creds, path) {
+  let res = await send(t);
+  if (res.status !== 401) return res;
+  if (await tokenAlive(t)) throw outdatedErr(path);
+  if (!creds) throw expiredErr();
+  const next = await autoToken(true, t);
+  res = await send(next);
+  if (res.status !== 401) return res;
+  if (await tokenAlive(next)) throw outdatedErr(path);
+  throw expiredErr();
+}
+
 /** خودِ فرستادن — یک بار، و روی ۴۰۱ِ توکنِ خودکار فقط یک بار دیگر. */
 async function authedSend(method, path, { query = {}, body = null, creds, token: t }) {
   const qs = new URLSearchParams(
@@ -443,23 +497,10 @@ async function authedSend(method, path, { query = {}, body = null, creds, token:
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  let res = await send(t);
-  if (res.status === 401 && creds) {
-    //  توکنِ خودکار مرده — یک بار، و فقط یک بار، دوباره وارد شو
-    t = await autoToken(true, t);
-    res = await send(t);
-  }
-
+  //  توکنِ خودکار مرده ⇒ یک بار، و فقط یک بار، دوباره وارد شو؛ ولی ۴۰۱ِ «مسیر نیست» نه (`send401`)
+  const res = await send401(send, t, creds, path);
   const out = await res.json().catch(() => ({}));
 
-  if (res.status === 401) {
-    //  توکنِ مدیر عمرِ کوتاهی دارد؛ «دوباره وارد شوید» بهتر از یک
-    //  خطای گنگ است.
-    const err = new Error('نشستِ مدیر روی سرورِ حساب تمام شده — دوباره وارد شوید');
-    err.code = 'cloud_session_expired';
-    err.status = 401;
-    throw err;
-  }
   if (!res.ok) {
     const err = new Error(out?.error?.message || 'سرورِ حساب جواب نداد');
     err.code = out?.error?.code || 'cloud_error';
@@ -510,17 +551,7 @@ export async function cloudRawBytes(method, path, { body = null, contentType = '
     body: m === 'POST' ? body : undefined,
   });
 
-  let res = await send(t);
-  if (res.status === 401 && creds) {
-    t = await autoToken(true, t);
-    res = await send(t);
-  }
-  if (res.status === 401) {
-    const err = new Error('نشستِ مدیر روی سرورِ حساب تمام شده — دوباره وارد شوید');
-    err.code = 'cloud_session_expired';
-    err.status = 401;
-    throw err;
-  }
+  const res = await send401(send, t, creds, p);
   if (!res.ok || m === 'POST') {
     const out = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -570,18 +601,8 @@ export async function cloudRawText(method, path, { query = {} } = {}) {
   const url = `${cloudTarget()}${p}${qs ? `?${qs}` : ''}`;
   const send = (bearer) => dial(url, { method: m, headers: { authorization: `Bearer ${bearer}` } });
 
-  let res = await send(t);
-  if (res.status === 401 && creds) {
-    t = await autoToken(true, t);
-    res = await send(t);
-  }
+  const res = await send401(send, t, creds, p);
   const text = await res.text().catch(() => '');
-  if (res.status === 401) {
-    const err = new Error('نشستِ مدیر روی سرورِ حساب تمام شده — دوباره وارد شوید');
-    err.code = 'cloud_session_expired';
-    err.status = 401;
-    throw err;
-  }
   if (!res.ok) {
     let payload = null;
     try { payload = JSON.parse(text); } catch { /* متنِ ساده */ }

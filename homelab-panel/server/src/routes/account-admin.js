@@ -1305,7 +1305,7 @@ router.post('/notices/:id/preview', guard(async (req, res) => {
 }));
 
 /** ارسالِ آزمایشی به نشانیِ خودِ مدیر — باز هم بی هیچ ردیفی در گزارش. */
-router.post('/notices/:id/test', guard(async (req, res) => {
+router.post('/notices/:id/test', requireRole('operator'), guard(async (req, res) => {
   res.json(await cloudRaw('POST', `/api/admin/notices/${idOf(req.params.id)}/test`, {
     body: { to: String(req.body?.to || '').slice(0, 160) },
   }));
@@ -1471,11 +1471,18 @@ router.get('/sync/conflicts', guard(async (req, res) => {
   }));
 }));
 
-/** بازگرداندنِ نسخهٔ بازنده — یک opِ تازه از طرفِ سرور، نه پاک کردنِ چیزی. */
-router.post('/sync/conflicts/:id/restore', guard(async (req, res) => {
+/**
+ * بازگرداندنِ نسخهٔ بازنده — یک opِ تازه از طرفِ سرور، نه پاک کردنِ چیزی.
+ *
+ * ⛔ (۱۴۰۵/۰۸/۰۹) دادهٔ یک حساب را عوض می‌کند و سرورِ حساب آن را فقط به مدیرِ
+ * **ارشد** و فقط **با دلیل** می‌دهد (`admin-sync.js`، ADMIN-CONTROL-PLANE). پل با
+ * حسابِ ارشد حرف می‌زند، پس مرزِ نقش همین‌جاست: فقط admin، و دلیل همراه می‌رود.
+ */
+router.post('/sync/conflicts/:id/restore', requireRole('admin'), guard(async (req, res) => {
   const id = idOf(req.params.id);
-  const out = await cloudRaw('POST', `/api/admin/sync/conflicts/${id}/restore`);
-  audit({ actor: actorOf(req), action: 'account.sync.restore', entity: 'sync_conflict', entityId: id });
+  const reason = String(req.body?.reason ?? '').trim().slice(0, 500);
+  const out = await cloudRaw('POST', `/api/admin/sync/conflicts/${id}/restore`, { body: { reason } });
+  audit({ actor: actorOf(req), action: 'account.sync.restore', entity: 'sync_conflict', entityId: id, detail: { reason } });
   res.json(out);
 }));
 
@@ -1852,7 +1859,13 @@ router.put('/email', requireRole('admin'), guard(async (req, res) => {
   res.json(out);
 }));
 
-router.post('/email/test', guard(async (req, res) => {
+/*
+ *  ⛔ «آزمون»های این روتر **می‌فرستند** (ایمیل، پیامک، اعلان) — نگاه کردن نیستند.
+ *  `writeNeedsOperator` هر POSTِ ‎…/test‎ را «فقط نگاه» می‌شمارد و برای viewer باز
+ *  می‌گذارد (درست برای آزمونِ اتصالِ مرکز فرمان)؛ پس این‌جا نقش صریح است. پیامک
+ *  پول است و سرورِ حساب آن را فقط به ارشد می‌دهد ⇒ admin.
+ */
+router.post('/email/test', requireRole('operator'), guard(async (req, res) => {
   res.json(await cloudRaw('POST', '/api/admin/email/test', { body: req.body || {} }));
 }));
 
@@ -1876,7 +1889,7 @@ router.put('/sms', requireRole('admin'), guard(async (req, res) => {
   res.json(out);
 }));
 
-router.post('/sms/test', guard(async (req, res) => {
+router.post('/sms/test', requireRole('admin'), guard(async (req, res) => {
   res.json(await cloudRaw('POST', '/api/admin/sms/test', { body: req.body || {} }));
 }));
 
@@ -1888,9 +1901,174 @@ router.post('/sms/test', guard(async (req, res) => {
  *     از `api.<دامنه>/admin/` انجام شده‌اند و پنل اصلاً ندیدشان.
  */
 router.get('/account-audit', guard(async (req, res) => {
+  //  ⚠️ (فاز ۲) پالایشِ «یک دکان» **سمتِ سرورِ حساب** است (`shopId`ِ ‎admin.js /audit‎)، نه فیلترِ
+  //  محلی روی صد ردیفِ آخر — وگرنه کارهای قدیمی‌ترِ همان دکان هیچ‌وقت دیده نمی‌شدند. سقف همان ۵۰۰ِ آن‌جا.
+  const shopId = req.query.shopId ? idOf(req.query.shopId) : '';
   res.json(await cloudRaw('GET', '/api/admin/audit', {
-    query: { limit: Math.min(200, Math.max(1, Number(req.query.limit) || 50)) },
+    query: { limit: Math.min(500, Math.max(1, Number(req.query.limit) || 50)), shopId },
   }));
+}));
+
+/* ═══════════════════════════════════════════════════════════════════════
+   🏪 کنسولِ فروشگاه — فاز ۲ ِ پنلِ مرکزیِ مالک (OWNER-CONSOLE-AUDIT §۴ و §۸)
+
+   زبانه‌های «فروشگاه» (‎/shop‎): داشبورد · فروشگاه‌ها · اشتراک‌ها · مالی · نسخه‌ها · سلامت و خطاها ·
+   تنظیمات و پرچم‌ها · یکپارچه‌سازی · دفترِ رخداد. هر چه پیش از این فقط در کنسولِ وبِ خودِ سرورِ حساب
+   (‎api.<دامنه>/admin/‎) بود، با **یک خطِ فهرستِ سفید برای هر مقصد**:
+
+     پنل ‎/api/account-admin/console/…‎      ⇐ سرورِ حساب                         نقشِ پنل   نقشِ آن‌جا
+     system/health · providers · versions  ⇐ ‎/api/admin/system/*‎               viewer     admin
+     system/chain-verify (POST)            ⇐ ‎/api/admin/system/chain-verify‎   admin      superadmin
+     release/beta                          ⇐ ‎/api/admin/release/beta‎          admin      superadmin
+     version-health                        ⇐ ‎/api/admin/sync/version-health‎   viewer     admin
+     live-config                           ⇐ ‎/api/admin/pump/live-config‎      viewer     admin
+     capabilities                          ⇐ ‎/api/admin/me‎ (فقط ‎capabilities‎) viewer     admin
+     shops/:id/health · flags · flags/history ⇐ فاز ۳ (shop) — پشتِ سنجشِ «توانایی»
+
+   ⛔ **همه خواندنی‌اند** جز `chain-verify` که فقط می‌سنجد (چیزی عوض نمی‌کند) ولی هزینه دارد و یک ردیفِ
+      سابقه در سرورِ حساب می‌نویسد ⇒ فقط admin، و یک ردیفِ دفترِ پنل.
+   ⛔ **هیچ عددی این‌جا ساخته یا حساب نمی‌شود.** پاسخِ بالادست همان‌طور می‌رود؛ فقط `fetchedAt` (زمانِ
+      رسیدنِ پاسخ به پنل) کنارش می‌نشیند تا صفحه «آخرین به‌روزرسانی» را از جایی واقعی بگوید، نه از
+      ساعتِ مرورگر.
+   ⛔ **مرزِ نقش = مرزِ سرورِ حساب یا تنگ‌تر.** پل با حسابِ ارشد حرف می‌زند، پس هر مقصدِ «فقط ارشد»
+      این‌جا دستِ‌کم admin است — و `test/bridge-roles.mjs` همین را برای **همهٔ** مسیرهای پل از روی
+      خودِ کدِ سرورِ حساب می‌سنجد، نه از این جدول.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const stamped = (out) => ({ ...(out && typeof out === 'object' ? out : {}), fetchedAt: Date.now() });
+
+router.get('/console/system/health', guard(async (req, res) => {
+  res.json(stamped(await cloudRaw('GET', '/api/admin/system/health')));
+}));
+
+router.get('/console/system/providers', guard(async (req, res) => {
+  res.json(stamped(await cloudRaw('GET', '/api/admin/system/providers')));
+}));
+
+router.get('/console/system/versions', guard(async (req, res) => {
+  res.json(stamped(await cloudRaw('GET', '/api/admin/system/versions')));
+}));
+
+/*
+ *  ⛔ وارسیِ زنجیرهٔ هشِ سابقه (SEC-02) — فقط‌خواندنی ولی پرهزینه، و نامِ زنجیره‌ها شناسهٔ دکان و
+ *  کاربر را دارد؛ سرورِ حساب آن را فقط به ارشد می‌دهد ⇒ این‌جا فقط admin. بدنهٔ کاربر نمی‌رود:
+ *  همیشه «همهٔ زنجیره‌ها، با ردیف‌ها» — همان پیش‌فرضِ آن‌جا.
+ */
+router.post('/console/system/chain-verify', requireRole('admin'), guard(async (req, res) => {
+  const out = await cloudRaw('POST', '/api/admin/system/chain-verify', { body: {} });
+  audit({
+    actor: actorOf(req), action: 'account.chain_verified', entity: 'account_server',
+    detail: { ok: out?.ok === true, total: Number(out?.total) || 0, broken: Number(out?.brokenCount) || 0 },
+  });
+  res.json(stamped(out));
+}));
+
+/** کانالِ آزمایشیِ برنامهٔ دکان (F0-27) — خواندن فقط؛ سرورِ حساب حتی خواندنش را فقط به ارشد می‌دهد. */
+router.get('/console/release/beta', requireRole('admin'), guard(async (req, res) => {
+  res.json(stamped(await cloudRaw('GET', '/api/admin/release/beta')));
+}));
+
+/** «یک نسخه: چند دستگاه، چند خطا» — شمرده در سرورِ حساب، نه این‌جا. */
+router.get('/console/version-health', guard(async (req, res) => {
+  const app = sectionOf(req.query.app || 'shop');
+  const version = String(req.query.version || '').trim().replace(/^v/i, '').slice(0, 32);
+  if (!/^\d+(\.\d+){1,3}$/.test(version)) {
+    return res.status(400).json({ error: 'bad_version', message: 'نسخه درست نیست' });
+  }
+  res.json(stamped(await cloudRaw('GET', '/api/admin/sync/version-health', { query: { app, version } })));
+}));
+
+/*
+ *  «تنظیماتِ زنده» (`live_config`) — `all` یا شناسهٔ یک دکان/پمپ.
+ *  ⛔ `release` این‌جا نه: همان فهرستِ کانالِ آزمایشی است که درِ خودش (`release/beta`) فقط admin است؛
+ *     درِ دوم با نقشِ پایین‌تر همان مرز را دور می‌زد.
+ */
+router.get('/console/live-config', guard(async (req, res) => {
+  const raw = String(req.query.scope || 'all').trim();
+  if (raw === 'release') {
+    return res.status(400).json({ error: 'use_release_beta', message: 'کانالِ آزمایشی را از زبانهٔ «نسخه‌ها» ببینید' });
+  }
+  const scope = raw === 'all' ? 'all' : idOf(raw);
+  res.json(stamped(await cloudRaw('GET', '/api/admin/pump/live-config', { query: { scope } })));
+}));
+
+/*
+ *  ── فاز ۳ (ریپوی shop): پشتِ سنجشِ «توانایی» ───────────────────────────
+ *
+ *  ⛔ مسیری که روی سرورِ حساب نیست هرگز صدا زده نمی‌شود: سرورِ حساب برای مسیرِ ناشناخته ۴۰۱ می‌دهد
+ *  (`stations/cloud.js`، `send401`). پس اول ‎GET /api/admin/me‎ — قرارداد: فیلدِ افزودنیِ
+ *  `capabilities: string[]` (نسخهٔ پیش از فاز ۳ آن را ندارد ⇒ هیچ توانایی). نبودِ توانایی ⇒ پاسخِ
+ *  ۲۰۰ ِ صریح `{ available: false, reason, capability, needs }` — نه عددِ ساختگی، نه خطای گنگ.
+ */
+export const PHASE3 = Object.freeze({
+  'shop-health.v1': 'GET /api/admin/shops/:id/health',
+  'flags.v1': 'GET /api/admin/flags · GET /api/admin/flags/history',
+  'shop-suspension.v1': 'GET /api/admin/shops/:id/suspension',
+  'actor.v1': 'سرآیندِ انجام‌دهنده در دفترِ سرورِ حساب',
+});
+const CAP_RE = /^[a-z][a-z0-9-]{0,40}\.v\d{1,3}$/;
+
+/*
+ *  ⚠️ کَش نمی‌شود، عمداً: یک ‎GET /api/admin/me‎ِ سبک برای هر درِ فاز ۳ (که فقط با باز کردنِ همان کارت
+ *  صدا زده می‌شود)، و روزی که سرورِ حساب به‌روز شد همان لحظه دیده می‌شود — نه یک دقیقه بعد.
+ */
+async function capabilities() {
+  const me = await cloudRaw('GET', '/api/admin/me');
+  const list = Array.isArray(me?.capabilities) ? me.capabilities.map(String).filter((c) => CAP_RE.test(c)) : [];
+  return { at: Date.now(), list };
+}
+
+function unavailable(capability) {
+  return {
+    available: false,
+    reason: 'capability_missing',
+    capability,
+    needs: PHASE3[capability] || capability,
+    message: 'داده در دسترس نیست — سرورِ حساب هنوز این API را ندارد (فاز ۳ ِ پنلِ مرکزی، ریپوی shop)',
+    fetchedAt: Date.now(),
+  };
+}
+
+router.get('/console/capabilities', guard(async (req, res) => {
+  const caps = await capabilities();
+  res.json({
+    capabilities: caps.list,
+    known: Object.entries(PHASE3).map(([id, needs]) => ({ id, needs, available: caps.list.includes(id) })),
+    checkedAt: caps.at,
+  });
+}));
+
+router.get('/console/shops/:id/health', guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  if (!(await capabilities()).list.includes('shop-health.v1')) return res.json(unavailable('shop-health.v1'));
+  res.json({ available: true, ...stamped(await cloudRaw('GET', `/api/admin/shops/${id}/health`)) });
+}));
+
+router.get('/console/shops/:id/suspension', guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  if (!(await capabilities()).list.includes('shop-suspension.v1')) return res.json(unavailable('shop-suspension.v1'));
+  res.json({ available: true, ...stamped(await cloudRaw('GET', `/api/admin/shops/${id}/suspension`)) });
+}));
+
+router.get('/console/flags', guard(async (req, res) => {
+  if (!(await capabilities()).list.includes('flags.v1')) return res.json(unavailable('flags.v1'));
+  res.json({ available: true, ...stamped(await cloudRaw('GET', '/api/admin/flags')) });
+}));
+
+router.get('/console/flags/history', guard(async (req, res) => {
+  if (!(await capabilities()).list.includes('flags.v1')) return res.json(unavailable('flags.v1'));
+  const key = String(req.query.key || '').trim();
+  if (key && !/^[a-z][a-z0-9_.-]{0,63}$/.test(key)) return res.status(400).json({ error: 'bad_key', message: 'کلید درست نیست' });
+  res.json({
+    available: true,
+    ...stamped(await cloudRaw('GET', '/api/admin/flags/history', {
+      query: {
+        key,
+        limit: Math.min(200, Math.max(1, Number(req.query.limit) || 50)),
+        before: Number(req.query.before) > 0 ? String(Math.floor(Number(req.query.before))) : '',
+      },
+    })),
+  });
 }));
 
 /* --------------------------- خواندنی‌های دیگر -------------------------- */
