@@ -81,11 +81,31 @@ export function writeNeedsOperator(req, res, next) {
 
 /* ------------------------ مدیریتِ کاربرانِ پنل -------------------------- */
 
+/*
+ *  ⛔ مالکِ اصلیِ پنل (۱۴۰۵/۰۸/۰۹، برنامهٔ پنلِ مرکزی §۲): «مالکِ اصلی حذف،
+ *  تعلیق یا تغییرِ نقش نمی‌شود». تا امروز فقط «آخرین مدیر» محافظت داشت؛ پس
+ *  مدیرِ دوم (یا نشستِ دزدیده‌شدهٔ او) می‌توانست صاحبِ سامانه را تنزل دهد،
+ *  ببندد، پاک کند یا رمزش را عوض کند و او را از پنلِ خودش بیرون بگذارد.
+ *
+ *  مالک = قدیمی‌ترین مدیرِ فعال (کم‌ترین id) — همان حسابِ `/api/auth/setup`.
+ *  ستون یا مهاجرتِ تازه لازم نیست: چون هیچ‌کس نمی‌تواند او را تنزل دهد یا
+ *  ببندد، همین قاعده همیشه همان آدم را برمی‌گرداند.
+ */
+export function ownerId() {
+  return db.prepare("SELECT MIN(id) AS id FROM users WHERE role = 'admin' AND disabled = 0").get()?.id ?? null;
+}
+
+export function isOwner(id) {
+  const owner = ownerId();
+  return owner != null && Number(id) === Number(owner);
+}
+
 export function listPanelUsers() {
+  const owner = ownerId();
   return db
     .prepare('SELECT id, username, role, disabled, created_at, last_login FROM users ORDER BY created_at')
     .all()
-    .map((u) => ({ ...u, disabled: Boolean(u.disabled) }));
+    .map((u) => ({ ...u, disabled: Boolean(u.disabled), owner: u.id === owner }));
 }
 
 export function adminCount() {
@@ -98,6 +118,7 @@ export function setRole(id, role, actor = 'admin') {
   if (!user) throw new Error('not_found');
   // آخرین مدیر نباید از دستِ خودش برود
   if (user.role === 'admin' && role !== 'admin' && adminCount() <= 1) throw new Error('last_admin');
+  if (role !== 'admin' && isOwner(user.id)) throw new Error('owner_protected');
   db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, user.id);
   audit({ actor, action: 'panel.user.role', entity: 'user', entityId: user.username, detail: { from: user.role, to: role } });
   return { ...user, role, password_hash: undefined };
@@ -107,6 +128,7 @@ export function setDisabled(id, disabled, actor = 'admin') {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(id));
   if (!user) throw new Error('not_found');
   if (disabled && user.role === 'admin' && adminCount() <= 1) throw new Error('last_admin');
+  if (disabled && isOwner(user.id)) throw new Error('owner_protected');
   db.prepare('UPDATE users SET disabled = ? WHERE id = ?').run(disabled ? 1 : 0, user.id);
   // حسابِ از کار افتاده نباید نشستِ باز داشته باشد
   if (disabled) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id);
@@ -118,6 +140,7 @@ export function deletePanelUser(id, actor = 'admin') {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(id));
   if (!user) throw new Error('not_found');
   if (user.role === 'admin' && adminCount() <= 1) throw new Error('last_admin');
+  if (isOwner(user.id)) throw new Error('owner_protected');
   db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
   audit({ actor, action: 'panel.user.delete', entity: 'user', entityId: user.username });
   return true;
