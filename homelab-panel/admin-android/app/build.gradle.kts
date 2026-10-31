@@ -43,17 +43,41 @@ android {
   }
 
   /*
-   *  امضای ثابت. این کلید راز نیست و عمداً داخلِ مخزن است: تنها کارش این
-   *  است که هر ساخت با همان امضا بیرون بیاید تا نسخهٔ تازه *روی* نسخهٔ
-   *  قبلی بنشیند. با کلیدِ هر بار تازه، اندروید به‌روزرسانی را رد می‌کند و
-   *  باید برنامه پاک و از نو نصب شود — یعنی همهٔ داده‌ها از دست می‌روند.
+   *  امضای ثابت — فقط از محیط (secretِ CI)، هیچ‌چیز در مخزن.
+   *
+   *  امضا باید ثابت بماند تا نسخهٔ تازه *روی* نسخهٔ قبلی بنشیند. ⛔ ولی «این کلید راز نیست» درست نبود:
+   *  مخزن عمومی است و هر کس فایلِ کلید و رمزش را داشت می‌توانست APKی بسازد که اندروید به‌روزرسانیِ
+   *  همین برنامهٔ ادمین بداند (SEC-ART-05، از ۱۴۰۵/۰۸/۱۰). کلید و رمز از مخزن برداشته شدند؛ بسته‌بندیِ
+   *  release بی این متغیرها شکست می‌خورد. چرخش: docs/RULES-fa.md، بخشِ «کلیدِ امضای برنامهٔ ادمین».
    */
+  fun env(name: String): String? = System.getenv(name)?.takeIf { it.isNotBlank() }
+  val keystorePath: String? = env("VILLAIN_ADMIN_KEYSTORE")
+  val keystorePass: String? = env("VILLAIN_ADMIN_KEYSTORE_PASSWORD")
+  val keystoreAlias: String? = env("VILLAIN_ADMIN_KEY_ALIAS")
+  val keystoreKeyPass: String? = env("VILLAIN_ADMIN_KEY_PASSWORD") ?: keystorePass
+  val releaseSigning: Boolean = keystorePath != null && keystorePass != null && keystoreAlias != null &&
+    File(keystorePath).isFile
+
   signingConfigs {
     create("release") {
-      storeFile = file("villain-admin.jks")
-      storePassword = "villain-admin"
-      keyAlias = "villain"
-      keyPassword = "villain-admin"
+      if (releaseSigning) {
+        storeFile = File(keystorePath!!)
+        storePassword = keystorePass
+        keyAlias = keystoreAlias
+        keyPassword = keystoreKeyPass
+      }
+    }
+  }
+
+  val missingSigning = !releaseSigning
+  project.tasks.matching { it.name.matches(Regex("(package|bundle)Release")) }.configureEach {
+    doFirst {
+      if (missingSigning) {
+        throw GradleException(
+          "⛔ کلیدِ امضا نیست: VILLAIN_ADMIN_KEYSTORE، VILLAIN_ADMIN_KEYSTORE_PASSWORD و VILLAIN_ADMIN_KEY_ALIAS " +
+            "را بدهید (در CI از secretها). کلیدی در مخزن نیست و نباید باشد."
+        )
+      }
     }
   }
 
@@ -64,7 +88,8 @@ android {
       isShrinkResources = false
     }
     debug {
-      signingConfig = signingConfigs.getByName("release")
+      //  نسخهٔ خودی با کلیدِ debugِ خودِ کامپیوتر — کلیدِ انتشار فقط در CI
+      if (releaseSigning) signingConfig = signingConfigs.getByName("release")
     }
   }
 

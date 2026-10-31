@@ -36,8 +36,25 @@ jobs:
       - name: آماده‌سازی Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      #  ⛔ SEC-ART-05: کلیدِ امضا فقط از secret؛ فایل و رمزش دیگر در مخزنِ (عمومیِ) پیشین نیستند و برگشتی
+      #  هم نیست — بی secret این کار قرمز است (docs/RULES-fa.md، «کلیدِ امضای برنامهٔ ادمین»).
+      - name: کلیدِ امضا
+        env:
+          KEYSTORE_B64: ${{ secrets.VILLAIN_ADMIN_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::secret به نام VILLAIN_ADMIN_KEYSTORE_B64 (و VILLAIN_ADMIN_KEYSTORE_PASSWORD، VILLAIN_ADMIN_KEY_ALIAS) تنظیم نشده"
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/villain-admin.jks"
+          echo "VILLAIN_ADMIN_KEYSTORE=$RUNNER_TEMP/villain-admin.jks" >> "$GITHUB_ENV"
+
       - name: ساخت APK
         working-directory: homelab-panel/admin-android
+        env:
+          VILLAIN_ADMIN_KEYSTORE_PASSWORD: ${{ secrets.VILLAIN_ADMIN_KEYSTORE_PASSWORD }}
+          VILLAIN_ADMIN_KEY_ALIAS: ${{ secrets.VILLAIN_ADMIN_KEY_ALIAS }}
+          VILLAIN_ADMIN_KEY_PASSWORD: ${{ secrets.VILLAIN_ADMIN_KEY_PASSWORD }}
         run: gradle --no-daemon assembleRelease
 
       - name: نام‌گذاری و جمع کنترلی
