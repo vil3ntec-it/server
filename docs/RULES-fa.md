@@ -3127,7 +3127,7 @@ POST /api/pump-updates-admin/testers {codes}   فقط مدیر · دفترِ م�
 - ⛔ **پنل عددی نمی‌سازد و «نیامده = —، نه صفر»** (`consoleData.ts`؛ `live-pages` همان فایل را با Node اجرا می‌کند).
   هر کارت منبع و زمان دارد: «سنجیدهٔ سرورِ حساب» (`checkedAt`/`serverTime`) ⇐ «رسیده به پنل» (`fetchedAt`ِ پل)
   ⇐ «دریافت در این صفحه» (`useLoad().at`). خطای بالادست با **کدِ خودش** (`Problem`).
-- ⛔ **فاز ۳ (ریپوی shop) پشتِ «توانایی»**: `shops/:id/health`، `shops/:id/suspension`، `flags`، `flags/history`
+- ⛔ **فاز ۳ (ریپوی shop) پشتِ «توانایی»** (از ۱.۵۰.۶۴ درهای واقعیِ #597 — بخشِ «🔗 چسب» پایین؛ `suspension` رفت): `shops/:id/health`، `shops/:id/suspension`، `flags`، `flags/history`
   فقط وقتی صدا زده می‌شوند که سرورِ حساب در `GET /api/admin/me` بگوید `capabilities: ["shop-health.v1", …]`؛
   وگرنه پاسخِ ۲۰۰ ِ صریح `{available:false, reason:'capability_missing', capability, needs}` و رابط «داده در
   دسترس نیست». قرارداد و شکلِ پاسخ‌ها: `consoleData.ts` (`ShopHealth`، `ShopSuspension`، `Flags`، `FlagHistory`).
@@ -3144,3 +3144,32 @@ POST /api/pump-updates-admin/testers {codes}   فقط مدیر · دفترِ م�
 - آزمون: `account-admin.mjs` (+۲۷ بند، ۲۸۳: شکل، نقش، پورتِ عمومی، کدِ خطای بالادست، فاز ۳، سرورِ کهنه سرخ⇐سبز) ·
   **`bridge-roles.mjs`** (تازه؛ روی پیش از #109 دو سرخ می‌دهد — همان سه حفره) · `live-pages` (+۱۸، ۱۰۴) ·
   `control-ui` (+۱۴، ۱۴۸، کرومیوم) · `shop-console-ui.mjs` (تازه، کرومیوم، محلی: «نیامده = —» روی صفحهٔ واقعی).
+
+## 🔗 چسبِ کنسولِ فروشگاه ⇄ سرورِ حساب — درهای واقعیِ فاز ۳، کلیدِ سرویس و «انجام‌دهنده» (از ۱۴۰۵/۰۸/۰۹، نسخه 1.50.64)
+
+روی #115 (فاز ۲)، هم‌پای shop #597 (فاز ۳) و چسبِ سمتِ shop (`claude/console-glue`: `capabilities` در `GET /api/admin/me`،
+۴۰۴ ِ مسیرِ ناشناختهٔ مدیر، `total` ِ جست‌وجو؛ `docs/spec/ADMIN-CONTROL-PLANE.md` بندِ ۱۲.۶ ِ همان ریپو).
+
+- ⛔ **نامِ توانایی‌ها یکی برای هر دو سو**: `shop-health.v1` · `shop-holds.v1` · `flags.v1` · `actor.v1` · `service-key.v1`
+  (`PHASE3` ِ `account-admin.js` ⇔ `CAPABILITIES` ِ `routes/admin.js` ِ shop). `shop-suspension.v1` و درِ `/suspension` رفتند —
+  هرگز ساخته نشدند؛ چهار حالت + بایگانی همان `/holds` است. نامِ تازه فقط با افزودن به هر دو سو.
+- ⛔ **حالت‌های دکان** (`console/shops/:id/holds` و `…/:holdId/lift`): خواندن هر نقش؛ نوشتن فقط admin ِ پنل، `confirm: true`
+  (پنجرهٔ تأیید)، دلیلِ ۳ تا ۲۰۰، و **کلیدِ یکتایی از رابط** (یکی برای هر پنجره ⇒ دوبار زدن یک کار است) — «پایانِ اشتراک» بی
+  کلید ۴۰۰. بدنهٔ بالادست فقط `{kind, service?, reason}`؛ کلید در `Idempotency-Key`. بی `shop-holds.v1`: خواندن «داده در دسترس
+  نیست»، نوشتن `501 capability_missing` — هرگز «انجام شد» ِ دروغ. قاعدهٔ هر حالت (نقش، اثر، سابقه) در سرورِ حساب است.
+- ⛔ **کلیدِ سرویسِ پل** (`account/service-key.js`، `stations/cloud.js` ⇒ `sendAuthed`): کلید فقط در `settings` زیرِ
+  `account_service_key` (در `SECRET_SETTINGS.whole` ⇒ رمزشده با `data/vault.key`)؛ هیچ مسیری برش نمی‌گرداند، در لاگ/دفتر نمی‌آید،
+  حتی چهار نویسهٔ آخرش. پل وقتی کلید را به کار می‌برد که سرورِ حساب آن را بپذیرد **و** `service-key.v1` و `actor.v1` بگوید
+  (سنجش یک دقیقه نگه داشته می‌شود؛ صفحهٔ حال همیشه تازه). وگرنه **همان راهِ پیشین، دست‌نخورده** (رمزِ ارشد/توکنِ گاوصندوق).
+  ۴۰۱ روی کلید ⇒ همان درخواست یک بار با راهِ پیشین؛ راهِ پیشین نیست ⇒ `409 service_key_rejected` (نه ۴۰۱ تا مرورگر).
+- ⛔ **«انجام‌دهنده»** = کاربرِ همین نشستِ پنل، از نقشِ **امروزش در پایگاه**: admin ⇒ superadmin · operator ⇒ admin · viewer ⇒
+  viewer (`X-Actor-Id: panel:<id>`، نام percent-encoded). فقط `account-admin.js` و `/api/stations-admin/cloud/*` (همان‌ها که
+  `bridge-roles.mjs` می‌سنجد)؛ کارِ بی‌نشست (ربات‌ها، آینه، `codes.js`) ⇒ `panel:system` با همان اختیارِ امروزِ پل.
+- ⛔ **ساختن/چرخش/ابطالِ کلید** (`console/service-key`، `…/revoke`): فقط **مالکِ پنل** (قدیمی‌ترین admin ِ فعال؛ `ownerId` ِ
+  فاز ۱ اگر در پایه بود) + **احرازِ دوباره** (رمزِ پنل در همان درخواست، یا `requireRecentAuth` ِ فاز ۱ اگر بود) + دلیل + تأیید؛
+  ۵ رمزِ غلط در ربع ساعت ⇒ ۴۲۹. از **راهِ پیشین** (کلیدِ سرویس به `/admin/service-keys` راه ندارد)؛ کلیدِ تازه پیش از ذخیره
+  سنجیده می‌شود (نپذیرفت ⇒ باطل و ذخیره نمی‌شود)؛ چرخش ⇒ کهنه همان دم باطل (نشد ⇒ گفته می‌شود). برداشتنِ رمزِ ارشد از پنل
+  پس از سبز ماندنِ کلید کارِ صاحبِ سامانه است (بندِ ۱۲.۲ ِ ADMIN-CONTROL-PLANE).
+- ⚠️ با کلید، viewer ِ پنل در سرورِ حساب هم viewer است ⇒ «پیش‌نمایشِ اعلان» (POST) برایش ۴۰۳ ِ همان‌جاست — مرزِ سرور، درست.
+- آزمون: `account-admin.mjs` (+۴۲، ۳۲۵) · `bridge-roles.mjs` (۱۵۷ مسیر، با سورسِ shop ِ main و چسب) · `live-pages` (+۹، ۱۱۳) ·
+  `shop-console-ui.mjs` (کرومیوم، +۱۹، ۴۶).

@@ -518,13 +518,32 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
         && m.providerTone('mock') !== 'good' && m.providerTone('none') !== 'good' && m.providerTone('live') === 'good');
     check('⇒ «داده در دسترس نیست» با `available: false` شناخته می‌شود، نه با نبودِ داده',
       m.isUnavailable({ available: false, capability: 'x' }) && !m.isUnavailable({}) && !m.isUnavailable(null) && !m.isUnavailable({ available: true }));
-    check('⛔ شناسه در نشانیِ پل کدگذاری می‌شود', m.CONSOLE.shopHealth('a/b') === '/api/account-admin/console/shops/a%2Fb/health');
+    check('⛔ شناسه در نشانیِ پل کدگذاری می‌شود', m.CONSOLE.shopHealth('a/b') === '/api/account-admin/console/shops/a%2Fb/health'
+      && m.CONSOLE.liftHold('a/b', 'h/1') === '/api/account-admin/console/shops/a%2Fb/holds/h%2F1/lift');
+    //  چسبِ فاز ۳ — همان قاعده‌های سرورِ حساب، روی خودِ کد
+    check('⛔ چهار حالت + بایگانی، همان نام‌های ‎lib/shop-holds.js‎؛ «پایانِ اشتراک» پول‌مجاور است',
+      JSON.stringify(m.HOLD_KINDS) === JSON.stringify(['access_suspended', 'service_disabled', 'subscription_ended', 'deletion_requested', 'archived'])
+        && JSON.stringify(m.MONEY_HOLDS) === JSON.stringify(['subscription_ended']) && m.HOLD_SERVICES.length === 5);
+    check('⛔ دلیل ۳ تا ۲۰۰ نویسه (همان مرزِ سرورِ حساب)',
+      !m.reasonOk('') && !m.reasonOk('  ab  ') && m.reasonOk('abc') && m.reasonOk('x'.repeat(200)) && !m.reasonOk('x'.repeat(201)) && !m.reasonOk(undefined));
+    const k1 = m.newIdemKey();
+    check('کلیدِ یکتایی: شکلِ پذیرفتهٔ سرورِ حساب و هر بار تازه', /^[A-Za-z0-9_.:-]{8,128}$/.test(k1) && k1 !== m.newIdemKey(), k1);
+    check('⛔ صفحهٔ بعدیِ تاریخچه فقط وقتی صفحه پر آمده؛ وگرنه null',
+      m.nextBefore([{ at: 9 }, { at: 5 }], 2) === 5 && m.nextBefore([{ at: 9 }], 2) === null && m.nextBefore(undefined, 2) === null
+        && m.nextBefore([{ at: 9 }, {}], 2) === null);
+    check('⛔ مقدارِ پرچمِ نیامده «—»؛ false و null و ۰ همان خودشان',
+      m.flagValue(undefined) === '—' && m.flagValue(false) === 'false' && m.flagValue(null) === 'null' && m.flagValue(0) === '0');
+    check('⇒ «انجام‌دهنده»: آدمِ پشتِ پنل اگر سرورِ حساب گفته؛ وگرنه شناسهٔ مدیر؛ هیچ ⇒ «—»',
+      m.actorLabel({ name: 'کریم', id: 'panel:2' }, 'svk1') === 'کریم' && m.actorLabel(null, 'adm1') === 'adm1' && m.actorLabel(undefined, '') === '—');
     //  هر درِ کنسول که صفحه صدا می‌زند، در فهرستِ سفیدِ پل هست
     const bridge = fs.readFileSync(path.join(here, '..', 'src', 'routes', 'account-admin.js'), 'utf8');
     const wanted = ['system/health', 'system/providers', 'system/versions', 'system/chain-verify', 'release/beta', 'capabilities',
-      'version-health', 'live-config', 'shops/:id/health', 'shops/:id/suspension', 'flags', 'flags/history'];
+      'version-health', 'live-config', 'shops/:id/health', 'shops/:id/holds', 'shops/:id/holds/:holdId/lift', 'flags', 'flags/history',
+      'service-key', 'service-key/revoke'];
     const lost = wanted.filter((w) => !bridge.includes(`'/console/${w}'`));
     check('هر درِ کنسول یک خطِ فهرستِ سفید دارد', lost.length === 0, lost.join(' '));
+    check('⛔ درِ پیش‌نویسِ ‎/suspension‎ (هرگز در سرورِ حساب ساخته نشد) نه در پل است نه در صفحه',
+      !bridge.includes("'/console/shops/:id/suspension'") && !('shopSuspension' in m.CONSOLE));
   }
   const con = read('pages/account/ShopConsole.tsx');
   check('⛔ کنسول خودش جمع نمی‌زند و نیامده را صفر نمی‌کند (نه reduce، نه «|| 0»، نه «?? 0»)',
@@ -535,6 +554,11 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
     (con.match(/isUnavailable\(/g) || []).length >= 3 && /NotAvailable/.test(con));
   check('⛔ کارِ پرهزینه تأیید می‌خواهد و نتیجهٔ سرور «تأییدشده» است', /ConfirmDialog/.test(con) && /scServerConfirmed/.test(con));
   check('⛔ کانالِ آزمایشی فقط برای admin درخواست می‌شود', /can\('admin'\) \? CONSOLE\.releaseBeta : null/.test(con));
+  check('⛔ حالتِ دکان: پنجره با دلیلِ اجباری، اثرِ همان حالت، و یک کلیدِ یکتایی برای هر پنجره (نه هر کلیک)',
+    /disabled=\{!reasonOk\(reason\) \|\| busy\}/.test(con) && /useState\(newIdemKey\)/.test(con) && /HOLD_EFFECT\[effective\]/.test(con)
+      && /confirm: true, idempotencyKey: idem/.test(con));
+  check('⛔ کلیدِ سرویس: صفحه هرگز خودِ کلید را نمی‌خواهد یا نشان نمی‌دهد (فقط فراداده) و ساختن رمزِ پنل می‌خواهد',
+    !/vsk_/.test(con) && /type="password"/.test(con) && /d\.owner \?/.test(con));
   const tabs = ['dash', 'shops', 'subs', 'finance', 'versions', 'health', 'settings', 'integrations', 'audit', 'codes'];
   check(`میزِ فروشگاه همهٔ ${tabs.length} زبانه را دارد`, tabs.every((x) => shopDesk.includes(`'${x}'`)), tabs.filter((x) => !shopDesk.includes(`'${x}'`)).join(' '));
   check('⛔ «فروش و درآمد»ِ دکان یک در دارد: ‎view=sales‎ ⇒ زبانهٔ «مالی»',

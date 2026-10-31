@@ -131,31 +131,117 @@ export type LiveConfig = { scope?: string; version?: number; fetchedAt?: number;
 export type ChainReport = { ok?: boolean; checkedAt?: number; enabled?: boolean; total?: number; okCount?: number;
                             brokenCount?: number; broken?: { chain: string; seq?: number; reason?: string }[] };
 
-/* ───────────────── فاز ۳ (ریپوی shop) — قراردادِ آماده، پشتِ «توانایی» ───────────────── */
-
-/**
- * سلامتِ یک دکان — ‎GET /api/admin/shops/:id/health‎ (توانایی `shop-health.v1`).
- * ⛔ `online` و `lastSyncAt` را سرورِ حساب می‌گوید؛ نیامده ⇒ «—».
+/* ───────────── فاز ۳ (ریپوی shop، PR #597 + چسب) — شکلِ واقعیِ پاسخ‌ها، پشتِ «توانایی» ─────────────
+ *  همان شکلی که ‎server/src/lib/shop-health.js‎، ‎lib/shop-holds.js‎ و ‎routes/admin-flags.js‎ ِ shop برمی‌گردانند.
+ *  ⛔ نامِ توانایی‌ها همان نام‌های سرورِ حساب‌اند (‎CAPABILITIES‎ ِ ‎routes/admin.js‎): یکی برای هر دو سو.
  */
+
+/** سلامتِ یک دکان — ‎GET /api/admin/shops/:id/health‎ (`shop-health.v1`). زمانِ سنجش = `at` ِ سرورِ حساب. */
+export type HealthDevice = {
+  engine?: 'v1' | 'v3'; deviceId: string; appVersion?: string | null; schemaVersion?: number | null;
+  lastPushAt?: number | null; lastPullAt?: number | null; lastSeenAt?: number | null;
+  queued?: number; behind?: number | null; lastErrorAt?: number | null;
+};
 export type ShopHealth = {
-  available: true; shopId?: string; checkedAt?: number; fetchedAt?: number;
-  online?: boolean | null; onlineWithinMs?: number; lastSyncAt?: number | null;
-  devices?: { deviceId: string; app?: string; appVersion?: string; lastSeenAt?: number | null; online?: boolean }[];
+  available: true; fetchedAt?: number; at?: number;
+  shop?: { id: string; name?: string; status?: string; createdAt?: number };
+  state?: HoldState;
+  subscription?: { source?: string; status?: string; phase?: string; plan?: string | null; endsAt?: number | null;
+                   graceEndsAt?: number | null; daysLeft?: number | null; endedByAdmin?: boolean;
+                   trial?: { active?: boolean; endsAt?: number | null } | null };
+  sync?: {
+    lastSyncAt?: number | null;
+    v1?: { devices?: number; lastPushAt?: number | null; lastPullAt?: number | null; queued?: number;
+           behindMax?: number | null; openConflicts?: number };
+    v3?: { devices?: number; lastPushAt?: number | null; lastPullAt?: number | null; lastErrorAt?: number | null };
+    legacy?: { lastPushAt?: number | null; devices?: number; lastSyncAt?: number | null };
+  };
+  devices?: HealthDevice[];
+  versions?: { appVersion: string | null; devices: number }[];
+  errors?: { last24h?: number; last7d?: number; lastAt?: number | null; lastAppVersion?: string | null };
 };
-/** حالتِ دسترسیِ یک دکان — ‎GET /api/admin/shops/:id/suspension‎ (توانایی `shop-suspension.v1`). */
-export type ShopSuspension = {
-  available: true; fetchedAt?: number;
-  state?: 'active' | 'access_suspended' | 'service_disabled' | 'subscription_ended' | 'archived';
-  reason?: string; since?: number | null; by?: string;
+
+/** چهار حالتِ جدا + بایگانی (‎lib/shop-holds.js‎). هیچ‌کدام چیزی پاک نمی‌کند؛ همه برداشتنی‌اند. */
+export type HoldKind = 'access_suspended' | 'service_disabled' | 'subscription_ended' | 'deletion_requested' | 'archived';
+export const HOLD_KINDS: HoldKind[] = ['access_suspended', 'service_disabled', 'subscription_ended', 'deletion_requested', 'archived'];
+/** سرویس‌هایی که «غیرفعال کردنِ سرویس» می‌شناسد — کلیدِ پرچمِ هر کدام. */
+export const HOLD_SERVICES: string[] = ['shop.storefront', 'shop.orders', 'shop.delivery', 'shop.chat', 'market.directory'];
+/** پول‌مجاور ⇒ سرورِ حساب کلیدِ یکتایی را اجباری می‌داند (رابط برای همه می‌فرستد). */
+export const MONEY_HOLDS: HoldKind[] = ['subscription_ended'];
+
+export type HoldActor = { kind?: string; id?: string; name?: string; role?: string; effectiveRole?: string } | null;
+export type Hold = {
+  id: string; shopId?: string; kind: HoldKind | string; service?: string | null; reason?: string;
+  placedBy?: string; placedActor?: HoldActor; placedAt?: number | null;
+  liftedAt?: number | null; liftedBy?: string | null; liftedActor?: HoldActor; liftReason?: string | null; active?: boolean;
 };
-/** پرچم‌ها با تاریخچه — ‎GET /api/admin/flags‎ و ‎/flags/history‎ (توانایی `flags.v1`). */
-export type Flags = { available: true; checkedAt?: number; fetchedAt?: number;
-                      flags?: { key: string; value: unknown; updatedAt?: number; updatedBy?: string; reason?: string }[] };
-export type FlagHistory = { available: true; fetchedAt?: number; next?: number | null;
-                            entries?: { key: string; from?: unknown; to?: unknown; at?: number; by?: string; reason?: string }[] };
+export type HoldState = {
+  access?: 'open' | 'blocked'; blockedBy?: string[]; servicesDisabled?: string[];
+  subscriptionEnded?: boolean; deletionRequested?: boolean; archived?: boolean;
+};
+/** ‎GET /api/admin/shops/:id/holds‎ (`shop-holds.v1`) */
+export type ShopHolds = {
+  available: true; fetchedAt?: number; shopId?: string; state?: HoldState; open?: Hold[]; history?: Hold[];
+  kinds?: string[]; services?: Record<string, string>; roles?: Record<string, string[]>;
+};
+/** پاسخِ گذاشتن/برداشتن — `replayed` ⇒ همان کارِ پیشین (کلیدِ یکتایی)، نه کارِ دوم. */
+export type HoldResult = { hold?: Hold; state?: HoldState; replayed?: boolean; fetchedAt?: number };
+
+/** دلیل: ۳ تا ۲۰۰ نویسه — همان مرزِ سرورِ حساب (‎REASON_MIN/MAX‎). */
+export function reasonOk(v: unknown): boolean {
+  const s = typeof v === 'string' ? v.trim() : '';
+  return s.length >= 3 && s.length <= 200;
+}
+
+/** کلیدِ یکتایی برای یک پنجرهٔ تأیید — ⚠️ ‎crypto.randomUUID‎ روی http ِ شبکهٔ خانه نیست؛ ‎getRandomValues‎ هست. */
+export function newIdemKey(): string {
+  const b = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(b);
+  return `pnl-${Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** نامِ «انجام‌دهنده» ِ یک حالت: آدمِ پشتِ پنل اگر سرورِ حساب گفته، وگرنه شناسهٔ مدیر؛ هیچ ⇒ «—». */
+export function actorLabel(actor: HoldActor | undefined, by?: string | null): string {
+  if (actor && (actor.name || actor.id)) return String(actor.name || actor.id);
+  return by ? String(by) : '—';
+}
+
+/** پرچم‌ها — ‎GET /api/admin/flags‎ (`flags.v1`): مقدارهای یک scope + کاتالوگِ پرچم‌های شناخته. */
+export type FlagItem = { key: string; value: unknown; updatedAt?: number; updatedBy?: string };
+export type KnownFlag = { key: string; scope?: string; default?: unknown; what?: string };
+export type Flags = { available: true; fetchedAt?: number; scope?: string; version?: number;
+                      items?: FlagItem[]; known?: KnownFlag[]; reserved?: string[] };
+/** ‎GET /api/admin/flags/history‎ — چه کسی، کی، پیشین ⇒ تازه، چرا. صفحه‌بندی با `before` (زمانِ آخرین ردیف). */
+export type FlagHistoryEntry = { id?: string; scope?: string; key: string; action?: string; oldValue?: unknown;
+                                 newValue?: unknown; changedBy?: string; actor?: HoldActor; reason?: string | null; at?: number };
+export type FlagHistory = { available: true; fetchedAt?: number; entries?: FlagHistoryEntry[] };
+
+/** صفحهٔ بعدیِ تاریخچه: فقط وقتی صفحه پر آمده؛ وگرنه `null` (نه «شاید بیشتر هست»). */
+export function nextBefore(entries: { at?: number }[] | undefined, limit: number): number | null {
+  if (!Array.isArray(entries) || entries.length < limit) return null;
+  const last = num(entries[entries.length - 1]?.at);
+  return last !== null && last > 0 ? last : null;
+}
+
+/** مقدارِ پرچم برای نمایش: نیامده (`undefined`) ⇒ «—»؛ `null`/`false`/`0` همان خودشان. */
+export function flagValue(v: unknown): string {
+  if (v === undefined) return '—';
+  try { return JSON.stringify(v); } catch { return '—'; }
+}
 
 export type Capabilities = { capabilities?: string[]; checkedAt?: number;
                              known?: { id: string; needs: string; available: boolean }[] };
+
+/** حالِ پل — ‎GET /api/account-admin/console/service-key‎. ⛔ خودِ کلید هرگز در این شکل نیست. */
+export type ServiceKeyStatus = {
+  stored?: boolean; mode?: 'service' | 'legacy' | 'none'; reason?: string | null; legacy?: boolean; owner?: boolean;
+  checkedAt?: number;
+  probe?: { ok?: boolean; code?: string | null; at?: number; capabilities?: string[] } | null;
+  serviceKey?: { id: string; name?: string | null; roleCap?: string | null; createdAt?: number | null;
+                 createdBy?: string | null; storedAt?: number | null; rotatedFrom?: string | null } | null;
+  previous?: { id: string; revoked?: boolean; error?: string | null } | null;
+  rotated?: boolean;
+};
 
 /** نشانیِ هر درِ پلِ کنسول — یک جا؛ صفحه نشانی را دستی نمی‌سازد. */
 export const CONSOLE = {
@@ -169,12 +255,16 @@ export const CONSOLE = {
     `/api/account-admin/console/version-health?app=${encodeURIComponent(app)}&version=${encodeURIComponent(version)}`,
   liveConfig: (scope: string) => `/api/account-admin/console/live-config?scope=${encodeURIComponent(scope)}`,
   shopHealth: (id: string) => `/api/account-admin/console/shops/${encodeURIComponent(id)}/health`,
-  shopSuspension: (id: string) => `/api/account-admin/console/shops/${encodeURIComponent(id)}/suspension`,
-  flags: '/api/account-admin/console/flags',
-  flagHistory: (key: string, before?: number) =>
-    `/api/account-admin/console/flags/history?key=${encodeURIComponent(key)}${before ? `&before=${before}` : ''}`,
+  shopHolds: (id: string) => `/api/account-admin/console/shops/${encodeURIComponent(id)}/holds`,
+  liftHold: (id: string, holdId: string) =>
+    `/api/account-admin/console/shops/${encodeURIComponent(id)}/holds/${encodeURIComponent(holdId)}/lift`,
+  flags: (scope = 'all') => `/api/account-admin/console/flags?scope=${encodeURIComponent(scope)}`,
+  flagHistory: (key: string, before?: number | null, limit = 50) =>
+    `/api/account-admin/console/flags/history?key=${encodeURIComponent(key)}&limit=${limit}${before ? `&before=${before}` : ''}`,
+  serviceKey: '/api/account-admin/console/service-key',
+  serviceKeyRevoke: '/api/account-admin/console/service-key/revoke',
   accountAudit: (limit: number, shopId?: string) =>
     `/api/account-admin/account-audit?limit=${limit}${shopId ? `&shopId=${encodeURIComponent(shopId)}` : ''}`,
-  shops: (q: string, limit: number, offset: number) =>
-    `/api/account-admin/shops?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`,
+  shops: (q: string, limit: number, offset: number, hold = '') =>
+    `/api/account-admin/shops?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}${hold ? `&hold=${encodeURIComponent(hold)}` : ''}`,
 };

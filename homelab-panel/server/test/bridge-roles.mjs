@@ -152,6 +152,10 @@ const LOCAL = new Map([
   ['GET /api/stations-admin/cloud/mirror', 'حالِ آینهٔ محلی روی دیسکِ پنل'],
   ['POST /api/stations-admin/cloud/login', 'فقط ‎POST /api/admin/login‎ (ورودِ خودِ مدیر با نام و رمز؛ admin ِ پنل) — مسیرِ نقش‌دار نیست'],
   ['POST /api/stations-admin/cloud/mirror', 'با HLP_STATIONS=0 خاموش است (۵۰۳)؛ همان خواندنی‌های `cloudCall` را می‌زند که مسیرهای GETِ ‎/cloud/*‎ همین‌جا سنجیده‌اند'],
+  //  چسبِ فاز ۳ — کلیدِ سرویس: بی کلیدِ ذخیره‌شده (همین سنجه) چیزی به سرورِ حساب نمی‌رود؛ با کلید هم فقط مالکِ
+  //  admin (‎ownerOnly‎ + احرازِ دوباره) — مرزش را `account-admin.mjs` بند به بند می‌سنجد
+  ['GET /api/account-admin/console/service-key', 'حالِ کلیدِ ذخیره‌شدهٔ خودِ پنل؛ بی کلید هیچ پرسشی به سرورِ حساب نمی‌رود (فقط admin)'],
+  ['POST /api/account-admin/console/service-key/revoke', 'بی کلیدِ ذخیره‌شده ۴۰۴ ِ محلی؛ با کلید فقط مالک + رمز ⇒ درِ ابطالِ «فقط ارشد» (account-admin.mjs)'],
 ]);
 
 /*
@@ -174,7 +178,9 @@ const VIEWER_POST = new Map([
  *  توانایی‌اش را در ‎GET /api/admin/me‎ (`capabilities`) اعلام کند. روزی که آمدند، نقششان هم مثلِ بقیه
  *  سنجیده می‌شود (این فهرست فقط «نبودن» را می‌بخشد، نه نقش را).
  */
-const PHASE3 = ['GET /api/admin/shops/:id/health', 'GET /api/admin/shops/:id/suspension', 'GET /api/admin/flags', 'GET /api/admin/flags/history']
+const PHASE3 = ['GET /api/admin/shops/:id/health', 'GET /api/admin/shops/:id/holds', 'POST /api/admin/shops/:id/holds',
+  'POST /api/admin/shops/:id/holds/:holdId/lift', 'GET /api/admin/flags', 'GET /api/admin/flags/history',
+  'POST /api/admin/service-keys', 'POST /api/admin/service-keys/:id/revoke']
   .map((x) => { const [method, p] = x.split(' '); return { method, re: toRe(p), id: x }; });
 const phase3Of = (method, p) => PHASE3.find((x) => x.method === method && x.re.test(p)) || null;
 
@@ -212,7 +218,7 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
     if (!BACKGROUND.test(p)) calls.push({ method: req.method, path: p });
     //  همهٔ تواناییِ فاز ۳ اعلام می‌شود تا مقصدِ آن مسیرها هم دیده و سنجیده شود
-    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'flags.v1', 'shop-suspension.v1', 'actor.v1'], serverTime: NOW });
+    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1'], serverTime: NOW });
     if (/\/receipt$/.test(p)) { res.setHeader('content-type', 'text/html; charset=utf-8'); return res.end('<html>رسید</html>'); }
     if (/^\/api\/admin\/support\/media\//.test(p)) { res.setHeader('content-type', 'image/png'); return res.end(Buffer.from([137, 80, 78, 71])); }
     return j(200, sample);
@@ -263,6 +269,11 @@ const bodyFor = (app) => ({
 });
 const SPECIAL = {
   'POST /api/account-admin/support/threads/:id/media': { body: Buffer.from([137, 80, 78, 71]), type: 'image/png', query: '&name=a.png' },
+  //  ساختنِ کلیدِ سرویس: مالک با رمزِ درستِ خودش (احرازِ دوباره) تا مقصدِ «فقط ارشد» واقعاً دیده و سنجیده شود
+  'POST /api/account-admin/console/service-key': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
+  //  گذاشتنِ حالت: نوعِ معتبر و کلیدِ یکتایی (بدنهٔ همگانی `kind: 'percent'` دارد)
+  'POST /api/account-admin/console/shops/:id/holds': { body: { kind: 'archived', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-0001' } },
+  'POST /api/account-admin/console/shops/:id/holds/:holdId/lift': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true } },
 };
 const urlOf = (r, app) => {
   const p = r.path.replace(/:([A-Za-z_]\w*)/g, (_, k) => (k === 'app' ? app : PARAMS[k] || 'x1'));
