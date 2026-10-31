@@ -256,7 +256,8 @@ try {
   check('دفترِ سرورِ حساب و دفترِ پنل، هر دو با منبع', body.includes('admin.subscription_set') && body.includes('/api/admin/audit') && body.includes('/api/control/audit'), body.slice(0, 900));
   check('و یادداشتِ «انجام‌دهنده» (فاز ۳)', body.includes('actor.v1'));
   body = await open('finance');
-  check('مالی: همان «فروش و درآمد» + فاز ۴ «داده در دسترس نیست»', body.includes('داده در دسترس نیست') && body.includes('#411'), body.slice(0, 900));
+  //  ماژولِ ۴.۵: سرورِ حسابِ بی `finance.v1` ⇒ «داده در دسترس نیست» با نامِ توانایی (آزمونِ کاملش: shop-finance-ui.mjs)
+  check('مالی: سرورِ حسابِ بی finance.v1 ⇒ «داده در دسترس نیست» با نامِ توانایی، نه عدد', body.includes('داده در دسترس نیست') && body.includes('finance.v1'), body.slice(0, 900));
   await page.goto(`${BASE}/shop?tab=subs&view=sales`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(300);
   check('⛔ یک موضوع یک در: ‎?tab=subs&view=sales‎ ⇒ ‎?tab=finance‎', page.url().endsWith('/shop?tab=finance'), page.url());

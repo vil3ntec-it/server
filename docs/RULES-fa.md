@@ -3173,3 +3173,33 @@ POST /api/pump-updates-admin/testers {codes}   فقط مدیر · دفترِ م�
 - ⚠️ با کلید، viewer ِ پنل در سرورِ حساب هم viewer است ⇒ «پیش‌نمایشِ اعلان» (POST) برایش ۴۰۳ ِ همان‌جاست — مرزِ سرور، درست.
 - آزمون: `account-admin.mjs` (+۴۲، ۳۲۵) · `bridge-roles.mjs` (۱۵۷ مسیر، با سورسِ shop ِ main و چسب) · `live-pages` (+۹، ۱۱۳) ·
   `shop-console-ui.mjs` (کرومیوم، +۱۹، ۴۶).
+
+## 💰 مالیِ مرکزی — ماژولِ ۴.۵ ِ پنلِ مرکزیِ مالک در زبانهٔ «مالی» ِ فروشگاه (از ۱۴۰۵/۰۸/۱۰، نسخه 1.50.66)
+
+روی #116 (چسب)، هم‌پای shop `claude/console-finance-api` (مهاجرتِ ۱۷۱، `docs/spec/ADMIN-CONTROL-PLANE.md` بندِ ۱۲.۷ ِ همان
+ریپو). مالیِ مرکزی = **پولِ اشتراکِ خودِ پلتفرم** (`sub_payments`)، جدا از حساب‌داریِ داخلیِ هر دکان.
+
+- ⛔ **جا:** `web/src/pages/account/ShopFinance.tsx` + `pages/account/finance/*` (واژه‌ها در `finance/strings.ts`، سه‌زبانه، جدا از
+  `i18n.ts` تا ماژول‌های هم‌زمان در جدولِ مشترک برخورد نکنند)؛ پل در `server/src/routes/account-finance.js`، سوار زیرِ
+  `account-admin.js` روی `/console/finance` (همان نشست، «انجام‌دهنده»، ۴۰۴ ِ پورتِ عمومی). زیرزبانه با `?tab=finance&fin=…`.
+  **ثبت در پوسته:** `FinanceTab` ِ `ShopConsole.tsx` همان نام می‌ماند و حالا فقط `<ShopFinance />` است — هر جا زبانهٔ «مالی» با
+  آن سوار است (میزِ فروشگاه امروز؛ `console/modules/finance.tsx` ِ پوستهٔ `claude/console-shell`) بی تغییر همین ماژول را
+  نشان می‌دهد. ⚠️ `finance/*` از `ShopConsole.tsx` چیزی وارد نمی‌کند (بی حلقهٔ وارد کردن). کارتِ «بعداً» ِ فاز ۲ رفت؛ صفحهٔ
+  «فروش» ِ پیشین (ثبتِ پرداخت، رسید، رو به پایان + یادآوری) دست‌نخورده زیرزبانهٔ «ثبتِ پرداخت و رسید» است — هیچ کاری گم نشد.
+- ⛔ **هیچ عددی در پنل ساخته نمی‌شود**؛ همه از `/api/admin/finance/*` با `checkedAt` ِ سرورِ حساب. سرورِ حسابِ بی `finance.v1` ⇒
+  خواندن `200 {available:false, capability:'finance.v1'}`، نوشتن/خروجی `501 capability_missing`. ارزها هرگز با هم جمع نمی‌شوند.
+- ⛔ **پرس‌وجوی فهرست‌سفید** (`SPEC` ِ `account-finance.js`): کلیدِ ناشناخته نمی‌رود، شکلِ نادرست ۴۰۰ پیش از هر درخواستِ بالادست.
+- ⛔ **مرزِ نقش:** خواندن همه (viewer ⇒ viewer ِ سرورِ حساب)؛ خروجیِ CSV و سندِ اصلاحی فقط admin ِ پنل (و نقشِ «مالی» ِ پنل روزی
+  که ماژولِ ۴.۳ بسازد — `financeWriter`؛ آن روز `ACTOR_ROLE` ِ `account/service-key.js` هم باید `finance ⇒ finance` بگیرد)؛
+  تطبیقِ فروشِ آنلاینِ #411 (`/api/admin/system/reconciliation`، آن‌جا فقط ارشد) فقط admin. `bridge-roles.mjs` درِ
+  `requireFinanceWriter` ِ سرورِ حساب را هم‌ارزِ «فقط ارشد» می‌شمارد.
+- ⛔ **اصلاح فقط با سندِ تازه**؛ هیچ دکمهٔ ویرایش/حذفِ پرداخت در این ماژول نیست. سند: `confirm: true` + دلیلِ ۳ تا ۳۰۰ + **کلیدِ یکتایی
+  از رابط** (یکی برای هر پنجره) + **رمزِ پنلِ همین کاربر** (یا `requireRecentAuth` ِ فاز ۱ اگر در پایه بود؛ ۵ اشتباه در ربع ساعت ⇒
+  ۴۲۹) + **فقط با کلیدِ سرویس** (راهِ پیشین ⇒ `409 service_key_required`، چون ارشدِ مشترک آدمِ واقعی را به سندِ پولی نمی‌برد).
+  زمانِ احرازِ دوباره با `X-Actor-Reauth-At` می‌رود (تنها سرآیندِ تازهٔ مجاز در `extraHeaders` ِ `cloud.js`، فقط عدد) و سرورِ حساب
+  آن را دوباره می‌سنجد. بدنهٔ بالادست فقط `{paymentId, kind, reason, amount?, reference?, expectedNet?}` — رمز هرگز.
+- ⛔ **درگاهِ حساب‌پی** تا #518/#529 و کلیدهایش نیامده «BLOCKED-EXTERNAL: کلیدِ حساب‌پی نیامده» است (نه عدد، نه سبز)؛ پولِ درگاه و
+  فروشِ آنلاینِ دکان‌ها (یکصدمِ افغانی) هرگز با درآمدِ اشتراک جمع نمی‌شود. «ناموفق» ِ پرداختِ اشتراک گفته می‌شود که وجود ندارد
+  (ثبتِ دستی)، نه صفر.
+- آزمون: `account-finance.mjs` (۳۹) · `bridge-roles.mjs` (۲۰، با سورسِ shop ِ main و `claude/console-finance-api`) ·
+  `shop-finance-ui.mjs` (کرومیوم، ۳۰) · `control-ui`/`shop-console-ui`/`live-pages` به‌روز.
