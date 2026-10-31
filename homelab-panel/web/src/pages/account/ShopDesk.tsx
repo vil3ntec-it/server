@@ -30,8 +30,9 @@ import { ActionButton, Cell, Notice, Row, Stat, Table, Tabs } from '../../contro
 import { CloudProblem, fa, useLoad } from './shared';
 import AppSubscriptions from './AppSubscriptions';
 import {
-  AuditTab, FinanceTab, HealthCard, HealthTab, IntegrationsTab, SettingsTab, ShopsTab, SourceLine, VersionsTab,
+  AuditTab, FinanceTab, HealthCard, SettingsTab, ShopsTab, SourceLine,
 } from './ShopConsole';
+import { AlertsTab, IncidentsTab, IntegrationsOpsTab, OpsHealthTab, ReleasesTab, useOpsTabLabels } from './ConsoleOps';
 
 type Overview = {
   serverTime: number;
@@ -325,14 +326,17 @@ function Codes() {
  *  داشبورد · فروشگاه‌ها · اشتراک‌ها · مالی · نسخه‌ها · سلامت و خطاها · تنظیمات و پرچم‌ها · یکپارچه‌سازی ·
  *  دفترِ رخداد · کدِ شاگرد. همه در ‎?tab=‎ (لینکِ مستقیم و برگشتِ مرورگر)؛ پیش‌فرض داشبورد.
  */
-const TAB_IDS = ['dash', 'shops', 'subs', 'finance', 'versions', 'health', 'settings', 'integrations', 'audit', 'codes'] as const;
+//  ⚠️ «رخدادها» و «هشدارها» (ماژول‌های عملیات ۴.۱۰/۴.۱۱، ‎ConsoleOps.tsx‎) — نقطهٔ ثبتِ پوستهٔ کنسول
+//  (‎claude/console-shell‎) هنوز نیامده بود؛ تا آن روز همین دو خطِ کمینه
+const TAB_IDS = ['dash', 'shops', 'subs', 'finance', 'versions', 'health', 'incidents', 'alerts', 'settings', 'integrations', 'audit', 'codes'] as const;
 
 export default function ShopDesk() {
   const { t } = useApp();
+  const ops = useOpsTabLabels();
   const [params, setParams] = useSearchParams();
   const label: Record<(typeof TAB_IDS)[number], string> = {
     dash: t('shopDeskDash'), shops: t('scShops'), subs: t('shopDeskGroups'), finance: t('scFinance'),
-    versions: t('scVersions'), health: t('scHealthTab'), settings: t('scSettingsTab'),
+    versions: t('scVersions'), health: t('scHealthTab'), incidents: ops.incidents, alerts: ops.alerts, settings: t('scSettingsTab'),
     integrations: t('scIntegrations'), audit: t('scAudit'), codes: t('shopDeskCodes'),
   };
   const tabs = TAB_IDS.map((id) => ({ id, label: label[id] }));
@@ -354,10 +358,13 @@ export default function ShopDesk() {
           گروهِ خواندنیِ میز یک زبانهٔ همان‌جا (‎?view=groups‎) */}
       {active === 'subs' && <AppSubscriptions app="shop" groups={<SubGroups />} omit={['sales']} />}
       {active === 'finance' && <FinanceTab />}
-      {active === 'versions' && <VersionsTab />}
-      {active === 'health' && <HealthTab />}
+      {/* ماژول‌های عملیات (‎ConsoleOps.tsx‎): هر زبانه کارت‌های فاز ۲ را در خودش دارد + بخشِ تازه */}
+      {active === 'versions' && <ReleasesTab />}
+      {active === 'health' && <OpsHealthTab />}
+      {active === 'incidents' && <IncidentsTab shop={params.get('shop') || ''} />}
+      {active === 'alerts' && <AlertsTab />}
       {active === 'settings' && <SettingsTab />}
-      {active === 'integrations' && <IntegrationsTab />}
+      {active === 'integrations' && <IntegrationsOpsTab />}
       {active === 'audit' && <AuditTab shop={params.get('shop') || ''} />}
       {active === 'codes' && <Codes />}
     </div>
