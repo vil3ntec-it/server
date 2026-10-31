@@ -2112,6 +2112,13 @@ npm run test:live-pages      ۶۲ · test:control-ui ۱۱۲ — بی تغییر
 - ⛔ **کارهای پولیِ `/api/account-admin` فقط مدیر** (`money`): قیمت، اشتراک،
   کدِ VIP و تخفیف، پرداخت، پیامِ همگانی، برنامه‌ها. آن روتر با
   `writeNeedsOperator` سوار است، پس بی `money` هر کارگزاری پول جابه‌جا می‌کرد.
+- ⛔ **«آزمون»ی که می‌فرستد نگاه کردن نیست** (۱۴۰۵/۰۸/۰۹، 1.50.61): `writeNeedsOperator` هر POSTِ `…/test`
+  را برای viewer باز می‌گذارد. در `/api/account-admin` نقش صریح است: `sms/test` فقط admin (پول، و در سرورِ
+  حساب فقط ارشد)، `email/test` و `notices/:id/test` دستِ‌کم operator. ⛔ **پل با حسابِ ارشدِ سرورِ حساب حرف
+  می‌زند**، پس هر مسیرِ «ارشد»ِ آن‌طرف (ADMIN-CONTROL-PLANE بند ۶) این‌جا دستِ‌کم `admin` است — از جمله
+  `sync/conflicts/:id/restore`، که `reason`ِ بدنه را هم می‌برد. و **درِ دومِ پمپ همان مرزِ پول را دارد**:
+  `/api/stations-admin/cloud/grant` و `cloud/vip-codes` فقط admin (مثلِ `subs/:app/grant` و `vip-codes`).
+  آزمون: بندِ نقش‌ها در `test/account-admin.mjs`.
 - ⛔ **`config`ِ سرورِ حساب خام به مرورگر نمی‌رود** — `PLAN_CONFIG_KEYS`. سرورِ
   حسابِ پیش از ۲.۹.۱ کلیدِ خصوصیِ امضای مجوز را در همان پاسخ داشت.
 - ⛔ **توکنِ تونل از محیط (`TUNNEL_TOKEN`)، نه خطِ فرمان**، و فهرستِ پروسه‌ها
