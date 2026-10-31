@@ -1107,8 +1107,10 @@ try {
   check('تعارض بی شناسهٔ حساب، همان ۴۰۰ی خودِ سرورِ حساب', syncNoAcc.status === 400 && syncNoAcc.json?.error === 'account_required', `${syncNoAcc.status}`);
   const syncCf = await api('GET', '/api/account-admin/sync/conflicts?app=shop&account=s1', undefined, auth);
   check('تعارض‌ها با جدول، ردیف و خانه', syncCf.status === 200 && syncCf.json?.conflicts?.[0]?.field === 'price');
-  const syncRestore = await api('POST', '/api/account-admin/sync/conflicts/5/restore', {}, auth);
+  const syncRestore = await api('POST', '/api/account-admin/sync/conflicts/5/restore', { reason: 'دلیلِ آزمون' }, auth);
   check('بازگرداندنِ تعارض', syncRestore.status === 200 && last()?.path === '/api/admin/sync/conflicts/5/restore');
+  //  ⛔ سرورِ حساب بی دلیل ۴۰۰ می‌دهد (reason_required) — پل دلیل را می‌برد
+  check('⛔ دلیلِ بازگرداندن به سرورِ حساب می‌رسد', last()?.body?.reason === 'دلیلِ آزمون', JSON.stringify(last()?.body));
   const syncErr = await api('GET', '/api/account-admin/sync/errors?app=shop', undefined, auth);
   check('خطاهای گزارش‌شدهٔ برنامه', syncErr.status === 200 && syncErr.json?.errors?.[0]?.message === 'خطای آزمایشی');
 
@@ -1318,6 +1320,31 @@ try {
     //  ⛔ نمایشِ کد هم فقط admin — operator با همان نشستِ سالم رد می‌شود
     const oReveal = await api('POST', '/api/account-admin/logins/req1/reveal', {}, oAuth);
     check('⛔ نمایشِ کد فقط برای admin است', oReveal.status === 403, String(oReveal.status));
+    /*
+     *  ⛔ «آزمون»هایی که می‌فرستند، نگاه کردن نیستند (۱۴۰۵/۰۸/۰۹): `writeNeedsOperator`
+     *  هر POSTِ ‎…/test‎ را برای viewer باز می‌گذاشت ⇒ viewer با حسابِ ارشدِ پل پیامک
+     *  (پول، و در سرورِ حساب فقط ارشد) و ایمیل و اعلانِ آزمایشی به هر نشانی می‌فرستاد.
+     *  و بازگرداندنِ تعارض (تغییرِ دادهٔ یک حساب؛ در سرورِ حساب فقط ارشد) برای operator باز بود.
+     */
+    const vSends = [
+      await api('POST', '/api/account-admin/sms/test', { to: '+93700000000' }, vAuth),
+      await api('POST', '/api/account-admin/email/test', { to: 'x@y.af' }, vAuth),
+      await api('POST', '/api/account-admin/notices/n1/test', { to: 'x@y.af' }, vAuth),
+    ];
+    check('⛔ viewer نه پیامک، نه ایمیل، نه اعلانِ آزمایشی می‌فرستد', vSends.every((r) => r.status === 403), vSends.map((r) => r.status).join(' '));
+    const beforeOp = seen.length;
+    const oSms = await api('POST', '/api/account-admin/sms/test', { to: '+93700000000' }, oAuth);
+    const oRestore = await api('POST', '/api/account-admin/sync/conflicts/5/restore', { reason: 'آزمون' }, oAuth);
+    check('⛔ پیامکِ آزمایشی و بازگرداندنِ تعارض فقط admin', oSms.status === 403 && oRestore.status === 403
+      && !seen.slice(beforeOp).some((x) => /sms\/test|conflicts\/5\/restore/.test(x.path)), `${oSms.status} ${oRestore.status}`);
+    //  ⛔ و درِ دومِ پمپ (`/api/stations-admin/cloud/*`) همان مرزِ پول را دارد
+    const beforePump = seen.length;
+    const oPumpCode = await api('POST', '/api/stations-admin/cloud/vip-codes', { plan: 'm1', email: 'x@y.af' }, oAuth);
+    const oPumpGrant = await api('POST', '/api/stations-admin/cloud/grant', { stationId: 'st1', plan: 'm1' }, oAuth);
+    check('⛔ کدِ اشتراک و اشتراکِ پمپ از درِ پمپ هم فقط admin', oPumpCode.status === 403 && oPumpGrant.status === 403
+      && !seen.slice(beforePump).some((x) => /pump\/(vip-codes|subscriptions)$/.test(x.path)), `${oPumpCode.status} ${oPumpGrant.status}`);
+    const oMail = await api('POST', '/api/account-admin/email/test', { to: 'k@x.com' }, oAuth);
+    check('operator ایمیلِ آزمایشی می‌فرستد', oMail.status === 200, String(oMail.status));
     //  شورا چ۳: نماینده و درصدِ کمیسیون پول است — فقط admin
     const oRep = await api('POST', '/api/account-admin/reps', { app: 'shop', email: 'x@y.af', commissionPct: 5 }, oAuth);
     check('⛔ ساختنِ نماینده و درصدِ کمیسیون فقط admin', oRep.status === 403, String(oRep.status));

@@ -737,8 +737,13 @@ adminRouter.post('/cloud/mirror', requireWriteRole('operator'), async (req, res)
   res.json({ ok: true, report: rep, dir: mirrorDir(config.dataDir) });
 });
 
-/** اشتراک دادن یا تمدید — همان کاری که در بخشِ دکان می‌شود. */
-adminRouter.post('/cloud/grant', requireWriteRole('operator'), async (req, res) => {
+/**
+ * اشتراک دادن یا تمدید — همان کاری که در بخشِ دکان می‌شود.
+ *
+ * ⛔ (۱۴۰۵/۰۸/۰۹) پول است ⇒ admin، همان مرزِ `money`ِ `/api/account-admin/subs/:app/grant`.
+ * تا امروز این درِ دوم برای operator باز بود و همان کار را از راهِ پمپ می‌کرد.
+ */
+adminRouter.post('/cloud/grant', requireWriteRole('admin'), async (req, res) => {
   try {
     const out = await cloudCall('grant', { body: req.body || {} });
     logEvent('stations', 'cloud_subscription_granted', { stationId: req.body?.stationId });
@@ -770,7 +775,9 @@ adminRouter.post('/cloud/subscriptions/:id/status', requireWriteRole('operator')
   } catch (err) { cloudFail(res, err); }
 });
 
-adminRouter.post('/cloud/vip-codes', requireWriteRole('operator'), async (req, res) => {
+//  ⛔ کدِ اشتراک پول است، و سرورِ حساب `/api/admin/pump/vip-codes` را فقط به ارشد می‌دهد ⇒ admin
+//  (همان مرزِ `money`ِ `/api/account-admin/vip-codes`).
+adminRouter.post('/cloud/vip-codes', requireWriteRole('admin'), async (req, res) => {
   try {
     const out = await cloudCall('makeCode', { body: req.body || {} });
     logEvent('stations', 'cloud_code_made', {});
