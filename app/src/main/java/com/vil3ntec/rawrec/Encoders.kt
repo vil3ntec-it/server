@@ -391,7 +391,7 @@ object Planner {
      * file»: a fixed bit rate does both badly — it smears fast motion and pads still screens with bits
      * nobody can see (1.5 allowed QP 10 on a still screen just to reach the target). With the range,
      * every frame lands at the same visible quality: still screens and UI cost almost nothing, fast
-     * motion takes what it needs, up to 3× the target (max-bitrate). The codec level and the encoder's
+     * motion takes what it needs, up to 4× the target (max-bitrate). The codec level and the encoder's
      * maximum cap the peak.
      */
     fun autoBitrate(w: Int, h: Int, fps: Int, mime: String, level: Int): Int {
@@ -491,7 +491,9 @@ object Planner {
             RecordConfig.MODE_CBR -> if (cbr || !vbr) RecordConfig.MODE_CBR else RecordConfig.MODE_VBR
             else -> if (vbr || !cbr) RecordConfig.MODE_VBR else RecordConfig.MODE_CBR
         }
-        var peak = if (mode == RecordConfig.MODE_VBR) min(encMax.toLong(), bitrate * 3L) else bitrate.toLong()
+        // Headroom for fights, fast turns and explosions: the quality range holds (QP ≤ ceiling) only
+        // if the peak lets it; short bursts barely change the file's size.
+        var peak = if (mode == RecordConfig.MODE_VBR) min(encMax.toLong(), bitrate * 4L) else bitrate.toLong()
         // Lowest level that carries this size, rate and peak; the level's ceiling also bounds the
         // bit rate, so the encoder is never asked for more than the level it declares.
         val pl = Encoders.profileLevel(info, mime)

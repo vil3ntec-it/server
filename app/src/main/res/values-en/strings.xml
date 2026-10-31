@@ -33,9 +33,9 @@
     <string name="preset_title">Quality preset</string>
     <string name="preset_desc">Higher frame rate and resolution mean bigger files; the real numbers appear in the report after every recording. Changing any option below switches to Custom.</string>
     <string name="preset_screen">Like the screen (max)</string>
-    <string name="preset_screen_desc">Native resolution at the highest frame rate the phone\'s encoder supports.</string>
+    <string name="preset_screen_desc">Native resolution at the highest frame rate the phone\'s encoder supports (120 or 165): smoother, but bigger files and a warmer phone in busy games.</string>
     <string name="preset_60">60 fps</string>
-    <string name="preset_60_desc">Native resolution at 60 fps; sensible size, good for YouTube.</string>
+    <string name="preset_60_desc">Recommended for games: native resolution at 60 fps; every frame sharp, no blocks in busy scenes, cooler and smaller; good for YouTube.</string>
     <string name="preset_light">Light</string>
     <string name="preset_light_desc">Native resolution, 30 fps and a lower bitrate; the smallest files.</string>
     <string name="preset_custom">Custom</string>
@@ -59,7 +59,7 @@
     <string name="codec_auto">Auto</string>
     <string name="codec_av1_missing">AV1 (not available)</string>
     <string name="br_title">Bitrate (average)</string>
-    <string name="br_desc">Auto is computed from resolution × frame rate; fast motion may peak at 3× so it does not turn blocky.</string>
+    <string name="br_desc">Auto is computed from resolution × frame rate; fast motion may peak at 4× so it does not turn blocky.</string>
     <string name="br_auto_high">Auto (high)</string>
     <string name="br_auto_light">Auto (light)</string>
     <string name="br_auto_max">Auto (near-lossless)</string>
@@ -80,6 +80,12 @@
 
     <string name="float_title">On-screen recording control</string>
     <string name="float_desc">A small visible panel with stop, pause, mic, face cam, delete and hide; drag it to an edge, tap its header to shrink it to a dot.</string>
+    <string name="ready_title">Quick-record notification</string>
+    <string name="ready_desc">A small notification always stays in the shade; tap «Record» whenever you want (in a game too). Android asks its permission once before each recording.</string>
+    <string name="ch_ready">Ready to record</string>
+    <string name="n_ready_title">RawRec is ready</string>
+    <string name="n_ready_text">Tap to start recording</string>
+    <string name="n_record">Record</string>
     <string name="ghost_title">Keep the control out of the video</string>
     <string name="ghost_desc">While recording nothing of RawRec is on the screen. Shake the phone firmly three times (or tap «Show control» in the notification) to see the control. The recording pauses itself while the control is open, so viewers never see it; «Continue» takes it away and the recording goes on.</string>
     <string name="invis_title">Start as a small dot</string>
@@ -130,7 +136,7 @@
     <string name="footer">Files are saved in Movies/RawRec. Long recordings are saved as ordered parts of about 3.5 GB. If a game marks its screen as secure, no app can record its picture.</string>
 
     <string name="plan_applies_fmt">Will apply: %1$s</string>
-    <string name="plan_vbr_fmt">Size: about %1$s per minute on average (30 min ≈ %2$s); static screens much less, very fast motion up to 3×.</string>
+    <string name="plan_vbr_fmt">Size: about %1$s per minute on average (30 min ≈ %2$s); static screens much less, very fast motion up to 4×.</string>
     <string name="plan_cbr_fmt">Size: constant, about %1$s per minute (30 min ≈ %2$s).</string>
     <string name="plan_cq_fmt">Size: unknown in CQ mode; ceiling about %1$s per minute.</string>
     <string name="plan_free_fmt">Free space: %1$s • room for about %2$d minutes</string>

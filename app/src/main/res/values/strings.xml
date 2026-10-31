@@ -37,9 +37,9 @@
     <string name="preset_title">حالتِ کیفیت</string>
     <string name="preset_desc">فریم‌ریت و رزولوشنِ بیشتر یعنی فایلِ بزرگ‌تر؛ عددِ واقعی پس از هر ضبط در «گزارشِ ضبط» می‌آید. هر گزینه‌ای را پایین‌تر عوض کنی، حالت «سفارشی» می‌شود.</string>
     <string name="preset_screen">مثلِ صفحه (حداکثر)</string>
-    <string name="preset_screen_desc">رزولوشنِ اصلی با بیشترین فریم‌ریتی که انکودرِ گوشی پشتیبانی می‌کند.</string>
+    <string name="preset_screen_desc">رزولوشنِ اصلی با بیشترین فریم‌ریتی که انکودرِ گوشی پشتیبانی می‌کند (۱۲۰ یا ۱۶۵)؛ روانی بیشتر، ولی در بازیِ شلوغ فایلِ بزرگ‌تر و گوشیِ گرم‌تر.</string>
     <string name="preset_60">۶۰ فریم</string>
-    <string name="preset_60_desc">رزولوشنِ اصلی، ۶۰ فریم؛ حجمِ معقول، مناسبِ یوتیوب.</string>
+    <string name="preset_60_desc">پیشنهادی برای بازی: رزولوشنِ اصلی و ۶۰ فریم؛ هر فریم واضح، بی‌شطرنجی در صحنه‌های شلوغ، خنک‌تر و کم‌حجم‌تر؛ مناسبِ یوتیوب.</string>
     <string name="preset_light">سبک</string>
     <string name="preset_light_desc">رزولوشنِ اصلی، ۳۰ فریم و بیت‌ریتِ کمتر؛ کم‌حجم‌ترین.</string>
     <string name="preset_custom">سفارشی</string>
@@ -64,7 +64,7 @@
     <string name="codec_auto">خودکار</string>
     <string name="codec_av1_missing">AV1 (ندارد)</string>
     <string name="br_title">بیت‌ریت (میانگین)</string>
-    <string name="br_desc">خودکار بر اساسِ رزولوشن × فریم‌ریت حساب می‌شود؛ در حرکتِ سریع تا ۳ برابر اوج می‌گیرد تا پیکسلی نشود.</string>
+    <string name="br_desc">خودکار بر اساسِ رزولوشن × فریم‌ریت حساب می‌شود؛ در حرکتِ سریع تا ۴ برابر اوج می‌گیرد تا پیکسلی نشود.</string>
     <string name="br_auto_high">خودکار (بالا)</string>
     <string name="br_auto_light">خودکار (سبک)</string>
     <string name="br_auto_max">خودکار (بی‌افت)</string>
@@ -87,6 +87,12 @@
     <!-- control & overlays -->
     <string name="float_title">دکمهٔ ضبط روی صفحه</string>
     <string name="float_desc">پنلِ کوچکِ پیدا با توقف، مکث، میکروفون، فیس‌کم، حذف و پنهان؛ با کشیدن به لبه می‌چسبد و با یک لمس به نقطه جمع می‌شود.</string>
+    <string name="ready_title">اعلانِ ضبطِ سریع</string>
+    <string name="ready_desc">یک اعلانِ کوچک همیشه در نوارِ اعلان می‌ماند؛ هر وقت خواستی (وسطِ بازی هم) «ضبط» را بزن. اندروید پیش از هر ضبط یک بار اجازه می‌پرسد.</string>
+    <string name="ch_ready">آمادهٔ ضبط</string>
+    <string name="n_ready_title">RawRec آماده است</string>
+    <string name="n_ready_text">برای شروعِ ضبط بزن</string>
+    <string name="n_record">ضبط</string>
     <string name="ghost_title">کنترل در ویدیو دیده نشود</string>
     <string name="ghost_desc">هنگامِ ضبط هیچ چیزی از RawRec روی صفحه نیست. برای دیدنِ کنترل گوشی را سه بار محکم تکان بده (یا در اعلان «نمایشِ دکمه» را بزن). تا کنترل باز است ضبط خودش می‌ایستد، پس بیننده هیچ‌وقت آن را نمی‌بیند؛ با «ادامه» کنترل می‌رود و ضبط ادامه پیدا می‌کند.</string>
     <string name="invis_title">شروع به شکلِ نقطهٔ کوچک</string>
@@ -140,7 +146,7 @@
 
     <!-- plan summary -->
     <string name="plan_applies_fmt">اعمال می‌شود: %1$s</string>
-    <string name="plan_vbr_fmt">حجم: به‌طورِ میانگین حدودِ %1$s در دقیقه (۳۰ دقیقه ≈ %2$s)؛ صفحهٔ ساکن خیلی کمتر، حرکتِ خیلی سریع تا ۳ برابر.</string>
+    <string name="plan_vbr_fmt">حجم: به‌طورِ میانگین حدودِ %1$s در دقیقه (۳۰ دقیقه ≈ %2$s)؛ صفحهٔ ساکن خیلی کمتر، حرکتِ خیلی سریع تا ۴ برابر.</string>
     <string name="plan_cbr_fmt">حجم: ثابت، حدودِ %1$s در دقیقه (۳۰ دقیقه ≈ %2$s).</string>
     <string name="plan_cq_fmt">حجم: در حالتِ CQ نامعلوم؛ سقف حدودِ %1$s در دقیقه.</string>
     <string name="plan_free_fmt">فضای خالی: %1$s • حدوداً %2$d دقیقه جا دارید</string>

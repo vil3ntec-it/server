@@ -18,6 +18,9 @@ class RotationPolicy(private val auto: Boolean, private val smartStart: Boolean,
 
     fun start(landscapeNow: Boolean) { landscape = landscapeNow }
 
+    /** Would [onDisplay] switch for this orientation? (Asks only; changes nothing.) */
+    fun follows(landscapeNow: Boolean): Boolean = landscape != null && auto && landscapeNow != landscape
+
     fun onDisplay(landscapeNow: Boolean, msSinceStart: Long, resized: Boolean = false): Action {
         val cur = landscape ?: return Action.NONE
         val rotated = auto && landscapeNow != cur

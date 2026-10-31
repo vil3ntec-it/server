@@ -156,6 +156,12 @@ class Recorder(
     @Volatile private var resumeAtUs = 0L
     @Volatile private var needKeyAfterResume = false
 
+    // Rotation seen, encoder switch coming: frames composed from [cutAfterUs] on (the new picture
+    // squeezed into the old canvas, with black bars) are not written. Latched in output order, so a
+    // B-frame that refers to a dropped frame is dropped too and the part always decodes. 0 = none.
+    @Volatile private var cutAfterUs = 0L
+    @Volatile private var cutLatched = false
+
     var droppedOptions: List<String> = emptyList(); private set
     /** Microphone muted from the floating control (game audio continues). */
     @Volatile var micMuted = false
@@ -244,10 +250,24 @@ class Recorder(
      * decided by [RotationPolicy] in the service (one debounced source, one switch per rotation); with
      * [restart] the part recorded so far is discarded and the recording starts over as a single file.
      */
-    fun switchOrientation(d: DisplayInfo, restart: Boolean) {
-        if (!running) return
-        val next = Planner.replan(cfg, d, plan) ?: return
+    fun switchOrientation(d: DisplayInfo, restart: Boolean): Boolean {
+        if (!running) return false
+        val next = Planner.replan(cfg, d, plan) ?: return false
         switchRequest.set(Switch(next, restart))
+        return true
+    }
+
+    /** The screen is turning and a switch will follow: stop writing frames composed from now on. */
+    fun holdFramesFrom(us: Long) {
+        if (!running || cutAfterUs > 0) return
+        cutLatched = false
+        cutAfterUs = us
+    }
+
+    /** No switch after all (or it failed): write frames again. */
+    fun releaseHold() {
+        cutAfterUs = 0L
+        cutLatched = false
     }
 
     /** Ends the recording: drains the encoders and finalizes every part (always a playable MP4). */
@@ -314,7 +334,7 @@ class Recorder(
                 if ("mode" !in drop) {
                     setInteger(MediaFormat.KEY_BITRATE_MODE, Planner.codecMode(p.mode))
                     if (p.mode == RecordConfig.MODE_CQ && p.quality >= 0) setInteger(MediaFormat.KEY_QUALITY, p.quality)
-                    // Headroom for fast motion: VBR may peak at 3× the target instead of blocking.
+                    // Headroom for fast motion: VBR may peak at 4× the target instead of blocking.
                     if (p.mode == RecordConfig.MODE_VBR) setInteger("max-bitrate", p.peakBitrate)
                 }
                 if ("qp" !in drop && p.qpMax > 0) {
@@ -472,6 +492,8 @@ class Recorder(
         if (paused) return
         val pts = info.presentationTimeUs          // surface timestamp from the compositor, monotonic
         if (pts < resumeAtUs) return
+        val cut = cutAfterUs
+        if (cut > 0 && (cutLatched || pts >= cut)) { cutLatched = true; return }
         val key = info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
         if (needKeyAfterResume) {
             if (!key) { requestKeyFrame(); return }
@@ -508,11 +530,13 @@ class Recorder(
                     val back = newEncoder(plan) ?: throw IllegalStateException("no encoder after rotation")
                     try { vd?.surface = back.surface } catch (_: Exception) {}
                     enc = back
+                    releaseHold()
                     muxer.encoderReplaced()
                     events.onAudioProblem("rotate: encoder unavailable")
                     return
                 }
             } else if (next == null) {
+                releaseHold()
                 events.onAudioProblem("rotate: encoder unavailable")
                 return
             }
@@ -526,6 +550,7 @@ class Recorder(
             muxer.newPart(discardCurrent = sw.restart)
             enc = next
             plan = p
+            releaseHold()
             if (sw.restart) stats.reset() else stats.rotations++
             stats.skipNextGap = true
         }

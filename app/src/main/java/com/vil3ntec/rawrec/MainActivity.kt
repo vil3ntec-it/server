@@ -197,6 +197,7 @@ class MainActivity : Activity() {
                 if (Settings.canDrawOverlays(this)) onStartClicked(test) else toast(R.string.toast_overlay_denied)
             }
             refreshAll()
+            ReadyNotice.show(this)
             if (tab == Tab.VIDEOS) refreshVideos()
             if (tab == Tab.ABOUT) refreshAbout()
             tick()
@@ -307,7 +308,7 @@ class MainActivity : Activity() {
         val p = prefs
         val i = { k: String, d: Int -> SafePrefs.int(p, k, d) }
         var base = RecordConfig(
-            preset = i("c_preset", RecordConfig.PRESET_SCREEN).coerceIn(0, 3),
+            preset = i("c_preset", RecordConfig.PRESET_60).coerceIn(0, 3),
             resShort = i("c_res", 0).coerceAtLeast(0),
             orient = i("c_orient", RecordConfig.ORIENT_AUTO).coerceIn(0, 2),
             fps = i("c_fps", 0).coerceAtLeast(0),
@@ -332,6 +333,18 @@ class MainActivity : Activity() {
             if (p.contains("c_preset")) resetNote = true
             base = RecordConfig.withPreset(base, RecordConfig.PRESET_SCREEN)
             p.edit().putInt("cfg_ver", 3).apply()
+            cfg = base
+            saveConfigOf(base)
+        }
+        // 1.9: on screens faster than 60 Hz, «مثلِ صفحه (حداکثر)» recorded games at 120/165 fps: two to
+        // three times the frames per second for the same bits, so fights, fast turns and explosions
+        // turned blocky, the phone got hot and the files big. 60 fps keeps every frame sharp at the
+        // full resolution. Moved once; choosing «مثلِ صفحه» again afterwards is kept.
+        if (i("cfg_ver", 0) < 4) {
+            if (base.preset == RecordConfig.PRESET_SCREEN && DisplayInfo.read(this).refresh > 60) {
+                base = RecordConfig.withPreset(base, RecordConfig.PRESET_60)
+            }
+            p.edit().putInt("cfg_ver", 4).apply()
             cfg = base
             saveConfigOf(base)
         }
@@ -1381,6 +1394,7 @@ class MainActivity : Activity() {
         toggles["float"] = Toggle(c, "tog:float", R.drawable.ic_float, str(R.string.float_title), str(R.string.float_desc)) { on -> change(false) { it.copy(floatingButton = on) } }
         toggles["ghost"] = Toggle(c, "tog:ghost", R.drawable.ic_eye_off, str(R.string.ghost_title), str(R.string.ghost_desc)) { on -> change(false) { it.copy(ghostControl = on) } }
         toggles["invis"] = Toggle(c, "tog:invis", R.drawable.ic_shrink, str(R.string.invis_title), str(R.string.invis_desc)) { on -> change(false) { it.copy(invisibleControl = on) } }
+        toggles["ready"] = Toggle(c, "tog:ready", R.drawable.ic_bell, str(R.string.ready_title), str(R.string.ready_desc)) { on -> ReadyNotice.setEnabled(this, on) }
         toggles["shake"] = Toggle(c, "tog:shake", R.drawable.ic_vibrate, str(R.string.shake_title), str(R.string.shake_desc)) { on -> change(false) { it.copy(shakeStop = on) } }
         val c2 = card(pg.col, null, top = 12)
         rows["cd"] = Row(c2, str(R.string.cd_title), str(R.string.cd_desc),
@@ -1642,6 +1656,7 @@ class MainActivity : Activity() {
         toggles["invis"]?.set(c.invisibleControl)
         toggles["ghost"]?.set(c.ghostControl)
         toggles["shake"]?.set(c.shakeStop)
+        toggles["ready"]?.set(ReadyNotice.enabled(this))
         rows["cd"]?.select(countdowns.indexOf(c.countdown))
         rows["cam"]?.select(c.facecam)
         rows["gg"]?.root?.visibility = if (c.usesInternal) View.VISIBLE else View.GONE

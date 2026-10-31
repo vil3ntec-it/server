@@ -127,6 +127,7 @@ class RecordService : Service(), Recorder.Events {
         private const val NOTIF_DONE = 2
         /** Ghost mode: how long after the panel is taken down the recording continues. */
         private const val GHOST_RESUME_MS = 350L
+        private const val GEOMETRY_WATCH_MS = 1_500L
 
         // Keys of the last finished recording (read by the activity).
         const val K_LAST_URIS = "last_uris"
@@ -255,6 +256,7 @@ class RecordService : Service(), Recorder.Events {
         recoveries = 0
         startedAt = 0L; pausedSince = 0L; applied = ""; lowSpaceWarned = false
         state = State.PREPARING
+        ReadyNotice.hide(this)
 
         var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
         if (c.hasAudio) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
@@ -380,6 +382,7 @@ class RecordService : Service(), Recorder.Events {
             notifyRecording()
             refreshTile()
             if (c.shakeStop || ghostOf(c)) startShakeDetector(ghostOf(c))
+            startThermalWatch()
             lastSpaceAt = 0L
             main.postDelayed(spaceCheck, 2000)
             if (c.testSeconds > 0) main.postDelayed(testDone, c.testSeconds * 1000L)
@@ -397,18 +400,70 @@ class RecordService : Service(), Recorder.Events {
             override fun onDisplayRemoved(id: Int) {}
             override fun onDisplayChanged(id: Int) {
                 if (id != Display.DEFAULT_DISPLAY) return
-                facecam?.onDisplayChanged()
-                control?.onDisplayChanged()
-                // A rotation fires several display changes: wait until it settles, then decide once.
-                main.removeCallbacks(followRotation)
-                main.postDelayed(followRotation, 600)
+                // Only a new size or orientation counts. A refresh-rate change arrives here too —
+                // on an adaptive 60/120/165 Hz screen, in a game, many times a second — and in 1.5
+                // each one pushed the rotation decision back again: the switch came late or never,
+                // and the landscape game was recorded small inside the portrait video with black bars.
+                onGeometryMaybeChanged()
             }
         }
+        lastGeometry = geometry()
         dm.registerDisplayListener(l, main)
+        main.removeCallbacks(geometryWatch)
+        main.postDelayed(geometryWatch, GEOMETRY_WATCH_MS)
         displayListener = l
     }
 
     private var policy: RotationPolicy? = null
+    private var lastGeometry = 0L
+
+    /** The screen's current size in pixels, packed (width, height): rotation and resolution only. */
+    private fun geometry(): Long {
+        val d = getSystemService(DisplayManager::class.java)?.getDisplay(Display.DEFAULT_DISPLAY) ?: return 0L
+        val m = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION") d.getRealMetrics(m)
+        return (m.widthPixels.toLong() shl 32) or m.heightPixels.toLong()
+    }
+
+    private fun onGeometryMaybeChanged() {
+        val g = geometry()
+        if (g == lastGeometry || g == 0L) return
+        lastGeometry = g
+        facecam?.onDisplayChanged()
+        control?.onDisplayChanged()
+        holdIfSwitching()
+        // A rotation fires several size changes: wait until it settles, then decide once.
+        main.removeCallbacks(followRotation)
+        main.postDelayed(followRotation, 400)
+    }
+
+    /**
+     * Safety net: a display event that never came (a game that takes the screen in landscape, a
+     * vendor skin) must not leave the recording in the wrong orientation; the size is checked again
+     * every [GEOMETRY_WATCH_MS] while recording. Reading the size is cheap.
+     */
+    private val geometryWatch = object : Runnable {
+        override fun run() {
+            if (stopping || state == State.IDLE) return
+            onGeometryMaybeChanged()
+            main.postDelayed(this, GEOMETRY_WATCH_MS)
+        }
+    }
+
+    /**
+     * The screen is turning (or changing size) and the recording will switch to it: from this moment
+     * the old part gets no more frames, so it does not end with the new picture squeezed into it.
+     */
+    private fun holdIfSwitching() {
+        val r = recorder ?: return
+        val c = cfg ?: return
+        val pol = policy ?: return
+        val d = DisplayInfo.read(this)
+        val (tw, th) = Planner.targetSize(c, d)
+        val (sw, sh) = requestedSource
+        val resized = sw > 0 && !(tw == sw && th == sh) && !(tw == sh && th == sw)
+        if (pol.follows(d.landscape) || resized) r.holdFramesFrom(System.nanoTime() / 1000)
+    }
     private var recordStartWall = 0L
     /** Screen size (before encoder fitting) the recording is in or is being switched to. */
     private var requestedSource = 0 to 0
@@ -424,8 +479,11 @@ class RecordService : Service(), Recorder.Events {
         val action = policy?.onDisplay(d.landscape, System.currentTimeMillis() - recordStartWall, resized)
         if (action == RotationPolicy.Action.RESTART || action == RotationPolicy.Action.NEW_PART) {
             requestedSource = tw to th
-            r.switchOrientation(d, restart = action == RotationPolicy.Action.RESTART)
+            if (!r.switchOrientation(d, restart = action == RotationPolicy.Action.RESTART)) r.releaseHold()
             if (resized) addNotice("rotate", getString(R.string.eng_notice_resized_fmt, Fmt.size(tw, th)))
+        } else {
+            // Turned back before the decision, or not a switch after all: keep writing.
+            r.releaseHold()
         }
     }
 
@@ -658,10 +716,11 @@ class RecordService : Service(), Recorder.Events {
     private fun finishRecording(reason: StopReason, detail: String? = null) {
         if (stopping) return
         stopping = true
-        for (cb in listOf(pillTick, spaceCheck, followRotation, countdownStep, startAfterCountdown, testDone, ghostResume)) main.removeCallbacks(cb)
+        for (cb in listOf(pillTick, spaceCheck, followRotation, countdownStep, startAfterCountdown, testDone, ghostResume, geometryWatch)) main.removeCallbacks(cb)
         displayStop?.let { main.removeCallbacks(it) }
         displayStop = null
         stopShakeDetector()
+        stopThermalWatch()
         unregisterDisplayListener()
         unregisterScreenReceiver()
         releaseScreen()
@@ -712,6 +771,7 @@ class RecordService : Service(), Recorder.Events {
         projection = null
         refreshTile()
         stopForeground(STOP_FOREGROUND_REMOVE)
+        ReadyNotice.show(this)
         stopSelf()
     }
 
@@ -864,6 +924,33 @@ class RecordService : Service(), Recorder.Events {
     override fun onPartCreated(uri: Uri) = ActiveRec.partOpened(this, uri)
     override fun onPartFinished(uri: Uri) = ActiveRec.partClosed(this, uri)
 
+    // ------------------------------------------------------------ heat
+
+    /**
+     * When the phone gets hot, Android slows the chip down and frames can be lost: said in the
+     * notification and the report, so a dropped frame is never a mystery. Nothing is changed in the
+     * recording by itself.
+     */
+    private var thermalListener: android.os.PowerManager.OnThermalStatusChangedListener? = null
+    private var maxThermal = 0
+
+    private fun startThermalWatch() {
+        val pm = getSystemService(android.os.PowerManager::class.java) ?: return
+        maxThermal = 0
+        val l = android.os.PowerManager.OnThermalStatusChangedListener { s ->
+            if (s > maxThermal) { maxThermal = s; RecLog.add(this, "thermal: $s") }
+            if (s >= android.os.PowerManager.THERMAL_STATUS_SEVERE) addNotice("hot", getString(R.string.eng_notice_hot))
+            else if (s < android.os.PowerManager.THERMAL_STATUS_MODERATE) removeNotice("hot")
+        }
+        try { pm.addThermalStatusListener(mainExecutor, l); thermalListener = l } catch (_: Exception) {}
+    }
+
+    private fun stopThermalWatch() {
+        val l = thermalListener ?: return
+        thermalListener = null
+        try { getSystemService(android.os.PowerManager::class.java)?.removeThermalStatusListener(l) } catch (_: Exception) {}
+    }
+
     // ------------------------------------------------------------ shake to stop
 
     private var shake: ShakeGesture? = null
@@ -1002,6 +1089,8 @@ class RecordService : Service(), Recorder.Events {
         if (!stopping && state != State.IDLE) finishRecording(StopReason.SERVICE_ENDED)
         removeOverlays()
         stopShakeDetector()
+        stopThermalWatch()
+        main.removeCallbacks(geometryWatch)
         unregisterDisplayListener()
         unregisterScreenReceiver()
         releaseScreen()
