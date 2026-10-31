@@ -1,0 +1,5 @@
+# ⛔ کلیدِ امضا هرگز در مخزن (SEC-ART-05) — فقط secretِ CI
+*.jks
+*.keystore
+*.p12
+local.properties

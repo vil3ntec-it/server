@@ -3093,3 +3093,17 @@ POST /api/pump-updates-admin/testers {codes}   فقط مدیر · دفترِ م�
 باتِ تلگرامِ پمپ از shop به ریپوی پمپ (`telegram-bot/`) رفت و افزونهٔ سرورِ حساب است (`shop: src/lib/bots.js` ⇐ `bots/pump/`).
 - `account-server.yml` و `windows-app.yml` پس از کلونِ shop، `telegram-bot/index.js` را (کلونِ sparse، فقط همان پوشه) در `account-server/bots/pump/` می‌گذارند.
 - ⛔ shopِ تازه (با `bots.js`) و بی بات در ریپوی پمپ ⇒ ساخت **سرخ** (و `account-server.yml` بودنِ `bots/pump/index.js` را در بسته هم می‌سنجد)، تا سرورِ حسابِ بی‌بات به مشتری نرسد. shopِ کهنه ⇒ این گام رد می‌شود.
+
+## ⛔ کلیدِ امضای برنامهٔ ادمینِ اندروید فقط از secret (از ۱۴۰۵/۰۸/۱۰، نسخه 1.50.58)
+
+- **رخداد (SEC-ART-05):** `homelab-panel/admin-android/app/villain-admin.jks` و رمزش در `build.gradle.kts` عمداً در
+  مخزن بودند («این کلید راز نیست»). مخزن **عمومی** است، پس هر کس می‌توانست APKی بسازد که اندروید به‌روزرسانیِ همین
+  برنامهٔ ادمین بداند. این کلید لورفته است؛ پاک کردن از امروز تاریخچه را پاک نمی‌کند. در تاریخچهٔ همین مخزن کپیِ
+  کلیدِ امضای «فروشگاه من» (`homelab-panel/android/app/tohid-release.jks`، همان گواهیِ APKهای منتشرشده) هم هست.
+- ⛔ هیچ فایلِ کلید و هیچ رمزی در مخزن یا `build.gradle.kts` نمی‌آید. امضای release فقط از `VILLAIN_ADMIN_KEYSTORE*`ِ
+  محیط؛ در CI از secretهای `VILLAIN_ADMIN_KEYSTORE_B64`، `VILLAIN_ADMIN_KEYSTORE_PASSWORD`، `VILLAIN_ADMIN_KEY_ALIAS`
+  (و `VILLAIN_ADMIN_KEY_PASSWORD`). نبودنشان ⇒ گامِ «کلیدِ امضا» و `packageRelease` قرمز، نه برگشت به کلیدی دیگر.
+- **گامِ صاحب محصول:** secretها را بگذارید. برای این‌که نصبِ امروز به‌روز شود، فعلاً همان کلید (از نسخهٔ خودتان یا
+  تاریخچه، فقط روی کامپیوترِ خودتان). سپس چرخش با زنجیرهٔ v3: `apksigner rotate --out lineage.bin --old-signer --ks
+  old.jks --new-signer --ks new.jks` و امضا با `--lineage` (کمینهٔ برنامه API 26؛ اندروید ۹ به بالا کلیدِ قدیم را پس از
+  چرخش نمی‌پذیرد، ۸ و پایین‌تر همچنان می‌پذیرند). بازنویسیِ تاریخچه فقط با تصمیمِ صاحب محصول.
