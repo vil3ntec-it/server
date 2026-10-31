@@ -258,6 +258,23 @@ try {
   check('روی پورتِ عمومی «نبوده» است', pub.status === 404, `${pub.status}`);
   const noAuth = await api('GET', '/api/agent/status');
   check('بی نشست ۴۰۱', noAuth.status === 401);
+  /*
+   *  ⛔ همان روتر زیرِ ‎/api/panel/v1/agent‎ هم سوار است (‎routes/v1.js‎) — و
+   *  آن‌جا نگهبانِ ‎index.js‎ (‎requireAuth + writeNeedsOperator‎) نیست. پس
+   *  نگهبان باید داخلِ خودِ روتر باشد، وگرنه هر کسی در شبکهٔ خانه بی نشست
+   *  گفت‌وگوها را می‌خواند و «اقدامِ منتظرِ تأیید» را اجرا می‌کرد.
+   */
+  const v1NoAuth = [
+    await api('GET', '/api/panel/v1/agent/status'),
+    await api('GET', '/api/panel/v1/agent/conversations'),
+    await api('GET', '/api/panel/v1/agent/facts'),
+    await api('PUT', '/api/panel/v1/agent/facts', { key: 'owner', value: 'x' }),
+    await api('POST', `/api/panel/v1/agent/actions/${bprop?.id}/confirm`, {}),
+  ];
+  check('درِ نسخه‌دارِ ‎/api/panel/v1/agent‎ هم بی نشست ۴۰۱', v1NoAuth.every((r) => r.status === 401), v1NoAuth.map((r) => r.status).join(' '));
+  const v1VChat = await stream('/api/panel/v1/agent/chat', { text: 'سلام' }, vAuth);
+  const v1VConfirm = await api('POST', `/api/panel/v1/agent/actions/${bprop?.id}/confirm`, {}, vAuth);
+  check('viewer روی درِ نسخه‌دار هم نه می‌پرسد نه تأیید می‌کند', v1VChat.status === 403 && v1VConfirm.status === 403, `${v1VChat.status} ${v1VConfirm.status}`);
 
   console.log('\n── مدل‌ها: دانلود، حذف ──');
   const pull = await stream('/api/agent/models/pull', { name: 'qwen2.5:1.5b-instruct' }, auth);
