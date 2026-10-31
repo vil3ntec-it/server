@@ -1305,7 +1305,7 @@ router.post('/notices/:id/preview', guard(async (req, res) => {
 }));
 
 /** ارسالِ آزمایشی به نشانیِ خودِ مدیر — باز هم بی هیچ ردیفی در گزارش. */
-router.post('/notices/:id/test', guard(async (req, res) => {
+router.post('/notices/:id/test', requireRole('operator'), guard(async (req, res) => {
   res.json(await cloudRaw('POST', `/api/admin/notices/${idOf(req.params.id)}/test`, {
     body: { to: String(req.body?.to || '').slice(0, 160) },
   }));
@@ -1471,11 +1471,18 @@ router.get('/sync/conflicts', guard(async (req, res) => {
   }));
 }));
 
-/** بازگرداندنِ نسخهٔ بازنده — یک opِ تازه از طرفِ سرور، نه پاک کردنِ چیزی. */
-router.post('/sync/conflicts/:id/restore', guard(async (req, res) => {
+/**
+ * بازگرداندنِ نسخهٔ بازنده — یک opِ تازه از طرفِ سرور، نه پاک کردنِ چیزی.
+ *
+ * ⛔ (۱۴۰۵/۰۸/۰۹) دادهٔ یک حساب را عوض می‌کند و سرورِ حساب آن را فقط به مدیرِ
+ * **ارشد** و فقط **با دلیل** می‌دهد (`admin-sync.js`، ADMIN-CONTROL-PLANE). پل با
+ * حسابِ ارشد حرف می‌زند، پس مرزِ نقش همین‌جاست: فقط admin، و دلیل همراه می‌رود.
+ */
+router.post('/sync/conflicts/:id/restore', requireRole('admin'), guard(async (req, res) => {
   const id = idOf(req.params.id);
-  const out = await cloudRaw('POST', `/api/admin/sync/conflicts/${id}/restore`);
-  audit({ actor: actorOf(req), action: 'account.sync.restore', entity: 'sync_conflict', entityId: id });
+  const reason = String(req.body?.reason ?? '').trim().slice(0, 500);
+  const out = await cloudRaw('POST', `/api/admin/sync/conflicts/${id}/restore`, { body: { reason } });
+  audit({ actor: actorOf(req), action: 'account.sync.restore', entity: 'sync_conflict', entityId: id, detail: { reason } });
   res.json(out);
 }));
 
@@ -1852,7 +1859,13 @@ router.put('/email', requireRole('admin'), guard(async (req, res) => {
   res.json(out);
 }));
 
-router.post('/email/test', guard(async (req, res) => {
+/*
+ *  ⛔ «آزمون»های این روتر **می‌فرستند** (ایمیل، پیامک، اعلان) — نگاه کردن نیستند.
+ *  `writeNeedsOperator` هر POSTِ ‎…/test‎ را «فقط نگاه» می‌شمارد و برای viewer باز
+ *  می‌گذارد (درست برای آزمونِ اتصالِ مرکز فرمان)؛ پس این‌جا نقش صریح است. پیامک
+ *  پول است و سرورِ حساب آن را فقط به ارشد می‌دهد ⇒ admin.
+ */
+router.post('/email/test', requireRole('operator'), guard(async (req, res) => {
   res.json(await cloudRaw('POST', '/api/admin/email/test', { body: req.body || {} }));
 }));
 
@@ -1876,7 +1889,7 @@ router.put('/sms', requireRole('admin'), guard(async (req, res) => {
   res.json(out);
 }));
 
-router.post('/sms/test', guard(async (req, res) => {
+router.post('/sms/test', requireRole('admin'), guard(async (req, res) => {
   res.json(await cloudRaw('POST', '/api/admin/sms/test', { body: req.body || {} }));
 }));
 
