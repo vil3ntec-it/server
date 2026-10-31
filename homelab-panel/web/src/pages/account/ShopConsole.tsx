@@ -16,7 +16,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { Boxes, FileClock, Flag, HeartPulse, KeyRound, Lock, Plug, ShieldCheck, Store, Wallet } from 'lucide-react';
+import { Boxes, FileClock, Flag, HeartPulse, KeyRound, Lock, Plug, ShieldCheck, Store } from 'lucide-react';
 
 import { api, ApiError } from '../../api';
 import { Card, ConfirmDialog, Loading, Modal } from '../../components/ui';
@@ -24,7 +24,7 @@ import { useApp } from '../../app-context';
 import type { Dict } from '../../i18n';
 import { ActionButton, Cell, KV, Notice, Row, Stat, Table } from '../../control/ui';
 import { CloudProblem, useLoad, type Load } from './shared';
-import Sales from './Sales';
+import ShopFinance from './ShopFinance';
 import {
   CONSOLE, HOLD_KINDS, HOLD_SERVICES, MONEY_HOLDS, actorLabel, bytes, flagValue, healthTone, isUnavailable, minutesAgo,
   newIdemKey, nextBefore, num, providerTone, reasonOk, shown, stampOf,
@@ -460,19 +460,13 @@ export function ShopsTab({ params, setParams }: { params?: URLSearchParams; setP
 
 /* ─────────────────────────────── زبانه: مالی ─────────────────────────────── */
 
+/*
+ *  ماژولِ ۴.۵ (مالیِ مرکزی) خودش را دارد: ‎ShopFinance.tsx‎ و ‎finance/*‎ — همین نام می‌ماند تا هر جا که زبانهٔ «مالی»
+ *  را با `FinanceTab` سوار کرده (میزِ فروشگاه، پوستهٔ ماژول‌ها) بی تغییر همان ماژول را نشان دهد.
+ *  ⚠️ ‎finance/*‎ از این فایل چیزی وارد نمی‌کند (بی حلقهٔ وارد کردن).
+ */
 export function FinanceTab() {
-  const { t } = useApp();
-  return (
-    <div className="space-y-4">
-      {/* ⛔ همان صفحهٔ «فروش و درآمد» (درآمد، پرداخت و رسید، بدهی، رو به پایان) — رونوشتِ دومی نیست */}
-      <Sales fixedApp="shop" />
-      <Card title={t('scFinanceLater')} icon={<Wallet size={16} />}>
-        <Notice tone="warn">
-          <b>{t('scNotAvailable')}</b> — {t('scFinanceLaterWhy')}
-        </Notice>
-      </Card>
-    </div>
-  );
+  return <ShopFinance />;
 }
 
 /* ────────────────────────────── زبانه: نسخه‌ها ────────────────────────────── */
