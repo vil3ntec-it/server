@@ -1,0 +1,22 @@
+# ---------------------------------------------------------------------------
+#  درِ عمومی + خودِ پنل روی دامنه (CADDYFILE=Caddyfile.panel در .env)
+#
+#  ⛔ فقط با HLP_PANEL_PUBLIC=1 و HLP_PANEL_URL=https://<PANEL_HOST> در .env —
+#  پنل بی این دو، از این راه وارد نمی‌کند. و از این راه فقط کسی وارد می‌شود
+#  که ورودِ دومرحله‌ای (TOTP) را روشن کرده؛ «ساختِ نخستین مدیر» هم از این
+#  راه نیست. راهِ خصوصی (تونلِ SSH) همیشه می‌ماند.
+# ---------------------------------------------------------------------------
+import apps.caddy
+
+{$PANEL_HOST} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Robots-Tag "noindex, nofollow"
+		X-Frame-Options "DENY"
+		-Server
+	}
+	reverse_proxy panel:4700 {
+		import vill3n_upstream
+	}
+}

@@ -74,15 +74,17 @@ export function parseCidr(cidr) {
  * @param {string} address
  * @param {string[]} [extra] شبکه‌های افزوده (‎HLP_PANEL_NETS‎) — برای شبکهٔ خانه‌ای
  *   که نشانی‌اش در فهرستِ بالا نیست.
+ * @param {string[]} [base] فهرستِ پایه — پیش‌فرض همان شبکهٔ خانه؛ روی میزبانِ
+ *   عمومی تنگ‌تر (‎src/deploy.js‎: ‎vps‎ ⇒ خودِ سرور و Tailscale، ‎paas‎ ⇒ فقط خودِ سرور).
  */
-export function isLocalPeer(address, extra = []) {
+export function isLocalPeer(address, extra = [], base = LOCAL_NETS) {
   let a = String(address || '').trim();
   if (!a) return false;
   const m = a.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
   if (m) a = m[1];
   const addr = toBig(a);
   if (!addr) return false;
-  for (const c of [...LOCAL_NETS, ...extra]) {
+  for (const c of [...base, ...extra]) {
     const test = parseCidr(c);
     if (test && test(addr)) return true;
   }
@@ -99,11 +101,11 @@ export function extraNetsFromEnv(env = process.env) {
  * نگهبان را روی یک سرورِ ‎http/https‎ می‌گذارد.
  * ⚠️ یک خطِ هشدار برای هر نشانی در هر ساعت — نه سیلِ لاگ از یک اسکنر.
  */
-export function guardServer(server, { extra = extraNetsFromEnv(), log = () => {} } = {}) {
+export function guardServer(server, { extra = extraNetsFromEnv(), base = LOCAL_NETS, log = () => {} } = {}) {
   const warned = new Map();
   server.on('connection', (socket) => {
     const from = socket.remoteAddress;
-    if (isLocalPeer(from, extra)) return;
+    if (isLocalPeer(from, extra, base)) return;
     const last = warned.get(from) || 0;
     if (Date.now() - last > 3600_000) {
       warned.set(from, Date.now());

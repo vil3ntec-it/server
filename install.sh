@@ -29,12 +29,18 @@
 #    VILL3N_PANEL_SRC=/path     به‌جای کلون، همین پوشه کپی شود (آزمون)
 #    VILL3N_ACCOUNT_SRC=/path   همان برای سرورِ حساب (shop/server)
 #    VILL3N_STOP_AFTER=<مرحله>  بعد از آن مرحله با کدِ ۷۵ بیرون بیا (آزمونِ ادامه)
+#    VILL3N_DEPLOY=home|vps     نمایهٔ استقرار (HLP_DEPLOY، docs/DEPLOY-ANYWHERE-fa.md).
+#                               home (پیش‌فرض) همان سرورِ خانگی؛ vps: سرورِ اجاره‌ای —
+#                               بی Docker/Ollama، و پورتِ پنل فقط از Tailscale.
+#                               فقط نصبِ تازه؛ core.envِ موجود هرگز بازنویسی نمی‌شود.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
 ROOT="${VILL3N_ROOT:-/srv/vill3n}"
 SKIP_SYSTEM="${VILL3N_SKIP_SYSTEM:-0}"
 NON_INTERACTIVE="${VILL3N_NON_INTERACTIVE:-0}"
+DEPLOY="${VILL3N_DEPLOY:-home}"
+case "$DEPLOY" in home|vps) ;; *) echo "VILL3N_DEPLOY=$DEPLOY شناخته نیست — home یا vps (داکر: deploy/docker)" >&2; exit 2 ;; esac
 REPAIR=0
 LIST_STEPS=0
 for arg in "$@"; do
@@ -44,7 +50,7 @@ for arg in "$@"; do
     --list-steps) LIST_STEPS=1 ;;
     --root=*) ROOT="${arg#--root=}" ;;
     -h|--help)
-      sed -n '2,32p' "$0" | sed 's/^#//'
+      sed -n '2,36p' "$0" | sed 's/^#//'
       exit 0 ;;
     *) echo "گزینهٔ ناشناخته: $arg" >&2; exit 2 ;;
   esac
@@ -131,6 +137,16 @@ skip_system() {
   if [ "$SKIP_SYSTEM" = 1 ]; then
     log "  ⏭ $1 — رد شد (VILL3N_SKIP_SYSTEM=1)"
     record "$1" skipped "VILL3N_SKIP_SYSTEM=1"
+    return 0
+  fi
+  return 1
+}
+
+#  نمایهٔ vps: آن‌چه فقط به کارِ کامپیوترِ خانه می‌آید نصب نمی‌شود — «رد شد» با دلیل، نه «انجام شد»
+skip_on_vps() {
+  if [ "$DEPLOY" = vps ]; then
+    log "  ⏭ $1 — رد شد (VILL3N_DEPLOY=vps: $2)"
+    record "$1" skipped "VILL3N_DEPLOY=vps — $2"
     return 0
   fi
   return 1
@@ -322,6 +338,7 @@ install_node() {
 
 install_docker() {
   skip_system install_docker && return 0
+  skip_on_vps install_docker "پنل بی داکر کار می‌کند؛ نسخهٔ داکری: deploy/docker" && return 0
   if need docker; then record docker present "$(docker --version 2>/dev/null | head -1)"
   elif retry sh -c "curl -fsSL https://get.docker.com | sh"; then record docker installed "get.docker.com"
   elif apt_install docker.io docker-compose-v2; then record docker installed "بستهٔ توزیع"
@@ -419,6 +436,7 @@ EOF
 
 install_ollama() {
   skip_system install_ollama && return 0
+  skip_on_vps install_ollama "دستیار روی سرورِ اجاره‌ای پیش‌فرض خاموش است (HLP_FEATURE_AGENT=1 روشنش می‌کند)" && return 0
   if need ollama; then record ollama present "$(ollama --version 2>/dev/null | head -1)"
   elif retry sh -c "curl -fsSL https://ollama.com/install.sh | sh"; then record ollama installed "اسکریپتِ رسمی"
   elif retry install_ollama_binary; then record ollama installed "باینریِ GitHub"
@@ -456,6 +474,7 @@ HLP_SECRET_KEY=$(rand_hex 32)
 HLP_ADMIN_USER=admin
 HLP_ADMIN_PASSWORD=$admin_pass
 HLP_ADMIN_EMAIL=$ADMIN_EMAIL
+HLP_DEPLOY=$DEPLOY
 HLP_DATA_DIR=$DATA_DIR
 HLP_SITES_ROOT=$ROOT/sites
 HLP_LIBRARY_ROOT=$ROOT/data/library
@@ -657,11 +676,14 @@ setup_firewall() {
   ufw allow "${SSH_PORT:-22}/tcp" >/dev/null
   ufw allow 80/tcp >/dev/null
   ufw allow 443/tcp >/dev/null
-  #  پنل (۴۷۰۰) فقط از شبکهٔ خانگی و Tailscale — هرگز از اینترنت
-  for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16; do ufw allow from "$net" to any port "$PANEL_PORT" proto tcp >/dev/null; done
+  #  پنل (۴۷۰۰) فقط از شبکهٔ خانگی و Tailscale — هرگز از اینترنت.
+  #  ⛔ روی VPS «شبکهٔ خصوصیِ دیتاسنتر» شبکهٔ خانه نیست: فقط Tailscale (همان src/deploy.js).
+  if [ "$DEPLOY" != vps ]; then
+    for net in 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16; do ufw allow from "$net" to any port "$PANEL_PORT" proto tcp >/dev/null; done
+  fi
   ufw allow in on tailscale0 >/dev/null 2>&1 || true
   ufw --force enable >/dev/null
-  record firewall present "deny incoming · allow ${SSH_PORT:-22},80,443 · $PANEL_PORT فقط LAN/Tailscale"
+  record firewall present "deny incoming · allow ${SSH_PORT:-22},80,443 · $PANEL_PORT فقط $([ "$DEPLOY" = vps ] && echo Tailscale || echo LAN/Tailscale)"
 }
 
 setup_fail2ban() {
@@ -708,6 +730,7 @@ setup_cloudflared() {
 
 pull_model() {
   skip_system pull_model && return 0
+  skip_on_vps pull_model "دستیار خاموش است — چند گیگ دانلود بی‌فایده" && return 0
   load_answers
   need ollama || { record model skipped "Ollama نیست"; return 0; }
   if ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$MODEL"; then record model present "$MODEL"; return 0; fi

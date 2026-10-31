@@ -28,7 +28,8 @@ export default function Login() {
         if (err.code === 'invalid_credentials') setError(t('wrongCredentials'));
         else if (err.code === 'password_too_short') setError(t('passwordTooShort'));
         else if (err.code === 'username_too_short') setError(t('usernameTooShort'));
-        else setError(err.code);
+        //  پیامِ خواندنیِ خودِ سرور (مثلاً «پنل از اینترنت فقط با کدِ دومرحله‌ای…»)
+        else setError(err.message && err.message !== err.code ? err.message : err.code);
       } else {
         setError(t('connectionLost'));
       }

@@ -41,6 +41,7 @@ import { bumpSoon } from '../live/bus.js';
 import { createAlertPusher } from './alert-push.js';
 import { createStationChat, CHAT_BRANCH } from './chat.js';
 import { isLocalPeer, extraNetsFromEnv } from '../lib/lan-guard.js';
+import { deploy } from '../config.js';
 
 /** شاخه‌ای که برنامهٔ نیتیو می‌نویسد و بقیه فقط می‌خوانند */
 export const LIVE_BRANCH = 'live';
@@ -87,7 +88,9 @@ export function isLocalRequest(req) {
   //  ⛔ «شبکهٔ خانه» یک تعریف دارد — همان نگهبانِ درِ پنل (‎lib/lan-guard.js‎،
   //  با ‎HLP_PANEL_NETS‎ برای شبکهٔ غیرعادی). دو فهرستِ جدا یعنی روزی پنل
   //  برنامهٔ پمپ را راه می‌دهد و ثبتِ پمپ ردش می‌کند (۱۴۰۵/۰۷/۱۳، سنجهٔ ‎lanreach‎).
-  return isLocalPeer(ip, extraNetsFromEnv());
+  //  همان فهرستِ درِ پنل، به تفکیکِ نمایهٔ استقرار (src/deploy.js): روی VPS «شبکهٔ
+  //  خصوصیِ دیتاسنتر» شبکهٔ خانه نیست.
+  return isLocalPeer(ip, extraNetsFromEnv(), deploy.panel.nets);
 }
 
 /**

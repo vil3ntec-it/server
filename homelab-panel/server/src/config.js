@@ -6,6 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { buildDomains } from './platform/domain.js';
+import { resolveDeploy } from './deploy.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const SERVER_ROOT = path.resolve(__dirname, '..');
@@ -34,6 +35,12 @@ const num = (v, d) => {
   const n = parseInt(v ?? '', 10);
   return Number.isFinite(n) ? n : d;
 };
+
+/**
+ * نمایهٔ استقرار — home (پیش‌فرض، همان رفتارِ امروز) · vps · docker · paas.
+ * شرح در src/deploy.js و docs/DEPLOY-ANYWHERE-fa.md. پس از خواندنِ .env.
+ */
+export const deploy = resolveDeploy(process.env);
 
 /**
  * ══ پنل روی کدام کارت گوش بدهد (۱۴۰۵/۰۷/۱۳) ══════════════════════════════
@@ -115,7 +122,9 @@ export const config = {
   // پشتِ reverse proxy هستیم؟ فقط وقتی روشن شود که واقعاً پراکسی جلو باشد.
   // اگر بی‌جهت روشن باشد، هر کسی با جعلِ X-Forwarded-For محدودیتِ نرخ را
   // دور می‌زند و لاگ‌ها IPِ دروغ ثبت می‌کنند.
-  trustProxy: (process.env.HLP_TRUST_PROXY ?? '0') !== '0',
+  //  ⚠️ پیش‌فرضش با نمایه است: home خاموش (همان امروز)، docker/paas روشن —
+  //  آن‌جا همیشه پراکسی/لودبالانسر جلوست (src/deploy.js).
+  trustProxy: deploy.trustProxy,
 
   // مبدأهای اضافیِ مجاز برای CORS (با کاما جدا) — علاوه بر دامنه و شبکهٔ خانگی
   corsOrigins: String(process.env.HLP_CORS_ORIGINS || '')
@@ -165,9 +174,8 @@ export const config = {
     //   lan  (پیش‌فرض) فقط از شبکهٔ خانگی — از اینترنت هرگز
     //   off               هیچ‌کس؛ فقط پنل پمپ می‌سازد
     //   open              هر کسی (فقط برای آزمون)
-    enroll: ['lan', 'off', 'open'].includes(process.env.HLP_STATIONS_ENROLL)
-      ? process.env.HLP_STATIONS_ENROLL
-      : 'lan',
+    //  پیش‌فرض: home ⇒ lan (همان امروز)؛ میزبانِ عمومی ⇒ off (شبکهٔ خانه‌ای نیست)
+    enroll: deploy.enroll,
   },
 
   // ── HTTPS مستقیم روی خودِ پنل ────────────────────────────────────────────
@@ -187,7 +195,8 @@ export const config = {
   // مغزش Ollama است روی همین کامپیوتر؛ هیچ سرویسِ ابری و هیچ کلیدی در کار
   // نیست. HLP_AGENT=0 کلِ دستیار را از پنل برمی‌دارد (نگهبان، گزارش، چت).
   agent: {
-    enabled: (process.env.HLP_AGENT ?? '1') !== '0',
+    //  HLP_AGENT=0 همان معنای قدیم؛ روی میزبانِ عمومی پیش‌فرض خاموش (src/deploy.js)
+    enabled: deploy.features.agent,
     ollamaUrl: process.env.HLP_OLLAMA_URL || process.env.HLP_AI_OLLAMA_URL || 'http://127.0.0.1:11434',
     keepAlive: process.env.HLP_AGENT_KEEP_ALIVE || '10m',
     numCtx: num(process.env.HLP_AGENT_NUM_CTX, 8192),

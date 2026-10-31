@@ -24,6 +24,21 @@ import { roleOf, listPanelUsers, setRole, setDisabled, deletePanelUser, ROLES, R
 import { audit } from '../lib/audit.js';
 import { noteLogin } from '../automation/sources.js';
 import { clientIp } from '../platform/security.js';
+import { deploy } from '../config.js';
+import { deploySummary, viaProxy } from '../deploy.js';
+
+/*
+ *  ⛔ «پنلِ عمومی» (HLP_PANEL_PUBLIC=1، پشتِ Caddy با TLS — src/deploy.js).
+ *
+ *  رمز به‌تنهایی برای پنلی که از اینترنت دیده می‌شود کافی نیست. پس از راهِ
+ *  پراکسی (هر درخواستی که X-Forwarded-For دارد) فقط کسی وارد می‌شود که کدِ
+ *  دومرحله‌ای (TOTP) را روشن کرده، و «ساختنِ نخستین مدیر» اصلاً از آن راه نیست.
+ *  راهِ خصوصی (تونلِ SSH یا Tailscale، مستقیم به پورتِ پنل) همیشه باز می‌ماند —
+ *  صاحب سامانه هرگز بیرون نمی‌ماند و TOTP را همان‌جا روشن می‌کند.
+ */
+function publicPath(req) {
+  return deploy.panel.public && viaProxy(req);
+}
 
 const router = Router();
 
@@ -34,6 +49,13 @@ router.get('/status', (req, res) => {
 
 router.post('/setup', (req, res) => {
   if (isInitialized()) return res.status(409).json({ error: 'already_initialized' });
+  if (publicPath(req)) {
+    audit(req, 'panel.setup', { ok: false, detail: { reason: 'public_path' } });
+    return res.status(403).json({
+      error: 'setup_private_only',
+      message: 'نخستین مدیر از راهِ عمومی ساخته نمی‌شود — HLP_ADMIN_USER/HLP_ADMIN_PASSWORD را در محیط بگذارید یا از تونلِ SSH/Tailscale وارد شوید.',
+    });
+  }
   const { username, password } = req.body || {};
   if (!username || String(username).trim().length < 3) {
     return res.status(400).json({ error: 'username_too_short' });
@@ -72,6 +94,13 @@ router.post('/login', (req, res) => {
    *  بازیابی) را بدهد. بلیت با `typ: 'totp'` مهر می‌خورد و `verifyToken`
    *  آن را نشست نمی‌شمارد.
    */
+  if (!user.totp_enabled && publicPath(req)) {
+    audit(req, 'panel.login', { target: user.username, ok: false, detail: { step: 'totp_required_public' } });
+    return res.status(403).json({
+      error: 'totp_required_public',
+      message: 'پنل از اینترنت فقط با کدِ دومرحله‌ای باز می‌شود. یک بار از تونلِ SSH یا Tailscale وارد شوید و ورودِ دومرحله‌ای را روشن کنید.',
+    });
+  }
   if (user.totp_enabled) {
     const ticket = jwt.sign({ uid: user.id, typ: 'totp' }, jwtSecret(), { expiresIn: 300 });
     audit(req, 'panel.login', { target: user.username, ok: true, detail: { step: 'totp_required' } });
@@ -132,6 +161,8 @@ router.get('/me', requireAuth, (req, res) => {
     user: { id: req.user.id, username: req.user.username, role },
     abilities: ROLE_ABILITIES[role] || [],
     sessions: listSessions(req.user.id),
+    //  کدام بخش‌ها روی این میزبان هستند (src/deploy.js) — رابط همان‌ها را نشان می‌دهد
+    deploy: deploySummary(deploy),
   });
 });
 
