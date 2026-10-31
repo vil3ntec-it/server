@@ -28,6 +28,7 @@ import { listBackups, saveBackup, KEEP_DAYS, MAX_BYTES } from '../stations/backu
 import { describeFolder } from '../stations/layout.js';
 import { validateChatInput, CHAT_RELAY_DAYS, CHAT_MEDIA_HOURS, CHAT_MEDIA_MAX } from '../stations/chat.js';
 import { cloudStatus, cloudLogin, cloudForget, cloudCall } from '../stations/cloud.js';
+import { withPanelActor } from '../account/service-key.js';
 import { noticesFor } from '../announce/store.js';
 
 /** شاخهٔ حساب‌های کیو‌آردار — ‎acct/<شناسه>‎ (برنامهٔ نیتیو می‌نویسد) */
@@ -423,6 +424,8 @@ export default router;
 
 export const adminRouter = Router();
 adminRouter.use(requireAuth);
+//  پلِ پمپ به سرورِ حساب (‎/cloud/*‎): «انجام‌دهنده» = کاربرِ همین نشست (‎account/service-key.js‎)
+adminRouter.use('/cloud', withPanelActor);
 
 async function qrFor(text) {
   if (!text) return null;

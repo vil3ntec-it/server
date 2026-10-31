@@ -16,19 +16,21 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { Boxes, FileClock, Flag, HeartPulse, Plug, ShieldCheck, Store, Wallet } from 'lucide-react';
+import { Boxes, FileClock, Flag, HeartPulse, KeyRound, Lock, Plug, ShieldCheck, Store, Wallet } from 'lucide-react';
 
 import { api, ApiError } from '../../api';
-import { Card, ConfirmDialog, Loading } from '../../components/ui';
+import { Card, ConfirmDialog, Loading, Modal } from '../../components/ui';
 import { useApp } from '../../app-context';
 import type { Dict } from '../../i18n';
 import { ActionButton, Cell, KV, Notice, Row, Stat, Table } from '../../control/ui';
 import { CloudProblem, useLoad, type Load } from './shared';
 import Sales from './Sales';
 import {
-  CONSOLE, bytes, healthTone, isUnavailable, minutesAgo, num, providerTone, shown, stampOf,
-  type AppVersions, type ChainReport, type Flags, type LiveConfig, type Providers, type ReleaseBeta,
-  type ShopHealth, type ShopSuspension, type SystemHealth, type Unavailable, type VersionHealth, type Versions,
+  CONSOLE, HOLD_KINDS, HOLD_SERVICES, MONEY_HOLDS, actorLabel, bytes, flagValue, healthTone, isUnavailable, minutesAgo,
+  newIdemKey, nextBefore, num, providerTone, reasonOk, shown, stampOf,
+  type AppVersions, type Capabilities, type ChainReport, type FlagHistory, type Flags, type Hold, type HoldKind,
+  type HoldResult, type LiveConfig, type Providers, type ReleaseBeta, type ServiceKeyStatus, type ShopHealth,
+  type ShopHolds, type SystemHealth, type Unavailable, type VersionHealth, type Versions,
 } from './consoleData';
 
 type T = (key: keyof Dict) => string;
@@ -164,23 +166,202 @@ export function HealthCard() {
 /* ─────────────────────────── زبانه: فروشگاه‌ها ─────────────────────────── */
 
 type ShopRow = { id: string; name?: string; status?: string; owner_email?: string; owner_name?: string; members?: number;
-                 sub_status?: string; plan?: string; ends_at?: number | string | null; created_at?: number | string };
+                 sub_status?: string; plan?: string; ends_at?: number | string | null; created_at?: number | string;
+                 holds?: string[] };
 type ShopList = { shops?: ShopRow[]; total?: number; limit?: number; offset?: number };
 type SyncDevice = { device_id: string; app_version?: string; last_seen_at?: number; last_push_at?: number | null;
                     queued_count?: number; behind?: number; conflicts?: number };
 
 const PAGE = 25;
 
+const HOLD_LABEL: Record<HoldKind, keyof Dict> = {
+  access_suspended: 'scHoldAccessSuspended', service_disabled: 'scHoldServiceDisabled',
+  subscription_ended: 'scHoldSubscriptionEnded', deletion_requested: 'scHoldDeletionRequested', archived: 'scHoldArchived',
+};
+const HOLD_EFFECT: Record<HoldKind, keyof Dict> = {
+  access_suspended: 'scHoldEffectAccess', service_disabled: 'scHoldEffectService',
+  subscription_ended: 'scHoldEffectSubscription', deletion_requested: 'scHoldEffectDeletion', archived: 'scHoldEffectArchived',
+};
+const holdLabel = (t: T, kind: unknown) => (HOLD_KINDS.includes(kind as HoldKind) ? t(HOLD_LABEL[kind as HoldKind]) : String(kind || '—'));
+const errText = (e: unknown) => (e instanceof ApiError ? `${e.message} (${e.code})` : String(e));
+
+/** سلامتِ یک دکان — همان شکلِ ‎lib/shop-health.js‎؛ نیامده ⇒ «—». */
+function ShopHealthView({ h }: { h: ShopHealth }) {
+  const { t } = useApp();
+  const devices = Array.isArray(h.devices) ? h.devices : [];
+  const sub = h.subscription;
+  return (
+    <>
+      <KV label={t('scAccess')}>
+        {h.state?.access === 'blocked' ? t('scAccessBlocked') : h.state?.access === 'open' ? t('scAccessOpen') : '—'}
+        {(h.state?.blockedBy || []).length ? ` · ${(h.state?.blockedBy || []).map((k) => holdLabel(t, k)).join('، ')}` : ''}
+      </KV>
+      <KV label={t('scLastSync')}>{moment(h.sync?.lastSyncAt)}</KV>
+      <KV label={t('scSub')}>{sub?.status || '—'}{sub?.plan ? ` · ${sub.plan}` : ''}{sub?.phase ? ` · ${sub.phase}` : ''}</KV>
+      <KV label={t('shopDeskEnds')}>{moment(sub?.endsAt)} · {t('scDaysLeft')}: {shown(sub?.daysLeft)}</KV>
+      <KV label={t('scErrors24h')}>{shown(h.errors?.last24h)} · {t('scErrors7d')}: {shown(h.errors?.last7d)} · {moment(h.errors?.lastAt)}</KV>
+      <KV label={t('scQueued')}>{shown(h.sync?.v1?.queued)} · {t('scBehind')}: {shown(h.sync?.v1?.behindMax)} · {t('scConflicts')}: {shown(h.sync?.v1?.openConflicts)}</KV>
+      <h4 className="mb-1 mt-3 text-[11px] font-semibold">{t('scVersionsOnDevices')}</h4>
+      <Table head={[t('scAppVersion'), t('scDevices')]} empty={!h.versions?.length}>
+        {(h.versions || []).map((v) => (
+          <Row key={v.appVersion || '—'}><Cell mono>{v.appVersion || '—'}</Cell><Cell>{shown(v.devices)}</Cell></Row>
+        ))}
+      </Table>
+      <Table head={[t('scEngine'), t('scDevice'), t('scAppVersion'), t('scLastSeen'), t('scLastPush'), t('scQueued'), t('scBehind')]}
+             empty={devices.length === 0}>
+        {devices.map((d) => (
+          <Row key={`${d.engine}-${d.deviceId}`}>
+            <Cell mono>{d.engine || '—'}</Cell>
+            <Cell mono>{d.deviceId}</Cell>
+            <Cell mono>{d.appVersion || '—'}</Cell>
+            <Cell>{moment(d.lastSeenAt)}</Cell>
+            <Cell>{moment(d.lastPushAt)}</Cell>
+            <Cell>{shown(d.queued)}</Cell>
+            <Cell>{shown(d.behind)}</Cell>
+          </Row>
+        ))}
+      </Table>
+      {/* ⛔ زمانِ سنجش همان `at` ِ سرورِ حساب است، نه ساعتِ مرورگر */}
+      <SourceLine source="/api/admin/shops/:id/health" data={{ checkedAt: h.at, fetchedAt: h.fetchedAt }} />
+    </>
+  );
+}
+
+/**
+ * پنجرهٔ گذاشتن/برداشتنِ حالت — دلیلِ اجباری، اثرِ دقیقِ همان حالت، و **یک** کلیدِ یکتایی برای همین
+ * پنجره (دوبار زدن یا تکرارِ پس از قطعی یک کار است، نه دو).
+ */
+function HoldDialog({ shopId, mode, hold, onClose, onDone }: {
+  shopId: string; mode: 'place' | 'lift'; hold?: Hold; onClose: () => void; onDone: (r: HoldResult) => void;
+}) {
+  const { t } = useApp();
+  const [kind, setKind] = useState<HoldKind>((hold?.kind as HoldKind) || 'access_suspended');
+  const [service, setService] = useState(HOLD_SERVICES[0]);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [idem] = useState(newIdemKey);
+  const effective = mode === 'lift' ? ((hold?.kind as HoldKind) || kind) : kind;
+  const send = async () => {
+    if (!reasonOk(reason) || busy) return;
+    setBusy(true);
+    setErr('');
+    try {
+      const url = mode === 'lift' ? CONSOLE.liftHold(shopId, hold!.id) : CONSOLE.shopHolds(shopId);
+      const body = mode === 'lift'
+        ? { reason: reason.trim(), confirm: true, idempotencyKey: idem }
+        : { kind, ...(kind === 'service_disabled' ? { service } : {}), reason: reason.trim(), confirm: true, idempotencyKey: idem };
+      onDone(await api<HoldResult>(url, { method: 'POST', body }));
+    } catch (e) { setErr(errText(e)); }
+    finally { setBusy(false); }
+  };
+  return createPortal(
+    <Modal open onClose={onClose} title={mode === 'lift' ? `${t('scLiftHold')} — ${holdLabel(t, effective)}` : t('scPlaceHold')}
+           footer={<>
+             <button className="btn" onClick={onClose}>{t('cancel')}</button>
+             <button className="btn btn-danger" disabled={!reasonOk(reason) || busy} onClick={send}>{busy ? t('scChecking') : t('scConfirmSend')}</button>
+           </>}>
+      <div className="space-y-3 text-sm">
+        {mode === 'place' && (
+          <div className="flex flex-wrap gap-2">
+            <select className="input w-auto" value={kind} onChange={(e) => setKind(e.target.value as HoldKind)} aria-label={t('scKind')}>
+              {HOLD_KINDS.map((k) => <option key={k} value={k}>{holdLabel(t, k)}</option>)}
+            </select>
+            {kind === 'service_disabled' && (
+              <select className="input w-auto" dir="ltr" value={service} onChange={(e) => setService(e.target.value)} aria-label={t('scService')}>
+                {HOLD_SERVICES.map((x) => <option key={x} value={x}>{x}</option>)}
+              </select>
+            )}
+          </div>
+        )}
+        {/* ⛔ اثرِ واقعیِ همین حالت، پیش از تأیید — «تعلیق»، «خاموشیِ سرویس»، «پایانِ اشتراک» و «حذف» یکی نیستند */}
+        <Notice tone="warn">{mode === 'lift' ? t('scLiftEffect') : t(HOLD_EFFECT[effective])}</Notice>
+        {mode === 'place' && MONEY_HOLDS.includes(kind) && <p className="text-[11px] text-ink-muted">{t('scHoldMoneyNote')}</p>}
+        <label className="block text-xs">
+          {t('scReasonHint')}
+          <textarea className="input mt-1 w-full" rows={2} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} />
+        </label>
+        {err && <Notice tone="bad">{err}</Notice>}
+      </div>
+    </Modal>,
+    document.body,
+  );
+}
+
+/** چهار حالتِ جدا + بایگانی: باز، تاریخچه، گذاشتن و برداشتن — مرز و اثر همه در سرورِ حساب. */
+function HoldsView({ shopId, data, onChanged }: { shopId: string; data: ShopHolds; onChanged: () => void }) {
+  const { t, can } = useApp();
+  const [dialog, setDialog] = useState<{ mode: 'place' | 'lift'; hold?: Hold } | null>(null);
+  const [done, setDone] = useState<HoldResult | null>(null);
+  const open = Array.isArray(data.open) ? data.open : [];
+  const history = Array.isArray(data.history) ? data.history : [];
+  const st = data.state;
+  return (
+    <>
+      <KV label={t('scAccess')}>
+        {st?.access === 'blocked' ? t('scAccessBlocked') : st?.access === 'open' ? t('scAccessOpen') : '—'}
+      </KV>
+      <KV label={t('scServicesDisabled')}>{(st?.servicesDisabled || []).join('، ') || '—'}</KV>
+      {done && (
+        <Notice tone="good">
+          {t('scServerConfirmed')} — {holdLabel(t, done.hold?.kind)}{done.hold?.service ? ` (${done.hold.service})` : ''}
+          {done.replayed ? ` · ${t('scHoldReplayed')}` : ''}
+        </Notice>
+      )}
+      <h4 className="mb-1 mt-3 text-[11px] font-semibold">{t('scOpenHolds')}</h4>
+      <Table head={[t('scKind'), t('scReason'), t('scPlacedBy'), t('scPlacedAt'), '']} empty={open.length === 0}>
+        {open.map((h) => (
+          <Row key={h.id}>
+            <Cell>{holdLabel(t, h.kind)}{h.service ? <span dir="ltr"> · {h.service}</span> : null}</Cell>
+            <Cell>{h.reason || '—'}</Cell>
+            <Cell>{actorLabel(h.placedActor, h.placedBy)}</Cell>
+            <Cell>{moment(h.placedAt)}</Cell>
+            <Cell>{can('admin') && <button className="btn btn-sm" onClick={() => { setDone(null); setDialog({ mode: 'lift', hold: h }); }}>{t('scLift')}</button>}</Cell>
+          </Row>
+        ))}
+      </Table>
+      {can('admin')
+        ? <button className="btn btn-sm mt-2" onClick={() => { setDone(null); setDialog({ mode: 'place' }); }}><Lock size={14} /> {t('scPlaceHold')}</button>
+        : <p className="mt-2 text-[11px] text-ink-muted">{t('scAdminOnly')}</p>}
+      <h4 className="mb-1 mt-3 text-[11px] font-semibold">{t('scHoldHistory')}</h4>
+      <Table head={[t('scKind'), t('scPlacedAt'), t('scLiftedAt'), t('scReason')]} empty={history.length === 0}>
+        {history.map((h) => (
+          <Row key={`hist-${h.id}`}>
+            <Cell>{holdLabel(t, h.kind)}{h.service ? <span dir="ltr"> · {h.service}</span> : null}</Cell>
+            <Cell>{moment(h.placedAt)} · {actorLabel(h.placedActor, h.placedBy)}</Cell>
+            <Cell>{h.liftedAt ? `${moment(h.liftedAt)} · ${actorLabel(h.liftedActor, h.liftedBy)}` : '—'}</Cell>
+            <Cell>{h.reason || '—'}{h.liftReason ? ` ⇐ ${h.liftReason}` : ''}</Cell>
+          </Row>
+        ))}
+      </Table>
+      <SourceLine source="/api/admin/shops/:id/holds" data={data} />
+      {dialog && (
+        <HoldDialog shopId={shopId} mode={dialog.mode} hold={dialog.hold} onClose={() => setDialog(null)}
+                    onDone={(r) => { setDialog(null); setDone(r); onChanged(); }} />
+      )}
+    </>
+  );
+}
+
 function ShopDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const { t } = useApp();
   const sync = useLoad<{ devices?: SyncDevice[] }>(`/api/account-admin/sync/status?app=shop&account=${encodeURIComponent(id)}&limit=50`, [id]);
   const health = useLoad<ShopHealth | Unavailable>(CONSOLE.shopHealth(id), [id]);
-  const susp = useLoad<ShopSuspension | Unavailable>(CONSOLE.shopSuspension(id), [id]);
+  const holds = useLoad<ShopHolds | Unavailable>(CONSOLE.shopHolds(id), [id]);
   const devices = Array.isArray(sync.data?.devices) ? sync.data!.devices! : [];
   return (
     <Card title={`${t('scShop')} ${id}`} icon={<Store size={16} />}
           action={<ActionButton onClick={onClose}>{t('close')}</ActionButton>}>
-      <h3 className="mb-2 text-xs font-semibold">{t('scSyncDevices')}</h3>
+      <h3 className="mb-2 text-xs font-semibold">{t('scHolds')}</h3>
+      {holds.error ? <Problem load={holds as Load<unknown>} /> : !holds.data ? <Loading /> : isUnavailable(holds.data)
+        ? <NotAvailable data={holds.data} />
+        : <HoldsView shopId={id} data={holds.data} onChanged={() => { void holds.reload(); void health.reload(); }} />}
+
+      <h3 className="mb-2 mt-4 text-xs font-semibold">{t('scShopHealth')}</h3>
+      {health.error ? <Problem load={health as Load<unknown>} /> : !health.data ? <Loading /> : isUnavailable(health.data)
+        ? <NotAvailable data={health.data} /> : <ShopHealthView h={health.data} />}
+
+      <h3 className="mb-2 mt-4 text-xs font-semibold">{t('scSyncDevices')}</h3>
       {sync.error ? <Problem load={sync as Load<unknown>} /> : !sync.data ? <Loading /> : (
         <>
           <Table head={[t('scDevice'), t('scAppVersion'), t('scLastSeen'), t('scLastPush'), t('scQueued'), t('scBehind'), t('scConflicts')]}
@@ -201,27 +382,6 @@ function ShopDetail({ id, onClose }: { id: string; onClose: () => void }) {
           <p className="text-[11px] text-ink-muted">{t('scSyncV1Only')}</p>
         </>
       )}
-
-      <h3 className="mb-2 mt-4 text-xs font-semibold">{t('scShopHealth')}</h3>
-      {health.error ? <Problem load={health as Load<unknown>} /> : !health.data ? <Loading /> : isUnavailable(health.data)
-        ? <NotAvailable data={health.data} /> : (
-          <>
-            <KV label={t('scOnline')}>{health.data.online == null ? '—' : health.data.online ? t('scYes') : t('scNo')}</KV>
-            <KV label={t('scLastSync')}>{moment(health.data.lastSyncAt)}</KV>
-            <KV label={t('scDevices')}>{shown(health.data.devices?.length)}</KV>
-            <SourceLine source="/api/admin/shops/:id/health" data={health.data} at={health.at} />
-          </>
-        )}
-
-      <h3 className="mb-2 mt-4 text-xs font-semibold">{t('scSuspension')}</h3>
-      {susp.error ? <Problem load={susp as Load<unknown>} /> : !susp.data ? <Loading /> : isUnavailable(susp.data)
-        ? <NotAvailable data={susp.data} /> : (
-          <>
-            <KV label={t('status')}>{susp.data.state || '—'}</KV>
-            <KV label={t('scReason')}>{susp.data.reason || '—'}</KV>
-            <SourceLine source="/api/admin/shops/:id/suspension" data={susp.data} at={susp.at} />
-          </>
-        )}
       <p className="mt-3 text-xs"><Link className="underline" to={`/shop?tab=audit&shop=${encodeURIComponent(id)}`}>{t('scShopAudit')}</Link></p>
     </Card>
   );
@@ -230,25 +390,43 @@ function ShopDetail({ id, onClose }: { id: string; onClose: () => void }) {
 export function ShopsTab() {
   const { t } = useApp();
   const [q, setQ] = useState('');
+  const [hold, setHold] = useState('');
   const [offset, setOffset] = useState(0);
   const [open, setOpen] = useState('');
-  useEffect(() => { setOffset(0); }, [q]);
-  //  ⛔ جست‌وجو و صفحه‌بندی سمتِ سرورِ حساب (‎q · limit · offset‎)، نه آوردنِ همه و برش در مرورگر
-  const load = useLoad<ShopList>(CONSOLE.shops(q.trim(), PAGE, offset), [q, offset], 'customers');
+  useEffect(() => { setOffset(0); }, [q, hold]);
+  //  «توانایی»ها: پالایشِ حالت فقط وقتی سرورِ حساب `shop-holds.v1` دارد؛ و `total` ِ «همین جست‌وجو» فقط
+  //  روی سرورِ حسابی که `capabilities` می‌گوید (چسبِ فاز ۳ ⇒ `total` همان q و hold را می‌شمارد)
+  const caps = useLoad<Capabilities>(CONSOLE.capabilities);
+  const capList = Array.isArray(caps.data?.capabilities) ? caps.data!.capabilities! : [];
+  const holdsOk = capList.includes('shop-holds.v1');
+  //  ⛔ جست‌وجو، پالایش و صفحه‌بندی سمتِ سرورِ حساب (‎q · hold · limit · offset‎)، نه آوردنِ همه و برش در مرورگر
+  const load = useLoad<ShopList>(CONSOLE.shops(q.trim(), PAGE, offset, holdsOk ? hold : ''), [q, offset, hold, holdsOk], 'customers');
   const rows = Array.isArray(load.data?.shops) ? load.data!.shops! : [];
+  const filtered = Boolean(q.trim() || (holdsOk && hold));
   return (
     <div className="space-y-4">
-      <input className="input w-full sm:w-80" placeholder={t('shopDeskSearch')} value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="flex flex-wrap gap-2">
+        <input className="input w-full sm:w-80" placeholder={t('shopDeskSearch')} value={q} onChange={(e) => setQ(e.target.value)} />
+        {holdsOk && (
+          <select className="input w-auto" value={hold} onChange={(e) => setHold(e.target.value)} aria-label={t('scHoldFilter')}>
+            <option value="">{t('scHoldFilter')}: {t('scHoldAny')}</option>
+            <option value="none">{t('scHoldNone')}</option>
+            {HOLD_KINDS.map((k) => <option key={k} value={k}>{holdLabel(t, k)}</option>)}
+          </select>
+        )}
+      </div>
       {open && <ShopDetail id={open} onClose={() => setOpen('')} />}
       <Card title={t('scShops')} icon={<Store size={16} />}>
         {load.error ? <Problem load={load as Load<unknown>} /> : !load.data ? <Loading /> : (
           <>
-            <Table head={[t('shopDeskName'), t('shopDeskEmail'), t('status'), t('scSub'), t('shopDeskEnds'), t('scMembers')]} empty={rows.length === 0}>
+            <Table head={[t('shopDeskName'), t('shopDeskEmail'), t('status'), t('scHolds'), t('scSub'), t('shopDeskEnds'), t('scMembers')]} empty={rows.length === 0}>
               {rows.map((r) => (
                 <Row key={r.id} onClick={() => setOpen(r.id)}>
                   <Cell>{r.name || r.id}</Cell>
                   <Cell mono>{r.owner_email || '—'}</Cell>
                   <Cell>{r.status || '—'}</Cell>
+                  {/* ⛔ نیامده (سرورِ حسابِ پیش از فاز ۳) ⇒ «—»؛ آرایهٔ خالیِ واقعی ⇒ «بی حالت» */}
+                  <Cell>{!Array.isArray(r.holds) ? '—' : r.holds.length ? r.holds.map((k) => holdLabel(t, k)).join('، ') : t('scHoldNone')}</Cell>
                   <Cell>{r.sub_status || '—'}{r.plan ? ` · ${r.plan}` : ''}</Cell>
                   <Cell>{moment(r.ends_at)}</Cell>
                   <Cell>{shown(r.members)}</Cell>
@@ -259,8 +437,11 @@ export function ShopsTab() {
               <button className="btn btn-sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>{t('scPrev')}</button>
               <button className="btn btn-sm" disabled={rows.length < PAGE} onClick={() => setOffset(offset + PAGE)}>{t('scNext')}</button>
               <span>{t('scRows').replace('{from}', shown(rows.length ? offset + 1 : 0)).replace('{to}', shown(offset + rows.length))}</span>
-              {/* ⚠️ «کل» ِ سرورِ حساب همهٔ دکان‌هاست، نه نتیجهٔ همین جست‌وجو — همان را می‌گوییم */}
-              <span>· {t('scAllShops')}: {shown(load.data.total)}</span>
+              {/* ⚠️ سرورِ حسابِ پیش از چسب `total` را همیشه «همهٔ دکان‌ها» می‌دهد؛ با `capabilities` همان جست‌وجو را —
+                  برچسب همان را می‌گوید که سرور واقعاً شمرده، و «توانایی» نیامده ⇒ «—» ِ برچسب، نه حدس */}
+              {!filtered ? <span>· {t('scAllShops')}: {shown(load.data.total)}</span>
+                : !caps.data ? <span>· {t('scSearchTotal')}: —</span>
+                : <span>· {capList.length ? t('scSearchTotal') : t('scAllShops')}: {shown(load.data.total)}</span>}
             </div>
             <SourceLine source="/api/admin/shops" at={load.at} />
           </>
@@ -465,11 +646,57 @@ export function HealthTab() {
 
 /* ───────────────────────── زبانه: تنظیمات و پرچم‌ها ───────────────────────── */
 
+const HIST_PAGE = 50;
+
+/** تاریخچهٔ پرچم‌ها — چه کسی، کی، پیشین ⇒ تازه، چرا؛ صفحه‌بندیِ سمتِ سرورِ حساب (`before`). */
+function FlagHistoryCard() {
+  const { t } = useApp();
+  const [key, setKey] = useState('');
+  const [want, setWant] = useState('');
+  const [before, setBefore] = useState<number | null>(null);
+  const [pages, setPages] = useState<(number | null)[]>([]);
+  const hist = useLoad<FlagHistory | Unavailable>(CONSOLE.flagHistory(want, before, HIST_PAGE), [want, before]);
+  const entries = hist.data && !isUnavailable(hist.data) && Array.isArray(hist.data.entries) ? hist.data.entries : [];
+  const next = nextBefore(entries, HIST_PAGE);
+  return (
+    <Card title={t('scFlagHistory')} icon={<FileClock size={16} />}>
+      <form className="mb-3 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); setPages([]); setBefore(null); setWant(key.trim()); }}>
+        <input className="input w-full sm:w-72" dir="ltr" placeholder={t('scFlagKeyFilter')} value={key} onChange={(e) => setKey(e.target.value)} />
+        <button className="btn btn-sm" type="submit">{t('scShow')}</button>
+      </form>
+      {hist.error ? <Problem load={hist as Load<unknown>} /> : !hist.data ? <Loading /> : isUnavailable(hist.data)
+        ? <NotAvailable data={hist.data} /> : (
+          <>
+            <Table head={[t('scAt'), t('scKey'), t('scOld'), t('scNew'), t('scActor'), t('scReason')]} empty={entries.length === 0}>
+              {entries.map((e, i) => (
+                <Row key={e.id || `${e.key}-${e.at}-${i}`}>
+                  <Cell>{moment(e.at)}</Cell>
+                  <Cell mono>{e.scope ? `${e.scope}:` : ''}{e.key}</Cell>
+                  <Cell mono>{flagValue(e.oldValue)}</Cell>
+                  <Cell mono>{flagValue(e.newValue)}</Cell>
+                  <Cell>{actorLabel(e.actor, e.changedBy)}</Cell>
+                  <Cell>{e.reason || '—'}</Cell>
+                </Row>
+              ))}
+            </Table>
+            <div className="mt-2 flex gap-2">
+              <button className="btn btn-sm" disabled={!pages.length}
+                      onClick={() => { const p = [...pages]; const prev = p.pop(); setPages(p); setBefore(prev ?? null); }}>{t('scPrev')}</button>
+              <button className="btn btn-sm" disabled={next === null}
+                      onClick={() => { setPages([...pages, before]); setBefore(next); }}>{t('scNext')}</button>
+            </div>
+            <SourceLine source="/api/admin/flags/history" data={hist.data} at={hist.at} />
+          </>
+        )}
+    </Card>
+  );
+}
+
 export function SettingsTab() {
   const { t } = useApp();
   const [scope, setScope] = useState('');
   const [want, setWant] = useState('');
-  const flags = useLoad<Flags | Unavailable>(CONSOLE.flags);
+  const flags = useLoad<Flags | Unavailable>(CONSOLE.flags('all'));
   const live = useLoad<LiveConfig>(want ? CONSOLE.liveConfig(want) : null, [want]);
   const cfg = useLoad<{ config?: Record<string, string> }>('/api/account-admin/account-config');
   const items = Array.isArray(live.data?.items) ? live.data!.items! : [];
@@ -477,22 +704,38 @@ export function SettingsTab() {
     <div className="space-y-4">
       <Card title={t('scFlags')} icon={<Flag size={16} />}>
         {flags.error ? <Problem load={flags as Load<unknown>} /> : !flags.data ? <Loading /> : isUnavailable(flags.data)
-          ? <NotAvailable data={flags.data} /> : (
-            <>
-              <Table head={[t('scKey'), t('scValue'), t('scChangedBy'), t('scReason')]} empty={!flags.data.flags?.length}>
-                {(flags.data.flags || []).map((f) => (
-                  <Row key={f.key}>
-                    <Cell mono>{f.key}</Cell>
-                    <Cell mono>{JSON.stringify(f.value)}</Cell>
-                    <Cell>{f.updatedBy || '—'} · {moment(f.updatedAt)}</Cell>
-                    <Cell>{f.reason || '—'}</Cell>
-                  </Row>
-                ))}
-              </Table>
-              <SourceLine source="/api/admin/flags" data={flags.data} at={flags.at} />
-            </>
-          )}
+          ? <NotAvailable data={flags.data} /> : (() => {
+            const d = flags.data;
+            const set = Array.isArray(d.items) ? d.items : [];
+            const known = Array.isArray(d.known) ? d.known : [];
+            //  ⛔ مقدار همیشه از `live_config` (‎items‎)؛ کاتالوگ فقط شرح و پیش‌فرض است. پرچمِ نوشته‌نشده
+            //  «نوشته نشده» است و پیش‌فرضش کنارش — نه مقدارِ ساختگی.
+            const keys = [...new Set([...known.map((k) => k.key), ...set.map((x) => x.key)])];
+            return (
+              <>
+                <Table head={[t('scKey'), t('scValue'), t('scFlagDefault'), t('scChangedBy'), t('scWhat')]} empty={keys.length === 0}>
+                  {keys.map((k) => {
+                    const it = set.find((x) => x.key === k);
+                    const kn = known.find((x) => x.key === k);
+                    return (
+                      <Row key={k}>
+                        <Cell mono>{k}</Cell>
+                        <Cell mono>{it ? flagValue(it.value) : t('scFlagNotSet')}</Cell>
+                        <Cell mono>{kn ? flagValue(kn.default) : '—'}</Cell>
+                        <Cell>{it ? `${it.updatedBy || '—'} · ${moment(it.updatedAt)}` : '—'}</Cell>
+                        <Cell>{kn?.what || '—'}</Cell>
+                      </Row>
+                    );
+                  })}
+                </Table>
+                <p className="mt-2 text-[11px] text-ink-muted">{t('scFlagsReadOnly')}</p>
+                <SourceLine source={`/api/admin/flags?scope=${d.scope || 'all'}`} data={d} at={flags.at} />
+              </>
+            );
+          })()}
       </Card>
+
+      <FlagHistoryCard />
 
       <Card title={t('scLiveConfig')} icon={<Plug size={16} />}>
         <form className="mb-3 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); setWant(scope.trim()); }}>
@@ -533,6 +776,94 @@ export function SettingsTab() {
 type ManagedApp = { id: string; slug?: string; title?: string; status?: string; keySet?: boolean; keyHint?: string;
                     lastCheckAt?: number | null; lastOk?: boolean | null; lastStatus?: number | null };
 
+/**
+ * کلیدِ سرویسِ پل — حالِ امروز (کلید + انجام‌دهنده، یا رمزِ ارشدِ مشترک)، و برای **مالکِ پنل** ساختن،
+ * چرخش و ابطال با احرازِ دوباره. ⛔ خودِ کلید هرگز به مرورگر نمی‌آید (پل آن را برنمی‌گرداند).
+ */
+function ServiceKeyCard() {
+  const { t, can } = useApp();
+  const load = useLoad<ServiceKeyStatus>(can('admin') ? CONSOLE.serviceKey : null);
+  const [ask, setAsk] = useState<'make' | 'revoke' | null>(null);
+  const [reason, setReason] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [done, setDone] = useState<ServiceKeyStatus | null>(null);
+  if (!can('admin')) return null;
+  const close = () => { setAsk(null); setReason(''); setPassword(''); setErr(''); };
+  const send = async () => {
+    if (!ask || !reasonOk(reason) || !password || busy) return;
+    setBusy(true);
+    setErr('');
+    try {
+      const out = await api<ServiceKeyStatus>(ask === 'revoke' ? CONSOLE.serviceKeyRevoke : CONSOLE.serviceKey,
+        { method: 'POST', body: { reason: reason.trim(), confirm: true, password } });
+      setDone(out);
+      close();
+      void load.reload();
+    } catch (e) { setErr(errText(e)); }
+    finally { setBusy(false); setPassword(''); }
+  };
+  const mode = (m: unknown) => (m === 'service' ? t('scModeService') : m === 'legacy' ? t('scModeLegacy') : m === 'none' ? t('scModeNone') : '—');
+  return (
+    <Card title={t('scServiceKey')} icon={<KeyRound size={16} />}>
+      {load.error ? <Problem load={load as Load<unknown>} /> : !load.data ? <Loading /> : (() => {
+        const d = load.data;
+        const k = d.serviceKey;
+        return (
+          <>
+            <KV label={t('scBridgeMode')}><Pill tone={d.mode === 'service' ? 'good' : d.mode === 'legacy' ? 'warn' : 'bad'}>{mode(d.mode)}</Pill></KV>
+            <KV label={t('scWhyNotService')}>{d.mode === 'service' ? '—' : <code dir="ltr" className="font-mono">{d.reason || '—'}</code>}</KV>
+            <KV label={t('scKeyId')} mono>{k?.id || '—'}</KV>
+            <KV label={t('scRoleCap')} mono>{k?.roleCap || '—'}</KV>
+            <KV label={t('scKeyCreatedAt')}>{moment(k?.createdAt)} · {k?.createdBy || '—'}</KV>
+            <p className="mt-2 text-[11px] text-ink-muted">{t('scKeyNever')}</p>
+            {d.mode === 'service' && d.legacy && <p className="text-[11px] text-ink-muted">{t('scLegacyStill')}</p>}
+            {done && (
+              <Notice tone={done.previous && !done.previous.revoked ? 'warn' : 'good'}>
+                {t('scServerConfirmed')} — {mode(done.mode)}
+                {done.previous ? ` · ${done.previous.revoked ? t('scPrevRevoked') : t('scPrevNotRevoked')}` : ''}
+              </Notice>
+            )}
+            {d.owner ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button className="btn btn-sm" onClick={() => { setDone(null); setAsk('make'); }}>{k ? t('scKeyRotate') : t('scKeyCreate')}</button>
+                {k && <button className="btn btn-sm btn-danger" onClick={() => { setDone(null); setAsk('revoke'); }}>{t('scKeyRevoke')}</button>}
+              </div>
+            ) : <p className="mt-2 text-[11px] text-ink-muted">{t('scKeyOwnerOnly')}</p>}
+            <SourceLine source="/api/admin/me · /api/admin/service-keys" data={{ fetchedAt: d.checkedAt }} at={load.at} />
+            {ask && createPortal(
+              <Modal open onClose={close}
+                     title={ask === 'revoke' ? t('scKeyRevoke') : k ? t('scKeyRotate') : t('scKeyCreate')}
+                     footer={<>
+                       <button className="btn" onClick={close}>{t('cancel')}</button>
+                       <button className="btn btn-danger" disabled={!reasonOk(reason) || !password || busy} onClick={send}>
+                         {busy ? t('scChecking') : t('scConfirmSend')}
+                       </button>
+                     </>}>
+                <div className="space-y-3 text-sm">
+                  <Notice tone="warn">{ask === 'revoke' ? t('scKeyRevokeConfirm') : k ? t('scKeyRotateConfirm') : t('scKeyCreateConfirm')}</Notice>
+                  <label className="block text-xs">
+                    {t('scReasonHint')}
+                    <textarea className="input mt-1 w-full" rows={2} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} />
+                  </label>
+                  <label className="block text-xs">
+                    {t('scPanelPassword')}
+                    <input className="input mt-1 w-full" type="password" autoComplete="current-password" value={password}
+                           onChange={(e) => setPassword(e.target.value)} />
+                  </label>
+                  {err && <Notice tone="bad">{err}</Notice>}
+                </div>
+              </Modal>,
+              document.body,
+            )}
+          </>
+        );
+      })()}
+    </Card>
+  );
+}
+
 export function IntegrationsTab() {
   const { t } = useApp();
   const load = useLoad<Providers>(CONSOLE.providers);
@@ -540,6 +871,7 @@ export function IntegrationsTab() {
   const list = Array.isArray(apps.data?.apps) ? apps.data!.apps! : [];
   return (
     <div className="space-y-4">
+      <ServiceKeyCard />
       <Panel title={t('scProviders')} icon={<Plug size={16} />} source="/api/admin/system/providers" load={load}>
         {(d) => (
           <>
