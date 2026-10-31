@@ -32,6 +32,10 @@ import AppSubscriptions from './AppSubscriptions';
 import {
   AuditTab, FinanceTab, HealthCard, HealthTab, IntegrationsTab, SettingsTab, ShopsTab, SourceLine, VersionsTab,
 } from './ShopConsole';
+//  ۴.۶ و ۴.۷ — ماژول‌های جدا (پوشهٔ ‎market/‎)؛ وقتی پوستهٔ کنسول آمد، همین دو کامپوننت با `defineModule` ثبت می‌شوند
+import MarketModule from './market/MarketConsole';
+import CourierModule from './market/CourierConsole';
+import { tabLabel } from './market/tx';
 
 type Overview = {
   serverTime: number;
@@ -325,13 +329,14 @@ function Codes() {
  *  داشبورد · فروشگاه‌ها · اشتراک‌ها · مالی · نسخه‌ها · سلامت و خطاها · تنظیمات و پرچم‌ها · یکپارچه‌سازی ·
  *  دفترِ رخداد · کدِ شاگرد. همه در ‎?tab=‎ (لینکِ مستقیم و برگشتِ مرورگر)؛ پیش‌فرض داشبورد.
  */
-const TAB_IDS = ['dash', 'shops', 'subs', 'finance', 'versions', 'health', 'settings', 'integrations', 'audit', 'codes'] as const;
+const TAB_IDS = ['dash', 'shops', 'subs', 'finance', 'market', 'courier', 'versions', 'health', 'settings', 'integrations', 'audit', 'codes'] as const;
 
 export default function ShopDesk() {
-  const { t } = useApp();
+  const { t, lang } = useApp();
   const [params, setParams] = useSearchParams();
   const label: Record<(typeof TAB_IDS)[number], string> = {
     dash: t('shopDeskDash'), shops: t('scShops'), subs: t('shopDeskGroups'), finance: t('scFinance'),
+    market: tabLabel('market', lang), courier: tabLabel('courier', lang),
     versions: t('scVersions'), health: t('scHealthTab'), settings: t('scSettingsTab'),
     integrations: t('scIntegrations'), audit: t('scAudit'), codes: t('shopDeskCodes'),
   };
@@ -354,6 +359,11 @@ export default function ShopDesk() {
           گروهِ خواندنیِ میز یک زبانهٔ همان‌جا (‎?view=groups‎) */}
       {active === 'subs' && <AppSubscriptions app="shop" groups={<SubGroups />} omit={['sales']} />}
       {active === 'finance' && <FinanceTab />}
+      {/* ⛔ پارامترهای خودِ ماژول (‎view‎، پالایش) کنارِ ‎tab‎ در نشانی — لینکِ مستقیم و برگشتِ مرورگر */}
+      {(active === 'market' || active === 'courier') && (() => {
+        const sub = (next: Record<string, string>) => setParams({ tab: active, ...next });
+        return active === 'market' ? <MarketModule params={params} setParams={sub} /> : <CourierModule params={params} setParams={sub} />;
+      })()}
       {active === 'versions' && <VersionsTab />}
       {active === 'health' && <HealthTab />}
       {active === 'settings' && <SettingsTab />}

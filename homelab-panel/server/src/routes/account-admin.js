@@ -44,6 +44,7 @@ import { rateLimit } from '../platform/rate-limit.js';
 import {
   withPanelActor, readServiceKey, storeServiceKey, forgetServiceKey, publicServiceKey, SERVICE_KEY_RE,
 } from '../account/service-key.js';
+import { mountConsoleMarket } from './console-market.js';
 
 const { requireRole } = panelRoles;
 const router = express.Router();
@@ -2354,6 +2355,12 @@ for (const [local, remote] of [
     res.json(await cloudRaw('GET', remote, { query: req.query }));
   }));
 }
+
+/*
+ *  🏪 ۴.۶ مدیریتِ بازار و ۴.۷ نظارت بر پیک — درهایش در ‎routes/console-market.js‎، ولی روی **همین** روتر تا
+ *  فهرستِ سفید، «انجام‌دهنده» و ‎bridge-roles.mjs‎ یکی بمانند.
+ */
+mountConsoleMarket(router);
 
 /** هر چیزِ دیگری زیرِ این پیشوند «نیست» — نه «رد شد»، تا نقشهٔ آن‌طرف لو نرود. */
 router.use((req, res) => res.status(404).json({ error: 'not_found', message: 'این مسیر وجود ندارد' }));
