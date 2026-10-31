@@ -21,7 +21,7 @@ import PanelUsers from './pages/control/PanelUsers';
 import Assistant from './pages/Assistant';
 import { AccountServerHub, DomainsHub, LoginsHub, LogsHub, MonitoringHub, NetworkHub } from './pages/hubs';
 import SubscriptionsMoved from './pages/account/SubscriptionsMoved';
-import ShopDesk from './pages/account/ShopDesk';
+import ConsoleShell from './pages/account/console/Shell';
 import DatabasesPage from './pages/Databases';
 import TerminalPage from './pages/Terminal';
 import AutomationPage from './pages/Automation';
@@ -85,7 +85,8 @@ function Shell() {
           ⛔ میزِ فروشگاه صفحهٔ خودش را گرفت (بندهای ۴.۱ تا ۴.۴ سندِ ریمیک):
           داشبورد، اشتراک‌ها (همهٔ کارها، از ۱۴۰۵/۰۸/۰۹) و کدِ شاگرد.
         */}
-        <Route path="/shop" element={<ShopDesk />} />
+        {/* ⛔ از ۱۴۰۵/۰۸/۱۰ بخشِ «فروشگاه» یک برنامهٔ کامل است: پوسته + ماژول‌ها (`console/`)، همان ‎?tab=‎ ِ پیشین */}
+        <Route path="/shop" element={<ConsoleShell />} />
         <Route path="/account-server" element={<AccountServerHub />} />
         <Route path="/sales" element={<SalesPage />} />
         <Route path="/notices" element={<NoticesPage />} />

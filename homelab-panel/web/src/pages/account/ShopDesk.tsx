@@ -20,18 +20,16 @@
 //  می‌گوید و برنامه «تمام شده».
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
-import { Navigate, useSearchParams } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { Clock, KeyRound, MessagesSquare, Store, Users, Wifi } from 'lucide-react';
 
 import { api } from '../../api';
 import { Card, CopyButton, Loading, toast } from '../../components/ui';
 import { useApp } from '../../app-context';
-import { ActionButton, Cell, Notice, Row, Stat, Table, Tabs } from '../../control/ui';
+import { ActionButton, Cell, Notice, Row, Stat, Table } from '../../control/ui';
 import { CloudProblem, fa, useLoad } from './shared';
 import AppSubscriptions from './AppSubscriptions';
-import {
-  AuditTab, FinanceTab, HealthCard, HealthTab, IntegrationsTab, SettingsTab, ShopsTab, SourceLine, VersionsTab,
-} from './ShopConsole';
+import { HealthCard, SourceLine } from './ShopConsole';
 
 type Overview = {
   serverTime: number;
@@ -62,7 +60,7 @@ const when = (ms?: number | null) => (ms ? new Date(Number(ms)).toLocaleDateStri
 
 /* ───────────────────────────── تبِ ۱: داشبورد ───────────────────────────── */
 
-function Dash() {
+export function Dash() {
   const { t } = useApp();
   const load = useLoad<Overview>('/api/account-admin/shop-desk/overview?days=7', [], ['customers', 'sales', 'support']);
   if (load.error) return <CloudProblem code={load.code} message={load.error} onRetry={load.reload} />;
@@ -173,7 +171,7 @@ function GroupTable({ rows, empty }: { rows: GroupRow[]; empty: string }) {
   );
 }
 
-function SubGroups() {
+export function SubGroups() {
   const { t } = useApp();
   const [q, setQ] = useState('');
   const load = useLoad<Groups>(`/api/account-admin/shop-desk/groups?q=${encodeURIComponent(q)}`, [q], 'customers');
@@ -285,7 +283,7 @@ function StaffCodeCard({ shopId, onClose }: { shopId: string; onClose: () => voi
   );
 }
 
-function Codes() {
+export function Codes() {
   const { t } = useApp();
   const [q, setQ] = useState('');
   const [open, setOpen] = useState('');
@@ -318,48 +316,23 @@ function Codes() {
   );
 }
 
-/* ─────────────────────────────── خودِ صفحه ─────────────────────────────── */
+/* ───────────────────────── اشتراک‌ها (ماژولِ ۴.۴) ───────────────────────── */
+
+/**
+ *  ⛔ اشتراکِ فروشگاه فقط همین‌جاست — بخشِ جدای «اشتراک‌ها» برداشته شد (دستورِ صاحب محصول ۱۴۰۵/۰۸/۰۹): همهٔ کارها
+ *  با بخشِ ثابتِ دکان، و سه گروهِ خواندنیِ میز یک زبانهٔ همان‌جا (‎?view=groups‎).
+ *  ⛔ «یک موضوع، یک در»: «فروش و درآمد»ِ دکان زبانهٔ «مالی» است؛ ‎?tab=subs&view=sales‎ (و ‎/sales?app=shop‎ از راهِ
+ *  `subsPath`) به همان‌جا می‌رسد، نه به رونوشتِ دوم.
+ */
+export function ShopSubs({ params }: { params: URLSearchParams }) {
+  if (params.get('view') === 'sales') return <Navigate to="/shop?tab=finance" replace />;
+  return <AppSubscriptions app="shop" groups={<SubGroups />} omit={['sales']} />;
+}
 
 /*
- *  ══ زبانه‌های بخشِ «فروشگاه» — پنلِ مرکزیِ مالک، فاز ۲ (OWNER-CONSOLE-AUDIT §۴ و §۸) ══
- *  داشبورد · فروشگاه‌ها · اشتراک‌ها · مالی · نسخه‌ها · سلامت و خطاها · تنظیمات و پرچم‌ها · یکپارچه‌سازی ·
- *  دفترِ رخداد · کدِ شاگرد. همه در ‎?tab=‎ (لینکِ مستقیم و برگشتِ مرورگر)؛ پیش‌فرض داشبورد.
+ *  ══ بخشِ «فروشگاه» — پنلِ مرکزیِ مالک، یک برنامهٔ کامل داخلِ پنل (۱۴۰۵/۰۸/۱۰) ══
+ *  خودِ صفحه دیگر این‌جا نیست: پوسته، منوی گروه‌بندی‌شده، ردِ نان، جست‌وجو و نگهبانِ هر ماژول در
+ *  ‎./console/Shell.tsx‎ (مسیرِ ‎/shop‎ در `App.tsx`). این فایل تکه‌های داشبورد، سه گروه، کدِ شاگرد و اشتراک‌ها را
+ *  دارد که ماژول‌های ‎./console/modules/‎ به کار می‌برند. زبانه‌های پیشین (‎?tab=dash|shops|subs|finance|versions|
+ *  health|settings|integrations|audit|codes‎) همان نشانی‌اند، پس هیچ لینکی نمی‌شکند.
  */
-const TAB_IDS = ['dash', 'shops', 'subs', 'finance', 'versions', 'health', 'settings', 'integrations', 'audit', 'codes'] as const;
-
-export default function ShopDesk() {
-  const { t } = useApp();
-  const [params, setParams] = useSearchParams();
-  const label: Record<(typeof TAB_IDS)[number], string> = {
-    dash: t('shopDeskDash'), shops: t('scShops'), subs: t('shopDeskGroups'), finance: t('scFinance'),
-    versions: t('scVersions'), health: t('scHealthTab'), settings: t('scSettingsTab'),
-    integrations: t('scIntegrations'), audit: t('scAudit'), codes: t('shopDeskCodes'),
-  };
-  const tabs = TAB_IDS.map((id) => ({ id, label: label[id] }));
-  const wanted = params.get('tab') || 'dash';
-  const active = tabs.some((x) => x.id === wanted) ? wanted : 'dash';
-
-  //  ⛔ «یک موضوع، یک در»: «فروش و درآمد»ِ دکان حالا زبانهٔ «مالی» است؛ نشانیِ ‎?tab=subs&view=sales‎
-  //  (و ‎/sales?app=shop‎ از راهِ `subsPath`) به همان‌جا می‌رسد، نه به رونوشتِ دوم
-  if (active === 'subs' && params.get('view') === 'sales') return <Navigate to="/shop?tab=finance" replace />;
-
-  return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-3">
-      <h1 className="text-lg font-semibold">{t('navShops')}</h1>
-      <Tabs tabs={tabs} active={active} onChange={(id) => setParams(id === 'dash' ? {} : { tab: id })} />
-      {active === 'dash' && <Dash />}
-      {active === 'shops' && <ShopsTab />}
-      {/* ⛔ اشتراکِ فروشگاه فقط همین‌جاست — بخشِ جدای «اشتراک‌ها» برداشته شد
-          (دستورِ صاحب محصول ۱۴۰۵/۰۸/۰۹): همهٔ کارها با بخشِ ثابتِ دکان، و سه
-          گروهِ خواندنیِ میز یک زبانهٔ همان‌جا (‎?view=groups‎) */}
-      {active === 'subs' && <AppSubscriptions app="shop" groups={<SubGroups />} omit={['sales']} />}
-      {active === 'finance' && <FinanceTab />}
-      {active === 'versions' && <VersionsTab />}
-      {active === 'health' && <HealthTab />}
-      {active === 'settings' && <SettingsTab />}
-      {active === 'integrations' && <IntegrationsTab />}
-      {active === 'audit' && <AuditTab shop={params.get('shop') || ''} />}
-      {active === 'codes' && <Codes />}
-    </div>
-  );
-}

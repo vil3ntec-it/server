@@ -16,7 +16,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { Boxes, FileClock, Flag, HeartPulse, KeyRound, Lock, Plug, ShieldCheck, Store, Wallet } from 'lucide-react';
+import { Boxes, FileClock, Flag, HeartPulse, KeyRound, Lock, Plug, ShieldCheck, Store } from 'lucide-react';
 
 import { api, ApiError } from '../../api';
 import { Card, ConfirmDialog, Loading, Modal } from '../../components/ui';
@@ -24,7 +24,7 @@ import { useApp } from '../../app-context';
 import type { Dict } from '../../i18n';
 import { ActionButton, Cell, KV, Notice, Row, Stat, Table } from '../../control/ui';
 import { CloudProblem, useLoad, type Load } from './shared';
-import Sales from './Sales';
+import ShopFinance from './ShopFinance';
 import {
   CONSOLE, HOLD_KINDS, HOLD_SERVICES, MONEY_HOLDS, actorLabel, bytes, flagValue, healthTone, isUnavailable, minutesAgo,
   newIdemKey, nextBefore, num, providerTone, reasonOk, shown, stampOf,
@@ -387,12 +387,19 @@ function ShopDetail({ id, onClose }: { id: string; onClose: () => void }) {
   );
 }
 
-export function ShopsTab() {
+export function ShopsTab({ params, setParams }: { params?: URLSearchParams; setParams?: (p: Record<string, string>) => void } = {}) {
   const { t } = useApp();
-  const [q, setQ] = useState('');
+  //  لینکِ مستقیم (پوستهٔ فروشگاه، جست‌وجوی سراسری): ‎?tab=shops&shop=<id>‎ پرونده را باز می‌کند و ‎&q=‎ جست‌وجو را
+  const [q, setQ] = useState(() => params?.get('q') || '');
   const [hold, setHold] = useState('');
   const [offset, setOffset] = useState(0);
-  const [open, setOpen] = useState('');
+  const [open, setOpenState] = useState(() => params?.get('shop') || '');
+  const setOpen = (id: string) => { setOpenState(id); setParams?.(id ? { shop: id } : {}); };
+  //  همان زبانه باز است و نشانی عوض شد (جست‌وجوی سراسری، برگشتِ مرورگر) ⇒ پرونده و جست‌وجو هم
+  const urlShop = params?.get('shop') || '';
+  const urlQ = params?.get('q') || '';
+  useEffect(() => { setOpenState(urlShop); }, [urlShop]);
+  useEffect(() => { if (urlQ) setQ(urlQ); }, [urlQ]);
   useEffect(() => { setOffset(0); }, [q, hold]);
   //  «توانایی»ها: پالایشِ حالت فقط وقتی سرورِ حساب `shop-holds.v1` دارد؛ و `total` ِ «همین جست‌وجو» فقط
   //  روی سرورِ حسابی که `capabilities` می‌گوید (چسبِ فاز ۳ ⇒ `total` همان q و hold را می‌شمارد)
@@ -453,19 +460,13 @@ export function ShopsTab() {
 
 /* ─────────────────────────────── زبانه: مالی ─────────────────────────────── */
 
+/*
+ *  ماژولِ ۴.۵ (مالیِ مرکزی) خودش را دارد: ‎ShopFinance.tsx‎ و ‎finance/*‎ — همین نام می‌ماند تا هر جا که زبانهٔ «مالی»
+ *  را با `FinanceTab` سوار کرده (میزِ فروشگاه، پوستهٔ ماژول‌ها) بی تغییر همان ماژول را نشان دهد.
+ *  ⚠️ ‎finance/*‎ از این فایل چیزی وارد نمی‌کند (بی حلقهٔ وارد کردن).
+ */
 export function FinanceTab() {
-  const { t } = useApp();
-  return (
-    <div className="space-y-4">
-      {/* ⛔ همان صفحهٔ «فروش و درآمد» (درآمد، پرداخت و رسید، بدهی، رو به پایان) — رونوشتِ دومی نیست */}
-      <Sales fixedApp="shop" />
-      <Card title={t('scFinanceLater')} icon={<Wallet size={16} />}>
-        <Notice tone="warn">
-          <b>{t('scNotAvailable')}</b> — {t('scFinanceLaterWhy')}
-        </Notice>
-      </Card>
-    </div>
-  );
+  return <ShopFinance />;
 }
 
 /* ────────────────────────────── زبانه: نسخه‌ها ────────────────────────────── */
@@ -649,7 +650,7 @@ export function HealthTab() {
 const HIST_PAGE = 50;
 
 /** تاریخچهٔ پرچم‌ها — چه کسی، کی، پیشین ⇒ تازه، چرا؛ صفحه‌بندیِ سمتِ سرورِ حساب (`before`). */
-function FlagHistoryCard() {
+export function FlagHistoryCard() {
   const { t } = useApp();
   const [key, setKey] = useState('');
   const [want, setWant] = useState('');
@@ -692,14 +693,41 @@ function FlagHistoryCard() {
   );
 }
 
-export function SettingsTab() {
+/** «تنظیماتِ زنده» (‎live_config‎ ِ پمپ/دکان به scope) — فقط خواندن؛ در «تنظیمات» و ماژولِ ۴.۱۲ ِ پوسته. */
+export function LiveConfigCard() {
   const { t } = useApp();
   const [scope, setScope] = useState('');
   const [want, setWant] = useState('');
-  const flags = useLoad<Flags | Unavailable>(CONSOLE.flags('all'));
   const live = useLoad<LiveConfig>(want ? CONSOLE.liveConfig(want) : null, [want]);
-  const cfg = useLoad<{ config?: Record<string, string> }>('/api/account-admin/account-config');
   const items = Array.isArray(live.data?.items) ? live.data!.items! : [];
+  return (
+      <Card title={t('scLiveConfig')} icon={<Plug size={16} />}>
+        <form className="mb-3 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); setWant(scope.trim()); }}>
+          <input className="input w-full sm:w-72" dir="ltr" placeholder={t('scScopeHint')} value={scope} onChange={(e) => setScope(e.target.value)} />
+          <button className="btn btn-sm" type="submit" disabled={!scope.trim()}>{t('scShow')}</button>
+        </form>
+        {!want ? <p className="text-xs text-ink-muted">{t('scLiveConfigHint')}</p> : live.error ? <Problem load={live as Load<unknown>} /> : !live.data ? <Loading /> : (
+          <>
+            <Table head={[t('scKey'), t('scValue'), t('scChangedBy')]} empty={items.length === 0}>
+              {items.map((it) => (
+                <Row key={it.key}>
+                  <Cell mono>{it.key}</Cell>
+                  <Cell mono>{JSON.stringify(it.value)}</Cell>
+                  <Cell>{it.updatedBy || '—'} · {moment(it.updatedAt)}</Cell>
+                </Row>
+              ))}
+            </Table>
+            <SourceLine source={`/api/admin/pump/live-config?scope=${live.data.scope || want}`} data={live.data} at={live.at} />
+          </>
+        )}
+      </Card>
+  );
+}
+
+export function SettingsTab() {
+  const { t } = useApp();
+  const flags = useLoad<Flags | Unavailable>(CONSOLE.flags('all'));
+  const cfg = useLoad<{ config?: Record<string, string> }>('/api/account-admin/account-config');
   return (
     <div className="space-y-4">
       <Card title={t('scFlags')} icon={<Flag size={16} />}>
@@ -737,26 +765,7 @@ export function SettingsTab() {
 
       <FlagHistoryCard />
 
-      <Card title={t('scLiveConfig')} icon={<Plug size={16} />}>
-        <form className="mb-3 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); setWant(scope.trim()); }}>
-          <input className="input w-full sm:w-72" dir="ltr" placeholder={t('scScopeHint')} value={scope} onChange={(e) => setScope(e.target.value)} />
-          <button className="btn btn-sm" type="submit" disabled={!scope.trim()}>{t('scShow')}</button>
-        </form>
-        {!want ? <p className="text-xs text-ink-muted">{t('scLiveConfigHint')}</p> : live.error ? <Problem load={live as Load<unknown>} /> : !live.data ? <Loading /> : (
-          <>
-            <Table head={[t('scKey'), t('scValue'), t('scChangedBy')]} empty={items.length === 0}>
-              {items.map((it) => (
-                <Row key={it.key}>
-                  <Cell mono>{it.key}</Cell>
-                  <Cell mono>{JSON.stringify(it.value)}</Cell>
-                  <Cell>{it.updatedBy || '—'} · {moment(it.updatedAt)}</Cell>
-                </Row>
-              ))}
-            </Table>
-            <SourceLine source={`/api/admin/pump/live-config?scope=${live.data.scope || want}`} data={live.data} at={live.at} />
-          </>
-        )}
-      </Card>
+      <LiveConfigCard />
 
       <Card title={t('scServerConfig')} icon={<Plug size={16} />}>
         {cfg.error ? <Problem load={cfg as Load<unknown>} /> : !cfg.data ? <Loading /> : (

@@ -41,9 +41,13 @@ import { audit } from '../control/audit.js';
 import * as panelAuth from '../auth.js';
 import { db } from '../db.js';
 import { rateLimit } from '../platform/rate-limit.js';
+import { mountConsoleOps } from './console-ops.js';
+import financeRoutes from './account-finance.js';
 import {
   withPanelActor, readServiceKey, storeServiceKey, forgetServiceKey, publicServiceKey, SERVICE_KEY_RE,
 } from '../account/service-key.js';
+import { mountConsoleShell } from './console-shell.js';
+import { mountConsoleMarket, MARKET_CAPABILITIES } from './console-market.js';
 
 const { requireRole } = panelRoles;
 const router = express.Router();
@@ -879,8 +883,13 @@ router.patch('/account-config', requireRole('admin'), guard(async (req, res) => 
   if (!Object.keys(body).length) {
     return res.status(400).json({ error: 'nothing', message: 'چیزی برای نوشتن نبود' });
   }
-  const out = await cloudRaw('PATCH', '/api/admin/config', { body });
-  audit({ actor: actorOf(req), action: 'account.trial.update', detail: body });
+  //  پوستهٔ کنسول (۴.۱۲): «پیشین ⇒ تازه» و دلیل (اختیاری؛ کنسول همیشه می‌فرستد) در دفترِ پنل — همان ردیف‌ها
+  //  «تاریخچهٔ تنظیمات» ِ ماژولِ تنظیمات‌اند. خواندنِ پیشین شکست بخورد ⇒ `from` نیست، نه حدس.
+  const reason = String(req.body?.reason ?? '').trim().slice(0, 200);
+  const before = await cloudRaw('GET', '/api/admin/plans').catch(() => null);
+  const out = await cloudRaw('PATCH', '/api/admin/config', { body: { ...body, ...(reason ? { reason } : {}) } });
+  const from = before?.config ? Object.fromEntries(Object.keys(body).map((k) => [k, before.config[k] ?? null])) : undefined;
+  audit({ actor: actorOf(req), action: 'account.trial.update', detail: { ...body, ...(from ? { from } : {}), ...(reason ? { reason } : {}) } });
   res.json({ config: Object.fromEntries(CONFIG_KEYS.map((k) => [k, out.config?.[k] ?? ''])) });
 }));
 
@@ -2028,6 +2037,15 @@ export const PHASE3 = Object.freeze({
   'flags.v1': 'GET /api/admin/flags · GET /api/admin/flags/history',
   'actor.v1': 'سرآیندهای X-Actor-Id/Role/Name ⇒ «انجام‌دهنده» در سابقهٔ سرورِ حساب',
   'service-key.v1': 'Bearer vsk_… · /api/admin/service-keys',
+  //  ماژول‌های عملیات (‎routes/console-ops.js‎) و انتشارِ مرحله‌ایِ OPS-01 (shop #559)
+  'ops.v1': 'GET /api/admin/ops/releases|health|integrations · /api/admin/ops/incidents* · /api/admin/ops/alerts*',
+  'release-stage.v1': 'GET|PUT|DELETE /api/admin/release/stage (OPS-01، shop #559)',
+  'finance.v1': 'GET /api/admin/finance/* · POST /api/admin/finance/adjustments (ماژولِ ۴.۵ ِ مالیِ مرکزی، ‎routes/account-finance.js‎)',
+  //  کنسولِ یکپارچه: پوسته (‎routes/console-shell.js‎) و ۴.۶/۴.۷ (‎routes/console-market.js‎) هم در همین فهرست — تا
+  //  ‎GET /console/capabilities‎ (یکپارچه‌سازی) «هست/نیست» ِ همهٔ ماژول‌های بخشِ «فروشگاه» را یک‌جا بگوید
+  'admin-sessions.v1': 'GET /api/admin/admins/:id/sessions · POST …/sessions/revoke (ماژولِ ۴.۳)',
+  'search.v1': 'GET /api/admin/search (جست‌وجوی سراسریِ پوسته)',
+  ...MARKET_CAPABILITIES,
 });
 const CAP_RE = /^[a-z][a-z0-9-]{0,40}\.v\d{1,3}$/;
 
@@ -2235,7 +2253,9 @@ function reauth(req, res, next) {
     const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(Number(req.user.id));
     if (!row || !panelAuth.verifyPassword(password, row.password_hash)) {
       res.locals.reauthFailed = true;
-      audit({ actor: actorOf(req), action: 'account.service_key.reauth_failed', entity: 'service_key', result: 'forbidden' });
+      //  همان احرازِ دوباره برای انتشارِ مرحله‌ای (‎console-ops.js‎) — ردیفِ دفتر نامِ همان کار را می‌گیرد
+      const what = String(req.path || '').includes('/release/stage') ? 'release_stage' : 'service_key';
+      audit({ actor: actorOf(req), action: `account.${what}.reauth_failed`, entity: what, result: 'forbidden' });
       return res.status(403).json({ error: 'reauth_failed', message: 'رمزِ پنل درست نیست' });
     }
     if (typeof panelAuth.markFresh === 'function' && req.user?.sessionId) panelAuth.markFresh(req.user.sessionId);
@@ -2339,6 +2359,11 @@ router.post('/console/service-key/revoke', requireRole('admin'), ownerOnly, reau
   res.json({ ok: true, revoked: prev.id, ...(await serviceKeyStatus()) });
 }));
 
+/* ═══ 🛠 ماژول‌های عملیات (۴.۸ · ۴.۹ · ۴.۱۰ · ۴.۱۱ · ۴.۱۳) — ‎routes/console-ops.js‎، روی همین روتر ═══ */
+mountConsoleOps(router, {
+  guard, capabilities, unavailable, missingErr, badInput, stamped, actorOf, isPanelOwner, reauthLimit, reauth,
+});
+
 /* --------------------------- خواندنی‌های دیگر -------------------------- */
 
 /** فقط‌خواندنی — یک‌به‌یک، نه «هر چه زیرِ /api/admin بود». */
@@ -2354,6 +2379,21 @@ for (const [local, remote] of [
     res.json(await cloudRaw('GET', remote, { query: req.query }));
   }));
 }
+
+/*
+ *  🏪 پوستهٔ کنسولِ «فروشگاه» (ماژول‌ها، داشبورد، جست‌وجو، کاربران و نقش‌ها، پرچم‌ها) — درهایش در
+ *  ‎routes/console-shell.js‎، ولی روی **همین** روتر تا فهرستِ سفید و ‎bridge-roles.mjs‎ یکی بمانند.
+ */
+mountConsoleShell(router);
+
+/*
+ *  🏪 ۴.۶ مدیریتِ بازار و ۴.۷ نظارت بر پیک — درهایش در ‎routes/console-market.js‎، ولی روی **همین** روتر تا
+ *  فهرستِ سفید، «انجام‌دهنده» و ‎bridge-roles.mjs‎ یکی بمانند.
+ */
+mountConsoleMarket(router);
+
+/* ماژولِ ۴.۵ ِ پنلِ مرکزی — مالیِ مرکزی (‎routes/account-finance.js‎؛ همین نشست، همین «انجام‌دهنده») */
+router.use('/console/finance', financeRoutes);
 
 /** هر چیزِ دیگری زیرِ این پیشوند «نیست» — نه «رد شد»، تا نقشهٔ آن‌طرف لو نرود. */
 router.use((req, res) => res.status(404).json({ error: 'not_found', message: 'این مسیر وجود ندارد' }));

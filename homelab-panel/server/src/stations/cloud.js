@@ -414,13 +414,18 @@ export async function cloudRaw(method, path, { query = {}, body = null, headers 
 }
 
 /*
- *  ⛔ سرآیندِ اضافه فقط «کلیدِ یکتایی» (‎Idempotency-Key‎ ِ سرورِ حساب، همان الگو) — نه هر سرآیندی:
- *  وگرنه صداکننده می‌توانست ‎X-Actor-*‎ یا ‎Authorization‎ را خودش بنویسد.
+ *  ⛔ سرآیندِ اضافه فقط «کلیدِ یکتایی» (‎Idempotency-Key‎ ِ سرورِ حساب، همان الگو) و «زمانِ احرازِ دوبارهٔ
+ *  پنل» (‎X-Actor-Reauth-At‎، فقط عدد؛ سندِ اصلاحیِ مالی — ‎routes/account-finance.js‎) — نه هر سرآیندی:
+ *  وگرنه صداکننده می‌توانست ‎X-Actor-Id/Role‎ یا ‎Authorization‎ را خودش بنویسد.
  */
 const IDEM_RE = /^[A-Za-z0-9_.:-]{8,128}$/;
 function extraHeaders(h) {
   const out = {};
   for (const [k, v] of Object.entries(h || {})) {
+    if (String(k).toLowerCase() === 'x-actor-reauth-at' && /^\d{12,14}$/.test(String(v ?? ''))) {
+      out['x-actor-reauth-at'] = String(v);
+      continue;
+    }
     if (String(k).toLowerCase() !== 'idempotency-key' || v === undefined || v === null || v === '') continue;
     if (!IDEM_RE.test(String(v))) {
       const err = new Error('کلیدِ یکتایی نامعتبر است');

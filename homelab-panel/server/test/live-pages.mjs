@@ -248,9 +248,13 @@ check('⛔ درِ دومی برای پوشه ساخته نشد',
  */
 const shopDesk = read('pages/account/ShopDesk.tsx');
 
-//  ۴.۱ — صفحهٔ خودش، با سه تب
-check('۴.۱ میزِ فروشگاه سه تب دارد',
-  /shopDeskDash/.test(shopDesk) && /shopDeskGroups/.test(shopDesk) && /shopDeskCodes/.test(shopDesk));
+//  ۴.۱ — صفحهٔ خودش؛ از ۱۴۰۵/۰۸/۱۰ داشبورد، سه گروه و کدِ شاگرد ماژول‌های پوستهٔ «فروشگاه»اند (همان سه تکهٔ این فایل)
+const shellDir = path.join(webSrc, 'pages', 'account', 'console');
+const modFile = (id) => (fs.existsSync(path.join(shellDir, 'modules', `${id}.tsx`)) ? fs.readFileSync(path.join(shellDir, 'modules', `${id}.tsx`), 'utf8') : '');
+check('۴.۱ میزِ فروشگاه سه تکه دارد (داشبورد، سه گروه، کدِ شاگرد) و هر سه در پوسته‌اند',
+  /export function Dash\(/.test(shopDesk) && /export function SubGroups\(/.test(shopDesk) && /export function Codes\(/.test(shopDesk)
+  && /shopDeskGroups/.test(shopDesk) && /shopDeskCodes/.test(shopDesk)
+  && /<Dash \/>/.test(read('pages/account/console/Dashboard.tsx')) && /ShopSubs/.test(modFile('subs')) && /<Codes \/>/.test(modFile('codes')));
 
 //  ۴.۲ — شش عدد و فهرستِ رو به پایان با ایمیل
 /*
@@ -559,8 +563,34 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
       && /confirm: true, idempotencyKey: idem/.test(con));
   check('⛔ کلیدِ سرویس: صفحه هرگز خودِ کلید را نمی‌خواهد یا نشان نمی‌دهد (فقط فراداده) و ساختن رمزِ پنل می‌خواهد',
     !/vsk_/.test(con) && /type="password"/.test(con) && /d\.owner \?/.test(con));
-  const tabs = ['dash', 'shops', 'subs', 'finance', 'versions', 'health', 'settings', 'integrations', 'audit', 'codes'];
-  check(`میزِ فروشگاه همهٔ ${tabs.length} زبانه را دارد`, tabs.every((x) => shopDesk.includes(`'${x}'`)), tabs.filter((x) => !shopDesk.includes(`'${x}'`)).join(' '));
+  //  ⛔ (پوستهٔ ۱۴۰۵/۰۸/۱۰) زبانه‌ها حالا ماژول‌اند: هر شناسهٔ پیشین یک فایل در ‎console/modules/‎ و یک ردیف در فهرستِ سرور —
+  //  همان ‎?tab=‎، پس هیچ لینکی نمی‌شکند. (`test/console-shell.mjs` هم‌خوانیِ دوسویه و نقش را جدا می‌سنجد.)
+  const tabs = ['dash', 'shops', 'subs', 'finance', 'versions', 'health', 'settings', 'integrations', 'audit', 'codes', 'users'];
+  const serverReg = fs.readFileSync(path.join(here, '..', 'src', 'console', 'modules.js'), 'utf8');
+  const lostTabs = tabs.filter((x) => !new RegExp(`id: '${x}'`).test(modFile(x)) || !serverReg.includes(`id: '${x}'`));
+  check(`بخشِ فروشگاه همهٔ ${tabs.length} ماژولِ ساخته را دارد (فایلِ وب + ردیفِ سرور)`, lostTabs.length === 0, lostTabs.join(' '));
+  const shell = read('pages/account/console/Shell.tsx');
+  const reg = read('pages/account/console/registry.ts');
+  check('⛔ پوسته: فهرستِ ماژول‌ها از سرور (نقش‌محور)، فقط «ساخته + فایلِ وب»، و هر ماژول در نگهبانِ خودش',
+    /SHELL_API\.modules/.test(shell) && /m\.built && WEB_MODULES\.has\(m\.id\)/.test(shell) && /<Guarded key=\{info\.id\}/.test(shell)
+    && /import\.meta\.glob<[^>]*>\('\.\/modules\/\*\.tsx', \{ eager: true \}\)/.test(reg));
+  check('⛔ پوسته: ردِ نان، جست‌وجوی سراسری، منوی گروه‌ها روی گوشی و صفحهٔ پهن، «ساخته نشده» و «برای نقشِ شما نیست» ِ صادق',
+    /aria-label=\{tx\('ردِ نان'/.test(shell) && /<ConsoleSearch \/>/.test(shell) && /<optgroup/.test(shell) && /<aside className="hidden lg:block"/.test(shell)
+    && /<NotSupported/.test(shell) && /<Forbidden>/.test(shell));
+  //  ⛔ ریشهٔ واقعی (۱.۵۰.۶۵): ماژولی که `defineModule` را از `registry.ts` می‌گرفت حلقه می‌ساخت (registry ⇐ glob ⇐ ماژول ⇐
+  //  registry) و بسته پیش از آماده شدنِ ثابت به آن می‌رسید ⇒ «Cannot access … before initialization» و **کلِ پنل سفید**.
+  const modSrcs = fs.readdirSync(path.join(shellDir, 'modules')).filter((f) => f.endsWith('.tsx')).map((f) => fs.readFileSync(path.join(shellDir, 'modules', f), 'utf8'));
+  check('⛔ ماژول‌ها فقط از ‎../contract‎ وارد می‌کنند، نه ‎../registry‎ (حلقه ⇒ پنلِ سفید)',
+    modSrcs.length >= 10 && modSrcs.every((x) => /from '\.\.\/contract'/.test(x) && !/from '\.\.\/registry'/.test(x))
+    && /export function defineModule\(/.test(read('pages/account/console/contract.ts')));
+  check('⛔ ‎/shop‎ همان پوسته است', /path="\/shop" element=\{<ConsoleShell \/>\}/.test(read('App.tsx')));
+  const cdash = read('pages/account/console/Dashboard.tsx');
+  check('⛔ داشبوردِ پوسته: کارتِ هر ماژول در نگهبانِ خودش، منبع و زمان، نسنجیده گفته می‌شود، و صفرِ ساختگی نه',
+    /<Guarded key=\{m\.id\}[^>]*compact>/.test(cdash) && /<Stamp item=/.test(cdash) && /failed\.length > 0/.test(cdash)
+    && !/\|\|\s*0\b/.test(cdash) && !/\?\?\s*0\b/.test(cdash));
+  const parts = read('pages/account/console/parts.tsx');
+  check('⛔ کارِ حساسِ پوسته: یک کلیدِ یکتایی برای هر پنجره، دلیلِ اجباری، رمزِ پنل در صورتِ نیاز، پنجره بیرون از کارت (portal)',
+    /useState\(newIdemKey\)/.test(parts) && /reasonOk\(reason\)/.test(parts) && /type="password"/.test(parts) && /createPortal\(/.test(parts));
   check('⛔ «فروش و درآمد»ِ دکان یک در دارد: ‎view=sales‎ ⇒ زبانهٔ «مالی»',
     /omit=\{\['sales'\]\}/.test(shopDesk) && /tab=finance/.test(shopDesk));
   //  سه‌زبانه: هر کلیدِ کنسول در فارسی، انگلیسی و پشتو
@@ -568,6 +598,51 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
   const keys = [...new Set([...con.matchAll(/t\('(sc[A-Za-z0-9]+)'\)/g), ...shopDesk.matchAll(/t\('(sc[A-Za-z0-9]+)'\)/g)].map((x) => x[1]))];
   const thin = keys.filter((k) => (i18n.match(new RegExp(`\\n  ${k}: '`, 'g')) || []).length < 3);
   check(`سه‌زبانه (فارسی، انگلیسی، پشتو): ${keys.length} کلیدِ کنسول`, keys.length > 50 && thin.length === 0, thin.join(' '));
+}
+
+/*
+ *  ══ 🛠 ماژول‌های عملیات (۴.۸ · ۴.۹ · ۴.۱۰ · ۴.۱۱ · ۴.۱۳) — ‎ConsoleOps.tsx‎ و ‎routes/console-ops.js‎ ══
+ *  همان قاعده‌های کنسول روی خودِ کد: عددی ساخته نمی‌شود، هر کارت منبع دارد، «توانایی» نیامده «در دسترس نیست»،
+ *  نوشتنِ حساس با دلیل/تأیید/رمز، «برگشت» وانمود نمی‌شود، توکن در نشانی نمی‌رود، سه‌زبانه.
+ */
+{
+  console.log('\n── کنسولِ فروشگاه: ماژول‌های عملیات ──');
+  const ops = read('pages/account/ConsoleOps.tsx');
+  //  پوستهٔ کنسول: هر ماژولِ عملیات یک فایل در ‎console/modules/‎ (۴.۱۰ = شناسهٔ رزروِ `errors`، ۴.۱۱ = `alerts`)
+  const mod = (id) => read(`pages/account/console/modules/${id}.tsx`);
+  const bridgeOps = fs.readFileSync(path.join(here, '..', 'src', 'routes', 'console-ops.js'), 'utf8');
+  check('⛔ عملیات خودش جمع نمی‌زند و نیامده را صفر نمی‌کند (نه reduce، نه «|| 0»، نه «?? 0»)',
+    !/\.reduce\(/.test(ops) && !/\|\|\s*0\b/.test(ops) && !/\?\?\s*0\b/.test(ops));
+  check('⛔ هر کارت منبع و زمان (SourceLine) و خطا با کد (Problem)', (ops.match(/<SourceLine /g) || []).length >= 7 && (ops.match(/<Problem /g) || []).length >= 6);
+  check('⛔ «توانایی» نیامده ⇒ «داده در دسترس نیست»', (ops.match(/isUnavailable\(/g) || []).length >= 5 && /capabilityMissing/.test(ops));
+  check('⛔ انتشارِ مرحله‌ای: دلیل + رمز + confirm: true؛ دکمه فقط برای مالک/فنی (canChange)؛ «برگشت» فقط متنِ «پشتیبانی نمی‌شود»',
+    /confirm: true, password/.test(ops) && /reasonOk\(reason\) && Boolean\(password\)/.test(ops) && /canChange/.test(ops)
+      && /rollbackNo/.test(ops) && !/rollback'/.test(ops) && !/\/rollback/.test(ops));
+  check('⛔ یادداشتِ رخداد با یک کلیدِ یکتایی برای هر یادداشت', /useState\(\(\) => newIdemKey\(\)\)/.test(ops) && /idempotencyKey: noteKey/.test(ops));
+  check('⛔ بستنِ هشدار دلیل می‌خواهد', /ready=\{resolveOf \? reasonOk\(text\) : true\}/.test(ops));
+  check('⛔ خروجیِ CSV با سرآیندِ Authorization، نه ‎?token=‎ در نشانی', /Authorization: `Bearer/.test(ops) && !/[?&]token=\$\{/.test(ops) && !/downloadUrl\(/.test(ops));
+  const opsPaths = ['ops/releases', 'ops/health', 'ops/integrations', 'ops/incidents', 'ops/incidents.csv', 'ops/incidents/:id',
+    'ops/incidents/:id/status', 'ops/incidents/:id/priority', 'ops/incidents/:id/notes', 'ops/incidents/:id/link', 'ops/alerts',
+    'ops/alerts/evaluate', 'ops/alerts/:id/ack', 'ops/alerts/:id/resolve', 'ops/alerts/telegram', 'release/stage', 'release/stage/end'];
+  const lostOps = opsPaths.filter((w) => !bridgeOps.includes(`'/console/${w}'`));
+  check('هر درِ عملیات یک خطِ فهرستِ سفید در پل دارد', lostOps.length === 0, lostOps.join(' '));
+  check('⛔ رمزِ احرازِ دوباره به سرورِ حساب نمی‌رود (بدنهٔ بالادستِ مرحله فقط همان چهار فیلد)',
+    /cloudRaw\('PUT', '\/api\/admin\/release\/stage', \{ body: input \}\)/.test(bridgeOps) && /return \{ tag, version, percent, reason \}/.test(bridgeOps));
+  check('پوسته: «رخدادها» ماژولِ `errors` و «هشدارها» ماژولِ `alerts`؛ نسخه‌ها/سلامت/یکپارچه‌سازی همان زبانه‌های عملیات',
+    /id: 'errors'/.test(mod('errors')) && /<IncidentsTab /.test(mod('errors')) && /id: 'alerts'/.test(mod('alerts')) && /<AlertsTab /.test(mod('alerts'))
+      && /<ReleasesTab /.test(mod('versions')) && /<OpsHealthTab /.test(mod('health')) && /<IntegrationsOpsTab /.test(mod('integrations')));
+  let tr = null;
+  try { tr = await import(new URL('file://' + path.join(webSrc, 'pages', 'account', 'consoleOpsI18n.ts')).href); }
+  catch (e) { console.log('   ', e.message); }
+  const used = [...new Set([...ops.matchAll(/\bt\('([A-Za-z_0-9]+)'/g)].map((x) => x[1]))];
+  const dyn = ['st_ok', 'st_warn', 'st_down', 'st_unknown', 'inc_open', 'inc_investigating', 'inc_resolved', 'al_open', 'al_acknowledged',
+    'al_resolved', 'sev_critical', 'sev_high', 'sev_medium', 'sev_low', 'rs_ok', 'rs_unavailable', 'rs_error', 'wh_live', 'wh_blocked',
+    'wh_unknown', 'ev_created', 'ev_status', 'ev_priority', 'ev_note', 'ev_link', 'ev_reopened'];
+  const thinOps = tr ? [...used, ...dyn].filter((k) => ['fa', 'en', 'ps'].some((l) => {
+    const v = tr.opsText(l, k);
+    return !v || (l !== 'en' && v === k) || (l !== 'en' && v === tr.opsText('en', k) && !/^[A-Za-z0-9 ()·.,%‎-]+$/.test(v));
+  })) : ['(import failed)'];
+  check(`سه‌زبانه (فارسی، انگلیسی، پشتو): ${used.length + dyn.length} کلیدِ عملیات`, used.length > 60 && thinOps.length === 0, thinOps.join(' '));
 }
 
 console.log('\n════════════════════════════════════');

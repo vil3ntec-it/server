@@ -88,7 +88,8 @@ function routesOf(rel, prefix, seen = new Set()) {
     }
     if (p === undefined) { unparsed.push(`${rel}: ${m[0]}`); continue; }
     const head = rest.split(/\basync\b|\bwrap\(|\(\s*req\s*,|\bfunction\b/)[0];
-    const superOnly = fileSuper || /\brequireSuperAdmin\b/.test(head);
+    //  `requireFinanceWriter` (مالیِ مرکزی، ماژولِ ۴.۵): مالی/ارشد — تنگ‌تر از مدیرِ عادی ⇒ در پنل هم admin
+    const superOnly = fileSuper || /\b(requireSuperAdmin|requireFinanceWriter)\b/.test(head);
     const paths = p.includes('${') ? expand(src, p) : [p];
     if (!paths) { unparsed.push(`${rel}: ${p}`); continue; }
     for (const pp of paths) shopRoutes.push({ method: verb.toUpperCase(), path: join(prefix, pp), superOnly, file: rel });
@@ -133,12 +134,15 @@ const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'bridge-roles-'));
 process.env.HLP_DATA_DIR = path.join(tmp, 'unit');
 process.env.HLP_ACCOUNT_API = '0';
 const accountAdmin = (await import('../src/routes/account-admin.js')).default;
+//  مالیِ مرکزی (ماژولِ ۴.۵) روترِ خودش را دارد و زیرِ ‎/console/finance‎ ِ همان پل سوار است
+const accountFinance = (await import('../src/routes/account-finance.js')).default;
 const { adminRouter: stationsAdmin } = await import('../src/routes/stations.js');
 const listOf = (router, base, keep = () => true) => router.stack
   .filter((l) => l.route && keep(l.route.path))
   .flatMap((l) => Object.keys(l.route.methods).filter((x) => x !== '_all').map((m) => ({ method: m.toUpperCase(), path: l.route.path, base })));
 const BRIDGE = [
   ...listOf(accountAdmin, '/api/account-admin'),
+  ...listOf(accountFinance, '/api/account-admin/console/finance'),
   ...listOf(stationsAdmin, '/api/stations-admin', (p) => p.startsWith('/cloud/')),
 ];
 
@@ -156,6 +160,11 @@ const LOCAL = new Map([
   //  admin (‎ownerOnly‎ + احرازِ دوباره) — مرزش را `account-admin.mjs` بند به بند می‌سنجد
   ['GET /api/account-admin/console/service-key', 'حالِ کلیدِ ذخیره‌شدهٔ خودِ پنل؛ بی کلید هیچ پرسشی به سرورِ حساب نمی‌رود (فقط admin)'],
   ['POST /api/account-admin/console/service-key/revoke', 'بی کلیدِ ذخیره‌شده ۴۰۴ ِ محلی؛ با کلید فقط مالک + رمز ⇒ درِ ابطالِ «فقط ارشد» (account-admin.mjs)'],
+  //  پوستهٔ کنسول: فهرستِ ماژول‌ها از `console/modules.js` ِ خودِ پنل — بی هیچ پرسشی از سرورِ حساب
+  ['GET /api/account-admin/console/modules', 'فهرستِ ماژول‌های همین نقش از فهرستِ خودِ پنل (console/modules.js)'],
+  //  ماژول‌های عملیات: انتخابِ نوعِ هشدار برای رباتِ تلگرامِ مالک — فقط تنظیمِ خودِ پنل (‎console-ops.mjs‎)
+  ['GET /api/account-admin/console/ops/alerts/telegram', 'نوع‌های برگزیدهٔ هشدار برای رباتِ مالک و حالِ ربات — تنظیمِ خودِ پنل'],
+  ['PUT /api/account-admin/console/ops/alerts/telegram', 'ذخیرهٔ همان انتخاب در تنظیماتِ پنل (فقط admin)'],
 ]);
 
 /*
@@ -180,7 +189,29 @@ const VIEWER_POST = new Map([
  */
 const PHASE3 = ['GET /api/admin/shops/:id/health', 'GET /api/admin/shops/:id/holds', 'POST /api/admin/shops/:id/holds',
   'POST /api/admin/shops/:id/holds/:holdId/lift', 'GET /api/admin/flags', 'GET /api/admin/flags/history',
-  'POST /api/admin/service-keys', 'POST /api/admin/service-keys/:id/revoke']
+  'POST /api/admin/service-keys', 'POST /api/admin/service-keys/:id/revoke',
+  //  پوستهٔ کنسول (shop، شاخهٔ claude/console-shell-api): `admin-sessions.v1` و `search.v1`
+  'GET /api/admin/admins/:id/sessions', 'POST /api/admin/admins/:id/sessions/revoke', 'GET /api/admin/search',
+  //  نوشتنِ پرچم (‎flags.v1‎ ِ #597) — پوسته فقط با همان توانایی صدایش می‌زند
+  'PUT /api/admin/flags', 'DELETE /api/admin/flags',
+  //  ۴.۶ و ۴.۷ (shop: claude/console-market-api) — پشتِ `market-admin.v1` و `delivery-watch.v1`
+  'GET /api/admin/market/overview', 'GET /api/admin/market/sellers', 'GET /api/admin/market/orders',
+  'GET /api/admin/market/commission', 'GET /api/admin/market/history', 'GET /api/admin/delivery/overview',
+  'GET /api/admin/delivery/queue', 'GET /api/admin/delivery/events', 'GET /api/admin/delivery/connectivity',
+  'GET /api/admin/delivery/report', 'GET /api/admin/delivery/thresholds', 'PUT /api/admin/delivery/thresholds',
+  //  ماژول‌های عملیات (shop ‎claude/console-ops-api‎) و انتشارِ مرحله‌ایِ OPS-01 (shop #559) — پشتِ ‎ops.v1‎ و ‎release-stage.v1‎
+  'GET /api/admin/ops/releases', 'GET /api/admin/ops/health', 'GET /api/admin/ops/integrations', 'GET /api/admin/ops/incidents',
+  'GET /api/admin/ops/incidents/:id', 'POST /api/admin/ops/incidents/:id/status', 'POST /api/admin/ops/incidents/:id/priority',
+  'POST /api/admin/ops/incidents/:id/notes', 'POST /api/admin/ops/incidents/:id/link', 'GET /api/admin/ops/alerts',
+  'POST /api/admin/ops/alerts/evaluate', 'POST /api/admin/ops/alerts/:id/ack', 'POST /api/admin/ops/alerts/:id/resolve',
+  'GET /api/admin/release/stage', 'PUT /api/admin/release/stage', 'DELETE /api/admin/release/stage',
+  //  ماژولِ ۴.۵ (shop: claude/console-finance-api، پشتِ `finance.v1`) و تطبیقِ فروشِ آنلاینِ #411 (روی main ِ shop هست؛
+  //  روی شاخه‌ای که هنوز #411 را ندارد «نبودن» بخشوده است، نه نقش)
+  'GET /api/admin/finance/summary', 'GET /api/admin/finance/breakdown', 'GET /api/admin/finance/payments',
+  'GET /api/admin/finance/payments/:id', 'GET /api/admin/finance/adjustments', 'POST /api/admin/finance/adjustments',
+  'GET /api/admin/finance/receivables', 'GET /api/admin/finance/pending', 'GET /api/admin/finance/gateway',
+  'GET /api/admin/finance/discrepancies', 'GET /api/admin/finance/history', 'GET /api/admin/finance/export',
+  'GET /api/admin/system/reconciliation']
   .map((x) => { const [method, p] = x.split(' '); return { method, re: toRe(p), id: x }; });
 const phase3Of = (method, p) => PHASE3.find((x) => x.method === method && x.re.test(p)) || null;
 
@@ -206,6 +237,11 @@ const sample = {
   notices: [], campaigns: [], reps: [], addons: [], errors: [], conflicts: [], devices: [], logins: [], series: [],
   thread: { id: 'x1', status: 'open' }, notice: { id: 'x1' }, payment: { id: 'x1' }, code: 'X', token: 'tok-1',
   total: 1, serverTime: NOW,
+  //  پوستهٔ کنسول: کاتالوگِ پرچم (تا PUT/DELETE ِ «فقط ارشد» واقعاً دیده شود)، نوع‌های جست‌وجو، مدیرِ غیرِمالک
+  known: [{ key: 'shop.receipt_v2', scope: 'shop', default: false }],
+  kinds: ['shops', 'users', 'payments', 'orders', 'errors', 'admins'], results: {},
+  admins: [{ id: 'x1', username: 'other', role: 'admin', status: 'active', is_owner: false }],
+  sessions: [],
 };
 const fake = http.createServer((req, res) => {
   const chunks = [];
@@ -218,7 +254,7 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
     if (!BACKGROUND.test(p)) calls.push({ method: req.method, path: p });
     //  همهٔ تواناییِ فاز ۳ اعلام می‌شود تا مقصدِ آن مسیرها هم دیده و سنجیده شود
-    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1'], serverTime: NOW });
+    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1', 'admin-sessions.v1', 'search.v1', 'market-admin.v1', 'delivery-watch.v1', 'ops.v1', 'release-stage.v1', 'finance.v1'], serverTime: NOW });
     if (/\/receipt$/.test(p)) { res.setHeader('content-type', 'text/html; charset=utf-8'); return res.end('<html>رسید</html>'); }
     if (/^\/api\/admin\/support\/media\//.test(p)) { res.setHeader('content-type', 'image/png'); return res.end(Buffer.from([137, 80, 78, 71])); }
     return j(200, sample);
@@ -274,6 +310,30 @@ const SPECIAL = {
   //  گذاشتنِ حالت: نوعِ معتبر و کلیدِ یکتایی (بدنهٔ همگانی `kind: 'percent'` دارد)
   'POST /api/account-admin/console/shops/:id/holds': { body: { kind: 'archived', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-0001' } },
   'POST /api/account-admin/console/shops/:id/holds/:holdId/lift': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true } },
+  //  پوستهٔ کنسول: جست‌وجو یک ‎q‎ می‌خواهد؛ نوشتن‌ها (مالک + رمزِ پنل + دلیل + تأیید + کلیدِ یکتایی) تا مقصدِ «فقط ارشد» دیده شود
+  'GET /api/account-admin/console/search': { query: '&q=ab' },
+  'POST /api/account-admin/console/admins': { body: { username: 'bridge.role', role: 'viewer', adminPassword: 'Bridge-role-1405!', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-adm-0001', password: 'Bridge-1405-roles' } },
+  'POST /api/account-admin/console/admins/:id/update': { body: { role: 'viewer', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-adm-0002', password: 'Bridge-1405-roles' } },
+  'POST /api/account-admin/console/admins/:id/sessions/revoke': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-adm-0003', password: 'Bridge-1405-roles' } },
+  'PUT /api/account-admin/console/flags': { body: { scope: 'all', key: 'shop.receipt_v2', value: true, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, confirmKey: 'shop.receipt_v2', idempotencyKey: 'bridge-roles-flag-0001', password: 'Bridge-1405-roles' } },
+  'POST /api/account-admin/console/flags/reset': { body: { scope: 'all', key: 'shop.receipt_v2', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, confirmKey: 'shop.receipt_v2', idempotencyKey: 'bridge-roles-flag-0002', password: 'Bridge-1405-roles' } },
+  //  ۴.۶ و ۴.۷: کارِ حساس با رمزِ همان admin (احرازِ دوباره) تا مقصدِ «فقط ارشد» واقعاً دیده و سنجیده شود
+  'POST /api/account-admin/console/market/trust/cases/:id/assign': { body: { confirm: true } },
+  'POST /api/account-admin/console/market/trust/cases/:id/decide': { body: { outcome: 'upheld', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
+  'POST /api/account-admin/console/market/trust/cases/:id/appeal-decision': { body: { outcome: 'upheld', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
+  'POST /api/account-admin/console/market/trust/sanctions/:id/lift': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
+  'PUT /api/account-admin/console/delivery/thresholds': { body: { thresholds: { dispatchMin: 45 }, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
+  //  ماژول‌های عملیات: مقدارِ معتبرِ هر در (بدنهٔ همگانی `status: 'active'` دارد)
+  'POST /api/account-admin/console/ops/incidents/:id/status': { body: { status: 'investigating', note: 'سنجه' } },
+  'POST /api/account-admin/console/ops/incidents/:id/priority': { body: { priority: 'p2', reason: 'سنجه' } },
+  //  انتشارِ مرحله‌ای: مالک با رمزِ درستِ خودش (احرازِ دوباره) تا مقصدِ «فقط ارشد» واقعاً دیده و سنجیده شود
+  'PUT /api/account-admin/console/release/stage': { body: { tag: 'tohid-native', version: '2.14.5', percent: 10, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
+  'POST /api/account-admin/console/release/stage/end': { body: { tag: 'tohid-native', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
+  //  سندِ اصلاحیِ مالی: بدنهٔ کامل و رمزِ درستِ مالک تا از احرازِ دوبارهٔ پنل بگذرد (بی کلیدِ سرویس ۴۰۹ می‌گیرد؛
+  //  مقصدِ بالادستش را `account-finance.mjs` با کلیدِ سرویس می‌سنجد)
+  'POST /api/account-admin/console/finance/adjustments': {
+    body: { paymentId: 'x1', kind: 'refund', amount: 1, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-fin-0001', password: 'Bridge-1405-roles' },
+  },
 };
 const urlOf = (r, app) => {
   const p = r.path.replace(/:([A-Za-z_]\w*)/g, (_, k) => (k === 'app' ? app : PARAMS[k] || 'x1'));
