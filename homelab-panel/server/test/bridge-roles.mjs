@@ -156,6 +156,9 @@ const LOCAL = new Map([
   //  admin (‎ownerOnly‎ + احرازِ دوباره) — مرزش را `account-admin.mjs` بند به بند می‌سنجد
   ['GET /api/account-admin/console/service-key', 'حالِ کلیدِ ذخیره‌شدهٔ خودِ پنل؛ بی کلید هیچ پرسشی به سرورِ حساب نمی‌رود (فقط admin)'],
   ['POST /api/account-admin/console/service-key/revoke', 'بی کلیدِ ذخیره‌شده ۴۰۴ ِ محلی؛ با کلید فقط مالک + رمز ⇒ درِ ابطالِ «فقط ارشد» (account-admin.mjs)'],
+  //  ماژول‌های عملیات: انتخابِ نوعِ هشدار برای رباتِ تلگرامِ مالک — فقط تنظیمِ خودِ پنل (‎console-ops.mjs‎)
+  ['GET /api/account-admin/console/ops/alerts/telegram', 'نوع‌های برگزیدهٔ هشدار برای رباتِ مالک و حالِ ربات — تنظیمِ خودِ پنل'],
+  ['PUT /api/account-admin/console/ops/alerts/telegram', 'ذخیرهٔ همان انتخاب در تنظیماتِ پنل (فقط admin)'],
 ]);
 
 /*
@@ -180,7 +183,13 @@ const VIEWER_POST = new Map([
  */
 const PHASE3 = ['GET /api/admin/shops/:id/health', 'GET /api/admin/shops/:id/holds', 'POST /api/admin/shops/:id/holds',
   'POST /api/admin/shops/:id/holds/:holdId/lift', 'GET /api/admin/flags', 'GET /api/admin/flags/history',
-  'POST /api/admin/service-keys', 'POST /api/admin/service-keys/:id/revoke']
+  'POST /api/admin/service-keys', 'POST /api/admin/service-keys/:id/revoke',
+  //  ماژول‌های عملیات (shop ‎claude/console-ops-api‎) و انتشارِ مرحله‌ایِ OPS-01 (shop #559) — پشتِ ‎ops.v1‎ و ‎release-stage.v1‎
+  'GET /api/admin/ops/releases', 'GET /api/admin/ops/health', 'GET /api/admin/ops/integrations', 'GET /api/admin/ops/incidents',
+  'GET /api/admin/ops/incidents/:id', 'POST /api/admin/ops/incidents/:id/status', 'POST /api/admin/ops/incidents/:id/priority',
+  'POST /api/admin/ops/incidents/:id/notes', 'POST /api/admin/ops/incidents/:id/link', 'GET /api/admin/ops/alerts',
+  'POST /api/admin/ops/alerts/evaluate', 'POST /api/admin/ops/alerts/:id/ack', 'POST /api/admin/ops/alerts/:id/resolve',
+  'GET /api/admin/release/stage', 'PUT /api/admin/release/stage', 'DELETE /api/admin/release/stage']
   .map((x) => { const [method, p] = x.split(' '); return { method, re: toRe(p), id: x }; });
 const phase3Of = (method, p) => PHASE3.find((x) => x.method === method && x.re.test(p)) || null;
 
@@ -218,7 +227,7 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
     if (!BACKGROUND.test(p)) calls.push({ method: req.method, path: p });
     //  همهٔ تواناییِ فاز ۳ اعلام می‌شود تا مقصدِ آن مسیرها هم دیده و سنجیده شود
-    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1'], serverTime: NOW });
+    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1', 'ops.v1', 'release-stage.v1'], serverTime: NOW });
     if (/\/receipt$/.test(p)) { res.setHeader('content-type', 'text/html; charset=utf-8'); return res.end('<html>رسید</html>'); }
     if (/^\/api\/admin\/support\/media\//.test(p)) { res.setHeader('content-type', 'image/png'); return res.end(Buffer.from([137, 80, 78, 71])); }
     return j(200, sample);
@@ -274,6 +283,12 @@ const SPECIAL = {
   //  گذاشتنِ حالت: نوعِ معتبر و کلیدِ یکتایی (بدنهٔ همگانی `kind: 'percent'` دارد)
   'POST /api/account-admin/console/shops/:id/holds': { body: { kind: 'archived', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-0001' } },
   'POST /api/account-admin/console/shops/:id/holds/:holdId/lift': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true } },
+  //  ماژول‌های عملیات: مقدارِ معتبرِ هر در (بدنهٔ همگانی `status: 'active'` دارد)
+  'POST /api/account-admin/console/ops/incidents/:id/status': { body: { status: 'investigating', note: 'سنجه' } },
+  'POST /api/account-admin/console/ops/incidents/:id/priority': { body: { priority: 'p2', reason: 'سنجه' } },
+  //  انتشارِ مرحله‌ای: مالک با رمزِ درستِ خودش (احرازِ دوباره) تا مقصدِ «فقط ارشد» واقعاً دیده و سنجیده شود
+  'PUT /api/account-admin/console/release/stage': { body: { tag: 'tohid-native', version: '2.14.5', percent: 10, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
+  'POST /api/account-admin/console/release/stage/end': { body: { tag: 'tohid-native', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
 };
 const urlOf = (r, app) => {
   const p = r.path.replace(/:([A-Za-z_]\w*)/g, (_, k) => (k === 'app' ? app : PARAMS[k] || 'x1'));
