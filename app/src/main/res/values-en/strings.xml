@@ -59,7 +59,7 @@
     <string name="codec_auto">Auto</string>
     <string name="codec_av1_missing">AV1 (not available)</string>
     <string name="br_title">Bitrate (average)</string>
-    <string name="br_desc">Auto is computed from resolution × frame rate; fast motion may peak at 2× so it does not turn blocky.</string>
+    <string name="br_desc">Auto is computed from resolution × frame rate; fast motion may peak at 3× so it does not turn blocky.</string>
     <string name="br_auto_high">Auto (high)</string>
     <string name="br_auto_light">Auto (light)</string>
     <string name="br_auto_max">Auto (near-lossless)</string>
@@ -130,7 +130,7 @@
     <string name="footer">Files are saved in Movies/RawRec. Long recordings are saved as ordered parts of about 3.5 GB. If a game marks its screen as secure, no app can record its picture.</string>
 
     <string name="plan_applies_fmt">Will apply: %1$s</string>
-    <string name="plan_vbr_fmt">Size: about %1$s per minute on average (30 min ≈ %2$s); static screens much less, very fast motion up to 2×.</string>
+    <string name="plan_vbr_fmt">Size: about %1$s per minute on average (30 min ≈ %2$s); static screens much less, very fast motion up to 3×.</string>
     <string name="plan_cbr_fmt">Size: constant, about %1$s per minute (30 min ≈ %2$s).</string>
     <string name="plan_cq_fmt">Size: unknown in CQ mode; ceiling about %1$s per minute.</string>
     <string name="plan_free_fmt">Free space: %1$s • room for about %2$d minutes</string>

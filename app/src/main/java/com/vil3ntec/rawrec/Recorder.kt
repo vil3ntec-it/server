@@ -313,7 +313,7 @@ class Recorder(
                 if ("mode" !in drop) {
                     setInteger(MediaFormat.KEY_BITRATE_MODE, Planner.codecMode(p.mode))
                     if (p.mode == RecordConfig.MODE_CQ && p.quality >= 0) setInteger(MediaFormat.KEY_QUALITY, p.quality)
-                    // Headroom for fast motion: VBR may peak at 2× the target instead of blocking.
+                    // Headroom for fast motion: VBR may peak at 3× the target instead of blocking.
                     if (p.mode == RecordConfig.MODE_VBR) setInteger("max-bitrate", p.peakBitrate)
                 }
                 if ("qp" !in drop && p.qpMax > 0) {

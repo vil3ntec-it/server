@@ -382,37 +382,40 @@ object Planner {
      * VBR target (average) for the automatic levels, in bits per second. Reference: bits per pixel
      * at 60 fps, × (fps/60)^0.6: higher frame rates cost less than linearly (consecutive frames are more alike).
      * HEVC values; AVC ×1.4, AV1 ×0.9 (hardware AV1 encoders gain less over HEVC than software ones).
-     *   High (default): 0.11 bpp → 1920×1080@60 ≈ 14 Mbps (103 MB/min), 1504×2400@120 ≈ 36 Mbps (270 MB/min)
+     *   High (default): 0.17 bpp → 1920×1080@60 ≈ 21 Mbps (160 MB/min), 1504×2400@120 ≈ 56 Mbps (420 MB/min)
      *   Light:          0.045 bpp → 1920×1080@30 ≈ 4 Mbps
-     *   «بی‌افت»:        0.24 bpp  → 1920×1080@60 ≈ 30 Mbps (224 MB/min)
+     *   «بی‌افت»:        0.34 bpp  → 1920×1080@60 ≈ 42 Mbps (318 MB/min)
      * 1.4 used 0.075 bpp (9 Mbps for 1080p60) with a QP ceiling of 30: small text and fast game motion
-     * came out soft and blocky. Screen content (sharp edges, text, UI) needs more than camera video.
-     * Peaks may reach 2× the target (max-bitrate) and the per-frame-type QP ceiling lets the encoder
+     * came out soft and blocky. 1.5's 0.11 bpp with QP 26 still softened fine text and showed banding
+     * in smooth gradients (wallpapers, shadows) — the owner: «the video is not what I see». Screen
+     * content (sharp edges, text, UI, 8-bit gradients) needs far more than camera video.
+     * Peaks may reach 3× the target (max-bitrate) and the per-frame-type QP ceiling lets the encoder
      * spend more rather than smear detail; the codec level and the encoder's maximum cap both.
      */
     fun autoBitrate(w: Int, h: Int, fps: Int, mime: String, level: Int): Int {
-        val base = when (level) { RecordConfig.BR_MAX -> 0.24; RecordConfig.BR_AUTO_BALANCED -> 0.045; else -> 0.11 }
+        val base = when (level) { RecordConfig.BR_MAX -> 0.34; RecordConfig.BR_AUTO_BALANCED -> 0.045; else -> 0.17 }
         val bps = w.toDouble() * h * 60 * base * codecFactor(mime) * (fps / 60.0).pow(0.6)
         return (bps / 1_000_000).roundToInt().coerceAtLeast(3) * 1_000_000
     }
 
     private fun codecFactor(mime: String) = when (mime) { Encoders.AVC -> 1.4; Encoders.AV1 -> 0.9; else -> 1.0 }
 
-    /** Range that keeps screen content faithful (rule of thumb, shown for reference): 0.06–0.14 bpp HEVC at 60 fps. */
+    /** Range that keeps screen content faithful (rule of thumb, shown for reference): 0.10–0.24 bpp HEVC at 60 fps. */
     fun referenceRange(w: Int, h: Int, fps: Int, mime: String): Pair<Int, Int> {
         val k = w.toDouble() * h * 60 * codecFactor(mime) * (fps / 60.0).pow(0.6) / 1_000_000
-        return (k * 0.06).roundToInt() to (k * 0.14).roundToInt()
+        return (k * 0.10).roundToInt() to (k * 0.24).roundToInt()
     }
 
     /**
      * Quality floor (QP ceiling of P frames; I −2, B +2) for VBR: rather than go above it the encoder
-     * spends more than the target. 26 keeps text edges clean on HEVC/AV1/AVC hardware encoders.
+     * spends more than the target. 21 keeps text edges and smooth 8-bit gradients clean on HEVC/AV1/AVC
+     * hardware encoders (26 in 1.5 showed banding and soft text); 17 is visually lossless.
      */
     fun qpCeiling(bitrateLevel: Int): Int = when (bitrateLevel) {
-        RecordConfig.BR_MAX -> 22
+        RecordConfig.BR_MAX -> 17
         RecordConfig.BR_AUTO_BALANCED -> 34
-        RecordConfig.BR_AUTO_HIGH -> 26
-        else -> 28                      // a fixed Mbps chosen by the owner
+        RecordConfig.BR_AUTO_HIGH -> 21
+        else -> 23                      // a fixed Mbps chosen by the owner
     }
 
     fun plan(cfg: RecordConfig, d: DisplayInfo): CapturePlan? {
@@ -475,7 +478,7 @@ object Planner {
             RecordConfig.MODE_CBR -> if (cbr || !vbr) RecordConfig.MODE_CBR else RecordConfig.MODE_VBR
             else -> if (vbr || !cbr) RecordConfig.MODE_VBR else RecordConfig.MODE_CBR
         }
-        var peak = if (mode == RecordConfig.MODE_VBR) min(encMax.toLong(), bitrate * 2L) else bitrate.toLong()
+        var peak = if (mode == RecordConfig.MODE_VBR) min(encMax.toLong(), bitrate * 3L) else bitrate.toLong()
         // Lowest level that carries this size, rate and peak; the level's ceiling also bounds the
         // bit rate, so the encoder is never asked for more than the level it declares.
         val pl = Encoders.profileLevel(info, mime)

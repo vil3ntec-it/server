@@ -64,7 +64,7 @@
     <string name="codec_auto">خودکار</string>
     <string name="codec_av1_missing">AV1 (ندارد)</string>
     <string name="br_title">بیت‌ریت (میانگین)</string>
-    <string name="br_desc">خودکار بر اساسِ رزولوشن × فریم‌ریت حساب می‌شود؛ در حرکتِ سریع تا ۲ برابر اوج می‌گیرد تا پیکسلی نشود.</string>
+    <string name="br_desc">خودکار بر اساسِ رزولوشن × فریم‌ریت حساب می‌شود؛ در حرکتِ سریع تا ۳ برابر اوج می‌گیرد تا پیکسلی نشود.</string>
     <string name="br_auto_high">خودکار (بالا)</string>
     <string name="br_auto_light">خودکار (سبک)</string>
     <string name="br_auto_max">خودکار (بی‌افت)</string>
@@ -140,7 +140,7 @@
 
     <!-- plan summary -->
     <string name="plan_applies_fmt">اعمال می‌شود: %1$s</string>
-    <string name="plan_vbr_fmt">حجم: به‌طورِ میانگین حدودِ %1$s در دقیقه (۳۰ دقیقه ≈ %2$s)؛ صفحهٔ ساکن خیلی کمتر، حرکتِ خیلی سریع تا ۲ برابر.</string>
+    <string name="plan_vbr_fmt">حجم: به‌طورِ میانگین حدودِ %1$s در دقیقه (۳۰ دقیقه ≈ %2$s)؛ صفحهٔ ساکن خیلی کمتر، حرکتِ خیلی سریع تا ۳ برابر.</string>
     <string name="plan_cbr_fmt">حجم: ثابت، حدودِ %1$s در دقیقه (۳۰ دقیقه ≈ %2$s).</string>
     <string name="plan_cq_fmt">حجم: در حالتِ CQ نامعلوم؛ سقف حدودِ %1$s در دقیقه.</string>
     <string name="plan_free_fmt">فضای خالی: %1$s • حدوداً %2$d دقیقه جا دارید</string>
