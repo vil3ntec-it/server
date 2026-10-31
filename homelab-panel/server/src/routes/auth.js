@@ -22,6 +22,7 @@ import { getSetting } from '../db.js';
 import { db, logEvent } from '../db.js';
 import { roleOf, listPanelUsers, setRole, setDisabled, deletePanelUser, ROLES, ROLE_ABILITIES, requireRole } from '../control/roles.js';
 import { audit } from '../lib/audit.js';
+import { auditFromReq } from '../control/audit.js';
 import { noteLogin } from '../automation/sources.js';
 import { clientIp } from '../platform/security.js';
 
@@ -147,7 +148,15 @@ router.get('/totp', requireAuth, (req, res) => {
   });
 });
 
+/*
+ *  ⛔ دوعاملیِ روشن با یک نشست عوض نمی‌شود (۱۴۰۵/۰۸/۰۹): تا امروز `setup` و
+ *  `enable` رازِ تازه را روی رازِ روشن می‌نشاندند — نشستِ دزدیده‌شده رازِ خودش
+ *  را جا می‌زد و صاحبِ حساب دیگر نمی‌توانست وارد شود. حالا اول باید خاموش شود،
+ *  و خاموش کردن رمز + کدِ فعلی می‌خواهد.
+ */
 router.post('/totp/setup', requireAuth, async (req, res) => {
+  const cur = db.prepare('SELECT totp_enabled FROM users WHERE id = ?').get(req.user.id);
+  if (cur?.totp_enabled) return res.status(409).json({ error: 'totp_already_enabled' });
   const secret = newSecret();
   db.prepare('UPDATE users SET totp_pending = ? WHERE id = ?').run(secret, req.user.id);
   const issuer = String(getSetting('server_name', '') || 'VILL3N').slice(0, 40);
@@ -157,7 +166,8 @@ router.post('/totp/setup', requireAuth, async (req, res) => {
 });
 
 router.post('/totp/enable', requireAuth, (req, res) => {
-  const u = db.prepare('SELECT totp_pending, username FROM users WHERE id = ?').get(req.user.id);
+  const u = db.prepare('SELECT totp_pending, totp_enabled, username FROM users WHERE id = ?').get(req.user.id);
+  if (u?.totp_enabled) return res.status(409).json({ error: 'totp_already_enabled' });
   if (!u?.totp_pending) return res.status(400).json({ error: 'totp_not_setup' });
   if (!verifyTotp(u.totp_pending, req.body?.code)) return res.status(400).json({ error: 'totp_invalid' });
   const codes = newRecoveryCodes();
@@ -219,6 +229,7 @@ router.post('/users', requireAuth, requireRole('admin'), (req, res) => {
   const user = createUser(String(username).trim(), String(password));
   db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, user.id);
   logEvent('info', 'panel', `کاربر «${user.username}» با نقشِ ${role} ساخته شد`);
+  auditFromReq(req, 'panel.user.create', { entity: 'user', entityId: user.username, detail: { role } });
   res.status(201).json({ user: { id: user.id, username: user.username, role, disabled: false } });
 });
 
@@ -228,10 +239,17 @@ router.patch('/users/:id', requireAuth, requireRole('admin'), (req, res) => {
     if (req.body?.disabled !== undefined) setDisabled(req.params.id, Boolean(req.body.disabled), req.user.username);
     res.json({ users: listPanelUsers() });
   } catch (e) {
+    if (e.message === 'owner_protected') return ownerDenied(req, res, 'role');
     const code = e.message === 'not_found' ? 404 : 400;
     res.status(code).json({ error: e.message });
   }
 });
+
+/** دستِ کسی به نقش، وضعیت، رمز یا حذفِ مالکِ اصلی نمی‌رسد — و تلاشش می‌ماند. */
+function ownerDenied(req, res, what) {
+  auditFromReq(req, 'panel.user.owner_protected', { entity: 'user', entityId: String(req.params.id), result: 'forbidden', detail: { what } });
+  return res.status(403).json({ error: 'owner_protected' });
+}
 
 router.delete('/users/:id', requireAuth, requireRole('admin'), (req, res) => {
   if (Number(req.params.id) === Number(req.user.id)) return res.status(400).json({ error: 'cannot_delete_self' });
@@ -239,6 +257,7 @@ router.delete('/users/:id', requireAuth, requireRole('admin'), (req, res) => {
     deletePanelUser(req.params.id, req.user.username);
     res.json({ ok: true, users: listPanelUsers() });
   } catch (e) {
+    if (e.message === 'owner_protected') return ownerDenied(req, res, 'delete');
     res.status(e.message === 'not_found' ? 404 : 400).json({ error: e.message });
   }
 });
