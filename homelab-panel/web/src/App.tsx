@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppProvider, useApp } from './app-context';
 import { featureOn } from './features';
 import { Loading, ToastHost } from './components/ui';
@@ -20,7 +20,7 @@ import Updates from './pages/control/Updates';
 import PanelUsers from './pages/control/PanelUsers';
 import Assistant from './pages/Assistant';
 import { AccountServerHub, DomainsHub, LoginsHub, LogsHub, MonitoringHub, NetworkHub } from './pages/hubs';
-import SubscriptionsHub from './pages/account/SubscriptionsHub';
+import SubscriptionsMoved from './pages/account/SubscriptionsMoved';
 import ShopDesk from './pages/account/ShopDesk';
 import DatabasesPage from './pages/Databases';
 import TerminalPage from './pages/Terminal';
@@ -33,22 +33,6 @@ import SalesPage from './pages/account/Sales';
 import NoticesPage from './pages/account/Notices';
 import SupportPage from './pages/account/Support';
 import SyncStatusPage from './pages/account/SyncStatus';
-
-/**
- *  نشانیِ قدیمیِ اشتراک‌ها ⇒ تبِ خودش در `/subscriptions`، با همان پارامترها.
- *  `/customers?tab=visitors` هم تبِ «بازدیدکننده‌ها» می‌شود، و `/plans?tab=codes`
- *  «کدهای اشتراک» — همان نام‌های قبلی.
- */
-function ToSubscriptions({ tab }: { tab: string }) {
-  const loc = useLocation();
-  const p = new URLSearchParams(loc.search);
-  const old = p.get('tab');
-  const target = old && ['subs', 'plans', 'discounts', 'codes', 'requests', 'visitors'].includes(old) ? old : tab;
-  p.delete('tab');
-  if (target !== 'subs') p.set('tab', target);
-  const qs = p.toString();
-  return <Navigate to={`/subscriptions${qs ? `?${qs}` : ''}`} replace />;
-}
 
 function Shell() {
   const { ready, authed } = useApp();
@@ -84,20 +68,22 @@ function Shell() {
 
         {/* مشتری‌ها و فروش — پلِ سرورِ حساب */}
         {/*
-          ⛔ **اشتراک‌ها یک بخش‌اند** (۱۴۰۵/۰۷/۱۳): «مشتری‌ها و اشتراک‌ها» و
-          «پلن‌ها و تخفیف‌ها» در `/subscriptions` یکی شدند. نشانی‌های قدیمی
-          نمی‌شکنند — هر کدام با همان پارامترها (`app`، `q`) به تبِ خودش می‌رود.
+          ⛔ **بخشِ جدای «اشتراک‌ها» برداشته شد** (۱۴۰۵/۰۸/۰۹، دستورِ صاحب
+          محصول): اشتراکِ پمپ در «پمپ‌بنزین‌ها ← 💳 اشتراک‌ها» (`/stations#subs`)
+          و اشتراکِ فروشگاه در «فروشگاه‌ها ← اشتراک‌ها» (`/shop?tab=subs`) —
+          `pages/account/AppSubscriptions.tsx`. نشانی‌های کهنه نمی‌شکنند: با
+          همان `app`/`tab`/`q` به بخشِ درست، و بی برنامه به «کدام برنامه؟»
+          (`SubscriptionsMoved` ⇐ `subsPath.ts`).
         */}
-        <Route path="/subscriptions" element={<SubscriptionsHub />} />
-        <Route path="/customers" element={<ToSubscriptions tab="subs" />} />
-        <Route path="/plans" element={<ToSubscriptions tab="plans" />} />
-        <Route path="/visitors" element={<ToSubscriptions tab="visitors" />} />
-        <Route path="/vip-codes" element={<ToSubscriptions tab="codes" />} />
-        <Route path="/discounts" element={<ToSubscriptions tab="discounts" />} />
+        <Route path="/subscriptions" element={<SubscriptionsMoved />} />
+        <Route path="/customers" element={<SubscriptionsMoved defaultView="subs" />} />
+        <Route path="/plans" element={<SubscriptionsMoved defaultView="plans" />} />
+        <Route path="/visitors" element={<SubscriptionsMoved defaultView="visitors" />} />
+        <Route path="/vip-codes" element={<SubscriptionsMoved defaultView="codes" />} />
+        <Route path="/discounts" element={<SubscriptionsMoved defaultView="discounts" />} />
         {/*
           ⛔ میزِ فروشگاه صفحهٔ خودش را گرفت (بندهای ۴.۱ تا ۴.۴ سندِ ریمیک):
-          داشبورد، سه گروهِ اشتراک، و کدِ شاگرد. کارهای اشتراکش حالا از همان
-          `/subscriptions?app=shop` است.
+          داشبورد، اشتراک‌ها (همهٔ کارها، از ۱۴۰۵/۰۸/۰۹) و کدِ شاگرد.
         */}
         <Route path="/shop" element={<ShopDesk />} />
         <Route path="/account-server" element={<AccountServerHub />} />

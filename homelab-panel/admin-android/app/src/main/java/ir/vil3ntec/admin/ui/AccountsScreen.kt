@@ -64,6 +64,9 @@ private enum class Section(val title: String) {
   Shops("فروشگاه‌ها"),
   //  ⛔ اشتراکِ فروشگاه‌ها کنارِ خودِ فروشگاه‌ها — همان زبانهٔ بخشِ پمپ
   ShopSubs("💳 اشتراکِ فروشگاه‌ها"),
+  //  ⛔ کدِ آفلاینِ «فروشگاه من» هم همین‌جا، مثلِ «🔑 کدِ آفلاین»ِ بخشِ پمپ —
+  //  اشتراکِ هر برنامه در بخشِ خودش (۱۴۰۵/۰۸/۰۹)؛ همان ‎?app=shop‎ِ پنلِ وب
+  ShopOffline("🔑 کدِ آفلاینِ فروشگاه"),
   Stations("پمپ‌ها"),
   Sites("سایت‌ها"),
   Panel("کاربران پنل"),
@@ -146,6 +149,10 @@ fun AccountsScreen(session: Session) {
 
     if (section == Section.ShopSubs) {
       SubscriptionsTab(session, "shop")
+      return@Column
+    }
+    if (section == Section.ShopOffline) {
+      OfflineCodesTab(session, "shop")
       return@Column
     }
 
@@ -237,8 +244,8 @@ private fun toneTint(tone: Int): Color = when (tone) {
 /* ------------------------- گرفتن و ترجمهٔ داده ---------------------------- */
 
 private fun load(session: Session, section: Section): List<AccountRow> = when (section) {
-  //  زبانهٔ اشتراک‌ها داده‌اش را خودش می‌خواند (`SubscriptionsTab`)
-  Section.ShopSubs -> emptyList()
+  //  زبانهٔ اشتراک‌ها و کدِ آفلاین داده‌شان را خودشان می‌خوانند
+  Section.ShopSubs, Section.ShopOffline -> emptyList()
   Section.Shops -> Api.shopAccounts(session).items("items").let { array ->
     (0 until array.length()).map { index ->
       val row = array.optJSONObject(index) ?: JSONObject()

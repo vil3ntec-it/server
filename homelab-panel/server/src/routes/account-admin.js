@@ -1183,7 +1183,18 @@ router.post('/discount-codes/quote', guard(async (req, res) => {
 /* ------------------------------- کمپین -------------------------------- */
 
 router.get('/campaigns', guard(async (req, res) => {
-  res.json(await cloudRaw('GET', '/api/admin/campaigns'));
+  const out = await cloudRaw('GET', '/api/admin/campaigns');
+  /*
+   *  ⛔ ۱۴۰۵/۰۸/۰۹ — اشتراکِ هر برنامه در بخشِ خودش: «تخفیف‌ها و کمپین»ِ پمپ
+   *  کمپینِ دکان را نشان نمی‌دهد. سرورِ حساب برای این فهرست `?app=` ندارد، پس
+   *  پالایش همین‌جا در سرور است، نه در رابط. کمپینِ «هر دو» مالِ هر دو بخش است.
+   *  بی `?app=` (یا «هر دو») همان فهرستِ کامل، مثلِ پیش.
+   */
+  const scope = scopeOf(req.query.app);
+  if ((scope === 'shop' || scope === 'pump') && Array.isArray(out?.campaigns)) {
+    return res.json({ ...out, campaigns: out.campaigns.filter((c) => c && (c.app === scope || c.app === 'both')) });
+  }
+  res.json(out);
 }));
 
 /** فیلتر ⇒ کدِ تخفیف ⇒ اعلان، در یک تماس (سناریوی ۱۱ پرامپت). */

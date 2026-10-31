@@ -32,6 +32,7 @@ import {
   APP_LABEL, CURRENCY_LABEL, CloudProblem, PageHead, day, daysTone, fa, moment, money, useLoad, type AppId,
 } from './account/shared';
 import Revenue from './account/Revenue';
+import { subsPath } from './account/subsPath';
 import type { Expiring, SalesSummary, Thread } from './account/types';
 
 type CodeLite = { app: string; status: string; createdAt: number; sendState: string; logOnly?: boolean };
@@ -105,7 +106,9 @@ export default function Dashboard() {
         sub="فروش و اشتراک‌های هر برنامه، از سرورِ حساب — حالِ خودِ سرور در «مانیتورینگ» است"
         actions={(
           <>
-            <Link to="/subscriptions" className="btn btn-sm btn-primary"><CreditCard className="h-4 w-4" /> اشتراک‌ها</Link>
+            {/* ⛔ بخشِ جدای «اشتراک‌ها» نیست (۱۴۰۵/۰۸/۰۹) — هر برنامه در بخشِ خودش */}
+            <Link to={subsPath('pump')} className="btn btn-sm btn-primary"><CreditCard className="h-4 w-4" /> اشتراکِ پمپ</Link>
+            <Link to={subsPath('shop')} className="btn btn-sm btn-primary"><CreditCard className="h-4 w-4" /> اشتراکِ فروشگاه</Link>
             <Link to="/monitoring" className="btn btn-sm"><Activity className="h-4 w-4" /> مانیتورینگِ سرور</Link>
           </>
         )}
@@ -124,7 +127,7 @@ export default function Dashboard() {
               key={app}
               title={APP_LABEL[app]}
               icon={<Icon className="h-4 w-4" />}
-              action={<Link className="btn btn-sm" to={`/subscriptions?app=${app}`}>اشتراک‌های {APP_LABEL[app]}</Link>}
+              action={<Link className="btn btn-sm" to={subsPath(app)}>اشتراک‌های {APP_LABEL[app]}</Link>}
             >
               {summary.busy && !s ? <Skeleton rows={2} /> : (
                 <>
@@ -180,7 +183,7 @@ export default function Dashboard() {
           className="lg:col-span-2"
           title={`رو به پایان — ${fa(expiring.data?.days || 30)} روزِ آینده`}
           icon={<Clock className="h-4 w-4" />}
-          action={<Link className="btn btn-sm" to="/subscriptions">همه</Link>}
+          action={<Link className="btn btn-sm" to="/sales?tab=expiring">همه</Link>}
         >
           {expiring.error ? <CloudProblem code={expiring.code} message={expiring.error} onRetry={expiring.reload} />
             : expiring.busy && !expiring.data ? <Skeleton rows={4} />

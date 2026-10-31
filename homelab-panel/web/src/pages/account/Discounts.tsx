@@ -17,11 +17,16 @@ import { ActionButton, Cell, KV, Notice, Row, Table } from '../../control/ui';
 import { APP_LABEL, AppPicker, CloudProblem, PageHead, day, fa, fromLocalInput, moment, useLoad, type AppId, type Scope } from './shared';
 import type { Campaign, CampaignStats, DiscountCode } from './types';
 
-export default function Discounts() {
-  //  ⚠️ بخشِ آغازین از نشانی (`?app=`)، مثلِ بقیهٔ تب‌های «اشتراک‌ها»
+/**
+ *  ⛔ `fixedApp`: داخلِ بخشِ خودِ همان برنامه (`AppSubscriptions.tsx`). کدها و
+ *  کمپین‌ها هر دو با `?app=` از سرور پالوده می‌آیند — کمپینِ «هر دو» در هر دو
+ *  بخش دیده می‌شود (`/campaigns` در `account-admin.js`)، نه پالایش در رابط.
+ */
+export default function Discounts({ fixedApp }: { fixedApp?: AppId } = {}) {
+  //  ⚠️ بی `fixedApp`، بخشِ آغازین از نشانی (`?app=`)
   const [params] = useSearchParams();
   const fromUrl = params.get('app');
-  const [app, setApp] = useState<Scope>(fromUrl === 'pump' || fromUrl === 'shop' ? fromUrl : 'both');
+  const [app, setApp] = useState<Scope>(fixedApp || (fromUrl === 'pump' || fromUrl === 'shop' ? fromUrl : 'both'));
   const [newCode, setNewCode] = useState(false);
   const [newCampaign, setNewCampaign] = useState(false);
   const [revoke, setRevoke] = useState<DiscountCode | null>(null);
@@ -29,7 +34,8 @@ export default function Discounts() {
 
   const codes = useLoad<{ codes: DiscountCode[] }>(
     `/api/account-admin/discount-codes${app === 'both' ? '' : `?app=${app}`}`, [app]);
-  const campaigns = useLoad<{ campaigns: Campaign[] }>('/api/account-admin/campaigns');
+  const campaigns = useLoad<{ campaigns: Campaign[] }>(
+    `/api/account-admin/campaigns${app === 'both' ? '' : `?app=${app}`}`, [app]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -38,7 +44,7 @@ export default function Discounts() {
         sub="کدِ تخفیف برای یک برنامه، یک پلن یا یک مشتری — و کمپین که فیلتر، کد و اعلان را یک‌جا انجام می‌دهد"
         actions={
           <>
-            <AppPicker value={app} onChange={setApp} withBoth />
+            {!fixedApp && <AppPicker value={app} onChange={setApp} withBoth />}
             <button className="btn btn-sm btn-primary" onClick={() => setNewCode(true)}>کدِ تازه</button>
             <button className="btn btn-sm" onClick={() => setNewCampaign(true)}>کمپینِ تازه</button>
           </>
@@ -107,8 +113,8 @@ export default function Discounts() {
         )}
       </Card>
 
-      {newCode && <NewCode onClose={() => setNewCode(false)} onDone={codes.reload} />}
-      {newCampaign && <NewCampaign onClose={() => setNewCampaign(false)} onDone={async () => { await campaigns.reload(); await codes.reload(); }} />}
+      {newCode && <NewCode fixedApp={fixedApp} onClose={() => setNewCode(false)} onDone={codes.reload} />}
+      {newCampaign && <NewCampaign fixedApp={fixedApp} onClose={() => setNewCampaign(false)} onDone={async () => { await campaigns.reload(); await codes.reload(); }} />}
 
       {stats && (
         <Modal open onClose={() => setStats(null)} title={`گزارشِ کمپینِ «${stats.campaign.name}»`}>
@@ -148,8 +154,8 @@ export default function Discounts() {
   );
 }
 
-function NewCode({ onClose, onDone }: { onClose: () => void; onDone: () => Promise<void> }) {
-  const [app, setApp] = useState<AppId>('shop');
+function NewCode({ onClose, onDone, fixedApp }: { onClose: () => void; onDone: () => Promise<void>; fixedApp?: AppId }) {
+  const [app, setApp] = useState<AppId>(fixedApp || 'shop');
   const [code, setCode] = useState('');
   const [kind, setKind] = useState<'percent' | 'amount'>('percent');
   const [value, setValue] = useState('');
@@ -196,8 +202,12 @@ function NewCode({ onClose, onDone }: { onClose: () => void; onDone: () => Promi
       <Notice tone="info">
         همان رشته در دکان و پمپ دو کدِ جداست؛ بخش را درست انتخاب کنید. کدِ خالی را خودِ سرور می‌سازد.
       </Notice>
-      <label className="label">بخش</label>
-      <div className="mb-3"><AppPicker value={app} onChange={(v) => setApp(v as AppId)} /></div>
+      {!fixedApp && (
+        <>
+          <label className="label">بخش</label>
+          <div className="mb-3"><AppPicker value={app} onChange={(v) => setApp(v as AppId)} /></div>
+        </>
+      )}
       <label className="label">کد (خالی = خودکار)</label>
       <input className="input mb-3 w-full" dir="ltr" value={code} onChange={(e) => setCode(e.target.value)} />
       <div className="mb-3 grid grid-cols-2 gap-3">
@@ -244,9 +254,9 @@ function NewCode({ onClose, onDone }: { onClose: () => void; onDone: () => Promi
 }
 
 /** کمپین: فیلتر ⇒ کد ⇒ اعلان، در یک تماس. */
-function NewCampaign({ onClose, onDone }: { onClose: () => void; onDone: () => Promise<void> }) {
+function NewCampaign({ onClose, onDone, fixedApp }: { onClose: () => void; onDone: () => Promise<void>; fixedApp?: AppId }) {
   const [name, setName] = useState('');
-  const [app, setApp] = useState<Scope>('shop');
+  const [app, setApp] = useState<Scope>(fixedApp || 'shop');
   const [percent, setPercent] = useState('');
   const [expiringDays, setExpiringDays] = useState('30');
   const [city, setCity] = useState('');
@@ -298,7 +308,7 @@ function NewCampaign({ onClose, onDone }: { onClose: () => void; onDone: () => P
       <label className="label">نام</label>
       <input className="input mb-3 w-full" value={name} onChange={(e) => setName(e.target.value)} placeholder="مثلاً: تخفیفِ عید" />
       <label className="label">بخش</label>
-      <div className="mb-3"><AppPicker value={app} onChange={setApp} withBoth /></div>
+      <div className="mb-3"><AppPicker only={fixedApp} value={app} onChange={setApp} withBoth /></div>
       <div className="mb-3 grid grid-cols-2 gap-3">
         <div>
           <label className="label">درصدِ تخفیف</label>

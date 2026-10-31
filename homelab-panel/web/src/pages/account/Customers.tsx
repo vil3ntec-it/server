@@ -343,6 +343,7 @@ export default function Customers({ fixedApp, embedded = false }: { fixedApp?: A
         onDone={after}
         startApp={grant?.app}
         startQuery={grant?.q}
+        fixedApp={fixedApp}
       />
 
       {extend && (
