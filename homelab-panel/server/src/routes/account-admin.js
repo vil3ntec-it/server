@@ -41,6 +41,7 @@ import { audit } from '../control/audit.js';
 import * as panelAuth from '../auth.js';
 import { db } from '../db.js';
 import { rateLimit } from '../platform/rate-limit.js';
+import financeRoutes from './account-finance.js';
 import {
   withPanelActor, readServiceKey, storeServiceKey, forgetServiceKey, publicServiceKey, SERVICE_KEY_RE,
 } from '../account/service-key.js';
@@ -2028,6 +2029,7 @@ export const PHASE3 = Object.freeze({
   'flags.v1': 'GET /api/admin/flags · GET /api/admin/flags/history',
   'actor.v1': 'سرآیندهای X-Actor-Id/Role/Name ⇒ «انجام‌دهنده» در سابقهٔ سرورِ حساب',
   'service-key.v1': 'Bearer vsk_… · /api/admin/service-keys',
+  'finance.v1': 'GET /api/admin/finance/* · POST /api/admin/finance/adjustments (ماژولِ ۴.۵ ِ مالیِ مرکزی، ‎routes/account-finance.js‎)',
 });
 const CAP_RE = /^[a-z][a-z0-9-]{0,40}\.v\d{1,3}$/;
 
@@ -2354,6 +2356,9 @@ for (const [local, remote] of [
     res.json(await cloudRaw('GET', remote, { query: req.query }));
   }));
 }
+
+/* ماژولِ ۴.۵ ِ پنلِ مرکزی — مالیِ مرکزی (‎routes/account-finance.js‎؛ همین نشست، همین «انجام‌دهنده») */
+router.use('/console/finance', financeRoutes);
 
 /** هر چیزِ دیگری زیرِ این پیشوند «نیست» — نه «رد شد»، تا نقشهٔ آن‌طرف لو نرود. */
 router.use((req, res) => res.status(404).json({ error: 'not_found', message: 'این مسیر وجود ندارد' }));

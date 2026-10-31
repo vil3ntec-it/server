@@ -88,7 +88,8 @@ function routesOf(rel, prefix, seen = new Set()) {
     }
     if (p === undefined) { unparsed.push(`${rel}: ${m[0]}`); continue; }
     const head = rest.split(/\basync\b|\bwrap\(|\(\s*req\s*,|\bfunction\b/)[0];
-    const superOnly = fileSuper || /\brequireSuperAdmin\b/.test(head);
+    //  `requireFinanceWriter` (مالیِ مرکزی، ماژولِ ۴.۵): مالی/ارشد — تنگ‌تر از مدیرِ عادی ⇒ در پنل هم admin
+    const superOnly = fileSuper || /\b(requireSuperAdmin|requireFinanceWriter)\b/.test(head);
     const paths = p.includes('${') ? expand(src, p) : [p];
     if (!paths) { unparsed.push(`${rel}: ${p}`); continue; }
     for (const pp of paths) shopRoutes.push({ method: verb.toUpperCase(), path: join(prefix, pp), superOnly, file: rel });
@@ -133,12 +134,15 @@ const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'bridge-roles-'));
 process.env.HLP_DATA_DIR = path.join(tmp, 'unit');
 process.env.HLP_ACCOUNT_API = '0';
 const accountAdmin = (await import('../src/routes/account-admin.js')).default;
+//  مالیِ مرکزی (ماژولِ ۴.۵) روترِ خودش را دارد و زیرِ ‎/console/finance‎ ِ همان پل سوار است
+const accountFinance = (await import('../src/routes/account-finance.js')).default;
 const { adminRouter: stationsAdmin } = await import('../src/routes/stations.js');
 const listOf = (router, base, keep = () => true) => router.stack
   .filter((l) => l.route && keep(l.route.path))
   .flatMap((l) => Object.keys(l.route.methods).filter((x) => x !== '_all').map((m) => ({ method: m.toUpperCase(), path: l.route.path, base })));
 const BRIDGE = [
   ...listOf(accountAdmin, '/api/account-admin'),
+  ...listOf(accountFinance, '/api/account-admin/console/finance'),
   ...listOf(stationsAdmin, '/api/stations-admin', (p) => p.startsWith('/cloud/')),
 ];
 
@@ -180,7 +184,14 @@ const VIEWER_POST = new Map([
  */
 const PHASE3 = ['GET /api/admin/shops/:id/health', 'GET /api/admin/shops/:id/holds', 'POST /api/admin/shops/:id/holds',
   'POST /api/admin/shops/:id/holds/:holdId/lift', 'GET /api/admin/flags', 'GET /api/admin/flags/history',
-  'POST /api/admin/service-keys', 'POST /api/admin/service-keys/:id/revoke']
+  'POST /api/admin/service-keys', 'POST /api/admin/service-keys/:id/revoke',
+  //  ماژولِ ۴.۵ (shop: claude/console-finance-api، پشتِ `finance.v1`) و تطبیقِ فروشِ آنلاینِ #411 (روی main ِ shop هست؛
+  //  روی شاخه‌ای که هنوز #411 را ندارد «نبودن» بخشوده است، نه نقش)
+  'GET /api/admin/finance/summary', 'GET /api/admin/finance/breakdown', 'GET /api/admin/finance/payments',
+  'GET /api/admin/finance/payments/:id', 'GET /api/admin/finance/adjustments', 'POST /api/admin/finance/adjustments',
+  'GET /api/admin/finance/receivables', 'GET /api/admin/finance/pending', 'GET /api/admin/finance/gateway',
+  'GET /api/admin/finance/discrepancies', 'GET /api/admin/finance/history', 'GET /api/admin/finance/export',
+  'GET /api/admin/system/reconciliation']
   .map((x) => { const [method, p] = x.split(' '); return { method, re: toRe(p), id: x }; });
 const phase3Of = (method, p) => PHASE3.find((x) => x.method === method && x.re.test(p)) || null;
 
@@ -218,7 +229,7 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
     if (!BACKGROUND.test(p)) calls.push({ method: req.method, path: p });
     //  همهٔ تواناییِ فاز ۳ اعلام می‌شود تا مقصدِ آن مسیرها هم دیده و سنجیده شود
-    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1'], serverTime: NOW });
+    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1', 'finance.v1'], serverTime: NOW });
     if (/\/receipt$/.test(p)) { res.setHeader('content-type', 'text/html; charset=utf-8'); return res.end('<html>رسید</html>'); }
     if (/^\/api\/admin\/support\/media\//.test(p)) { res.setHeader('content-type', 'image/png'); return res.end(Buffer.from([137, 80, 78, 71])); }
     return j(200, sample);
@@ -274,6 +285,11 @@ const SPECIAL = {
   //  گذاشتنِ حالت: نوعِ معتبر و کلیدِ یکتایی (بدنهٔ همگانی `kind: 'percent'` دارد)
   'POST /api/account-admin/console/shops/:id/holds': { body: { kind: 'archived', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-0001' } },
   'POST /api/account-admin/console/shops/:id/holds/:holdId/lift': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true } },
+  //  سندِ اصلاحیِ مالی: بدنهٔ کامل و رمزِ درستِ مالک تا از احرازِ دوبارهٔ پنل بگذرد (بی کلیدِ سرویس ۴۰۹ می‌گیرد؛
+  //  مقصدِ بالادستش را `account-finance.mjs` با کلیدِ سرویس می‌سنجد)
+  'POST /api/account-admin/console/finance/adjustments': {
+    body: { paymentId: 'x1', kind: 'refund', amount: 1, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-fin-0001', password: 'Bridge-1405-roles' },
+  },
 };
 const urlOf = (r, app) => {
   const p = r.path.replace(/:([A-Za-z_]\w*)/g, (_, k) => (k === 'app' ? app : PARAMS[k] || 'x1'));
