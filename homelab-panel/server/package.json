@@ -15,6 +15,8 @@
     "test:bridge-roles": "node test/bridge-roles.mjs",
     "test:console-shell": "node test/console-shell.mjs",
     "test:shop-console-ui": "node test/shop-console-ui.mjs",
+    "test:console-market": "node test/console-market.mjs",
+    "test:market-console-ui": "node test/market-console-ui.mjs",
     "test:stations": "node test/stations.mjs",
     "test:station-push": "node test/station-push.mjs",
     "test:station-chat": "node test/station-chat.mjs",

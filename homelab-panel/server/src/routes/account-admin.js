@@ -45,6 +45,7 @@ import {
   withPanelActor, readServiceKey, storeServiceKey, forgetServiceKey, publicServiceKey, SERVICE_KEY_RE,
 } from '../account/service-key.js';
 import { mountConsoleShell } from './console-shell.js';
+import { mountConsoleMarket } from './console-market.js';
 
 const { requireRole } = panelRoles;
 const router = express.Router();
@@ -2366,6 +2367,12 @@ for (const [local, remote] of [
  *  ‎routes/console-shell.js‎، ولی روی **همین** روتر تا فهرستِ سفید و ‎bridge-roles.mjs‎ یکی بمانند.
  */
 mountConsoleShell(router);
+
+/*
+ *  🏪 ۴.۶ مدیریتِ بازار و ۴.۷ نظارت بر پیک — درهایش در ‎routes/console-market.js‎، ولی روی **همین** روتر تا
+ *  فهرستِ سفید، «انجام‌دهنده» و ‎bridge-roles.mjs‎ یکی بمانند.
+ */
+mountConsoleMarket(router);
 
 /** هر چیزِ دیگری زیرِ این پیشوند «نیست» — نه «رد شد»، تا نقشهٔ آن‌طرف لو نرود. */
 router.use((req, res) => res.status(404).json({ error: 'not_found', message: 'این مسیر وجود ندارد' }));
