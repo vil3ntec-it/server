@@ -136,13 +136,20 @@ async function main() {
   console.log('\n── درِ نسخه‌دار: هیچ روتری بی نشست باز نیست ──');
   const V1_PRIVATE = ['users', 'system', 'dashboard', 'sites', 'services', 'domains', 'files', 'logs',
     'network', 'settings', 'backups', 'site-server', 'messenger/me', 'notify-admin/x', 'agent/status',
-    'agent/conversations', 'agent/facts'];
+    'agent/conversations', 'agent/facts',
+    //  ۱.۵۰.۶۲ (فاز ۱ ِ ممیزی): دفترِ یکپارچه، و دو درِ تازهٔ روترِ auth
+    'audit', 'auth/me', 'auth/sessions', 'auth/users'];
   const open = [];
   for (const p of V1_PRIVATE) {
     const res = await api('GET', `/api/v1/${p}`, undefined, { noAuth: true, token: '' });
     if (res.status !== 401) open.push(`${p}=${res.status}`);
   }
   check('همهٔ روترهای خصوصیِ ‎/api/panel/v1‎ بی نشست ۴۰۱ می‌دهند', open.length === 0, open.join(' '));
+  for (const p of ['auth/reauth', 'auth/ticket']) {
+    const res = await api('POST', `/api/v1/${p}`, {}, { noAuth: true, token: '' });
+    if (res.status !== 401) open.push(`POST ${p}=${res.status}`);
+  }
+  check('و درهای تازهٔ احرازِ دوباره و بلیت هم بی نشست ۴۰۱', open.length === 0, open.join(' '));
 
   // ── هدرهای امن ────────────────────────────────────────────────────────
   console.log('\n── هدرهای امن ──');

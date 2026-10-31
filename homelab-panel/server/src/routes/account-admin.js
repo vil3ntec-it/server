@@ -35,6 +35,7 @@ import express from 'express';
 import { cloudRaw, cloudRawText, cloudRawBytes } from '../stations/cloud.js';
 import { fetchOnce, writeCached } from '../support-media-cache.js';
 import { requireRole } from '../control/roles.js';
+import { requireRecentAuth, reauthMoneyEnforced } from '../auth.js';
 import { audit } from '../control/audit.js';
 
 const router = express.Router();
@@ -153,9 +154,20 @@ router.get('/shop-accounts/:id/staff-codes', guard(async (req, res) => {
  *  VIP می‌داد، پرداخت پاک می‌کرد و به همهٔ مشتری‌ها پیام می‌فرستاد.
  *  دیدن و پشتیبانیِ روزمره برای کارگزار باز است.
  */
-const money = requireRole('admin');
+const adminOnly = requireRole('admin');
+/*
+ *  ⚠️ احرازِ دوباره برای کارِ پولی (۶-۵) پشتِ `HLP_REAUTH_MONEY=1` است و پیش‌فرض
+ *  خاموش: «ویلن ادمین» همین درها را می‌زند و هنوز پنجرهٔ «رمز را دوباره بزنید»
+ *  ندارد. شرحش کنارِ `reauthMoneyEnforced` در `auth.js`.
+ */
+const money = (req, res, next) =>
+  adminOnly(req, res, () => (reauthMoneyEnforced() ? requireRecentAuth(req, res, next) : next()));
 
-router.post('/shop-accounts/:id/staff-codes/reveal', requireRole('admin'), guard(async (req, res) => {
+/*
+ *  ⛔ نمایشِ کدِ شاگرد = نمایشِ راز ⇒ احرازِ دوباره (۶-۵). فقط رابطِ وب این در
+ *  را می‌زند و پنجرهٔ رمز را دارد.
+ */
+router.post('/shop-accounts/:id/staff-codes/reveal', adminOnly, requireRecentAuth, guard(async (req, res) => {
   const id = idOf(req.params.id);
   const out = await cloudRaw('POST', `/api/admin/shops/${id}/staff-codes/reveal`, { body: {} });
   //  ⛔ دو بار ثبت: دفترِ خودِ پنل و دفترِ خودِ سرورِ حساب — همان قاعدهٔ
@@ -281,7 +293,8 @@ router.get('/users/:id/delete-preview', guard(async (req, res) => {
   res.json(await cloudRaw('GET', `/api/admin/users/${idOf(req.params.id)}/delete-preview`));
 }));
 
-router.delete('/users/:id', requireRole('admin'), guard(async (req, res) => {
+//  ⛔ حذفِ دائمیِ حساب ⇒ احرازِ دوباره (۶-۵)؛ فقط رابطِ وب این در را می‌زند
+router.delete('/users/:id', adminOnly, requireRecentAuth, guard(async (req, res) => {
   const id = idOf(req.params.id);
   const out = await cloudRaw('DELETE', `/api/admin/users/${id}`, { body: { confirmEmail: String(req.body?.confirmEmail || '') } });
   audit({ actor: actorOf(req), action: 'account.user_deleted', entity: 'user', entityId: id,

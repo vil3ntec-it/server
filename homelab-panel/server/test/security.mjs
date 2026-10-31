@@ -9,6 +9,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { WebSocket } from 'ws';
 import dgram from 'node:dgram';
+import { DatabaseSync } from 'node:sqlite';
+import { io as ioClient } from 'socket.io-client';
 
 const PORT = Number(process.env.TEST_PORT || 4786);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -51,6 +53,10 @@ const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 
     HLP_WS_PING_MS: '400',
     HLP_DISCOVERY_PORT: String(PORT + 2),
     HLP_WS_TICKET_TTL: '1500',
+    //  رمزِ ارشدِ سرورِ حساب از محیط — تا «پنهان در وضعیت، نمایشِ یک‌باره فقط مالک» سنجیده شود (۶-۴)
+    HLP_ACCOUNT_ADMIN_USER: 'bridge-root',
+    HLP_ACCOUNT_ADMIN_PASSWORD: 'Br1dge-Secret-Never-In-Status',
+    HLP_ACCOUNT_AUTOSTART: '0',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -116,6 +122,133 @@ try {
   const appApi = await fetch(`${BASE}/api/app/config`, { headers: { Origin: 'https://my-shop.example.com' } });
   check('API برنامه‌ها برای همه باز است', appApi.headers.get('access-control-allow-origin') === 'https://my-shop.example.com');
   check('ولی بدونِ credentials', appApi.headers.get('access-control-allow-credentials') === null);
+
+  /* ═══════════════ فاز ۱ ِ ممیزیِ پنلِ مرکزی (۱۴۰۵/۰۸/۰۹) ═══════════════ */
+  const j = (r) => r.json().catch(() => ({}));
+  const get = (p, headers = {}) => fetch(`${BASE}${p}`, { headers });
+  const post = (p, body, headers = auth) => fetch(`${BASE}${p}`, { method: 'POST', headers, body: JSON.stringify(body ?? {}) });
+  /** نشست را «کهنه» می‌کند — همان که ده دقیقه بی رمز بگذرد */
+  const staleAll = () => {
+    const d = new DatabaseSync(path.join(dataDir, 'panel.db'));
+    try { d.exec('PRAGMA busy_timeout = 5000'); d.exec('UPDATE sessions SET auth_at = 0'); } finally { d.close(); }
+  };
+
+  console.log('\n▶ CSP ِ پنل (۶-۶)');
+  const homeRes = await get('/');
+  const csp = homeRes.headers.get('content-security-policy') || '';
+  const scriptSrc = (/script-src ([^;]*)/.exec(csp) || [])[1] || '';
+  check('صفحهٔ پنل سرآیندِ CSP دارد', csp.includes("default-src 'self'"), csp);
+  check("⛔ script-src فقط 'self' — نه درون‌خطی، نه eval، نه بیرون", scriptSrc.trim() === "'self'", scriptSrc);
+  check("object-src 'none' و frame-ancestors 'self'", csp.includes("object-src 'none'") && csp.includes("frame-ancestors 'self'"), csp);
+  check('وب‌سوکتِ همان میزبان در connect-src', csp.includes(`ws://127.0.0.1:${PORT}`), csp);
+  check('پاسخِ API هم همان CSP را دارد', ((await get('/api/auth/status')).headers.get('content-security-policy') || '') === csp);
+  const indexHtml = await fsp.readFile(path.join(import.meta.dirname, '..', 'public', 'index.html'), 'utf8');
+  check('⛔ باندلِ ساخته‌شده هیچ <script> ِ درون‌خطی ندارد (وگرنه CSP پنل را سفید می‌کرد)',
+    [...indexHtml.matchAll(/<script\b([^>]*)>/g)].every((m) => /\bsrc=/.test(m[1])), indexHtml.slice(0, 300));
+  const connect = await get('/connect');
+  const connectCsp = connect.headers.get('content-security-policy') || '';
+  const connectHtml = await connect.text();
+  const inline = /<script>([\s\S]*?)<\/script>/.exec(connectHtml)?.[1] ?? '';
+  const { createHash } = await import('node:crypto');
+  check('صفحهٔ اتصال: اسکریپتِ درون‌خطی فقط با هشِ خودش، نه unsafe-inline',
+    connectCsp.includes(`'sha256-${createHash('sha256').update(inline, 'utf8').digest('base64')}'`)
+    && !/script-src[^;]*unsafe-inline/.test(connectCsp), connectCsp);
+
+  console.log('\n▶ توکنِ نشست در نشانی پذیرفته نیست (۶-۶)');
+  const tokenQs = `token=${encodeURIComponent(setup.token)}`;
+  for (const p of ['/api/dashboard', '/api/live/stream', `/api/files/download?path=${encodeURIComponent(path.join(sitesRoot, 'shop', 'index.html'))}`]) {
+    const r = await get(`${p}${p.includes('?') ? '&' : '?'}${tokenQs}`);
+    check(`⛔ ${p.split('?')[0]} با ‎?token=‎ ⇒ ۴۰۱`, r.status === 401, String(r.status));
+    await r.body?.cancel?.().catch(() => {});
+  }
+  check('همان توکن در سرآیند کار می‌کند', (await get('/api/dashboard', auth)).status === 200);
+  const sockQuery = await new Promise((resolve) => {
+    const so = ioClient(BASE, { query: { token: setup.token }, transports: ['websocket'], reconnection: false });
+    so.on('connect', () => { so.close(); resolve('connected'); });
+    so.on('connect_error', () => { so.close(); resolve('refused'); });
+    setTimeout(() => { so.close(); resolve('timeout'); }, 4000);
+  });
+  check('⛔ Socket.IO با ‎?token=‎ ِ نشانی وصل نمی‌شود', sockQuery === 'refused', sockQuery);
+  const sockAuth = await new Promise((resolve) => {
+    const so = ioClient(BASE, { auth: { token: setup.token }, transports: ['websocket'], reconnection: false });
+    so.on('connect', () => { so.close(); resolve('connected'); });
+    so.on('connect_error', (e) => { so.close(); resolve(`refused ${e.message}`); });
+    setTimeout(() => { so.close(); resolve('timeout'); }, 4000);
+  });
+  check('و با `auth` ِ دست‌دادن (رابطِ وب) وصل می‌شود', sockAuth === 'connected', sockAuth);
+
+  console.log('\n▶ بلیتِ یک‌بارمصرفِ نشانی (۶-۶)');
+  const filePath = `/api/files/download?path=${encodeURIComponent(path.join(sitesRoot, 'shop', 'index.html'))}`;
+  let tk = await j(await post('/api/auth/ticket', { path: filePath }));
+  check('بلیت صادر می‌شود و کوتاه‌عمر است', typeof tk.ticket === 'string' && tk.expiresIn <= 60, JSON.stringify(tk));
+  let dl = await get(`${filePath}&ticket=${encodeURIComponent(tk.ticket)}`);
+  check('دانلود با بلیت ۲۰۰ و همان فایل', dl.status === 200 && (await dl.text()).includes('<h1>shop</h1>'), String(dl.status));
+  dl = await get(`${filePath}&ticket=${encodeURIComponent(tk.ticket)}`);
+  check('⛔ بارِ دوم ۴۰۱ (یک‌بارمصرف)', dl.status === 401, String(dl.status));
+  tk = await j(await post('/api/auth/ticket', { path: '/api/dashboard' }));
+  dl = await get(`${filePath}&ticket=${encodeURIComponent(tk.ticket)}`);
+  check('⛔ بلیتِ مسیرِ دیگر این‌جا ۴۰۱', dl.status === 401, String(dl.status));
+  tk = await j(await post('/api/auth/ticket', { path: '/api/auth/logout' }));
+  const viaPost = await fetch(`${BASE}/api/auth/logout?ticket=${encodeURIComponent(tk.ticket)}`, { method: 'POST' });
+  check('⛔ بلیت برای نوشتن (POST) کار نمی‌کند', viaPost.status === 401, String(viaPost.status));
+  tk = await j(await post('/api/auth/ticket', { path: '/api/dashboard' }));
+  await wait(1700);
+  check('⛔ بلیتِ منقضی ۴۰۱', (await get(`/api/dashboard?ticket=${encodeURIComponent(tk.ticket)}`)).status === 401);
+  for (const bad of ['https://evil.example/api/x', '/etc/passwd', '']) {
+    const r = await post('/api/auth/ticket', { path: bad });
+    check(`مسیرِ نامعتبر «${bad || '∅'}» بلیت نمی‌گیرد`, r.status === 400, String(r.status));
+  }
+  check('بی نشست بلیت نمی‌دهد', (await post('/api/auth/ticket', { path: '/api/dashboard' }, { 'Content-Type': 'application/json' })).status === 401);
+
+  console.log('\n▶ رمزِ ارشدِ سرورِ حساب: نه در وضعیت، فقط نمایشِ یک‌بارهٔ مالک (۶-۴، ۶-۵)');
+  const SECRET = 'Br1dge-Secret-Never-In-Status';
+  const ownerStatus = await get('/api/account-server/status', auth);
+  const ownerStatusText = await ownerStatus.text();
+  check('⛔ وضعیت برای خودِ مالک هم رمز را ندارد', ownerStatus.status === 200 && !ownerStatusText.includes(SECRET)
+    && /"passwordSet":true/.test(ownerStatusText), ownerStatusText.slice(0, 200));
+  const mk2 = await post('/api/auth/users', { username: 'admin2', password: 'Second-Admin-2026', role: 'admin' });
+  const mkV = await post('/api/auth/users', { username: 'viewer9', password: 'Viewer-Only-2026', role: 'viewer' });
+  check('مدیرِ دوم و بیننده ساخته شدند', mk2.status === 201 && mkV.status === 201, `${mk2.status} ${mkV.status}`);
+  const a2 = await j(await post('/api/auth/login', { username: 'admin2', password: 'Second-Admin-2026' }, { 'Content-Type': 'application/json' }));
+  const vw = await j(await post('/api/auth/login', { username: 'viewer9', password: 'Viewer-Only-2026' }, { 'Content-Type': 'application/json' }));
+  const auth2 = { Authorization: `Bearer ${a2.token}`, 'Content-Type': 'application/json' };
+  const authV = { Authorization: `Bearer ${vw.token}`, 'Content-Type': 'application/json' };
+  const st2 = await (await get('/api/account-server/status', auth2)).text();
+  check('⛔ مدیرِ دوم هم رمز را در وضعیت نمی‌بیند (تا ۱.۵۰.۶۱ می‌دید)', !st2.includes(SECRET), st2.slice(0, 160));
+  const rev2 = await post('/api/account-server/admin-password/reveal', {}, auth2);
+  check('⛔ مدیرِ دوم نمایشِ یک‌باره نمی‌گیرد (۴۰۳ owner_only)', rev2.status === 403 && (await j(rev2)).error === 'owner_only', String(rev2.status));
+  const revV = await post('/api/account-server/admin-password/reveal', {}, authV);
+  check('⛔ بیننده هم نه', revV.status === 403, String(revV.status));
+  const revOk = await post('/api/account-server/admin-password/reveal', {}, auth);
+  const revOkBody = await j(revOk);
+  check('مالک با نشستِ تازه یک بار می‌بیند (no-store)', revOk.status === 200 && revOkBody.password === SECRET
+    && /no-store/.test(revOk.headers.get('cache-control') || ''), `${revOk.status}`);
+  staleAll();
+  const revStale = await post('/api/account-server/admin-password/reveal', {}, auth);
+  check('⛔ نشستِ کهنهٔ مالک ⇒ ۴۰۳ reauth_required', revStale.status === 403 && (await j(revStale)).error === 'reauth_required', String(revStale.status));
+  const reWrong = await post('/api/auth/reauth', { password: 'not-my-password' });
+  check('احرازِ دوباره با رمزِ غلط ۴۰۰ (نشست بیرون نمی‌افتد)', reWrong.status === 400 && (await get('/api/auth/me', auth)).status === 200, String(reWrong.status));
+  const reOk = await post('/api/auth/reauth', { password: 'a-very-long-password' });
+  check('احرازِ دوباره با رمزِ درست', reOk.status === 200 && (await j(reOk)).freshUntil > Date.now());
+  check('و حالا نمایش دوباره کار می‌کند', (await post('/api/account-server/admin-password/reveal', {}, auth)).status === 200);
+  const ua = await j(await get('/api/audit?source=panel&q=admin_password&limit=50', auth));
+  const revRows = (ua.rows || []).filter((r) => r.action === 'account.admin_password.reveal');
+  check('هر نمایش و هر تلاشِ ردشده در دفتر (۲ موفق + ۱ ردِ مدیرِ دوم)',
+    revRows.filter((r) => r.result === 'ok').length === 2 && revRows.filter((r) => r.result === 'forbidden').length === 1,
+    JSON.stringify(revRows.map((r) => `${r.actor}:${r.result}`)));
+  check('⛔ و دفترِ یکپارچه خودش فقط admin است', (await get('/api/audit', authV)).status === 403);
+  check('⛔ و فقط‌خواندنی (DELETE ⇒ ۴۰۵)', (await fetch(`${BASE}/api/audit`, { method: 'DELETE', headers: auth })).status === 405);
+
+  console.log('\n▶ جزئیاتِ دفترِ کارهای حساس «[object Object]» نیست (۶-۷)');
+  await post('/api/auth/logout-all', {});
+  const sensitive = await j(await get('/api/audit?source=panel&q=panel.logout_all', auth));
+  const la = (sensitive.rows || []).find((r) => r.action === 'panel.logout_all');
+  check('جزئیاتِ شیء JSON نوشته می‌شود', la && la.detail && !la.detail.includes('[object Object]')
+    && Number.isInteger(JSON.parse(la.detail).revoked), JSON.stringify(la));
+  const dbRaw = new DatabaseSync(path.join(dataDir, 'panel.db'));
+  const objRows = dbRaw.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE detail = '[object Object]'").get().n;
+  dbRaw.close();
+  check('⛔ هیچ ردیفی در audit_log «[object Object]» ندارد', objRows === 0, String(objRows));
 
   console.log('\n▶ محدودیتِ نرخ');
   let limited = 0;

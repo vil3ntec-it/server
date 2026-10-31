@@ -729,6 +729,59 @@ root دارد نه اینترنتِ آزاد. آن مسیر فقط `bash -n` و 
 - ⛔ **دوعاملیِ روشن با یک نشست جا زده نمی‌شود**: `totp/setup` و `totp/enable` روی حسابِ دوعاملی‌دار ۴۰۹
   `totp_already_enabled`؛ اول `totp/disable` (رمز + کد). آزمون: «مالکِ اصلی…» در `test/roles-logs.mjs`.
 
+## 🛡️ پنلِ مرکزی، فاز ۱ — پایهٔ امن (از ۱۴۰۵/۰۸/۰۹، نسخه 1.50.62)
+
+بندهای ۶-۲ تا ۶-۷ و §۸ ِ `docs/OWNER-CONSOLE-AUDIT-fa.md` (شاخهٔ `claude/console-audit`). روی #107/#108/#109 سوار است.
+
+- ⛔ **«حسابِ من» (`/account`) همیشه روشن است** و همان جزءِ `components/AccountSecurity.tsx` است که `Settings` هم
+  دارد — یک نسخه. رمز، دوعاملی، دستگاه‌ها. بقیهٔ `Settings` (ریشهٔ سایت‌ها، دامنهٔ پایه…) هنوز پشتِ `FEATURES.settings`.
+- ⛔ **کاربرانِ پنل روشن (`FEATURES.panelUsers=true`)**، فقط روی `/api/auth/users`. **هر دو درِ کاربران**
+  (`/api/auth/users` و `/api/panel/v1/users`) فقط تابع‌های `control/roles.js` را صدا می‌زنند: `createPanelUser`،
+  `updatePanelUser`، `resetPanelUserPassword`، `deletePanelUser`. قاعدهٔ تازه آن‌جا نوشته می‌شود، نه در روتر. ترتیب:
+  خودت (`cannot_demote_self`/`cannot_disable_self`/`cannot_delete_self`/`use_change_password`) ⇐ آخرین مدیر ⇐ مالک
+  (`owner_protected` + ردیفِ دفتر). نام: `USERNAME_RE` (حرف و رقمِ هر زبان، `._-`، ۳ تا ۴۰). تغییرِ نقش یا بستن ⇒ همهٔ
+  نشست‌های او باطل. پاسخِ v1 شکلِ قراردادش را نگه می‌دارد (`invalid_input`، `already_exists`).
+- ⛔ **احرازِ دوباره (`requireRecentAuth`، `auth.js`)**: `sessions.auth_at` (مهاجرتِ ۰۰۷) با ورود و
+  `POST /api/auth/reauth` (رمز، و اگر دوعاملی روشن است کد هم) پر می‌شود؛ پنجره ۱۰ دقیقه (`HLP_REAUTH_WINDOW_SEC`).
+  پشتِ آن: همهٔ نوشتن‌های کاربرانِ پنل (هر دو در)، `totp/setup` و `totp/enable` (نشستِ دزدیده‌شده با روشن کردنِ
+  دوعاملی مالک را بیرون می‌گذاشت)، نمایشِ رمزِ ارشد، نمایشِ کدِ شاگرد، حذفِ دائمیِ حسابِ دکان/پمپ. شکستش ۴۰۰ است نه
+  ۴۰۱ (نشست سالم است) و سقفِ خودش را **پیش از** روترِ `/api/auth` دارد (`reauthLimiter`). رابط: `ReauthHost` روی هر
+  ۴۰۳ ِ `reauth_required` یک بار پنجره و یک بار تکرار.
+  ⚠️ **کارِ پولیِ پل پشتِ `HLP_REAUTH_MONEY=1` و پیش‌فرض خاموش**: «ویلن ادمین» همان درها را می‌زند و هنوز پنجرهٔ رمز
+  ندارد. روشن کردنش بی آن، دادنِ اشتراک از گوشی را می‌خواباند.
+- ⛔ **`vill3n owner-reset` تنها راهِ بازیابیِ مالک است و هیچ درِ HTTPی ندارد**: فقط با دسترسیِ نوشتن به `panel.db`
+  روی همان کامپیوتر؛ `--yes` یا «yes» از ترمینال؛ پشتیبانِ `VACUUM INTO` در `backups/` پیش از هر تغییر؛ رمزِ
+  یک‌بارمصرف فقط روی همان ترمینال (هیچ‌جا نوشته نمی‌شود)؛ دوعاملی خاموش (مگر `--keep-2fa`)؛ نقشِ مدیر و باز بودن
+  برمی‌گردد؛ **همهٔ** نشست‌ها باطل؛ ردیفِ `panel.owner.reset` (کاربرِ سیستم‌عامل) و یک خطِ لاگ. بی import از کدِ پنل
+  (`node:sqlite`، همان قالبِ scrypt). با root، فایل‌های تازه به مالکِ `panel.db` برمی‌گردند (`chown`) تا سرویس بنویسد.
+- ⛔ **رمزِ یک‌بارمصرف = `users.must_change_password`**: `requireAuth` جز `auth/me`، `auth/change-password` و
+  `auth/logout` همه را ۴۰۳ ِ `password_change_required` می‌دهد، Socket.IO هم رد می‌کند؛ `change-password` آن را پاک و همهٔ
+  نشست‌ها را می‌بندد و رمزِ تازهٔ برابر با قبلی را رد می‌کند (`same_password`). رابطِ وب `ForceChangePassword`،
+  «ویلن ادمین» پیامِ «اول در پنلِ وب رمز بگذارید».
+- ⛔ **رمزِ ارشدِ پلِ سرورِ حساب در `/api/account-server/status` نیست — برای هیچ‌کس** (فقط `passwordSet`). خودش فقط
+  از `POST /api/account-server/admin-password/reveal`: مالکِ اصلی + نشستِ تازه + `no-store` + ردیفِ دفتر (تلاشِ
+  مدیرِ دیگر هم با `forbidden`). رابط آن را در یک پنجره نشان می‌دهد که پس از یک دقیقه یا بستن، از صفحه می‌رود.
+- ⛔ **نشستِ پنل فقط از سرآیندِ `Authorization`** — `?token=` دیگر پذیرفته نیست (`requireAuth`، Socket.IO فقط
+  `auth`). پیوندِ دانلود: `POST /api/auth/ticket {path}` ⇒ بلیتِ یک‌بارمصرفِ ۶۰ثانیه‌ای، بسته به همان نشست و همان مسیر،
+  فقط GET/HEAD (`openWithTicket` در `api.ts`). رسانهٔ پشتیبانی با سرآیند خوانده و blob می‌شود. ⚠️ توکن‌های دیگر
+  (رمزِ پمپ، کلیدِ خواندنِ اعلان، توکنِ پروژه، توکنِ کاربرِ برنامه) قاعدهٔ خودشان را دارند و این‌جا عوض نشدند.
+- ⛔ **CSP روی پورتِ پنل** (`panelCsp`، `platform/security.js`): `script-src 'self'` بی درون‌خطی و بی eval،
+  `object-src 'none'`، `frame-ancestors 'self'`، وب‌سوکتِ همان میزبان. `style-src` عمداً `'unsafe-inline'` دارد (سبک کد
+  اجرا نمی‌کند). صفحهٔ `/connect` اسکریپتِ درون‌خطی‌اش را با **هش** اجازه می‌گیرد. ⛔ اسکریپتِ درون‌خطی به
+  `web/index.html` نیفزایید — پنل سفید می‌شود (`security.mjs` می‌سنجد).
+- ⛔ **دفترِ رخدادِ یکپارچه: `GET /api/audit`** (فقط admin، فقط‌خواندنی — هر روشِ دیگر ۴۰۵)، در «لاگ‌ها ← دفترِ رخدادِ
+  یکپارچه»: `audit_log` + `cc_audit` با `UNION ALL` و صفحه‌بندیِ واقعی، به‌علاوهٔ ۵۰۰ ردیفِ آخرِ `audit_logs` ِ سرورِ حساب
+  (`capped`، و `sources.account.ok=false` با دلیل وقتی در دسترس نیست — نه فهرستِ خالی). در `routes/v1.js` هم سوار است
+  و در جاروی `platform.mjs`. ⛔ `lib/audit.js` جزئیاتِ شیء را JSON (با `scrub`) می‌نویسد، نه `"[object Object]"`.
+
+```
+npm run test:roles            مالک، یک قاعده برای دو در، احرازِ دوباره (۶۱ سنجه)
+npm run test:totp             دوعاملی + احرازِ دوباره با کد (۳۸)
+npm run test:owner-recovery   vill3n owner-reset روی پنلِ زنده (۳۷)
+node test/security.mjs        CSP، ‎?token=‎ رد، بلیت، رمزِ ارشد، دفتر (۷۳)
+npm run test:live-pages       سورسِ رابط: حسابِ من، کاربران، ReauthHost، بی توکن در نشانی (۹۳)
+```
+
 ## 🧾 مشتری، پول و پیام در خودِ پنل — قاعده‌هایی که نباید برگردند (از ۱۴۰۵/۰۷/۰۳)
 
 تا ۱.۴۴.۰ همهٔ منطقِ اشتراک، قیمت، تخفیف، اعلان، فروش، رسید و Sync روی
@@ -2110,7 +2163,7 @@ npm run test:live-pages      ۶۲ · test:control-ui ۱۱۲ — بی تغییر
 پمپ). این‌جا فقط چیزهایی که **نباید برگردند**:
 
 - ⛔ **هر رازی که به مرورگر می‌رود فقط برای نقشِ «مدیر»**: رمزِ مدیرِ سرورِ حساب
-  (`/api/account-server/status`)، رمزِ سرورِ سایت و لینکِ رمزدارش
+  (از ۱.۵۰.۶۲ **دیگر در `/api/account-server/status` نیست** — فقط نمایشِ یک‌بارهٔ مالک؛ بخشِ «پنلِ مرکزی، فاز ۱»)، رمزِ سرورِ سایت و لینکِ رمزدارش
   (`/api/site-server`)، رمزِ نوشتنِ پمپ (`/stations/:code/keys` و `/connect`).
   «واردشده» کافی نیست — «بیننده» هم واردشده است.
 - ⛔ **`/api/site-server`، `/api/account-server` و `/api/storage` نوشتنشان فقط

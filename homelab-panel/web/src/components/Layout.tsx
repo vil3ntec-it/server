@@ -25,6 +25,7 @@ import {
   Server,
   ServerCog,
   Settings as SettingsIcon,
+  ShieldCheck,
   Sun,
   TerminalSquare,
   UserCog,
@@ -181,6 +182,8 @@ const NAV_GROUPS: NavGroup[] = [
        */
       { to: '/account-server', key: 'acServer', icon: ServerCog, needs: 'admin' },
       { to: '/control/updates', key: 'ccUpdates', icon: Download },
+      //  «حسابِ من» برای هر واردشده (۶-۲) — همان گروهِ بسته، پس بلندیِ منو عوض نمی‌شود
+      { to: '/account', key: 'myAccount', icon: ShieldCheck },
       { to: '/control/panel-users', key: 'ccPanelUsers', icon: UserCog, needs: 'admin', feature: 'panelUsers' },
       { to: '/files', key: 'files', icon: FolderTree, feature: 'files' },
       { to: '/terminal', key: 'terminal', icon: TerminalSquare, needs: 'admin' },

@@ -14,6 +14,7 @@
 // ---------------------------------------------------------------------------
 import { db } from '../db.js';
 import { audit } from './audit.js';
+import { clientIp } from '../platform/security.js';
 
 export const ROLES = ['viewer', 'operator', 'admin'];
 
@@ -103,45 +104,132 @@ export function isOwner(id) {
 export function listPanelUsers() {
   const owner = ownerId();
   return db
-    .prepare('SELECT id, username, role, disabled, created_at, last_login FROM users ORDER BY created_at')
+    .prepare('SELECT id, username, role, disabled, created_at, last_login, last_login_at, totp_enabled FROM users ORDER BY created_at')
     .all()
-    .map((u) => ({ ...u, disabled: Boolean(u.disabled), owner: u.id === owner }));
+    .map((u) => ({
+      id: u.id,
+      username: u.username,
+      role: u.role,
+      disabled: Boolean(u.disabled),
+      created_at: u.created_at,
+      last_login: u.last_login ?? u.last_login_at ?? null,
+      totp: Boolean(u.totp_enabled),
+      owner: u.id === owner,
+    }));
 }
 
 export function adminCount() {
   return db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND disabled = 0").get().n;
 }
 
-export function setRole(id, role, actor = 'admin') {
-  if (!ROLES.includes(role)) throw new Error('invalid_role');
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(id));
-  if (!user) throw new Error('not_found');
-  // آخرین مدیر نباید از دستِ خودش برود
-  if (user.role === 'admin' && role !== 'admin' && adminCount() <= 1) throw new Error('last_admin');
-  if (role !== 'admin' && isOwner(user.id)) throw new Error('owner_protected');
-  db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, user.id);
-  audit({ actor, action: 'panel.user.role', entity: 'user', entityId: user.username, detail: { from: user.role, to: role } });
-  return { ...user, role, password_hash: undefined };
+/* ═══════════════ یک قاعده برای هر دو درِ کاربران (۶-۲ / S17) ═══════════════
+ *
+ *  ⛔ تا ۱.۵۰.۶۱ دو API ِ کاربران با قاعده‌های نابرابر بود: `/api/auth/users`
+ *  (رابطِ وب و «ویلن ادمین») خودِ مدیر را تنزل می‌داد و می‌بست، ساختن و حذفش
+ *  در دفترِ رخداد نبود و نامِ کاربری را نمی‌سنجید؛ `/api/panel/v1/users` همهٔ
+ *  این‌ها را داشت ولی بازنشانیِ رمزش با نشستِ هر مدیری می‌شد. حالا هر دو همین
+ *  تابع‌ها را صدا می‌زنند و فقط شکلِ پاسخشان فرق دارد:
+ *
+ *    • خودت: نه تنزل، نه بستن، نه حذف؛ رمزِ خودت فقط با رمزِ فعلی
+ *    • آخرین مدیرِ فعال نمی‌رود · مالکِ اصلی دست نمی‌خورد (403 owner_protected)
+ *    • تغییرِ نقش یا بستن ⇒ همهٔ نشست‌های آن کاربر همان لحظه باطل
+ *    • هر کار — و هر تلاشِ ردشده روی مالک — یک ردیف در دفترِ رخدادها
+ *    • همهٔ نوشتن‌ها پشتِ `requireRecentAuth` (رمز در ده دقیقهٔ گذشته) — در روتر
+ */
+export const USERNAME_RE = /^[\p{L}\p{N}._-]{3,40}$/u;
+
+export function panelUserError(code, status = 400) {
+  const e = new Error(code);
+  e.code = code;
+  e.status = status;
+  return e;
 }
 
-export function setDisabled(id, disabled, actor = 'admin') {
+function targetOf(id) {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(id));
-  if (!user) throw new Error('not_found');
-  if (disabled && user.role === 'admin' && adminCount() <= 1) throw new Error('last_admin');
-  if (disabled && isOwner(user.id)) throw new Error('owner_protected');
-  db.prepare('UPDATE users SET disabled = ? WHERE id = ?').run(disabled ? 1 : 0, user.id);
-  // حسابِ از کار افتاده نباید نشستِ باز داشته باشد
-  if (disabled) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id);
-  audit({ actor, action: disabled ? 'panel.user.disable' : 'panel.user.enable', entity: 'user', entityId: user.username });
+  if (!user) throw panelUserError('not_found', 404);
+  return user;
+}
+
+const actorName = (req) => req?.user?.username || 'unknown';
+
+function auditUser(req, action, entityId, extra = {}) {
+  audit({ actor: actorName(req), ip: clientIp(req), action, entity: 'user', entityId, ...extra });
+}
+
+/** نام، رمز و نقشِ کاربرِ تازه — همان قاعده برای هر دو در. */
+export function checkNewUser({ username, password, role }) {
+  const name = typeof username === 'string' ? username.trim() : '';
+  if (name.length < 3) throw panelUserError('username_too_short');
+  if (!USERNAME_RE.test(name)) throw panelUserError('username_invalid');
+  if (typeof password !== 'string' || password.length < 8) throw panelUserError('password_too_short');
+  if (password.length > 200) throw panelUserError('password_too_long');
+  if (!ROLES.includes(role)) throw panelUserError('invalid_role');
+  if (db.prepare('SELECT id FROM users WHERE username = ?').get(name)) throw panelUserError('username_taken', 409);
+  return { username: name, password, role };
+}
+
+export function createPanelUser(req, input, createUser) {
+  const { username, password, role } = checkNewUser(input);
+  const user = createUser(username, password, role);
+  db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, user.id);
+  auditUser(req, 'panel.user.create', username, { detail: { role } });
+  return { id: user.id, username, role, disabled: false, created_at: user.created_at };
+}
+
+/** دستِ کسی به مالک نمی‌رسد — و تلاشش می‌ماند. */
+function ownerDenied(req, target, what) {
+  auditUser(req, 'panel.user.owner_protected', String(target.id), { result: 'forbidden', detail: { what, username: target.username } });
+  return panelUserError('owner_protected', 403);
+}
+
+export function updatePanelUser(req, id, body = {}) {
+  const target = targetOf(id);
+  const self = Number(target.id) === Number(req.user?.id);
+  let role = target.role;
+  let disabled = target.disabled ? 1 : 0;
+  if (body.role !== undefined) {
+    if (!ROLES.includes(body.role)) throw panelUserError('invalid_role');
+    role = body.role;
+    // مدیر نباید بتواند خودش را از مدیریت بیندازد و پنل را قفل کند
+    if (self && role !== 'admin') throw panelUserError('cannot_demote_self');
+  }
+  if (body.disabled !== undefined) {
+    disabled = body.disabled === true || body.disabled === 1 || body.disabled === 'true' ? 1 : 0;
+    if (self && disabled) throw panelUserError('cannot_disable_self');
+  }
+  const losingAdmin = target.role === 'admin' && !target.disabled && (role !== 'admin' || disabled);
+  if (losingAdmin && adminCount() <= 1) throw panelUserError('last_admin');
+  if (losingAdmin && isOwner(target.id)) throw ownerDenied(req, target, body.role !== undefined && role !== 'admin' ? 'role' : 'disable');
+
+  if (role === target.role && disabled === (target.disabled ? 1 : 0)) return { ...target, password_hash: undefined };
+  db.prepare('UPDATE users SET role = ?, disabled = ? WHERE id = ?').run(role, disabled, target.id);
+  // تغییرِ دسترسی باید فوری اثر کند، نه بعد از انقضای توکن
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(target.id);
+  if (role !== target.role) auditUser(req, 'panel.user.role', target.username, { detail: { from: target.role, to: role } });
+  if (disabled !== (target.disabled ? 1 : 0)) auditUser(req, disabled ? 'panel.user.disable' : 'panel.user.enable', target.username);
+  return { id: target.id, username: target.username, role, disabled: Boolean(disabled) };
+}
+
+/** بازنشانیِ رمزِ کاربرِ **دیگر** — رمزِ خودت فقط با رمزِ فعلی (`change-password`). */
+export function resetPanelUserPassword(req, id, password, hashPassword) {
+  const target = targetOf(id);
+  if (Number(target.id) === Number(req.user?.id)) throw panelUserError('use_change_password');
+  if (isOwner(target.id)) throw ownerDenied(req, target, 'password');
+  if (typeof password !== 'string' || password.length < 8) throw panelUserError('password_too_short');
+  if (password.length > 200) throw panelUserError('password_too_long');
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), target.id);
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(target.id);
+  auditUser(req, 'panel.user.password_reset', target.username);
   return true;
 }
 
-export function deletePanelUser(id, actor = 'admin') {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(id));
-  if (!user) throw new Error('not_found');
-  if (user.role === 'admin' && adminCount() <= 1) throw new Error('last_admin');
-  if (isOwner(user.id)) throw new Error('owner_protected');
-  db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
-  audit({ actor, action: 'panel.user.delete', entity: 'user', entityId: user.username });
+export function deletePanelUser(req, id) {
+  const target = targetOf(id);
+  if (Number(target.id) === Number(req.user?.id)) throw panelUserError('cannot_delete_self');
+  if (target.role === 'admin' && !target.disabled && adminCount() <= 1) throw panelUserError('last_admin');
+  if (isOwner(target.id)) throw ownerDenied(req, target, 'delete');
+  db.prepare('DELETE FROM users WHERE id = ?').run(target.id); // نشست‌ها با CASCADE می‌روند
+  auditUser(req, 'panel.user.delete', target.username);
   return true;
 }

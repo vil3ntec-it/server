@@ -26,7 +26,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Mic, MessagesSquare, Paperclip, Search, Send, Square } from 'lucide-react';
 
-import { api, getToken } from '../../api';
+import { api, fetchBlobUrl } from '../../api';
 import { Badge, ConfirmDialog, Modal, Skeleton, toast } from '../../components/ui';
 import { ActionButton, Notice as InlineNotice, Select } from '../../control/ui';
 import { APP_LABEL, AppPicker, CloudProblem, day, fa, moment, useLoad, type Scope } from './shared';
@@ -56,30 +56,55 @@ function kindOfMime(mime: string): MediaKind | null {
   return null;
 }
 
-/** نشانیِ رسانه روی خودِ پنل — ‎?token=‎ چون ‎<img>‎ سرآیندِ Authorization ندارد. */
+/** نشانیِ رسانه روی خودِ پنل */
 function mediaUrl(mid: string) {
-  return `/api/account-admin/support/media/${encodeURIComponent(mid)}?token=${encodeURIComponent(getToken() || '')}`;
+  return `/api/account-admin/support/media/${encodeURIComponent(mid)}`;
+}
+
+/*
+ *  ⛔ بی توکن در نشانی (۶-۶): تا ۱.۵۰.۶۱ این‌جا `?token=` بود، چون ‎<img>‎ و
+ *  ‎<video>‎ سرآیندِ Authorization نمی‌فرستند — یعنی توکنِ نشستِ مدیر در
+ *  تاریخچه و لاگ. حالا رسانه با سرآیندِ نشست خوانده و blob ِ محلی می‌شود.
+ *  رسانهٔ پشتیبانی کوچک است (سقفِ پیام‌رسان)، پس یک‌جا خواندنش بی‌خطر است.
+ */
+function useMediaBlob(mid: string) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [broken, setBroken] = useState(false);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    let made: string | null = null;
+    setSrc(null);
+    setBroken(false);
+    fetchBlobUrl(mediaUrl(mid), ctrl.signal)
+      .then((u) => { made = u; setSrc(u); })
+      .catch(() => { if (!ctrl.signal.aborted) setBroken(true); });
+    return () => {
+      ctrl.abort();
+      if (made) URL.revokeObjectURL(made);
+    };
+  }, [mid]);
+  return { src, broken, setBroken };
 }
 
 /** رسانهٔ داخلِ حباب. نشد (گذشته از ۱۵ روز یا جای دیگری گرفته شد) ⇒ یک جملهٔ راست. */
 function MediaView({ kind, mid }: { kind: MediaKind; mid: string }) {
-  const [broken, setBroken] = useState(false);
-  const url = mediaUrl(mid);
+  const { src, broken, setBroken } = useMediaBlob(mid);
   if (broken) {
     return <p className="text-[12px] opacity-80">{MEDIA_LABEL[kind]} · رسانه دیگر در دسترس نیست</p>;
   }
+  if (!src) return <p className="text-[12px] opacity-70">{MEDIA_LABEL[kind]} · در حالِ آوردن…</p>;
   if (kind === 'image') {
     return (
-      <a href={url} target="_blank" rel="noreferrer" className="block">
-        <img src={url} alt="عکس" loading="lazy" onError={() => setBroken(true)}
+      <a href={src} target="_blank" rel="noreferrer" className="block">
+        <img src={src} alt="عکس" loading="lazy" onError={() => setBroken(true)}
           className="max-h-72 max-w-full rounded-xl object-contain" style={{ background: 'rgba(0,0,0,.06)' }} />
       </a>
     );
   }
   if (kind === 'video') {
-    return <video src={url} controls preload="metadata" onError={() => setBroken(true)} className="max-h-72 max-w-full rounded-xl" />;
+    return <video src={src} controls preload="metadata" onError={() => setBroken(true)} className="max-h-72 max-w-full rounded-xl" />;
   }
-  return <audio src={url} controls preload="metadata" onError={() => setBroken(true)} className="w-64 max-w-full" />;
+  return <audio src={src} controls preload="metadata" onError={() => setBroken(true)} className="w-64 max-w-full" />;
 }
 
 /** رنگِ آواتار از روی نام — همان قاعدهٔ ‎AvatarKey‎ی برنامهٔ پمپ: یک نام، همیشه یک رنگ. */

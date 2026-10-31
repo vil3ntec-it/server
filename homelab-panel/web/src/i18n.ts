@@ -1110,6 +1110,9 @@ const fa = {
   searchGoto: 'کجا بروم؟ نامِ بخش را بنویسید…',
   searchNothing: 'چیزی پیدا نشد',
   searchHint: 'Ctrl+K برای باز کردن · ↑↓ برای انتخاب · Enter برای رفتن · Esc برای بستن',
+  /* ------------------------- فاز ۱ ِ پنلِ مرکزی ------------------------- */
+  myAccount: 'حسابِ من',
+  auditUnified: 'دفترِ رخدادِ یکپارچه',
 };
 
 export type Dict = typeof fa;
@@ -2203,6 +2206,8 @@ const en: Dict = {
   searchGoto: 'Where to? Type a section name…',
   searchNothing: 'Nothing found',
   searchHint: 'Ctrl+K to open · ↑↓ to pick · Enter to go · Esc to close',
+  myAccount: 'My account',
+  auditUnified: 'Unified audit log',
 };
 
 const ar: Dict = {

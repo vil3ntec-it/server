@@ -33,7 +33,25 @@ export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
 }
 
-export async function api<T = any>(url: string, options: Options = {}): Promise<T> {
+/*
+ *  ⛔ احرازِ دوباره (۶-۵): سرور برای کارِ حساس (نمایشِ راز، کاربرانِ پنل،
+ *  روشن کردنِ دوعاملی، حذفِ حساب) از نشستی که ده دقیقه رمز نزده ۴۰۳ ِ
+ *  `reauth_required` می‌دهد. این‌جا یک بار پنجرهٔ رمز باز می‌شود
+ *  (`components/ReauthHost.tsx`) و اگر رمز درست بود همان درخواست یک بار دیگر
+ *  فرستاده می‌شود — هیچ صفحه‌ای لازم نیست خودش این را بداند.
+ */
+let onReauth: (() => Promise<boolean>) | null = null;
+export function setReauthHandler(fn: (() => Promise<boolean>) | null) {
+  onReauth = fn;
+}
+
+/* رمزِ یک‌بارمصرفِ بازیابی ⇒ سرور هر درِ دیگری را می‌بندد تا رمزِ تازه گذاشته شود */
+let onMustChange: (() => void) | null = null;
+export function setMustChangeHandler(fn: (() => void) | null) {
+  onMustChange = fn;
+}
+
+export async function api<T = any>(url: string, options: Options = {}, retried = false): Promise<T> {
   const headers: Record<string, string> = {};
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -68,6 +86,11 @@ export async function api<T = any>(url: string, options: Options = {}): Promise<
     json = null;
   }
 
+  if (res.status === 403 && json?.error === 'reauth_required' && !retried && onReauth && options.raw === undefined) {
+    if (await onReauth()) return api<T>(url, options, true);
+  }
+  if (res.status === 403 && json?.error === 'password_change_required') onMustChange?.();
+
   if (!res.ok) {
     // detail توضیحِ خواندنیِ سرور است؛ بدون آن کاربر فقط یک کد می‌بیند
     throw new ApiError(res.status, json?.error || 'request_failed', json?.detail || json?.message);
@@ -75,8 +98,35 @@ export async function api<T = any>(url: string, options: Options = {}): Promise<
   return json as T;
 }
 
-export function downloadUrl(path: string) {
-  return `/api/files/download?path=${encodeURIComponent(path)}&token=${encodeURIComponent(getToken() || '')}`;
+/*
+ *  ⛔ دانلود بی توکن در نشانی (۶-۶): تا ۱.۵۰.۶۱ توکنِ ۱۲ساعتهٔ نشست در
+ *  `?token=` ِ پیوندها بود و در تاریخچهٔ مرورگر و لاگ می‌ماند. حالا با همان
+ *  نشست یک بلیتِ ۶۰ثانیه‌ایِ یک‌بارمصرف گرفته می‌شود که فقط همین مسیر را باز
+ *  می‌کند، و مرورگر همان لحظه می‌رود.
+ */
+export async function openWithTicket(path: string) {
+  const r = await api<{ ticket: string }>('/api/auth/ticket', { body: { path } });
+  const sep = path.includes('?') ? '&' : '?';
+  window.location.assign(`${path}${sep}ticket=${encodeURIComponent(r.ticket)}`);
+}
+
+export function downloadPath(path: string) {
+  return `/api/files/download?path=${encodeURIComponent(path)}`;
+}
+
+/** رسانه‌ای که سرآیندِ نشست می‌خواهد ⇒ blob ِ محلی؛ صدا زننده `URL.revokeObjectURL` می‌کند. */
+export async function fetchBlobUrl(url: string, signal?: AbortSignal): Promise<string> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(url, { headers, signal });
+  if (res.status === 401) {
+    setToken(null);
+    onUnauthorized?.();
+    throw new ApiError(401, 'unauthorized');
+  }
+  if (!res.ok) throw new ApiError(res.status, 'request_failed');
+  return URL.createObjectURL(await res.blob());
 }
 
 export const logoUrl = () => `/api/settings/logo?v=${Date.now()}`;

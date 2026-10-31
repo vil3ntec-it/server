@@ -1,5 +1,5 @@
 // لایهٔ نازکی روی api() برای مسیرهای مرکز فرمان
-import { api, getToken } from '../api';
+import { api } from '../api';
 import type {
   Overview, Project, Server, Endpoint, Ip, Port, CcDomain, Route, Tunnel, CfAccount,
   Secret, Backup, Release, Monitor, Alert, AuditRow, ProbeResult, UpdateInfo, UpdateStatus,
@@ -126,8 +126,9 @@ export const cc = {
   previewRestore: (id: string, backupId: number) => api<{ validation: ValidationResult; preview: RestorePreview | null }>(`${CC}/storage/projects/${id}/backups/${backupId}/preview`, { body: {} }),
   restoreBackup: (id: string, backupId: number) => api<{ ok: true; safetyBackupId: number | null; files: unknown; data: unknown }>(`${CC}/storage/projects/${id}/backups/${backupId}/restore`, { body: { confirm: true } }),
   deleteBackup: (id: string, backupId: number) => api(`${CC}/storage/projects/${id}/backups/${backupId}`, { method: 'DELETE' }),
-  backupDownloadUrl: (id: string, backupId: number) =>
-    `${CC}/storage/projects/${id}/backups/${backupId}/download?token=${encodeURIComponent(getToken() || '')}`,
+  /** ⛔ بی توکن در نشانی — با `openWithTicket` باز شود (۶-۶) */
+  backupDownloadPath: (id: string, backupId: number) =>
+    `${CC}/storage/projects/${id}/backups/${backupId}/download`,
 
   releases: (id: string) => api<{ releases: Release[]; platforms: string[]; channels: string[]; dir: string; unregistered: { name: string; path: string; size: number }[] }>(`${CC}/storage/projects/${id}/releases`),
   addRelease: (id: string, body: Record<string, unknown>) => api<{ release: Release }>(`${CC}/storage/projects/${id}/releases`, { body }),
