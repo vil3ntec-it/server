@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Round icon button with a surface (pause / resume beside the record button). -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="@color/ripple_strong">
+    <item>
+        <selector>
+            <item android:state_focused="true">
+                <shape android:shape="oval">
+                    <solid android:color="@color/surface_3" />
+                    <stroke android:width="2dp" android:color="@color/focus" />
+                </shape>
+            </item>
+            <item>
+                <shape android:shape="oval">
+                    <solid android:color="@color/surface_3" />
+                    <stroke android:width="@dimen/hairline" android:color="@color/stroke_strong" />
+                </shape>
+            </item>
+        </selector>
+    </item>
+</ripple>

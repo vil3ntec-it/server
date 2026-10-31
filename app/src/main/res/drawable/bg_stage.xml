@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The record stage on the home screen; MainActivity lays a state-coloured glow over it. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/surface" />
+    <corners android:radius="@dimen/radius_xl" />
+    <stroke android:width="@dimen/hairline" android:color="@color/stroke" />
+</shape>

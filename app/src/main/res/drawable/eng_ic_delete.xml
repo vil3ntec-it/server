@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- RawRec icon set: 24 dp grid, 1.75 stroke, round caps/joins (engine copy, same style as design/icons.py) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M3.5,6.5L20.5,6.5M18.5,6.5l-0.85,12.6A2,2 0 0 1 15.66,21H8.34a2,2 0 0 1 -1.99,-1.9L5.5,6.5M9,6.5V4.75A1.75,1.75 0 0 1 10.75,3h2.5A1.75,1.75 0 0 1 15,4.75V6.5M10,11L10,16.5M14,11L14,16.5"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.75"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

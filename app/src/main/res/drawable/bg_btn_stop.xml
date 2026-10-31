@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="@color/ripple_dark">
+    <item>
+        <selector>
+            <item android:state_enabled="false">
+                <shape android:shape="rectangle">
+                    <solid android:color="@color/surface_2" />
+                    <corners android:radius="@dimen/radius_pill" />
+                </shape>
+            </item>
+            <item android:state_pressed="true">
+                <shape android:shape="rectangle">
+                    <solid android:color="@color/pressed_on_light" />
+                    <corners android:radius="@dimen/radius_pill" />
+                </shape>
+            </item>
+            <item android:state_focused="true">
+                <shape android:shape="rectangle">
+                    <solid android:color="@color/text_primary" />
+                    <corners android:radius="@dimen/radius_pill" />
+                    <stroke android:width="2dp" android:color="@color/focus" />
+                </shape>
+            </item>
+            <item>
+                <shape android:shape="rectangle">
+                    <solid android:color="@color/text_primary" />
+                    <corners android:radius="@dimen/radius_pill" />
+                    <stroke android:width="0dp" android:color="@color/transparent" />
+                </shape>
+            </item>
+        </selector>
+    </item>
+</ripple>

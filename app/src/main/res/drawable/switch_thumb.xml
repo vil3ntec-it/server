@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 20 dp knob; the 6 dp inset is reported as padding so the switch is 52 × 32 dp. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false">
+        <inset android:inset="6dp">
+            <shape android:shape="oval">
+                <solid android:color="@color/text_disabled" />
+                <size android:width="20dp" android:height="20dp" />
+            </shape>
+        </inset>
+    </item>
+    <item android:state_checked="true">
+        <inset android:inset="6dp">
+            <shape android:shape="oval">
+                <solid android:color="@color/on_accent" />
+                <size android:width="20dp" android:height="20dp" />
+            </shape>
+        </inset>
+    </item>
+    <item>
+        <inset android:inset="6dp">
+            <shape android:shape="oval">
+                <solid android:color="@color/text_secondary" />
+                <size android:width="20dp" android:height="20dp" />
+            </shape>
+        </inset>
+    </item>
+</selector>

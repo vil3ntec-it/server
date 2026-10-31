@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  RawRec 1.5 design system: theme, type scale, containers, chips, buttons.
+  Colours: values/colors.xml • sizes: values/dimens.xml • icons: drawable/ic_* (design/icons.py).
+-->
+<resources>
+
+    <style name="Theme.RawRec" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:colorPrimary">@color/surface</item>
+        <item name="android:colorPrimaryDark">@color/bg</item>
+        <item name="android:colorAccent">@color/sel</item>
+        <item name="android:colorControlHighlight">@color/ripple</item>
+        <item name="android:colorControlActivated">@color/sel</item>
+        <item name="android:colorControlNormal">@color/text_secondary</item>
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/surface</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:textColorHint">@color/text_tertiary</item>
+        <item name="android:textColorHighlight">@color/sel_soft</item>
+        <item name="android:switchStyle">@style/Widget.RawRec.Switch</item>
+        <item name="android:alertDialogTheme">@style/Theme.RawRec.Dialog</item>
+    </style>
+
+    <style name="Theme.RawRec.Dialog" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">@color/sel</item>
+        <item name="android:colorBackground">@color/surface_2</item>
+        <item name="android:colorControlHighlight">@color/ripple</item>
+        <item name="android:dialogCornerRadius">@dimen/radius_xl</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:textColorAlertDialogListItem">@color/text_primary</item>
+        <item name="android:backgroundDimAmount">0.7</item>
+    </style>
+
+    <style name="Widget.RawRec.Switch" parent="@android:style/Widget.Material.CompoundButton.Switch">
+        <item name="android:thumb">@drawable/switch_thumb</item>
+        <item name="android:track">@drawable/switch_track</item>
+        <item name="android:switchMinWidth">52dp</item>
+        <item name="android:switchPadding">0dp</item>
+        <!-- the platform cuts a gap in the track around the knob; this track is a plain pill -->
+        <item name="android:splitTrack">false</item>
+        <item name="android:showText">false</item>
+        <item name="android:background">@null</item>
+    </style>
+
+    <!-- ============================================================ type scale -->
+    <style name="Text">
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">@dimen/text_body</item>
+        <item name="android:lineSpacingMultiplier">1.15</item>
+        <!-- Every line starts at the reading start (right in Persian), even a Latin-only line. -->
+        <item name="android:textAlignment">viewStart</item>
+    </style>
+    <!-- Big numbers (timer, stats header). -->
+    <style name="Text.Display">
+        <item name="android:textSize">@dimen/text_display</item>
+        <item name="android:fontFamily">sans-serif-light</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+        <item name="android:lineSpacingMultiplier">1.0</item>
+    </style>
+    <!-- Page titles. -->
+    <style name="Text.Headline">
+        <item name="android:textSize">@dimen/text_headline</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:lineSpacingMultiplier">1.05</item>
+    </style>
+    <!-- Card titles. -->
+    <style name="Text.Title">
+        <item name="android:textSize">@dimen/text_title</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+    <style name="Text.SectionTitle" parent="Text.Title">
+        <item name="android:drawablePadding">@dimen/space_s</item>
+        <item name="android:drawableTint">@color/sel</item>
+        <item name="android:gravity">center_vertical</item>
+    </style>
+    <!-- Row titles, option names. -->
+    <style name="Text.Label">
+        <item name="android:textSize">@dimen/text_label</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+    <style name="Text.Body">
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+    <style name="Text.Caption">
+        <item name="android:textSize">@dimen/text_caption</item>
+        <item name="android:textColor">@color/text_tertiary</item>
+        <item name="android:lineSpacingMultiplier">1.2</item>
+    </style>
+    <!-- Small group heading above a card ("ضبط", "برنامه"). -->
+    <style name="Text.Overline">
+        <item name="android:textSize">@dimen/text_overline</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textColor">@color/text_tertiary</item>
+    </style>
+    <style name="Text.Stat">
+        <item name="android:textSize">@dimen/text_stat</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+        <item name="android:lineSpacingMultiplier">1.0</item>
+    </style>
+    <style name="Text.Timer">
+        <item name="android:textSize">@dimen/text_timer</item>
+        <item name="android:fontFamily">sans-serif-light</item>
+        <item name="android:fontFeatureSettings">tnum</item>
+        <item name="android:lineSpacingMultiplier">1.0</item>
+        <item name="android:textAlignment">center</item>
+        <item name="android:gravity">center</item>
+    </style>
+    <style name="Text.Nav">
+        <item name="android:textSize">@dimen/text_nav</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textColor">@color/nav_label</item>
+        <item name="android:textAlignment">center</item>
+        <item name="android:gravity">center</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+    </style>
+    <style name="Text.Mono">
+        <item name="android:textSize">@dimen/text_caption</item>
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:lineSpacingMultiplier">1.25</item>
+        <item name="android:textIsSelectable">true</item>
+    </style>
+    <style name="Badge">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@drawable/bg_badge</item>
+        <item name="android:backgroundTint">@color/surface_3</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingEnd">10dp</item>
+        <item name="android:paddingTop">4dp</item>
+        <item name="android:paddingBottom">4dp</item>
+        <item name="android:textSize">@dimen/text_overline</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:gravity">center</item>
+        <item name="android:drawablePadding">@dimen/space_xs</item>
+    </style>
+
+    <!-- ============================================================ containers -->
+    <style name="Card">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/space_m</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:background">@drawable/bg_card</item>
+        <item name="android:padding">@dimen/space_l</item>
+    </style>
+    <style name="Inset">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/space_m</item>
+        <item name="android:background">@drawable/bg_inset</item>
+        <item name="android:padding">@dimen/space_m</item>
+    </style>
+
+    <!-- ============================================================ chips (RadioButton without the circle) -->
+    <style name="Chip">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginEnd">@dimen/space_s</item>
+        <item name="android:minHeight">@dimen/chip_height</item>
+        <item name="android:minWidth">56dp</item>
+        <item name="android:button">@null</item>
+        <item name="android:background">@drawable/bg_chip</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:textColor">@color/chip_text</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:drawablePadding">6dp</item>
+        <item name="android:drawableTint">@color/chip_icon</item>
+        <item name="android:maxLines">1</item>
+        <!-- Built with defStyleAttr = 0, so the platform radio-button style (which makes it
+             clickable) is not applied: without these two lines taps do nothing (1.1 / 1.2.1 bug). -->
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+    <style name="Chip.Wide">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_marginEnd">0dp</item>
+        <item name="android:layout_marginBottom">@dimen/space_s</item>
+        <item name="android:background">@drawable/bg_chip_wide</item>
+        <item name="android:gravity">center_vertical|start</item>
+        <item name="android:textAlignment">viewStart</item>
+        <item name="android:minHeight">64dp</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">14dp</item>
+        <item name="android:paddingTop">12dp</item>
+        <item name="android:paddingBottom">12dp</item>
+        <item name="android:drawablePadding">14dp</item>
+        <item name="android:lineSpacingMultiplier">1.2</item>
+        <item name="android:maxLines">8</item>
+    </style>
+
+    <!-- ============================================================ buttons -->
+    <style name="Button" parent="@android:style/Widget.Material.Button.Borderless">
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">@dimen/text_button</item>
+        <item name="android:textColor">@color/btn_text</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:drawableTint">@color/btn_text</item>
+        <item name="android:drawablePadding">@dimen/space_s</item>
+        <item name="android:minHeight">@dimen/touch_min</item>
+        <item name="android:minWidth">@dimen/touch_min</item>
+        <item name="android:maxLines">2</item>
+    </style>
+    <!-- The one red action: start recording. -->
+    <style name="Button.Record">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">@dimen/record_button_height</item>
+        <item name="android:background">@drawable/bg_btn_record</item>
+        <item name="android:textColor">@color/btn_text_on_accent</item>
+        <item name="android:drawableTint">@color/btn_text_on_accent</item>
+        <item name="android:textSize">@dimen/text_button_large</item>
+        <item name="android:gravity">center</item>
+        <item name="android:paddingStart">28dp</item>
+        <item name="android:paddingEnd">32dp</item>
+        <item name="android:maxLines">1</item>
+    </style>
+    <style name="Button.Secondary">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">@dimen/button_height</item>
+        <item name="android:background">@drawable/bg_btn_secondary</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingEnd">20dp</item>
+        <item name="android:gravity">center</item>
+    </style>
+    <style name="Button.Tonal" parent="Button.Secondary">
+        <item name="android:background">@drawable/bg_btn_tonal</item>
+        <item name="android:textColor">@color/btn_text_tonal</item>
+        <item name="android:drawableTint">@color/btn_text_tonal</item>
+    </style>
+    <style name="Button.Small">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">@dimen/button_height</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">16dp</item>
+        <item name="android:background">@drawable/bg_btn_small</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:maxLines">1</item>
+    </style>
+</resources>

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Strings of the recording engine (service, overlay control, stop reasons). Persian is the default. -->
+<resources>
+    <!-- On-screen recording control -->
+    <string name="eng_ctl_header_fmt">زمانِ ضبط %1$s؛ بزن تا کوچک شود، بکش تا جابه‌جا شود</string>
+    <string name="eng_ctl_minimize">کوچک کردنِ دکمهٔ ضبط</string>
+    <string name="eng_ctl_expand">دکمهٔ ضبط؛ بزن تا دکمه‌ها باز شوند، بکش تا جابه‌جا شود</string>
+    <string name="eng_ctl_hide">پنهان کردنِ دکمهٔ ضبط</string>
+    <string name="eng_n_show_control">نمایشِ دکمه</string>
+    <string name="eng_toast_control_hidden">دکمهٔ ضبط پنهان شد. برای توقف از اعلان یا کاشیِ تنظیماتِ سریع استفاده کن؛ «نمایشِ دکمه» در اعلان آن را برمی‌گرداند.</string>
+
+    <!-- Notices while recording -->
+    <string name="eng_notice_recovered_fmt">انکودرِ ویدیو خطا داد و خودکار دوباره راه افتاد (%1$d بار)؛ ضبط ادامه دارد.</string>
+    <string name="eng_notice_write_recovered">نوشتنِ فایل یک بار خطا داد؛ بخشِ قبلی سالم بسته شد و ضبط در بخشِ تازه ادامه دارد.</string>
+    <string name="eng_notice_content_hidden">برنامه‌ای که ضبط می‌شود دیگر روی صفحه نیست؛ تا برگردد تصویرِ تازه‌ای ضبط نمی‌شود.</string>
+    <string name="eng_notice_resized_fmt">اندازهٔ صفحه عوض شد: ادامهٔ ضبط در بخشِ تازه با %1$s.</string>
+
+    <!-- «گزارشِ ضبط» -->
+    <string name="eng_rep_reason_fmt">چرا تمام شد: %1$s</string>
+    <string name="eng_rep_detail_fmt">جزئیاتِ فنی: %1$s</string>
+    <string name="eng_rep_part_fmt">بخشِ %1$d: %2$s</string>
+    <string name="eng_rep_recovered_fmt">انکودر %1$d بار خودکار بازیابی شد و ضبط ادامه یافت.</string>
+    <string name="eng_rep_saved_parts_fmt">بخش‌های سالمِ ذخیره‌شده: %1$d</string>
+    <string name="eng_part_size">فایلِ قبلی به ۳٫۵ گیگابایت رسید (بدونِ افتادنِ فریم ادامه یافت)</string>
+    <string name="eng_part_rotate">صفحه چرخید یا اندازه‌اش عوض شد</string>
+    <string name="eng_part_recover">پس از خطای انکودر یا نوشتنِ فایل</string>
+    <string name="eng_part_restart">شروعِ هوشمند: چند ثانیهٔ اولِ پیش از چرخشِ صفحه کنار گذاشته شد</string>
+
+    <!-- Why a recording ended -->
+    <string name="eng_reason_control">دکمهٔ توقفِ روی صفحه را زدی.</string>
+    <string name="eng_reason_app">دکمهٔ توقف در برنامهٔ RawRec را زدی.</string>
+    <string name="eng_reason_notification">دکمهٔ «پایان و ذخیره» در اعلان زده شد.</string>
+    <string name="eng_reason_tile">کاشیِ RawRec در تنظیماتِ سریع زده شد.</string>
+    <string name="eng_reason_shake">گوشی چند بار محکم تکان داده شد («تکان دادن = توقف» روشن است).</string>
+    <string name="eng_reason_test">ضبطِ آزمایشی تمام شد.</string>
+    <string name="eng_reason_deleted">ضبط با دکمهٔ حذف پاک شد.</string>
+    <string name="eng_reason_low_storage">حافظهٔ گوشی تقریباً پر شد؛ ضبط پیش از پر شدن، سالم بسته شد.</string>
+    <string name="eng_reason_screen_locked">صفحه خاموش یا قفل شد؛ اندروید هنگامِ قفل شدنِ گوشی، ضبطِ صفحه را خودش قطع می‌کند.</string>
+    <string name="eng_reason_projection">اندروید ضبطِ صفحه را قطع کرد: «توقفِ اشتراک‌گذاری» در نوارِ وضعیت زده شد، برنامهٔ دیگری ضبط یا پخش روی تلویزیون را شروع کرد، یا برنامه‌ای که ضبط می‌شد بسته شد.</string>
+    <string name="eng_reason_display">اندروید نمایشگرِ ضبط را متوقف کرد.</string>
+    <string name="eng_reason_encoder">انکودرِ ویدیوی گوشی از کار افتاد و دوباره راه نیفتاد (معمولاً وقتی بازی یا دوربین آن را می‌گیرد).</string>
+    <string name="eng_reason_write">نوشتنِ فایلِ ویدیو در حافظه ممکن نشد.</string>
+    <string name="eng_reason_start">شروعِ ضبط ممکن نشد.</string>
+    <string name="eng_reason_service">اندروید سرویسِ ضبط را بست؛ فایل سالم بسته شد.</string>
+    <string name="eng_reason_crash">برنامه به خطا خورد؛ ویدیو پیش از بسته شدنِ برنامه ذخیره شد.</string>
+    <string name="eng_reason_killed">ضبط ناگهان قطع شد: اندروید برنامه را بست (کمبودِ حافظه یا «توقف» در فهرستِ برنامه‌های فعال). بخشی که در حالِ ضبط بود قابلِ ذخیره نبود.</string>
+</resources>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Navigation rail (tablets, landscape): raised surface with a hairline on its end side. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><color android:color="@color/stroke" /></item>
+    <item android:end="@dimen/hairline"><color android:color="@color/surface" /></item>
+</layer-list>

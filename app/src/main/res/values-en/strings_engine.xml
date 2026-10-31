@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- On-screen recording control -->
+    <string name="eng_ctl_header_fmt">Recording time %1$s; tap to minimize, drag to move</string>
+    <string name="eng_ctl_minimize">Minimize the recording control</string>
+    <string name="eng_ctl_expand">Recording control; tap to show the buttons, drag to move</string>
+    <string name="eng_ctl_hide">Hide the recording control</string>
+    <string name="eng_n_show_control">Show control</string>
+    <string name="eng_toast_control_hidden">Recording control hidden. Stop from the notification or the Quick Settings tile; “Show control” in the notification brings it back.</string>
+
+    <!-- Notices while recording -->
+    <string name="eng_notice_recovered_fmt">The video encoder failed and was restarted automatically (%1$d×); recording continues.</string>
+    <string name="eng_notice_write_recovered">Writing the file failed once; the part so far was closed cleanly and recording continues in a new part.</string>
+    <string name="eng_notice_content_hidden">The recorded app is no longer on screen; nothing new is captured until it comes back.</string>
+    <string name="eng_notice_resized_fmt">The screen size changed: recording continues in a new part at %1$s.</string>
+
+    <!-- Recording report -->
+    <string name="eng_rep_reason_fmt">Why it ended: %1$s</string>
+    <string name="eng_rep_detail_fmt">Technical detail: %1$s</string>
+    <string name="eng_rep_part_fmt">Part %1$d: %2$s</string>
+    <string name="eng_rep_recovered_fmt">The encoder was recovered automatically %1$d× and recording went on.</string>
+    <string name="eng_rep_saved_parts_fmt">Parts saved intact: %1$d</string>
+    <string name="eng_part_size">the previous file reached 3.5 GB (continued without losing frames)</string>
+    <string name="eng_part_rotate">the screen rotated or changed size</string>
+    <string name="eng_part_recover">after an encoder or file-write error</string>
+    <string name="eng_part_restart">smart start: the first seconds before the rotation were dropped</string>
+
+    <!-- Why a recording ended -->
+    <string name="eng_reason_control">You tapped stop on the on-screen control.</string>
+    <string name="eng_reason_app">You tapped stop in the RawRec app.</string>
+    <string name="eng_reason_notification">“Stop &amp; save” was tapped in the notification.</string>
+    <string name="eng_reason_tile">The RawRec Quick Settings tile was tapped.</string>
+    <string name="eng_reason_shake">The phone was shaken hard several times (shake-to-stop is on).</string>
+    <string name="eng_reason_test">The test recording finished.</string>
+    <string name="eng_reason_deleted">The recording was deleted with the delete button.</string>
+    <string name="eng_reason_low_storage">Phone storage was almost full; the recording was closed cleanly before it filled up.</string>
+    <string name="eng_reason_screen_locked">The screen turned off or locked; Android stops screen capture when the phone locks.</string>
+    <string name="eng_reason_projection">Android ended the screen capture: “Stop sharing” was tapped in the status bar, another app started recording or casting, or the recorded app was closed.</string>
+    <string name="eng_reason_display">Android stopped the capture display.</string>
+    <string name="eng_reason_encoder">The phone’s video encoder failed and could not be restarted (usually when a game or the camera takes it over).</string>
+    <string name="eng_reason_write">The video file could not be written to storage.</string>
+    <string name="eng_reason_start">The recording could not start.</string>
+    <string name="eng_reason_service">Android closed the recording service; the file was closed cleanly.</string>
+    <string name="eng_reason_crash">The app hit an error; the video was saved before the app closed.</string>
+    <string name="eng_reason_killed">The recording was cut off: Android closed the app (low memory, or “Stop” in the active-apps list). The part being recorded could not be saved.</string>
+</resources>

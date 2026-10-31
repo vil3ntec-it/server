@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icon tile at the start of a row: blue-tinted while the row is on (activated). -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_activated="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/sel_soft" />
+            <corners android:radius="@dimen/radius_s" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/surface_2" />
+            <corners android:radius="@dimen/radius_s" />
+        </shape>
+    </item>
+</selector>

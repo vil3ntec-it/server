@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- RawRec 1.5: 4 dp spacing grid, one radius scale, one type scale. -->
+<resources>
+    <!-- spacing -->
+    <dimen name="space_xxs">2dp</dimen>
+    <dimen name="space_xs">4dp</dimen>
+    <dimen name="space_s">8dp</dimen>
+    <dimen name="space_m">12dp</dimen>
+    <dimen name="space_l">16dp</dimen>
+    <dimen name="space_xl">24dp</dimen>
+    <dimen name="space_xxl">32dp</dimen>
+
+    <!-- radii -->
+    <dimen name="radius_xs">8dp</dimen>
+    <dimen name="radius_s">12dp</dimen>
+    <dimen name="radius_m">16dp</dimen>
+    <dimen name="radius_card">20dp</dimen>
+    <dimen name="radius_xl">28dp</dimen>
+    <dimen name="radius_pill">100dp</dimen>
+    <!-- old names kept for anything that still refers to them -->
+    <dimen name="radius_chip">16dp</dimen>
+    <dimen name="radius_button">100dp</dimen>
+
+    <!-- type scale -->
+    <dimen name="text_display">34sp</dimen>
+    <dimen name="text_headline">26sp</dimen>
+    <dimen name="text_title">18sp</dimen>
+    <dimen name="text_label">15sp</dimen>
+    <dimen name="text_body">14sp</dimen>
+    <dimen name="text_caption">12.5sp</dimen>
+    <dimen name="text_overline">12sp</dimen>
+    <dimen name="text_nav">12sp</dimen>
+    <dimen name="text_stat">20sp</dimen>
+    <dimen name="text_timer">34sp</dimen>
+    <dimen name="text_button">15sp</dimen>
+    <dimen name="text_button_large">17sp</dimen>
+    <dimen name="text_subpage_title">22sp</dimen>
+    <dimen name="text_small">13sp</dimen>
+    <dimen name="text_micro">11.5sp</dimen>
+
+    <!-- sizes -->
+    <dimen name="touch_min">48dp</dimen>
+    <dimen name="chip_height">48dp</dimen>
+    <dimen name="chip_visual_inset">4dp</dimen>
+    <dimen name="button_height">48dp</dimen>
+    <dimen name="record_button_height">56dp</dimen>
+    <dimen name="icon_s">18dp</dimen>
+    <dimen name="icon_m">20dp</dimen>
+    <dimen name="icon_l">24dp</dimen>
+    <dimen name="icon_tile">40dp</dimen>
+    <dimen name="nav_bar_height">72dp</dimen>
+    <dimen name="nav_rail_width">88dp</dimen>
+    <dimen name="nav_indicator_width">56dp</dimen>
+    <dimen name="nav_indicator_height">32dp</dimen>
+    <dimen name="hairline">1dp</dimen>
+    <dimen name="content_max_width">720dp</dimen>
+</resources>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pill chip: 40 dp to the eye inside a 48 dp touch target. Selected = blue tint + blue outline. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetTop="@dimen/chip_visual_inset"
+    android:insetBottom="@dimen/chip_visual_inset">
+    <ripple android:color="@color/ripple">
+        <item>
+            <selector>
+                <item android:state_enabled="false">
+                    <shape android:shape="rectangle">
+                        <corners android:radius="@dimen/radius_pill" />
+                        <stroke android:width="@dimen/hairline" android:color="@color/stroke" android:dashWidth="4dp" android:dashGap="3dp" />
+                    </shape>
+                </item>
+                <item android:state_checked="true" android:state_focused="true">
+                    <shape android:shape="rectangle">
+                        <solid android:color="@color/sel_soft" />
+                        <corners android:radius="@dimen/radius_pill" />
+                        <stroke android:width="2dp" android:color="@color/text_primary" />
+                    </shape>
+                </item>
+                <item android:state_checked="true">
+                    <shape android:shape="rectangle">
+                        <solid android:color="@color/sel_soft" />
+                        <corners android:radius="@dimen/radius_pill" />
+                        <stroke android:width="1.5dp" android:color="@color/sel" />
+                    </shape>
+                </item>
+                <item android:state_focused="true">
+                    <shape android:shape="rectangle">
+                        <solid android:color="@color/surface_2" />
+                        <corners android:radius="@dimen/radius_pill" />
+                        <stroke android:width="2dp" android:color="@color/focus" />
+                    </shape>
+                </item>
+                <item>
+                    <shape android:shape="rectangle">
+                        <solid android:color="@color/surface_2" />
+                        <corners android:radius="@dimen/radius_pill" />
+                        <stroke android:width="@dimen/hairline" android:color="@color/stroke" />
+                    </shape>
+                </item>
+            </selector>
+        </item>
+    </ripple>
+</inset>

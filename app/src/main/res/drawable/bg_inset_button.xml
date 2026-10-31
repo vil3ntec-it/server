@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A tappable inset strip (the plan line under the record button). -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="@color/ripple">
+    <item>
+        <selector>
+            <item android:state_focused="true">
+                <shape android:shape="rectangle">
+                    <solid android:color="@color/surface_2" />
+                    <corners android:radius="@dimen/radius_m" />
+                    <stroke android:width="2dp" android:color="@color/focus" />
+                </shape>
+            </item>
+            <item>
+                <shape android:shape="rectangle">
+                    <solid android:color="@color/surface_2" />
+                    <corners android:radius="@dimen/radius_m" />
+                </shape>
+            </item>
+        </selector>
+    </item>
+</ripple>

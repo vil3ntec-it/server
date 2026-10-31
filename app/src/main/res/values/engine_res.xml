@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Colours and sizes of the recording overlays (dark translucent glass, white icons, red record dot). -->
+<resources>
+    <color name="eng_glass">#CC111317</color>
+    <color name="eng_glass_stroke">#2EFFFFFF</color>
+    <color name="eng_btn">#1FFFFFFF</color>
+    <color name="eng_btn_ripple">#4DFFFFFF</color>
+    <color name="eng_icon">#FFFFFFFF</color>
+    <color name="eng_rec_red">#FFFF453A</color>
+    <color name="eng_stop_fill">#E6E5383B</color>
+    <color name="eng_paused">#FFFFB340</color>
+    <color name="eng_armed">#FFE5383B</color>
+
+    <dimen name="eng_ctl_radius">22dp</dimen>
+    <dimen name="eng_ctl_button">48dp</dimen>
+    <dimen name="eng_ctl_icon">22dp</dimen>
+    <dimen name="eng_ctl_header">36dp</dimen>
+    <dimen name="eng_ctl_dot">44dp</dimen>
+    <dimen name="eng_ctl_rec_dot">9dp</dimen>
+    <dimen name="eng_ctl_pad">6dp</dimen>
+    <dimen name="eng_ctl_gap">4dp</dimen>
+</resources>

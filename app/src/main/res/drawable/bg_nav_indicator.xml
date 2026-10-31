@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The pill behind the selected destination's icon (bottom bar and rail). -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android" android:enterFadeDuration="150" android:exitFadeDuration="150">
+    <item android:state_selected="true">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/sel_soft" />
+            <corners android:radius="@dimen/radius_m" />
+        </shape>
+    </item>
+    <item android:drawable="@color/transparent" />
+</selector>

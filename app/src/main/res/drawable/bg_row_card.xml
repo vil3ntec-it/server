@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A card that is itself tappable (video rows). -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="@color/ripple">
+    <item>
+        <selector>
+            <item android:state_focused="true">
+                <shape android:shape="rectangle">
+                    <solid android:color="@color/surface" />
+                    <corners android:radius="@dimen/radius_card" />
+                    <stroke android:width="2dp" android:color="@color/focus" />
+                </shape>
+            </item>
+            <item>
+                <shape android:shape="rectangle">
+                    <solid android:color="@color/surface" />
+                    <corners android:radius="@dimen/radius_card" />
+                    <stroke android:width="@dimen/hairline" android:color="@color/stroke" />
+                </shape>
+            </item>
+        </selector>
+    </item>
+</ripple>

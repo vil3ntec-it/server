@@ -1,0 +1,386 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">RawRec</string>
+    <string name="version_fmt">نسخهٔ %1$s</string>
+    <string name="tagline">ضبطِ صفحه با کیفیتِ اصلی، مستقیم از انکودرِ سخت‌افزاری — بدونِ فشرده‌سازیِ دوباره</string>
+
+    <!-- record card -->
+    <string name="state_idle">آماده</string>
+    <string name="state_preparing">در حال آماده‌سازی…</string>
+    <string name="state_countdown_fmt">شروع تا %1$d ثانیهٔ دیگر…</string>
+    <string name="state_recording">در حال ضبط</string>
+    <string name="state_paused">مکث</string>
+    <string name="state_saving">در حال ذخیرهٔ فایل…</string>
+    <string name="idle_detail_fmt">با این تنظیمات ضبط می‌شود:\n%1$s</string>
+    <string name="applied_header">تنظیماتِ اعمال‌شده:</string>
+    <string name="btn_start">شروعِ ضبط</string>
+    <string name="btn_cancel">لغو</string>
+    <string name="btn_stop">توقف و ذخیره</string>
+    <string name="btn_wait">صبر کن…</string>
+    <string name="btn_pause">توقفِ موقت</string>
+    <string name="btn_resume">ادامهٔ ضبط</string>
+    <string name="btn_test">ضبطِ آزمایشیِ ۱۰ ثانیه</string>
+
+    <!-- last recording -->
+    <string name="action_open">باز کردن</string>
+    <string name="action_share">اشتراک</string>
+    <string name="action_copy_report">کپیِ گزارش</string>
+    <string name="action_report">گزارش</string>
+    <string name="report_title">گزارشِ ضبط</string>
+    <string name="dialog_copy">کپی</string>
+    <string name="dialog_open">باز کردنِ ویدیو</string>
+    <string name="dialog_close">بستن</string>
+    <string name="share_title">اشتراکِ ویدیو</string>
+
+    <!-- quality / presets -->
+    <string name="card_quality">کیفیت</string>
+    <string name="preset_title">حالتِ کیفیت</string>
+    <string name="preset_desc">فریم‌ریت و رزولوشنِ بیشتر یعنی فایلِ بزرگ‌تر؛ عددِ واقعی پس از هر ضبط در «گزارشِ ضبط» می‌آید. هر گزینه‌ای را پایین‌تر عوض کنی، حالت «سفارشی» می‌شود.</string>
+    <string name="preset_screen">مثلِ صفحه (حداکثر)</string>
+    <string name="preset_screen_desc">رزولوشنِ اصلی با بیشترین فریم‌ریتی که انکودرِ گوشی پشتیبانی می‌کند.</string>
+    <string name="preset_60">۶۰ فریم</string>
+    <string name="preset_60_desc">رزولوشنِ اصلی، ۶۰ فریم؛ حجمِ معقول، مناسبِ یوتیوب.</string>
+    <string name="preset_light">سبک</string>
+    <string name="preset_light_desc">رزولوشنِ اصلی، ۳۰ فریم و بیت‌ریتِ کمتر؛ کم‌حجم‌ترین.</string>
+    <string name="preset_custom">سفارشی</string>
+    <string name="preset_custom_desc">همه‌چیز را خودت پایین‌تر انتخاب می‌کنی.</string>
+    <string name="alt_button_fmt">به‌جایش: %1$s با %2$s</string>
+
+    <!-- video -->
+    <string name="card_video">تصویر</string>
+    <string name="orient_title">جهت</string>
+    <string name="orient_desc">«خودکار»: همان جهتِ صفحه؛ اگر وسطِ ضبط گوشی بچرخد، ضبط بدونِ کشیدگی در بخشِ تازه ادامه می‌یابد. عمودی/افقی: جهتِ ثابت، جهتِ دیگر با نوارِ سیاه.</string>
+    <string name="orient_auto">خودکار</string>
+    <string name="orient_portrait">عمودی</string>
+    <string name="orient_landscape">افقی</string>
+    <string name="res_title">رزولوشن</string>
+    <string name="res_desc_fmt">«اصلی» = دقیقاً همان چیزی که روی صفحه می‌بینی (%1$s). بالاتر از صفحه (مثلاً 4K) ضبط نمی‌شود، چون فقط حجم را زیاد می‌کند و جزئیاتی اضافه نمی‌کند.</string>
+    <string name="res_native">اصلی</string>
+    <string name="fps_title">فریم‌ریت</string>
+    <string name="fps_desc">تعدادِ تصویر در ثانیه. «صفحه» = بیشترین نرخِ نوسازیِ نمایشگر؛ اگر انکودر نتواند، پایین‌تر و اعلام می‌شود.</string>
+    <string name="fps_screen_fmt">صفحه (%1$s)</string>
+    <string name="codec_title">کدک</string>
+    <string name="codec_desc">«خودکار» به این ترتیب انتخاب می‌کند: اول AV1 سخت‌افزاری (اگر باشد)، بعد HEVC، بعد H.264. AV1 و HEVC در حجمِ برابر کیفیتِ خیلی بهتری دارند؛ H.264 با ویرایشگرهای قدیمی سازگارتر است.</string>
+    <string name="codec_auto">خودکار</string>
+    <string name="codec_av1_missing">AV1 (ندارد)</string>
+    <string name="br_title">بیت‌ریت (میانگین)</string>
+    <string name="br_desc">خودکار بر اساسِ رزولوشن × فریم‌ریت حساب می‌شود؛ در حرکتِ سریع تا ۲ برابر اوج می‌گیرد تا پیکسلی نشود.</string>
+    <string name="br_auto_high">خودکار (بالا)</string>
+    <string name="br_auto_light">خودکار (سبک)</string>
+    <string name="br_auto_max">خودکار (بی‌افت)</string>
+    <string name="mode_title">حالتِ بیت‌ریت</string>
+    <string name="mode_desc">VBR (پیشنهادی): صفحهٔ ساکن تقریباً حجمی نمی‌گیرد. CBR: همیشه ثابت و حجیم. CQ: کیفیتِ ثابت ولی حجمِ نامعلوم و معمولاً خیلی زیاد.</string>
+    <string name="mode_cq_missing">CQ (این گوشی ندارد)</string>
+
+    <!-- audio -->
+    <string name="audio_title">منبعِ صدا</string>
+    <string name="audio_desc">صدای داخلی فقط از بازی‌هایی ضبط می‌شود که اجازه داده‌اند. کیفیت: 48 kHz استریو، AAC 320 kbps.</string>
+    <string name="audio_none">بی‌صدا</string>
+    <string name="audio_internal">صدای بازی</string>
+    <string name="audio_mic">میکروفون</string>
+    <string name="audio_both">بازی + میکروفون</string>
+    <string name="gg_title">بلندیِ صدای بازی</string>
+    <string name="gg_desc">۱۰۰٪ یعنی بدونِ تغییر.</string>
+    <string name="mg_title">بلندیِ میکروفون</string>
+    <string name="mg_desc">اگر صدایت ضعیف است بیشترش کن.</string>
+
+    <!-- control & overlays -->
+    <string name="float_title">دکمهٔ ضبط روی صفحه</string>
+    <string name="float_desc">پنلِ کوچکِ پیدا با توقف، مکث، میکروفون، فیس‌کم، حذف و پنهان؛ با کشیدن به لبه می‌چسبد و با یک لمس به نقطه جمع می‌شود.</string>
+    <string name="invis_title">شروع به شکلِ نقطهٔ کوچک</string>
+    <string name="invis_desc">با شروعِ ضبط، دکمه به یک نقطهٔ کوچکِ پیدا در لبه جمع می‌شود؛ با لمس باز می‌شود. هیچ دکمهٔ نامرئی‌ای در کار نیست.</string>
+    <string name="shake_title">تکان دادن = توقف</string>
+    <string name="shake_desc">چند تکانِ محکم و عمدیِ رفت‌وبرگشتی پشتِ‌سرِهم ضبط را تمام می‌کند؛ راه رفتن، ضربه یا بازیِ پرتحرک آن را قطع نمی‌کند.</string>
+    <string name="cd_title">شمارشِ معکوس</string>
+    <string name="cd_desc">فرصت برای رفتن به بازی پیش از شروع.</string>
+    <string name="cd_none">ندارد</string>
+    <string name="cd_sec_fmt">%1$d ثانیه</string>
+    <string name="cam_title">فیس‌کم</string>
+    <string name="cam_desc">حبابِ دوربینِ جلو؛ چون روی صفحه است داخلِ ویدیو می‌آید.</string>
+    <string name="cam_s">کوچک</string>
+    <string name="cam_m">متوسط</string>
+    <string name="cam_l">بزرگ</string>
+    <string name="off">خاموش</string>
+    <string name="on">روشن</string>
+    <string name="control_note">توقف از نوارِ اعلان و کاشیِ RawRec در تنظیماتِ سریع هم همیشه کار می‌کند؛ اگر دکمه را پنهان کرده‌ای، «نمایشِ دکمه» در اعلان برش می‌گرداند.</string>
+    <string name="control_note_34">اندروید ۱۴ به بعد: اگر در پنجرهٔ سیستم «یک برنامه» را انتخاب کنی، هیچ دکمه یا لایه‌ای داخلِ ویدیو نمی‌آید (فقط همان برنامه ضبط می‌شود).</string>
+    <string name="cd_hint">دکمهٔ ضبط کنارِ صفحه است: بزن تا باز شود، بکش تا جابه‌جا شود، «پنهان» برش می‌دارد.</string>
+
+    <!-- permissions -->
+    <string name="perms_desc">هر مجوز فقط برای کاری که کنارش نوشته لازم است. اجازهٔ ضبطِ صفحه هر بار جدا پرسیده می‌شود.</string>
+    <string name="perm_notif">اعلان‌ها</string>
+    <string name="perm_notif_desc">برای دکمهٔ توقف در نوارِ اعلان و خبرِ ذخیرهٔ فایل.</string>
+    <string name="perm_mic">میکروفون</string>
+    <string name="perm_mic_desc">برای هر نوع صدا لازم است — حتی صدای داخلیِ بازی (قانونِ اندروید).</string>
+    <string name="perm_cam">دوربین</string>
+    <string name="perm_cam_desc">فقط برای فیس‌کم.</string>
+    <string name="perm_overlay">نمایش روی برنامه‌های دیگر</string>
+    <string name="perm_overlay_desc">برای دکمهٔ توقفِ روی صفحه، فیس‌کم و شمارشِ معکوس.</string>
+    <string name="perm_needed_fmt">لازم برای تنظیماتِ فعلی • %1$s</string>
+    <string name="perm_ok">فعال</string>
+    <string name="perm_fix">اجازه بده</string>
+    <string name="perm_denied_settings">این مجوز قبلاً رد شده؛ از صفحهٔ تنظیماتِ برنامه روشنش کن.</string>
+
+    <!-- device -->
+    <string name="card_device">توانِ این گوشی</string>
+    <string name="dev_display_fmt">نمایشگر (همین الان): %1$s • تا %2$s هرتز • %3$s dpi</string>
+    <string name="dev_below_panel_fmt">⚠ پنل %1$s است ولی سیستم با %2$s رسم می‌کند؛ برای ضبطِ %1$s، رزولوشنِ صفحه را در تنظیماتِ گوشی بالا ببر. (بزرگ‌کردنِ تصویر کیفیتی اضافه نمی‌کند، پس انجام نمی‌شود.)</string>
+    <string name="dev_modes_fmt">حالت‌های نمایشگر: %1$s</string>
+    <string name="dev_encoders_title">انکودرهای سخت‌افزاری (اعلام‌شده توسطِ گوشی، در اندازهٔ صفحه):</string>
+    <string name="dev_encoder_fmt">• انکودرِ %1$s: %2$s — در %3$s تا %4$s • بیت‌ریت تا %5$s • CQ: %6$s</string>
+    <string name="dev_scaled">(کوچک‌شده)</string>
+    <string name="dev_none">هیچ انکودرِ سخت‌افزاری پیدا نشد.</string>
+    <string name="dev_claims_note">این‌ها ادعای گوشی است؛ عددِ واقعی را «ضبطِ آزمایشیِ ۱۰ ثانیه» نشان می‌دهد.</string>
+    <string name="dev_refresh_note">دکمهٔ روی صفحه از سیستم بیشترین نرخِ نوسازی را می‌خواهد؛ فقط وقتی آن دکمه روشن است اثر دارد.</string>
+    <string name="yes">دارد</string>
+    <string name="no">ندارد</string>
+    <string name="footer">فایل‌ها در Movies/RawRec ذخیره می‌شوند. ضبط‌های طولانی در بخش‌های حدودِ ۳٫۵ گیگ (به ترتیب) ذخیره می‌شوند. اگر بازی‌ای صفحه‌اش را امن (Secure) کرده باشد، هیچ برنامه‌ای نمی‌تواند تصویرش را ضبط کند.</string>
+
+    <!-- plan summary -->
+    <string name="plan_applies_fmt">اعمال می‌شود: %1$s</string>
+    <string name="plan_vbr_fmt">حجم: به‌طورِ میانگین حدودِ %1$s در دقیقه (۳۰ دقیقه ≈ %2$s)؛ صفحهٔ ساکن خیلی کمتر، حرکتِ خیلی سریع تا ۲ برابر.</string>
+    <string name="plan_cbr_fmt">حجم: ثابت، حدودِ %1$s در دقیقه (۳۰ دقیقه ≈ %2$s).</string>
+    <string name="plan_cq_fmt">حجم: در حالتِ CQ نامعلوم؛ سقف حدودِ %1$s در دقیقه.</string>
+    <string name="plan_free_fmt">فضای خالی: %1$s • حدوداً %2$d دقیقه جا دارید</string>
+    <string name="plan_report_note">عددِ واقعی پس از هر ضبط در «گزارشِ ضبط» نشان داده می‌شود.</string>
+    <string name="plan_max_warn_fmt">⚠ بیت‌ریتِ «بی‌افت» خیلی حجیم است: حدودِ %1$s در دقیقه و فقط حدودِ %2$d دقیقه جا دارید.</string>
+    <string name="no_encoder">⚠ هیچ انکودرِ ویدیویی روی این گوشی پیدا نشد.</string>
+
+    <!-- notes about the plan -->
+    <string name="note_software">⚠ انکودرِ سخت‌افزاری پیدا نشد؛ انکودرِ نرم‌افزاری کند است و ممکن است فریم بیفتد.</string>
+    <string name="note_codec_fallback_fmt">کدکِ انتخابی روی این گوشی نیست؛ %1$s استفاده می‌شود.</string>
+    <string name="note_scaled_fmt">⚠ انکودر اندازهٔ کامل را نمی‌پذیرد؛ تصویر به %1$s کوچک می‌شود.</string>
+    <string name="note_padded_fmt">تصویر کوچک نمی‌شود؛ فقط %1$s پیکسل حاشیهٔ سیاه برای هم‌ترازیِ انکودر اضافه می‌شود.</string>
+    <string name="note_fps_capped_fmt">صفحه %1$s هرتز است، ولی بهترین انکودرِ سخت‌افزاری در %2$s طبقِ اعلامِ خودِ گوشی تا %3$s را پشتیبانی می‌کند؛ همین اعمال می‌شود تا فریم نیفتد.</string>
+    <string name="note_fps_alt_fmt">راهِ دیگر: %1$s با %2$s (رزولوشنِ کمتر، فریم‌ریتِ کامل).</string>
+    <string name="note_br_capped_fmt">بیت‌ریت به سقفِ انکودر (%1$s) محدود شد.</string>
+    <string name="note_mode_fallback_fmt">حالتِ %1$s روی این انکودر نیست؛ %2$s اعمال می‌شود.</string>
+
+    <!-- applied settings -->
+    <string name="ap_encoder_fmt">انکودر: %1$s (%2$s)</string>
+    <string name="hw">سخت‌افزاری</string>
+    <string name="sw">نرم‌افزاری</string>
+    <string name="auto">خودکار</string>
+    <string name="ap_codec_fmt">کدک: %1$s • پروفایل %2$s • سطح %3$s</string>
+    <string name="ap_size_fmt">تصویر: %1$s</string>
+    <string name="ap_content_fmt">" (محتوا %1$s)"</string>
+    <string name="ap_scaled">" (کوچک‌شده)"</string>
+    <string name="ap_fps_fmt">فریم‌ریت: %1$s</string>
+    <string name="ap_fps_screen_fmt">" (صفحه %1$s)"</string>
+    <string name="ap_bitrate_fmt">بیت‌ریت: %1$s</string>
+    <string name="ap_mode_default">" (انکودر حالت را نپذیرفت؛ پیش‌فرضِ خودش)"</string>
+    <string name="ap_peak_fmt">" • اوج تا %1$s"</string>
+    <string name="ap_qp_fmt">" • کفِ کیفیت QP≤%1$s"</string>
+    <string name="ap_color">رنگ: BT.709، محدودهٔ استاندارد</string>
+    <string name="ap_color_default">رنگ: پیش‌فرضِ انکودر</string>
+    <string name="ap_audio_fmt">صدا: %1$s</string>
+    <string name="ap_dropped_fmt">تنظیم‌های اختیاریِ ردشده توسطِ انکودر: %1$s</string>
+    <string name="audio_failed_fmt">%1$s — ضبط نشد</string>
+    <string name="audio_ok_fmt">%1$s • 48 kHz استریو • AAC %2$s kbps</string>
+
+    <!-- report -->
+    <string name="rep_title_fmt">گزارشِ ضبط — RawRec %1$s</string>
+    <string name="rep_time_fmt">زمان: %1$s</string>
+    <string name="rep_measured">— اندازه‌گیری‌شده از خودِ فایل —</string>
+    <string name="rep_fps_fmt">فریم‌ریت: تنظیم %1$s • میانگینِ واقعی %2$s • بیشینه %3$s</string>
+    <string name="rep_frames_fmt">فریم‌ها: %1$s ثبت‌شده از حدودِ %2$s (%3$s کمتر)</string>
+    <string name="rep_gaps_fmt">وقفه‌های بلند (بیش از ۲٫۵ فریم): %1$s • بیشترین فاصله: %2$s ms</string>
+    <string name="rep_br_fmt">بیت‌ریتِ واقعیِ تصویر: %1$s (هدف %2$s)</string>
+    <string name="rep_permin_fmt">حجم در دقیقه (واقعی): %1$s • ۳۰ دقیقه ≈ %2$s</string>
+    <string name="rep_dur_fmt">مدت: %1$s • حجم: %2$s • بخش‌ها: %3$s</string>
+    <string name="rep_rot_fmt">" (%1$s بار چرخشِ صفحه)"</string>
+    <string name="rep_keys_fmt">فریم‌های کلیدی: %1$s • انتظارِ نوشتن: %2$s ms</string>
+    <string name="rep_error_fmt">خطا: %1$s</string>
+    <string name="rep_hint">راهنما: «کمتر» روی صفحهٔ ساکن یا بازیِ کم‌فریم طبیعی است؛ «وقفهٔ بلند» یعنی افتادنِ واقعیِ فریم.</string>
+
+    <!-- toasts and notices -->
+    <string name="toast_saving">فایل در حال ذخیره است؛ چند لحظه صبر کن.</string>
+    <string name="toast_already">یک ضبط در جریان است؛ اول آن را تمام کن.</string>
+    <string name="toast_no_encoder">انکودرِ مناسبی روی این گوشی نیست.</string>
+    <string name="toast_low_storage">حافظهٔ گوشی تقریباً پر است؛ اول کمی جا باز کن.</string>
+    <string name="toast_overlay_go">اجازهٔ «نمایش روی برنامه‌های دیگر» را روشن کن و برگرد؛ ضبط خودش ادامه پیدا می‌کند.</string>
+    <string name="toast_overlay_denied">اجازهٔ «نمایش روی برنامه‌های دیگر» داده نشد؛ دکمهٔ روی صفحه و فیس‌کم را خاموش کن یا اجازه بده.</string>
+    <string name="toast_mic_silent">بدونِ مجوزِ میکروفون، ویدیو بی‌صدا ضبط می‌شود.</string>
+    <string name="toast_capture_denied">اجازهٔ ضبطِ صفحه داده نشد.</string>
+    <string name="toast_open_failed">فایل باز نشد؛ شاید پاک شده باشد.</string>
+    <string name="toast_share_failed">اشتراک ممکن نشد.</string>
+    <string name="toast_copied">گزارش کپی شد.</string>
+    <string name="err_no_projection">مجوزِ ضبطِ صفحه دریافت نشد.</string>
+    <string name="err_start_fmt">شروعِ ضبط ناموفق بود: %1$s</string>
+    <string name="low_space_stop">حافظهٔ گوشی تقریباً پر شد؛ ضبط متوقف و فایل سالم ذخیره شد.</string>
+    <string name="low_space_warn_fmt">حافظه کم است: حدوداً %1$d دقیقهٔ دیگر جا هست؛ پیش از پر شدن، ضبط خودش سالم تمام می‌شود.</string>
+    <string name="notice_audio_fmt">صدا ضبط نشد (%1$s)؛ ضبطِ تصویر ادامه دارد.</string>
+    <string name="notice_rotate_fail_fmt">چرخشِ صفحه دنبال نشد (%1$s).</string>
+    <string name="notice_rotated_fmt">صفحه چرخید: ادامهٔ ضبط در بخشِ تازه با %1$s (بدونِ کشیدگی یا کوچک‌شدن).</string>
+    <string name="notice_split_fmt">فایل به ۳٫۵ گیگ رسید؛ بخشِ %1$d شروع شد.</string>
+
+    <!-- notifications -->
+    <string name="ch_rec">در حال ضبط</string>
+    <string name="ch_done">ضبط تمام شد</string>
+    <string name="n_preparing">RawRec آماده می‌شود</string>
+    <string name="n_recording">RawRec در حال ضبط</string>
+    <string name="n_paused">RawRec — متوقف موقت</string>
+    <string name="n_saving">RawRec در حال ذخیره…</string>
+    <string name="n_countdown_fmt">شروع تا %1$d ثانیه</string>
+    <string name="n_saving_text">فایل در حال ذخیره است</string>
+    <string name="n_pause">توقفِ موقت</string>
+    <string name="n_resume">ادامه</string>
+    <string name="n_stop">پایان و ذخیره</string>
+    <string name="n_not_saved">ویدیویی ذخیره نشد</string>
+    <string name="n_saved">ویدیو ذخیره شد</string>
+    <string name="n_saved_err">ضبط قطع شد ولی ویدیو ذخیره شد</string>
+    <string name="n_parts_fmt">" • %1$d فایل (به ترتیب)"</string>
+    <string name="n_report_hint">گزارشِ ضبط در برنامه است.</string>
+
+    <!-- tile -->
+    <string name="tile_stop">توقفِ ضبط</string>
+    <string name="tile_sub_rec">در حال ضبط</string>
+    <string name="tile_sub_idle">لمس برای شروع</string>
+    <!-- crash safety net -->
+    <string name="crash_title">دفعهٔ قبل برنامه بسته شد</string>
+    <string name="crash_desc">متنِ زیر را با «کپی» یا «اشتراک» برای ما بفرست تا مشکل را درست کنیم.</string>
+    <string name="crash_now_title">این صفحه ساخته نشد</string>
+    <string name="crash_now_desc">برنامه به‌جای بسته‌شدن این گزارش را نشان می‌دهد. آن را برای ما بفرست.</string>
+    <string name="crash_copy">کپی</string>
+    <string name="crash_share">اشتراک</string>
+    <string name="crash_close">بستن</string>
+    <string name="unknown_value">—</string>
+    <string name="card_lang">زبان</string>
+    <string name="lang_desc">زبانِ برنامه؛ پیش‌فرض فارسی است، حتی اگر زبانِ گوشی انگلیسی باشد.</string>
+    <string name="lang_fa" translatable="false">فارسی</string>
+    <string name="lang_en" translatable="false">English</string>
+    <string name="error_action_fmt">این کار انجام نشد: %1$s — جزئیات در «گزارشِ خطا» ذخیره شد.</string>
+    <string name="error_title">گزارشِ خطا</string>
+    <!-- 1.3: tabs, settings pages, videos, about -->
+    <string name="tab_record">ضبط</string>
+    <string name="tab_quality">کیفیت</string>
+    <string name="tab_videos">ویدیوها</string>
+    <string name="tab_settings">تنظیمات</string>
+    <string name="tab_about">درباره</string>
+    <string name="sub_video">تصویر و جهت</string>
+    <string name="sub_video_desc">جهتِ ضبط و شروعِ هوشمند برای بازی</string>
+    <string name="sub_audio">صدا</string>
+    <string name="sub_audio_desc">منبع و بلندیِ صدای بازی و میکروفون</string>
+    <string name="sub_controls">دکمهٔ شناور و کنترل‌ها</string>
+    <string name="sub_controls_desc">دکمهٔ توقف، حالتِ بازی، تکان، شمارشِ معکوس، فیس‌کم</string>
+    <string name="sub_storage">ذخیره‌سازی</string>
+    <string name="sub_storage_desc">پوشه، فضای خالی و بخش‌بندی</string>
+    <string name="sub_perms">اجازه‌ها</string>
+    <string name="sub_perms_desc">اعلان، میکروفون، دوربین، نمایش روی برنامه‌ها</string>
+    <string name="sub_lang">زبان</string>
+    <string name="sub_lang_desc">فارسی یا انگلیسی</string>
+    <string name="back">بازگشت</string>
+    <string name="plan_line_fmt">%1$s\nحدودِ %2$s در دقیقه</string>
+    <string name="orient_landscape_game">افقی (بازی)</string>
+    <string name="smart_title">شروعِ هوشمند برای بازی</string>
+    <string name="smart_desc">اگر در ۱۰ ثانیهٔ اول گوشی را بچرخانی، ضبط از نو در جهتِ تازه شروع می‌شود و همه‌چیز یک فایل می‌ماند (همان چند ثانیهٔ اول حذف می‌شود).</string>
+    <string name="game_title">حالتِ بازی (فقط همان برنامه)</string>
+    <string name="game_desc">اندروید ۱۴ به بعد: فقط بازی ضبط می‌شود؛ دکمهٔ RawRec و نوارِ اعلان را می‌بینی ولی در ویدیو نیستند.</string>
+    <string name="game_unavailable">نیاز به اندروید ۱۴ به بعد</string>
+    <string name="bubble_explain">در ضبطِ تمام‌صفحه هر چیزی که روی صفحه است ضبط می‌شود، از جمله دکمهٔ RawRec؛ برای همین کوچک و نیمه‌شفاف است و به نقطه جمع می‌شود. «پنهان» آن را کاملاً برمی‌دارد و در اعلان دکمهٔ «نمایشِ دکمه» می‌آید.\nاگر می‌خواهی دکمه را ببینی ولی در ویدیو نباشد، «حالتِ بازی» را روشن کن و در پنجرهٔ سیستم «یک برنامه» ← بازی را انتخاب کن.</string>
+    <string name="home_game_hint">حالتِ بازی روشن است: در پنجرهٔ سیستم «یک برنامه» و بعد بازی را انتخاب کن.</string>
+    <string name="home_tip">نکته: برای اینکه دکمه را ببینی ولی در ویدیو نباشد، «حالتِ بازی» را در تنظیمات ← کنترل‌ها روشن کن.</string>
+    <string name="game_dialog_title">حالتِ بازی</string>
+    <string name="game_dialog_msg">در پنجرهٔ بعد «یک برنامه» را بزن و بازی را انتخاب کن. آن‌وقت دکمهٔ RawRec را می‌بینی ولی در ویدیو نیست.
+اگر «کلِ صفحه» را بزنی، دکمه هم ضبط می‌شود.</string>
+    <string name="continue_">ادامه</string>
+    <string name="cancel">لغو</string>
+    <string name="storage_text_fmt">پوشه: Movies/RawRec (در گالری هم دیده می‌شود)
+فضای خالی: %1$s • حدوداً %2$d دقیقه با تنظیماتِ فعلی
+فایل‌های خیلی طولانی در بخش‌های حدودِ ۳٫۵ گیگابایتی ذخیره می‌شوند.
+پیش از پر شدنِ حافظه، ضبط خودش سالم تمام می‌شود.</string>
+    <string name="videos_empty">اولین ضبطت این‌جا نشان داده می‌شود.</string>
+    <string name="videos_hint">لمس: پخش در گالری • نگه‌داشتن یا ⋮: اشتراک و حذف</string>
+    <string name="video_sub_fmt">%1$s • %2$s • %3$s</string>
+    <string name="video_delete">حذف</string>
+    <string name="video_delete_confirm_fmt">«%1$s» برای همیشه حذف شود؟</string>
+    <string name="video_deleted">حذف شد.</string>
+    <string name="about_version_fmt">RawRec نسخهٔ %1$s</string>
+    <string name="about_report">آخرین «گزارشِ ضبط»</string>
+    <string name="about_no_report">هنوز گزارشی نیست؛ «ضبطِ آزمایشیِ ۱۰ ثانیه» را بزن.</string>
+    <string name="about_crash">گزارشِ خطا</string>
+    <string name="about_no_crash">خطایی ثبت نشده است.</string>
+    <string name="crash_clear">پاک کردن</string>
+    <string name="settings_reset_note">تنظیماتِ کیفیت به پیش‌فرضِ تازهٔ ۱٫۳ برگشت (حجمِ کمتر، همان کیفیت).</string>
+    <string name="notice_smart_restart_fmt">شروعِ هوشمند: چون صفحه در ۱۰ ثانیهٔ اول چرخید، ضبط از نو با %1$s شروع شد (یک فایل).</string>
+    <string name="rep_ref_fmt">مرجع: بازهٔ معمولِ «بی‌افتِ دیداری» برای این اندازه و فریم‌ریت: %1$s</string>
+    <string name="ap_complexity_fmt">تلاشِ انکودر (complexity): %1$s</string>
+    <!-- 1.4 home, menu, collapsible sections, floating pill -->
+    <string name="home_start">شروعِ ضبط</string>
+    <string name="home_stop">توقفِ ضبط</string>
+    <string name="seg_record">ضبط</string>
+    <string name="seg_my">ضبط‌های من</string>
+    <string name="opt_cam_title">فیس‌کم</string>
+    <string name="opt_cam_desc">واکنشِ چهره‌ات را کنارِ بازی نشان بده</string>
+    <string name="opt_mic_title">گفتار</string>
+    <string name="opt_mic_desc">صدای خودت را با میکروفون روی ویدیو بگذار</string>
+    <string name="opt_preset_title">کیفیت</string>
+    <string name="opt_orient_title">جهت</string>
+    <string name="menu">منو</string>
+    <string name="sec_advanced">تنظیماتِ پیشرفته</string>
+    <string name="sec_advanced_desc">کدک، بیت‌ریت، فریم‌ریت، رزولوشن و حالتِ بیت‌ریت</string>
+    <string name="sec_report_desc">اعدادِ اندازه‌گیری‌شده از آخرین فایل</string>
+    <string name="sec_device_desc">نمایشگر و انکودرهای این دستگاه</string>
+    <string name="sec_crash_desc">اگر برنامه خطا داده باشد، اینجاست</string>
+    <string name="expand">باز کردن</string>
+    <string name="collapse">بستن</string>
+    <string name="pill_stop">توقف و ذخیره</string>
+    <string name="pill_pause">توقفِ موقت</string>
+    <string name="pill_resume">ادامهٔ ضبط</string>
+    <string name="pill_mic_on">میکروفون روشن است؛ برای قطع بزن</string>
+    <string name="pill_mic_off">میکروفون قطع است؛ برای وصل بزن</string>
+    <string name="pill_cam_on">فیس‌کم روشن است؛ برای خاموش کردن بزن</string>
+    <string name="pill_cam_off">فیس‌کم خاموش است؛ برای روشن کردن بزن</string>
+    <string name="pill_delete">حذفِ این ضبط</string>
+    <string name="pill_delete_confirm">برای حذفِ ضبط دوباره بزن</string>
+    <string name="pill_expand">نمایشِ دکمه‌های ضبط</string>
+    <string name="notice_deleted">ضبط حذف شد؛ چیزی ذخیره نشد.</string>
+    <string name="pause_short">توقفِ موقت</string>
+    <string name="home_preset_desc">حجم و فریم‌ریت؛ جزئیات در زبانهٔ «کیفیت»</string>
+    <string name="home_orient_desc">«خودکار» چرخشِ صفحه را بدونِ کشیدگی دنبال می‌کند</string>
+    <!-- 1.5 redesign: navigation, stage, stats card, storage meter -->
+    <string name="tagline_short">ضبطِ صفحه با کیفیتِ اصلی</string>
+    <string name="quick_title">تنظیماتِ سریع</string>
+    <string name="status_countdown">شمارشِ معکوس</string>
+    <string name="status_preparing">آماده‌سازی</string>
+    <string name="status_saving">ذخیره‌سازی</string>
+    <string name="page_videos_sub">همهٔ ضبط‌ها؛ در گالری هم هستند</string>
+    <string name="page_quality_sub">یک حالت انتخاب کن؛ بقیه خودکار تنظیم می‌شود</string>
+    <string name="page_settings_sub">ضبط، صدا، کنترل‌ها و خودِ برنامه</string>
+    <string name="page_about_sub">نسخه، گزارشِ ضبط و توانِ این گوشی</string>
+    <string name="videos_count_fmt">%1$d ویدیو • %2$s</string>
+    <string name="videos_empty_title">هنوز ویدیویی نیست</string>
+    <string name="videos_empty_action">رفتن به ضبط</string>
+    <string name="video_more">گزینه‌ها</string>
+    <string name="settings_group_rec">ضبط</string>
+    <string name="settings_group_app">برنامه</string>
+    <string name="perms_all_ok">همه فعال</string>
+    <string name="perms_missing_fmt">%1$d مورد لازم</string>
+    <string name="storage_free_fmt">%1$s آزاد</string>
+    <string name="storage_used_fmt">%1$s از %2$s پر است</string>
+    <string name="storage_minutes_fmt">حدودِ %1$d دقیقه ضبط با تنظیماتِ فعلی</string>
+    <string name="storage_folder">پوشهٔ Movies/RawRec؛ در گالری هم دیده می‌شود</string>
+    <string name="storage_parts">ضبط‌های خیلی طولانی در بخش‌های حدودِ ۳٫۵ گیگ و به ترتیب ذخیره می‌شوند</string>
+    <string name="storage_safe">پیش از پر شدنِ حافظه، ضبط خودش سالم تمام می‌شود</string>
+    <string name="report_full">متنِ کاملِ گزارش</string>
+    <string name="report_smooth">بدونِ افتِ فریم</string>
+    <string name="report_gaps_fmt">%1$d وقفهٔ بلند</string>
+    <string name="report_failed">با خطا تمام شد</string>
+    <string name="report_test">آزمایشی</string>
+    <string name="stat_duration">مدت</string>
+    <string name="stat_size">حجم</string>
+    <string name="stat_fps">فریم‌ریتِ میانگین</string>
+    <string name="stat_bitrate">بیت‌ریتِ واقعی</string>
+    <string name="stat_permin">حجم در دقیقه</string>
+    <string name="stat_frames">فریم‌ها</string>
+    <string name="stat_fps_sub_fmt">هدف %1$s • بیشینه %2$s</string>
+    <string name="stat_br_sub_fmt">هدف %1$s</string>
+    <string name="stat_permin_sub_fmt">۳۰ دقیقه ≈ %1$s</string>
+    <string name="stat_frames_sub_fmt">از حدودِ %1$s • بیشترین فاصله %2$s ms</string>
+    <string name="stat_parts_fmt">%1$s بخش</string>
+    <string name="about_made_by">ساختِ VIL3NTEC</string>
+    <string name="plan_title">با این تنظیمات</string>
+    <string name="open_quality">باز کردنِ «کیفیت»</string>
+    <string name="report_stopped_itself">خودش متوقف شد</string>
+    <string name="report_why">چرا تمام شد</string>
+</resources>

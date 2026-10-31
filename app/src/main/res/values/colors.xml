@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  RawRec 1.5 palette. Every colour the app draws comes from here (Kotlin reads R.color.*).
+  Surfaces step up in lightness for elevation; red is only for recording and destructive
+  actions, blue only for selection / focus / "on".
+-->
+<resources>
+    <!-- surfaces (elevation 0 → 3) -->
+    <color name="bg">#FF0E0F12</color>
+    <color name="surface">#FF16181D</color>
+    <color name="surface_2">#FF1E2128</color>
+    <color name="surface_3">#FF262A33</color>
+    <color name="surface_pressed">#FF2E333D</color>
+    <color name="stroke">#FF2A2E37</color>
+    <color name="stroke_strong">#FF3A3F4B</color>
+
+    <!-- text -->
+    <color name="text_primary">#FFF2F3F5</color>
+    <color name="text_secondary">#FFA6ACB8</color>
+    <color name="text_tertiary">#FF80889A</color>
+    <color name="text_disabled">#FF4E5462</color>
+    <color name="text_on_light">#FF0E0F12</color>
+    <color name="on_accent">#FFFFFFFF</color>
+
+    <!-- primary accent: recording red -->
+    <color name="accent">#FFFF3B47</color>
+    <color name="accent_fill">#FFE0293A</color>
+    <color name="accent_pressed">#FFC21F2F</color>
+    <color name="accent_disabled">#FF4A2227</color>
+    <color name="accent_soft">#29FF3B47</color>
+    <color name="accent_glow">#47FF3B47</color>
+
+    <!-- secondary accent: selection, focus, "on" -->
+    <color name="sel">#FF6AA6FF</color>
+    <color name="sel_strong">#FF3D7FE6</color>
+    <color name="sel_soft">#296AA6FF</color>
+    <color name="sel_glow">#1F6AA6FF</color>
+
+    <!-- status -->
+    <color name="success">#FF3DD68C</color>
+    <color name="success_soft">#243DD68C</color>
+    <color name="warning">#FFFFB020</color>
+    <color name="warning_soft">#24FFB020</color>
+    <color name="warning_glow">#33FFB020</color>
+    <color name="error">#FFFF6B73</color>
+    <color name="error_soft">#24FF6B73</color>
+    <color name="info">#FF6AA6FF</color>
+    <color name="paused">#FFFFB020</color>
+
+    <!-- interaction -->
+    <color name="ripple">#1FFFFFFF</color>
+    <color name="ripple_strong">#33FFFFFF</color>
+    <color name="ripple_dark">#1F000000</color>
+    <color name="focus">#FF6AA6FF</color>
+    <color name="transparent">#00000000</color>
+    <color name="glow_idle">#0DFFFFFF</color>
+    <color name="scrim">#A6000000</color>
+    <color name="pressed_on_light">#FFD9DCE1</color>
+
+    <!-- record dial -->
+    <color name="dial_fill">#FF1B1E24</color>
+    <color name="dial_fill_rec">#FF2A1519</color>
+    <color name="dial_fill_paused">#FF2A2216</color>
+
+    <!-- floating control and launcher -->
+    <color name="overlay_bg">#EB16181D</color>
+    <color name="launcher_bg">#FFE0293A</color>
+    <color name="launcher_bg_top">#FFFF4D58</color>
+    <color name="launcher_bg_bottom">#FFD41F31</color>
+</resources>

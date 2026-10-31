@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon foreground (108 dp canvas, 66 dp safe zone): a record dot inside a rounded
+     screen frame, white on the red background. Same drawing as @drawable/ic_logo_mark. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M48,31h12a9,9 0 0 1 9,9v28a9,9 0 0 1 -9,9h-12a9,9 0 0 1 -9,-9v-28a9,9 0 0 1 9,-9z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="5"
+        android:strokeLineJoin="round" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,46.5a7.5,7.5 0 1 1 0,15a7.5,7.5 0 1 1 0,-15z" />
+</vector>
