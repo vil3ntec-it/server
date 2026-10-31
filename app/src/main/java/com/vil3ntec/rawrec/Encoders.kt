@@ -410,13 +410,14 @@ object Planner {
 
     /**
      * Quality floor (QP ceiling of P frames; I −2, B +2) for VBR: rather than go above it the encoder
-     * spends more than the target. 20 keeps text edges and smooth 8-bit gradients clean on HEVC/AV1/AVC
-     * hardware encoders (26 in 1.5 showed banding and soft text); 17 is visually lossless.
+     * spends more than the target. 18 keeps text edges, fine game texture and smooth 8-bit gradients
+     * clean on HEVC/AV1/AVC hardware encoders (26 in 1.5 showed banding and soft text, 20 in 1.8 still a
+     * little soft next to the screen); 16 for «بی‌افت».
      */
     fun qpCeiling(bitrateLevel: Int): Int = when (bitrateLevel) {
-        RecordConfig.BR_MAX -> 17
+        RecordConfig.BR_MAX -> 16
         RecordConfig.BR_AUTO_BALANCED -> 34
-        RecordConfig.BR_AUTO_HIGH -> 20
+        RecordConfig.BR_AUTO_HIGH -> 18
         else -> 23                      // a fixed Mbps chosen by the owner
     }
 
@@ -433,13 +434,15 @@ object Planner {
 
     fun plan(cfg: RecordConfig, d: DisplayInfo): CapturePlan? {
         val (w, h) = targetSize(cfg, d)
-        // Automatic: hardware AV1 (Android 14+, where MediaMuxer writes AV1 MP4) → HEVC → AVC.
+        // Automatic: HEVC → hardware AV1 (Android 14+, MediaMuxer) → AVC.
         val av1 = if (Build.VERSION.SDK_INT >= 34 && Encoders.av1MuxOk) listOf(Encoders.AV1) else emptyList()
         val order = when (cfg.codec) {
             RecordConfig.CODEC_AVC -> listOf(Encoders.AVC, Encoders.HEVC)
             RecordConfig.CODEC_HEVC -> listOf(Encoders.HEVC, Encoders.AVC)
             RecordConfig.CODEC_AV1 -> av1 + listOf(Encoders.HEVC, Encoders.AVC)
-            else -> av1 + listOf(Encoders.HEVC, Encoders.AVC)
+            // Automatic: HEVC first since 2.0 — it goes through RawRec's own MP4 writer (one file, no
+            // 4 GB limit); AV1 only when there is no HEVC hardware encoder.
+            else -> listOf(Encoders.HEVC) + av1 + listOf(Encoders.AVC)
         }
         val wantFps = wantFps(cfg, d)
         // Every hardware encoder of the allowed codecs is measured against the device's own claims:

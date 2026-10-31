@@ -22,13 +22,25 @@ import kotlin.math.sin
 class RecordingLogicTest {
 
     @Test fun oneRotationIsOneSwitch() {
-        val p = RotationPolicy(auto = true, smartStart = true)
+        val p = RotationPolicy(auto = true, smartStart = true, newFileOnRotate = true)
         p.start(landscapeNow = false)
-        assertEquals(RotationPolicy.Action.RESTART, p.onDisplay(true, 3_000))      // within 10 s: restart, one file
+        assertEquals(RotationPolicy.Action.RESTART, p.onDisplay(true, 3_000))      // within 20 s: restart, one file
         assertEquals(RotationPolicy.Action.NONE, p.onDisplay(true, 3_400))         // duplicate event: nothing
         assertEquals(RotationPolicy.Action.NONE, p.onDisplay(true, 3_900))
         assertEquals(RotationPolicy.Action.NEW_PART, p.onDisplay(false, 30_000))  // later: a new part
         assertEquals(RotationPolicy.Action.NONE, p.onDisplay(false, 30_500))
+    }
+
+    @Test fun oneRecordingStaysOneFileByDefault() {
+        val p = RotationPolicy(auto = true, smartStart = true)
+        p.start(landscapeNow = false)
+        assertTrue(p.follows(true, 15_000))
+        assertEquals(RotationPolicy.Action.RESTART, p.onDisplay(true, 15_000))     // opened the game: restart in landscape
+        assertFalse(p.follows(false, 40_000))
+        assertEquals(RotationPolicy.Action.NONE, p.onDisplay(false, 40_000))      // later: same file, shown whole
+        assertEquals(RotationPolicy.Action.NONE, p.onDisplay(true, 50_000))
+        assertEquals(true, p.landscape)
+        assertEquals(RotationPolicy.Action.NEW_PART, p.onDisplay(true, 60_000, resized = true))
     }
 
     @Test fun lockedOrientationNeverSwitches() {
@@ -39,7 +51,7 @@ class RecordingLogicTest {
     }
 
     @Test fun smartStartOffMakesAPartEvenEarly() {
-        val p = RotationPolicy(auto = true, smartStart = false)
+        val p = RotationPolicy(auto = true, smartStart = false, newFileOnRotate = true)
         p.start(false)
         assertEquals(RotationPolicy.Action.NEW_PART, p.onDisplay(true, 2_000))
     }

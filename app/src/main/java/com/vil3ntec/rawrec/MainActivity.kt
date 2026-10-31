@@ -325,6 +325,7 @@ class MainActivity : Activity() {
             invisibleControl = SafePrefs.bool(p, "c_invis", true),
             ghostControl = SafePrefs.bool(p, "c_ghost", true),
             smartStart = SafePrefs.bool(p, "c_smart", true),
+            rotateNewFile = SafePrefs.bool(p, "c_rotnew", false),
             gameMode = SafePrefs.bool(p, "c_game", false),
         )
         // 1.3 changed the size model: video settings saved by earlier versions (e.g. a «50 Mbps»
@@ -360,7 +361,7 @@ class MainActivity : Activity() {
             .putInt("c_audio", c.audioMode).putFloat("c_gg", c.gameGain).putFloat("c_mg", c.micGain)
             .putInt("c_cd", c.countdown).putBoolean("c_shake", c.shakeStop).putInt("c_cam", c.facecam)
             .putBoolean("c_float", c.floatingButton).putBoolean("c_invis", c.invisibleControl).putBoolean("c_ghost", c.ghostControl)
-            .putBoolean("c_smart", c.smartStart).putBoolean("c_game", c.gameMode)
+            .putBoolean("c_smart", c.smartStart).putBoolean("c_game", c.gameMode).putBoolean("c_rotnew", c.rotateNewFile)
             .apply()
     }
 
@@ -1364,6 +1365,9 @@ class MainActivity : Activity() {
         toggles["smart"] = Toggle(c, "tog:smart", R.drawable.ic_sparkle, str(R.string.smart_title), str(R.string.smart_desc), top = 8) { on ->
             change(false) { it.copy(smartStart = on) }
         }
+        toggles["rotnew"] = Toggle(c, "tog:rotnew", R.drawable.ic_rotate, str(R.string.rotnew_title), str(R.string.rotnew_desc)) { on ->
+            change(false) { it.copy(rotateNewFile = on) }
+        }
         return pg.scroll
     }
 
@@ -1643,6 +1647,7 @@ class MainActivity : Activity() {
         rows["homePreset"]?.select(c.preset)
         if (::camToggle.isInitialized) { camToggle.set(c.facecam > 0); micToggle.set(c.usesMic) }
         toggles["smart"]?.set(c.smartStart)
+        toggles["rotnew"]?.set(c.rotateNewFile)
         rows["res"]?.select(resValues.indexOf(c.resShort))
         rows["fps"]?.select(fpsValues.indexOf(c.fps).let { if (it < 0 && c.fps >= disp.refresh) 0 else it })
         rows["codec"]?.select(c.codec)

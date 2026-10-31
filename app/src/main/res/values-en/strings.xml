@@ -261,7 +261,9 @@
     <string name="plan_line_fmt">%1$s\nabout %2$s per minute</string>
     <string name="orient_landscape_game">Landscape (game)</string>
     <string name="smart_title">Smart start for games</string>
-    <string name="smart_desc">If you rotate the phone in the first 10 seconds, recording starts over in the new orientation and stays one file (those first seconds are dropped).</string>
+    <string name="smart_desc">If the screen turns in the first 20 seconds (you open the game, say), recording starts over in the new orientation at the game\'s full size and stays one file (those first seconds are dropped).</string>
+    <string name="rotnew_title">A new file for each rotation</string>
+    <string name="rotnew_desc">Off (recommended): every recording is one file, even an hour long; if the screen turns after the first 20 seconds the other orientation is shown whole inside the same video. On: each rotation starts a new file in the new orientation.</string>
     <string name="game_title">Game mode (that app only)</string>
     <string name="game_desc">Android 14+: only the game is recorded; you see the RawRec button and the notification shade, the video does not.</string>
     <string name="game_unavailable">Needs Android 14+</string>

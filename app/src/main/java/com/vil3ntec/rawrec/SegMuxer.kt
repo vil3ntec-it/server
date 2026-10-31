@@ -437,7 +437,7 @@ class SegMuxer(
         if (info.presentationTimeUs < s.base) { recycle(it); return }
         write(s, s.vTrack, it)
         videoBytes += info.size
-        if (forceReason < 0 && s.bytes >= segLimit) {
+        if (forceReason < 0 && s.bytes >= minOf(segLimit, s.file.maxBytes)) {
             forceReason = REASON_SIZE
             keyWanted.set(true)
         }
@@ -623,6 +623,8 @@ interface PartSink {
 
 interface PartFile {
     val uri: Uri
+    /** Largest size this file can take (MediaMuxer: 4 GB, RawRec's own writer: no limit). */
+    val maxBytes: Long get() = Long.MAX_VALUE
     fun addTrack(f: MediaFormat): Int
     fun start()
     fun write(track: Int, buf: ByteBuffer, info: MediaCodec.BufferInfo)
@@ -630,8 +632,82 @@ interface PartFile {
     fun close(keep: Boolean): Long
 }
 
-/** Movies/RawRec through MediaStore (no storage permission needed on Android 10+), written by MediaMuxer. */
+/**
+ * Movies/RawRec through MediaStore (no storage permission needed on Android 10+).
+ *
+ * Since 2.0 written by [Mp4Writer] (HEVC/H.264 + AAC): no 4 GB limit, so an hour of game is one
+ * file, and a journal lets an interrupted file be finished on the next start ([recover]). Any other
+ * codec (AV1), or codec data the writer can't read, goes through MediaMuxer as before — parts of
+ * at most 3.5 GB then.
+ */
 class MediaStoreSink(private val ctx: Context) : PartSink {
+    companion object {
+        /** MediaMuxer writes 32-bit offsets: a part must stay under 4 GB. */
+        const val MEDIA_MUXER_LIMIT = 3_500_000_000L
+
+        fun journalFor(ctx: Context, uri: Uri): java.io.File =
+            java.io.File(ctx.filesDir, "rec-" + (uri.lastPathSegment ?: "x").filter { it.isLetterOrDigit() } + ".rrj")
+
+        /**
+         * A part left open by a recording that was cut off: finish it from its journal and show it
+         * in the gallery. False when there is nothing to finish it from (the caller deletes it).
+         */
+        fun recover(ctx: Context, uri: Uri): Boolean {
+            val j = journalFor(ctx, uri)
+            if (!j.exists()) return false
+            val ok = try {
+                ctx.contentResolver.openFileDescriptor(uri, "rw")?.use { pfd ->
+                    java.io.FileOutputStream(pfd.fileDescriptor).channel.use { Mp4Writer.repair(j, it) }
+                } ?: false
+            } catch (_: Throwable) { false }
+            if (ok) try {
+                ctx.contentResolver.update(uri, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null)
+            } catch (_: Throwable) {}
+            try { j.delete() } catch (_: Throwable) {}
+            return ok
+        }
+
+        /** The encoder's MediaFormat as [Mp4Writer] needs it; null when the writer can't take it. */
+        fun trackOf(f: MediaFormat): Mp4Track? {
+            val mime = f.getString(MediaFormat.KEY_MIME) ?: return null
+            if (!Mp4Writer.supports(mime)) return null
+            val csd = (0..2).mapNotNull { k ->
+                val b = if (f.containsKey("csd-$k")) f.getByteBuffer("csd-$k") else null
+                b?.duplicate()?.let { d -> d.rewind(); ByteArray(d.remaining()).also { a -> d.get(a) } }
+            }
+            if (csd.isEmpty()) return null
+            fun int(k: String, d: Int) = try { if (f.containsKey(k)) f.getInteger(k) else d } catch (_: Exception) { d }
+            val video = mime.startsWith("video/")
+            var w = int(MediaFormat.KEY_WIDTH, 0)
+            var h = int(MediaFormat.KEY_HEIGHT, 0)
+            if (f.containsKey("crop-right") && f.containsKey("crop-left")) w = int("crop-right", 0) - int("crop-left", 0) + 1
+            if (f.containsKey("crop-bottom") && f.containsKey("crop-top")) h = int("crop-bottom", 0) - int("crop-top", 0) + 1
+            if (video && (w <= 0 || h <= 0)) return null
+            val std = int(MediaFormat.KEY_COLOR_STANDARD, -1)
+            val (pri, mtx) = when (std) {
+                MediaFormat.COLOR_STANDARD_BT709 -> 1 to 1
+                MediaFormat.COLOR_STANDARD_BT601_PAL -> 5 to 5
+                MediaFormat.COLOR_STANDARD_BT601_NTSC -> 6 to 6
+                MediaFormat.COLOR_STANDARD_BT2020 -> 9 to 9
+                else -> -1 to -1
+            }
+            val trc = when (int(MediaFormat.KEY_COLOR_TRANSFER, -1)) {
+                MediaFormat.COLOR_TRANSFER_SDR_VIDEO -> 1
+                MediaFormat.COLOR_TRANSFER_LINEAR -> 8
+                MediaFormat.COLOR_TRANSFER_ST2084 -> 16
+                MediaFormat.COLOR_TRANSFER_HLG -> 18
+                else -> -1
+            }
+            return Mp4Track(
+                video = video, mime = mime, width = w, height = h,
+                sampleRate = int(MediaFormat.KEY_SAMPLE_RATE, 0), channels = int(MediaFormat.KEY_CHANNEL_COUNT, 0),
+                bitrate = int(MediaFormat.KEY_BIT_RATE, 0), csd = csd,
+                primaries = pri, transfer = trc, matrix = mtx,
+                fullRange = int(MediaFormat.KEY_COLOR_RANGE, -1) == MediaFormat.COLOR_RANGE_FULL,
+            )
+        }
+    }
+
     override fun create(name: String): PartFile {
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, name)
@@ -641,27 +717,69 @@ class MediaStoreSink(private val ctx: Context) : PartSink {
         }
         val collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val uri = ctx.contentResolver.insert(collection, values) ?: throw IllegalStateException("cannot create file in Movies/RawRec")
-        var pfd: android.os.ParcelFileDescriptor? = null
-        val muxer = try {
-            pfd = ctx.contentResolver.openFileDescriptor(uri, "rw") ?: throw IllegalStateException("cannot open output file")
-            MediaMuxer(pfd.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        val fd: android.os.ParcelFileDescriptor = try {
+            ctx.contentResolver.openFileDescriptor(uri, "rw") ?: throw IllegalStateException("cannot open output file")
         } catch (e: Exception) {
             // Don't leave an empty hidden (pending) entry behind.
-            try { pfd?.close() } catch (_: Exception) {}
             try { ctx.contentResolver.delete(uri, null, null) } catch (_: Exception) {}
             throw e
         }
-        val fd: android.os.ParcelFileDescriptor = pfd!!
+        val journal = journalFor(ctx, uri)
         return object : PartFile {
+            private val formats = ArrayList<MediaFormat>()
+            private var mp4: Mp4Writer? = null
+            private var channel: java.nio.channels.FileChannel? = null
+            private var muxer: MediaMuxer? = null
+
             override val uri = uri
-            override fun addTrack(f: MediaFormat) = muxer.addTrack(f)
-            override fun start() = muxer.start()
-            override fun write(track: Int, buf: ByteBuffer, info: MediaCodec.BufferInfo) = muxer.writeSampleData(track, buf, info)
+            override val maxBytes get() = if (mp4 != null) Long.MAX_VALUE else MEDIA_MUXER_LIMIT
+
+            override fun addTrack(f: MediaFormat): Int { formats += f; return formats.size - 1 }
+
+            override fun start() {
+                // RawRec's writer when it can take every track; it fails before writing a byte
+                // when it can't (then MediaMuxer, as before).
+                val tracks = formats.map { trackOf(it) }
+                if (tracks.all { it != null }) {
+                    try {
+                        val ch = java.io.FileOutputStream(fd.fileDescriptor).channel
+                        val w = Mp4Writer(ch, journal)
+                        for (t in tracks) w.addTrack(t!!)
+                        w.start()
+                        channel = ch; mp4 = w
+                        return
+                    } catch (_: Exception) {
+                        mp4 = null; channel = null
+                        try { journal.delete() } catch (_: Exception) {}
+                        try { java.io.FileOutputStream(fd.fileDescriptor).channel.truncate(0) } catch (_: Exception) {}
+                    }
+                }
+                val m = MediaMuxer(fd.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+                for (f in formats) m.addTrack(f)
+                m.start()
+                muxer = m
+            }
+
+            override fun write(track: Int, buf: ByteBuffer, info: MediaCodec.BufferInfo) {
+                val w = mp4
+                if (w != null) {
+                    if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) return
+                    w.write(track, buf, info.offset, info.size, info.presentationTimeUs, info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0)
+                } else muxer?.writeSampleData(track, buf, info)
+            }
+
             override fun close(keep: Boolean): Long {
+                val w = mp4
+                if (w != null) {
+                    try { if (keep) w.finish() else w.abandon() } catch (_: Exception) {}
+                    try { channel?.close() } catch (_: Exception) {}
+                }
                 // stop() writes the MP4 index. It throws when a track got no samples, but the index is
                 // still written in that case, so the file is kept (and playable) anyway.
-                try { muxer.stop() } catch (_: Exception) {}
-                try { muxer.release() } catch (_: Exception) {}
+                muxer?.let { m ->
+                    try { m.stop() } catch (_: Exception) {}
+                    try { m.release() } catch (_: Exception) {}
+                }
                 val size = try { fd.statSize } catch (_: Exception) { -1L }
                 try { fd.close() } catch (_: Exception) {}
                 try {

@@ -133,16 +133,29 @@ object ActiveRec {
             l.startsWith("reason ") -> reason = StopReason.of(l.substring(7))
         }
         val leftovers = opened.filter { it !in done }
+        val startedMs = System.currentTimeMillis()
         Thread {
             try {
-                for (u in leftovers) try { app.contentResolver.delete(Uri.parse(u), null, null) } catch (_: Throwable) {}
+                // 2.0: a part written by RawRec's own MP4 writer is finished from its journal and kept
+                // (up to its last second); only one that can't be finished is removed.
+                var recovered = 0
+                for (u in leftovers) try {
+                    val uri = Uri.parse(u)
+                    if (MediaStoreSink.recover(app, uri)) recovered++
+                    else app.contentResolver.delete(uri, null, null)
+                } catch (_: Throwable) {}
+                // Journals nobody needs any more (never one of a recording started since this process began).
+                try {
+                    app.filesDir.listFiles { f -> f.name.startsWith("rec-") && f.name.endsWith(".rrj") && f.lastModified() < startedMs - 60_000 }
+                        ?.forEach { it.delete() }
+                } catch (_: Throwable) {}
                 // The crash handler already saved its own reason; otherwise the process was killed.
                 if (reason == null) {
                     val ctx = AppLang.wrap(app)
                     RecordService.saveStop(ctx, StopReason.PROCESS_DIED, null, commit = true)
                     val report = ctx.getString(R.string.rep_title_fmt, BuildInfo.version(ctx)) + "\n" +
                         ctx.getString(R.string.eng_rep_reason_fmt, ctx.getString(StopReason.PROCESS_DIED.text)) + "\n" +
-                        ctx.getString(R.string.eng_rep_saved_parts_fmt, done.size)
+                        ctx.getString(R.string.eng_rep_saved_parts_fmt, done.size + recovered)
                     ctx.getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE).edit()
                         .putString(RecordService.K_LAST_REPORT, report)
                         .putString(RecordService.K_LAST_ERROR, ctx.getString(StopReason.PROCESS_DIED.text))
@@ -150,7 +163,7 @@ object ActiveRec {
                         .putBoolean(RecordService.K_REPORT_UNSEEN, true)
                         .commit()
                 }
-                RecLog.add(app, "interrupted recording found: ${leftovers.size} unfinished part(s) removed, ${done.size} saved")
+                RecLog.add(app, "interrupted recording found: ${leftovers.size} unfinished part(s), $recovered finished from the journal, ${done.size} saved")
             } catch (_: Throwable) {}
         }.start()
     }

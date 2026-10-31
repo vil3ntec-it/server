@@ -25,10 +25,13 @@ data class RecordConfig(
     // کنترل» in the notification) opens it and pauses the recording first, so no frame with the
     // control in it is ever written. See RecordService.ghostOpen.
     val ghostControl: Boolean = true,
-    val smartStart: Boolean = true,  // «شروعِ هوشمند برای بازی»: rotation in the first 10 s restarts into one file
+    val smartStart: Boolean = true,  // «شروعِ هوشمند برای بازی»: rotation in the first 20 s restarts into one file
+    val rotateNewFile: Boolean = false, // «فایلِ جدا برای هر چرخش»: off = one file per recording (see RotationPolicy)
     val gameMode: Boolean = false,   // «حالتِ بازی»: Android 14+ single-app capture, the control stays visible
     val testSeconds: Int = 0,       // > 0: stop by itself after this many seconds and show the report
-    val segmentBytes: Long = 3_500_000_000L,
+    // No split by size since 2.0 (RawRec's own MP4 writer has no 4 GB limit); MediaMuxer files
+    // (AV1) still stop at MediaStoreSink.MEDIA_MUXER_LIMIT. Tests set a small value.
+    val segmentBytes: Long = Long.MAX_VALUE,
 ) {
     val hasAudio get() = audioMode != AUDIO_NONE
     val usesMic get() = audioMode == AUDIO_MIC || audioMode == AUDIO_BOTH
@@ -41,7 +44,7 @@ data class RecordConfig(
         i.putExtra("am", audioMode); i.putExtra("gg", gameGain); i.putExtra("mg", micGain)
         i.putExtra("cd", countdown); i.putExtra("shake", shakeStop); i.putExtra("cam", facecam)
         i.putExtra("float", floatingButton); i.putExtra("invis", invisibleControl); i.putExtra("ghost", ghostControl)
-        i.putExtra("smart", smartStart); i.putExtra("game", gameMode)
+        i.putExtra("smart", smartStart); i.putExtra("game", gameMode); i.putExtra("rotnew", rotateNewFile)
         i.putExtra("test", testSeconds); i.putExtra("seg", segmentBytes)
     }
 
@@ -91,9 +94,10 @@ data class RecordConfig(
             invisibleControl = i.getBooleanExtra("invis", true),
             ghostControl = i.getBooleanExtra("ghost", true),
             smartStart = i.getBooleanExtra("smart", true),
+            rotateNewFile = i.getBooleanExtra("rotnew", false),
             gameMode = i.getBooleanExtra("game", false),
             testSeconds = i.getIntExtra("test", 0),
-            segmentBytes = i.getLongExtra("seg", 3_500_000_000L),
+            segmentBytes = i.getLongExtra("seg", Long.MAX_VALUE),
         )
 
         /** The fixed video values behind each preset. Audio and overlay choices are kept. */

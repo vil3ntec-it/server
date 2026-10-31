@@ -370,7 +370,7 @@ class RecordService : Service(), Recorder.Events {
             startedAt = System.currentTimeMillis()
             recordStartWall = startedAt
             requestedSource = plan.sourceWidth to plan.sourceHeight
-            policy = RotationPolicy(auto = c.orient == RecordConfig.ORIENT_AUTO, smartStart = c.smartStart).also {
+            policy = RotationPolicy(auto = c.orient == RecordConfig.ORIENT_AUTO, smartStart = c.smartStart, newFileOnRotate = c.rotateNewFile).also {
                 it.start(plan.contentWidth > plan.contentHeight)
             }
             applied = Texts.applied(this, c, plan, r.droppedOptions, r.audioKbps, c.hasAudio)
@@ -462,7 +462,7 @@ class RecordService : Service(), Recorder.Events {
         val (tw, th) = Planner.targetSize(c, d)
         val (sw, sh) = requestedSource
         val resized = sw > 0 && !(tw == sw && th == sh) && !(tw == sh && th == sw)
-        if (pol.follows(d.landscape) || resized) r.holdFramesFrom(System.nanoTime() / 1000)
+        if (pol.follows(d.landscape, System.currentTimeMillis() - recordStartWall, resized)) r.holdFramesFrom(System.nanoTime() / 1000)
     }
     private var recordStartWall = 0L
     /** Screen size (before encoder fitting) the recording is in or is being switched to. */
