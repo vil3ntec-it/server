@@ -42,15 +42,17 @@ const LABEL: Record<SubsView, string> = {
   sales: 'فروش و درآمد',
 };
 
-export default function AppSubscriptions({ app, groups }: {
+export default function AppSubscriptions({ app, groups, omit = [] }: {
   app: AppId;
   /** «سه گروه»ِ میزِ فروشگاه (دارد / ندارد / تمام شده) — فقط وقتی داده شود زبانه دارد */
   groups?: ReactNode;
+  /** زبانه‌ای که بخشِ میزبان خودش جای جدا برایش دارد (فروشگاه: «فروش و درآمد» ⇒ زبانهٔ «مالی») */
+  omit?: SubsView[];
 }) {
   const [params] = useSearchParams();
   const loc = useLocation();
   const navigate = useNavigate();
-  const views = viewsOf(app).filter((v) => v !== 'groups' || Boolean(groups));
+  const views = viewsOf(app).filter((v) => (v !== 'groups' || Boolean(groups)) && !omit.includes(v));
   const want = params.get('view') || 'subs';
   const active: SubsView = views.find((v) => v === want) || 'subs';
 

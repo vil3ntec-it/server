@@ -284,7 +284,8 @@ check('۴.۲ داشبورد هر شش عدد را نشان می‌دهد',
     && /path="\/visitors" element=\{<SubscriptionsMoved defaultView="visitors"/.test(app));
   check('⇒ پمپ‌بنزین‌ها و فروشگاه‌ها خودشان اشتراکِ خودشان را دارند — همان صفحه، با بخشِ ثابت',
     /<AppSubscriptions app="pump" \/>/.test(stations) && !/\/subscriptions/.test(stations)
-    && /<AppSubscriptions app="shop" groups=\{<SubGroups \/>\} \/>/.test(shopDesk) && !/\/subscriptions/.test(shopDesk));
+    //  (فاز ۲: «فروش و درآمد»ِ دکان زبانهٔ «مالی» ِ همان میز است ⇒ `omit`، و ‎view=sales‎ به آن‌جا می‌رود)
+    && /<AppSubscriptions app="shop" groups=\{<SubGroups \/>\}( omit=\{\['sales'\]\})? \/>/.test(shopDesk) && !/\/subscriptions/.test(shopDesk));
   /*
    *  ⛔ «هیچ قابلیتی از دست نرود»: هر زبانهٔ بخشِ کهنه (و فروش) همین‌جا با
    *  `fixedApp` است — نه رونوشت. درخواستِ خرید فقط دکان (جدولش به shops بند است).
@@ -486,6 +487,63 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
     fn && fn({ liveConnections: 0, lastActivity: now - 5 * 60_000, liveAt: now - 5 * 60_000 }, now) === false);
   check('⚠️ عکسِ تازه به‌تنهایی «روشن» است',
     fn && fn({ liveConnections: 0, lastActivity: null, liveAt: now - 30_000 }, now) === true);
+}
+
+/*
+ *  ══ 🏪 کنسولِ فروشگاه — فاز ۲ ِ پنلِ مرکزیِ مالک (OWNER-CONSOLE-AUDIT §۸) ══
+ *  ⛔ «نیامده = —، نه صفر» روی **خودِ کد** (`consoleData.ts` با Node اجرا می‌شود)، و صفحه عددی نمی‌سازد.
+ *  نسخهٔ کرومیومیِ همین قاعده‌ها: `test/shop-console-ui.mjs` (محلی، مثلِ `control-ui`).
+ */
+{
+  console.log('\n── کنسولِ فروشگاه (فاز ۲) ──');
+  let m = null;
+  try { m = await import(new URL('file://' + path.join(webSrc, 'pages', 'account', 'consoleData.ts')).href); }
+  catch (e) { console.log('   ', e.message); }
+  check('consoleData.ts با Node اجرا می‌شود', Boolean(m && m.shown && m.stampOf && m.CONSOLE));
+  if (m) {
+    const absent = [undefined, null, '', NaN, 'abc', true, Infinity];
+    check('⛔ نیامده «—» است: undefined · null · \'\' · NaN · متن · بولی · بی‌نهایت',
+      absent.every((v) => m.shown(v) === '—' && m.num(v) === null), absent.map((v) => m.shown(v)).join(' '));
+    check('⛔ و صفرِ واقعی «۰» است، نه «—»', m.shown(0) === '۰' && m.num(0) === 0 && m.shown('0') === '۰', m.shown(0));
+    check('⇒ بایتِ نیامده «—»، نه «0 B»', m.bytes(undefined) === '—' && m.bytes(null) === '—' && m.bytes(0) !== '—');
+    const st1 = m.stampOf({ checkedAt: 100, fetchedAt: 900 });
+    const st2 = m.stampOf({ fetchedAt: 900 });
+    const st3 = m.stampOf({ serverTime: 50 });
+    check('⛔ زمان: سنجیدهٔ سرورِ حساب جلوتر از رسیدن به پنل؛ هیچ‌کدام ⇒ null (نه «همین حالا»)',
+      st1?.kind === 'server' && st1.at === 100 && st2?.kind === 'panel' && st2.at === 900 && st3?.kind === 'server'
+        && m.stampOf({}) === null && m.stampOf(null) === null && m.stampOf({ checkedAt: 0 }) === null, JSON.stringify([st1, st2, st3]));
+    check('⇒ «چند دقیقه پیش» برای زمانِ نیامده null است', m.minutesAgo(undefined, 1e6) === null && m.minutesAgo(1e6 - 180e3, 1e6) === 3);
+    check('⛔ «ناشناخته» هرگز سبز نیست؛ فقط live ِ سرویس سبز است',
+      m.healthTone('unknown') === 'neutral' && m.healthTone(undefined) === 'neutral' && m.healthTone('ok') === 'good'
+        && m.providerTone('mock') !== 'good' && m.providerTone('none') !== 'good' && m.providerTone('live') === 'good');
+    check('⇒ «داده در دسترس نیست» با `available: false` شناخته می‌شود، نه با نبودِ داده',
+      m.isUnavailable({ available: false, capability: 'x' }) && !m.isUnavailable({}) && !m.isUnavailable(null) && !m.isUnavailable({ available: true }));
+    check('⛔ شناسه در نشانیِ پل کدگذاری می‌شود', m.CONSOLE.shopHealth('a/b') === '/api/account-admin/console/shops/a%2Fb/health');
+    //  هر درِ کنسول که صفحه صدا می‌زند، در فهرستِ سفیدِ پل هست
+    const bridge = fs.readFileSync(path.join(here, '..', 'src', 'routes', 'account-admin.js'), 'utf8');
+    const wanted = ['system/health', 'system/providers', 'system/versions', 'system/chain-verify', 'release/beta', 'capabilities',
+      'version-health', 'live-config', 'shops/:id/health', 'shops/:id/suspension', 'flags', 'flags/history'];
+    const lost = wanted.filter((w) => !bridge.includes(`'/console/${w}'`));
+    check('هر درِ کنسول یک خطِ فهرستِ سفید دارد', lost.length === 0, lost.join(' '));
+  }
+  const con = read('pages/account/ShopConsole.tsx');
+  check('⛔ کنسول خودش جمع نمی‌زند و نیامده را صفر نمی‌کند (نه reduce، نه «|| 0»، نه «?? 0»)',
+    !/\.reduce\(/.test(con) && !/\|\|\s*0\b/.test(con) && !/\?\?\s*0\b/.test(con));
+  check('⛔ هر کارت منبع و زمان دارد (SourceLine)، و خطا کدِ خودش را (Problem)',
+    (con.match(/<SourceLine /g) || []).length >= 12 && /scErrorCode/.test(con) && /load\.code/.test(con));
+  check('⛔ فاز ۳ ِ نیامده «داده در دسترس نیست» است (isUnavailable ⇒ NotAvailable)',
+    (con.match(/isUnavailable\(/g) || []).length >= 3 && /NotAvailable/.test(con));
+  check('⛔ کارِ پرهزینه تأیید می‌خواهد و نتیجهٔ سرور «تأییدشده» است', /ConfirmDialog/.test(con) && /scServerConfirmed/.test(con));
+  check('⛔ کانالِ آزمایشی فقط برای admin درخواست می‌شود', /can\('admin'\) \? CONSOLE\.releaseBeta : null/.test(con));
+  const tabs = ['dash', 'shops', 'subs', 'finance', 'versions', 'health', 'settings', 'integrations', 'audit', 'codes'];
+  check(`میزِ فروشگاه همهٔ ${tabs.length} زبانه را دارد`, tabs.every((x) => shopDesk.includes(`'${x}'`)), tabs.filter((x) => !shopDesk.includes(`'${x}'`)).join(' '));
+  check('⛔ «فروش و درآمد»ِ دکان یک در دارد: ‎view=sales‎ ⇒ زبانهٔ «مالی»',
+    /omit=\{\['sales'\]\}/.test(shopDesk) && /tab=finance/.test(shopDesk));
+  //  سه‌زبانه: هر کلیدِ کنسول در فارسی، انگلیسی و پشتو
+  const i18n = read('i18n.ts');
+  const keys = [...new Set([...con.matchAll(/t\('(sc[A-Za-z0-9]+)'\)/g), ...shopDesk.matchAll(/t\('(sc[A-Za-z0-9]+)'\)/g)].map((x) => x[1]))];
+  const thin = keys.filter((k) => (i18n.match(new RegExp(`\\n  ${k}: '`, 'g')) || []).length < 3);
+  check(`سه‌زبانه (فارسی، انگلیسی، پشتو): ${keys.length} کلیدِ کنسول`, keys.length > 50 && thin.length === 0, thin.join(' '));
 }
 
 console.log('\n════════════════════════════════════');

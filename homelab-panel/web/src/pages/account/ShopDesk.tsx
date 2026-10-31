@@ -20,7 +20,7 @@
 //  می‌گوید و برنامه «تمام شده».
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { Clock, KeyRound, MessagesSquare, Store, Users, Wifi } from 'lucide-react';
 
 import { api } from '../../api';
@@ -29,6 +29,9 @@ import { useApp } from '../../app-context';
 import { ActionButton, Cell, Notice, Row, Stat, Table, Tabs } from '../../control/ui';
 import { CloudProblem, fa, useLoad } from './shared';
 import AppSubscriptions from './AppSubscriptions';
+import {
+  AuditTab, FinanceTab, HealthCard, HealthTab, IntegrationsTab, SettingsTab, ShopsTab, SourceLine, VersionsTab,
+} from './ShopConsole';
 
 type Overview = {
   serverTime: number;
@@ -91,6 +94,7 @@ function Dash() {
 
   return (
     <div className="space-y-4">
+      <div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Stat label={t('shopDeskShops')} value={fa(counts.shops)} icon={<Store size={16} />} />
         <Stat label={t('shopDeskCustomers')} value={fa(counts.customers)} icon={<Users size={16} />} />
@@ -103,6 +107,12 @@ function Dash() {
               icon={<MessagesSquare size={16} />}
               sub={t('shopDeskSupportOpen').replace('{n}', fa(counts.supportOpen))} />
       </div>
+      {/* ⛔ هر عدد منبع و زمان دارد — `serverTime` ِ خودِ سرورِ حساب */}
+      <SourceLine source="/api/admin/shop-desk/overview" data={d} at={load.at} />
+      </div>
+
+      {/* فاز ۲: کارتِ سلامت و نسخه‌ها، از ‎/api/admin/system/*‎ */}
+      <HealthCard />
 
       <Card title={t('shopDeskExpiring').replace('{n}', fa(d.days))} icon={<Clock size={16} />}>
         {expiring.length === 0 ? <Notice tone="good">{t('shopDeskExpiringNone')}</Notice> : (
@@ -310,26 +320,45 @@ function Codes() {
 
 /* ─────────────────────────────── خودِ صفحه ─────────────────────────────── */
 
+/*
+ *  ══ زبانه‌های بخشِ «فروشگاه» — پنلِ مرکزیِ مالک، فاز ۲ (OWNER-CONSOLE-AUDIT §۴ و §۸) ══
+ *  داشبورد · فروشگاه‌ها · اشتراک‌ها · مالی · نسخه‌ها · سلامت و خطاها · تنظیمات و پرچم‌ها · یکپارچه‌سازی ·
+ *  دفترِ رخداد · کدِ شاگرد. همه در ‎?tab=‎ (لینکِ مستقیم و برگشتِ مرورگر)؛ پیش‌فرض داشبورد.
+ */
+const TAB_IDS = ['dash', 'shops', 'subs', 'finance', 'versions', 'health', 'settings', 'integrations', 'audit', 'codes'] as const;
+
 export default function ShopDesk() {
   const { t } = useApp();
   const [params, setParams] = useSearchParams();
-  const tabs = [
-    { id: 'dash', label: t('shopDeskDash') },
-    { id: 'subs', label: t('shopDeskGroups') },
-    { id: 'codes', label: t('shopDeskCodes') },
-  ];
+  const label: Record<(typeof TAB_IDS)[number], string> = {
+    dash: t('shopDeskDash'), shops: t('scShops'), subs: t('shopDeskGroups'), finance: t('scFinance'),
+    versions: t('scVersions'), health: t('scHealthTab'), settings: t('scSettingsTab'),
+    integrations: t('scIntegrations'), audit: t('scAudit'), codes: t('shopDeskCodes'),
+  };
+  const tabs = TAB_IDS.map((id) => ({ id, label: label[id] }));
   const wanted = params.get('tab') || 'dash';
   const active = tabs.some((x) => x.id === wanted) ? wanted : 'dash';
+
+  //  ⛔ «یک موضوع، یک در»: «فروش و درآمد»ِ دکان حالا زبانهٔ «مالی» است؛ نشانیِ ‎?tab=subs&view=sales‎
+  //  (و ‎/sales?app=shop‎ از راهِ `subsPath`) به همان‌جا می‌رسد، نه به رونوشتِ دوم
+  if (active === 'subs' && params.get('view') === 'sales') return <Navigate to="/shop?tab=finance" replace />;
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-3">
       <h1 className="text-lg font-semibold">{t('navShops')}</h1>
       <Tabs tabs={tabs} active={active} onChange={(id) => setParams(id === 'dash' ? {} : { tab: id })} />
       {active === 'dash' && <Dash />}
+      {active === 'shops' && <ShopsTab />}
       {/* ⛔ اشتراکِ فروشگاه فقط همین‌جاست — بخشِ جدای «اشتراک‌ها» برداشته شد
           (دستورِ صاحب محصول ۱۴۰۵/۰۸/۰۹): همهٔ کارها با بخشِ ثابتِ دکان، و سه
           گروهِ خواندنیِ میز یک زبانهٔ همان‌جا (‎?view=groups‎) */}
-      {active === 'subs' && <AppSubscriptions app="shop" groups={<SubGroups />} />}
+      {active === 'subs' && <AppSubscriptions app="shop" groups={<SubGroups />} omit={['sales']} />}
+      {active === 'finance' && <FinanceTab />}
+      {active === 'versions' && <VersionsTab />}
+      {active === 'health' && <HealthTab />}
+      {active === 'settings' && <SettingsTab />}
+      {active === 'integrations' && <IntegrationsTab />}
+      {active === 'audit' && <AuditTab shop={params.get('shop') || ''} />}
       {active === 'codes' && <Codes />}
     </div>
   );

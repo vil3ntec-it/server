@@ -2119,6 +2119,9 @@ npm run test:live-pages      ۶۲ · test:control-ui ۱۱۲ — بی تغییر
   `sync/conflicts/:id/restore`، که `reason`ِ بدنه را هم می‌برد. و **درِ دومِ پمپ همان مرزِ پول را دارد**:
   `/api/stations-admin/cloud/grant` و `cloud/vip-codes` فقط admin (مثلِ `subs/:app/grant` و `vip-codes`).
   آزمون: بندِ نقش‌ها در `test/account-admin.mjs`.
+  ⛔ **و از 1.50.63 این مرز دستی سنجیده نمی‌شود**: `test/bridge-roles.mjs` جدولِ نقشِ سرورِ حساب را از
+  **سورسِ خودش** (هر `requireSuperAdmin`) و فهرستِ پل را از **خودِ روترها** (`router.stack`) می‌خواند و هر
+  مسیرِ پل را با سه نقش می‌زند (بخشِ «🏪 کنسولِ فروشگاه — فاز ۲» پایین).
 - ⛔ **`config`ِ سرورِ حساب خام به مرورگر نمی‌رود** — `PLAN_CONFIG_KEYS`. سرورِ
   حسابِ پیش از ۲.۹.۱ کلیدِ خصوصیِ امضای مجوز را در همان پاسخ داشت.
 - ⛔ **توکنِ تونل از محیط (`TUNNEL_TOKEN`)، نه خطِ فرمان**، و فهرستِ پروسه‌ها
@@ -3109,3 +3112,35 @@ POST /api/pump-updates-admin/testers {codes}   فقط مدیر · دفترِ م�
 باتِ تلگرامِ پمپ از shop به ریپوی پمپ (`telegram-bot/`) رفت و افزونهٔ سرورِ حساب است (`shop: src/lib/bots.js` ⇐ `bots/pump/`).
 - `account-server.yml` و `windows-app.yml` پس از کلونِ shop، `telegram-bot/index.js` را (کلونِ sparse، فقط همان پوشه) در `account-server/bots/pump/` می‌گذارند.
 - ⛔ shopِ تازه (با `bots.js`) و بی بات در ریپوی پمپ ⇒ ساخت **سرخ** (و `account-server.yml` بودنِ `bots/pump/index.js` را در بسته هم می‌سنجد)، تا سرورِ حسابِ بی‌بات به مشتری نرسد. shopِ کهنه ⇒ این گام رد می‌شود.
+
+## 🏪 کنسولِ فروشگاه — فاز ۲ ِ پنلِ مرکزیِ مالک (از ۱۴۰۵/۰۸/۰۹، نسخه 1.50.63)
+
+سند: `docs/OWNER-CONSOLE-AUDIT-fa.md` (§۴ و §۸، شاخهٔ `claude/console-audit`). میزِ فروشگاه (`/shop`) ده زبانه دارد:
+داشبورد · فروشگاه‌ها · اشتراک‌ها · مالی · نسخه‌ها · سلامت و خطاها · تنظیمات و پرچم‌ها · یکپارچه‌سازی · دفترِ رخداد ·
+کدِ شاگرد (`?tab=`). رابط: `web/src/pages/account/ShopConsole.tsx` و قاعدهٔ داده `consoleData.ts`.
+
+- ⛔ **پل‌های تازه یک خطِ فهرستِ سفید برای هر مقصد** (`/api/account-admin/console/*` در `account-admin.js`):
+  `system/health|providers|versions` (هر نقش)، `system/chain-verify` (POST، فقط admin — سرورِ حساب: ارشد)،
+  `release/beta` (فقط admin — سرورِ حساب **حتی خواندنش** را فقط به ارشد می‌دهد)، `version-health`،
+  `live-config` (⛔ `scope=release` نه: درِ کانالِ آزمایشی `release/beta` است)، `capabilities`. و `account-audit`
+  حالا `shopId` را به **سرورِ حساب** می‌برد (سقفِ ۵۰۰). روی پورتِ عمومی هیچ‌کدام نیست.
+- ⛔ **پنل عددی نمی‌سازد و «نیامده = —، نه صفر»** (`consoleData.ts`؛ `live-pages` همان فایل را با Node اجرا می‌کند).
+  هر کارت منبع و زمان دارد: «سنجیدهٔ سرورِ حساب» (`checkedAt`/`serverTime`) ⇐ «رسیده به پنل» (`fetchedAt`ِ پل)
+  ⇐ «دریافت در این صفحه» (`useLoad().at`). خطای بالادست با **کدِ خودش** (`Problem`).
+- ⛔ **فاز ۳ (ریپوی shop) پشتِ «توانایی»**: `shops/:id/health`، `shops/:id/suspension`، `flags`، `flags/history`
+  فقط وقتی صدا زده می‌شوند که سرورِ حساب در `GET /api/admin/me` بگوید `capabilities: ["shop-health.v1", …]`؛
+  وگرنه پاسخِ ۲۰۰ ِ صریح `{available:false, reason:'capability_missing', capability, needs}` و رابط «داده در
+  دسترس نیست». قرارداد و شکلِ پاسخ‌ها: `consoleData.ts` (`ShopHealth`، `ShopSuspension`، `Flags`، `FlagHistory`).
+- ⛔ **۴۰۱ِ سرورِ حساب دو معنا دارد** (با سرورِ واقعیِ shop@2.14.4 سنجیده شد): مسیرِ ناشناختهٔ `/api/admin/*` به
+  `routes/data` می‌افتد و `401 invalid_token` می‌دهد، **نه ۴۰۴**. تا امروز پل آن را «نشست تمام شد» می‌خواند: برای هر
+  درخواست یک ورودِ تازه (سقفِ نرخ) و ۴۰۱ تا مرورگر ⇒ `api.ts` صاحب سامانه را **از پنل** بیرون می‌انداخت. حالا
+  (`stations/cloud.js`، `send401`): ۴۰۱ ⇒ `GET /api/admin/me` با همان توکن؛ زنده ⇒ `501 account_server_outdated`
+  (بی ورود)، مرده ⇒ همان یک ورودِ تک‌پرواز. و `cloud_session_expired` حالا **۴۰۹** است، نه ۴۰۱.
+  ⚠️ پس یادداشتِ «سرورِ حسابِ پیش از ۲.۹.۰ ⇒ هر سه تب ۴۰۴» (گامِ ۴) با سرورِ واقعی ۴۰۱ بود؛ حالا ۵۰۱ و پیامِ «به‌روز کنید».
+- ⛔ **«یک موضوع، یک در»**: «فروش و درآمد»ِ دکان زبانهٔ «مالی» است؛ `/shop?tab=subs&view=sales` به `?tab=finance`
+  می‌رود (`AppSubscriptions omit`). تطبیق و حساب‌پی فاز ۴ و «داده در دسترس نیست» (BLOCKED-EXTERNAL).
+- ⚠️ **`ConfirmDialog` درونِ کارتِ `.rise` به `body` برده می‌شود** (`createPortal`): انیمیشنِ transform قابِ `fixed`
+  را زندانی می‌کرد و دکمهٔ «تایید» دیده نمی‌شد — کرومیومِ واقعی گرفتش.
+- آزمون: `account-admin.mjs` (+۲۷ بند، ۲۸۳: شکل، نقش، پورتِ عمومی، کدِ خطای بالادست، فاز ۳، سرورِ کهنه سرخ⇐سبز) ·
+  **`bridge-roles.mjs`** (تازه؛ روی پیش از #109 دو سرخ می‌دهد — همان سه حفره) · `live-pages` (+۱۸، ۱۰۴) ·
+  `control-ui` (+۱۴، ۱۴۸، کرومیوم) · `shop-console-ui.mjs` (تازه، کرومیوم، محلی: «نیامده = —» روی صفحهٔ واقعی).

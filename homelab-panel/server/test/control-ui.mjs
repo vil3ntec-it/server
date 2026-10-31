@@ -195,6 +195,14 @@ try {
     ['/stations#codes', 'رفتن به کدها'],
     ['/codes?app=pump', 'کدهای زنده — پمپ‌بنزین'],
     ['/shop?tab=codes', 'کدِ شاگرد'],
+    //  🏪 فاز ۲ ِ پنلِ مرکزی — هر زبانه بی سرورِ حساب هم قاب و عنوانش می‌آید، نه صفحهٔ سفید
+    ['/shop?tab=shops', 'فروشگاه‌ها'],
+    ['/shop?tab=finance', 'تطبیق، پرداختِ آنلاین و بازپرداخت'],
+    ['/shop?tab=versions', 'نسخه‌های برنامهٔ دکان روی دستگاه‌ها'],
+    ['/shop?tab=health', 'زنجیرهٔ سابقه (SEC-02)'],
+    ['/shop?tab=settings', 'تنظیماتِ زنده'],
+    ['/shop?tab=integrations', 'سرویس‌های بیرونی'],
+    ['/shop?tab=audit', 'دفترِ پنل — کارهای پلِ سرورِ حساب'],
     ['/sales', 'فروش'],
     ['/plans', 'اشتراک‌ها حالا در بخشِ خودِ هر برنامه‌اند'],
     ['/plans?tab=discounts', 'اشتراک‌ها حالا در بخشِ خودِ هر برنامه‌اند'],
@@ -229,7 +237,8 @@ try {
   const ACCOUNT_PAGES = new Set(['/subscriptions', '/subscriptions?app=pump', '/subscriptions?app=pump&tab=plans', '/codes?app=pump', '/stations#codes', '/shop', '/shop?tab=subs', '/stations#subs', '/shop?tab=subs#', '/shop?tab=codes', '/customers', '/customers?app=shop', '/sales', '/plans', '/plans?tab=discounts', '/notices', '/support', '/sync', '/logins', '/discounts', '/discounts?app=pump',
     '/stations?view=codes#subs', '/stations?view=sales#subs', '/shop?tab=subs&view=groups', '/shop?tab=subs&view=discounts',
     '/plans?tab=codes&app=shop', '/plans?tab=requests', '/customers?tab=visitors&app=pump', '/subscriptions?tab=reps&app=shop', '/account-server', '/account-server?tab=email', '/account-server?tab=status',
-    '/vip-codes', '/vip-codes?app=pump', '/visitors']);
+    '/vip-codes', '/vip-codes?app=pump', '/visitors',
+    '/shop?tab=shops', '/shop?tab=finance', '/shop?tab=versions', '/shop?tab=health', '/shop?tab=settings', '/shop?tab=integrations', '/shop?tab=audit']);
 
   for (const [route, heading] of PAGES) {
     consoleErrors.length = 0;
