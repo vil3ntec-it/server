@@ -122,10 +122,12 @@ try {
    *  کردنِ گروه‌های دیگر می‌دود، چون آن‌ها حالشان را در حافظهٔ مرورگر
    *  نگه می‌دارند و بعدش دیگر «حالتِ پیش‌فرض» نیست.
    */
-  //  ⛔ «مشتری‌ها و اشتراک‌ها» و «پلن‌ها و تخفیف‌ها» یک در شدند: «اشتراک‌ها» (۱.۵۰.۱۶)
-  for (const label of ['اشتراک‌ها', 'فروش', 'مرکز اعلان', 'پشتیبانی', 'وضعیت Sync']) {
+  //  ⛔ «اشتراک‌ها» دیگر درِ منو ندارد (۱۴۰۵/۰۸/۰۹): اشتراکِ هر برنامه در
+  //  «پمپ‌بنزین‌ها» و «فروشگاه‌ها» است، که هر دو در گروهِ بازِ «هر روز»اند
+  for (const label of ['پمپ‌بنزین‌ها', 'فروشگاه‌ها', 'فروش', 'مرکز اعلان', 'پشتیبانی', 'وضعیت Sync']) {
     check(`«${label}» بدونِ باز کردنِ گروه دیده می‌شود`, firstText.includes(label), firstText.slice(0, 300));
   }
+  check('⛔ «اشتراک‌ها»ی جدا در منو نیست', !/(^|\n)اشتراک‌ها(\n|$)/.test(firstText), firstText.slice(0, 300));
 
   const fits = await page.evaluate(() => {
     const box = document.querySelector('aside nav')?.parentElement;
@@ -170,53 +172,64 @@ try {
      *  بی داده هم بیاید و صفحه سفید نماند — همان چیزی که کاربر با مودمِ
      *  خاموش می‌بیند.
      */
-    //  ⛔ همهٔ اشتراک‌ها در یک بخش (۱۴۰۵/۰۷/۱۳)؛ نشانیِ قدیمی به همان می‌رود
-    ['/subscriptions', 'اشتراک‌ها'],
-    ['/subscriptions?app=pump', 'پمپ‌بنزین'],
-    ['/customers', 'اشتراک‌ها'],
+    //  ⛔ بخشِ جدای اشتراک‌ها برداشته شد (۱۴۰۵/۰۸/۰۹): نشانیِ کهنه بی برنامه ⇒
+    //  «کدام برنامه؟»، با برنامه ⇒ مستقیم زبانهٔ اشتراکِ همان بخش
+    ['/subscriptions', 'اشتراک‌ها حالا در بخشِ خودِ هر برنامه‌اند'],
+    ['/subscriptions?app=pump', 'اشتراکِ پمپ‌بنزین'],
+    ['/subscriptions?app=pump&tab=plans', 'پلن‌ها و قیمت‌ها'],
+    ['/customers', 'اشتراک‌ها حالا در بخشِ خودِ هر برنامه‌اند'],
+    ['/customers?app=shop', 'اشتراکِ دکان'],
     /*
      *  میزِ فروشگاه — بندهای ۴.۱ تا ۴.۴. سه تب، و هر سه باید بی سرورِ
      *  حساب هم قاب و عنوانشان بیاید، نه صفحهٔ سفید.
      */
     ['/shop', 'فروشگاه‌ها'],
     ['/shop?tab=subs', 'اشتراک‌ها'],
-    //  ⛔ بخشِ هر برنامه فقط درِ بخشِ مرکزیِ «اشتراک‌ها» است (۱۴۰۵/۰۷/۱۳)
-    ['/stations#subs', 'رفتن به اشتراک‌ها'],
-    ['/shop?tab=subs#', 'رفتن به اشتراک‌ها'],
+    //  ⛔ اشتراکِ هر برنامه داخلِ بخشِ خودش، با همهٔ زبانه‌ها (۱۴۰۵/۰۸/۰۹)
+    ['/stations#subs', 'اشتراکِ پمپ‌بنزین'],
+    ['/shop?tab=subs#', 'اشتراکِ دکان'],
+    ['/stations?view=codes#subs', 'کدهای اشتراک'],
+    ['/stations?view=sales#subs', 'فروش و درآمد'],
+    ['/shop?tab=subs&view=groups', 'سه گروه'],
+    ['/shop?tab=subs&view=discounts', 'تخفیف‌ها و کمپین'],
     ['/stations#codes', 'رفتن به کدها'],
     ['/codes?app=pump', 'کدهای زنده — پمپ‌بنزین'],
     ['/shop?tab=codes', 'کدِ شاگرد'],
     ['/sales', 'فروش'],
-    ['/plans', 'پلن‌ها و قیمت‌ها'],
-    ['/plans?tab=discounts', 'تخفیف‌ها و کمپین'],
+    ['/plans', 'اشتراک‌ها حالا در بخشِ خودِ هر برنامه‌اند'],
+    ['/plans?tab=discounts', 'اشتراک‌ها حالا در بخشِ خودِ هر برنامه‌اند'],
     ['/notices', 'مرکز اعلان'],
     ['/support', 'پشتیبانی'],
     ['/sync', 'وضعیت Sync'],
     ['/logins', 'کدِ ایمیلیِ مشتری‌ها'],
-    //  نشانیِ حدسی که هیچ‌وقت صفحهٔ جدا نداشت، به تبِ خودش می‌رود
-    ['/discounts', 'تخفیف‌ها و کمپین'],
+    //  نشانیِ حدسی که هیچ‌وقت صفحهٔ جدا نداشت، به «کدام برنامه؟» می‌رود
+    ['/discounts', 'اشتراک‌ها حالا در بخشِ خودِ هر برنامه‌اند'],
+    ['/discounts?app=pump', 'تخفیف‌ها و کمپین'],
     /*
      *  ⛔ دسترسی‌هایی که در ۱.۴۱.۰ با دفترِ قدیمی از پنل افتادند و در
      *     ۱.۴۷.۰ برگشتند. بی این چهار خط، همان اتفاق بی‌صدا دوباره
      *     می‌افتد: صفحه‌ای که در منو نیست، برای کاربر وجود ندارد.
      */
-    ['/plans?tab=codes', 'کدهای اشتراک'],
+    ['/plans?tab=codes&app=shop', 'کدهای اشتراک'],
+    //  درخواستِ خرید فقط مالِ دکان است ⇒ بی ‎?app=‎ هم مستقیم به فروشگاه
     ['/plans?tab=requests', 'درخواست‌های خرید'],
-    ['/customers?tab=visitors', 'بازدیدکننده‌ها'],
+    ['/customers?tab=visitors&app=pump', 'بازدیدکننده‌ها'],
     //  شورا چ۳ — نماینده‌های فروش
-    ['/subscriptions?tab=reps', 'نماینده‌های فروش'],
+    ['/subscriptions?tab=reps&app=shop', 'نماینده‌های فروش'],
     ['/account-server', 'برنامه‌های زیرِ مدیریت'],
     ['/account-server?tab=email', 'ایمیلِ سرورِ حساب'],
     ['/account-server?tab=status', 'وضعیتِ سرورِ حساب'],
     //  نشانی‌های قدیمی نباید بشکنند
-    ['/vip-codes', 'کدهای اشتراک'],
-    ['/visitors', 'بازدیدکننده‌ها'],
+    ['/vip-codes', 'اشتراک‌ها حالا در بخشِ خودِ هر برنامه‌اند'],
+    ['/vip-codes?app=pump', 'کدهای اشتراک'],
+    ['/visitors', 'اشتراک‌ها حالا در بخشِ خودِ هر برنامه‌اند'],
   ];
 
   /*  صفحه‌هایی که از سرورِ حساب می‌خوانند — فقط این‌ها حق دارند ۴۰۹/۵۰۳ بدهند.  */
-  const ACCOUNT_PAGES = new Set(['/subscriptions', '/subscriptions?app=pump', '/codes?app=pump', '/stations#codes', '/shop', '/shop?tab=subs', '/stations#subs', '/shop?tab=subs#', '/shop?tab=codes', '/customers', '/sales', '/plans', '/plans?tab=discounts', '/notices', '/support', '/sync', '/logins', '/discounts',
-    '/plans?tab=codes', '/plans?tab=requests', '/customers?tab=visitors', '/subscriptions?tab=reps', '/account-server', '/account-server?tab=email', '/account-server?tab=status',
-    '/vip-codes', '/visitors']);
+  const ACCOUNT_PAGES = new Set(['/subscriptions', '/subscriptions?app=pump', '/subscriptions?app=pump&tab=plans', '/codes?app=pump', '/stations#codes', '/shop', '/shop?tab=subs', '/stations#subs', '/shop?tab=subs#', '/shop?tab=codes', '/customers', '/customers?app=shop', '/sales', '/plans', '/plans?tab=discounts', '/notices', '/support', '/sync', '/logins', '/discounts', '/discounts?app=pump',
+    '/stations?view=codes#subs', '/stations?view=sales#subs', '/shop?tab=subs&view=groups', '/shop?tab=subs&view=discounts',
+    '/plans?tab=codes&app=shop', '/plans?tab=requests', '/customers?tab=visitors&app=pump', '/subscriptions?tab=reps&app=shop', '/account-server', '/account-server?tab=email', '/account-server?tab=status',
+    '/vip-codes', '/vip-codes?app=pump', '/visitors']);
 
   for (const [route, heading] of PAGES) {
     consoleErrors.length = 0;
@@ -241,6 +254,26 @@ try {
     check(`${route} بدونِ خطای جاوااسکریپت`, jsErrors.length === 0, jsErrors.join(' | '));
   }
 
+
+  /*
+   *  ⛔ اشتراکِ هر برنامه داخلِ بخشِ خودش (۱۴۰۵/۰۸/۰۹): نشانیِ کهنه به همان
+   *  بخش و زبانه می‌رسد، و عوض کردنِ زبانهٔ درونی `#subs`ِ پمپ‌بنزین‌ها را
+   *  نمی‌اندازد (وگرنه تازه‌سازی به «حساب‌ها» برمی‌گشت).
+   */
+  console.log('\n── اشتراک‌ها در بخشِ هر برنامه ──');
+  await page.goto(`${BASE}/subscriptions?app=pump&tab=reps`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(300);
+  check('‎/subscriptions?app=pump&tab=reps‎ ⇒ ‎/stations?view=reps#subs‎',
+    new URL(page.url()).pathname === '/stations' && page.url().includes('view=reps') && page.url().endsWith('#subs'), page.url());
+  await page.locator('main button', { hasText: 'پلن‌ها و قیمت‌ها' }).first().click();
+  await page.waitForTimeout(300);
+  check('زبانهٔ درونی ‎?view=‎ را عوض می‌کند و ‎#subs‎ می‌ماند',
+    page.url().includes('view=plans') && page.url().endsWith('#subs'), page.url());
+  await page.goto(`${BASE}/customers?app=shop&q=a%40b.af`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(300);
+  check('‎/customers?app=shop&q=…‎ ⇒ میزِ فروشگاه، زبانهٔ اشتراک، با همان جست‌وجو',
+    new URL(page.url()).pathname === '/shop' && page.url().includes('tab=subs') && page.url().includes('q=a%40b.af')
+      && (await page.locator('main input[placeholder="نام، ایمیل، شماره…"]').inputValue()) === 'a@b.af', page.url());
 
   console.log('\n── جست‌وجوی سراسری (Ctrl+K) ──');
   await page.keyboard.press('Control+KeyK');

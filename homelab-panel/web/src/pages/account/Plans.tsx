@@ -26,11 +26,11 @@ type PlansOut = { plans: Plan[]; app: string; config: Record<string, string> };
 
 const UNIT_LABEL: Record<string, string> = { day: 'روزه', week: 'هفته‌ای', month: 'ماهه', year: 'ساله' };
 
-export default function Plans() {
-  //  ⚠️ بخشِ آغازین از نشانی (`?app=`) — کسی که از «پمپ‌بنزین‌ها» به بخشِ
-  //  اشتراک‌ها آمده، پلن و کدِ پمپ می‌خواهد، نه دکان. بعدش کادر آزاد است.
+/** ⛔ `fixedApp`: داخلِ بخشِ خودِ همان برنامه (`AppSubscriptions.tsx`) — بخشِ دیگری انتخاب نمی‌شود. */
+export default function Plans({ fixedApp }: { fixedApp?: AppId } = {}) {
+  //  ⚠️ بی `fixedApp`، بخشِ آغازین از نشانی (`?app=`) و کادر آزاد است.
   const [params] = useSearchParams();
-  const [app, setApp] = useState<AppId>(params.get('app') === 'pump' ? 'pump' : 'shop');
+  const [app, setApp] = useState<AppId>(fixedApp || (params.get('app') === 'pump' ? 'pump' : 'shop'));
   const [edit, setEdit] = useState<Plan | null>(null);
   const [discount, setDiscount] = useState<Plan | null>(null);
 
@@ -45,7 +45,7 @@ export default function Plans() {
       <PageHead
         title="پلن‌ها و قیمت‌ها"
         sub="قیمت‌ها فقط از سرورِ حساب — همان عددی که برنامه، پورتال و پنل می‌خوانند"
-        actions={<AppPicker value={app} onChange={(v) => setApp(v as AppId)} />}
+        actions={<AppPicker only={fixedApp} value={app} onChange={(v) => setApp(v as AppId)} />}
       />
 
       {plans.error && <CloudProblem code={plans.code} message={plans.error} onRetry={plans.reload} />}

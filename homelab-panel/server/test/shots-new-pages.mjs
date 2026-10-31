@@ -37,7 +37,7 @@ try {
   await page.fill('input[type="password"]', 'ShotsPanel!2026');
   await page.locator('form button').last().click();
   await page.waitForSelector('aside nav', { timeout: 20000 });
-  for (const [route, name] of [['/', 'dashboard'], ['/subscriptions', 'subscriptions'], ['/subscriptions?tab=plans&app=pump', 'subscriptions-plans'], ['/codes?app=pump', 'codes-pump'], ['/stations#subs', 'stations-subs']]) {
+  for (const [route, name] of [['/', 'dashboard'], ['/subscriptions', 'subscriptions-moved'], ['/stations?view=plans#subs', 'stations-subs-plans'], ['/shop?tab=subs', 'shop-subs'], ['/codes?app=pump', 'codes-pump'], ['/stations#subs', 'stations-subs']]) {
     await page.goto(`${BASE}${route}`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(700);
     await page.screenshot({ path: path.join(shots, `${name}.png`), fullPage: true });

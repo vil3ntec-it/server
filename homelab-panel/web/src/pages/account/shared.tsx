@@ -283,17 +283,28 @@ export function PageHead({ title, sub, actions }: { title: string; sub?: string;
   );
 }
 
-/** انتخابگرِ بخش — «هر دو» فقط جایی که سرورِ حساب واقعاً می‌پذیرد. */
+/**
+ *  انتخابگرِ بخش — «هر دو» فقط جایی که سرورِ حساب واقعاً می‌پذیرد.
+ *
+ *  ⛔ `only`: داخلِ بخشِ خودِ یک برنامه (۱۴۰۵/۰۸/۰۹ — «بخشِ جدای اشتراک‌ها
+ *  حذف شود») بخشِ دیگر انتخاب‌شدنی نیست؛ فقط همان برنامه و — اگر `withBoth`
+ *  — «هر دو». تنها یک گزینه ⇒ هیچ انتخابگری کشیده نمی‌شود.
+ */
 export function AppPicker({
   value,
   onChange,
   withBoth,
+  only,
 }: {
   value: Scope;
   onChange: (v: Scope) => void;
   withBoth?: boolean;
+  only?: AppId;
 }) {
-  const items: Scope[] = withBoth ? ['both', 'shop', 'pump'] : ['shop', 'pump'];
+  const items: Scope[] = only
+    ? (withBoth ? [only, 'both'] : [only])
+    : (withBoth ? ['both', 'shop', 'pump'] : ['shop', 'pump']);
+  if (items.length < 2) return null;
   return (
     <div className="flex gap-1">
       {items.map((id) => (

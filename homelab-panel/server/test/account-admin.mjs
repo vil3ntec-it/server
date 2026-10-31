@@ -590,6 +590,10 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/pump/short-codes' && req.method === 'GET') return j(200, { codes: [{ id: 'psc1', code: '0471-8293', days: 30, note: '', createdAt: NOW }] });
     if (p === '/api/admin/pump/short-codes' && req.method === 'POST') return j(201, { short: { id: 'psc2', code: '9409-6184', days: body?.days, note: body?.note } });
     if (/^\/api\/admin\/pump\/offline-codes\/[^/]+\/revoke$/.test(p)) return j(200, { offline: { id: 'of1', status: 'revoked' } });
+    //  کدِ آفلاینِ «فروشگاه من» (shop/server/src/lib/shop-offline-codes.js) — بی فایل
+    if (p === '/api/admin/shop-offline-codes' && req.method === 'GET') return j(200, { codes: [{ id: 'sfc1', serial: 'f1e2d3c4b5a6', plan: 'sub', planTitle: 'زمان‌دار', computer: 'K7QW-2MZD-9XRT-B4NA', status: 'issued', createdAt: NOW }] });
+    if (p === '/api/admin/shop-offline-codes' && req.method === 'POST') return j(201, { code: 'SHOPX-12345', offline: { id: 'sfc2', plan: body?.plan, computer: body?.computer } });
+    if (/^\/api\/admin\/shop-offline-codes\/[^/]+\/revoke$/.test(p)) return j(200, { offline: { id: 'sfc1', status: 'revoked' } });
 
     if (p === '/api/admin/purchase-requests') return j(200, { requests: [{ id: 'pr1', shop_id: 's1', user_id: 'u1', plan_code: 'm1', note: '', status: 'pending', created_at: NOW - 3600e3, shop_name: 'دکانِ یک', user_name: 'کریم', phone: '' }] });
     if (/^\/api\/admin\/purchase-requests\/[^/]+\/approve$/.test(p)) return j(200, { subscription: { id: 'sub9' } });
@@ -1005,6 +1009,22 @@ try {
   check('کمپینِ تازه: فیلتر و تخفیف و اعلان با هم می‌روند',
     campNew.status === 200 && last()?.body?.name === 'تخفیفِ عید' && last()?.body?.filter?.expiring_days === 30
       && last()?.body?.discount?.value === 20, JSON.stringify(last()?.body));
+  /*
+   *  ⛔ ۱۴۰۵/۰۸/۰۹ — اشتراکِ هر برنامه در بخشِ خودش: «تخفیف‌ها و کمپین»ِ پمپ
+   *  کمپینِ دکان را نشان نمی‌دهد. سرورِ حساب برای این فهرست `?app=` ندارد،
+   *  پس پالایش در **سرورِ پنل** است، نه در رابط؛ کمپینِ «هر دو» در هر دو بخش.
+   */
+  const campPump = await api('GET', '/api/account-admin/campaigns?app=pump', undefined, auth);
+  const pumpIds = (campPump.json?.campaigns || []).map((c) => c.id);
+  check('⛔ کمپین‌های بخشِ پمپ: فقط پمپ و «هر دو»، نه دکان',
+    campPump.status === 200 && pumpIds.includes(campNew.json?.campaign?.id) && !pumpIds.includes('cmp1'), JSON.stringify(pumpIds));
+  const campShop = await api('GET', '/api/account-admin/campaigns?app=shop', undefined, auth);
+  const shopIds = (campShop.json?.campaigns || []).map((c) => c.id);
+  check('⛔ کمپین‌های بخشِ دکان: دکان و «هر دو»',
+    campShop.status === 200 && shopIds.includes('cmp1') && shopIds.includes(campNew.json?.campaign?.id), JSON.stringify(shopIds));
+  const campAll = await api('GET', '/api/account-admin/campaigns', undefined, auth);
+  check('⚠️ بی ‎?app=‎ همه، مثلِ پیش', campAll.status === 200 && campAll.json?.campaigns?.length === campaigns.length,
+    `${campAll.json?.campaigns?.length} / ${campaigns.length}`);
   const campStats = await api('GET', `/api/account-admin/campaigns/${campNew.json?.campaign?.id}/stats`, undefined, auth);
   check('گزارشِ کمپین عدد می‌دهد، نه حدس', campStats.status === 200 && campStats.json?.codeUses === 1 && campStats.json?.renewed === 1);
 
@@ -1407,10 +1427,33 @@ try {
     check('برنامهٔ اندروید کد، ردیف و فایلِ ‎.pumpkey‎ را از همان کلیدها برمی‌دارد',
       kt.includes('optString("code")') && kt.includes('optJSONObject("offline")') && kt.includes('optJSONObject("file")') && kt.includes('items("codes")'));
     check('برنامهٔ اندروید همان سه درِ پنلِ وب را می‌زند',
-      api2.includes('"/api/account-admin/offline-codes?limit=200"') && api2.includes('"/api/account-admin/offline-codes", "POST"') &&
-        api2.includes('/revoke"'));
+      api2.includes('"/api/account-admin/offline-codes?limit=200" + shopOnly(app, "&")')
+        && api2.includes('"/api/account-admin/offline-codes" + shopOnly(app), "POST"')
+        && api2.includes('"/revoke" + shopOnly(app)')
+        && /fun shopOnly\(app: String, sep: String = "\?"\): String = if \(app == "shop"\) "\$\{sep\}app=shop" else ""/.test(api2));
     const viaApp = await api('GET', '/api/account-admin/offline-codes?limit=200', undefined, auth);
     check('درِ فهرستِ برنامهٔ اندروید (با ‎limit‎) هم جواب می‌دهد', viaApp.status === 200 && Array.isArray(viaApp.json?.codes), String(viaApp.status));
+    /*
+     *  ⛔ ۱۴۰۵/۰۸/۰۹ — اشتراکِ هر برنامه در بخشِ خودش: «🔑 کدِ آفلاینِ فروشگاه»
+     *  در «حساب‌ها» کنارِ اشتراکِ فروشگاه‌ها، همان سه در با ‎?app=shop‎ —
+     *  و پمپ دست‌نخورده در بخشِ پمپ. هر سه درِ برنامه این‌جا واقعاً زده می‌شوند.
+     */
+    const accountsKt = await fsp.readFile(new URL('../../admin-android/app/src/main/java/ir/vil3ntec/admin/ui/AccountsScreen.kt', import.meta.url), 'utf8');
+    const stationsKt = await fsp.readFile(new URL('../../admin-android/app/src/main/java/ir/vil3ntec/admin/ui/StationsScreen.kt', import.meta.url), 'utf8');
+    check('برنامهٔ اندروید: کدِ آفلاینِ فروشگاه در «حساب‌ها»، پمپ در «پمپ»',
+      /OfflineCodesTab\(session, "shop"\)/.test(accountsKt) && /OfflineCodesTab\(session\)/.test(stationsKt)
+        && /if \(app == "shop"\) listOf\(\s*Triple\("sub"/.test(kt) && /Api\.offlineCodes\(session, app\)/.test(kt)
+        && /Api\.revokeOfflineCode\(session, target\.id, app\)/.test(kt) && /account\.trim\(\), app\)/.test(kt));
+    const shopList = await api('GET', '/api/account-admin/offline-codes?limit=200&app=shop', undefined, auth);
+    check('درِ فهرستِ فروشگاهِ برنامهٔ اندروید به ‎shop-offline-codes‎ می‌رسد',
+      shopList.status === 200 && shopList.json?.codes?.[0]?.id === 'sfc1' && last()?.path === '/api/admin/shop-offline-codes', `${shopList.status} ${last()?.path}`);
+    const shopMake = await api('POST', '/api/account-admin/offline-codes?app=shop', { plan: 'sub', computer: 'K7QW-2MZD-9XRT-B4NA', days: 365, note: '', account: '' }, auth);
+    check('ساختنِ کدِ فروشگاه ⇒ ‎shop-offline-codes‎، بی فایل',
+      shopMake.status === 200 && shopMake.json?.code === 'SHOPX-12345' && !shopMake.json?.file
+        && last()?.path === '/api/admin/shop-offline-codes' && last()?.body?.plan === 'sub', `${shopMake.status} ${last()?.path}`);
+    const shopRevoke = await api('POST', '/api/account-admin/offline-codes/sfc1/revoke?app=shop', {}, auth);
+    check('باطل کردنِ کدِ فروشگاه ⇒ ‎shop-offline-codes/…/revoke‎',
+      shopRevoke.status === 200 && last()?.path === '/api/admin/shop-offline-codes/sfc1/revoke', `${shopRevoke.status} ${last()?.path}`);
   }
   const offBad = await api('POST', '/api/account-admin/offline-codes/..%2Fx/revoke', {}, auth);
   check('⛔ شناسهٔ ناجور به سرورِ حساب نمی‌رسد', offBad.status === 400 || offBad.status === 404, String(offBad.status));

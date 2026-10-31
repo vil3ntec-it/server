@@ -404,21 +404,25 @@ object Api {
   fun subStatus(session: Session, app: String, id: String, status: String): Reply =
     call(session, "/api/account-admin/subs/$app/$id/status", "POST", JSONObject().put("status", status))
 
-  /* ------------------ کدِ اشتراکِ آفلاینِ پمپ -------------------------- */
+  /* ------------- کدِ اشتراکِ آفلاین — پمپ و «فروشگاه من» ------------------ */
   /*
    *  ⛔ همان سه درِ پنلِ وب (‎OfflineCodes.tsx‎) — سرورِ حساب امضا می‌کند.
+   *  ‎?app=shop‎ همان را برای «فروشگاه من» می‌کند (‎offlineApp‎ در ‎account-admin.js‎)؛
+   *  نبودش ⇒ پمپ، مثلِ همیشه.
    */
-  fun offlineCodes(session: Session): Reply =
-    call(session, "/api/account-admin/offline-codes?limit=200")
+  private fun shopOnly(app: String, sep: String = "?"): String = if (app == "shop") "${sep}app=shop" else ""
+
+  fun offlineCodes(session: Session, app: String = "pump"): Reply =
+    call(session, "/api/account-admin/offline-codes?limit=200" + shopOnly(app, "&"))
 
   fun makeOfflineCode(session: Session, plan: String, computer: String, days: Int?, note: String,
-                      account: String = ""): Reply =
-    call(session, "/api/account-admin/offline-codes", "POST",
+                      account: String = "", app: String = "pump"): Reply =
+    call(session, "/api/account-admin/offline-codes" + shopOnly(app), "POST",
       JSONObject().put("plan", plan).put("computer", computer).put("account", account)
         .put("days", days ?: JSONObject.NULL).put("note", note), timeoutMs = 30_000)
 
-  fun revokeOfflineCode(session: Session, id: String): Reply =
-    call(session, "/api/account-admin/offline-codes/" + java.net.URLEncoder.encode(id, "UTF-8") + "/revoke",
+  fun revokeOfflineCode(session: Session, id: String, app: String = "pump"): Reply =
+    call(session, "/api/account-admin/offline-codes/" + java.net.URLEncoder.encode(id, "UTF-8") + "/revoke" + shopOnly(app),
       "POST", JSONObject())
 
   /* --------------------------- اطلاعیه‌ها -------------------------------- */

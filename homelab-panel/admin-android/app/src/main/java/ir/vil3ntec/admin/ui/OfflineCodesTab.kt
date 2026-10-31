@@ -48,7 +48,7 @@ import org.json.JSONObject
 import java.io.File
 
 /*
- *  ══ کدِ اشتراکِ آفلاینِ پمپ — در جیب ══════════════════════════════════════
+ *  ══ کدِ اشتراکِ آفلاین — پمپ و «فروشگاه من» — در جیب ══════════════════════
  *
  *  خواستهٔ صاحبِ سامانه (۱۴۰۵/۰۷/۱۵): «توی برنامهٔ نیتیوِ اندرویدِ سرور هم
  *  این باشه تا اگه کامپیوتر پیشم نبود از برنامه بگیرم و بدم به طرف.»
@@ -59,6 +59,9 @@ import java.io.File
  *  کدِ کامپیوتر را دارد — همان قاعدهٔ سرور.
  *  ⛔ کد فقط روی **همان** کامپیوتری کار می‌کند که کدش زده شده؛ نویسهٔ آخرِ
  *  کدِ کامپیوتر سنجش است و سرور خطای تایپ را همین‌جا رد می‌کند.
+ *  ⛔ ‎app‎ (۱۴۰۵/۰۸/۰۹ — اشتراکِ هر برنامه در بخشِ خودش): «پمپ بنزین» در
+ *  بخشِ پمپ، «فروشگاه من» در «حساب‌ها» کنارِ اشتراکِ فروشگاه‌ها — همان
+ *  ‎?app=shop‎ِ پنلِ وب. پلن‌ها همان ‎PLANS_OF‎ِ ‎OfflineCodes.tsx‎.
  */
 
 private data class OfflineRow(
@@ -77,11 +80,21 @@ private data class OfflineRow(
 /** پاسخِ ساختن: کدِ خام، ردیف و فایلِ ‎.pumpkey‎ */
 private data class MadeCode(val code: String, val row: OfflineRow, val file: JSONObject)
 
-private val OFFLINE_PLANS = listOf(
+/** پمپ سه پلن دارد؛ فروشگاه («فروشگاه من») زمان‌دار یا دائمی — ‎shop-offline-codes.js‎ */
+private fun offlinePlans(app: String) = if (app == "shop") listOf(
+  Triple("sub", "زمان‌دار", "365"),
+  Triple("perm", "دائمی", ""),
+) else listOf(
   Triple("std", "استاندارد", "365"),
   Triple("vip", "وی‌آی‌پی", "365"),
   Triple("perm", "دائمی", ""),
 )
+
+private fun appName(app: String) = if (app == "shop") "فروشگاه من" else "پمپ بنزین"
+
+/** جایی که مشتری کدِ کامپیوترش را در برنامه می‌بیند و کد را می‌زند */
+private fun whereInApp(app: String) =
+  if (app == "shop") "اشتراک ← کدِ اشتراکِ آفلاین" else "پروفایل ← اشتراک و پلن‌ها ← کدِ اشتراکِ آفلاین"
 
 private fun rowOf(o: JSONObject) = OfflineRow(
   id = o.optString("id"),
@@ -97,7 +110,7 @@ private fun rowOf(o: JSONObject) = OfflineRow(
 )
 
 @Composable
-fun OfflineCodesTab(session: Session) {
+fun OfflineCodesTab(session: Session, app: String = "pump") {
   var rows by remember { mutableStateOf<List<OfflineRow>?>(null) }
   var error by remember { mutableStateOf("") }
   var reload by remember { mutableIntStateOf(0) }
@@ -107,10 +120,10 @@ fun OfflineCodesTab(session: Session) {
   var note by remember { mutableStateOf("") }
   val scope = rememberCoroutineScope()
 
-  LaunchedEffect(reload) {
+  LaunchedEffect(reload, app) {
     error = ""
     try {
-      val reply = withContext(Dispatchers.IO) { Api.offlineCodes(session) }
+      val reply = withContext(Dispatchers.IO) { Api.offlineCodes(session, app) }
       val array = reply.items("codes")
       rows = (0 until array.length()).mapNotNull { array.optJSONObject(it)?.let(::rowOf) }
     } catch (e: Exception) {
@@ -126,8 +139,8 @@ fun OfflineCodesTab(session: Session) {
     item {
       PanelCard {
         CardHeader(
-          "🔑 کدِ اشتراکِ آفلاین",
-          "برای کامپیوتری که اینترنت ندارد. مشتری در برنامهٔ پمپ «پروفایل ← اشتراک و پلن‌ها» " +
+          "🔑 کدِ اشتراکِ آفلاینِ ${appName(app)}",
+          "برای کامپیوتری که اینترنت ندارد. مشتری در برنامهٔ ${appName(app)} «${whereInApp(app)}» " +
             "کدِ کامپیوترش را می‌بیند؛ همان را این‌جا بزنید و کدِ ساخته‌شده را برایش بفرستید.",
         )
         Row(Modifier.fillMaxWidth().padding(top = 10.dp)) {
@@ -151,12 +164,13 @@ fun OfflineCodesTab(session: Session) {
   if (making) {
     NewOfflineDialog(
       session = session,
+      app = app,
       onDismiss = { making = false },
       onMade = { m -> making = false; made = m; note = ""; reload++ },
     )
   }
 
-  made?.let { m -> MadeDialog(m) { made = null } }
+  made?.let { m -> MadeDialog(m, app) { made = null } }
 
   revoking?.let { r ->
     AlertDialog(
@@ -175,7 +189,7 @@ fun OfflineCodesTab(session: Session) {
           revoking = null
           scope.launch {
             note = try {
-              withContext(Dispatchers.IO) { Api.revokeOfflineCode(session, target.id) }
+              withContext(Dispatchers.IO) { Api.revokeOfflineCode(session, target.id, app) }
               "✅ کد باطل شد."
             } catch (e: Exception) {
               "❌ " + (e.message ?: "نشد")
@@ -223,9 +237,9 @@ private fun OfflineCard(r: OfflineRow, onRevoke: () -> Unit) {
 }
 
 @Composable
-private fun NewOfflineDialog(session: Session, onDismiss: () -> Unit, onMade: (MadeCode) -> Unit) {
+private fun NewOfflineDialog(session: Session, app: String, onDismiss: () -> Unit, onMade: (MadeCode) -> Unit) {
   var computer by remember { mutableStateOf("") }
-  var plan by remember { mutableStateOf("vip") }
+  var plan by remember { mutableStateOf(if (app == "shop") "sub" else "vip") }
   var days by remember { mutableStateOf("365") }
   var memo by remember { mutableStateOf("") }
   var account by remember { mutableStateOf("") }
@@ -236,7 +250,7 @@ private fun NewOfflineDialog(session: Session, onDismiss: () -> Unit, onMade: (M
 
   AlertDialog(
     onDismissRequest = { if (!busy) onDismiss() },
-    title = { Text("کدِ اشتراکِ آفلاینِ تازه") },
+    title = { Text("کدِ اشتراکِ آفلاینِ تازه — ${appName(app)}") },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
@@ -247,7 +261,7 @@ private fun NewOfflineDialog(session: Session, onDismiss: () -> Unit, onMade: (M
         OutlinedTextField(
           value = computer,
           onValueChange = { computer = it.uppercase() },
-          label = { Text("کدِ کامپیوترِ مشتری") },
+          label = { Text(if (app == "shop") "شناسهٔ کامپیوترِ مشتری" else "کدِ کامپیوترِ مشتری") },
           placeholder = { Text("XXXX-XXXX-XXXX-XXXX") },
           singleLine = true,
           textStyle = MonoDigits.copy(textDirection = TextDirection.Ltr),
@@ -255,7 +269,7 @@ private fun NewOfflineDialog(session: Session, onDismiss: () -> Unit, onMade: (M
           modifier = Modifier.fillMaxWidth(),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-          OFFLINE_PLANS.forEach { (code, title, d) ->
+          offlinePlans(app).forEach { (code, title, d) ->
             FilterChip(selected = plan == code, onClick = { plan = code; days = d }, label = { Text(title) })
           }
         }
@@ -281,7 +295,7 @@ private fun NewOfflineDialog(session: Session, onDismiss: () -> Unit, onMade: (M
         OutlinedTextField(
           value = memo,
           onValueChange = { memo = it.take(300) },
-          label = { Text("یادداشت (نامِ مشتری، پمپ…)") },
+          label = { Text(if (app == "shop") "یادداشت (نامِ مشتری، دکان…)" else "یادداشت (نامِ مشتری، پمپ…)") },
           singleLine = true,
           modifier = Modifier.fillMaxWidth(),
         )
@@ -295,7 +309,7 @@ private fun NewOfflineDialog(session: Session, onDismiss: () -> Unit, onMade: (M
         scope.launch {
           try {
             val out = withContext(Dispatchers.IO) {
-              Api.makeOfflineCode(session, plan, computer.trim(), if (perm) null else days.toIntOrNull(), memo.trim(), account.trim())
+              Api.makeOfflineCode(session, plan, computer.trim(), if (perm) null else days.toIntOrNull(), memo.trim(), account.trim(), app)
             }.o()
             onMade(MadeCode(
               out.optString("code"),
@@ -315,12 +329,12 @@ private fun NewOfflineDialog(session: Session, onDismiss: () -> Unit, onMade: (M
 }
 
 @Composable
-private fun MadeDialog(m: MadeCode, onDismiss: () -> Unit) {
+private fun MadeDialog(m: MadeCode, app: String, onDismiss: () -> Unit) {
   val context = LocalContext.current
   val r = m.row
   val until = if (r.permanent) "" else " تا ${offlineDay(r.endsAt)}"
-  val message = "کدِ اشتراکِ آفلاینِ برنامهٔ پمپ بنزین (${r.planTitle}$until) — فقط برای کامپیوترِ ${r.computer}:\n\n" +
-    "${m.code}\n\nدر برنامه: پروفایل ← اشتراک و پلن‌ها ← کدِ اشتراکِ آفلاین ← چسباندن و «ثبتِ کد»."
+  val message = "کدِ اشتراکِ آفلاینِ برنامهٔ ${appName(app)} (${r.planTitle}$until) — فقط برای کامپیوترِ ${r.computer}:\n\n" +
+    "${m.code}\n\nدر برنامه: ${whereInApp(app)} ← چسباندن و «ثبتِ کد»."
 
   AlertDialog(
     onDismissRequest = onDismiss,
@@ -344,7 +358,10 @@ private fun MadeDialog(m: MadeCode, onDismiss: () -> Unit) {
           OutlinedButton(onClick = { copyText(context, m.code) }) { Text("کپیِ کد") }
           OutlinedButton(onClick = { shareText(context, message) }) { Text("ارسال (واتساپ…)") }
         }
-        OutlinedButton(onClick = { shareKeyFile(context, r.computer, m.file) }) { Text("فرستادنِ فایلِ ‎.pumpkey‎") }
+        //  ⚠️ فایلِ ‎.pumpkey‎ فقط مالِ پمپ است؛ سرورِ حساب برای فروشگاه فایلی نمی‌دهد
+        if (m.file.length() > 0) {
+          OutlinedButton(onClick = { shareKeyFile(context, r.computer, m.file) }) { Text("فرستادنِ فایلِ ‎.pumpkey‎") }
+        }
       }
     },
     confirmButton = { TextButton(onClick = onDismiss) { Text("برداشتم، ببند") } },

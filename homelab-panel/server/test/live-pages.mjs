@@ -263,27 +263,65 @@ check('۴.۲ داشبورد هر شش عدد را نشان می‌دهد',
   ['shops', 'customers', 'subscribed', 'online', 'supportUnread', 'supportOpen']
     .every((k) => shopDesk.includes(`counts.${k}`))
   && /const counts = d\.counts \|\|/.test(shopDesk));
-//  ── اشتراک‌ها یک بخش، کدها یک بخش، داشبوردِ کار — ۱۴۰۵/۰۷/۱۳ (۱.۵۰.۱۶) ────
+//  ── کدها یک بخش، داشبوردِ کار — ۱۴۰۵/۰۷/۱۳ (۱.۵۰.۱۶) ──────────────────────
+//  ── و بخشِ جدای «اشتراک‌ها» برداشته شد — ۱۴۰۵/۰۸/۰۹ (دستورِ صاحب محصول) ──
 {
   const app = read('App.tsx');
-  const hub = read('pages/account/SubscriptionsHub.tsx');
   const stations = read('pages/Stations.tsx');
   const dash = read('pages/Dashboard.tsx');
   const codes = read('pages/Codes.tsx');
-  check('⛔ منو یک درِ «اشتراک‌ها» دارد، نه «مشتری‌ها» و «پلن‌ها»ی جدا',
-    /to: '\/subscriptions', key: 'acSubscriptions'/.test(layout)
-    && !/to: '\/customers'/.test(layout) && !/to: '\/plans'/.test(layout));
-  check('⇒ نشانی‌های قدیمی به تبِ خودشان در اشتراک‌ها می‌روند',
-    /path="\/customers" element=\{<ToSubscriptions tab="subs"/.test(app)
-    && /path="\/plans" element=\{<ToSubscriptions tab="plans"/.test(app)
-    && /path="\/vip-codes" element=\{<ToSubscriptions tab="codes"/.test(app));
-  check('⇒ همان صفحه‌ها داخلِ تب‌های هاب — نه رونوشت',
-    /<Customers key=/.test(hub) && /<Plans \/>/.test(hub) && /<VipCodes \/>/.test(hub) && /<PurchaseRequests \/>/.test(hub));
-  check('⇒ پمپ‌بنزین‌ها و فروشگاه‌ها فقط درِ همان بخش‌اند، با بخشِ خودشان',
-    /to="\/subscriptions\?app=pump"/.test(stations) && !/<Customers/.test(stations)
-    && /to="\/subscriptions\?app=shop"/.test(shopDesk) && !/<Customers/.test(shopDesk));
-  check('⇒ «مدیریتِ اشتراک»ِ جدولِ پمپ هم به همان‌جا می‌رود',
-    /\/subscriptions\?app=pump&q=/.test(read('pages/StationsCloud.tsx')));
+  const subs = read('pages/account/AppSubscriptions.tsx');
+  check('⛔ منو درِ «اشتراک‌ها» ندارد — نه «مشتری‌ها» و نه «پلن‌ها»ی جدا',
+    !/to: '\/subscriptions'/.test(layout) && !/to: '\/customers'/.test(layout) && !/to: '\/plans'/.test(layout));
+  check('⛔ صفحهٔ بخشِ جدا (SubscriptionsHub) دیگر نیست',
+    !fs.existsSync(path.join(webSrc, 'pages', 'account', 'SubscriptionsHub.tsx')) && !/SubscriptionsHub/.test(app));
+  check('⇒ نشانی‌های کهنه ۴۰۴ نمی‌شوند — هر کدام با زبانهٔ خودش به «کدام برنامه؟» یا مستقیم به بخشِ درست',
+    /path="\/subscriptions" element=\{<SubscriptionsMoved \/>/.test(app)
+    && /path="\/customers" element=\{<SubscriptionsMoved defaultView="subs"/.test(app)
+    && /path="\/plans" element=\{<SubscriptionsMoved defaultView="plans"/.test(app)
+    && /path="\/vip-codes" element=\{<SubscriptionsMoved defaultView="codes"/.test(app)
+    && /path="\/discounts" element=\{<SubscriptionsMoved defaultView="discounts"/.test(app)
+    && /path="\/visitors" element=\{<SubscriptionsMoved defaultView="visitors"/.test(app));
+  check('⇒ پمپ‌بنزین‌ها و فروشگاه‌ها خودشان اشتراکِ خودشان را دارند — همان صفحه، با بخشِ ثابت',
+    /<AppSubscriptions app="pump" \/>/.test(stations) && !/\/subscriptions/.test(stations)
+    && /<AppSubscriptions app="shop" groups=\{<SubGroups \/>\} \/>/.test(shopDesk) && !/\/subscriptions/.test(shopDesk));
+  /*
+   *  ⛔ «هیچ قابلیتی از دست نرود»: هر زبانهٔ بخشِ کهنه (و فروش) همین‌جا با
+   *  `fixedApp` است — نه رونوشت. درخواستِ خرید فقط دکان (جدولش به shops بند است).
+   */
+  check('⛔ همهٔ قابلیت‌های بخشِ کهنه در بخشِ هر برنامه هست، با بخشِ ثابت',
+    /<Customers fixedApp=\{app\} embedded \/>/.test(subs) && /<Plans fixedApp=\{app\} \/>/.test(subs)
+    && /<Discounts fixedApp=\{app\} \/>/.test(subs) && /<VipCodes fixedApp=\{app\} \/>/.test(subs)
+    && /app === 'shop' && <PurchaseRequests \/>/.test(subs) && /<Visitors fixedApp=\{app\} \/>/.test(subs)
+    && /<SalesReps fixedApp=\{app\} \/>/.test(subs) && /<Sales fixedApp=\{app\} \/>/.test(subs));
+  check('⇒ دادن، حذفِ حساب و کدِ آفلاین همان درهای پیشین‌اند',
+    /import GrantSub from '\.\/GrantSub'/.test(read('pages/account/Customers.tsx'))
+    && /import DeleteAccount from '\.\/DeleteAccount'/.test(read('pages/account/Customers.tsx'))
+    && /<OfflineCodes key=\{app\} app=\{app\} \/>/.test(read('pages/account/VipCodes.tsx')));
+  /*
+   *  ⛔ هیچ لینکِ داخلیِ تازه‌ای به بخشِ برداشته‌شده نرود — جز خودِ مسیرِ
+   *  سازگاری در App.tsx. لینکِ اشتراک فقط از `subsPath`.
+   */
+  const stray = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const f = path.join(dir, e.name);
+      if (e.isDirectory()) walk(f);
+      else if (/\.tsx?$/.test(e.name) && !/App\.tsx$|subsPath\.ts$/.test(f)) {
+        //  فقط کد، نه یادداشت‌ها — تاریخچهٔ نوشته‌شده در یادداشت لینک نیست
+        const src = fs.readFileSync(f, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/(^|[^:])\/\/.*$/gm, '$1');
+        if (/['"`]\/(subscriptions|customers|plans|vip-codes|discounts|visitors)\b/.test(src)) stray.push(path.relative(webSrc, f));
+      }
+    }
+  };
+  walk(webSrc);
+  check('⛔ هیچ لینکِ داخلی به نشانی‌های کهنهٔ اشتراک نمانده', stray.length === 0, stray.join(', '));
+  check('⇒ «مدیریتِ اشتراک»ِ جدولِ پمپ به زبانهٔ اشتراکِ همان بخش می‌رود',
+    /subsPath\('pump', 'subs', q\)/.test(read('pages/StationsCloud.tsx')));
+  check('⇒ جست‌وجوی Ctrl+K «اشتراک» را به هر دو بخش می‌برد',
+    /PALETTE_EXTRA/.test(layout) && /subsPath\('pump'\)/.test(layout) && /subsPath\('shop'\)/.test(layout));
   check('⇒ تمدید و دادنِ اشتراک مدتِ دلخواه دارند',
     /function ExtendDialog/.test(read('pages/account/Customers.tsx'))
     && /customSpan/.test(read('pages/account/GrantSub.tsx')) && /endsAt/.test(read('pages/account/GrantSub.tsx')));
@@ -295,6 +333,45 @@ check('۴.۲ داشبورد هر شش عدد را نشان می‌دهد',
     /TAB_APPS/.test(codes) && /'pump-station'/.test(codes) && /\/api\/codes-admin\/send/.test(codes) && /params\.get\('app'\)/.test(codes));
   check('⇒ صفحهٔ جدای «کدِ پمپ» رفت؛ پمپ‌بنزین‌ها به تبِ پمپِ کدها می‌رود',
     !fs.existsSync(path.join(webSrc, 'pages', 'PumpCodes.tsx')) && /to="\/codes\?app=pump"/.test(stations));
+}
+
+/*
+ *  ⛔ رفتارِ نشانی‌ها، نه فقط متنشان: خودِ `subsPath.ts` با Node اجرا می‌شود
+ *  (فایل عمداً بی import و فقط با نحوِ حذف‌شدنیِ TypeScript نوشته شده).
+ */
+{
+  let m = null;
+  try { m = await import(new URL('file://' + path.join(webSrc, 'pages', 'account', 'subsPath.ts')).href); }
+  catch (e) { console.log('   ', e.message); }
+  check('subsPath.ts با Node اجرا می‌شود', Boolean(m && m.legacySubsTarget && m.subsPath));
+  if (m) {
+    const CASES = [
+      //  [search, defaultView, انتظار]
+      ['?app=pump', 'subs', '/stations#subs'],
+      ['?app=pump&q=a%40b.af', 'subs', '/stations?q=a%40b.af#subs'],
+      ['?app=shop', 'subs', '/shop?tab=subs'],
+      ['?app=shop&tab=plans', 'subs', '/shop?tab=subs&view=plans'],
+      ['?tab=plans&app=pump', 'subs', '/stations?view=plans#subs'],
+      ['?app=pump', 'codes', '/stations?view=codes#subs'],          // /vip-codes?app=pump
+      ['?app=shop&tab=visitors', 'subs', '/shop?tab=subs&view=visitors'], // /customers?tab=visitors&app=shop
+      ['?app=pump&tab=reps', 'subs', '/stations?view=reps#subs'],
+      ['?tab=requests', 'plans', '/shop?tab=subs&view=requests'],     // درخواستِ خرید فقط دکان
+      ['?app=pump&tab=requests', 'subs', '/stations#subs'],          // پمپ درخواستِ خرید ندارد ⇒ اشتراک‌ها
+      ['?app=shop&tab=bogus', 'discounts', '/shop?tab=subs&view=discounts'],
+      ['?app=station', 'subs', null],                                // بخشِ ناشناخته ⇒ «کدام برنامه؟»
+      ['', 'subs', null],
+      ['?tab=plans', 'subs', null],
+    ];
+    const bad = CASES.filter(([s, d, want]) => m.legacySubsTarget(s, d) !== want)
+      .map(([s, d, want]) => `${s || '∅'}|${d} ⇒ ${m.legacySubsTarget(s, d)} (باید ${want})`);
+    check(`⛔ هر نشانیِ کهنه به همان برنامه و همان زبانه می‌رسد (${CASES.length} حالت)`, bad.length === 0, bad.join(' · '));
+    check('⇒ پمپ «درخواستِ خرید» و «سه گروه» ندارد؛ دکان دارد',
+      !m.viewsOf('pump').includes('requests') && !m.viewsOf('pump').includes('groups')
+      && m.viewsOf('shop').includes('requests') && m.viewsOf('shop').includes('groups'));
+    check('⇒ هر دو بخش پلن، تخفیف، کد، بازدیدکننده، نماینده و فروش دارند',
+      ['subs', 'plans', 'discounts', 'codes', 'visitors', 'reps', 'sales']
+        .every((v) => m.viewsOf('pump').includes(v) && m.viewsOf('shop').includes(v)));
+  }
 }
 
 check('۴.۲ و «رو به پایان» ایمیل و روزِ مانده دارد',
