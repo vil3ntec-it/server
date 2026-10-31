@@ -44,6 +44,7 @@ import { rateLimit } from '../platform/rate-limit.js';
 import {
   withPanelActor, readServiceKey, storeServiceKey, forgetServiceKey, publicServiceKey, SERVICE_KEY_RE,
 } from '../account/service-key.js';
+import { mountConsoleShell } from './console-shell.js';
 
 const { requireRole } = panelRoles;
 const router = express.Router();
@@ -879,8 +880,13 @@ router.patch('/account-config', requireRole('admin'), guard(async (req, res) => 
   if (!Object.keys(body).length) {
     return res.status(400).json({ error: 'nothing', message: 'چیزی برای نوشتن نبود' });
   }
-  const out = await cloudRaw('PATCH', '/api/admin/config', { body });
-  audit({ actor: actorOf(req), action: 'account.trial.update', detail: body });
+  //  پوستهٔ کنسول (۴.۱۲): «پیشین ⇒ تازه» و دلیل (اختیاری؛ کنسول همیشه می‌فرستد) در دفترِ پنل — همان ردیف‌ها
+  //  «تاریخچهٔ تنظیمات» ِ ماژولِ تنظیمات‌اند. خواندنِ پیشین شکست بخورد ⇒ `from` نیست، نه حدس.
+  const reason = String(req.body?.reason ?? '').trim().slice(0, 200);
+  const before = await cloudRaw('GET', '/api/admin/plans').catch(() => null);
+  const out = await cloudRaw('PATCH', '/api/admin/config', { body: { ...body, ...(reason ? { reason } : {}) } });
+  const from = before?.config ? Object.fromEntries(Object.keys(body).map((k) => [k, before.config[k] ?? null])) : undefined;
+  audit({ actor: actorOf(req), action: 'account.trial.update', detail: { ...body, ...(from ? { from } : {}), ...(reason ? { reason } : {}) } });
   res.json({ config: Object.fromEntries(CONFIG_KEYS.map((k) => [k, out.config?.[k] ?? ''])) });
 }));
 
@@ -2354,6 +2360,12 @@ for (const [local, remote] of [
     res.json(await cloudRaw('GET', remote, { query: req.query }));
   }));
 }
+
+/*
+ *  🏪 پوستهٔ کنسولِ «فروشگاه» (ماژول‌ها، داشبورد، جست‌وجو، کاربران و نقش‌ها، پرچم‌ها) — درهایش در
+ *  ‎routes/console-shell.js‎، ولی روی **همین** روتر تا فهرستِ سفید و ‎bridge-roles.mjs‎ یکی بمانند.
+ */
+mountConsoleShell(router);
 
 /** هر چیزِ دیگری زیرِ این پیشوند «نیست» — نه «رد شد»، تا نقشهٔ آن‌طرف لو نرود. */
 router.use((req, res) => res.status(404).json({ error: 'not_found', message: 'این مسیر وجود ندارد' }));

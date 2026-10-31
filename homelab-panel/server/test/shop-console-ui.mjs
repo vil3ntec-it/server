@@ -44,6 +44,7 @@ let caps = [];
 const posted = [];          // { path, body, idem, bearer }
 const holds = [];
 let svcKey = '';
+let breakFlags = false;
 const fake = http.createServer((req, res) => {
   let raw = '';
   req.on('data', (d) => (raw += d));
@@ -54,10 +55,10 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/health') return j(200, { ok: true, server: 'online', version: '2.14.4' });
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
     const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-    if (req.method === 'POST') {
+    if (req.method !== 'GET') {
       let body = null;
       try { body = raw ? JSON.parse(raw) : null; } catch { /* نه JSON */ }
-      posted.push({ path: p, body, idem: req.headers['idempotency-key'] || '', bearer, actor: req.headers['x-actor-id'] || '' });
+      posted.push({ method: req.method, path: p, body, idem: req.headers['idempotency-key'] || '', bearer, actor: req.headers['x-actor-id'] || '' });
     }
     //  بی capabilities ⇒ فاز ۳ نیامده؛ کلیدِ سرویس فقط وقتی همان کلیدِ ساخته‌شده است
     if (p === '/api/admin/me') {
@@ -90,6 +91,26 @@ const fake = http.createServer((req, res) => {
         const h = holds.find((x) => x.id === m[2]);
         Object.assign(h, { active: false, liftedAt: Date.now(), liftReason: posted.at(-1).body?.reason });
         return j(200, { hold: h, state: { access: 'open', blockedBy: [], servicesDisabled: [] }, replayed: false });
+      }
+      //  پوستهٔ فروشگاه (۱۴۰۵/۰۸/۱۰): مدیرانِ سرورِ حساب، جست‌وجو، نوشتنِ پرچم
+      if (p === '/api/admin/admins' && req.method === 'GET') {
+        return j(200, { admins: [
+          { id: 'adm-o', username: 'malek', name: 'مالک', role: 'superadmin', status: 'active', is_owner: true, created_at: NOW - 9 * DAY },
+          { id: 'a1', username: 'boss', name: 'پل', role: 'superadmin', status: 'active', is_owner: false, created_at: NOW - 8 * DAY },
+          { id: 'adm-f', username: 'mali', name: 'مالی', role: 'finance', status: 'active', is_owner: false, created_at: NOW - 7 * DAY }] });
+      }
+      if (p === '/api/admin/admins' && req.method === 'POST') {
+        const b = posted.at(-1).body || {};
+        return j(201, { admin: { id: 'adm-new', username: b.username, name: b.name, role: b.role } });
+      }
+      if (p === '/api/admin/search') {
+        return j(200, { q: u.searchParams.get('q'), kinds: ['shops', 'users', 'payments', 'orders', 'errors', 'admins'],
+          results: { shops: [{ id: 'shp-1', name: 'دکانِ یک', status: 'active' }], users: [], payments: [], orders: [], errors: [], admins: [] } });
+      }
+      if (p === '/api/admin/flags' && req.method === 'PUT') return j(200, { ok: true, scope: posted.at(-1).body?.scope, key: posted.at(-1).body?.key });
+      if (p === '/api/admin/flags' && breakFlags) {
+        //  ⚠️ شکلِ خرابِ بالادست: «شرح» یک شیء است ⇒ رندرِ ماژول می‌شکند — نگهبانِ همان ماژول باید بگیرد
+        return j(200, { scope: 'all', items: [], known: [{ key: 'shop.chat', scope: 'shop', default: false, what: { broken: true } }] });
       }
       if (p === '/api/admin/flags') {
         return j(200, { scope: 'all', version: 2, items: [{ key: 'shop.orders', value: false, updatedAt: NOW - DAY, updatedBy: 'boss' }],
@@ -196,7 +217,9 @@ try {
   console.log('\n── داشبورد ──');
   let body = await open('');
   check('صفحه راست‌چین است', (await page.evaluate(() => document.documentElement.dir)) === 'rtl');
-  check('ده زبانهٔ فروشگاه', ['داشبورد', 'فروشگاه‌ها', 'اشتراک‌ها', 'مالی', 'نسخه‌ها', 'سلامت و خطاها', 'تنظیمات و پرچم‌ها', 'یکپارچه‌سازی', 'دفترِ رخداد', 'کدِ شاگرد']
+  //  (پوستهٔ ۱۴۰۵/۰۸/۱۰) منوی گروه‌بندی‌شدهٔ ماژول‌ها از سرور — مالک همهٔ ماژول‌های ساخته را می‌بیند
+  check('یازده ماژولِ ساختهٔ فروشگاه در منو', ['داشبورد', 'فروشگاه‌های عضو', 'اشتراک و مجوز', 'مالیِ مرکزی', 'نسخه‌ها و انتشار', 'سلامت و خطاها',
+    'تنظیماتِ مرکزی و پرچم‌ها', 'یکپارچه‌سازی و API', 'دفترِ رخداد', 'کدِ شاگرد', 'کاربران و نقش‌ها']
     .every((x) => body.includes(x)), body.slice(0, 300));
   //  ⛔ آنلاین نیامده ⇒ «—»؛ پیامِ نخوانده صفرِ واقعی ⇒ «۰»
   const onlineCard = await page.locator('main .card', { hasText: 'آنلاین' }).first().innerText();
@@ -205,7 +228,7 @@ try {
   check('و صفرِ واقعی «۰» است، نه «—»', /۰/.test(unreadCard), unreadCard);
   check('⛔ زیرِ آمارِ داشبورد منبع و زمانِ سرورِ حساب هست',
     body.includes('/api/admin/shop-desk/overview') && body.includes('سنجیدهٔ سرورِ حساب') && body.includes('دقیقه پیش'), body.slice(0, 600));
-  const healthCard = await page.locator('main .card', { hasText: 'سلامتِ سرورِ حساب' }).first().innerText();
+  const healthCard = await page.locator('main .card', { hasText: 'خطای برنامه‌ها (۲۴ ساعت)' }).first().innerText();
   check('⛔ کارتِ سلامت: خطای برنامه‌ها نیامده «—»، تعارض صفرِ واقعی «۰»',
     /خطای برنامه‌ها \(۲۴ ساعت\): —/.test(healthCard) && /تعارض \(۲۴ ساعت\): ۰/.test(healthCard), healthCard);
   check('و منبعش ‎/api/admin/system/health‎ با «۳ دقیقه پیش»', healthCard.includes('/api/admin/system/health') && healthCard.includes('۳ دقیقه پیش'), healthCard);
@@ -265,7 +288,7 @@ try {
   console.log('\n── چسبِ فاز ۳: حالت‌ها، سلامت، پرچم‌ها، کلیدِ سرویس ──');
   caps = ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1'];
   body = await open('shops');
-  await page.fill('main input.input', 'یک');
+  await page.fill('main section input.input', 'یک');
   await page.waitForTimeout(800);
   body = await main();
   check('⛔ با جست‌وجو «شمارِ همین جست‌وجو: ۱» (سرورِ حسابِ تازه total را همان جست‌وجو می‌شمارد)',
@@ -335,6 +358,98 @@ try {
   await page.waitForTimeout(800);
   const viaKey2 = posted.filter((x) => x.path === '/api/admin/system/chain-verify').slice(viaKey.length);
   check('و از آن پس پل با کلید و «انجام‌دهنده»ِ همین کاربر', viaKey2.length === 1 && viaKey2[0].bearer === svcKey && /^panel:\d+$/.test(viaKey2[0].actor), JSON.stringify(viaKey2));
+
+  /* ══════════ پوستهٔ فروشگاه (۱۴۰۵/۰۸/۱۰) ══════════ */
+  console.log('\n── پوسته: ردِ نان، جست‌وجو، کاربران و نقش‌ها، پرچمِ پرخطر، نگهبانِ ماژول، نقش، گوشی ──');
+  caps = [...caps, 'admin-sessions.v1', 'search.v1'];
+  body = await open('settings');
+  const crumb = await page.locator('nav[aria-label="ردِ نان"]').innerText();
+  check('ردِ نان: فروشگاه › دسترسی و تنظیمات › تنظیماتِ مرکزی و پرچم‌ها', /فروشگاه[\s\S]*دسترسی و تنظیمات[\s\S]*تنظیماتِ مرکزی و پرچم‌ها/.test(crumb), crumb);
+  check('منوی کناری: گروه‌ها و همین ماژول «جاری»', (await page.locator('main aside a[aria-current="page"]').innerText()).includes('تنظیماتِ مرکزی'));
+  await page.locator('main tr', { hasText: 'shop.chat' }).locator('button', { hasText: 'روشن کن' }).click();
+  await page.waitForTimeout(300);
+  const fsend = page.getByRole('button', { name: 'تأیید و فرستادن' });
+  await page.locator('textarea').last().fill('روشن برای همه');
+  check('⛔ پرچمِ «همهٔ دکان‌ها» (پرخطر): بی نامِ کلید و رمزِ پنل دکمه بسته است', await fsend.isDisabled());
+  await page.getByLabel('برای تأیید، «shop.chat» را بنویسید').fill('shop.chat');
+  check('…و با نام ولی بی رمز هم بسته', await fsend.isDisabled());
+  await page.locator('input[autocomplete="current-password"]').last().fill('ShopConsole!2026');
+  let n0 = posted.length;
+  await fsend.dblclick();
+  await page.waitForTimeout(1000);
+  const puts = posted.slice(n0).filter((x) => x.method === 'PUT' && x.path === '/api/admin/flags');
+  check('⛔ دوکلیک ⇒ یک PUT با {scope:all, key, value:true, reason}', puts.length === 1
+    && JSON.stringify(puts[0].body) === JSON.stringify({ scope: 'all', key: 'shop.chat', value: true, reason: 'روشن برای همه' }), JSON.stringify(puts));
+  check('و نتیجه «تأییدشده از سرورِ حساب»', (await main()).includes('تأییدشده از سرورِ حساب'));
+
+  body = await open('users');
+  check('کاربران و نقش‌ها: مالکِ اصلی و حسابِ پل نشان‌دار', body.includes('مالکِ اصلی') && body.includes('حسابِ پل') && body.includes('mali'), body.slice(0, 600));
+  check('⛔ روی مالک و حسابِ پل دکمهٔ «نقش»/«تعلیق» نیست', (await page.locator('main tr', { hasText: 'malek' }).locator('button', { hasText: 'تعلیق' }).count()) === 0
+    && (await page.locator('main tr', { hasText: 'boss' }).locator('button', { hasText: 'نقش' }).count()) === 0
+    && (await page.locator('main tr', { hasText: 'mali' }).locator('button', { hasText: 'تعلیق' }).count()) === 1);
+  await page.locator('main button', { hasText: 'مدیرِ تازه' }).click();
+  await page.waitForTimeout(300);
+  check('⛔ نقشِ پیش‌نهادی «فقط‌خواندن» (کمینهٔ دسترسی)', (await page.getByLabel('نقش (کمینهٔ دسترسی: «فقط‌خواندن»)').inputValue()) === 'viewer');
+  await page.getByLabel('نامِ کاربری (حروفِ کوچکِ انگلیسی، رقم، . _ -)').fill('new.one');
+  await page.locator('button', { hasText: 'ساختنِ تصادفی' }).click();
+  const genPw = await page.locator('input[autocomplete="new-password"]').inputValue();
+  check('رمزِ تصادفیِ قوی ساخته شد', genPw.length >= 18, String(genPw.length));
+  await page.locator('textarea').last().fill('همکارِ تازه');
+  const csend = page.getByRole('button', { name: 'تأیید و فرستادن' });
+  check('⛔ بی رمزِ پنل دکمه بسته است', await csend.isDisabled());
+  await page.locator('input[autocomplete="current-password"]').last().fill('ShopConsole!2026');
+  n0 = posted.length;
+  await csend.dblclick();
+  await page.waitForTimeout(1200);
+  const madeAdm = posted.slice(n0).filter((x) => x.path === '/api/admin/admins');
+  check('⛔ دوکلیک ⇒ یک ساختن، نقشِ viewer، از راهِ پیشین', madeAdm.length === 1 && madeAdm[0].body?.role === 'viewer' && madeAdm[0].body?.username === 'new.one' && madeAdm[0].bearer === 'tok-1', JSON.stringify(madeAdm));
+  body = await main();
+  check('نتیجه «سرورِ حساب تأیید کرد» و رمزِ حسابِ تازه دیگر در صفحه نیست', body.includes('سرورِ حساب تأیید کرد') && !(await page.content()).includes(genPw));
+
+  await page.fill('#shop-console-search', 'دکان');
+  await page.waitForTimeout(1000);
+  const dd = await page.locator('[role="listbox"]').innerText();
+  check('جست‌وجوی سراسری: گروهِ «دکان‌ها» با نتیجه', dd.includes('دکان‌ها') && dd.includes('دکانِ یک'), dd);
+  await page.locator('[role="listbox"] a', { hasText: 'دکانِ یک' }).first().click();
+  await page.waitForTimeout(900);
+  check('⇒ لینکِ مستقیم: ‎?tab=shops&shop=shp-1‎، پروندهٔ همان دکان، و ردِ نان با شناسه', /\/shop\?tab=shops&shop=shp-1$/.test(page.url())
+    && (await page.locator('nav[aria-label="ردِ نان"]').innerText()).includes('shp-1') && (await main()).includes('dev-h1'), page.url());
+
+  body = await open('market');
+  check('ماژولِ رزروشده «هنوز ساخته نشده» — بی عدد و بی دکمه', body.includes('هنوز در این نسخهٔ پنل ساخته نشده'), body.slice(0, 400));
+  body = await open('no-such');
+  check('شناسهٔ ناشناخته ⇒ «چنین ماژولی نیست»', body.includes('چنین ماژولی نیست'));
+
+  breakFlags = true;
+  body = await open('settings');
+  breakFlags = false;
+  check('⛔ شکلِ خرابِ بالادست فقط همان ماژول را سرخ می‌کند؛ منو و جست‌وجو سرِ جایشان',
+    body.includes('باز نشد') && (await page.locator('main aside nav a').count()) >= 10 && (await page.locator('#shop-console-search').count()) === 1, body.slice(0, 400));
+  jsErrors.splice(0, jsErrors.length, ...jsErrors.filter((e) => !/Objects are not valid as a React child|Minified React error #31|ماژولِ «|The above error occurred/.test(e)));
+
+  //  نقش: viewer ِ پنل
+  const adminTok = await page.evaluate(() => localStorage.getItem('hlp.token'));
+  await fetch(`${BASE}/api/auth/users`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${adminTok}` },
+    body: JSON.stringify({ username: 'view1', password: 'ShopViewer!2026', role: 'viewer' }) });
+  const vctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const vpage = await vctx.newPage();
+  vpage.on('pageerror', (e) => jsErrors.push(String(e.message)));
+  await vpage.goto(BASE, { waitUntil: 'networkidle' });
+  await vpage.fill('input[autocomplete="username"]', 'view1');
+  await vpage.fill('input[type="password"]', 'ShopViewer!2026');
+  await vpage.locator('form button').last().click();
+  await vpage.waitForTimeout(1500);
+  await vpage.goto(`${BASE}/shop`, { waitUntil: 'networkidle' });
+  await vpage.waitForTimeout(800);
+  const opts = await vpage.locator('select[aria-label="ماژول‌های فروشگاه"] option').allInnerTexts();
+  check('⛔ viewer: «کاربران و نقش‌ها» در منو نیست (سرور هم نمی‌گوید)', opts.length >= 9 && !opts.some((o) => o.includes('کاربران و نقش‌ها')), opts.join('|'));
+  check('گوشی (۳۹۰px): فهرستِ کشویی دیده می‌شود، کناره نه، و صفحه افقی نمی‌لغزد',
+    await vpage.locator('select[aria-label="ماژول‌های فروشگاه"]').isVisible() && !(await vpage.locator('main aside nav[aria-label="ماژول‌های فروشگاه"]').isVisible())
+      && (await vpage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)));
+  await vpage.goto(`${BASE}/shop?tab=users`, { waitUntil: 'networkidle' });
+  await vpage.waitForTimeout(600);
+  check('⛔ viewer با لینکِ مستقیم ‎?tab=users‎ ⇒ «برای نقشِ شما باز نیست»', (await vpage.locator('main').innerText()).includes('برای نقشِ شما باز نیست'));
+  await vctx.close();
 
   check('هیچ خطای جاوااسکریپت', jsErrors.length === 0, jsErrors.join(' | '));
 } catch (e) {
