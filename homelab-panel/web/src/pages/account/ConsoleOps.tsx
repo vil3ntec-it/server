@@ -3,8 +3,8 @@
 //
 //    ۴.۸  نسخه‌ها و انتشار     ⇐ ‎ReleasesTab‎   (زبانهٔ «نسخه‌ها»: همان کارت‌های فاز ۲ + انتشار، سازگاری، مرحله‌ای)
 //    ۴.۹  سلامتِ سیستم         ⇐ ‎OpsHealthTab‎  (زبانهٔ «سلامت و خطاها»: سنجه‌های پنل + سرورِ حساب + فاز ۲)
-//    ۴.۱۰ رخدادها              ⇐ ‎IncidentsTab‎  (زبانهٔ تازهٔ «رخدادها»)
-//    ۴.۱۱ هشدارها              ⇐ ‎AlertsTab‎     (زبانهٔ تازهٔ «هشدارها»)
+//    ۴.۱۰ رخدادها              ⇐ ‎IncidentsTab‎  (ماژولِ `errors` ِ پوسته)
+//    ۴.۱۱ هشدارها              ⇐ ‎AlertsTab‎     (ماژولِ `alerts` ِ پوسته)
 //    ۴.۱۳ یکپارچه‌سازی و API   ⇐ ‎IntegrationsOpsTab‎ (زبانهٔ «یکپارچه‌سازی»: فاز ۲ + فعالیت، اعتبارنامه، وب‌هوک، قرارداد)
 //
 //  ⛔ هر عدد از سرورِ حساب یا از سنجهٔ همین پنل؛ نیامده ⇒ «—» (‎shown‎ ِ consoleData)، نه صفر.
@@ -833,10 +833,4 @@ export function IntegrationsOpsTab() {
       <IntegrationsBoard />
     </div>
   );
-}
-
-/** برچسبِ زبانه‌های تازه برای ‎ShopDesk‎ (بی دست زدن به ‎i18n.ts‎ ِ مشترک). */
-export function useOpsTabLabels() {
-  const t = useOpsT();
-  return { incidents: t('tabIncidents'), alerts: t('tabAlerts') };
 }

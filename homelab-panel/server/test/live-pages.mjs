@@ -608,7 +608,8 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
 {
   console.log('\n── کنسولِ فروشگاه: ماژول‌های عملیات ──');
   const ops = read('pages/account/ConsoleOps.tsx');
-  const desk = read('pages/account/ShopDesk.tsx');
+  //  پوستهٔ کنسول: هر ماژولِ عملیات یک فایل در ‎console/modules/‎ (۴.۱۰ = شناسهٔ رزروِ `errors`، ۴.۱۱ = `alerts`)
+  const mod = (id) => read(`pages/account/console/modules/${id}.tsx`);
   const bridgeOps = fs.readFileSync(path.join(here, '..', 'src', 'routes', 'console-ops.js'), 'utf8');
   check('⛔ عملیات خودش جمع نمی‌زند و نیامده را صفر نمی‌کند (نه reduce، نه «|| 0»، نه «?? 0»)',
     !/\.reduce\(/.test(ops) && !/\|\|\s*0\b/.test(ops) && !/\?\?\s*0\b/.test(ops));
@@ -627,7 +628,9 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
   check('هر درِ عملیات یک خطِ فهرستِ سفید در پل دارد', lostOps.length === 0, lostOps.join(' '));
   check('⛔ رمزِ احرازِ دوباره به سرورِ حساب نمی‌رود (بدنهٔ بالادستِ مرحله فقط همان چهار فیلد)',
     /cloudRaw\('PUT', '\/api\/admin\/release\/stage', \{ body: input \}\)/.test(bridgeOps) && /return \{ tag, version, percent, reason \}/.test(bridgeOps));
-  check('میزِ فروشگاه زبانه‌های «رخدادها» و «هشدارها» را دارد', ["'incidents'", "'alerts'"].every((x) => desk.includes(x)) && /<IncidentsTab /.test(desk) && /<AlertsTab /.test(desk));
+  check('پوسته: «رخدادها» ماژولِ `errors` و «هشدارها» ماژولِ `alerts`؛ نسخه‌ها/سلامت/یکپارچه‌سازی همان زبانه‌های عملیات',
+    /id: 'errors'/.test(mod('errors')) && /<IncidentsTab /.test(mod('errors')) && /id: 'alerts'/.test(mod('alerts')) && /<AlertsTab /.test(mod('alerts'))
+      && /<ReleasesTab /.test(mod('versions')) && /<OpsHealthTab /.test(mod('health')) && /<IntegrationsOpsTab /.test(mod('integrations')));
   let tr = null;
   try { tr = await import(new URL('file://' + path.join(webSrc, 'pages', 'account', 'consoleOpsI18n.ts')).href); }
   catch (e) { console.log('   ', e.message); }

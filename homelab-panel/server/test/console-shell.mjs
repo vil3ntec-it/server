@@ -191,7 +191,9 @@ try {
   check('مالک: همهٔ ماژول‌ها، owner=true', mods.admin?.owner === true && mods.admin?.modules?.length === CONSOLE_MODULES.length, JSON.stringify(mods.admin).slice(0, 300));
   check('admin ِ دوم: همه، ولی owner=false', mods.admin2?.owner === false && mods.admin2?.modules?.some((m) => m.id === 'users'));
   check('⛔ operator و viewer «کاربران و نقش‌ها» را ندارند', ['operator', 'viewer'].every((r) => mods[r]?.modules && !mods[r].modules.some((m) => m.id === 'users')));
-  check('رزروشده‌ها «ساخته‌نشده»اند (market، courier، errors، alerts) و بقیه ساخته', mods.admin.modules.filter((m) => !m.built).map((m) => m.id).sort().join(',') === 'alerts,courier,errors,market');
+  //  کنسولِ یکپارچه (۱.۵۰.۶۹): رزروهای پیشین (market، courier، errors، alerts) حالا درِ واقعی دارند ⇒ هیچ ماژولی «ساخته‌نشده» نیست
+  check('همهٔ ماژول‌ها ساخته‌اند — رزروهای پیشین (market، courier، errors، alerts) هم probe ِ واقعی دارند', mods.admin.modules.every((m) => m.built)
+    && ['market', 'courier', 'errors', 'alerts'].every((id) => mods.admin.modules.some((m) => m.id === id && m.built)), mods.admin.modules.filter((m) => !m.built).map((m) => m.id).join(','));
   check('برچسبِ سه‌زبانه برای هر ماژول و گروه', mods.admin.modules.every((m) => m.label?.fa && m.label?.en && m.label?.ps) && mods.admin.groups.every((g) => g.label?.ps));
   const RANK = { viewer: 0, operator: 1, admin: 2 };
   const leaks = [];
@@ -221,7 +223,8 @@ try {
   check('⛔ نیامده = null («—»)، نه صفر: «اشتراکِ فعال» در پاسخِ ناقصِ مالی', item('finance')?.ok && item('finance').metrics.find((x) => x.id === 'active')?.value === null
     && item('finance').metrics.find((x) => x.id === 'month_AFN')?.value === 12000, JSON.stringify(item('finance')));
   check('⛔ خطای یک منبع فقط همان کارت: «نسخه‌ها» با کدِ خودش، بقیه سالم', item('versions')?.ok === false && item('versions').error?.code === 'versions_unavailable' && item('health')?.ok === true);
-  check('ماژولِ ساخته‌نشده «not_built» است، بی عدد', item('market')?.reason === 'not_built' && !item('market').metrics);
+  check('ماژولِ ساخته‌شدهٔ بی تابعِ خلاصه «no_summary» است (نه «not_built»)، بی عدد', item('market')?.reason === 'no_summary' && !item('market').metrics
+    && !sum.json.items.some((x) => x.reason === 'not_built'));
   check('ماژولِ بی خلاصه «no_summary»', item('codes')?.reason === 'no_summary');
   const al = sum.json.alerts || [];
   check('هشدار از عددِ واقعی، با پیوند و منبع: رو به پایان (۲) و سلامتِ «warn»', al.some((a) => a.module === 'subs' && /2/.test(a.text.en) && a.link)

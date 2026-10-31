@@ -25,6 +25,7 @@ import { audit } from '../control/audit.js';
 import * as panelAuth from '../auth.js';
 import { db } from '../db.js';
 import { rateLimit } from '../platform/rate-limit.js';
+import { requireModule } from '../console/modules.js';
 
 const router = express.Router();
 
@@ -121,14 +122,14 @@ for (const [local, remote, keys] of [
   ['/discrepancies', '/api/admin/finance/discrepancies', []],
   ['/history', '/api/admin/finance/history', ['action', 'targetId', 'limit', 'cursor']],
 ]) {
-  router.get(local, guard(async (req, res) => {
+  router.get(local, requireModule('finance'), guard(async (req, res) => {
     const query = pick(req.query, keys);
     if (!(await hasFinance())) return res.json(unavailable());
     res.json(stamped(await cloudRaw('GET', remote, { query })));
   }));
 }
 
-router.get('/payments/:id', guard(async (req, res) => {
+router.get('/payments/:id', requireModule('finance'), guard(async (req, res) => {
   const id = String(req.params.id || '');
   if (!ID.test(id)) throw bad('bad_id', 'شناسه معتبر نیست');
   if (!(await hasFinance())) return res.json(unavailable());

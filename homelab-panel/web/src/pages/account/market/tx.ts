@@ -22,10 +22,3 @@ export function useTx(): { tx: Tx; tri: (x: Tri | undefined, fallback?: string) 
   const tri = useCallback((x: Tri | undefined, fallback = '') => (x ? x[l] || x.fa : fallback), [l]);
   return { tx, tri, lang: l };
 }
-
-/** عنوانِ دو زبانهٔ بخشِ «فروشگاه» (همان برچسب‌های رزروشدهٔ پوستهٔ کنسول برای ۴.۶ و ۴.۷). */
-export const TAB_LABEL: Record<'market' | 'courier', Tri> = {
-  market: { fa: 'مدیریتِ بازار', en: 'Marketplace management', ps: 'د بازار مدیریت' },
-  courier: { fa: 'نظارتِ پیک', en: 'Courier monitoring', ps: 'د پېک څارنه' },
-};
-export const tabLabel = (id: 'market' | 'courier', lang: string) => TAB_LABEL[id][lang3(lang)];

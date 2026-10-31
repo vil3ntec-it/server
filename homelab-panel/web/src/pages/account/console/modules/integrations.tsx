@@ -1,6 +1,6 @@
-//  ۴.۱۳ — یکپارچه‌سازی و API: سرویس‌های بیرونی، برنامه‌های زیرِ مدیریت، کلیدِ سرویسِ پل.
+//  ۴.۱۳ — یکپارچه‌سازی و API: سرویس‌های بیرونی، کلیدِ سرویسِ پل + فعالیت، اعتبارنامه‌ها (فقط «هست/نیست»)، وب‌هوک، قرارداد.
 import { Plug } from 'lucide-react';
-import { IntegrationsTab } from '../../ShopConsole';
+import { IntegrationsOpsTab } from '../../ConsoleOps';
 import { defineModule } from '../contract';
 
-export default defineModule({ id: 'integrations', icon: Plug, component: () => <IntegrationsTab /> });
+export default defineModule({ id: 'integrations', icon: Plug, component: () => <IntegrationsOpsTab /> });

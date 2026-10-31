@@ -48,23 +48,24 @@ export const CONSOLE_MODULES = Object.freeze([
     label: L('کدِ شاگرد', 'Staff codes', 'د شاګرد کوډ'), probe: '/api/account-admin/shop-desk/groups' },
 
   { id: 'finance', spec: '4.5', group: 'money', order: 10, minRole: 'viewer',
-    label: L('مالیِ مرکزی', 'Central finance', 'مرکزي مالي'), probe: '/api/account-admin/sales/summary' },
+    label: L('مالیِ مرکزی', 'Central finance', 'مرکزي مالي'), probe: '/api/account-admin/console/finance/summary' },
 
-  //  رزرو برای ماژول‌های در دستِ ساخت (۴.۶ و ۴.۷) — بی `probe` در وب دیده نمی‌شوند
+  //  ۴.۶ و ۴.۷ — ‎routes/console-market.js‎ (خواندن پشتِ `market-admin.v1` / `delivery-watch.v1`؛ کارِ حساس admin + احرازِ دوباره)
   { id: 'market', spec: '4.6', group: 'market', order: 10, minRole: 'viewer',
-    label: L('مدیریتِ بازار', 'Marketplace management', 'د بازار مدیریت'), probe: null },
+    label: L('مدیریتِ بازار', 'Marketplace management', 'د بازار مدیریت'), probe: '/api/account-admin/console/market/overview' },
   { id: 'courier', spec: '4.7', group: 'market', order: 20, minRole: 'viewer',
-    label: L('نظارتِ پیک', 'Courier monitoring', 'د پېک څارنه'), probe: null },
+    label: L('نظارتِ پیک', 'Courier monitoring', 'د پېک څارنه'), probe: '/api/account-admin/console/delivery/overview' },
 
   { id: 'versions', spec: '4.8', group: 'ops', order: 10, minRole: 'viewer',
     label: L('نسخه‌ها و انتشار', 'Versions & releases', 'نسخې او خپرونه'), probe: '/api/account-admin/console/system/versions' },
-  { id: 'health', spec: '4.9 · 4.10', group: 'ops', order: 20, minRole: 'viewer',
+  //  ۴.۸ · ۴.۹ · ۴.۱۰ · ۴.۱۱ · ۴.۱۳ — ‎routes/console-ops.js‎ (پشتِ `ops.v1`؛ «سلامت» فهرستِ خطای برنامه‌ها را هم دارد و
+  //  جست‌وجوی سراسری نوعِ `errors` را به همان می‌برد؛ پرونده‌های رخداد و هشدارها ماژولِ خودشان را دارند)
+  { id: 'health', spec: '4.9', group: 'ops', order: 20, minRole: 'viewer',
     label: L('سلامت و خطاها', 'Health & errors', 'روغتیا او تېروتنې'), probe: '/api/account-admin/console/system/health' },
-  //  رزرو (۴.۱۰ جدا و ۴.۱۱) — تا ساخته نشده‌اند، «سلامت و خطاها» خطاها را دارد
   { id: 'errors', spec: '4.10', group: 'ops', order: 30, minRole: 'viewer',
-    label: L('خطاها، رخدادها و پشتیبانی', 'Errors, incidents & support', 'تېروتنې، پېښې او ملاتړ'), probe: null },
+    label: L('خطاها، رخدادها و پشتیبانی', 'Errors, incidents & support', 'تېروتنې، پېښې او ملاتړ'), probe: '/api/account-admin/console/ops/incidents' },
   { id: 'alerts', spec: '4.11', group: 'ops', order: 40, minRole: 'viewer',
-    label: L('هشدارها', 'Alerts', 'خبرتیاوې'), probe: null },
+    label: L('هشدارها', 'Alerts', 'خبرتیاوې'), probe: '/api/account-admin/console/ops/alerts' },
 
   { id: 'users', spec: '4.3', group: 'control', order: 10, minRole: 'admin',
     label: L('کاربران و نقش‌ها', 'Users & roles', 'کاروونکي او رولونه'), probe: '/api/account-admin/console/admins' },

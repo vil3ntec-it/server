@@ -28,9 +28,10 @@
   label: L('مدیریتِ بازار', 'Marketplace management', 'د بازار مدیریت'), probe: '/api/account-admin/market/cases' },
 ```
 
-- `id` = همان `?tab=` و نامِ فایلِ وب. **شناسه‌های رزرو** (ردیفشان از پیش هست، فقط `probe: null` را با درِ واقعی عوض کنید):
-  `market` (۴.۶)، `courier` (۴.۷)، `errors` (۴.۱۰)، `alerts` (۴.۱۱). موجودها: `dash` · `shops` · `subs` · `codes` · `finance` ·
-  `versions` · `health` · `users` · `settings` · `integrations` · `audit`.
+- `id` = همان `?tab=` و نامِ فایلِ وب. شناسه‌های رزروِ پیشین (`market` ۴.۶، `courier` ۴.۷، `errors` ۴.۱۰، `alerts` ۴.۱۱) از نسخهٔ
+  1.50.69 (کنسولِ یکپارچه) درِ واقعی دارند. موجودها: `dash` · `shops` · `subs` · `codes` · `finance` · `market` · `courier` ·
+  `versions` · `health` · `errors` · `alerts` · `users` · `settings` · `integrations` · `audit`. ماژولِ تازه = ردیفِ تازه با `probe: null`
+  تا درش ساخته شود.
 - گروه‌ها: `overview` · `shops` · `money` · `market` · `ops` · `control`.
 - `minRole` = کم‌ترین نقشی که درِ **خواندنیِ** ماژول را امروز در سرور می‌گیرد (`viewer` | `operator` | `admin`). درهای تازهٔ خودتان
   را با `requireModule('<id>')` ببندید تا منو و سرور یکی بمانند.

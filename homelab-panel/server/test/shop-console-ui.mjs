@@ -416,8 +416,10 @@ try {
   check('⇒ لینکِ مستقیم: ‎?tab=shops&shop=shp-1‎، پروندهٔ همان دکان، و ردِ نان با شناسه', /\/shop\?tab=shops&shop=shp-1$/.test(page.url())
     && (await page.locator('nav[aria-label="ردِ نان"]').innerText()).includes('shp-1') && (await main()).includes('dev-h1'), page.url());
 
+  //  کنسولِ یکپارچه: رزروِ پیشینِ ۴.۶ حالا ماژولِ واقعی است — سرورِ حسابِ بی `market-admin.v1` ⇒ «داده در دسترس نیست» با نامِ توانایی
   body = await open('market');
-  check('ماژولِ رزروشده «هنوز ساخته نشده» — بی عدد و بی دکمه', body.includes('هنوز در این نسخهٔ پنل ساخته نشده'), body.slice(0, 400));
+  check('ماژولِ ۴.۶ (رزروِ پیشین) در پوسته: بی market-admin.v1 «داده در دسترس نیست»، نه «ساخته نشده» و نه عدد',
+    body.includes('داده در دسترس نیست') && body.includes('market-admin.v1') && !body.includes('هنوز در این نسخهٔ پنل ساخته نشده'), body.slice(0, 400));
   body = await open('no-such');
   check('شناسهٔ ناشناخته ⇒ «چنین ماژولی نیست»', body.includes('چنین ماژولی نیست'));
 

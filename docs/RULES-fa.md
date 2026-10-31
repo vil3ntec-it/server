@@ -3207,7 +3207,8 @@ POST /api/pump-updates-admin/testers {codes}   فقط مدیر · دفترِ م�
 ## 🛒🛵 ۴.۶ مدیریتِ بازار و ۴.۷ نظارت بر پیک — در بخشِ «فروشگاه» (از ۱۴۰۵/۰۸/۱۰، نسخه 1.50.67)
 
 روی #116 (چسب)، هم‌پای shop `claude/console-market-api` (`/api/admin/market/*`، `/api/admin/delivery/*`، مهاجرتِ ۱۷۲ فقط نمایه).
-زبانه‌های `?tab=market` و `?tab=courier` ِ `/shop` (`web/src/pages/account/market/`)؛ درهای پل در `routes/console-market.js`
+ماژول‌های پوستهٔ `market` و `courier` (`?tab=market` / `?tab=courier` ِ `/shop`؛ فایل‌های `console/modules/{market,courier}.tsx` ⇐
+`web/src/pages/account/market/`، از نسخهٔ 1.50.69)؛ درهای پل در `routes/console-market.js`
 (`mountConsoleMarket(router)` روی **همان** روترِ `account-admin.js`، پیش از ۴۰۴ ِ آخر — تا `bridge-roles.mjs` خودش بسنجد).
 
 - ⛔ **فقط سمتِ مدیریت.** برنامه/سایتِ خرید بیرون است. آن‌چه در مدل نیست «در مدل نیست» گفته می‌شود، نه صفر: فروشندهٔ
@@ -3260,7 +3261,7 @@ POST /api/pump-updates-admin/testers {codes}   فقط مدیر · دفترِ م�
   `telegram-bot` ۸۳.
 ## 💰 مالیِ مرکزی — ماژولِ ۴.۵ ِ پنلِ مرکزیِ مالک در زبانهٔ «مالی» ِ فروشگاه (از ۱۴۰۵/۰۸/۱۰، نسخه 1.50.66)
 
-روی #116 (چسب)، هم‌پای shop `claude/console-finance-api` (مهاجرتِ ۱۷۱، `docs/spec/ADMIN-CONTROL-PLANE.md` بندِ ۱۲.۷ ِ همان
+روی #116 (چسب)، هم‌پای shop `claude/console-finance-api` (مهاجرتِ ۱۷۱، `docs/spec/ADMIN-CONTROL-PLANE.md` بندِ ۱۲.۹ ِ همان
 ریپو). مالیِ مرکزی = **پولِ اشتراکِ خودِ پلتفرم** (`sub_payments`)، جدا از حساب‌داریِ داخلیِ هر دکان.
 
 - ⛔ **جا:** `web/src/pages/account/ShopFinance.tsx` + `pages/account/finance/*` (واژه‌ها در `finance/strings.ts`، سه‌زبانه، جدا از
@@ -3287,3 +3288,27 @@ POST /api/pump-updates-admin/testers {codes}   فقط مدیر · دفترِ م�
   (ثبتِ دستی)، نه صفر.
 - آزمون: `account-finance.mjs` (۳۹) · `bridge-roles.mjs` (۲۰، با سورسِ shop ِ main و `claude/console-finance-api`) ·
   `shop-finance-ui.mjs` (کرومیوم، ۳۰) · `control-ui`/`shop-console-ui`/`live-pages` به‌روز.
+
+## 🧩 کنسولِ یکپارچهٔ «فروشگاه» — پوسته + مالی + بازار/پیک + عملیات در یک مسیرِ مرج (از ۱۴۰۵/۰۸/۱۰، نسخه 1.50.69)
+
+چهار شاخهٔ هم‌زمان (#119 پوسته، #120 مالی، #117 بازار/پیک، #118 عملیات) در `claude/console-integrated` یکی شدند (جای هر چهار؛
+هم‌پای shop `claude/console-integrated-api`). قاعده‌ها همان بخش‌های بالا؛ این‌جا فقط آن‌چه ادغام ثابت کرد:
+
+- ⛔ **هیچ زبانه‌ای در `ShopDesk.tsx` نیست** (`TAB_IDS` برداشته شد). هر ماژول = یک ردیف در `server/src/console/modules.js` (`probe`
+  ِ واقعی + `minRole`) + یک فایل در `web/src/pages/account/console/modules/<id>.tsx`. شناسه‌های رزرو پر شدند: `market` ⇐
+  `console/market/overview`، `courier` ⇐ `console/delivery/overview`، `errors` (۴.۱۰، پرونده‌های رخداد) ⇐ `console/ops/incidents`،
+  `alerts` ⇐ `console/ops/alerts`؛ `finance` ⇐ `console/finance/summary` (`modules/finance.tsx` ⇐ `FinanceTab` ⇐ `ShopFinance`).
+  `versions`/`health`/`integrations` همان شناسه‌اند ولی حالا `ReleasesTab`/`OpsHealthTab`/`IntegrationsOpsTab` (کارت‌های فاز ۲ درونشان).
+- ⛔ **شناسهٔ `incidents` نیست** — ۴.۱۰ همان رزروِ `errors` است (`?tab=errors&shop=…`). «سلامت و خطاها» هنوز فهرستِ خطای برنامه‌ها
+  را دارد و نوعِ `errors` ِ جست‌وجوی سراسری به همان می‌رود.
+- ⛔ **خواندن‌های هر ماژول پشتِ `requireModule('<id>')`** (`console-market.js`، `console-ops.js`، `account-finance.js`) — منو و سرور یک
+  `minRole`؛ نوشتن‌ها نگهبانِ خودشان را دارند (admin/operator، احرازِ دوباره).
+- ⛔ **`PHASE3` ِ `account-admin.js` فهرستِ همهٔ توانایی‌های سرورِ حساب است** که ماژول‌ها می‌خواهند (فاز ۳، `ops.v1`،
+  `release-stage.v1`، `finance.v1`، `admin-sessions.v1`، `search.v1` و `MARKET_CAPABILITIES` ِ `console-market.js`) ⇒ `GET
+  /console/capabilities` «هست/نیست» ِ همه را یک‌جا می‌گوید. توانایی ِ تازه ⇒ یک خط همان‌جا + `PHASE3` ِ `bridge-roles.mjs`.
+- ⚠️ **نقشِ «مالی» ِ پنل هنوز نیست** (`control/roles.js` سه نقش؛ ۴.۳ نقشِ تازه نساخت) ⇒ شاخهٔ `role === 'finance'` ِ `financeWriter`
+  دست‌نیافتنی است و `ACTOR_ROLE` ِ `account/service-key.js` نگاشتِ `finance` نمی‌خواهد. روزی که ساخته شد: هر دو با هم.
+- کلیدهای مُرده برداشته شد: برچسب‌های زبانهٔ کهنه (`scAudit`، `scFinance`، `scHealthTab`، `scIntegrations`، `scSettingsTab`،
+  `shopDeskDash`)، `scFinanceLater*`، `scOnline`، `scSuspension`، `tabIncidents`/`tabAlerts` و `useOpsTabLabels`، `TAB_LABEL` ِ `market/tx.ts`.
+- آزمون: `npm test` همهٔ `console-shell`، `console-market`، `console-ops` و `account-finance` را دارد؛ `console-shell.mjs` حالا می‌سنجد که
+  هیچ ماژولی «ساخته‌نشده» نیست؛ آزمون‌های کرومیوم به شناسه‌های پوسته (`?tab=errors`) و انتخاب‌گرِ درونِ ماژول (`[data-module=…]`).

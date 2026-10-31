@@ -131,14 +131,14 @@ try {
   };
 
   console.log('\n── بی ‎ops.v1‎ ──');
-  let body = await open('incidents');
+  let body = await open('errors');
   check('صفحه راست‌چین است', (await page.evaluate(() => document.documentElement.dir)) === 'rtl');
-  check('زبانه‌های «رخدادها» و «هشدارها» در میزِ فروشگاه', body.includes('رخدادها') && body.includes('هشدارها'), body.slice(0, 300));
+  check('ماژول‌های «خطاها، رخدادها…» (۴.۱۰) و «هشدارها» (۴.۱۱) در منوی بخشِ فروشگاه', body.includes('رخدادها') && body.includes('هشدارها'), body.slice(0, 300));
   check('⛔ «داده در دسترس نیست» با نامِ توانایی، نه جدولِ خالی', body.includes('داده در دسترس نیست') && body.includes('ops.v1'), body.slice(0, 600));
   caps = ['actor.v1', 'ops.v1', 'release-stage.v1'];
 
   console.log('\n── رخدادها ──');
-  body = await open('incidents');
+  body = await open('errors');
   check('فهرستِ رخداد از سرورِ حساب با منبع', body.includes('NullPointer در ثبتِ فروش') && body.includes('/api/admin/ops/incidents'), body.slice(0, 600));
   await page.locator('main tr', { hasText: 'NullPointer در ثبتِ فروش' }).first().click();
   await page.waitForTimeout(600);

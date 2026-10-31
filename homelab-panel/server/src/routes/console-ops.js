@@ -29,6 +29,7 @@ import { getSetting, setSetting } from '../db.js';
 import { versionInfo } from '../version.js';
 import { ACCOUNT_PREFIXES, accountApiUrl } from '../api/account-proxy.js';
 import { CONSOLE_ALERT_RULES, consoleAlertPrefs, setConsoleAlertPrefs } from '../support/telegram-console-alerts.js';
+import { requireModule } from '../console/modules.js';
 
 const { requireRole } = panelRoles;
 const IDEM_RE = /^[A-Za-z0-9_.:-]{8,128}$/;
@@ -128,11 +129,12 @@ export function mountConsoleOps(router, d) {
   };
   const textOf = (v, max) => String(v ?? '').trim().slice(0, max);
 
+  //  ⛔ خواندن‌ها پشتِ `requireModule(<id>)` ِ پوسته (‎console/modules.js‎) — همان `minRole` ِ منو؛ نوشتن‌ها نگهبانِ خودشان را دارند
   /* ───── ۴.۸ نسخه‌ها و انتشار ───── */
-  router.get('/console/ops/releases', readThrough('ops.v1', '/api/admin/ops/releases'));
+  router.get('/console/ops/releases', requireModule('versions'), readThrough('ops.v1', '/api/admin/ops/releases'));
 
   /* ───── ۴.۹ سلامت: سنجه‌های پنل همیشه؛ سرورِ حساب اگر هست — یکی بخوابد دیگری می‌ماند ───── */
-  router.get('/console/ops/health', guard(async (req, res) => {
+  router.get('/console/ops/health', requireModule('health'), guard(async (req, res) => {
     const panel = await panelProbes();
     let account;
     if (panel.bridge.status === 'down') {
@@ -150,7 +152,7 @@ export function mountConsoleOps(router, d) {
   }));
 
   /* ───── ۴.۱۳ یکپارچه‌سازی: سرورِ حساب + درگاهِ همین پنل ───── */
-  router.get('/console/ops/integrations', guard(async (req, res) => {
+  router.get('/console/ops/integrations', requireModule('integrations'), guard(async (req, res) => {
     const gateway = {
       accountApi: Boolean(accountApiUrl()),
       prefixes: [...ACCOUNT_PREFIXES],
@@ -171,7 +173,7 @@ export function mountConsoleOps(router, d) {
   }));
 
   /* ───── ۴.۱۰ رخدادها ───── */
-  router.get('/console/ops/incidents', readThrough('ops.v1', '/api/admin/ops/incidents', INCIDENT_Q));
+  router.get('/console/ops/incidents', requireModule('errors'), readThrough('ops.v1', '/api/admin/ops/incidents', INCIDENT_Q));
 
   //  ⛔ خروجیِ CSV: فقط admin، حداکثر ۱۰۰۰ ردیف (پنج صفحهٔ ۲۰۰تایی ِ همان پالایش)، با یک ردیفِ دفترِ پنل
   router.get('/console/ops/incidents.csv', requireRole('admin'), guard(async (req, res) => {
@@ -197,7 +199,7 @@ export function mountConsoleOps(router, d) {
     res.send(`\uFEFF${lines.join('\r\n')}\r\n`);
   }));
 
-  router.get('/console/ops/incidents/:id', guard(async (req, res) => {
+  router.get('/console/ops/incidents/:id', requireModule('errors'), guard(async (req, res) => {
     const id = idOf(req.params.id);
     if (!(await has('ops.v1'))) return res.json(unavailable('ops.v1'));
     res.json({ available: true, ...stamped(await cloudRaw('GET', `/api/admin/ops/incidents/${id}`)) });
@@ -257,7 +259,7 @@ export function mountConsoleOps(router, d) {
   }));
 
   /* ───── ۴.۱۱ هشدارها ───── */
-  router.get('/console/ops/alerts', readThrough('ops.v1', '/api/admin/ops/alerts', ALERT_Q));
+  router.get('/console/ops/alerts', requireModule('alerts'), readThrough('ops.v1', '/api/admin/ops/alerts', ALERT_Q));
 
   router.post('/console/ops/alerts/evaluate', requireRole('operator'), guard(async (req, res) => {
     if (!(await has('ops.v1'))) throw missingErr('ops.v1');
@@ -289,7 +291,7 @@ export function mountConsoleOps(router, d) {
    *  ارسالِ بیرونیِ هشدار: **فقط رباتِ تلگرامِ مالک** (همان که هست؛ ‎support/telegram-watch.js‎). پیامک و
    *  ایمیل برای هشدار ساخته نشده‌اند ⇒ رابط «آینده» می‌گوید. انتخابِ نوع‌ها (opt-in) فقط admin.
    */
-  router.get('/console/ops/alerts/telegram', guard(async (req, res) => {
+  router.get('/console/ops/alerts/telegram', requireModule('alerts'), guard(async (req, res) => {
     let bot = null;
     try {
       const tgm = await import('../support/telegram.js');

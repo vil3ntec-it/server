@@ -7,8 +7,6 @@
 //     ننشینند؛ همان الگوی زبان: نبودِ کلید در یک زبان ⇒ انگلیسی، ‎ar‎ ⇒ انگلیسی.
 // ---------------------------------------------------------------------------
 const fa = {
-  tabIncidents: 'رخدادها',
-  tabAlerts: 'هشدارها',
   source: 'منبع',
   updated: 'به‌روز شده',
   serverConfirmed: 'تأییدشده از سرورِ حساب',
@@ -250,7 +248,7 @@ const fa = {
 export type OpsKey = keyof typeof fa;
 
 const en: Record<OpsKey, string> = {
-  tabIncidents: 'Incidents', tabAlerts: 'Alerts', source: 'Source', updated: 'Updated',
+  source: 'Source', updated: 'Updated',
   serverConfirmed: 'Confirmed by the account server', savedPanel: 'Saved in this panel’s settings', notAvailable: 'Data not available',
   capabilityMissing: 'The account server does not have this module yet (owner-console ops) — it appears after the account server is updated.',
   adminOnly: 'Panel admin only', ownerOnly: 'Panel owner only', reason: 'Reason (3–200 chars, kept in the log)',
@@ -322,7 +320,7 @@ const en: Record<OpsKey, string> = {
 };
 
 const ps: Record<OpsKey, string> = {
-  tabIncidents: 'پېښې', tabAlerts: 'خبرتیاوې', source: 'سرچینه', updated: 'تازه شوی',
+  source: 'سرچینه', updated: 'تازه شوی',
   serverConfirmed: 'د حساب سرور تایید کړی', savedPanel: 'د همدې پینل په تنظیماتو کې وساتل شو', notAvailable: 'معلومات نشته',
   capabilityMissing: 'د حساب سرور لا دا برخه نه لري (د مرکزي پینل عملیاتي برخې) — د حساب سرور له تازه کېدو وروسته پخپله راځي.',
   adminOnly: 'یوازې د پینل مدیر (admin)', ownerOnly: 'یوازې د پینل مالک', reason: 'دلیل (۳ تر ۲۰۰ توري، په سابقه کې پاتې کېږي)',

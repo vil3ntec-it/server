@@ -47,7 +47,7 @@ import {
   withPanelActor, readServiceKey, storeServiceKey, forgetServiceKey, publicServiceKey, SERVICE_KEY_RE,
 } from '../account/service-key.js';
 import { mountConsoleShell } from './console-shell.js';
-import { mountConsoleMarket } from './console-market.js';
+import { mountConsoleMarket, MARKET_CAPABILITIES } from './console-market.js';
 
 const { requireRole } = panelRoles;
 const router = express.Router();
@@ -2041,6 +2041,11 @@ export const PHASE3 = Object.freeze({
   'ops.v1': 'GET /api/admin/ops/releases|health|integrations · /api/admin/ops/incidents* · /api/admin/ops/alerts*',
   'release-stage.v1': 'GET|PUT|DELETE /api/admin/release/stage (OPS-01، shop #559)',
   'finance.v1': 'GET /api/admin/finance/* · POST /api/admin/finance/adjustments (ماژولِ ۴.۵ ِ مالیِ مرکزی، ‎routes/account-finance.js‎)',
+  //  کنسولِ یکپارچه: پوسته (‎routes/console-shell.js‎) و ۴.۶/۴.۷ (‎routes/console-market.js‎) هم در همین فهرست — تا
+  //  ‎GET /console/capabilities‎ (یکپارچه‌سازی) «هست/نیست» ِ همهٔ ماژول‌های بخشِ «فروشگاه» را یک‌جا بگوید
+  'admin-sessions.v1': 'GET /api/admin/admins/:id/sessions · POST …/sessions/revoke (ماژولِ ۴.۳)',
+  'search.v1': 'GET /api/admin/search (جست‌وجوی سراسریِ پوسته)',
+  ...MARKET_CAPABILITIES,
 });
 const CAP_RE = /^[a-z][a-z0-9-]{0,40}\.v\d{1,3}$/;
 

@@ -30,6 +30,7 @@ import * as panelAuth from '../auth.js';
 import { audit } from '../control/audit.js';
 import { db } from '../db.js';
 import { rateLimit } from '../platform/rate-limit.js';
+import { requireModule } from '../console/modules.js';
 
 const { requireRole } = panelRoles;
 const actorOf = (req) => req.user?.username || 'admin';
@@ -189,8 +190,9 @@ const issuesText = (i) => (i ? [...(i.stuck || []), ...(i.mismatch || []), ...(i
 export function mountConsoleMarket(router) {
   const MARKET = 'market-admin.v1';
   const DELIVERY = 'delivery-watch.v1';
+  //  خواندن: همان `minRole` ِ ردیفِ ماژول در ‎console/modules.js‎ (منو و سرور یکی)
   const read = (cap, localPath, remotePath, queryOf) => {
-    router.get(localPath, guard(async (req, res) => {
+    router.get(localPath, requireModule(cap === MARKET ? 'market' : 'courier'), guard(async (req, res) => {
       const query = clean(queryOf(req.query || {}));
       if (!(await hasCap(cap))) return res.json(unavailable(cap));
       res.json({ available: true, ...stamped(await cloudRaw('GET', remotePath, { query })) });

@@ -205,7 +205,8 @@ try {
   check('جمعِ هر ارز جدا: خالصِ افغانی ۱٬۰۰۰ و دالر ۱۲۰؛ بازپرداخت −۱۰۰', body.includes('۱٬۰۰۰') && body.includes('۱۲۰') && /−?-?۱۰۰/.test(body), body.slice(0, 900));
   check('⛔ منبع و زمانِ سرورِ حساب زیرِ کارت', body.includes('/api/admin/finance/summary') && body.includes('سنجیدهٔ سرورِ حساب') && body.includes('۳ دقیقه پیش'), body.slice(0, 1200));
   check('به تفکیکِ بخش (پمپ/فروشگاه) و روش، و دکان در جدولِ تفکیک', body.includes('پمپ') && body.includes('حواله') && body.includes('دکانِ مالی'), body.slice(0, 1500));
-  await page.selectOption('main select >> nth=0', 'month');
+  //  ⚠️ درونِ پوستهٔ کنسول نخستین `select` ِ main فهرستِ کشوییِ منو (گوشی) است ⇒ فقط درونِ خودِ ماژول
+  await page.selectOption('[data-module="finance"] select >> nth=0', 'month');
   await page.waitForTimeout(400);
   check('گروه‌بندیِ ماهانه به سرورِ حساب می‌رود (بی دکمهٔ دیگر)', (await main()).includes('ماهانه'));
 
