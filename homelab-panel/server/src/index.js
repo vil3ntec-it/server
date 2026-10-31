@@ -11,7 +11,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import express from 'express';
 
-import { config, ensureDirs, SERVER_ROOT } from './config.js';
+import { config, ensureDirs, SERVER_ROOT, deploy } from './config.js';
 import { db, logEvent, pruneEvents, getSetting, setSetting } from './db.js';
 import { pruneSessions } from './auth.js';
 import { setSiteSync, setStations, setIo, getIo } from './state.js';
@@ -122,6 +122,19 @@ function serveInstaller(req, res) {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Content-Disposition', 'inline; filename="install.sh"');
   res.type('text/x-shellscript; charset=utf-8').sendFile(file);
+}
+
+/*
+ *  ⛔ نمایهٔ استقرار (src/deploy.js) — تنظیمِ ناامن یعنی پنل **بالا نمی‌آید**،
+ *  نه این‌که با پیامی در لاگ همان‌طور باز بماند: پنلِ بی TLS در اینترنت یا ثبتِ
+ *  پمپِ باز روی سرورِ عمومی چیزی نیست که بعداً کسی بخواند و درست کند.
+ */
+if (deploy.errors.length) {
+  console.error('');
+  console.error(`❌ تنظیمِ استقرار پذیرفته نیست (HLP_DEPLOY=${deploy.profile}) — پنل بالا نمی‌آید:`);
+  for (const e of deploy.errors) console.error(`   • ${e}`);
+  console.error('   راهنما: docs/DEPLOY-ANYWHERE-fa.md');
+  process.exit(78); // EX_CONFIG — ناظرِ سرویس می‌فهمد «دوباره امتحان کردن» فایده ندارد
 }
 
 ensureDirs();
@@ -520,8 +533,11 @@ const { server: httpServer, secure: panelSecure } = createServer();
 //  پنل روی کارتِ شبکه هم گوش می‌دهد تا برنامهٔ پمپ و گوشیِ کارمند برسند؛
 //  این نگهبان نمی‌گذارد همان در به اینترنت باز شود. ‎HLP_PANEL_LAN_ONLY=0‎
 //  خاموشش می‌کند و ‎HLP_PANEL_NETS‎ شبکهٔ خانهٔ غیرعادی را می‌افزاید.
-if ((process.env.HLP_PANEL_LAN_ONLY ?? '1') !== '0') {
+//  ⚠️ «شبکهٔ خانه» به تفکیکِ نمایه است (src/deploy.js): home همان فهرستِ امروز؛
+//  vps فقط خودِ سرور و Tailscale؛ paas فقط خودِ کانتینر.
+if (deploy.panel.guard) {
   guardServer(httpServer, {
+    base: deploy.panel.nets,
     log: (from) => logEvent('warn', 'panel', `اتصال به پنل از بیرونِ شبکهٔ خانه بسته شد: ${from}`),
   });
 }
@@ -540,7 +556,7 @@ if (panelSecure && config.tls.redirectHttp) {
     console.warn(`⚠️  شنوندهٔ تغییرِ مسیرِ http بالا نیامد (${e.code}) — https خودش کار می‌کند.`);
     redirectServer = null;
   });
-  if ((process.env.HLP_PANEL_LAN_ONLY ?? '1') !== '0') guardServer(redirectServer);
+  if (deploy.panel.guard) guardServer(redirectServer, { base: deploy.panel.nets });
   redirectServer.listen(redirectPort, config.host);
 }
 export const scheme = panelSecure ? 'https' : 'http';
@@ -838,7 +854,8 @@ monitorEvents.on('result', ({ monitor, result }) => {
   } catch { /* هنوز کسی وصل نیست */ }
 });
 // ۲.۹) کشفِ خودکار — تا اپ‌ها بدونِ دانستنِ IP سرور را پیدا کنند
-if ((process.env.HLP_DISCOVERY ?? '1') !== '0') startDiscovery();
+//  روی میزبانِ عمومی شبکهٔ خانه‌ای نیست که پخشِ UDP در آن معنا داشته باشد (src/deploy.js)
+if (deploy.features.discovery) startDiscovery();
 
 // ۲.۹۵) پشتیبانِ زمان‌بندی‌شده — اگر کاربر روشنش کرده باشد.
 // با موتورِ اتوماسیون، پشتیبانِ روزانه/هفتگی کارِ همان موتور است (backup-daily،
@@ -1037,6 +1054,16 @@ async function main() {
       console.log('        دیدن و تنظیمش: پنل ← «کدهای شش‌رقمی».');
     }
     console.log('');
+    if (!deploy.home) {
+      console.log(`  🧭 نمایهٔ استقرار: ${deploy.profile}`);
+      const off = Object.entries(deploy.features).filter(([, on]) => !on).map(([k]) => k);
+      if (off.length) console.log(`     خاموش روی این میزبان: ${off.join(' · ')}`);
+      console.log(`     درِ پنل: ${deploy.panel.public ? `عمومی پشتِ ${deploy.panel.url} (ورود فقط با کدِ دومرحله‌ای)` : `فقط ${deploy.panel.netsName === 'tailscale' ? 'خودِ سرور و Tailscale' : deploy.panel.netsName === 'loopback' ? 'خودِ سرور' : 'شبکهٔ خصوصی'}`}`);
+    }
+    for (const w of deploy.warnings) {
+      console.log(`  ⚠️  ${w}`);
+      logEvent('warn', 'panel', `استقرار: ${w}`);
+    }
     console.log(`  پوشهٔ داده:  ${config.dataDir}`);
     console.log(`  ریشهٔ سایت‌ها: ${sitesRoot()}`);
     console.log('==============================================================');
@@ -1045,8 +1072,9 @@ async function main() {
 
     // تونل اینترنتی: به‌صورت پیش‌فرض روشن است تا سایت از هر دستگاهی وصل شود.
     // برای خاموش کردن، در پنل دکمه‌اش را بزنید یا HLP_TUNNEL=0 بگذارید.
+    //  HLP_TUNNEL همان معنای قدیم؛ روی میزبانِ عمومی پیش‌فرض خاموش — Caddy جلوست (src/deploy.js)
     const tunnelWanted =
-      (process.env.HLP_TUNNEL ?? '1') !== '0' && getSetting('tunnel_autostart', true) !== false;
+      deploy.features.tunnel && getSetting('tunnel_autostart', true) !== false;
     if (siteSync && tunnelWanted) {
       /*
        *  پیش از راه‌اندازی، شناسهٔ تونلِ داخلِ config.yml با حسابِ Cloudflare

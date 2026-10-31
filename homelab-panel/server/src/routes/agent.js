@@ -23,9 +23,20 @@ import { TOOLS, executeAction } from '../agent/tools.js';
 import { runDailyReport, collectDaily, renderDaily } from '../agent/reports.js';
 import { installOllama, installStatus } from '../agent/installer.js';
 import { knowledgeIndex, searchKnowledge } from '../agent/kb.js';
+import { disabledPayload } from '../lib/feature-gate.js';
 
 const router = Router();
 const actorOf = (req) => req.user?.username || 'admin';
+
+/*
+ *  ⛔ دستیارِ خاموش (‎HLP_AGENT=0‎، یا پیش‌فرضِ میزبانِ عمومی — src/deploy.js) یعنی
+ *  هیچ کارِ تغییردهنده‌ای هم از این در نمی‌گذرد: نه نصبِ Ollama (پروسهٔ نصب
+ *  روی سرور)، نه کشیدنِ مدل، نه تأییدِ «کارِ» دستیار. خواندنِ وضعیت می‌ماند تا
+ *  صفحه بگوید چرا خاموش است.
+ */
+router.use((req, res, next) => (req.method === 'GET' || config.agent.enabled
+  ? next()
+  : res.status(403).json(disabledPayload('agent'))));
 
 function sse(res) {
   res.status(200);

@@ -11,6 +11,7 @@ import { io, type Socket } from 'socket.io-client';
 import { api, getToken, setToken, setUnauthorizedHandler } from './api';
 import { dirOf, translate, type Dict, type Lang } from './i18n';
 import type { HistoryPoint, MetricsSnapshot, Site } from './types';
+import { serverFeatureOn, type ServerFeature, type ServerFeatures } from './features';
 
 type Theme = 'dark' | 'light' | 'system';
 
@@ -24,6 +25,10 @@ type AppState = {
   role: PanelRole;
   /** آیا نقشِ فعلی دستِ‌کم این اندازه دسترسی دارد؟ */
   can: (needed: PanelRole) => boolean;
+  /** آیا این قابلیت روی میزبانِ همین سرور هست؟ (نمایهٔ استقرار) */
+  serverOn: (feature: ServerFeature) => boolean;
+  /** نامِ نمایهٔ استقرار — home · vps · docker · paas (null تا پیش از ورود) */
+  deployProfile: string | null;
   serverName: string;
   hasLogo: boolean;
   lang: Lang;
@@ -56,6 +61,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [authed, setAuthed] = useState(Boolean(getToken()));
   const [username, setUsername] = useState<string | null>(null);
   const [role, setRole] = useState<PanelRole>('viewer');
+  const [serverFeatures, setServerFeatures] = useState<ServerFeatures | null>(null);
+  const [deployProfile, setDeployProfile] = useState<string | null>(null);
   const [serverName, setServerName] = useState('');
   const [hasLogo, setHasLogo] = useState(false);
   const [lang, setLangState] = useState<Lang>(() => (localStorage.getItem('hlp.lang') as Lang) || 'fa');
@@ -93,6 +100,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const RANK: Record<PanelRole, number> = { viewer: 0, operator: 1, admin: 2 };
   const can = useCallback((needed: PanelRole) => RANK[role] >= RANK[needed], [role]);
+  const serverOn = useCallback((f: ServerFeature) => serverFeatureOn(serverFeatures, f), [serverFeatures]);
+
+  /*
+   *  نمایهٔ استقرار پس از هر ورود — چه از بارگذاری با توکنِ مانده، چه از فرمِ ورود.
+   *  شکست ⇒ همه روشن می‌مانند (سرورِ قدیمی)؛ نگهبانِ واقعی همان سرور است.
+   */
+  useEffect(() => {
+    if (!authed) {
+      setServerFeatures(null);
+      setDeployProfile(null);
+      return;
+    }
+    let live = true;
+    api<{ deploy?: { profile?: string; features?: ServerFeatures } }>('/api/auth/me')
+      .then((me) => {
+        if (!live) return;
+        setServerFeatures(me.deploy?.features || null);
+        setDeployProfile(me.deploy?.profile || null);
+      })
+      .catch(() => { /* سرورِ قدیمی یا قطعی — همه روشن */ });
+    return () => { live = false; };
+  }, [authed]);
 
   const refreshPublic = useCallback(async () => {
     try {
@@ -246,6 +275,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       username,
       role,
       can,
+      serverOn,
+      deployProfile,
       serverName,
       hasLogo,
       lang,
@@ -267,7 +298,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshPublic,
     }),
     [
-      ready, initialized, authed, username, role, can, serverName, hasLogo, lang, dir, theme, resolvedTheme,
+      ready, initialized, authed, username, role, can, serverOn, deployProfile, serverName, hasLogo, lang, dir, theme, resolvedTheme,
       metrics, history, sites, connected, socket, t, setLang, setTheme, login, setup, logout, refreshPublic,
     ]
   );

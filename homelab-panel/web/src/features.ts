@@ -25,3 +25,23 @@ export const FEATURES: Record<FeatureKey, boolean> = {
 export function featureOn(key: FeatureKey): boolean {
   return FEATURES[key];
 }
+
+/**
+ *  قابلیت‌هایی که **سرور** می‌گوید روی این میزبان هستند یا نه
+ *  (‎homelab-panel/server/src/deploy.js‎ — نمایهٔ استقرار، از ‎/api/auth/me‎).
+ *
+ *  روی کامپیوترِ خانه همه روشن‌اند؛ روی VPS/داکر درهای «کنترلِ کاملِ همین
+ *  کامپیوتر» (ترمینال، فایل، دیتابیس، اجرای سایت‌ها) خاموش‌اند. خاموش یعنی
+ *  نه در منو، نه با نشانیِ دستی — همان قاعدهٔ `FEATURES` بالا.
+ *
+ *  ⚠️ سرورِ قدیمی که این را نمی‌فرستد ⇒ همه روشن (همان رفتارِ پیشین).
+ */
+export type ServerFeature =
+  | 'terminal' | 'files' | 'databases' | 'sites' | 'docker'
+  | 'agent' | 'update' | 'discovery' | 'tunnel';
+
+export type ServerFeatures = Partial<Record<ServerFeature, boolean>>;
+
+export function serverFeatureOn(map: ServerFeatures | null, key: ServerFeature): boolean {
+  return !map || map[key] !== false;
+}

@@ -20,6 +20,7 @@
 //     HTTP را برای همیشه باز نگه دارد.
 // ---------------------------------------------------------------------------
 import { run } from '../lib/exec.js';
+import { featureOn } from '../lib/feature-gate.js';
 
 /** مهلت‌ها بر حسبِ کاری که می‌کنند، نه یک عددِ واحد */
 const T_READ = 8000;      // فهرست گرفتن
@@ -48,6 +49,17 @@ function fail(code, detail = null) {
   return { ok: false, error: code, detail };
 }
 
+/**
+ *  ⛔ هر فرمانِ داکر از همین می‌گذرد: روی میزبانِ عمومی (src/deploy.js) خاموش
+ *  یعنی هیچ پروسهٔ ‎docker‎ای ساخته نمی‌شود — پاسخِ «نیست»، نه خطای دیمن.
+ */
+function dockerCli(args, opts) {
+  if (!featureOn('docker')) {
+    return Promise.resolve({ ok: false, stdout: '', stderr: 'feature_disabled', error: new Error('feature_disabled') });
+  }
+  return run('docker', args, opts);
+}
+
 /* -------------------------------------------------------------------------- */
 /*  در دسترس بودنِ داکر                                                        */
 /* -------------------------------------------------------------------------- */
@@ -66,9 +78,11 @@ let cached = { at: 0, value: null };
  * اجرای `docker version` برای هرکدام بی‌فایده است.
  */
 export async function available({ force = false } = {}) {
+  //  ⛔ روی میزبانِ عمومی پیش‌فرض خاموش (src/deploy.js) — «نیست»، نه «خراب است»
+  if (!featureOn('docker')) return { ok: false, installed: false, running: false, reason: 'feature_disabled' };
   if (!force && cached.value && Date.now() - cached.at < 5000) return cached.value;
 
-  const version = await run('docker', ['version', '--format', '{{json .}}'], { timeout: T_READ });
+  const version = await dockerCli(['version', '--format', '{{json .}}'], { timeout: T_READ });
   let value;
 
   if (!version.ok && /ENOENT|not found|not recognized/i.test(version.error?.message || version.stderr || '')) {
@@ -138,7 +152,7 @@ function normalizeState(state) {
 export async function listContainers({ all = true } = {}) {
   const args = ['ps', '--no-trunc', '--format', '{{json .}}'];
   if (all) args.push('--all');
-  const res = await run('docker', args, { timeout: T_READ });
+  const res = await dockerCli(args, { timeout: T_READ });
   if (!res.ok) return fail('docker_failed', res.stderr.trim().slice(0, 400) || null);
 
   const items = parseJsonLines(res.stdout).map((row) => ({
@@ -171,7 +185,7 @@ function labelValue(labels, key) {
 }
 
 export async function listImages() {
-  const res = await run('docker', ['images', '--format', '{{json .}}'], { timeout: T_READ });
+  const res = await dockerCli(['images', '--format', '{{json .}}'], { timeout: T_READ });
   if (!res.ok) return fail('docker_failed', res.stderr.trim().slice(0, 400) || null);
 
   const items = parseJsonLines(res.stdout).map((row) => ({
@@ -187,7 +201,7 @@ export async function listImages() {
 }
 
 export async function listVolumes() {
-  const res = await run('docker', ['volume', 'ls', '--format', '{{json .}}'], { timeout: T_READ });
+  const res = await dockerCli(['volume', 'ls', '--format', '{{json .}}'], { timeout: T_READ });
   if (!res.ok) return fail('docker_failed', res.stderr.trim().slice(0, 400) || null);
 
   const items = parseJsonLines(res.stdout).map((row) => ({
@@ -201,7 +215,7 @@ export async function listVolumes() {
 }
 
 export async function listNetworks() {
-  const res = await run('docker', ['network', 'ls', '--no-trunc', '--format', '{{json .}}'], { timeout: T_READ });
+  const res = await dockerCli(['network', 'ls', '--no-trunc', '--format', '{{json .}}'], { timeout: T_READ });
   if (!res.ok) return fail('docker_failed', res.stderr.trim().slice(0, 400) || null);
 
   const items = parseJsonLines(res.stdout).map((row) => ({
@@ -248,7 +262,7 @@ export async function stats() {
 
 export async function inspect(id) {
   if (!validId(id)) return fail('invalid_id');
-  const res = await run('docker', ['inspect', id], { timeout: T_READ });
+  const res = await dockerCli(['inspect', id], { timeout: T_READ });
   if (!res.ok) return fail('not_found', res.stderr.trim().slice(0, 400) || null);
   try {
     const parsed = JSON.parse(res.stdout);
@@ -301,7 +315,7 @@ export async function containerAction(id, action) {
   const args = CONTAINER_ACTIONS[String(action || '')];
   if (!args) return fail('unknown_action');
 
-  const res = await run('docker', [...args, id], { timeout: T_ACTION });
+  const res = await dockerCli([...args, id], { timeout: T_ACTION });
   if (!res.ok) return fail('action_failed', res.stderr.trim().slice(0, 400) || null);
   return { ok: true, action, id };
 }
@@ -313,7 +327,7 @@ export async function removeContainer(id, { force = false } = {}) {
   if (force) args.push('--force');
   args.push(id);
 
-  const res = await run('docker', args, { timeout: T_ACTION });
+  const res = await dockerCli(args, { timeout: T_ACTION });
   if (!res.ok) return fail('remove_failed', res.stderr.trim().slice(0, 400) || null);
   return { ok: true, id };
 }
@@ -324,14 +338,14 @@ export async function removeImage(id, { force = false } = {}) {
   if (force) args.push('--force');
   args.push(id);
 
-  const res = await run('docker', args, { timeout: T_ACTION });
+  const res = await dockerCli(args, { timeout: T_ACTION });
   if (!res.ok) return fail('remove_failed', res.stderr.trim().slice(0, 400) || null);
   return { ok: true, id };
 }
 
 export async function removeVolume(name) {
   if (!validId(name)) return fail('invalid_id');
-  const res = await run('docker', ['volume', 'rm', name], { timeout: T_ACTION });
+  const res = await dockerCli(['volume', 'rm', name], { timeout: T_ACTION });
   if (!res.ok) return fail('remove_failed', res.stderr.trim().slice(0, 400) || null);
   return { ok: true, name };
 }
