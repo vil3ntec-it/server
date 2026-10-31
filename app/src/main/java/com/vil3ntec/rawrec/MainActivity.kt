@@ -322,6 +322,7 @@ class MainActivity : Activity() {
             facecam = i("c_cam", 0).coerceIn(0, 3),
             floatingButton = SafePrefs.bool(p, "c_float", true),
             invisibleControl = SafePrefs.bool(p, "c_invis", true),
+            ghostControl = SafePrefs.bool(p, "c_ghost", true),
             smartStart = SafePrefs.bool(p, "c_smart", true),
             gameMode = SafePrefs.bool(p, "c_game", false),
         )
@@ -345,7 +346,7 @@ class MainActivity : Activity() {
             .putInt("c_fps", c.fps).putInt("c_codec", c.codec).putInt("c_br", c.bitrate).putInt("c_mode", c.mode)
             .putInt("c_audio", c.audioMode).putFloat("c_gg", c.gameGain).putFloat("c_mg", c.micGain)
             .putInt("c_cd", c.countdown).putBoolean("c_shake", c.shakeStop).putInt("c_cam", c.facecam)
-            .putBoolean("c_float", c.floatingButton).putBoolean("c_invis", c.invisibleControl)
+            .putBoolean("c_float", c.floatingButton).putBoolean("c_invis", c.invisibleControl).putBoolean("c_ghost", c.ghostControl)
             .putBoolean("c_smart", c.smartStart).putBoolean("c_game", c.gameMode)
             .apply()
     }
@@ -1378,6 +1379,7 @@ class MainActivity : Activity() {
         }
         if (Build.VERSION.SDK_INT < 34) toggles["game"]?.enable(false)
         toggles["float"] = Toggle(c, "tog:float", R.drawable.ic_float, str(R.string.float_title), str(R.string.float_desc)) { on -> change(false) { it.copy(floatingButton = on) } }
+        toggles["ghost"] = Toggle(c, "tog:ghost", R.drawable.ic_eye_off, str(R.string.ghost_title), str(R.string.ghost_desc)) { on -> change(false) { it.copy(ghostControl = on) } }
         toggles["invis"] = Toggle(c, "tog:invis", R.drawable.ic_shrink, str(R.string.invis_title), str(R.string.invis_desc)) { on -> change(false) { it.copy(invisibleControl = on) } }
         toggles["shake"] = Toggle(c, "tog:shake", R.drawable.ic_vibrate, str(R.string.shake_title), str(R.string.shake_desc)) { on -> change(false) { it.copy(shakeStop = on) } }
         val c2 = card(pg.col, null, top = 12)
@@ -1638,12 +1640,14 @@ class MainActivity : Activity() {
         toggles["game"]?.set(c.gameMode)
         toggles["float"]?.set(c.floatingButton)
         toggles["invis"]?.set(c.invisibleControl)
+        toggles["ghost"]?.set(c.ghostControl)
         toggles["shake"]?.set(c.shakeStop)
         rows["cd"]?.select(countdowns.indexOf(c.countdown))
         rows["cam"]?.select(c.facecam)
         rows["gg"]?.root?.visibility = if (c.usesInternal) View.VISIBLE else View.GONE
         rows["mg"]?.root?.visibility = if (c.usesMic) View.VISIBLE else View.GONE
-        toggles["invis"]?.root?.visibility = if (c.floatingButton && !c.gameMode) View.VISIBLE else View.GONE
+        toggles["ghost"]?.root?.visibility = if (c.floatingButton && !c.gameMode) View.VISIBLE else View.GONE
+        toggles["invis"]?.root?.visibility = if (c.floatingButton && !c.gameMode && !c.ghostControl) View.VISIBLE else View.GONE
 
         val p = runCatching { Planner.plan(c, disp) }.getOrNull()
         plan = p

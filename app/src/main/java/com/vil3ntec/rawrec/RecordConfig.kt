@@ -21,6 +21,10 @@ data class RecordConfig(
     // Was «invisible while recording» (an empty window that still took touches) until 1.4. Now: the
     // control shrinks to a small visible dot as soon as the recording starts. Nothing is ever invisible.
     val invisibleControl: Boolean = true,
+    // «کنترل در ویدیو دیده نشود»: while recording the control is off the screen; a shake (or «نمایشِ
+    // کنترل» in the notification) opens it and pauses the recording first, so no frame with the
+    // control in it is ever written. See RecordService.ghostOpen.
+    val ghostControl: Boolean = true,
     val smartStart: Boolean = true,  // «شروعِ هوشمند برای بازی»: rotation in the first 10 s restarts into one file
     val gameMode: Boolean = false,   // «حالتِ بازی»: Android 14+ single-app capture, the control stays visible
     val testSeconds: Int = 0,       // > 0: stop by itself after this many seconds and show the report
@@ -36,7 +40,7 @@ data class RecordConfig(
         i.putExtra("fps", fps); i.putExtra("codec", codec); i.putExtra("br", bitrate); i.putExtra("mode", mode)
         i.putExtra("am", audioMode); i.putExtra("gg", gameGain); i.putExtra("mg", micGain)
         i.putExtra("cd", countdown); i.putExtra("shake", shakeStop); i.putExtra("cam", facecam)
-        i.putExtra("float", floatingButton); i.putExtra("invis", invisibleControl)
+        i.putExtra("float", floatingButton); i.putExtra("invis", invisibleControl); i.putExtra("ghost", ghostControl)
         i.putExtra("smart", smartStart); i.putExtra("game", gameMode)
         i.putExtra("test", testSeconds); i.putExtra("seg", segmentBytes)
     }
@@ -85,6 +89,7 @@ data class RecordConfig(
             facecam = i.getIntExtra("cam", 0),
             floatingButton = i.getBooleanExtra("float", true),
             invisibleControl = i.getBooleanExtra("invis", true),
+            ghostControl = i.getBooleanExtra("ghost", true),
             smartStart = i.getBooleanExtra("smart", true),
             gameMode = i.getBooleanExtra("game", false),
             testSeconds = i.getIntExtra("test", 0),

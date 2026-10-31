@@ -72,7 +72,10 @@ enum class StopReason(val text: Int, val byUser: Boolean) {
  * and it needs four strong swings in alternating directions on one axis within 1.2 s; footsteps,
  * bumps and taps push one way only. Ignored until [armedAtMs] (start / resume).
  */
-internal class ShakeGesture(private val threshold: Float = 2.0f * SensorManager.GRAVITY_EARTH) {
+internal class ShakeGesture(
+    private val threshold: Float = 2.0f * SensorManager.GRAVITY_EARTH,
+    private val swingsNeeded: Int = 4,
+) {
     private val g = FloatArray(3)
     private var hasGravity = false
     private var swings = 0
@@ -96,7 +99,7 @@ internal class ShakeGesture(private val threshold: Float = 2.0f * SensorManager.
         if (swings > 0 && tMs - firstAt <= 1_200 && axis == lastAxis && sign != lastSign) swings++
         else { swings = 1; firstAt = tMs }
         lastAt = tMs; lastAxis = axis; lastSign = sign
-        if (swings >= 4) { swings = 0; lastAxis = -1; return true }
+        if (swings >= swingsNeeded) { swings = 0; lastAxis = -1; return true }
         return false
     }
 }
@@ -122,6 +125,8 @@ class RecordService : Service(), Recorder.Events {
         private const val CH_DONE = "done"
         private const val NOTIF_REC = 1
         private const val NOTIF_DONE = 2
+        /** Ghost mode: how long after the panel is taken down the recording continues. */
+        private const val GHOST_RESUME_MS = 350L
 
         // Keys of the last finished recording (read by the activity).
         const val K_LAST_URIS = "last_uris"
@@ -309,7 +314,7 @@ class RecordService : Service(), Recorder.Events {
         try {
             if (c.facecam > 0) facecam = FacecamOverlay(this, c.facecam).also { it.show() }
         } catch (_: Exception) { facecam = null }
-        if (c.floatingButton) control = makeControl(c)
+        if (c.floatingButton && !ghostOf(c)) control = makeControl(c)
         registerDisplayListener()
         registerScreenReceiver()
         keepScreenOn()
@@ -318,7 +323,7 @@ class RecordService : Service(), Recorder.Events {
 
     /** «حالتِ بازی» (single-app capture): the control is not in the video, so it never needs to shrink at once. */
     private fun makeControl(c: RecordConfig): FloatingControl? = try {
-        FloatingControl(this, c.invisibleControl && !c.gameMode, pillActions).also {
+        FloatingControl(this, c.invisibleControl && !c.gameMode && !ghostOf(c), pillActions, ghost = ghostOf(c)).also {
             it.setMic(on = c.usesMic && recorder?.micMuted != true, available = c.usesMic)
             it.setCam(on = facecam != null, available = camAllowed)
             it.setPaused(state == State.PAUSED)
@@ -342,7 +347,7 @@ class RecordService : Service(), Recorder.Events {
             return
         }
         if (Settings.canDrawOverlays(this)) {
-            try { (countdownView ?: CountdownOverlay(this, null).also { countdownView = it }).set(left) } catch (_: Exception) {}
+            try { (countdownView ?: CountdownOverlay(this, if (ghost) getString(R.string.eng_ghost_hint) else null).also { countdownView = it }).set(left) } catch (_: Exception) {}
         } else {
             cdToast?.cancel()
             cdToast = Toast.makeText(this, "⏺ $left", Toast.LENGTH_SHORT).also { it.show() }
@@ -374,7 +379,7 @@ class RecordService : Service(), Recorder.Events {
             main.post(pillTick)
             notifyRecording()
             refreshTile()
-            if (c.shakeStop) startShakeDetector()
+            if (c.shakeStop || ghostOf(c)) startShakeDetector(ghostOf(c))
             lastSpaceAt = 0L
             main.postDelayed(spaceCheck, 2000)
             if (c.testSeconds > 0) main.postDelayed(testDone, c.testSeconds * 1000L)
@@ -512,6 +517,7 @@ class RecordService : Service(), Recorder.Events {
     private fun togglePause() {
         if (stopping) return
         val r = recorder ?: return
+        if (r.paused && ghost && control != null) { ghostClose(); return }
         if (r.paused) {
             r.resume()
             startedAt += System.currentTimeMillis() - pausedSince
@@ -548,6 +554,7 @@ class RecordService : Service(), Recorder.Events {
         }
         override fun delete() = finishRecording(StopReason.DELETED)
         override fun hideControl() {
+            if (ghost) { ghostClose(); return }
             control?.hide()
             control = null
             controlHidden = true
@@ -558,6 +565,7 @@ class RecordService : Service(), Recorder.Events {
 
     /** «نمایشِ دکمه» in the notification after the control was hidden. */
     private fun showControlAgain() {
+        if (ghost) { ghostOpen(); return }
         if (!controlHidden || stopping || state == State.IDLE || state == State.SAVING) return
         val c = cfg ?: return
         if (!Settings.canDrawOverlays(this)) return
@@ -565,6 +573,59 @@ class RecordService : Service(), Recorder.Events {
         controlHidden = control == null
         main.removeCallbacks(pillTick)
         main.post(pillTick)
+        notifyRecording()
+    }
+
+    // ------------------------------------------------------------ «کنترل در ویدیو دیده نشود»
+    //
+    // Android lets no ordinary app keep a window on the screen and out of a full-screen recording
+    // (only the system's own recorder can). So the control is simply never on the screen while
+    // frames are being written:
+    //  • recording: nothing of RawRec on the screen — no panel, no dot, no invisible window;
+    //  • a shake (or «نمایشِ کنترل» in the notification) pauses the recorder FIRST and only then
+    //    puts the panel up — the recorder drops every frame from the pause on (Recorder.pause);
+    //  • «ادامه» / «پنهان» / the header takes the panel down, and the recorder resumes
+    //    [GHOST_RESUME_MS] later, when the screen without the panel has been composed. Frames older
+    //    than the resume are dropped too (Recorder.resumeAtUs), so none with the panel gets in;
+    //  • stop / delete on the panel end a recording that was already paused before the panel came.
+
+    private fun ghostOf(c: RecordConfig) = c.ghostControl && c.floatingButton && !c.gameMode
+    private val ghost get() = cfg?.let { ghostOf(it) } == true
+
+    private fun ghostOpen() {
+        val c = cfg ?: return
+        if (!ghost || stopping || control != null) return
+        if (state != State.RECORDING && state != State.PAUSED) return
+        if (!Settings.canDrawOverlays(this)) return
+        main.removeCallbacks(ghostResume)
+        val r = recorder ?: return
+        if (!r.paused) {
+            r.pause()
+            pausedSince = System.currentTimeMillis()
+            state = State.PAUSED
+        }
+        control = makeControl(c)?.also { it.expand() }
+        main.removeCallbacks(pillTick)
+        main.post(pillTick)
+        notifyRecording()
+    }
+
+    private fun ghostClose() {
+        try { control?.blankThenHide() } catch (_: Exception) {}
+        control = null
+        main.removeCallbacks(pillTick)
+        main.removeCallbacks(ghostResume)
+        main.postDelayed(ghostResume, GHOST_RESUME_MS)
+        notifyRecording()
+    }
+
+    private val ghostResume = Runnable {
+        val r = recorder
+        if (stopping || r == null || !r.paused || control != null || state != State.PAUSED) return@Runnable
+        r.resume()
+        startedAt += System.currentTimeMillis() - pausedSince
+        state = State.RECORDING
+        shake?.armedAtMs = SystemClock.elapsedRealtime() + 1_500
         notifyRecording()
     }
 
@@ -597,7 +658,7 @@ class RecordService : Service(), Recorder.Events {
     private fun finishRecording(reason: StopReason, detail: String? = null) {
         if (stopping) return
         stopping = true
-        for (cb in listOf(pillTick, spaceCheck, followRotation, countdownStep, startAfterCountdown, testDone)) main.removeCallbacks(cb)
+        for (cb in listOf(pillTick, spaceCheck, followRotation, countdownStep, startAfterCountdown, testDone, ghostResume)) main.removeCallbacks(cb)
         displayStop?.let { main.removeCallbacks(it) }
         displayStop = null
         stopShakeDetector()
@@ -809,17 +870,29 @@ class RecordService : Service(), Recorder.Events {
     private val shakeListener = object : SensorEventListener {
         override fun onSensorChanged(e: SensorEvent) {
             val g = shake ?: return
+            if (shakeOpens) {
+                // «کنترل در ویدیو دیده نشود»: a shake brings the control (and pauses first).
+                if (control != null || (state != State.RECORDING && state != State.PAUSED)) return
+                if (g.onSample(e.values[0], e.values[1], e.values[2], e.timestamp / 1_000_000)) main.post { ghostOpen() }
+                return
+            }
             if (state != State.RECORDING) return
             if (g.onSample(e.values[0], e.values[1], e.values[2], e.timestamp / 1_000_000)) main.post { finishRecording(StopReason.SHAKE) }
         }
         override fun onAccuracyChanged(s: Sensor?, a: Int) {}
     }
 
-    private fun startShakeDetector() {
+    /** True: a shake opens the control ([ghostOpen]); false: a shake ends the recording. */
+    private var shakeOpens = false
+
+    private fun startShakeDetector(opens: Boolean) {
         val sm = getSystemService(SensorManager::class.java) ?: return
         val acc = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) ?: return
-        // Sensor time is elapsed-realtime based; nothing counts in the first 3 s.
-        shake = ShakeGesture().also { it.armedAtMs = SystemClock.elapsedRealtime() + 3_000 }
+        shakeOpens = opens
+        // Sensor time is elapsed-realtime based; nothing counts in the first 3 s. Opening the control
+        // only pauses, so it takes a lighter shake than stopping (three swings instead of four).
+        val g = if (opens) ShakeGesture(1.7f * SensorManager.GRAVITY_EARTH, 3) else ShakeGesture()
+        shake = g.also { it.armedAtMs = SystemClock.elapsedRealtime() + 3_000 }
         sm.registerListener(shakeListener, acc, SensorManager.SENSOR_DELAY_GAME, main)
         sensorManager = sm
     }
@@ -883,7 +956,7 @@ class RecordService : Service(), Recorder.Events {
                 getString(if (s == State.PAUSED) R.string.n_resume else R.string.n_pause), pause))
         }
         if (s != State.SAVING) b.addAction(action(R.drawable.eng_ic_stop, getString(if (s == State.PREPARING) R.string.btn_cancel else R.string.n_stop), stop))
-        if (controlHidden && s != State.SAVING) {
+        if ((controlHidden || (ghost && control == null && (s == State.RECORDING || s == State.PAUSED))) && s != State.SAVING) {
             val show = PendingIntent.getService(this, 8, Intent(this, RecordService::class.java).setAction(ACTION_SHOW_CONTROL), flags)
             b.addAction(action(R.drawable.eng_ic_visible, getString(R.string.eng_n_show_control), show))
         }

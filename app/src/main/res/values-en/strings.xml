@@ -80,6 +80,8 @@
 
     <string name="float_title">On-screen recording control</string>
     <string name="float_desc">A small visible panel with stop, pause, mic, face cam, delete and hide; drag it to an edge, tap its header to shrink it to a dot.</string>
+    <string name="ghost_title">Keep the control out of the video</string>
+    <string name="ghost_desc">While recording nothing of RawRec is on the screen. Shake the phone firmly three times (or tap «Show control» in the notification) to see the control. The recording pauses itself while the control is open, so viewers never see it; «Continue» takes it away and the recording goes on.</string>
     <string name="invis_title">Start as a small dot</string>
     <string name="invis_desc">When recording starts the control shrinks to a small visible dot at the edge; tap it to open. Nothing is ever invisible.</string>
     <string name="shake_title">Shake to stop</string>

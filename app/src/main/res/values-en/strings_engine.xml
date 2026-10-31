@@ -5,6 +5,8 @@
     <string name="eng_ctl_minimize">Minimize the recording control</string>
     <string name="eng_ctl_expand">Recording control; tap to show the buttons, drag to move</string>
     <string name="eng_ctl_hide">Hide the recording control</string>
+    <string name="eng_ctl_ghost_continue">Continue recording without the control</string>
+    <string name="eng_ghost_hint">The control is not in the video — shake the phone to see it</string>
     <string name="eng_n_show_control">Show control</string>
     <string name="eng_toast_control_hidden">Recording control hidden. Stop from the notification or the Quick Settings tile; “Show control” in the notification brings it back.</string>
 

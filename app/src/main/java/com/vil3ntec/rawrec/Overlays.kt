@@ -140,11 +140,15 @@ private class Placer(
  * completely (stop then from the notification, the Quick Settings tile or shake-to-stop).
  *
  * [startMinimized]: go to the dot as soon as the recording starts.
+ * [ghost]: «کنترل در ویدیو دیده نشود» — the panel is only up while the recording is paused (see
+ * RecordService.ghostOpen); it never shrinks to the dot, and the header, «پنهان» and «ادامه» all
+ * take it down ([Actions.hideControl]) so the recording continues.
  */
 class FloatingControl(
     private val ctx: Context,
     private val startMinimized: Boolean,
     private val actions: Actions,
+    private val ghost: Boolean = false,
 ) {
     interface Actions {
         fun stop()
@@ -292,7 +296,7 @@ class FloatingControl(
         }
         stop.contentDescription = ctx.getString(R.string.pill_stop)
         delete.contentDescription = ctx.getString(R.string.pill_delete)
-        hideButton.contentDescription = ctx.getString(R.string.eng_ctl_hide)
+        hideButton.contentDescription = ctx.getString(if (ghost) R.string.eng_ctl_ghost_continue else R.string.eng_ctl_hide)
         stop.setOnClickListener { touched(); actions.stop() }
         pause.setOnClickListener { touched(); actions.pauseToggle() }
         mic.setOnClickListener { touched(); actions.micToggle() }
@@ -302,7 +306,7 @@ class FloatingControl(
             if (deleteArmed) { disarm(); actions.delete() } else arm()
         }
         hideButton.setOnClickListener { actions.hideControl() }
-        attachDrag(timer) { collapse() }
+        attachDrag(timer) { if (ghost) actions.hideControl() else collapse() }
         attachDrag(dotFrame) { expand() }
         fy = SafePrefs.float(prefs, "pill_fy", 0.3f).coerceIn(0f, 1f)
         right = SafePrefs.bool(prefs, "pill_right", true)
@@ -327,6 +331,18 @@ class FloatingControl(
         shown = false
         main.removeCallbacksAndMessages(null)
         OverlayWindows.remove(wm, root)
+    }
+
+    /**
+     * Ghost mode: clear the panel and stop it taking touches first, then take the window away a
+     * moment later — so even if the system animates the window out, the animation shows nothing.
+     */
+    fun blankThenHide() {
+        root.visibility = View.INVISIBLE
+        lp.flags = lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        if (shown) OverlayWindows.update(wm, root, lp)
+        main.removeCallbacksAndMessages(null)
+        main.postDelayed({ hide() }, 60)
     }
 
     fun setRecording(rec: Boolean) {
@@ -396,7 +412,7 @@ class FloatingControl(
     private val autoCollapse = Runnable { if (recording && expanded) collapse() }
     private fun touched() {
         main.removeCallbacks(autoCollapse)
-        main.postDelayed(autoCollapse, 5000)
+        if (!ghost) main.postDelayed(autoCollapse, 5000)
     }
 
     /**
