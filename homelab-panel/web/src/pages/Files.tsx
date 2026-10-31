@@ -16,7 +16,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { useApp } from '../app-context';
-import { api, ApiError, downloadUrl, getToken } from '../api';
+import { api, ApiError, downloadPath, getToken, openWithTicket } from '../api';
 import type { FileItem } from '../types';
 import { Card, ConfirmDialog, Empty, Field, Loading, Modal, toast } from '../components/ui';
 import { bytes, dateTime } from '../format';
@@ -215,9 +215,13 @@ export default function Files() {
                 </span>
                 <div className="flex shrink-0 gap-1">
                   {!item.isDir && (
-                    <a className="btn btn-sm" href={downloadUrl(item.path)} title={t('downloadFile')}>
+                    <button
+                      className="btn btn-sm"
+                      title={t('downloadFile')}
+                      onClick={() => openWithTicket(downloadPath(item.path)).catch((e) => toast((e as Error).message, 'bad'))}
+                    >
                       <Download className="h-3.5 w-3.5" />
-                    </a>
+                    </button>
                   )}
                   <button className="btn btn-sm" title={t('rename')} onClick={() => setRenaming(item)}>
                     <FilePen className="h-3.5 w-3.5" />

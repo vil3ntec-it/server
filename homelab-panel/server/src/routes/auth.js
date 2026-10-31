@@ -14,13 +14,21 @@ import {
   revokeSession,
   revokeOtherSessions,
   jwtSecret,
+  hashPassword,
+  issueUrlTicket,
+  markFresh,
+  freshUntil,
+  requireRecentAuth,
 } from '../auth.js';
 import jwt from 'jsonwebtoken';
 import QRCode from 'qrcode';
 import { newSecret, verifyTotp, otpauthUrl, newRecoveryCodes, hashRecovery, useRecoveryCode } from '../lib/totp.js';
 import { getSetting } from '../db.js';
 import { db, logEvent } from '../db.js';
-import { roleOf, listPanelUsers, setRole, setDisabled, deletePanelUser, ROLES, ROLE_ABILITIES, requireRole } from '../control/roles.js';
+import {
+  roleOf, listPanelUsers, ROLES, ROLE_ABILITIES, requireRole, isOwner,
+  createPanelUser, updatePanelUser, resetPanelUserPassword, deletePanelUser,
+} from '../control/roles.js';
 import { audit } from '../lib/audit.js';
 import { auditFromReq } from '../control/audit.js';
 import { noteLogin } from '../automation/sources.js';
@@ -91,7 +99,13 @@ function finishLogin(req, res, user) {
   audit(req, 'panel.login', { target: user.username });
   // ورودِ موفق از IPِ تازه هم به موتورِ اتوماسیون گفته می‌شود
   noteLogin({ ok: true, username: user.username, userId: user.id, ip: clientIp(req), userAgent: req.headers['user-agent'] });
-  res.json({ ok: true, user: { id: user.id, username: user.username, role: user.role || 'admin' }, ...session });
+  res.json({
+    ok: true,
+    user: { id: user.id, username: user.username, role: user.role || 'admin' },
+    //  رمزِ یک‌بارمصرفِ `vill3n owner-reset` ⇒ اول رمزِ تازه (سرور اجبار می‌کند)
+    mustChangePassword: Boolean(user.must_change_password),
+    ...session,
+  });
 }
 
 /** گامِ دومِ ورود — کدِ TOTP یا کدِ بازیابی. همان سقفِ نرخِ /login رویش هست. */
@@ -131,9 +145,46 @@ router.get('/me', requireAuth, (req, res) => {
   const role = roleOf(req);
   res.json({
     user: { id: req.user.id, username: req.user.username, role },
+    //  مالکِ اصلی (قدیمی‌ترین مدیرِ فعال) — رابط با این نشانش می‌دهد؛ مجوز در سرور است
+    owner: isOwner(req.user.id),
+    mustChangePassword: Boolean(req.user.mustChangePassword),
+    //  تا کِی این نشست برای کارِ حساس تازه است (میلی‌ثانیه؛ صفر = نیست)
+    freshUntil: freshUntil(req.user.sessionId),
     abilities: ROLE_ABILITIES[role] || [],
     sessions: listSessions(req.user.id),
   });
+});
+
+/* ---------------------- احرازِ دوباره (۶-۵) ------------------------
+ *  رمز — و اگر دوعاملی روشن است، کدِ اپ هم. نشستِ همین درخواست ده دقیقه
+ *  برای کارِ حساس تازه می‌شود. سقفِ نرخِ ورود (فقط ناموفق‌ها) رویش هست.
+ */
+router.post('/reauth', requireAuth, (req, res) => {
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  const okPass = Boolean(u) && verifyPassword(String(req.body?.password || ''), u.password_hash);
+  const okCode = !u?.totp_enabled || verifyTotp(u.totp_secret, req.body?.code);
+  if (!okPass || !okCode) {
+    audit(req, 'panel.reauth', { target: req.user.username, ok: false, detail: { step: okPass ? 'totp' : 'password' } });
+    //  ۴۰۰ نه ۴۰۱: نشست سالم است، فقط رمز غلط بود — رابط نباید بیرونش بیندازد
+    return res.status(400).json({
+      error: okPass ? 'totp_invalid' : 'wrong_password',
+      totpRequired: Boolean(u?.totp_enabled),
+    });
+  }
+  markFresh(req.user.sessionId);
+  audit(req, 'panel.reauth', { target: req.user.username });
+  res.json({ ok: true, freshUntil: freshUntil(req.user.sessionId) });
+});
+
+/* ---------------------- بلیتِ نشانی (۶-۶) ------------------------
+ *  پیوندِ دانلود سرآیندِ Authorization ندارد؛ به‌جای توکنِ ۱۲ساعته در نشانی،
+ *  یک بلیتِ ۶۰ثانیه‌ایِ یک‌بارمصرف که به همین نشست و همین مسیر بسته است.
+ */
+router.post('/ticket', requireAuth, (req, res) => {
+  const t = issueUrlTicket(req.user, req.body?.path);
+  if (!t) return res.status(400).json({ error: 'invalid_path' });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ ok: true, ...t });
 });
 
 /* ---------------------- ورودِ دوعاملی (TOTP) ------------------------
@@ -154,7 +205,12 @@ router.get('/totp', requireAuth, (req, res) => {
  *  را جا می‌زد و صاحبِ حساب دیگر نمی‌توانست وارد شود. حالا اول باید خاموش شود،
  *  و خاموش کردن رمز + کدِ فعلی می‌خواهد.
  */
-router.post('/totp/setup', requireAuth, async (req, res) => {
+/*
+ *  ⛔ روشن کردن هم احرازِ دوباره می‌خواهد (۱۴۰۵/۰۸/۰۹): نشستِ دزدیده‌شده با
+ *  اپِ خودش دوعاملی را روی حسابِ بی‌دوعاملیِ مالک روشن می‌کرد و صاحبِ سامانه
+ *  دیگر وارد نمی‌شد. نشستی که همین حالا وارد شده تازه است؛ وگرنه یک بار رمز.
+ */
+router.post('/totp/setup', requireAuth, requireRecentAuth, async (req, res) => {
   const cur = db.prepare('SELECT totp_enabled FROM users WHERE id = ?').get(req.user.id);
   if (cur?.totp_enabled) return res.status(409).json({ error: 'totp_already_enabled' });
   const secret = newSecret();
@@ -165,7 +221,7 @@ router.post('/totp/setup', requireAuth, async (req, res) => {
   res.json({ secret, url, qr });
 });
 
-router.post('/totp/enable', requireAuth, (req, res) => {
+router.post('/totp/enable', requireAuth, requireRecentAuth, (req, res) => {
   const u = db.prepare('SELECT totp_pending, totp_enabled, username FROM users WHERE id = ?').get(req.user.id);
   if (u?.totp_enabled) return res.status(409).json({ error: 'totp_already_enabled' });
   if (!u?.totp_pending) return res.status(400).json({ error: 'totp_not_setup' });
@@ -214,51 +270,54 @@ router.post('/logout-all', requireAuth, (req, res) => {
   res.json({ ok: true, revoked: n });
 });
 
-/* ---------------------- کاربرانِ پنل (فقط مدیر) ------------------------ */
+/* ---------------------- کاربرانِ پنل (فقط مدیر) ------------------------
+ *  ⛔ همان قاعده‌های `/api/panel/v1/users` — هر دو از `control/roles.js`
+ *  (۶-۲ / S17). نوشتن پشتِ احرازِ دوباره (۶-۵).
+ */
+function usersError(res, e) {
+  if (e?.code && e?.status) return res.status(e.status).json({ error: e.code });
+  throw e;
+}
 
 router.get('/users', requireAuth, requireRole('admin'), (req, res) => {
   res.json({ users: listPanelUsers(), roles: ROLES, abilities: ROLE_ABILITIES });
 });
 
-router.post('/users', requireAuth, requireRole('admin'), (req, res) => {
-  const { username, password, role } = req.body || {};
-  if (!username || String(username).trim().length < 3) return res.status(400).json({ error: 'username_too_short' });
-  if (!password || String(password).length < 8) return res.status(400).json({ error: 'password_too_short' });
-  if (!ROLES.includes(role)) return res.status(400).json({ error: 'invalid_role' });
-  if (findUser(String(username).trim())) return res.status(409).json({ error: 'username_taken' });
-  const user = createUser(String(username).trim(), String(password));
-  db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, user.id);
-  logEvent('info', 'panel', `کاربر «${user.username}» با نقشِ ${role} ساخته شد`);
-  auditFromReq(req, 'panel.user.create', { entity: 'user', entityId: user.username, detail: { role } });
-  res.status(201).json({ user: { id: user.id, username: user.username, role, disabled: false } });
-});
-
-router.patch('/users/:id', requireAuth, requireRole('admin'), (req, res) => {
+router.post('/users', requireAuth, requireRole('admin'), requireRecentAuth, (req, res) => {
   try {
-    if (req.body?.role !== undefined) setRole(req.params.id, req.body.role, req.user.username);
-    if (req.body?.disabled !== undefined) setDisabled(req.params.id, Boolean(req.body.disabled), req.user.username);
-    res.json({ users: listPanelUsers() });
+    const user = createPanelUser(req, req.body || {}, createUser);
+    logEvent('info', 'panel', `کاربر «${user.username}» با نقشِ ${user.role} ساخته شد`);
+    res.status(201).json({ user });
   } catch (e) {
-    if (e.message === 'owner_protected') return ownerDenied(req, res, 'role');
-    const code = e.message === 'not_found' ? 404 : 400;
-    res.status(code).json({ error: e.message });
+    usersError(res, e);
   }
 });
 
-/** دستِ کسی به نقش، وضعیت، رمز یا حذفِ مالکِ اصلی نمی‌رسد — و تلاشش می‌ماند. */
-function ownerDenied(req, res, what) {
-  auditFromReq(req, 'panel.user.owner_protected', { entity: 'user', entityId: String(req.params.id), result: 'forbidden', detail: { what } });
-  return res.status(403).json({ error: 'owner_protected' });
-}
-
-router.delete('/users/:id', requireAuth, requireRole('admin'), (req, res) => {
-  if (Number(req.params.id) === Number(req.user.id)) return res.status(400).json({ error: 'cannot_delete_self' });
+router.patch('/users/:id', requireAuth, requireRole('admin'), requireRecentAuth, (req, res) => {
   try {
-    deletePanelUser(req.params.id, req.user.username);
+    const u = updatePanelUser(req, req.params.id, { role: req.body?.role, disabled: req.body?.disabled });
+    logEvent('warn', 'panel', `کاربر «${u.username}»: نقش ${u.role}${u.disabled ? ' — حساب بسته است' : ''}`);
+    res.json({ users: listPanelUsers() });
+  } catch (e) {
+    usersError(res, e);
+  }
+});
+
+router.put('/users/:id/password', requireAuth, requireRole('admin'), requireRecentAuth, (req, res) => {
+  try {
+    resetPanelUserPassword(req, req.params.id, req.body?.password, hashPassword);
+    res.json({ ok: true });
+  } catch (e) {
+    usersError(res, e);
+  }
+});
+
+router.delete('/users/:id', requireAuth, requireRole('admin'), requireRecentAuth, (req, res) => {
+  try {
+    deletePanelUser(req, req.params.id);
     res.json({ ok: true, users: listPanelUsers() });
   } catch (e) {
-    if (e.message === 'owner_protected') return ownerDenied(req, res, 'delete');
-    res.status(e.message === 'not_found' ? 404 : 400).json({ error: e.message });
+    usersError(res, e);
   }
 });
 
@@ -267,7 +326,9 @@ router.post('/change-password', requireAuth, (req, res) => {
   if (!newPassword || String(newPassword).length < 8) {
     return res.status(400).json({ error: 'password_too_short' });
   }
+  if (String(newPassword).length > 200) return res.status(400).json({ error: 'password_too_long' });
   const result = changePassword(req.user.id, String(oldPassword || ''), String(newPassword));
+  auditFromReq(req, 'panel.password.change', { entity: 'user', entityId: req.user.username, result: result.ok ? 'ok' : result.error });
   if (!result.ok) return res.status(400).json(result);
   res.json({ ok: true });
 });

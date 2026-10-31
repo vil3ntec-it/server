@@ -162,8 +162,9 @@ try {
   const again = await bytes('/api/account-admin/support/media/smd_user1', auth);
   check('بارِ سوم از دیسک — سرورِ حساب دوباره پرسیده نشد', again.status === 200 && again.buf.equals(want) && fetches.get('smd_user1') === 1);
 
+  //  ⛔ (۶-۶) رابط رسانه را با سرآیند می‌خواند و blob می‌کند؛ توکنِ نشست در نشانی دیگر پذیرفته نیست
   const viaQuery = await bytes(`/api/account-admin/support/media/smd_user1?token=${encodeURIComponent(token)}`);
-  check('با ‎?token=‎ هم (برای ‎<img>‎ و ‎<video>‎)', viaQuery.status === 200 && viaQuery.buf.equals(want), String(viaQuery.status));
+  check('⛔ ‎?token=‎ ِ نشانی رد می‌شود (۴۰۱)', viaQuery.status === 401, String(viaQuery.status));
   const anon = await bytes('/api/account-admin/support/media/smd_user1');
   check('بی ورود ⇒ ۴۰۱', anon.status === 401);
 

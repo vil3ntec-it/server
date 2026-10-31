@@ -35,6 +35,7 @@ import express from 'express';
 import { cloudRaw, cloudRawText, cloudRawBytes } from '../stations/cloud.js';
 import { fetchOnce, writeCached } from '../support-media-cache.js';
 import { requireRole } from '../control/roles.js';
+import { requireRecentAuth, reauthMoneyEnforced } from '../auth.js';
 import { audit } from '../control/audit.js';
 
 const router = express.Router();
@@ -153,9 +154,20 @@ router.get('/shop-accounts/:id/staff-codes', guard(async (req, res) => {
  *  VIP می‌داد، پرداخت پاک می‌کرد و به همهٔ مشتری‌ها پیام می‌فرستاد.
  *  دیدن و پشتیبانیِ روزمره برای کارگزار باز است.
  */
-const money = requireRole('admin');
+const adminOnly = requireRole('admin');
+/*
+ *  ⚠️ احرازِ دوباره برای کارِ پولی (۶-۵) پشتِ `HLP_REAUTH_MONEY=1` است و پیش‌فرض
+ *  خاموش: «ویلن ادمین» همین درها را می‌زند و هنوز پنجرهٔ «رمز را دوباره بزنید»
+ *  ندارد. شرحش کنارِ `reauthMoneyEnforced` در `auth.js`.
+ */
+const money = (req, res, next) =>
+  adminOnly(req, res, () => (reauthMoneyEnforced() ? requireRecentAuth(req, res, next) : next()));
 
-router.post('/shop-accounts/:id/staff-codes/reveal', requireRole('admin'), guard(async (req, res) => {
+/*
+ *  ⛔ نمایشِ کدِ شاگرد = نمایشِ راز ⇒ احرازِ دوباره (۶-۵). فقط رابطِ وب این در
+ *  را می‌زند و پنجرهٔ رمز را دارد.
+ */
+router.post('/shop-accounts/:id/staff-codes/reveal', adminOnly, requireRecentAuth, guard(async (req, res) => {
   const id = idOf(req.params.id);
   const out = await cloudRaw('POST', `/api/admin/shops/${id}/staff-codes/reveal`, { body: {} });
   //  ⛔ دو بار ثبت: دفترِ خودِ پنل و دفترِ خودِ سرورِ حساب — همان قاعدهٔ
@@ -281,7 +293,8 @@ router.get('/users/:id/delete-preview', guard(async (req, res) => {
   res.json(await cloudRaw('GET', `/api/admin/users/${idOf(req.params.id)}/delete-preview`));
 }));
 
-router.delete('/users/:id', requireRole('admin'), guard(async (req, res) => {
+//  ⛔ حذفِ دائمیِ حساب ⇒ احرازِ دوباره (۶-۵)؛ فقط رابطِ وب این در را می‌زند
+router.delete('/users/:id', adminOnly, requireRecentAuth, guard(async (req, res) => {
   const id = idOf(req.params.id);
   const out = await cloudRaw('DELETE', `/api/admin/users/${id}`, { body: { confirmEmail: String(req.body?.confirmEmail || '') } });
   audit({ actor: actorOf(req), action: 'account.user_deleted', entity: 'user', entityId: id,
@@ -1294,7 +1307,7 @@ router.post('/notices/:id/preview', guard(async (req, res) => {
 }));
 
 /** ارسالِ آزمایشی به نشانیِ خودِ مدیر — باز هم بی هیچ ردیفی در گزارش. */
-router.post('/notices/:id/test', guard(async (req, res) => {
+router.post('/notices/:id/test', requireRole('operator'), guard(async (req, res) => {
   res.json(await cloudRaw('POST', `/api/admin/notices/${idOf(req.params.id)}/test`, {
     body: { to: String(req.body?.to || '').slice(0, 160) },
   }));
@@ -1460,11 +1473,18 @@ router.get('/sync/conflicts', guard(async (req, res) => {
   }));
 }));
 
-/** بازگرداندنِ نسخهٔ بازنده — یک opِ تازه از طرفِ سرور، نه پاک کردنِ چیزی. */
-router.post('/sync/conflicts/:id/restore', guard(async (req, res) => {
+/**
+ * بازگرداندنِ نسخهٔ بازنده — یک opِ تازه از طرفِ سرور، نه پاک کردنِ چیزی.
+ *
+ * ⛔ (۱۴۰۵/۰۸/۰۹) دادهٔ یک حساب را عوض می‌کند و سرورِ حساب آن را فقط به مدیرِ
+ * **ارشد** و فقط **با دلیل** می‌دهد (`admin-sync.js`، ADMIN-CONTROL-PLANE). پل با
+ * حسابِ ارشد حرف می‌زند، پس مرزِ نقش همین‌جاست: فقط admin، و دلیل همراه می‌رود.
+ */
+router.post('/sync/conflicts/:id/restore', requireRole('admin'), guard(async (req, res) => {
   const id = idOf(req.params.id);
-  const out = await cloudRaw('POST', `/api/admin/sync/conflicts/${id}/restore`);
-  audit({ actor: actorOf(req), action: 'account.sync.restore', entity: 'sync_conflict', entityId: id });
+  const reason = String(req.body?.reason ?? '').trim().slice(0, 500);
+  const out = await cloudRaw('POST', `/api/admin/sync/conflicts/${id}/restore`, { body: { reason } });
+  audit({ actor: actorOf(req), action: 'account.sync.restore', entity: 'sync_conflict', entityId: id, detail: { reason } });
   res.json(out);
 }));
 
@@ -1841,7 +1861,13 @@ router.put('/email', requireRole('admin'), guard(async (req, res) => {
   res.json(out);
 }));
 
-router.post('/email/test', guard(async (req, res) => {
+/*
+ *  ⛔ «آزمون»های این روتر **می‌فرستند** (ایمیل، پیامک، اعلان) — نگاه کردن نیستند.
+ *  `writeNeedsOperator` هر POSTِ ‎…/test‎ را «فقط نگاه» می‌شمارد و برای viewer باز
+ *  می‌گذارد (درست برای آزمونِ اتصالِ مرکز فرمان)؛ پس این‌جا نقش صریح است. پیامک
+ *  پول است و سرورِ حساب آن را فقط به ارشد می‌دهد ⇒ admin.
+ */
+router.post('/email/test', requireRole('operator'), guard(async (req, res) => {
   res.json(await cloudRaw('POST', '/api/admin/email/test', { body: req.body || {} }));
 }));
 
@@ -1865,7 +1891,7 @@ router.put('/sms', requireRole('admin'), guard(async (req, res) => {
   res.json(out);
 }));
 
-router.post('/sms/test', guard(async (req, res) => {
+router.post('/sms/test', requireRole('admin'), guard(async (req, res) => {
   res.json(await cloudRaw('POST', '/api/admin/sms/test', { body: req.body || {} }));
 }));
 

@@ -6,7 +6,9 @@
 //  روشن/خاموش کند یا لاگش را ببیند.
 // ---------------------------------------------------------------------------
 import { Router } from 'express';
-import { requireAuth, requireRole, requireWriteRole, userRole } from '../auth.js';
+import { requireAuth, requireRole, requireWriteRole, requireRecentAuth } from '../auth.js';
+import { isOwner } from '../control/roles.js';
+import { auditFromReq } from '../control/audit.js';
 import {
   accountStatus, accountLogs, startAccountServer, stopAccountServer, restartAccountServer,
 } from '../account/supervisor.js';
@@ -27,13 +29,37 @@ router.get('/status', async (req, res) => {
   const probe = await probeAccountServer().catch((e) => ({ up: false, error: e.message }));
   let bridge = null;
   try { bridge = cloudStatus(); } catch { /* گاوصندوق بسته */ }
-  //  ⛔ رمزِ مدیرِ سرورِ حساب فقط به مدیرِ پنل نشان داده می‌شود. با آن رمز
-  //  همهٔ اشتراک‌ها، کدها و پول دست می‌خورد؛ «بیننده» و «کارگزار» نامش را
-  //  می‌بینند، نه رمزش.
-  const admin = st.admin && userRole(req.user.id) !== 'admin'
-    ? { ...st.admin, password: null, hidden: true }
-    : st.admin;
+  //  ⛔ رمزِ ارشدِ سرورِ حساب دیگر در این پاسخ نیست — برای **هیچ‌کس**
+  //  (فاز ۱ ِ ممیزی، بخشِ پنلیِ ۶-۴ / S4). تا ۱.۵۰.۶۱ هر admin ِ پنل آن را
+  //  می‌گرفت و با آن از اینترنت به `api.<دامنه>/admin/` می‌رفت و نقش‌ها و
+  //  دفترِ پنل را دور می‌زد. فقط «تنظیم هست/نیست»؛ خودِ رمز را فقط مالکِ اصلی،
+  //  با احرازِ دوباره و یک ردیفِ دفتر، از `POST /admin-password/reveal` می‌بیند.
+  const admin = st.admin
+    ? { username: st.admin.username, source: st.admin.source, passwordSet: Boolean(st.admin.password) }
+    : null;
+  res.setHeader('Cache-Control', 'no-store');
   res.json({ ...st, admin, up: !!probe.up, version: probe.version || null, url: probe.url || null, bridge });
+});
+
+/**
+ * نمایشِ یک‌بارهٔ رمزِ ارشدِ سرورِ حساب — فقط مالکِ اصلی، فقط با رمزِ تازه.
+ *
+ * ⛔ هر بار یک درخواستِ جدا، یک ردیفِ دفتر و `no-store`؛ رابط آن را در حالتِ
+ * صفحه نگه نمی‌دارد و پس از بستنِ پنجره دیگر ندارد. مدیرِ دیگر ۴۰۳ ِ
+ * `owner_only` می‌گیرد و تلاشش هم می‌ماند.
+ */
+router.post('/admin-password/reveal', requireRole('admin'), (req, res) => {
+  if (!isOwner(req.user.id)) {
+    auditFromReq(req, 'account.admin_password.reveal', { entity: 'account-server', result: 'forbidden', detail: { why: 'owner_only' } });
+    return res.status(403).json({ error: 'owner_only', message: 'فقط مالکِ اصلیِ پنل این رمز را می‌بیند.' });
+  }
+  return requireRecentAuth(req, res, () => {
+    const st = accountStatus();
+    if (!st.admin?.password) return res.status(404).json({ error: 'not_configured' });
+    auditFromReq(req, 'account.admin_password.reveal', { entity: 'account-server', entityId: st.admin.username });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ ok: true, username: st.admin.username, password: st.admin.password, source: st.admin.source });
+  });
 });
 
 /** آخرین سطرهای لاگِ خودِ سرورِ حساب */

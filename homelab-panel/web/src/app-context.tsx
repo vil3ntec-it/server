@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import { api, getToken, setToken, setUnauthorizedHandler } from './api';
+import { api, getToken, setMustChangeHandler, setToken, setUnauthorizedHandler } from './api';
 import { dirOf, translate, type Dict, type Lang } from './i18n';
 import type { HistoryPoint, MetricsSnapshot, Site } from './types';
 
@@ -22,6 +22,10 @@ type AppState = {
   authed: boolean;
   username: string | null;
   role: PanelRole;
+  /** مالکِ اصلیِ پنل (قدیمی‌ترین مدیرِ فعال) — فقط برای نمایش؛ مجوز در سرور است */
+  owner: boolean;
+  /** با رمزِ یک‌بارمصرفِ `vill3n owner-reset` وارد شده ⇒ اول رمزِ تازه */
+  mustChangePassword: boolean;
   /** آیا نقشِ فعلی دستِ‌کم این اندازه دسترسی دارد؟ */
   can: (needed: PanelRole) => boolean;
   serverName: string;
@@ -56,6 +60,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [authed, setAuthed] = useState(Boolean(getToken()));
   const [username, setUsername] = useState<string | null>(null);
   const [role, setRole] = useState<PanelRole>('viewer');
+  const [owner, setOwner] = useState(false);
+  const [mustChangePassword, setMustChange] = useState(false);
   const [serverName, setServerName] = useState('');
   const [hasLogo, setHasLogo] = useState(false);
   const [lang, setLangState] = useState<Lang>(() => (localStorage.getItem('hlp.lang') as Lang) || 'fa');
@@ -116,7 +122,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setAuthed(false);
       setUsername(null);
       setRole('viewer');
+      setOwner(false);
+      setMustChange(false);
     });
+    setMustChangeHandler(() => setMustChange(true));
+    return () => setMustChangeHandler(null);
   }, []);
 
   useEffect(() => {
@@ -124,9 +134,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await refreshPublic();
       if (getToken()) {
         try {
-          const me = await api<{ user: { username: string; role: PanelRole } }>('/api/auth/me');
+          const me = await api<{ user: { username: string; role: PanelRole }; owner?: boolean; mustChangePassword?: boolean }>('/api/auth/me');
           setUsername(me.user.username);
           setRole(me.user.role || 'viewer');
+          setOwner(Boolean(me.owner));
+          setMustChange(Boolean(me.mustChangePassword));
           setAuthed(true);
         } catch {
           setAuthed(false);
@@ -138,7 +150,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Socket.IO — اطلاعات لحظه‌ای
   useEffect(() => {
-    if (!authed) {
+    //  نشستِ رمزِ یک‌بارمصرف وب‌سوکت ندارد (سرور هم ردش می‌کند)
+    if (!authed || mustChangePassword) {
       setSocket(null);
       setConnected(false);
       return;
@@ -179,7 +192,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       document.removeEventListener('visibilitychange', reportVisibility);
       s.close();
     };
-  }, [authed]);
+  }, [authed, mustChangePassword]);
 
   const setLang = useCallback((l: Lang) => {
     localStorage.setItem('hlp.lang', l);
@@ -192,7 +205,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (u: string, p: string) => {
-    const res = await api<{ ok: boolean; totpRequired?: boolean; ticket?: string; token?: string; user?: { username: string; role: PanelRole } }>('/api/auth/login', {
+    const res = await api<{ ok: boolean; totpRequired?: boolean; ticket?: string; token?: string; mustChangePassword?: boolean; user?: { username: string; role: PanelRole } }>('/api/auth/login', {
       body: { username: u, password: p },
     });
     // ورودِ دوعاملی: رمز درست بود، حالا کدِ اپ لازم است
@@ -200,7 +213,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setToken(res.token || null);
     setUsername(res.user?.username || null);
     setRole(res.user?.role || 'viewer');
+    setMustChange(Boolean(res.mustChangePassword));
     setAuthed(true);
+    api<{ owner?: boolean }>('/api/auth/me').then((me) => setOwner(Boolean(me.owner))).catch(() => {});
   }, []);
 
   const loginTotp = useCallback(async (ticket: string, code: string) => {
@@ -210,7 +225,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setToken(res.token);
     setUsername(res.user.username);
     setRole(res.user.role || 'viewer');
+    setMustChange(Boolean((res as { mustChangePassword?: boolean }).mustChangePassword));
     setAuthed(true);
+    api<{ owner?: boolean }>('/api/auth/me').then((me) => setOwner(Boolean(me.owner))).catch(() => {});
   }, []);
 
   const setup = useCallback(async (u: string, p: string) => {
@@ -220,6 +237,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setToken(res.token);
     setUsername(res.user.username);
     setRole(res.user.role || 'admin');
+    setOwner(true);
     setInitialized(true);
     setAuthed(true);
   }, []);
@@ -234,6 +252,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAuthed(false);
     setUsername(null);
     setRole('viewer');
+    setOwner(false);
+    setMustChange(false);
     setMetrics(null);
     setHistory([]);
   }, []);
@@ -245,6 +265,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       authed,
       username,
       role,
+      owner,
+      mustChangePassword,
       can,
       serverName,
       hasLogo,
@@ -267,7 +289,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshPublic,
     }),
     [
-      ready, initialized, authed, username, role, can, serverName, hasLogo, lang, dir, theme, resolvedTheme,
+      ready, initialized, authed, username, role, owner, mustChangePassword, can, serverName, hasLogo, lang, dir, theme, resolvedTheme,
       metrics, history, sites, connected, socket, t, setLang, setTheme, login, setup, logout, refreshPublic,
     ]
   );

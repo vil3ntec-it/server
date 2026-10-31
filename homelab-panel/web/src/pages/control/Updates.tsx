@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from 'react';
 import { Download, GitBranch, RefreshCw, ServerCog, Tag } from 'lucide-react';
-import { api, getToken } from '../../api';
+import { api, openWithTicket } from '../../api';
 import { useApp } from '../../app-context';
 import { Card, Field, Loading, Modal, toast } from '../../components/ui';
 import { dateTime, relative } from '../../format';
@@ -558,7 +558,6 @@ function PumpReleaseCard() {
     catch (e) { toast((e as Error).message, 'bad'); load(); }
     finally { setBusy(''); }
   };
-  const token = (() => { try { return getToken() || ''; } catch { return ''; } })();
   const setupOf = (v: PumpVersion) => v.assets.find((a) => /Setup.*\.exe$/i.test(a.name));
   const hold = st.mode === 'hold';
 
@@ -635,9 +634,13 @@ function PumpReleaseCard() {
               {v.mirroredAt && <span className="text-xs text-ink-muted">· رسید {relative(Date.parse(v.mirroredAt), 'fa')}</span>}
               <span className="flex-1" />
               {setup && (
-                <a className="btn btn-sm" href={`/api/pump-updates-admin/files/${v.version}/${encodeURIComponent(setup.name)}?token=${encodeURIComponent(token)}`}>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => openWithTicket(`/api/pump-updates-admin/files/${v.version}/${encodeURIComponent(setup.name)}`)
+                    .catch((e) => toast((e as Error).message, 'bad'))}
+                >
                   <Download className="h-4 w-4" /> نصاب برای آزمایش ({MB(setup.size)} MB)
-                </a>
+                </button>
               )}
               {!live && (
                 <button

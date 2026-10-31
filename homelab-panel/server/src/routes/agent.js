@@ -10,7 +10,8 @@
 //  ندارد.
 // ---------------------------------------------------------------------------
 import { Router } from 'express';
-import { requireRole } from '../control/roles.js';
+import { requireAuth } from '../auth.js';
+import { requireRole, writeNeedsOperator } from '../control/roles.js';
 import { audit } from '../control/audit.js';
 import { config } from '../config.js';
 import { versionInfo } from '../version.js';
@@ -25,6 +26,14 @@ import { installOllama, installStatus } from '../agent/installer.js';
 import { knowledgeIndex, searchKnowledge } from '../agent/kb.js';
 
 const router = Router();
+/*
+ *  ⛔ نگهبان داخلِ خودِ روتر است، نه فقط در ‎index.js‎ (۱۴۰۵/۰۸/۰۹).
+ *  همین روتر در ‎routes/v1.js‎ زیرِ ‎/api/panel/v1/agent‎ هم سوار است و آن‌جا
+ *  نگهبانِ ‎index.js‎ نبود ⇒ هر کسی در شبکهٔ خانه بی نشست گفت‌وگوها و
+ *  دانسته‌ها را می‌خواند و می‌نوشت و «اقدامِ منتظرِ تأیید» (توقفِ سایت، پاک
+ *  کردنِ لاگ…) را اجرا می‌کرد. دو بار نشستنش روی ‎/api/agent‎ بی‌ضرر است.
+ */
+router.use(requireAuth, writeNeedsOperator);
 const actorOf = (req) => req.user?.username || 'admin';
 
 function sse(res) {

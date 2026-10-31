@@ -411,6 +411,61 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
     fn && fn({ liveConnections: 0, lastActivity: null, liveAt: now - 30_000 }, now) === true);
 }
 
+/* ═════════════ فاز ۱ ِ ممیزیِ پنلِ مرکزی (۱۴۰۵/۰۸/۰۹) — آن‌چه نباید برگردد ═════════════ */
+console.log('\n── فاز ۱: «حسابِ من»، کاربرانِ پنل، احرازِ دوباره، توکن در نشانی، دفتر ──\n');
+{
+  const app = read('App.tsx');
+  const features = read('features.ts');
+  const layoutSrc = read('components/Layout.tsx');
+  const apiSrc = read('api.ts');
+  const ctx = read('app-context.tsx');
+  check('۶-۲ «حسابِ من» مسیرِ همیشه‌روشن دارد (پشتِ هیچ کلیدی نیست)',
+    /<Route path="\/account" element={<Account \/>} \/>/.test(app) && !/featureOn\('[a-zA-Z]+'\) && <Route path="\/account"/.test(app));
+  check('۶-۲ و در منو برای هر واردشده (بی needs و بی feature)',
+    /\{ to: '\/account', key: 'myAccount', icon: ShieldCheck \}/.test(layoutSrc));
+  check('۶-۲ «حسابِ من» همان جزءِ امنیتیِ Settings است، نه نسخهٔ دوم',
+    /<AccountSecurity/.test(read('pages/Account.tsx')) && /<AccountSecurity/.test(read('pages/Settings.tsx'))
+    && !/totp\/setup/.test(read('pages/Settings.tsx')));
+  check('۶-۲ کاربرانِ پنل روشن شد؛ بقیهٔ Settings هنوز خاموش',
+    /panelUsers: true/.test(features) && /settings: false/.test(features));
+  const users = read('pages/control/PanelUsers.tsx');
+  check('۶-۲ صفحهٔ کاربران فقط درِ `/api/auth/users` را می‌زند', /\/api\/auth\/users/.test(users) && !/\/api\/(panel\/v1\/)?users/.test(users));
+  check('۶-۲ مالک و خودت دکمهٔ بی‌اثر ندارند (سرور به‌هرحال رد می‌کند)', /const locked = Boolean\(u\.owner\) \|\| self/.test(users));
+
+  check('۶-۵ هر ۴۰۳ ِ reauth_required یک بار پنجرهٔ رمز و یک بار تکرار', /error === 'reauth_required' && !retried && onReauth/.test(apiSrc)
+    && /return api<T>\(url, options, true\)/.test(apiSrc));
+  check('۶-۵ پنجرهٔ رمز در ریشهٔ برنامه سوار است', /<ReauthHost \/>/.test(app));
+  check('۶-۳ رمزِ یک‌بارمصرف ⇒ صفحهٔ «رمزِ تازه» پیش از هر صفحهٔ دیگر',
+    /if \(mustChangePassword\) return <ForceChangePassword \/>/.test(app) && /setMustChangeHandler/.test(ctx));
+
+  //  ⛔ ۶-۶: هیچ توکنِ نشستی در نشانی — نه `?token=`، نه `&token=` با getToken
+  const offenders = [];
+  const walk = (dir) => {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) walk(full);
+      else if (/\.(ts|tsx)$/.test(ent.name)) {
+        const text = fs.readFileSync(full, 'utf8');
+        if (/[?&]token=\$\{/.test(text) || /token=['"`]\s*\+/.test(text) || /token=\$\{encodeURIComponent\(getToken/.test(text)) offenders.push(path.relative(webSrc, full));
+      }
+    }
+  };
+  walk(webSrc);
+  check('۶-۶ ⛔ هیچ نشانی‌ای در رابط توکنِ نشست ندارد', offenders.length === 0, offenders.join(', '));
+  check('۶-۶ دانلود با بلیتِ یک‌بارمصرف', /export async function openWithTicket/.test(apiSrc) && /\/api\/auth\/ticket/.test(apiSrc));
+  check('۶-۶ وب‌سوکت توکن را در `auth` ِ دست‌دادن می‌فرستد، نه نشانی', /io\(\{ auth: \{ token: getToken\(\) \}/.test(ctx));
+
+  const cloud = read('pages/StationsCloud.tsx');
+  check('۶-۴ ⛔ رمزِ ارشد از وضعیت خوانده نمی‌شود؛ فقط نمایشِ یک‌بارهٔ مالک',
+    !/admin\.password\b/.test(cloud) && /admin-password\/reveal/.test(cloud) && /passwordSet && owner/.test(cloud));
+
+  const hubsSrc = read('pages/hubs.tsx');
+  const ua = read('pages/control/UnifiedAudit.tsx');
+  check('۶-۷ دفترِ یکپارچه برای مدیر در «لاگ‌ها ← دفتر»', /can\('admin'\) \? <UnifiedAudit \/> : <Audit \/>/.test(hubsSrc));
+  check('۶-۷ صفحه‌بندی و فیلتر در سرور، و صفحه هیچ درِ نوشتنی ندارد',
+    /\/api\/audit\?\$\{qs\}/.test(ua) && /offset: String\(offset\)/.test(ua) && !/method: '(DELETE|POST|PUT|PATCH)'/.test(ua));
+}
+
 console.log('\n════════════════════════════════════');
 console.log(`  ✅ ${pass} سبز، ${fail} قرمز`);
 console.log('════════════════════════════════════\n');

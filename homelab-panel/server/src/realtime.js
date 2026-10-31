@@ -27,9 +27,11 @@ export function attachRealtime(httpServer) {
   });
 
   io.use((socket, next) => {
-    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    //  ⛔ فقط از `auth` ِ دست‌دادن، نه `?token=` ِ نشانی (۶-۶): نشانیِ
+    //  وب‌سوکت در لاگِ پراکسی می‌نشیند. رابطِ وب از روزِ اول `auth` می‌فرستد.
+    const token = socket.handshake.auth?.token;
     const user = token ? verifyToken(String(token)) : null;
-    if (!user) return next(new Error('unauthorized'));
+    if (!user || user.mustChangePassword) return next(new Error('unauthorized'));
     socket.data.user = user;
     next();
   });

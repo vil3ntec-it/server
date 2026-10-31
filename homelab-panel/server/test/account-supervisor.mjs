@@ -100,10 +100,17 @@ try {
   const st = await hit(PANEL, '/api/account-server/status', { headers: auth });
   check('ناظر می‌گوید نصب هست، روشن است و بالاست', st.json?.installed && st.json?.running && st.json?.up, JSON.stringify(st.json));
   check('راه‌انداز PGlite است', st.json?.driver === 'pglite');
-  check('نام و رمزِ مدیرِ سرورِ حساب از همین‌جا دیده می‌شود (خودساخته)',
-    st.json?.admin?.username === 'admin' && (st.json?.admin?.password || '').length >= 12 && st.json?.admin?.source === 'managed', JSON.stringify(st.json?.admin));
+  /*
+   *  ⛔ (۱.۵۰.۶۲، ۶-۴) رمزِ ارشد دیگر در وضعیت نیست — فقط «تنظیم هست» و نام.
+   *  خودِ رمز را مالکِ اصلی با نشستِ تازه از `admin-password/reveal` می‌بیند.
+   */
+  check('نامِ مدیرِ سرورِ حساب دیده می‌شود (خودساخته) و «رمز تنظیم هست»',
+    st.json?.admin?.username === 'admin' && st.json?.admin?.passwordSet === true && st.json?.admin?.source === 'managed', JSON.stringify(st.json?.admin));
+  check('⛔ ولی خودِ رمز در پاسخِ وضعیت نیست', st.json?.admin && !('password' in st.json.admin), JSON.stringify(st.json?.admin));
+  const rev = await hit(PANEL, '/api/account-server/admin-password/reveal', { method: 'POST', body: {}, headers: auth });
+  check('مالک (نشستِ تازه) رمز را یک بار می‌بیند', rev.status === 200 && (rev.json?.password || '').length >= 12, `${rev.status} ${rev.text.slice(0, 120)}`);
   //  و همان نام و رمز واقعاً درِ مدیرِ سرورِ حساب را باز می‌کند — از راهِ درگاه، مثلِ اپِ مدیریت
-  const adminLogin = await hit(PUBLIC, '/api/admin/login', { method: 'POST', body: { username: st.json?.admin?.username, password: st.json?.admin?.password } });
+  const adminLogin = await hit(PUBLIC, '/api/admin/login', { method: 'POST', body: { username: rev.json?.username, password: rev.json?.password } });
   check('با همان نام و رمز، ورودِ مدیر به سرورِ حساب از پورتِ عمومی ۲۰۰ است', adminLogin.status === 200 && !!(adminLogin.json?.token || adminLogin.json?.accessToken), `${adminLogin.status} ${adminLogin.text.slice(0, 200)}`);
   check('ایمیلِ کدها این‌جا تنظیم نیست، پس mail=false', st.json?.mail === false);
   const noAuth = await hit(PANEL, '/api/account-server/status');
@@ -127,6 +134,14 @@ try {
   check('آمارِ پمپ‌ها از سرورِ حسابِ واقعی آمد', stats.status === 200 && typeof stats.json?.stats?.stations === 'number', `${stats.status} ${stats.text.slice(0, 200)}`);
   const users = await hit(PANEL, '/api/stations-admin/cloud/users?limit=5', { headers: auth });
   check('حساب‌های پمپ هم', users.status === 200, `${users.status} ${users.text.slice(0, 200)}`);
+  //  دفترِ یکپارچه (۶-۷) دفترِ خودِ سرورِ حسابِ واقعی را هم می‌خواند
+  const ua = await hit(PANEL, '/api/audit?source=account&limit=20', { headers: auth });
+  check('دفترِ یکپارچه به دفترِ سرورِ حسابِ واقعی رسید', ua.status === 200 && ua.json?.sources?.account?.ok === true && (ua.json?.rows || []).length > 0
+    && (ua.json?.rows || []).every((r) => r.source === 'account' && typeof r.at === 'number'), `${ua.status} ${ua.text.slice(0, 300)}`);
+  const all = await hit(PANEL, '/api/audit?source=all&limit=200', { headers: auth });
+  check('و «هر سه دفتر» ردیفِ پنل (نمایشِ رمز) و سرورِ حساب را با هم دارد',
+    all.status === 200 && all.json.rows.some((r) => r.action === 'account.admin_password.reveal')
+    && all.json.sources?.panel?.ok && all.json.sources?.account?.ok, `${all.status} ${all.text.slice(0, 300)}`);
   const adminPanel = await hit(PUBLIC, '/admin/');
   check('پنلِ مدیریتِ سرورِ حساب از پورتِ عمومی می‌آید', adminPanel.status === 200 && /<html/i.test(adminPanel.text), String(adminPanel.status));
 
