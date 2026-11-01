@@ -56,6 +56,13 @@ class QuickStartActivity : Activity() {
         // screenshot), and picking the app is three more taps in the middle of a game. The control
         // stays out of the video anyway («کنترل در ویدیو دیده نشود»).
         cfg = c.copy(gameMode = false)
+        // «ضبطِ فوری»: the permission of the last recording is still held — no dialog at all.
+        if (RecordService.instantReady) {
+            startService(cfg!!, RESULT_OK, null)
+            finish()
+            @Suppress("DEPRECATION") overridePendingTransition(0, 0)
+            return
+        }
         val mpm = getSystemService(MediaProjectionManager::class.java) ?: run { viaApp(); return }
         // Android 14+: the short dialog — «لغو» / «شروع», one tap.
         val ask = if (Build.VERSION.SDK_INT >= 34) mpm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
@@ -69,15 +76,19 @@ class QuickStartActivity : Activity() {
         if (requestCode == REQ && resultCode == RESULT_OK && data != null) {
             try {
                 val c = cfg ?: RecordConfig.saved(getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE)).copy(gameMode = false)
-                val svc = Intent(this, RecordService::class.java).setAction(RecordService.ACTION_START)
-                c.putInto(svc)
-                svc.putExtra(RecordService.EXTRA_CODE, resultCode)
-                svc.putExtra(RecordService.EXTRA_DATA, data)
-                startForegroundService(svc)
+                startService(c, resultCode, data)
             } catch (_: Throwable) {}
         } else IdleBubble.show(this)   // cancelled: the record button comes back
         finish()
         @Suppress("DEPRECATION") overridePendingTransition(0, 0)
+    }
+
+    private fun startService(c: RecordConfig, code: Int, data: Intent?) {
+        val svc = Intent(this, RecordService::class.java).setAction(RecordService.ACTION_START)
+        c.putInto(svc)
+        svc.putExtra(RecordService.EXTRA_CODE, code)
+        if (data != null) svc.putExtra(RecordService.EXTRA_DATA, data)
+        startForegroundService(svc)
     }
 
     /** The old way: RawRec opens and starts the recording itself. */

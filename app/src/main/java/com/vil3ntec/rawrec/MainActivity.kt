@@ -1431,6 +1431,10 @@ class MainActivity : Activity() {
         toggles["float"] = Toggle(c, "tog:float", R.drawable.ic_float, str(R.string.float_title), str(R.string.float_desc)) { on -> change(false) { it.copy(floatingButton = on) } }
         toggles["ghost"] = Toggle(c, "tog:ghost", R.drawable.ic_eye_off, str(R.string.ghost_title), str(R.string.ghost_desc)) { on -> change(false) { it.copy(ghostControl = on) } }
         toggles["invis"] = Toggle(c, "tog:invis", R.drawable.ic_shrink, str(R.string.invis_title), str(R.string.invis_desc)) { on -> change(false) { it.copy(invisibleControl = on) } }
+        toggles["instant"] = Toggle(c, "tog:instant", R.drawable.ic_sparkle, str(R.string.instant_title), str(R.string.instant_desc)) { on ->
+            prefs.edit().putBoolean(RecordService.PREF_INSTANT, on).apply()
+            if (!on && RecordService.instantReady) startService(Intent(this, RecordService::class.java).setAction(RecordService.ACTION_RELEASE))
+        }
         toggles["bubble"] = Toggle(c, "tog:bubble", R.drawable.eng_ic_rec, str(R.string.bubble_title), str(R.string.bubble_desc)) { on -> IdleBubble.setEnabled(this, on) }
         toggles["ready"] = Toggle(c, "tog:ready", R.drawable.ic_bell, str(R.string.ready_title), str(R.string.ready_desc)) { on -> ReadyNotice.setEnabled(this, on) }
         toggles["shake"] = Toggle(c, "tog:shake", R.drawable.ic_vibrate, str(R.string.shake_title), str(R.string.shake_desc)) { on -> change(false) { it.copy(shakeStop = on) } }
@@ -1704,6 +1708,7 @@ class MainActivity : Activity() {
         toggles["shake"]?.set(c.shakeStop)
         toggles["ready"]?.set(ReadyNotice.enabled(this))
         toggles["bubble"]?.set(IdleBubble.enabled(this))
+        toggles["instant"]?.set(RecordService.instantEnabled(this))
         rows["cd"]?.select(countdowns.indexOf(c.countdown))
         rows["cam"]?.select(c.facecam)
         rows["gg"]?.root?.visibility = if (c.usesInternal) View.VISIBLE else View.GONE
@@ -2074,6 +2079,17 @@ class MainActivity : Activity() {
     }
 
     private fun askCapture() {
+        if (RecordService.instantReady) {
+            // «ضبطِ فوری»: the permission is still held — straight to the recording, no dialog.
+            act("start instant") {
+                val svc = Intent(this, RecordService::class.java).setAction(RecordService.ACTION_START)
+                cfg.copy(testSeconds = pendingTest, gameMode = false).putInto(svc)
+                svc.putExtra(RecordService.EXTRA_CODE, RESULT_OK)
+                startForegroundService(svc)
+                ui.postDelayed({ moveTaskToBack(true) }, 400)
+            }
+            return
+        }
         if (cfg.gameMode && Build.VERSION.SDK_INT >= 34) {
             // «حالتِ بازی»: the system dialog offers «یک برنامه»; we explain what to pick first.
             AlertDialog.Builder(this)

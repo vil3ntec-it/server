@@ -153,6 +153,15 @@ class RecordService : Service(), Recorder.Events {
         @Volatile var notice = ""; private set
 
         val isRecording get() = state != State.IDLE
+
+        /**
+         * «ضبطِ فوری»: the capture permission of the last recording is still held, so the next one
+         * starts without Android's dialog (ACTION_START without EXTRA_DATA).
+         */
+        @Volatile var instantReady = false; private set
+        const val ACTION_RELEASE = "rawrec.RELEASE"
+        const val PREF_INSTANT = "c_instant"
+        fun instantEnabled(ctx: Context) = SafePrefs.bool(ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE), PREF_INSTANT, true)
         val isPaused get() = state == State.PAUSED
 
         /** Why the last recording ended, in plain words ("" before the first one). */
@@ -188,6 +197,8 @@ class RecordService : Service(), Recorder.Events {
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
     @Volatile private var projection: MediaProjection? = null
     @Volatile private var recorder: Recorder? = null
+    /** «ضبطِ فوری»: the virtual display kept (detached) between recordings of the same permission. */
+    private var keptDisplay: android.hardware.display.VirtualDisplay? = null
     private var cfg: RecordConfig? = null
     @Volatile private var stopping = false
     private var facecam: FacecamOverlay? = null
@@ -223,6 +234,7 @@ class RecordService : Service(), Recorder.Events {
                 else -> StopReason.APP
             })
             ACTION_PAUSE -> togglePause()
+            ACTION_RELEASE -> if (state == State.IDLE) releaseInstant()
             ACTION_SHOW_CONTROL -> showControlAgain()
         }
         return START_NOT_STICKY
@@ -285,16 +297,29 @@ class RecordService : Service(), Recorder.Events {
         val data: Intent? = if (Build.VERSION.SDK_INT >= 34)
             intent.getParcelableExtra(EXTRA_DATA, Intent::class.java)
         else @Suppress("DEPRECATION") intent.getParcelableExtra(EXTRA_DATA)
-        if (data == null) { finishRecording(StopReason.START_FAILED, getString(R.string.err_no_projection)); return }
+        // «ضبطِ فوری»: the permission of the last recording is still held — no dialog this time.
+        val reuse = data == null && projection != null && keptDisplay != null
+        instantReady = false
+        if (data == null && !reuse) { finishRecording(StopReason.START_FAILED, getString(R.string.err_no_projection)); return }
 
-        try {
+        if (!reuse) try {
+            // A new permission replaces one still held.
+            keptDisplay?.let { d -> try { d.release() } catch (_: Exception) {} }
+            keptDisplay = null
+            projection?.let { old -> try { old.stop() } catch (_: Exception) {} }
+            projection = null
             val mpm = getSystemService(MediaProjectionManager::class.java) ?: throw IllegalStateException("no MediaProjectionManager")
-            val p = mpm.getMediaProjection(code, data) ?: throw IllegalStateException("projection is null")
+            val p = mpm.getMediaProjection(code, data!!) ?: throw IllegalStateException("projection is null")
             projection = p
             p.registerCallback(object : MediaProjection.Callback() {
                 // Android ended the capture: the screen locked (Android 15+), «Stop sharing» in the
                 // status bar, another app started a capture or cast, or the recorded app went away.
-                override fun onStop() { main.post { finishRecording(projectionStopReason()) } }
+                override fun onStop() {
+                    main.post {
+                        // While only held for «ضبطِ فوری» (no recording): let it go quietly.
+                        if (state == State.IDLE) releaseInstant() else finishRecording(projectionStopReason())
+                    }
+                }
                 // Rotation is NOT taken from onCapturedContentResize any more: in 1.2.2 it guessed an
                 // orientation from the reported size, was not debounced, and asked for a switch the
                 // wrong way. The debounced display listener is the only source now.
@@ -364,10 +389,11 @@ class RecordService : Service(), Recorder.Events {
         val c = cfg ?: return
         try {
             val plan = Planner.plan(c, DisplayInfo.read(this)) ?: throw IllegalStateException(getString(R.string.toast_no_encoder))
-            val r = Recorder(this, p, c, plan, this)
+            val r = Recorder(this, p, c, plan, this, keptDisplay, keepDisplay = instantEnabled(this))
             ActiveRec.begin(this)
             try { r.start() } catch (e: Exception) { ActiveRec.end(this); throw e }
             recorder = r
+            if (instantEnabled(this)) keptDisplay = r.virtualDisplay
             startedAt = System.currentTimeMillis()
             recordStartWall = startedAt
             requestedSource = plan.sourceWidth to plan.sourceHeight
@@ -731,6 +757,9 @@ class RecordService : Service(), Recorder.Events {
         val c = cfg
         val started = r != null
         val delete = reason == StopReason.DELETED
+        // «ضبطِ فوری»: a recording the owner ended keeps the permission for the next one.
+        val keep = reason.byUser && instantEnabled(this) && p != null && keptDisplay != null && r != null
+        keepingPermission = keep
         val error: String? = if (reason.byUser) null else getString(reason.text)
         val fixes = recoveries
         state = State.SAVING
@@ -744,7 +773,10 @@ class RecordService : Service(), Recorder.Events {
             var report: String? = null
             try {
                 try { r?.stop() } catch (_: Throwable) {}
-                try { p?.stop() } catch (_: Throwable) {}
+                if (!keep) {
+                    try { r?.virtualDisplay?.release() } catch (_: Throwable) {}
+                    try { p?.stop() } catch (_: Throwable) {}
+                }
                 parts = r?.parts ?: emptyList()
                 if (delete) {
                     // «حذفِ این ضبط» from the floating control: nothing is kept.
@@ -769,12 +801,67 @@ class RecordService : Service(), Recorder.Events {
         state = State.IDLE
         startedAt = 0L; pausedSince = 0L; countdownLeft = 0
         recorder = null
-        projection = null
         refreshTile()
+        if (keepingPermission && projection != null && keptDisplay != null) {
+            // «ضبطِ فوری»: stay in the foreground with the permission; the next start needs no dialog.
+            instantReady = true
+            try {
+                startForeground(NOTIF_REC, readyNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+            } catch (_: Exception) {
+                releaseInstant()
+                return
+            }
+            ReadyNotice.hide(this)
+            IdleBubble.show(this)
+            return
+        }
+        // Nothing is held on to: whatever is left of the permission goes back now.
+        keptDisplay?.let { d -> try { d.release() } catch (_: Exception) {} }
+        keptDisplay = null
+        projection?.let { p -> try { p.stop() } catch (_: Exception) {} }
+        projection = null
+        instantReady = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         ReadyNotice.show(this)
         IdleBubble.show(this)
         stopSelf()
+    }
+
+    private var keepingPermission = false
+
+    /** Gives the held capture permission back (owner's «پایان», the system's «توقفِ اشتراک», a lock). */
+    private fun releaseInstant() {
+        instantReady = false
+        keepingPermission = false
+        keptDisplay?.let { d -> try { d.release() } catch (_: Exception) {} }
+        keptDisplay = null
+        projection?.let { p -> try { p.stop() } catch (_: Exception) {} }
+        projection = null
+        if (state != State.IDLE) return
+        try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
+        ReadyNotice.show(this)
+        IdleBubble.show(this)
+        stopSelf()
+    }
+
+    /** While «ضبطِ فوری» holds the permission: one tap records (no dialog), «پایان» gives it back. */
+    private fun readyNotification(): Notification {
+        val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        val rec = PendingIntent.getActivity(this, 12, QuickStartActivity.intent(this), flags)
+        val release = PendingIntent.getService(this, 13, Intent(this, RecordService::class.java).setAction(ACTION_RELEASE), flags)
+        return Notification.Builder(this, CH_REC)
+            .setSmallIcon(R.drawable.eng_ic_rec)
+            .setColor(getColor(R.color.eng_rec_red))
+            .setContentTitle(getString(R.string.n_instant_title))
+            .setContentText(getString(R.string.n_instant_text))
+            .setStyle(Notification.BigTextStyle().bigText(getString(R.string.n_instant_text)))
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setContentIntent(rec)
+            .addAction(action(R.drawable.eng_ic_rec, getString(R.string.n_record), rec))
+            .addAction(action(R.drawable.eng_ic_stop, getString(R.string.n_instant_release), release))
+            .build()
     }
 
     /**
@@ -1090,6 +1177,13 @@ class RecordService : Service(), Recorder.Events {
     override fun onDestroy() {
         // Destroyed while a recording is open (Android stopped the service): finish it properly.
         if (!stopping && state != State.IDLE) finishRecording(StopReason.SERVICE_ENDED)
+        if (state == State.IDLE && instantReady) {
+            instantReady = false
+            keptDisplay?.let { d -> try { d.release() } catch (_: Exception) {} }
+            keptDisplay = null
+            projection?.let { p -> try { p.stop() } catch (_: Exception) {} }
+            projection = null
+        }
         removeOverlays()
         stopShakeDetector()
         stopThermalWatch()

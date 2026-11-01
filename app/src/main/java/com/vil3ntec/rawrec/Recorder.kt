@@ -97,6 +97,10 @@ class Recorder(
     private val cfg: RecordConfig,
     initialPlan: CapturePlan,
     private val events: Events,
+    /** «ضبطِ فوری»: the virtual display of an earlier recording of the same capture permission. */
+    private val keptDisplay: VirtualDisplay? = null,
+    /** At the end the virtual display is only detached, not released, so the next recording can use it. */
+    private val keepDisplay: Boolean = false,
 ) : SegMuxer.Events {
 
     interface Events {
@@ -228,10 +232,17 @@ class Recorder(
 
             running = true
             started = true
-            display = projection.createVirtualDisplay(
+            val target = look?.input ?: first.surface
+            display = if (keptDisplay != null) {
+                // Android 14+ allows one virtual display per capture permission: the next recording
+                // of «ضبطِ فوری» reuses it, sized for this plan.
+                keptDisplay.resize(plan.width, plan.height, plan.dpi)
+                keptDisplay.surface = target
+                keptDisplay
+            } else projection.createVirtualDisplay(
                 "RawRec", plan.width, plan.height, plan.dpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                look?.input ?: first.surface, displayCallback, Handler(Looper.getMainLooper()),
+                target, displayCallback, Handler(Looper.getMainLooper()),
             ) ?: throw IllegalStateException("virtual display not created")
             videoThread = Thread({ videoLoop() }, "rawrec-video").apply { start() }
             if (aac != null) audioThread = Thread({ audioLoop() }, "rawrec-audio").apply { start() }
@@ -239,7 +250,7 @@ class Recorder(
             running = false
             started = false
             stopped = true
-            try { display?.release() } catch (_: Exception) {}
+            releaseOrDetach()
             display = null
             try { look?.release() } catch (_: Throwable) {}
             look = null
@@ -250,6 +261,15 @@ class Recorder(
             muxer.finish()
             throw e
         }
+    }
+
+    /** The virtual display, for the next recording of «ضبطِ فوری». */
+    val virtualDisplay: VirtualDisplay? get() = display
+
+    private fun releaseOrDetach() {
+        val d = display ?: return
+        if (keepDisplay || d === keptDisplay) { try { d.surface = null } catch (_: Exception) {} }
+        else try { d.release() } catch (_: Exception) {}
     }
 
     @Synchronized
@@ -309,7 +329,7 @@ class Recorder(
         videoThread?.join(5000)
         audioThread?.join(5000)
         stats.flush()
-        try { display?.release() } catch (_: Exception) {}
+        releaseOrDetach()
         try { look?.release() } catch (_: Throwable) {}
         enc?.release()
         muxer.finish()
