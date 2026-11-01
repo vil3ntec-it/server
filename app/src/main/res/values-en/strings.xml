@@ -83,6 +83,7 @@
     <string name="bubble_title">Floating record button</string>
     <string name="bubble_desc">While not recording, a small round button stays at the screen\'s edge (over games too): one tap and recording starts right there, without opening the app. Drag to move, hold to open RawRec. Never in the video.</string>
     <string name="bubble_start">Start recording</string>
+    <string name="bubble_dismissed">Record button closed; it comes back when you open RawRec.</string>
     <string name="pill_stop_again">Again ■</string>
     <string name="pill_stop_confirm">Tap again to end the recording</string>
     <string name="ready_title">Quick-record notification</string>
@@ -276,6 +277,8 @@
     <string name="look_game">Vivid for games</string>
     <string name="look_cinema">Cinematic</string>
     <string name="look_sharp">Sharpness</string>
+    <string name="look_clarity">Far detail</string>
+    <string name="look_clarity_desc">Outlines and detail of far-away things, and what is faint in fog or smoke, come out clearer.</string>
     <string name="look_contrast">Contrast</string>
     <string name="look_color">Colour</string>
     <string name="look_bright">Brightness</string>

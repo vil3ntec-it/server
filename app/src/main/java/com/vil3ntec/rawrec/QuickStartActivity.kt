@@ -43,7 +43,7 @@ class QuickStartActivity : Activity() {
         IdleBubble.hide(this)
         val prefs = getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE)
         // Settings not yet brought up to date by this version: RawRec does it on its first start.
-        if (SafePrefs.int(prefs, "cfg_ver", 0) < 5) { viaApp(); return }
+        if (SafePrefs.int(prefs, "cfg_ver", 0) < 6) { viaApp(); return }
         val c = RecordConfig.saved(prefs)
         val missing = (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED && !SafePrefs.bool(prefs, "asked_" + Manifest.permission.POST_NOTIFICATIONS, false)) ||
             (c.hasAudio && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED && !SafePrefs.bool(prefs, "asked_" + Manifest.permission.RECORD_AUDIO, false)) ||

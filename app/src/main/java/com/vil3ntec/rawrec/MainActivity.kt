@@ -201,6 +201,7 @@ class MainActivity : Activity() {
             refreshAll()
             ReadyNotice.show(this)
             IdleBubble.hide(this)   // RawRec itself is open: its own big button is right here
+            IdleBubble.undismiss()
             if (tab == Tab.VIDEOS) refreshVideos()
             if (tab == Tab.ABOUT) refreshAbout()
             tick()
@@ -347,6 +348,13 @@ class MainActivity : Activity() {
             cfg = base
             saveConfigOf(base)
         }
+        // 2.4: «جزئیاتِ دور» is new; a look already in use gets it at medium, once.
+        if (i("cfg_ver", 0) < 6) {
+            if (base.lookSharp > 0 && base.lookClarity == 0) base = base.copy(lookClarity = 2)
+            p.edit().putInt("cfg_ver", 6).apply()
+            cfg = base
+            saveConfigOf(base)
+        }
         return if (base.preset == RecordConfig.PRESET_CUSTOM) base else RecordConfig.withPreset(base, base.preset)
     }
 
@@ -361,7 +369,7 @@ class MainActivity : Activity() {
             .putBoolean("c_float", c.floatingButton).putBoolean("c_invis", c.invisibleControl).putBoolean("c_ghost", c.ghostControl)
             .putBoolean("c_smart", c.smartStart).putBoolean("c_game", c.gameMode).putBoolean("c_rotnew", c.rotateNewFile)
             .putInt("c_lk_sharp", c.lookSharp).putInt("c_lk_con", c.lookContrast).putInt("c_lk_col", c.lookColor)
-            .putInt("c_lk_bri", c.lookBright).putInt("c_lk_warm", c.lookWarm)
+            .putInt("c_lk_bri", c.lookBright).putInt("c_lk_warm", c.lookWarm).putInt("c_lk_cla", c.lookClarity)
             .apply()
     }
 
@@ -1286,6 +1294,9 @@ class MainActivity : Activity() {
         rows["lk_sharp"] = Row(lc, str(R.string.look_sharp), "", listOf(str(R.string.lv_off), str(R.string.lv_low), str(R.string.lv_mid), str(R.string.lv_high)), top = 12) { i ->
             change(false) { it.copy(lookSharp = i) }
         }
+        rows["lk_cla"] = Row(lc, str(R.string.look_clarity), str(R.string.look_clarity_desc), listOf(str(R.string.lv_off), str(R.string.lv_low), str(R.string.lv_mid), str(R.string.lv_high)), top = 12) { i ->
+            change(false) { it.copy(lookClarity = i) }
+        }
         rows["lk_con"] = Row(lc, str(R.string.look_contrast), "", listOf(str(R.string.lv_less), str(R.string.lv_as_is), str(R.string.lv_more), str(R.string.lv_much)), top = 12) { i ->
             change(false) { it.copy(lookContrast = i) }
         }
@@ -1678,6 +1689,7 @@ class MainActivity : Activity() {
         rows["mode"]?.select(c.mode)
         rows["look"]?.select(c.lookPreset)
         rows["lk_sharp"]?.select(c.lookSharp)
+        rows["lk_cla"]?.select(c.lookClarity)
         rows["lk_con"]?.select(c.lookContrast)
         rows["lk_col"]?.select(c.lookColor)
         rows["lk_bri"]?.select(c.lookBright)

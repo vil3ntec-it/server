@@ -22,8 +22,9 @@ import kotlin.math.abs
  * «دکمهٔ شناورِ ضبط»: while RawRec is NOT recording, a small round record button floats at the
  * screen's edge — over a game too — so a recording starts with one tap without leaving the game
  * (the owner: «توی خودِ بازی سریع ریکورد بزنم»). Tap: Android's own «start recording?» dialog over
- * the game (QuickStartActivity), then the recording. Drag: move it (it sticks to the nearest side).
- * Long press: open RawRec.
+ * the game (QuickStartActivity), then the recording. Drag: move it (it sticks to the nearest side);
+ * while dragging a ✕ appears at the bottom — dropped there, the button goes away until RawRec is
+ * opened again. Long press: open RawRec.
  *
  * It is never in a video: it is taken off the screen before the recording starts and comes back
  * after. Not shown while RawRec itself is open. Main thread only.
@@ -32,6 +33,9 @@ object IdleBubble {
     const val PREF = "c_bubble"
     private var view: View? = null
     private var lp: WindowManager.LayoutParams? = null
+    /** Dragged onto the ✕: away until RawRec is opened again. */
+    private var dismissed = false
+    private var target: View? = null
     private val main = Handler(Looper.getMainLooper())
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE)
@@ -47,7 +51,7 @@ object IdleBubble {
         val ctx = ctx0.applicationContext
         if (Looper.myLooper() != Looper.getMainLooper()) { main.post { show(ctx) }; return }
         try {
-            if (view != null || !enabled(ctx) || RecordService.state != RecordService.State.IDLE) return
+            if (view != null || dismissed || !enabled(ctx) || RecordService.state != RecordService.State.IDLE) return
             if (!Settings.canDrawOverlays(ctx)) return
             val wm = ctx.getSystemService(WindowManager::class.java) ?: return
             val d = ctx.resources.displayMetrics.density
@@ -89,6 +93,49 @@ object IdleBubble {
         }
     }
 
+    /** RawRec was opened: a button sent away with the ✕ may come back. */
+    fun undismiss() { dismissed = false }
+
+    /** The ✕ at the bottom while the button is dragged; null when it can't be shown. */
+    private fun showTarget(ctx: Context, wm: WindowManager): View? {
+        if (target != null) return target
+        val d = ctx.resources.displayMetrics.density
+        val t = FrameLayout(ctx).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.argb(210, 24, 26, 30))
+                setStroke((2 * d).toInt(), Color.WHITE)
+            }
+        }
+        t.addView(ImageView(ctx).apply { setImageResource(R.drawable.ic_close); setColorFilter(Color.WHITE) },
+            FrameLayout.LayoutParams((28 * d).toInt(), (28 * d).toInt(), Gravity.CENTER))
+        val l = WindowManager.LayoutParams(
+            (64 * d).toInt(), (64 * d).toInt(),
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT,
+        ).apply { gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL; y = (56 * d).toInt() }
+        return try { wm.addView(t, l); target = t; t } catch (_: Throwable) { null }
+    }
+
+    private fun hideTarget(wm: WindowManager) {
+        val t = target ?: return
+        target = null
+        try { wm.removeView(t) } catch (_: Throwable) {}
+    }
+
+    /** Is the button (top-left at [x],[y], [size] wide) over the ✕? */
+    private fun overTarget(ctx: Context, x: Int, y: Int, size: Int): Boolean {
+        val s = DisplayInfo.read(ctx)
+        val d = ctx.resources.displayMetrics.density
+        val cx = x + size / 2f
+        val cy = y + size / 2f
+        val tx = s.width / 2f
+        val ty = s.height - (56 + 32) * d
+        val r = 90 * d
+        return (cx - tx) * (cx - tx) + (cy - ty) * (cy - ty) < r * r
+    }
+
     fun hide(ctx0: Context) {
         val ctx = ctx0.applicationContext
         if (Looper.myLooper() != Looper.getMainLooper()) { main.post { hide(ctx) }; return }
@@ -118,16 +165,28 @@ object IdleBubble {
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = e.rawX - rx; val dy = e.rawY - ry
-                    if (!moved && (abs(dx) > slop || abs(dy) > slop)) { moved = true; main.removeCallbacks(long) }
+                    if (!moved && (abs(dx) > slop || abs(dy) > slop)) {
+                        moved = true
+                        main.removeCallbacks(long)
+                        showTarget(ctx, wm)
+                    }
                     if (moved) {
                         l.x = x0 + dx.toInt(); l.y = y0 + dy.toInt()
                         try { wm.updateViewLayout(v, l) } catch (_: Throwable) {}
+                        val over = overTarget(ctx, l.x, l.y, size)
+                        target?.let { t -> t.scaleX = if (over) 1.25f else 1f; t.scaleY = t.scaleX }
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     main.removeCallbacks(long)
                     v.alpha = 0.9f
-                    if (moved) {
+                    hideTarget(wm)
+                    if (moved && overTarget(ctx, l.x, l.y, size)) {
+                        // Dropped on the ✕: away until RawRec is opened again.
+                        dismissed = true
+                        hide(ctx)
+                        try { android.widget.Toast.makeText(ctx, R.string.bubble_dismissed, android.widget.Toast.LENGTH_SHORT).show() } catch (_: Throwable) {}
+                    } else if (moved) {
                         val s = DisplayInfo.read(ctx)
                         val right = l.x + size / 2 > s.width / 2
                         l.x = if (right) (s.width - size).coerceAtLeast(0) else 0

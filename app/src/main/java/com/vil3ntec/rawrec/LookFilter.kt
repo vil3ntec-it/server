@@ -22,11 +22,16 @@ import java.util.concurrent.TimeUnit
  * «ظاهرِ ویدیو»: the edit is done while recording, so the file comes out already edited.
  *
  * The screen goes into a texture instead of straight into the encoder; one small shader draws it
- * into the encoder's surface with sharpening (unsharp mask, limited so edges get no halos),
- * contrast, brightness, colour (saturation + vibrance) and warmth. One full-screen pass of five
- * texture reads: for a phone GPU at 2400×1504 × 60 fps this is a fraction of a millisecond per
- * frame, far below what a game uses, and only when a look other than «طبیعی» is chosen (otherwise
- * the screen still goes straight into the encoder, as before).
+ * into the encoder's surface with fine sharpening and «جزئیاتِ دور» (local clarity at ~3 px), both
+ * on brightness only and cored against noise, then contrast, brightness, colour (saturation +
+ * vibrance), warmth and a half-step dither against banding. One full-screen pass of at most nine
+ * texture reads: for a phone GPU at 2400×1504 × 60 fps a fraction of a millisecond per frame, far
+ * below what a game uses, and only when a look other than «طبیعی» is chosen (otherwise the screen
+ * still goes straight into the encoder, as before).
+ *
+ * Why it helps so much on gaming phones: their display chip sharpens and enriches the picture on
+ * its way to the panel; a screen capture gets the picture before that, so it looks flatter than
+ * the eye saw. The look gives that back in the file.
  *
  * Frames keep the compositor's timestamps (eglPresentationTimeANDROID), so pause, rotation and
  * ghost-mode cuts in Recorder work unchanged. Frames that come faster than [fps] are taken from the
@@ -42,8 +47,11 @@ class LookFilter(private val look: Look, private val fps: Int) {
         val saturation: Float = 1f,
         val vibrance: Float = 0f,
         val warmth: Float = 0f,
+        val clarity: Float = 0f,
     ) {
-        val neutral get() = sharp == 0f && contrast == 1f && brightness == 0f && saturation == 1f && vibrance == 0f && warmth == 0f
+        val neutral get() = sharp == 0f && clarity == 0f && contrast == 1f && brightness == 0f && saturation == 1f && vibrance == 0f && warmth == 0f
+        /** Dither only when tones are stretched (contrast, brightness, colour): otherwise nothing to smooth. */
+        val dither get() = if (contrast != 1f || brightness != 0f || saturation != 1f || vibrance != 0f) 1f else 0f
     }
 
     private val thread = HandlerThread("rawrec-look").apply { start() }
@@ -194,6 +202,8 @@ class LookFilter(private val look: Look, private val fps: Int) {
         GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "sat"), look.saturation)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "vib"), look.vibrance)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "warm"), look.warmth)
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "clarity"), look.clarity)
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "dither"), look.dither)
         val pos = GLES20.glGetAttribLocation(prog, "pos")
         GLES20.glEnableVertexAttribArray(pos)
         GLES20.glVertexAttribPointer(pos, 2, GLES20.GL_FLOAT, false, 0, QUAD)
@@ -245,30 +255,49 @@ precision highp float;
 uniform samplerExternalOES tex;
 uniform vec2 texel;
 uniform float sharp;
+uniform float clarity;
 uniform float contrast;
 uniform float bright;
 uniform float sat;
 uniform float vib;
 uniform float warm;
+uniform float dither;
 varying vec2 uv;
+const vec3 W = vec3(0.2126, 0.7152, 0.0722);
+float lum(vec2 p) { return dot(texture2D(tex, p).rgb, W); }
 void main() {
     vec3 c = texture2D(tex, uv).rgb;
+    float y = dot(c, W);
+    // Fine sharpening, on brightness only (no colour fringes, no bits spent on colour noise):
+    // the pixel minus the mean of its four neighbours, cored so grain and compression speckle stay
+    // as they are, limited so edges get no halos.
     if (sharp > 0.0) {
-        vec3 n = texture2D(tex, uv + vec2(texel.x, 0.0)).rgb + texture2D(tex, uv - vec2(texel.x, 0.0)).rgb
-               + texture2D(tex, uv + vec2(0.0, texel.y)).rgb + texture2D(tex, uv - vec2(0.0, texel.y)).rgb;
-        vec3 d = c - n * 0.25;
-        // Coring: differences smaller than fine noise are left alone, so grain and compression
-        // speckle are not made stronger — only real edges and detail get sharper.
+        float n = (lum(uv + vec2(texel.x, 0.0)) + lum(uv - vec2(texel.x, 0.0))
+                 + lum(uv + vec2(0.0, texel.y)) + lum(uv - vec2(0.0, texel.y))) * 0.25;
+        float d = y - n;
         d = sign(d) * max(abs(d) - 0.012, 0.0);
-        c += clamp(d * (sharp * 1.6), vec3(-0.07), vec3(0.07));
+        c += vec3(clamp(d * sharp * 1.6, -0.07, 0.07));
+    }
+    // «جزئیاتِ دور» (local clarity): the same at about three pixels, the scale of far-away
+    // outlines, and things faint in haze or fog — what the screen's own enhancement shows and a
+    // plain capture loses. Four diagonal samples keep it light for the GPU.
+    if (clarity > 0.0) {
+        vec2 r = texel * 3.0;
+        float m = (lum(uv + r) + lum(uv - r) + lum(uv + vec2(r.x, -r.y)) + lum(uv + vec2(-r.x, r.y))) * 0.25;
+        float d = y - m;
+        d = sign(d) * max(abs(d) - 0.008, 0.0);
+        c += vec3(clamp(d * clarity * 1.3, -0.09, 0.09));
     }
     c = (c - 0.5) * contrast + 0.5 + bright;
-    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    float l = dot(c, W);
     float mx = max(c.r, max(c.g, c.b));
     float mn = min(c.r, min(c.g, c.b));
     float s = sat * (1.0 + vib * (1.0 - clamp(mx - mn, 0.0, 1.0)));
     c = mix(vec3(l), c, s);
     c += vec3(warm, warm * 0.2, -warm) * 0.5;
+    // Half a step of noise before the 8-bit output: stretched gradients (sky, fog, shadows) stay
+    // smooth instead of turning into bands.
+    c += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * dither / 255.0;
     gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }
 """

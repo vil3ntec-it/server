@@ -373,11 +373,12 @@ class Recorder(
                     setInteger(MediaFormat.KEY_VIDEO_QP_MAX, p.qpMax)
                     setInteger(MediaFormat.KEY_VIDEO_QP_I_MAX, p.qpMax - 2)
                     setInteger(MediaFormat.KEY_VIDEO_QP_P_MAX, p.qpMax)
-                    setInteger(MediaFormat.KEY_VIDEO_QP_B_MAX, p.qpMax + 2)
+                    // B-frames as good as P (2.4): +2 softened fine, far-away detail in every camera turn.
+                    setInteger(MediaFormat.KEY_VIDEO_QP_B_MAX, p.qpMax)
                     setInteger(MediaFormat.KEY_VIDEO_QP_MIN, lo)
                     setInteger(MediaFormat.KEY_VIDEO_QP_I_MIN, (lo - 2).coerceAtLeast(1))
                     setInteger(MediaFormat.KEY_VIDEO_QP_P_MIN, lo)
-                    setInteger(MediaFormat.KEY_VIDEO_QP_B_MIN, lo + 2)
+                    setInteger(MediaFormat.KEY_VIDEO_QP_B_MIN, lo)
                 }
                 if ("complexity" !in drop && p.complexity >= 0) setInteger(MediaFormat.KEY_COMPLEXITY, p.complexity)
                 // B-frames save size at equal quality; encoders that can't do them ignore the key.
