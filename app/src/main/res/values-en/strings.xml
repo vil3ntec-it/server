@@ -98,7 +98,7 @@
     <string name="n_ready_text">Tap to start recording</string>
     <string name="n_record">Record</string>
     <string name="ghost_title">Keep the control out of the video</string>
-    <string name="ghost_desc">While recording nothing of RawRec is on the screen. Shake the phone firmly three times (or tap «Show control» in the notification) to see the control. The recording pauses itself while the control is open, so viewers never see it; «Continue» takes it away and the recording goes on.</string>
+    <string name="ghost_desc">Off (default): the six-button control is on the screen while recording and shrinks to a small dot after 5 s (it shows in the video too). On: While recording nothing of RawRec is on the screen. Shake the phone firmly three times (or tap «Show control» in the notification) to see the control. The recording pauses itself while the control is open, so viewers never see it; «Continue» takes it away and the recording goes on.</string>
     <string name="invis_title">Start as a small dot</string>
     <string name="invis_desc">When recording starts the control shrinks to a small visible dot at the edge; tap it to open. Nothing is ever invisible.</string>
     <string name="shake_title">Shake to stop</string>

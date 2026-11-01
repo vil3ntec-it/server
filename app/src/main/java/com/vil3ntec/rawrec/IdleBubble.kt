@@ -139,9 +139,13 @@ object IdleBubble {
     fun hide(ctx0: Context) {
         val ctx = ctx0.applicationContext
         if (Looper.myLooper() != Looper.getMainLooper()) { main.post { hide(ctx) }; return }
+        val wm = ctx.getSystemService(WindowManager::class.java)
+        // The ✕ goes with the button: taken away in the middle of a drag (a recording starting),
+        // it stayed on the screen in 2.4.
+        if (wm != null) hideTarget(wm)
         val v = view ?: return
         view = null; lp = null
-        try { ctx.getSystemService(WindowManager::class.java)?.removeView(v) } catch (_: Throwable) {}
+        try { wm?.removeView(v) } catch (_: Throwable) {}
     }
 
     @SuppressLint("ClickableViewAccessibility")

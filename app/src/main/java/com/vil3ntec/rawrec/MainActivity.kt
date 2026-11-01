@@ -355,6 +355,15 @@ class MainActivity : Activity() {
             cfg = base
             saveConfigOf(base)
         }
+        // 2.6: the six-button control is on the screen during a recording again (the owner could not
+        // find it with «کنترل در ویدیو دیده نشود» on and had to stop from the notification). It opens
+        // full and shrinks to a small dot after 5 s; one tap opens it.
+        if (i("cfg_ver", 0) < 7) {
+            base = base.copy(ghostControl = false, invisibleControl = false, floatingButton = true)
+            p.edit().putInt("cfg_ver", 7).apply()
+            cfg = base
+            saveConfigOf(base)
+        }
         return if (base.preset == RecordConfig.PRESET_CUSTOM) base else RecordConfig.withPreset(base, base.preset)
     }
 

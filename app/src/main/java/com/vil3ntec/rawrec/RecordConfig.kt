@@ -20,11 +20,11 @@ data class RecordConfig(
     val floatingButton: Boolean = true,
     // Was «invisible while recording» (an empty window that still took touches) until 1.4. Now: the
     // control shrinks to a small visible dot as soon as the recording starts. Nothing is ever invisible.
-    val invisibleControl: Boolean = true,
+    val invisibleControl: Boolean = false,
     // «کنترل در ویدیو دیده نشود»: while recording the control is off the screen; a shake (or «نمایشِ
     // کنترل» in the notification) opens it and pauses the recording first, so no frame with the
     // control in it is ever written. See RecordService.ghostOpen.
-    val ghostControl: Boolean = true,
+    val ghostControl: Boolean = false,
     val smartStart: Boolean = true,  // «شروعِ هوشمند برای بازی»: rotation in the first 20 s restarts into one file
     val rotateNewFile: Boolean = false, // «فایلِ جدا برای هر چرخش»: off = one file per recording (see RotationPolicy)
     // «ظاهرِ ویدیو» (LookFilter): steps, index 1 = neutral except sharp (0 = off). All neutral = no GPU pass.
@@ -121,8 +121,8 @@ data class RecordConfig(
             shakeStop = i.getBooleanExtra("shake", false),
             facecam = i.getIntExtra("cam", 0),
             floatingButton = i.getBooleanExtra("float", true),
-            invisibleControl = i.getBooleanExtra("invis", true),
-            ghostControl = i.getBooleanExtra("ghost", true),
+            invisibleControl = i.getBooleanExtra("invis", false),
+            ghostControl = i.getBooleanExtra("ghost", false),
             smartStart = i.getBooleanExtra("smart", true),
             rotateNewFile = i.getBooleanExtra("rotnew", false),
             lookSharp = i.getIntArrayExtra("lk")?.getOrNull(0) ?: 0,
@@ -153,8 +153,8 @@ data class RecordConfig(
                 shakeStop = SafePrefs.bool(p, "c_shake", false),
                 facecam = i("c_cam", 0).coerceIn(0, 3),
                 floatingButton = SafePrefs.bool(p, "c_float", true),
-                invisibleControl = SafePrefs.bool(p, "c_invis", true),
-                ghostControl = SafePrefs.bool(p, "c_ghost", true),
+                invisibleControl = SafePrefs.bool(p, "c_invis", false),
+                ghostControl = SafePrefs.bool(p, "c_ghost", false),
                 smartStart = SafePrefs.bool(p, "c_smart", true),
                 rotateNewFile = SafePrefs.bool(p, "c_rotnew", false),
                 lookSharp = i("c_lk_sharp", 0).coerceIn(0, 3),
