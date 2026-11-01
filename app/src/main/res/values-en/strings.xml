@@ -288,6 +288,11 @@
     <string name="look_color_desc">How strong the colours are. Vivid: dull colours come alive, skin stays natural. Calmer: softer colours.</string>
     <string name="look_bright_desc">The whole picture a little brighter or darker. «Brighter» helps in very dark games.</string>
     <string name="look_warm_desc">Warmer: a touch of yellow and orange (sunlight). Cooler: a touch of blue (night, metal).</string>
+    <string name="look_preview_caption">Left half: as recorded • right half: with these settings. A piece of your own last video at real size.</string>
+    <string name="look_preview_sample">Left half: unedited • right half: with these settings. (A sample picture; after your first recording a piece of your own video appears here.)</string>
+    <string name="look_summary_fmt">Output: %1$s • %2$s fps • %3$s • about %4$s Mbps • look: %5$s</string>
+    <string name="look_custom">Custom</string>
+    <string name="res_4k">4K (upscaled)</string>
     <string name="look_clarity">Far detail</string>
     <string name="look_clarity_desc">Outlines and detail of far-away things, and what is faint in fog or smoke, come out clearer.</string>
     <string name="look_contrast">Contrast</string>

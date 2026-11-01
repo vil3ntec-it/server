@@ -308,6 +308,11 @@
     <string name="look_color_desc">پررنگیِ رنگ‌ها. زنده: رنگ‌های کم‌جان بیشتر جان می‌گیرند و پوست طبیعی می‌ماند. آرام‌تر: رنگ‌ها ملایم‌تر.</string>
     <string name="look_bright_desc">کلِ تصویر کمی روشن‌تر یا تیره‌تر. برای بازی‌های خیلی تاریک «روشن‌تر» کمک می‌کند.</string>
     <string name="look_warm_desc">گرم‌تر: کمی زرد و نارنجی (حسِ آفتاب). سردتر: کمی آبی (حسِ شب و فلز).</string>
+    <string name="look_preview_caption">نیمهٔ چپ: همان‌طور که ضبط شد • نیمهٔ راست: با همین تنظیم‌ها. تکه‌ای از آخرین ویدیوی خودت با اندازهٔ واقعی.</string>
+    <string name="look_preview_sample">نیمهٔ چپ: بی ادیت • نیمهٔ راست: با همین تنظیم‌ها. (یک تصویرِ نمونه؛ بعد از اولین ضبط، تکه‌ای از ویدیوی خودت اینجا می‌آید.)</string>
+    <string name="look_summary_fmt">خروجی: %1$s • %2$s فریم • %3$s • حدودِ %4$s مگابیت • ظاهر: %5$s</string>
+    <string name="look_custom">سفارشی</string>
+    <string name="res_4k">۴K (بزرگ‌نمایی)</string>
     <string name="look_clarity">جزئیاتِ دور</string>
     <string name="look_clarity_desc">لبه‌ها و جزئیاتِ چیزهای دور، و آنچه در مه و دود کم‌رنگ است، روشن‌تر دیده می‌شود.</string>
     <string name="look_contrast">کنتراست</string>

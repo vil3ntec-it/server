@@ -371,7 +371,16 @@ object Planner {
             RecordConfig.ORIENT_PORTRAIT -> if (w > h) { val t = w; w = h; h = t }
         }
         val short = min(w, h)
-        if (cfg.resShort in 1 until short) {
+        if (cfg.resShort == RecordConfig.RES_4K) {
+            // «۴K (بزرگ‌نمایی)»: the long side to 3840. The screen has no more pixels than its own; the
+            // compositor scales them up smoothly, which YouTube rewards with its 4K quality.
+            val long = maxOf(w, h)
+            if (long < 3840) {
+                val s = 3840.0 / long
+                w = ((w * s).roundToInt()) and 1.inv()
+                h = ((h * s).roundToInt()) and 1.inv()
+            }
+        } else if (cfg.resShort in 1 until short) {
             val s = cfg.resShort.toDouble() / short
             w = ((w * s).toInt()) and 1.inv()
             h = ((h * s).toInt()) and 1.inv()
@@ -485,7 +494,12 @@ object Planner {
         val fps = Encoders.sustainableFps(info, mime, fit.width, fit.height, wantFps)
         val alt = if (fps < wantFps) Encoders.sizeForFps(info, mime, w, h, wantFps) else null
         val encMax = Encoders.maxBitrate(info, mime)
-        val want = if (cfg.bitrate < 0) autoBitrate(fit.width, fit.height, fps, mime, cfg.bitrate)
+        // An upscaled picture holds no more detail than the screen: the bits follow the screen's own
+        // pixels (×1.35 for the finer grid), not the bigger frame.
+        val upscaled = fit.width.toLong() * fit.height > d.width.toLong() * d.height
+        val bw = if (upscaled) d.width else fit.width
+        val bh = if (upscaled) (d.height * 1.35).toInt() else fit.height
+        val want = if (cfg.bitrate < 0) autoBitrate(bw, bh, fps, mime, cfg.bitrate)
         else cfg.bitrate.coerceIn(1, 300) * 1_000_000
         var bitrate = min(want, encMax)
         val cq = Encoders.supportsMode(info, mime, EncoderCapabilities.BITRATE_MODE_CQ)

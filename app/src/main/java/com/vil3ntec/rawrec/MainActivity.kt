@@ -134,6 +134,10 @@ class MainActivity : Activity() {
     private val rows = HashMap<String, Row>()
     private val toggles = HashMap<String, Toggle>()
     private var resValues = intArrayOf(0)
+    private var lookImage: android.widget.ImageView? = null
+    private var lookCaption: TextView? = null
+    private var lookSummary: TextView? = null
+    private var lookShown: String? = null
     private var fpsValues = intArrayOf(0)
     private val brValues = intArrayOf(RecordConfig.BR_AUTO_HIGH, RecordConfig.BR_AUTO_BALANCED, RecordConfig.BR_MAX, 6, 10, 15, 20, 30, 50)
     private val gains = floatArrayOf(0.5f, 0.75f, 1f, 1.5f, 2f, 3f)
@@ -152,7 +156,8 @@ class MainActivity : Activity() {
             runCatching { Encoders.probeAv1Muxer(this) }
             // Only real reductions: 1440p on a 1504 px screen resampled every pixel by 4 % — the whole
             // video softer for 8 % less data.
-            resValues = (listOf(0) + listOf(1440, 1080, 720).filter { it <= minOf(disp.width, disp.height) * 0.8 }).toIntArray()
+            resValues = (listOf(0) + (if (maxOf(disp.width, disp.height) < 3840) listOf(RecordConfig.RES_4K) else emptyList()) +
+                listOf(1440, 1080, 720).filter { it <= minOf(disp.width, disp.height) * 0.8 }).toIntArray()
             fpsValues = (listOf(0) + listOf(30, 60, 90, 120, 144, 165, 240).filter { it < disp.refresh }).toIntArray()
             cfg = loadConfig()
             setContentView(buildUi())
@@ -343,7 +348,7 @@ class MainActivity : Activity() {
         // back to the screen's own size once.
         if (i("cfg_ver", 0) < 5) {
             val d = DisplayInfo.read(this)
-            if (base.resShort > 0 && base.resShort > minOf(d.width, d.height) * 0.8) base = base.copy(resShort = 0)
+            if (base.resShort > 0 && base.resShort != RecordConfig.RES_4K && base.resShort > minOf(d.width, d.height) * 0.8) base = base.copy(resShort = 0)
             p.edit().putInt("cfg_ver", 5).apply()
             cfg = base
             saveConfigOf(base)
@@ -1297,6 +1302,21 @@ class MainActivity : Activity() {
         // «ظاهرِ ویدیو»: the edit happens while recording (LookFilter), the file comes out edited.
         val lc = card(root, R.string.look_title, R.drawable.ic_sparkle, top = 12)
         lc.addView(text(str(R.string.look_desc), R.style.Text_Caption), lp(6))
+        // The picture: a piece of the last recording, left as recorded, right with this look.
+        lookImage = android.widget.ImageView(this).apply {
+            adjustViewBounds = true
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            setBackgroundResource(R.drawable.bg_inset)
+            contentDescription = str(R.string.look_preview_caption)
+        }
+        lc.addView(lookImage, lp(10))
+        lookCaption = text(str(R.string.look_preview_caption), R.style.Text_Caption)
+        lc.addView(lookCaption, lp(4))
+        lookSummary = text("", R.style.Text_Body).apply {
+            setBackgroundResource(R.drawable.bg_inset)
+            setPaddingRelative(dp(14), dp(10), dp(14), dp(10))
+        }
+        lc.addView(lookSummary, lp(8))
         rows["look"] = Row(lc, "", str(R.string.look_presets_desc), listOf(str(R.string.look_natural), str(R.string.look_clear), str(R.string.look_game), str(R.string.look_cinema)), top = 8) { i ->
             change(false) { it.withLook(i) }
         }
@@ -1336,7 +1356,7 @@ class MainActivity : Activity() {
             fpsValues.map { if (it == 0) str(R.string.fps_screen_fmt, Fmt.num(disp.refresh)) else Fmt.num(it) },
             ic = R.drawable.ic_speed, chipIcons = listOf(R.drawable.ic_sparkle)) { i -> change(true) { it.copy(fps = fpsValues[i]) } }
         rows["res"] = Row(adv, str(R.string.res_title), str(R.string.res_desc_fmt, Fmt.size(maxOf(disp.width, disp.height), minOf(disp.width, disp.height))),
-            resValues.map { if (it == 0) str(R.string.res_native) else "${it}p" }, ic = R.drawable.ic_resolution, chipIcons = listOf(R.drawable.ic_sparkle)) { i -> change(true) { it.copy(resShort = resValues[i]) } }
+            resValues.map { when (it) { 0 -> str(R.string.res_native); RecordConfig.RES_4K -> str(R.string.res_4k); else -> "${it}p" } }, ic = R.drawable.ic_resolution, chipIcons = listOf(R.drawable.ic_sparkle)) { i -> change(true) { it.copy(resShort = resValues[i]) } }
         rows["mode"] = Row(adv, str(R.string.mode_title), str(R.string.mode_desc), listOf("VBR", "CBR", "CQ"), ic = R.drawable.ic_chart) { i -> change(true) { it.copy(mode = i) } }
         return pg.scroll
     }
@@ -1701,6 +1721,7 @@ class MainActivity : Activity() {
         rows["br"]?.select(brValues.indexOf(c.bitrate))
         rows["mode"]?.select(c.mode)
         rows["look"]?.select(c.lookPreset)
+        updateLook(c)
         rows["lk_sharp"]?.select(c.lookSharp)
         rows["lk_cla"]?.select(c.lookClarity)
         rows["lk_con"]?.select(c.lookContrast)
@@ -1761,6 +1782,35 @@ class MainActivity : Activity() {
     }
 
     /** Short current values at the end of the settings rows. */
+    /** The look picture and the one-line summary of what will come out; redrawn only when something changed. */
+    private fun updateLook(c: RecordConfig) {
+        val p = runCatching { Planner.plan(c, disp) }.getOrNull()
+        val lookName = when (c.lookPreset) {
+            0 -> str(R.string.look_natural); 1 -> str(R.string.look_clear); 2 -> str(R.string.look_game); 3 -> str(R.string.look_cinema)
+            else -> str(R.string.look_custom)
+        }
+        lookSummary?.text = if (p != null) str(R.string.look_summary_fmt, Fmt.size(p.width, p.height), Fmt.num(p.fps), p.codecLabel,
+            Fmt.num(p.bitrate / 1_000_000), lookName) else lookName
+        val iv = lookImage ?: return
+        val key = c.look().toString() + SafePrefs.str(prefs, RecordService.K_LAST_URIS)
+        if (key == lookShown) return
+        lookShown = key
+        val look = c.look()
+        val app = applicationContext
+        Thread {
+            val bmp = try {
+                val (src, fromVideo) = LookPreview.source(app, 720, 420)
+                LookPreview.render(src, look) to fromVideo
+            } catch (_: Throwable) { null }
+            ui.post {
+                if (bmp != null && lookShown == key) {
+                    iv.setImageBitmap(bmp.first)
+                    lookCaption?.text = str(if (bmp.second) R.string.look_preview_caption else R.string.look_preview_sample)
+                }
+            }
+        }.start()
+    }
+
     private fun refreshSettingsValues(c: RecordConfig) {
         subValues[Sub.VIDEO]?.text = str(when (c.orient) {
             RecordConfig.ORIENT_AUTO -> R.string.orient_auto

@@ -93,6 +93,9 @@ data class RecordConfig(
         /** Ready looks: sharp, contrast, colour, brightness, warmth, far detail. «طبیعی», «واضح», «زنده برای بازی», «سینمایی». */
         val LOOKS = listOf(intArrayOf(0, 1, 1, 1, 1, 0), intArrayOf(2, 1, 1, 1, 1, 2), intArrayOf(2, 2, 2, 1, 1, 2), intArrayOf(1, 3, 0, 0, 2, 1))
 
+        /** [resShort] for «۴K (بزرگ‌نمایی)»: the long side scaled up to 3840. */
+        const val RES_4K = 4000
+
         const val BR_MAX = -1          // «بی‌افت»: about 3× the default target
         const val BR_AUTO_HIGH = -2
         const val BR_AUTO_BALANCED = -3
