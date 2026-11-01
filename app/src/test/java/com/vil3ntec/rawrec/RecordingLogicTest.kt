@@ -43,6 +43,16 @@ class RecordingLogicTest {
         assertEquals(RotationPolicy.Action.NEW_PART, p.onDisplay(true, 60_000, resized = true))
     }
 
+    @Test fun aGameIsNeverShrunkIntoPortrait() {
+        val p = RotationPolicy(auto = true, smartStart = true)
+        p.start(landscapeNow = false)
+        assertTrue(p.follows(true, 40_000))
+        assertEquals(RotationPolicy.Action.NEW_PART, p.onDisplay(true, 40_000))   // the game opened late: full size
+        assertFalse(p.follows(false, 90_000))
+        assertEquals(RotationPolicy.Action.NONE, p.onDisplay(false, 90_000))      // back to portrait: same file
+        assertEquals(RotationPolicy.Action.NONE, p.onDisplay(true, 120_000))
+    }
+
     @Test fun lockedOrientationNeverSwitches() {
         val p = RotationPolicy(auto = false, smartStart = true)
         p.start(true)

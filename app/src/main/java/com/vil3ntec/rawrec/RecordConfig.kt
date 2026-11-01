@@ -27,6 +27,12 @@ data class RecordConfig(
     val ghostControl: Boolean = true,
     val smartStart: Boolean = true,  // «شروعِ هوشمند برای بازی»: rotation in the first 20 s restarts into one file
     val rotateNewFile: Boolean = false, // «فایلِ جدا برای هر چرخش»: off = one file per recording (see RotationPolicy)
+    // «ظاهرِ ویدیو» (LookFilter): steps, index 1 = neutral except sharp (0 = off). All neutral = no GPU pass.
+    val lookSharp: Int = 0,      // 0 off, 1 light, 2 medium, 3 strong
+    val lookContrast: Int = 1,   // 0 softer, 1 as is, 2 more, 3 much more
+    val lookColor: Int = 1,      // 0 calmer, 1 as is, 2 vivid, 3 very vivid
+    val lookBright: Int = 1,     // 0 darker, 1 as is, 2 brighter
+    val lookWarm: Int = 1,       // 0 cooler, 1 as is, 2 warmer
     val gameMode: Boolean = false,   // «حالتِ بازی»: Android 14+ single-app capture, the control stays visible
     val testSeconds: Int = 0,       // > 0: stop by itself after this many seconds and show the report
     // No split by size since 2.0 (RawRec's own MP4 writer has no 4 GB limit); MediaMuxer files
@@ -38,6 +44,24 @@ data class RecordConfig(
     val usesInternal get() = audioMode == AUDIO_INTERNAL || audioMode == AUDIO_BOTH
     val wantsOverlay get() = facecam > 0 || floatingButton
 
+    /** The look as strengths for [LookFilter]. */
+    fun look(): LookFilter.Look = LookFilter.Look(
+        sharp = floatArrayOf(0f, 0.35f, 0.65f, 0.95f)[lookSharp.coerceIn(0, 3)],
+        contrast = floatArrayOf(0.94f, 1f, 1.08f, 1.16f)[lookContrast.coerceIn(0, 3)],
+        brightness = floatArrayOf(-0.03f, 0f, 0.03f)[lookBright.coerceIn(0, 2)],
+        saturation = floatArrayOf(0.9f, 1f, 1.08f, 1.18f)[lookColor.coerceIn(0, 3)],
+        vibrance = floatArrayOf(0f, 0f, 0.15f, 0.25f)[lookColor.coerceIn(0, 3)],
+        warmth = floatArrayOf(-0.04f, 0f, 0.04f)[lookWarm.coerceIn(0, 2)],
+    )
+
+    /** Which ready look this is (index into [LOOKS]), or -1 for a look of the owner's own. */
+    val lookPreset get() = LOOKS.indexOfFirst { it.contentEquals(intArrayOf(lookSharp, lookContrast, lookColor, lookBright, lookWarm)) }
+
+    fun withLook(i: Int): RecordConfig {
+        val v = LOOKS.getOrNull(i) ?: return this
+        return copy(lookSharp = v[0], lookContrast = v[1], lookColor = v[2], lookBright = v[3], lookWarm = v[4])
+    }
+
     fun putInto(i: Intent) {
         i.putExtra("preset", preset); i.putExtra("res", resShort); i.putExtra("orient", orient)
         i.putExtra("fps", fps); i.putExtra("codec", codec); i.putExtra("br", bitrate); i.putExtra("mode", mode)
@@ -45,6 +69,7 @@ data class RecordConfig(
         i.putExtra("cd", countdown); i.putExtra("shake", shakeStop); i.putExtra("cam", facecam)
         i.putExtra("float", floatingButton); i.putExtra("invis", invisibleControl); i.putExtra("ghost", ghostControl)
         i.putExtra("smart", smartStart); i.putExtra("game", gameMode); i.putExtra("rotnew", rotateNewFile)
+        i.putExtra("lk", intArrayOf(lookSharp, lookContrast, lookColor, lookBright, lookWarm))
         i.putExtra("test", testSeconds); i.putExtra("seg", segmentBytes)
     }
 
@@ -62,6 +87,9 @@ data class RecordConfig(
         const val CODEC_HEVC = 1
         const val CODEC_AVC = 2
         const val CODEC_AV1 = 3
+
+        /** Ready looks: sharp, contrast, colour, brightness, warmth. «طبیعی», «واضح», «زنده برای بازی», «سینمایی». */
+        val LOOKS = listOf(intArrayOf(0, 1, 1, 1, 1), intArrayOf(2, 1, 1, 1, 1), intArrayOf(2, 2, 2, 1, 1), intArrayOf(1, 3, 0, 0, 2))
 
         const val BR_MAX = -1          // «بی‌افت»: about 3× the default target
         const val BR_AUTO_HIGH = -2
@@ -95,6 +123,11 @@ data class RecordConfig(
             ghostControl = i.getBooleanExtra("ghost", true),
             smartStart = i.getBooleanExtra("smart", true),
             rotateNewFile = i.getBooleanExtra("rotnew", false),
+            lookSharp = i.getIntArrayExtra("lk")?.getOrNull(0) ?: 0,
+            lookContrast = i.getIntArrayExtra("lk")?.getOrNull(1) ?: 1,
+            lookColor = i.getIntArrayExtra("lk")?.getOrNull(2) ?: 1,
+            lookBright = i.getIntArrayExtra("lk")?.getOrNull(3) ?: 1,
+            lookWarm = i.getIntArrayExtra("lk")?.getOrNull(4) ?: 1,
             gameMode = i.getBooleanExtra("game", false),
             testSeconds = i.getIntExtra("test", 0),
             segmentBytes = i.getLongExtra("seg", Long.MAX_VALUE),

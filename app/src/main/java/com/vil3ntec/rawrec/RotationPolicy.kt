@@ -8,8 +8,9 @@ package com.vil3ntec.rawrec
  * 2.0, «one recording = one file» (the owner: an hour must not become ten videos):
  *  • in the first [smartWindowMs] a rotation starts the recording over in the new orientation — the
  *    usual «start, then open the game» ends up as one file at the game's full size;
- *  • later rotations stay in the same file: the other orientation is shown whole inside this
- *    picture. An MP4 track can't change its size, so a file per rotation only with [newFileOnRotate].
+ *  • later, a game is never shrunk: portrait → landscape gets the landscape picture (a new part,
+ *    once); landscape → portrait stays in the same file, the portrait screen shown whole inside.
+ *    An MP4 track can't change its size, so a file per rotation only with [newFileOnRotate].
  *
  * A change of the screen's size that is not a rotation (a foldable opened or closed, the phone's
  * resolution setting) always needs a new canvas: [onDisplay] with `resized = true`.
@@ -34,6 +35,10 @@ class RotationPolicy(
         if (!rotated && !resized) return Action.NONE
         if (smartStart && msSinceStart < smartWindowMs) return Action.RESTART
         if (resized || newFileOnRotate) return Action.NEW_PART
+        // A game is never shrunk into a portrait picture (2.0 did that after the first 20 s: the
+        // owner's game came out 1504 px wide on a 2400 px screen). Turning to landscape gets the
+        // landscape picture, once; turning back to portrait stays in it (shown whole inside).
+        if (rotated && landscapeNow && !cur) return Action.NEW_PART
         return Action.NONE
     }
 

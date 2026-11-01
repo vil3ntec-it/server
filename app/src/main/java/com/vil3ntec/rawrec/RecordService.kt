@@ -886,6 +886,7 @@ class RecordService : Service(), Recorder.Events {
     override fun onAudioProblem(message: String) {
         main.post {
             if (message.startsWith("rotate:")) addNotice("rotate", getString(R.string.notice_rotate_fail_fmt, message))
+            else if (message.startsWith("look:")) addNotice("look", getString(R.string.eng_notice_look_fail))
             else addNotice("audio", getString(R.string.notice_audio_fmt, message))
             RecLog.add(this, "notice: $message")
         }

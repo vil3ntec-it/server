@@ -143,6 +143,16 @@ class Recorder(
     @Volatile var plan: CapturePlan = initialPlan; private set
     @Volatile private var enc: VideoEnc? = null
     private var display: VirtualDisplay? = null
+    /** «ظاهرِ ویدیو»: the screen goes through the GPU look on its way to the encoder; null = straight in. */
+    private var look: LookFilter? = null
+    /** True when a look was asked for and is being applied (for the report). */
+    @Volatile var lookOn = false; private set
+
+    /** Points the screen at [s] (the encoder's surface; null = nowhere for now), directly or through the look. */
+    private fun route(vd: VirtualDisplay?, s: Surface?, w: Int, h: Int) {
+        val f = look
+        if (f != null) f.setOutput(s, w, h) else vd?.surface = s
+    }
     private var videoThread: Thread? = null
     private var audioThread: Thread? = null
     private var aac: MediaCodec? = null
@@ -194,6 +204,20 @@ class Recorder(
             try { first.prepare() } catch (e: Exception) { first.release(); throw e }
             droppedOptions = first.dropped
             enc = first
+            val lk = cfg.look()
+            if (!lk.neutral) {
+                // The GPU path, when the device gives one; otherwise the screen goes straight in as before.
+                look = try {
+                    LookFilter(lk, plan.fps).also { f ->
+                        try { f.start(plan.width, plan.height); f.setOutput(first.surface, plan.width, plan.height) }
+                        catch (t: Throwable) { f.release(); throw t }
+                    }
+                } catch (t: Throwable) {
+                    events.onAudioProblem("look: " + (t.message ?: t.javaClass.simpleName))
+                    null
+                }
+                lookOn = look != null
+            }
 
             if (cfg.hasAudio) {
                 try { prepareAac() } catch (e: Exception) {
@@ -207,7 +231,7 @@ class Recorder(
             display = projection.createVirtualDisplay(
                 "RawRec", plan.width, plan.height, plan.dpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                first.surface, displayCallback, Handler(Looper.getMainLooper()),
+                look?.input ?: first.surface, displayCallback, Handler(Looper.getMainLooper()),
             ) ?: throw IllegalStateException("virtual display not created")
             videoThread = Thread({ videoLoop() }, "rawrec-video").apply { start() }
             if (aac != null) audioThread = Thread({ audioLoop() }, "rawrec-audio").apply { start() }
@@ -217,6 +241,8 @@ class Recorder(
             stopped = true
             try { display?.release() } catch (_: Exception) {}
             display = null
+            try { look?.release() } catch (_: Throwable) {}
+            look = null
             enc?.release()
             enc = null
             aac?.let { a -> try { a.release() } catch (_: Exception) {} }
@@ -284,6 +310,7 @@ class Recorder(
         audioThread?.join(5000)
         stats.flush()
         try { display?.release() } catch (_: Exception) {}
+        try { look?.release() } catch (_: Throwable) {}
         enc?.release()
         muxer.finish()
     }
@@ -439,7 +466,7 @@ class Recorder(
         synchronized(switchLock) {
             if (!running) return false
             val vd = display
-            try { vd?.surface = null } catch (_: Exception) {}
+            try { route(vd, null, p.width, p.height) } catch (_: Exception) {}
             // Free the hardware first: a reclaimed or crashed codec may still hold it.
             enc?.release()
             enc = null
@@ -454,7 +481,7 @@ class Recorder(
                 if (!running) return false
             }
             val ok = next ?: return false
-            try { vd?.surface = ok.surface } catch (_: Exception) { ok.release(); return false }
+            try { route(vd, ok.surface, p.width, p.height) } catch (_: Exception) { ok.release(); return false }
             enc = ok
             muxer.encoderReplaced()
             stats.skipNextGap = true
@@ -520,7 +547,7 @@ class Recorder(
             if (next == null && old != null) {
                 // Not enough encoder hardware for two at once (high sizes and frame rates): finish the
                 // old encoder first, then start the new one. The part ends here anyway.
-                try { vd?.surface = null } catch (_: Exception) {}
+                try { route(vd, null, plan.width, plan.height) } catch (_: Exception) {}
                 drainAndRelease(old, info)
                 enc = null
                 oldDone = true
@@ -528,7 +555,7 @@ class Recorder(
                 if (next == null) {
                     // Keep recording in the old orientation rather than end the recording.
                     val back = newEncoder(plan) ?: throw IllegalStateException("no encoder after rotation")
-                    try { vd?.surface = back.surface } catch (_: Exception) {}
+                    try { route(vd, back.surface, plan.width, plan.height) } catch (_: Exception) {}
                     enc = back
                     releaseHold()
                     muxer.encoderReplaced()
@@ -541,9 +568,10 @@ class Recorder(
                 return
             }
             try {
-                vd?.surface = null
+                // With the look this also sets the new drawing size, before the screen is resized.
+                route(vd, null, p.width, p.height)
                 vd?.resize(p.width, p.height, p.dpi)
-                vd?.surface = next.surface
+                route(vd, next.surface, p.width, p.height)
             } catch (_: Exception) {}
             if (old != null && !oldDone) drainAndRelease(old, info)
             // Ordered after the old encoder's last frame: the next key frame opens a new part.

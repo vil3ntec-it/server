@@ -326,6 +326,11 @@ class MainActivity : Activity() {
             ghostControl = SafePrefs.bool(p, "c_ghost", true),
             smartStart = SafePrefs.bool(p, "c_smart", true),
             rotateNewFile = SafePrefs.bool(p, "c_rotnew", false),
+            lookSharp = i("c_lk_sharp", 0).coerceIn(0, 3),
+            lookContrast = i("c_lk_con", 1).coerceIn(0, 3),
+            lookColor = i("c_lk_col", 1).coerceIn(0, 3),
+            lookBright = i("c_lk_bri", 1).coerceIn(0, 2),
+            lookWarm = i("c_lk_warm", 1).coerceIn(0, 2),
             gameMode = SafePrefs.bool(p, "c_game", false),
         )
         // 1.3 changed the size model: video settings saved by earlier versions (e.g. a «50 Mbps»
@@ -362,6 +367,8 @@ class MainActivity : Activity() {
             .putInt("c_cd", c.countdown).putBoolean("c_shake", c.shakeStop).putInt("c_cam", c.facecam)
             .putBoolean("c_float", c.floatingButton).putBoolean("c_invis", c.invisibleControl).putBoolean("c_ghost", c.ghostControl)
             .putBoolean("c_smart", c.smartStart).putBoolean("c_game", c.gameMode).putBoolean("c_rotnew", c.rotateNewFile)
+            .putInt("c_lk_sharp", c.lookSharp).putInt("c_lk_con", c.lookContrast).putInt("c_lk_col", c.lookColor)
+            .putInt("c_lk_bri", c.lookBright).putInt("c_lk_warm", c.lookWarm)
             .apply()
     }
 
@@ -1277,6 +1284,28 @@ class MainActivity : Activity() {
         }
         qc.addView(altButton)
 
+        // «ظاهرِ ویدیو»: the edit happens while recording (LookFilter), the file comes out edited.
+        val lc = card(root, R.string.look_title, R.drawable.ic_sparkle, top = 12)
+        lc.addView(text(str(R.string.look_desc), R.style.Text_Caption), lp(6))
+        rows["look"] = Row(lc, "", "", listOf(str(R.string.look_natural), str(R.string.look_clear), str(R.string.look_game), str(R.string.look_cinema)), top = 8) { i ->
+            change(false) { it.withLook(i) }
+        }
+        rows["lk_sharp"] = Row(lc, str(R.string.look_sharp), "", listOf(str(R.string.lv_off), str(R.string.lv_low), str(R.string.lv_mid), str(R.string.lv_high)), top = 12) { i ->
+            change(false) { it.copy(lookSharp = i) }
+        }
+        rows["lk_con"] = Row(lc, str(R.string.look_contrast), "", listOf(str(R.string.lv_less), str(R.string.lv_as_is), str(R.string.lv_more), str(R.string.lv_much)), top = 12) { i ->
+            change(false) { it.copy(lookContrast = i) }
+        }
+        rows["lk_col"] = Row(lc, str(R.string.look_color), "", listOf(str(R.string.lv_calm), str(R.string.lv_as_is), str(R.string.lv_vivid), str(R.string.lv_very_vivid)), top = 12) { i ->
+            change(false) { it.copy(lookColor = i) }
+        }
+        rows["lk_bri"] = Row(lc, str(R.string.look_bright), "", listOf(str(R.string.lv_darker), str(R.string.lv_as_is), str(R.string.lv_brighter)), top = 12) { i ->
+            change(false) { it.copy(lookBright = i) }
+        }
+        rows["lk_warm"] = Row(lc, str(R.string.look_warm), "", listOf(str(R.string.lv_cooler), str(R.string.lv_as_is), str(R.string.lv_warmer)), top = 12) { i ->
+            change(false) { it.copy(lookWarm = i) }
+        }
+
         val adv = Section(root, "advanced", R.string.sec_advanced, R.string.sec_advanced_desc, R.drawable.ic_tune).body
         val av1 = Build.VERSION.SDK_INT >= 34 && Encoders.hardwareFor(Encoders.AV1) != null && Encoders.av1MuxOk
         rows["codec"] = Row(adv, str(R.string.codec_title), str(R.string.codec_desc),
@@ -1653,6 +1682,12 @@ class MainActivity : Activity() {
         rows["codec"]?.select(c.codec)
         rows["br"]?.select(brValues.indexOf(c.bitrate))
         rows["mode"]?.select(c.mode)
+        rows["look"]?.select(c.lookPreset)
+        rows["lk_sharp"]?.select(c.lookSharp)
+        rows["lk_con"]?.select(c.lookContrast)
+        rows["lk_col"]?.select(c.lookColor)
+        rows["lk_bri"]?.select(c.lookBright)
+        rows["lk_warm"]?.select(c.lookWarm)
         rows["audio"]?.select(c.audioMode)
         rows["gg"]?.select(gains.indexOfFirst { it == c.gameGain })
         rows["mg"]?.select(gains.indexOfFirst { it == c.micGain })
