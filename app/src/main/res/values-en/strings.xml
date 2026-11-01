@@ -277,6 +277,12 @@
     <string name="look_game">Vivid for games</string>
     <string name="look_cinema">Cinematic</string>
     <string name="look_sharp">Sharpness</string>
+    <string name="look_presets_desc">• Natural: the video exactly as recorded, no change.\n• Clear: only sharper; edges, text and far things clearer, colours untouched.\n• Vivid for games (recommended): sharper, livelier colours, deeper shadows; close to what the tablet\'s screen shows.\n• Cinematic: strong contrast, calmer slightly warm colours, like a film.\nBelow, each part can be set on its own.</string>
+    <string name="look_sharp_desc">Makes edges and fine detail (text, hair, cloth and weapon texture) crisper. Too much makes edges look hard.</string>
+    <string name="look_contrast_desc">The gap between dark and light. More: darker shadows, brighter lights, more depth. Softer: a softer, flatter picture.</string>
+    <string name="look_color_desc">How strong the colours are. Vivid: dull colours come alive, skin stays natural. Calmer: softer colours.</string>
+    <string name="look_bright_desc">The whole picture a little brighter or darker. «Brighter» helps in very dark games.</string>
+    <string name="look_warm_desc">Warmer: a touch of yellow and orange (sunlight). Cooler: a touch of blue (night, metal).</string>
     <string name="look_clarity">Far detail</string>
     <string name="look_clarity_desc">Outlines and detail of far-away things, and what is faint in fog or smoke, come out clearer.</string>
     <string name="look_contrast">Contrast</string>

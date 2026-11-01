@@ -1288,25 +1288,25 @@ class MainActivity : Activity() {
         // «ظاهرِ ویدیو»: the edit happens while recording (LookFilter), the file comes out edited.
         val lc = card(root, R.string.look_title, R.drawable.ic_sparkle, top = 12)
         lc.addView(text(str(R.string.look_desc), R.style.Text_Caption), lp(6))
-        rows["look"] = Row(lc, "", "", listOf(str(R.string.look_natural), str(R.string.look_clear), str(R.string.look_game), str(R.string.look_cinema)), top = 8) { i ->
+        rows["look"] = Row(lc, "", str(R.string.look_presets_desc), listOf(str(R.string.look_natural), str(R.string.look_clear), str(R.string.look_game), str(R.string.look_cinema)), top = 8) { i ->
             change(false) { it.withLook(i) }
         }
-        rows["lk_sharp"] = Row(lc, str(R.string.look_sharp), "", listOf(str(R.string.lv_off), str(R.string.lv_low), str(R.string.lv_mid), str(R.string.lv_high)), top = 12) { i ->
+        rows["lk_sharp"] = Row(lc, str(R.string.look_sharp), str(R.string.look_sharp_desc), listOf(str(R.string.lv_off), str(R.string.lv_low), str(R.string.lv_mid), str(R.string.lv_high)), top = 12) { i ->
             change(false) { it.copy(lookSharp = i) }
         }
         rows["lk_cla"] = Row(lc, str(R.string.look_clarity), str(R.string.look_clarity_desc), listOf(str(R.string.lv_off), str(R.string.lv_low), str(R.string.lv_mid), str(R.string.lv_high)), top = 12) { i ->
             change(false) { it.copy(lookClarity = i) }
         }
-        rows["lk_con"] = Row(lc, str(R.string.look_contrast), "", listOf(str(R.string.lv_less), str(R.string.lv_as_is), str(R.string.lv_more), str(R.string.lv_much)), top = 12) { i ->
+        rows["lk_con"] = Row(lc, str(R.string.look_contrast), str(R.string.look_contrast_desc), listOf(str(R.string.lv_less), str(R.string.lv_as_is), str(R.string.lv_more), str(R.string.lv_much)), top = 12) { i ->
             change(false) { it.copy(lookContrast = i) }
         }
-        rows["lk_col"] = Row(lc, str(R.string.look_color), "", listOf(str(R.string.lv_calm), str(R.string.lv_as_is), str(R.string.lv_vivid), str(R.string.lv_very_vivid)), top = 12) { i ->
+        rows["lk_col"] = Row(lc, str(R.string.look_color), str(R.string.look_color_desc), listOf(str(R.string.lv_calm), str(R.string.lv_as_is), str(R.string.lv_vivid), str(R.string.lv_very_vivid)), top = 12) { i ->
             change(false) { it.copy(lookColor = i) }
         }
-        rows["lk_bri"] = Row(lc, str(R.string.look_bright), "", listOf(str(R.string.lv_darker), str(R.string.lv_as_is), str(R.string.lv_brighter)), top = 12) { i ->
+        rows["lk_bri"] = Row(lc, str(R.string.look_bright), str(R.string.look_bright_desc), listOf(str(R.string.lv_darker), str(R.string.lv_as_is), str(R.string.lv_brighter)), top = 12) { i ->
             change(false) { it.copy(lookBright = i) }
         }
-        rows["lk_warm"] = Row(lc, str(R.string.look_warm), "", listOf(str(R.string.lv_cooler), str(R.string.lv_as_is), str(R.string.lv_warmer)), top = 12) { i ->
+        rows["lk_warm"] = Row(lc, str(R.string.look_warm), str(R.string.look_warm_desc), listOf(str(R.string.lv_cooler), str(R.string.lv_as_is), str(R.string.lv_warmer)), top = 12) { i ->
             change(false) { it.copy(lookWarm = i) }
         }
 
