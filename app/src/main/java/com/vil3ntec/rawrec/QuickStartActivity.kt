@@ -51,11 +51,14 @@ class QuickStartActivity : Activity() {
             (c.wantsOverlay && !Settings.canDrawOverlays(this))
         if (missing) { viaApp(); return }
         if (Storage.free(this) < Storage.RESERVE + 200L * 1024 * 1024) { viaApp(); return }
-        cfg = c
+        // Always the whole screen from here, also with «حالتِ بازی»: Android's «one app» dialog is so
+        // tall that on a landscape tablet its buttons end up under the navigation bar (the owner's
+        // screenshot), and picking the app is three more taps in the middle of a game. The control
+        // stays out of the video anyway («کنترل در ویدیو دیده نشود»).
+        cfg = c.copy(gameMode = false)
         val mpm = getSystemService(MediaProjectionManager::class.java) ?: run { viaApp(); return }
-        // Android 14+: the whole screen straight away — one tap in the dialog. «حالتِ بازی» (one app)
-        // needs the plain dialog, where the game is picked.
-        val ask = if (Build.VERSION.SDK_INT >= 34 && !c.gameMode) mpm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
+        // Android 14+: the short dialog — «لغو» / «شروع», one tap.
+        val ask = if (Build.VERSION.SDK_INT >= 34) mpm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
         else mpm.createScreenCaptureIntent()
         @Suppress("DEPRECATION") startActivityForResult(ask, REQ)
     }
@@ -65,7 +68,7 @@ class QuickStartActivity : Activity() {
         @Suppress("DEPRECATION") super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ && resultCode == RESULT_OK && data != null) {
             try {
-                val c = cfg ?: RecordConfig.saved(getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE))
+                val c = cfg ?: RecordConfig.saved(getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE)).copy(gameMode = false)
                 val svc = Intent(this, RecordService::class.java).setAction(RecordService.ACTION_START)
                 c.putInto(svc)
                 svc.putExtra(RecordService.EXTRA_CODE, resultCode)
