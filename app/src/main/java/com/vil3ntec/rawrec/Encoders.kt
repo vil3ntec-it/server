@@ -383,9 +383,11 @@ object Planner {
      * VBR target (average) for the automatic levels, in bits per second. Reference: bits per pixel
      * at 60 fps, × (fps/60)^0.6: higher frame rates cost less than linearly (consecutive frames are more alike).
      * HEVC values; AVC ×1.4, AV1 ×0.9 (hardware AV1 encoders gain less over HEVC than software ones).
-     *   High (default): 0.11 bpp → 1920×1080@60 ≈ 14 Mbps, 1504×2400@120 ≈ 36 Mbps
+     *   High (default): 0.20 bpp → 1920×1080@60 ≈ 25 Mbps, 2400×1504@60 ≈ 43 Mbps
      *   Light:          0.045 bpp → 1920×1080@30 ≈ 4 Mbps
-     *   «بی‌افت»:        0.20 bpp  → 1920×1080@60 ≈ 25 Mbps
+     *   «بی‌افت»:        0.30 bpp  → 1920×1080@60 ≈ 37 Mbps
+     * 2.2: 0.11 was too little where an encoder does not honour the quality range (Android only asks
+     * encoders to, it does not oblige them): busy game scenes came out grainy («like an old TV»).
      * Since 1.8 the target is only a guide: quality is held by a narrow QP range per frame
      * ([qpCeiling]..[qpFloor]), like a CRF encode. The owner wants «the pixels I see, but not a bigger
      * file»: a fixed bit rate does both badly — it smears fast motion and pads still screens with bits
@@ -395,17 +397,17 @@ object Planner {
      * maximum cap the peak.
      */
     fun autoBitrate(w: Int, h: Int, fps: Int, mime: String, level: Int): Int {
-        val base = when (level) { RecordConfig.BR_MAX -> 0.20; RecordConfig.BR_AUTO_BALANCED -> 0.045; else -> 0.11 }
+        val base = when (level) { RecordConfig.BR_MAX -> 0.30; RecordConfig.BR_AUTO_BALANCED -> 0.045; else -> 0.20 }
         val bps = w.toDouble() * h * 60 * base * codecFactor(mime) * (fps / 60.0).pow(0.6)
         return (bps / 1_000_000).roundToInt().coerceAtLeast(3) * 1_000_000
     }
 
     private fun codecFactor(mime: String) = when (mime) { Encoders.AVC -> 1.4; Encoders.AV1 -> 0.9; else -> 1.0 }
 
-    /** Range that keeps screen content faithful (rule of thumb, shown for reference): 0.06–0.16 bpp HEVC at 60 fps. */
+    /** Range that keeps screen content faithful (rule of thumb, shown for reference): 0.10–0.30 bpp HEVC at 60 fps. */
     fun referenceRange(w: Int, h: Int, fps: Int, mime: String): Pair<Int, Int> {
         val k = w.toDouble() * h * 60 * codecFactor(mime) * (fps / 60.0).pow(0.6) / 1_000_000
-        return (k * 0.06).roundToInt() to (k * 0.16).roundToInt()
+        return (k * 0.10).roundToInt() to (k * 0.30).roundToInt()
     }
 
     /**

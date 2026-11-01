@@ -11,8 +11,8 @@ import android.graphics.drawable.Icon
 
 /**
  * «اعلانِ ضبطِ سریع»: a small notification that stays in the shade while RawRec is idle, so a
- * recording can start at any moment (in a game too) without looking for the app. «ضبط» opens RawRec
- * with autostart: Android asks its own permission for each recording, then RawRec goes to the back.
+ * recording can start at any moment (in a game too) without looking for the app. «ضبط» starts it
+ * over the game (QuickStartActivity): only Android's own «start recording?» dialog appears.
  * Taken away while recording (the recording notification is there then) and put back after.
  */
 object ReadyNotice {
@@ -35,9 +35,8 @@ object ReadyNotice {
             nm.createNotificationChannel(NotificationChannel(CH, ctx.getString(R.string.ch_ready), NotificationManager.IMPORTANCE_LOW).apply {
                 setShowBadge(false)
             })
-            val start = PendingIntent.getActivity(ctx, 11,
-                Intent(ctx, MainActivity::class.java).putExtra("autostart", true)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            // Straight from the game: only Android's dialog appears over it (QuickStartActivity).
+            val start = PendingIntent.getActivity(ctx, 11, QuickStartActivity.intent(ctx),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             val n = Notification.Builder(ctx, CH)
                 .setSmallIcon(R.drawable.eng_ic_rec)

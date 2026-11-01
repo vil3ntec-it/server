@@ -35,6 +35,15 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".QuickStartActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RawRec.Invisible"
+            android:excludeFromRecents="true"
+            android:taskAffinity="com.vil3ntec.rawrec.quick"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density" />
+
         <service
             android:name=".RecordService"
             android:exported="false"

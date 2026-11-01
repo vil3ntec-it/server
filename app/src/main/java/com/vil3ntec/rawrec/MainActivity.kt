@@ -307,32 +307,7 @@ class MainActivity : Activity() {
     private fun loadConfig(): RecordConfig {
         val p = prefs
         val i = { k: String, d: Int -> SafePrefs.int(p, k, d) }
-        var base = RecordConfig(
-            preset = i("c_preset", RecordConfig.PRESET_60).coerceIn(0, 3),
-            resShort = i("c_res", 0).coerceAtLeast(0),
-            orient = i("c_orient", RecordConfig.ORIENT_AUTO).coerceIn(0, 2),
-            fps = i("c_fps", 0).coerceAtLeast(0),
-            codec = i("c_codec", RecordConfig.CODEC_AUTO).coerceIn(0, 3),
-            bitrate = i("c_br", RecordConfig.BR_AUTO_HIGH),
-            mode = i("c_mode", RecordConfig.MODE_VBR).coerceIn(0, 2),
-            audioMode = i("c_audio", RecordConfig.AUDIO_INTERNAL).coerceIn(0, 3),
-            gameGain = SafePrefs.float(p, "c_gg", 1f),
-            micGain = SafePrefs.float(p, "c_mg", 1f),
-            countdown = i("c_cd", 3).coerceIn(0, 60),
-            shakeStop = SafePrefs.bool(p, "c_shake", false),
-            facecam = i("c_cam", 0).coerceIn(0, 3),
-            floatingButton = SafePrefs.bool(p, "c_float", true),
-            invisibleControl = SafePrefs.bool(p, "c_invis", true),
-            ghostControl = SafePrefs.bool(p, "c_ghost", true),
-            smartStart = SafePrefs.bool(p, "c_smart", true),
-            rotateNewFile = SafePrefs.bool(p, "c_rotnew", false),
-            lookSharp = i("c_lk_sharp", 0).coerceIn(0, 3),
-            lookContrast = i("c_lk_con", 1).coerceIn(0, 3),
-            lookColor = i("c_lk_col", 1).coerceIn(0, 3),
-            lookBright = i("c_lk_bri", 1).coerceIn(0, 2),
-            lookWarm = i("c_lk_warm", 1).coerceIn(0, 2),
-            gameMode = SafePrefs.bool(p, "c_game", false),
-        )
+        var base = RecordConfig.fromPrefs(p)
         // 1.3 changed the size model: video settings saved by earlier versions (e.g. a «50 Mbps»
         // chip tapped while trying 1.2.2) go back to the new default once; audio/controls are kept.
         if (i("cfg_ver", 0) < 3) {
@@ -2081,8 +2056,12 @@ class MainActivity : Activity() {
 
     private fun launchCapture() {
         val mpm = getSystemService(MediaProjectionManager::class.java) ?: return
-        // Plain intent (no config): on Android 14+ the system dialog then offers «یک برنامه».
-        @Suppress("DEPRECATION") startActivityForResult(mpm.createScreenCaptureIntent(), REQ_CAPTURE)
+        // «حالتِ بازی»: plain intent, so the Android 14+ dialog offers «یک برنامه». Otherwise the whole
+        // screen straight away (one tap instead of two).
+        val ask = if (Build.VERSION.SDK_INT >= 34 && !cfg.gameMode)
+            mpm.createScreenCaptureIntent(android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay())
+        else mpm.createScreenCaptureIntent()
+        @Suppress("DEPRECATION") startActivityForResult(ask, REQ_CAPTURE)
     }
 
     @Deprecated("Deprecated in Java")

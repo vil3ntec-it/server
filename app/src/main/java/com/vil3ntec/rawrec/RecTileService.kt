@@ -29,9 +29,8 @@ class RecTileService : TileService() {
             stopRecording(RecordService.SRC_TILE)
             return
         }
-        val i = Intent(this, MainActivity::class.java)
-            .putExtra("autostart", true)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        // Over the game, without opening RawRec (QuickStartActivity).
+        val i = QuickStartActivity.intent(this)
         if (Build.VERSION.SDK_INT >= 34) {
             startActivityAndCollapse(
                 PendingIntent.getActivity(this, 5, i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)

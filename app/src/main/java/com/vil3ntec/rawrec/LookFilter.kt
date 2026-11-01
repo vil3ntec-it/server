@@ -236,8 +236,8 @@ void main() {
 }
 """
 
-        // Sharpening: centre minus the mean of its four neighbours, scaled and limited (no halos,
-        // no noise blown up in flat areas). Then contrast around mid-grey, brightness, saturation
+        // Sharpening: centre minus the mean of its four neighbours, cored (fine noise untouched),
+        // scaled and limited (no halos). Then contrast around mid-grey, brightness, saturation
         // with vibrance (dull colours gain more than already strong ones), warmth.
         private const val FS = """
 #extension GL_OES_EGL_image_external : require
@@ -257,6 +257,9 @@ void main() {
         vec3 n = texture2D(tex, uv + vec2(texel.x, 0.0)).rgb + texture2D(tex, uv - vec2(texel.x, 0.0)).rgb
                + texture2D(tex, uv + vec2(0.0, texel.y)).rgb + texture2D(tex, uv - vec2(0.0, texel.y)).rgb;
         vec3 d = c - n * 0.25;
+        // Coring: differences smaller than fine noise are left alone, so grain and compression
+        // speckle are not made stronger — only real edges and detail get sharper.
+        d = sign(d) * max(abs(d) - 0.012, 0.0);
         c += clamp(d * (sharp * 1.6), vec3(-0.07), vec3(0.07));
     }
     c = (c - 0.5) * contrast + 0.5 + bright;

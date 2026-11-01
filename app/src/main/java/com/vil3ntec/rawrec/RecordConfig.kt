@@ -133,6 +133,42 @@ data class RecordConfig(
             segmentBytes = i.getLongExtra("seg", Long.MAX_VALUE),
         )
 
+        fun fromPrefs(p: android.content.SharedPreferences): RecordConfig {
+            val i = { k: String, d: Int -> SafePrefs.int(p, k, d) }
+            return RecordConfig(
+                preset = i("c_preset", RecordConfig.PRESET_60).coerceIn(0, 3),
+                resShort = i("c_res", 0).coerceAtLeast(0),
+                orient = i("c_orient", RecordConfig.ORIENT_AUTO).coerceIn(0, 2),
+                fps = i("c_fps", 0).coerceAtLeast(0),
+                codec = i("c_codec", RecordConfig.CODEC_AUTO).coerceIn(0, 3),
+                bitrate = i("c_br", RecordConfig.BR_AUTO_HIGH),
+                mode = i("c_mode", RecordConfig.MODE_VBR).coerceIn(0, 2),
+                audioMode = i("c_audio", RecordConfig.AUDIO_INTERNAL).coerceIn(0, 3),
+                gameGain = SafePrefs.float(p, "c_gg", 1f),
+                micGain = SafePrefs.float(p, "c_mg", 1f),
+                countdown = i("c_cd", 3).coerceIn(0, 60),
+                shakeStop = SafePrefs.bool(p, "c_shake", false),
+                facecam = i("c_cam", 0).coerceIn(0, 3),
+                floatingButton = SafePrefs.bool(p, "c_float", true),
+                invisibleControl = SafePrefs.bool(p, "c_invis", true),
+                ghostControl = SafePrefs.bool(p, "c_ghost", true),
+                smartStart = SafePrefs.bool(p, "c_smart", true),
+                rotateNewFile = SafePrefs.bool(p, "c_rotnew", false),
+                lookSharp = i("c_lk_sharp", 0).coerceIn(0, 3),
+                lookContrast = i("c_lk_con", 1).coerceIn(0, 3),
+                lookColor = i("c_lk_col", 1).coerceIn(0, 3),
+                lookBright = i("c_lk_bri", 1).coerceIn(0, 2),
+                lookWarm = i("c_lk_warm", 1).coerceIn(0, 2),
+                gameMode = SafePrefs.bool(p, "c_game", false),
+            )
+        }
+
+        /** The settings as the app last saved them, with the chosen preset applied (QuickStart). */
+        fun saved(p: android.content.SharedPreferences): RecordConfig {
+            val c = fromPrefs(p)
+            return if (c.preset == PRESET_CUSTOM) c else withPreset(c, c.preset)
+        }
+
         /** The fixed video values behind each preset. Audio and overlay choices are kept. */
         fun withPreset(base: RecordConfig, preset: Int): RecordConfig = when (preset) {
             PRESET_SCREEN -> base.copy(preset = preset, resShort = 0, fps = 0, codec = CODEC_AUTO, bitrate = BR_AUTO_HIGH, mode = MODE_VBR)

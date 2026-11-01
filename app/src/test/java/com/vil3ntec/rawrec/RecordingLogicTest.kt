@@ -104,11 +104,11 @@ class RecordingLogicTest {
 
     @Test fun bitrateIsFidelityFirstButLightStaysSmall() {
         val tablet = Planner.autoBitrate(1504, 2400, 120, Encoders.HEVC, RecordConfig.BR_AUTO_HIGH)
-        assertTrue("33–40 Mbps, was ${tablet / 1_000_000}", tablet in 33_000_000..40_000_000)
+        assertTrue("60–72 Mbps, was ${tablet / 1_000_000}", tablet in 60_000_000..72_000_000)
         val ref = Planner.referenceRange(1504, 2400, 120, Encoders.HEVC)
         assertTrue(tablet / 1_000_000 in ref.first..ref.second)
         val fhd = Planner.autoBitrate(1920, 1080, 60, Encoders.HEVC, RecordConfig.BR_AUTO_HIGH)
-        assertTrue("1080p60 HEVC ≥ 12 Mbps, was ${fhd / 1_000_000}", fhd >= 12_000_000)
+        assertTrue("1080p60 HEVC ≥ 22 Mbps, was ${fhd / 1_000_000}", fhd >= 22_000_000)
         val light = Planner.autoBitrate(1080, 2400, 30, Encoders.HEVC, RecordConfig.BR_AUTO_BALANCED)
         assertTrue("light ≤ 6 Mbps, was ${light / 1_000_000}", light <= 6_000_000)
         assertTrue(Planner.qpCeiling(RecordConfig.BR_AUTO_HIGH) <= 20)
