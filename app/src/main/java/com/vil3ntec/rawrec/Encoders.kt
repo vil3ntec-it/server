@@ -429,7 +429,7 @@ object Planner {
         RecordConfig.BR_MAX -> 16
         RecordConfig.BR_AUTO_BALANCED -> 34
         RecordConfig.BR_AUTO_HIGH -> 18
-        else -> 23                      // a fixed Mbps chosen by the owner
+        else -> 18                      // a fixed Mbps chosen by the owner: the same quality (2.9; 23 was blocky at 120 fps)
     }
 
     /**

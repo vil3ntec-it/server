@@ -369,6 +369,19 @@ class MainActivity : Activity() {
             cfg = base
             saveConfigOf(base)
         }
+        // 2.9: «سفارشی» at 120 fps with a fixed 50 Mbps and sharpening off made game text blocky and soft
+        // (the owner's screenshots). Once: the best for games — the screen's own size, 60 fps, automatic
+        // high bit rate, «زنده برای بازی». Everything can be chosen again afterwards.
+        if (i("cfg_ver", 0) < 8) {
+            val bad = base.fps > 60 || base.bitrate > 0 || base.lookSharp == 0 || base.preset == RecordConfig.PRESET_CUSTOM
+            if (bad) {
+                base = RecordConfig.withPreset(base, RecordConfig.PRESET_60).let { if (it.lookSharp == 0) it.withLook(2) else it }
+                if (base.resShort != RecordConfig.RES_4K) base = base.copy(resShort = 0)
+            }
+            p.edit().putInt("cfg_ver", 8).apply()
+            cfg = base
+            saveConfigOf(base)
+        }
         return if (base.preset == RecordConfig.PRESET_CUSTOM) base else RecordConfig.withPreset(base, base.preset)
     }
 

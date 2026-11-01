@@ -23,10 +23,10 @@ jobs:
           set -e
           ls -la app/build/outputs/apk/release/
           mkdir -p out
-          cp app/build/outputs/apk/release/app-release-unsigned.apk out/RawRec-2.8-unsigned.apk
-          sha256sum out/RawRec-2.8-unsigned.apk
+          cp app/build/outputs/apk/release/app-release-unsigned.apk out/RawRec-2.9-unsigned.apk
+          sha256sum out/RawRec-2.9-unsigned.apk
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f out/RawRec-2.8-unsigned.apk
+          git add -f out/RawRec-2.9-unsigned.apk
           git commit -m "APK (unsigned) — temporary"
           git push
