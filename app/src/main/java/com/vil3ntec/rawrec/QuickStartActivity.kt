@@ -5,7 +5,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
@@ -64,9 +63,10 @@ class QuickStartActivity : Activity() {
             return
         }
         val mpm = getSystemService(MediaProjectionManager::class.java) ?: run { viaApp(); return }
-        // Android 14+: the short dialog — «لغو» / «شروع», one tap.
-        val ask = if (Build.VERSION.SDK_INT >= 34) mpm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
-        else mpm.createScreenCaptureIntent()
+        // Both choices in Android's dialog (2.7): «کلِ صفحه» or «یک برنامه». 2.4 offered only the whole
+        // screen and «Share one app» showed «Not supported by the app» — but one app (the game) is the
+        // best for games: RawRec's control, notifications and everything else stay out of the video.
+        val ask = mpm.createScreenCaptureIntent()
         @Suppress("DEPRECATION") startActivityForResult(ask, REQ)
     }
 

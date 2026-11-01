@@ -2113,11 +2113,8 @@ class MainActivity : Activity() {
 
     private fun launchCapture() {
         val mpm = getSystemService(MediaProjectionManager::class.java) ?: return
-        // «حالتِ بازی»: plain intent, so the Android 14+ dialog offers «یک برنامه». Otherwise the whole
-        // screen straight away (one tap instead of two).
-        val ask = if (Build.VERSION.SDK_INT >= 34 && !cfg.gameMode)
-            mpm.createScreenCaptureIntent(android.media.projection.MediaProjectionConfig.createConfigForDefaultDisplay())
-        else mpm.createScreenCaptureIntent()
+        // Both choices in Android's dialog: «کلِ صفحه» or «یک برنامه» (2.7).
+        val ask = mpm.createScreenCaptureIntent()
         @Suppress("DEPRECATION") startActivityForResult(ask, REQ_CAPTURE)
     }
 
