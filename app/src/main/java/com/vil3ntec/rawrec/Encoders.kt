@@ -488,10 +488,22 @@ object Planner {
         return build(cfg, d, w, h, cur.mime, info, cur.codecFallback)
     }
 
-    private fun build(cfg: RecordConfig, d: DisplayInfo, w: Int, h: Int, mime: String, info: MediaCodecInfo, fallback: Boolean): CapturePlan {
-        val fit = Encoders.fit(info, mime, w, h)
+    private fun build(cfg: RecordConfig, d: DisplayInfo, w0: Int, h0: Int, mime: String, info: MediaCodecInfo, fallback: Boolean): CapturePlan {
+        var w = w0
+        var h = h0
+        var fit = Encoders.fit(info, mime, w, h)
         val wantFps = wantFps(cfg, d)
-        val fps = Encoders.sustainableFps(info, mime, fit.width, fit.height, wantFps)
+        var fps = Encoders.sustainableFps(info, mime, fit.width, fit.height, wantFps)
+        if (cfg.resShort == RecordConfig.RES_4K && fps < wantFps) {
+            // «۴K»: a 16:10 screen at 3840 wide is more than the encoder's 4K at 60 fps (2.8 fell back
+            // to 30 fps). Instead the largest upscaled size that keeps the chosen frame rate, e.g.
+            // 3456×2160 — still «2160p 4K» for YouTube.
+            val f2 = Encoders.sizeForFps(info, mime, w, h, wantFps)
+            if (f2 != null && f2.width.toLong() * f2.height > d.width.toLong() * d.height) {
+                fit = f2; w = f2.width; h = f2.height
+                fps = Encoders.sustainableFps(info, mime, fit.width, fit.height, wantFps)
+            }
+        }
         val alt = if (fps < wantFps) Encoders.sizeForFps(info, mime, w, h, wantFps) else null
         val encMax = Encoders.maxBitrate(info, mime)
         // An upscaled picture holds no more detail than the screen: the bits follow the screen's own
