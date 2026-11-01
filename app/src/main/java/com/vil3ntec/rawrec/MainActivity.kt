@@ -382,6 +382,12 @@ class MainActivity : Activity() {
             cfg = base
             saveConfigOf(base)
         }
+        // 2.9: the owner wants Android's «کلِ صفحه یا یک برنامه» window before each recording: «هر بار
+        // بپرس» once; «فقط بارِ اول» stays one tap away in the settings.
+        if (i("cfg_ver", 0) < 9) {
+            p.edit().putBoolean(RecordService.PREF_INSTANT, false).putInt("cfg_ver", 9).apply()
+            if (RecordService.instantReady) try { startService(Intent(this, RecordService::class.java).setAction(RecordService.ACTION_RELEASE)) } catch (_: Exception) {}
+        }
         return if (base.preset == RecordConfig.PRESET_CUSTOM) base else RecordConfig.withPreset(base, base.preset)
     }
 
@@ -1473,9 +1479,13 @@ class MainActivity : Activity() {
         toggles["float"] = Toggle(c, "tog:float", R.drawable.ic_float, str(R.string.float_title), str(R.string.float_desc)) { on -> change(false) { it.copy(floatingButton = on) } }
         toggles["ghost"] = Toggle(c, "tog:ghost", R.drawable.ic_eye_off, str(R.string.ghost_title), str(R.string.ghost_desc)) { on -> change(false) { it.copy(ghostControl = on) } }
         toggles["invis"] = Toggle(c, "tog:invis", R.drawable.ic_shrink, str(R.string.invis_title), str(R.string.invis_desc)) { on -> change(false) { it.copy(invisibleControl = on) } }
-        toggles["instant"] = Toggle(c, "tog:instant", R.drawable.ic_sparkle, str(R.string.instant_title), str(R.string.instant_desc)) { on ->
-            prefs.edit().putBoolean(RecordService.PREF_INSTANT, on).apply()
-            if (!on && RecordService.instantReady) startService(Intent(this, RecordService::class.java).setAction(RecordService.ACTION_RELEASE))
+        // Two plain choices (2.9): Android's «کلِ صفحه یا یک برنامه» window before every recording, or
+        // only the first time («ضبطِ فوری»).
+        rows["askmode"] = Row(c, str(R.string.askmode_title), str(R.string.askmode_desc),
+            listOf(str(R.string.askmode_every), str(R.string.askmode_once)), ic = R.drawable.ic_sparkle, top = 4) { i ->
+            val once = i == 1
+            prefs.edit().putBoolean(RecordService.PREF_INSTANT, once).apply()
+            if (!once && RecordService.instantReady) startService(Intent(this, RecordService::class.java).setAction(RecordService.ACTION_RELEASE))
         }
         toggles["bubble"] = Toggle(c, "tog:bubble", R.drawable.eng_ic_rec, str(R.string.bubble_title), str(R.string.bubble_desc)) { on -> IdleBubble.setEnabled(this, on) }
         toggles["ready"] = Toggle(c, "tog:ready", R.drawable.ic_bell, str(R.string.ready_title), str(R.string.ready_desc)) { on -> ReadyNotice.setEnabled(this, on) }
@@ -1751,7 +1761,7 @@ class MainActivity : Activity() {
         toggles["shake"]?.set(c.shakeStop)
         toggles["ready"]?.set(ReadyNotice.enabled(this))
         toggles["bubble"]?.set(IdleBubble.enabled(this))
-        toggles["instant"]?.set(RecordService.instantEnabled(this))
+        rows["askmode"]?.select(if (RecordService.instantEnabled(this)) 1 else 0)
         rows["cd"]?.select(countdowns.indexOf(c.countdown))
         rows["cam"]?.select(c.facecam)
         rows["gg"]?.root?.visibility = if (c.usesInternal) View.VISIBLE else View.GONE

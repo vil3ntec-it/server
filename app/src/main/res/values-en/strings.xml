@@ -80,6 +80,10 @@
 
     <string name="float_title">On-screen recording control</string>
     <string name="float_desc">A small visible panel with stop, pause, mic, face cam, delete and hide; drag it to an edge, tap its header to shrink it to a dot.</string>
+    <string name="askmode_title">«Whole screen or one app» window</string>
+    <string name="askmode_desc">Ask every time: Android\'s window comes before each recording and you choose the whole screen or just one app (a game, say). Only the first time: it asks once, later recordings start without it until the screen locks or you tap «End» in the notification.</string>
+    <string name="askmode_every">Ask every time</string>
+    <string name="askmode_once">Only the first time (instant)</string>
     <string name="instant_title">Instant recording (no permission window)</string>
     <string name="instant_desc">Android asks before every recording. With this only the first time shows the window; the next recordings start with one tap and no window until the screen locks, the tablet restarts or you tap «End» in the notification. Meanwhile the screen-sharing sign stays in the status bar (nothing is recorded until you tap).</string>
     <string name="n_instant_title">RawRec ready — instant recording</string>

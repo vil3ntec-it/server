@@ -15,6 +15,7 @@ import android.media.MediaFormat
 import android.media.MediaRecorder
 import android.media.projection.MediaProjection
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -357,13 +358,13 @@ class Recorder(
         // with the profile).
         val steps = listOf(
             emptyList(),
-            listOf("complexity"),
-            listOf("complexity", "realtime"),
-            listOf("complexity", "realtime", "level"),
-            listOf("complexity", "realtime", "level", "qp"),
-            listOf("complexity", "realtime", "level", "qp", "profile"),
-            listOf("complexity", "realtime", "level", "qp", "profile", "bframes", "mode"),
-            listOf("complexity", "realtime", "level", "qp", "profile", "bframes", "mode", "color"),
+            listOf("stats", "complexity"),
+            listOf("stats", "complexity", "realtime"),
+            listOf("stats", "complexity", "realtime", "level"),
+            listOf("stats", "complexity", "realtime", "level", "qp"),
+            listOf("stats", "complexity", "realtime", "level", "qp", "profile"),
+            listOf("stats", "complexity", "realtime", "level", "qp", "profile", "bframes", "mode"),
+            listOf("stats", "complexity", "realtime", "level", "qp", "profile", "bframes", "mode", "color"),
         )
         var last: Exception? = null
         for (drop in steps) {
@@ -413,6 +414,10 @@ class Recorder(
                     setInteger(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED)
                     setInteger(MediaFormat.KEY_COLOR_TRANSFER, MediaFormat.COLOR_TRANSFER_SDR_VIDEO)
                 }
+                // Android 13+: the encoder reports each frame's real quantizer, so the bit rate can follow
+                // the picture's needs (see [onFrameQp]).
+                if ("stats" !in drop && Build.VERSION.SDK_INT >= 33 && p.qpMax > 0 && p.mime != Encoders.AV1)
+                    setInteger(MediaFormat.KEY_VIDEO_ENCODING_STATISTICS_LEVEL, MediaFormat.VIDEO_ENCODING_STATISTICS_LEVEL_1)
                 if ("realtime" !in drop) {
                     setInteger(MediaFormat.KEY_PRIORITY, 0)
                     setInteger(MediaFormat.KEY_OPERATING_RATE, p.fps)
@@ -531,6 +536,13 @@ class Recorder(
         if (!isConfig && info.size > 0) {
             val out = codec.getOutputBuffer(idx)
             if (out != null) handleVideoFrame(out, info)
+            if (Build.VERSION.SDK_INT >= 33 && plan.qpMax > 0 && codec === enc?.codec) {
+                try {
+                    val f = codec.getOutputFormat(idx)
+                    if (f.containsKey(MediaFormat.KEY_VIDEO_QP_AVERAGE))
+                        onFrameQp(codec, f.getInteger(MediaFormat.KEY_VIDEO_QP_AVERAGE), info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0)
+                } catch (_: Exception) {}
+            }
         }
         codec.releaseOutputBuffer(idx, false)
         return eos
@@ -599,6 +611,7 @@ class Recorder(
             muxer.newPart(discardCurrent = sw.restart)
             enc = next
             plan = p
+            ctlBitrate = 0; qpSum = 0; qpN = 0; qpWindowNs = 0L   // a new encoder starts at its plan
             releaseHold()
             if (sw.restart) stats.reset() else stats.rotations++
             stats.skipNextGap = true
@@ -623,6 +636,53 @@ class Recorder(
             }
         } catch (_: Exception) {}
         old.release()
+    }
+
+    // ------------------------------------------------------------ «فشرده‌سازیِ هوشمند»
+    //
+    // The owner: «the same quality, but squeeze the size as far as it goes — and if the quality would
+    // drop, don't». A fixed bit rate spends the same on a still menu as on a firefight (30 min at the
+    // top setting came to 22 GB). Here the encoder's own measured quantizer of every frame steers the
+    // bit rate once a second: above the plan's quality ceiling → more bits at once (+25 %); clearly
+    // finer than needed → fewer (−15 %). So the quality stays at the ceiling the owner chose and
+    // only the waste goes. An encoder that reports nothing keeps its bit rate: no squeezing then.
+
+    private var ctlBitrate = 0
+    private var qpSum = 0L
+    private var qpN = 0
+    private var qpWindowNs = 0L
+    /** Average quantizer of the recording (P/B frames), −1 when the encoder reports none. */
+    @Volatile var qpAverage = -1f; private set
+    private var qpAll = 0.0
+    private var qpAllN = 0L
+    /** The bit rate the controller ended at, 0 when it never acted. */
+    @Volatile var smartBitrate = 0; private set
+
+    private fun onFrameQp(codec: MediaCodec, qp: Int, key: Boolean) {
+        if (qp <= 0 || key) return   // key frames are meant to be finer
+        qpSum += qp; qpN++
+        qpAll += qp; qpAllN++
+        qpAverage = (qpAll / qpAllN).toFloat()
+        val now = System.nanoTime()
+        if (qpWindowNs == 0L) { qpWindowNs = now; return }
+        if (now - qpWindowNs < 1_000_000_000L || qpN < 10) return
+        val avg = qpSum.toFloat() / qpN
+        qpSum = 0; qpN = 0; qpWindowNs = now
+        val p = plan
+        if (ctlBitrate <= 0) ctlBitrate = p.bitrate
+        val target = p.qpMax.toFloat()
+        val next = when {
+            avg > target + 0.5f -> (ctlBitrate * 1.25).toInt()
+            avg < target - 2.5f -> (ctlBitrate * 0.85).toInt()
+            else -> ctlBitrate
+        }.coerceIn(maxOf(2_000_000, p.bitrate / 5), maxOf(p.peakBitrate, p.bitrate))
+        if (next != ctlBitrate) {
+            try {
+                codec.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, next) })
+                ctlBitrate = next
+                smartBitrate = next
+            } catch (_: Exception) {}
+        }
     }
 
     private fun requestKeyFrame() {

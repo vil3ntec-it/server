@@ -885,6 +885,10 @@ class RecordService : Service(), Recorder.Events {
             if (why != 0) block.append('\n').append(getString(R.string.eng_rep_part_fmt, pt.index, getString(why)))
         }
         if (fixes > 0) block.append('\n').append(getString(R.string.eng_rep_recovered_fmt, fixes))
+        // «فشرده‌سازیِ هوشمند»: what the encoder reported, so the size is never a mystery.
+        if (r.qpAverage > 0) block.append('\n').append(getString(R.string.eng_rep_smart_fmt, String.format(java.util.Locale.US, "%.1f", r.qpAverage),
+            Fmt.num(maxOf(r.smartBitrate, 0) / 1_000_000)))
+        else if (c.mode == RecordConfig.MODE_VBR) block.append('\n').append(getString(R.string.eng_rep_smart_none))
         if (base == null) return block.toString()
         val nl = base.indexOf('\n')
         val text = if (nl < 0) base + "\n" + block else base.substring(0, nl + 1) + block + "\n" + base.substring(nl + 1)

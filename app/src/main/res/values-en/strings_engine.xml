@@ -9,6 +9,8 @@
     <string name="eng_ghost_hint">The control is not in the video — shake the phone to see it</string>
     <string name="eng_notice_hot">The phone is hot; Android slows the chip down and frames may drop. 60 fps or the phone\'s cooling helps.</string>
     <string name="eng_notice_look_fail">«Video look» could not start on this phone; recording continues without it (natural).</string>
+    <string name="eng_rep_smart_fmt">Smart compression: average frame quality QP %1$s (lower = finer); bit rate at the end %2$s Mbps (0 = no change needed).</string>
+    <string name="eng_rep_smart_none">Smart compression: this phone did not report frame quality, so the chosen bit rate was left alone (no quality lost).</string>
     <string name="eng_n_show_control">Show control</string>
     <string name="eng_toast_control_hidden">Recording control hidden. Stop from the notification or the Quick Settings tile; “Show control” in the notification brings it back.</string>
 
