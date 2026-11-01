@@ -150,7 +150,9 @@ class MainActivity : Activity() {
         try {
             disp = DisplayInfo.read(this)
             runCatching { Encoders.probeAv1Muxer(this) }
-            resValues = (listOf(0) + listOf(1440, 1080, 720).filter { it < minOf(disp.width, disp.height) }).toIntArray()
+            // Only real reductions: 1440p on a 1504 px screen resampled every pixel by 4 % — the whole
+            // video softer for 8 % less data.
+            resValues = (listOf(0) + listOf(1440, 1080, 720).filter { it <= minOf(disp.width, disp.height) * 0.8 }).toIntArray()
             fpsValues = (listOf(0) + listOf(30, 60, 90, 120, 144, 165, 240).filter { it < disp.refresh }).toIntArray()
             cfg = loadConfig()
             setContentView(buildUi())
@@ -198,6 +200,7 @@ class MainActivity : Activity() {
             }
             refreshAll()
             ReadyNotice.show(this)
+            IdleBubble.hide(this)   // RawRec itself is open: its own big button is right here
             if (tab == Tab.VIDEOS) refreshVideos()
             if (tab == Tab.ABOUT) refreshAbout()
             tick()
@@ -206,6 +209,12 @@ class MainActivity : Activity() {
             if (SafePrefs.bool(prefs, RecordService.K_REPORT_UNSEEN, false) && RecordService.state == RecordService.State.IDLE &&
                 (SafePrefs.bool(prefs, RecordService.K_LAST_IS_TEST, false) || runCatching { RecordService.lastStopUnexpected(this) }.getOrDefault(false))) showReportDialog()
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Left RawRec (to a game): the floating record button is there.
+        if (RecordService.state == RecordService.State.IDLE) IdleBubble.show(this)
     }
 
     override fun onPause() {
@@ -326,6 +335,15 @@ class MainActivity : Activity() {
                 base = RecordConfig.withPreset(base, RecordConfig.PRESET_60)
             }
             p.edit().putInt("cfg_ver", 4).apply()
+            cfg = base
+            saveConfigOf(base)
+        }
+        // 2.3: a size just below the screen's (e.g. 1440p on a 1504 px screen) blurred every pixel:
+        // back to the screen's own size once.
+        if (i("cfg_ver", 0) < 5) {
+            val d = DisplayInfo.read(this)
+            if (base.resShort > 0 && base.resShort > minOf(d.width, d.height) * 0.8) base = base.copy(resShort = 0)
+            p.edit().putInt("cfg_ver", 5).apply()
             cfg = base
             saveConfigOf(base)
         }
@@ -1402,6 +1420,7 @@ class MainActivity : Activity() {
         toggles["float"] = Toggle(c, "tog:float", R.drawable.ic_float, str(R.string.float_title), str(R.string.float_desc)) { on -> change(false) { it.copy(floatingButton = on) } }
         toggles["ghost"] = Toggle(c, "tog:ghost", R.drawable.ic_eye_off, str(R.string.ghost_title), str(R.string.ghost_desc)) { on -> change(false) { it.copy(ghostControl = on) } }
         toggles["invis"] = Toggle(c, "tog:invis", R.drawable.ic_shrink, str(R.string.invis_title), str(R.string.invis_desc)) { on -> change(false) { it.copy(invisibleControl = on) } }
+        toggles["bubble"] = Toggle(c, "tog:bubble", R.drawable.eng_ic_rec, str(R.string.bubble_title), str(R.string.bubble_desc)) { on -> IdleBubble.setEnabled(this, on) }
         toggles["ready"] = Toggle(c, "tog:ready", R.drawable.ic_bell, str(R.string.ready_title), str(R.string.ready_desc)) { on -> ReadyNotice.setEnabled(this, on) }
         toggles["shake"] = Toggle(c, "tog:shake", R.drawable.ic_vibrate, str(R.string.shake_title), str(R.string.shake_desc)) { on -> change(false) { it.copy(shakeStop = on) } }
         val c2 = card(pg.col, null, top = 12)
@@ -1672,6 +1691,7 @@ class MainActivity : Activity() {
         toggles["ghost"]?.set(c.ghostControl)
         toggles["shake"]?.set(c.shakeStop)
         toggles["ready"]?.set(ReadyNotice.enabled(this))
+        toggles["bubble"]?.set(IdleBubble.enabled(this))
         rows["cd"]?.select(countdowns.indexOf(c.countdown))
         rows["cam"]?.select(c.facecam)
         rows["gg"]?.root?.visibility = if (c.usesInternal) View.VISIBLE else View.GONE

@@ -40,21 +40,22 @@ class QuickStartActivity : Activity() {
 
     private fun start() {
         if (RecordService.state != RecordService.State.IDLE) { finish(); return }
+        IdleBubble.hide(this)
         val prefs = getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE)
         // Settings not yet brought up to date by this version: RawRec does it on its first start.
-        if (SafePrefs.int(prefs, "cfg_ver", 0) < 4) { viaApp(); return }
+        if (SafePrefs.int(prefs, "cfg_ver", 0) < 5) { viaApp(); return }
         val c = RecordConfig.saved(prefs)
         val missing = (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED && !SafePrefs.bool(prefs, "asked_" + Manifest.permission.POST_NOTIFICATIONS, false)) ||
             (c.hasAudio && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED && !SafePrefs.bool(prefs, "asked_" + Manifest.permission.RECORD_AUDIO, false)) ||
             (c.facecam > 0 && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) ||
-            (c.wantsOverlay && !Settings.canDrawOverlays(this)) ||
-            (c.gameMode && Build.VERSION.SDK_INT >= 34)   // «حالتِ بازی» explains what to pick in the dialog first
+            (c.wantsOverlay && !Settings.canDrawOverlays(this))
         if (missing) { viaApp(); return }
         if (Storage.free(this) < Storage.RESERVE + 200L * 1024 * 1024) { viaApp(); return }
         cfg = c
         val mpm = getSystemService(MediaProjectionManager::class.java) ?: run { viaApp(); return }
-        // Android 14+: the whole screen straight away — one tap in the dialog instead of two.
-        val ask = if (Build.VERSION.SDK_INT >= 34) mpm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
+        // Android 14+: the whole screen straight away — one tap in the dialog. «حالتِ بازی» (one app)
+        // needs the plain dialog, where the game is picked.
+        val ask = if (Build.VERSION.SDK_INT >= 34 && !c.gameMode) mpm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
         else mpm.createScreenCaptureIntent()
         @Suppress("DEPRECATION") startActivityForResult(ask, REQ)
     }
@@ -71,7 +72,7 @@ class QuickStartActivity : Activity() {
                 svc.putExtra(RecordService.EXTRA_DATA, data)
                 startForegroundService(svc)
             } catch (_: Throwable) {}
-        }
+        } else IdleBubble.show(this)   // cancelled: the record button comes back
         finish()
         @Suppress("DEPRECATION") overridePendingTransition(0, 0)
     }

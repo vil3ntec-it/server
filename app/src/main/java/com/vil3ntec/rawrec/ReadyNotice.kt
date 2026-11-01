@@ -62,7 +62,7 @@ object ReadyNotice {
 class ReadyBootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         when (intent.action) {
-            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> ReadyNotice.show(ctx)
+            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> { ReadyNotice.show(ctx); IdleBubble.show(ctx) }
         }
     }
 }

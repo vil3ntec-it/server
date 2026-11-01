@@ -87,6 +87,11 @@
     <!-- control & overlays -->
     <string name="float_title">دکمهٔ ضبط روی صفحه</string>
     <string name="float_desc">پنلِ کوچکِ پیدا با توقف، مکث، میکروفون، فیس‌کم، حذف و پنهان؛ با کشیدن به لبه می‌چسبد و با یک لمس به نقطه جمع می‌شود.</string>
+    <string name="bubble_title">دکمهٔ شناورِ ضبط</string>
+    <string name="bubble_desc">وقتی ضبط نمی‌کنی، یک دکمهٔ گردِ کوچک کنارِ صفحه (روی بازی هم) می‌ماند: یک لمس و ضبط همان‌جا شروع می‌شود، بی رفتن به برنامه. کشیدن = جابه‌جایی، نگه داشتن = باز کردنِ RawRec. هیچ‌وقت در ویدیو نیست.</string>
+    <string name="bubble_start">شروعِ ضبط</string>
+    <string name="pill_stop_again">دوباره ■</string>
+    <string name="pill_stop_confirm">برای تمام کردنِ ضبط دوباره بزن</string>
     <string name="ready_title">اعلانِ ضبطِ سریع</string>
     <string name="ready_desc">یک اعلانِ کوچک همیشه در نوارِ اعلان می‌ماند؛ هر وقت خواستی (وسطِ بازی هم) «ضبط» را بزن. اندروید پیش از هر ضبط یک بار اجازه می‌پرسد.</string>
     <string name="ch_ready">آمادهٔ ضبط</string>

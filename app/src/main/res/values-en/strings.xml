@@ -80,6 +80,11 @@
 
     <string name="float_title">On-screen recording control</string>
     <string name="float_desc">A small visible panel with stop, pause, mic, face cam, delete and hide; drag it to an edge, tap its header to shrink it to a dot.</string>
+    <string name="bubble_title">Floating record button</string>
+    <string name="bubble_desc">While not recording, a small round button stays at the screen\'s edge (over games too): one tap and recording starts right there, without opening the app. Drag to move, hold to open RawRec. Never in the video.</string>
+    <string name="bubble_start">Start recording</string>
+    <string name="pill_stop_again">Again ■</string>
+    <string name="pill_stop_confirm">Tap again to end the recording</string>
     <string name="ready_title">Quick-record notification</string>
     <string name="ready_desc">A small notification always stays in the shade; tap «Record» whenever you want (in a game too). Android asks its permission once before each recording.</string>
     <string name="ch_ready">Ready to record</string>

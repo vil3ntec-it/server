@@ -257,6 +257,7 @@ class RecordService : Service(), Recorder.Events {
         startedAt = 0L; pausedSince = 0L; applied = ""; lowSpaceWarned = false
         state = State.PREPARING
         ReadyNotice.hide(this)
+        IdleBubble.hide(this)
 
         var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
         if (c.hasAudio) type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
@@ -772,6 +773,7 @@ class RecordService : Service(), Recorder.Events {
         refreshTile()
         stopForeground(STOP_FOREGROUND_REMOVE)
         ReadyNotice.show(this)
+        IdleBubble.show(this)
         stopSelf()
     }
 

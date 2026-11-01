@@ -297,7 +297,12 @@ class FloatingControl(
         stop.contentDescription = ctx.getString(R.string.pill_stop)
         delete.contentDescription = ctx.getString(R.string.pill_delete)
         hideButton.contentDescription = ctx.getString(if (ghost) R.string.eng_ctl_ghost_continue else R.string.eng_ctl_hide)
-        stop.setOnClickListener { touched(); actions.stop() }
+        // Two taps: the first only marks it («دوباره بزن»), so a finger that slips in a game does not
+        // end the recording (the owner asked for it).
+        stop.setOnClickListener {
+            touched()
+            if (stopArmed) { disarmStop(); actions.stop() } else armStop()
+        }
         pause.setOnClickListener { touched(); actions.pauseToggle() }
         mic.setOnClickListener { touched(); actions.micToggle() }
         cam.setOnClickListener { touched(); actions.camToggle() }
@@ -361,10 +366,12 @@ class FloatingControl(
         for (v in listOf(recDot, dot)) { (v.background as? GradientDrawable)?.setColor(c); v.alpha = 1f }
     }
 
+    private var lastTime: CharSequence = "0:00"
     fun setTime(sec: Long) {
-        timerText.text = if (sec >= 3600) String.format(java.util.Locale.US, "%d:%02d:%02d", sec / 3600, sec / 60 % 60, sec % 60)
+        lastTime = if (sec >= 3600) String.format(java.util.Locale.US, "%d:%02d:%02d", sec / 3600, sec / 60 % 60, sec % 60)
         else String.format(java.util.Locale.US, "%d:%02d", sec / 60, sec % 60)
-        timer.contentDescription = ctx.getString(R.string.eng_ctl_header_fmt, timerText.text)
+        if (!stopArmed) timerText.text = lastTime
+        timer.contentDescription = ctx.getString(R.string.eng_ctl_header_fmt, lastTime)
     }
 
     fun setMic(on: Boolean, available: Boolean) {
@@ -407,6 +414,28 @@ class FloatingControl(
         delete.contentDescription = ctx.getString(R.string.pill_delete)
     }
     val armed get() = deleteArmed
+
+    private var stopArmed = false
+    private fun stopRing(on: Boolean) {
+        (stop.background as? android.graphics.drawable.RippleDrawable)?.getDrawable(0)
+            ?.let { (it as? GradientDrawable)?.setStroke(if (on) dp(3) else 0, Color.WHITE) }
+    }
+    private fun armStop() {
+        stopArmed = true
+        stopRing(true)
+        timerText.text = ctx.getString(R.string.pill_stop_again)
+        stop.contentDescription = ctx.getString(R.string.pill_stop_confirm)
+        main.postDelayed(disarmStopR, 3000)
+    }
+    private val disarmStopR = Runnable { disarmStop() }
+    private fun disarmStop() {
+        stopArmed = false
+        main.removeCallbacks(disarmStopR)
+        stopRing(false)
+        stop.contentDescription = ctx.getString(R.string.pill_stop)
+        timerText.text = lastTime
+    }
+    val stopIsArmed get() = stopArmed
 
     /** Any touch keeps the panel open for a while; while recording it then shrinks to the dot. */
     private val autoCollapse = Runnable { if (recording && expanded) collapse() }
