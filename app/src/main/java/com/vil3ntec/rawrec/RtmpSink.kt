@@ -175,6 +175,8 @@ class RtmpSink(
                         lastError = e.message ?: e.javaClass.simpleName
                         if (failingSince == 0L) failingSince = System.currentTimeMillis()
                         if (System.currentTimeMillis() - failingSince > 180_000L || (reconnects == 0 && sent == 0L && e.message?.contains("refused") == true)) {
+                            // given up: nothing more is taken in (with other platforms still streaming, frames keep coming)
+                            stopped = true; queue.clear()
                             state = State.FAILED; status(); return
                         }
                         state = if (sent == 0L) State.CONNECTING else State.RECONNECTING

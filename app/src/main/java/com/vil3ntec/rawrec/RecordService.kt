@@ -120,9 +120,15 @@ class RecordService : Service(), Recorder.Events {
         const val EXTRA_LIVE_URL = "live_url"
         const val EXTRA_LIVE_KEY = "live_key"
         const val EXTRA_LIVE_NAME = "live_name"
+        /** Several platforms at once (the same order in all three). */
+        const val EXTRA_LIVE_URLS = "live_urls"
+        const val EXTRA_LIVE_KEYS = "live_keys"
+        const val EXTRA_LIVE_NAMES = "live_names"
 
         /** The live stream's state for the app's «زنده» page; null when not live. */
         @Volatile var liveStatus: RtmpSink.Status? = null; private set
+        /** Each platform's own state while streaming to several at once (empty for one). */
+        @Volatile var liveDests: List<Pair<String, RtmpSink.Status?>> = emptyList(); private set
         @Volatile var isLive = false; private set
         @Volatile var liveCovered = false; private set
         /** The stream on YouTube while live (title, picture, health), and the latest counts; null otherwise. */
@@ -218,7 +224,10 @@ class RecordService : Service(), Recorder.Events {
     @Volatile private var recorder: Recorder? = null
     private class LiveTarget(val url: String, val key: String, val name: String)
     private var live: LiveTarget? = null
-    private var liveSink: RtmpSink? = null
+    private var liveSink: MediaSink? = null
+    /** Where the stream goes (one or several platforms). */
+    private var liveTargets: List<LiveSettings.Dest> = emptyList()
+    private val failedDests = HashSet<String>()
     private var coverManual = false
     private var coverAuto = false
     private var micBeforeCover = false
@@ -276,9 +285,16 @@ class RecordService : Service(), Recorder.Events {
         }
         Encoders.probeAv1Muxer(this)
         val c0 = RecordConfig.from(intent)
-        live = intent.getStringExtra(EXTRA_LIVE_URL)?.takeIf { it.isNotBlank() }?.let {
-            LiveTarget(it, intent.getStringExtra(EXTRA_LIVE_KEY) ?: "", intent.getStringExtra(EXTRA_LIVE_NAME) ?: "")
-        }
+        val urls = intent.getStringArrayExtra(EXTRA_LIVE_URLS)
+        val keys = intent.getStringArrayExtra(EXTRA_LIVE_KEYS)
+        val names = intent.getStringArrayExtra(EXTRA_LIVE_NAMES)
+        liveTargets = if (urls != null && keys != null && names != null && urls.size == keys.size && urls.size == names.size)
+            urls.indices.filter { urls[it].isNotBlank() }.map { LiveSettings.Dest(-1, names[it], urls[it], keys[it]) }
+        else intent.getStringExtra(EXTRA_LIVE_URL)?.takeIf { it.isNotBlank() }?.let {
+            listOf(LiveSettings.Dest(-1, intent.getStringExtra(EXTRA_LIVE_NAME) ?: "", it, intent.getStringExtra(EXTRA_LIVE_KEY) ?: ""))
+        } ?: emptyList()
+        live = liveTargets.firstOrNull()?.let { LiveTarget(it.url, it.key, liveTargets.joinToString(" + ") { d -> d.name }) }
+        liveDests = emptyList(); failedDests.clear()
         isLive = live != null
         liveStatus = null
         liveSink = null
@@ -424,7 +440,10 @@ class RecordService : Service(), Recorder.Events {
             val plan = Planner.plan(c, DisplayInfo.read(this)) ?: throw IllegalStateException(getString(R.string.toast_no_encoder))
             val lv = live
             val r = if (lv != null) Recorder(this, p, c, plan, this, null, keepDisplay = false,
-                sinkFactory = { RtmpSink(lv.url, lv.key, plan.bitrate, liveListener).also { liveSink = it } }, forceLook = true)
+                sinkFactory = {
+                    (if (liveTargets.size > 1) MultiSink(liveTargets, plan.bitrate, liveListener) else RtmpSink(lv.url, lv.key, plan.bitrate, liveListener))
+                        .also { liveSink = it }
+                }, forceLook = true)
             else Recorder(this, p, c, plan, this, keptDisplay, keepDisplay = instantEnabled(this))
             if (lv == null) ActiveRec.begin(this)
             try { r.start() } catch (e: Exception) { ActiveRec.end(this); throw e }
@@ -661,6 +680,12 @@ class RecordService : Service(), Recorder.Events {
         override fun onStatus(s: RtmpSink.Status) {
             main.post {
                 liveStatus = s
+                val multi = liveSink as? MultiSink
+                liveDests = multi?.dests?.map { it.name to it.status } ?: emptyList()
+                // one platform gave up while the others go on: said once
+                multi?.dests?.filter { it.status?.state == RtmpSink.State.FAILED && failedDests.add(it.name) }?.forEach {
+                    addNotice("live_" + it.name, getString(R.string.live_n_dest_failed_fmt, it.name, it.status?.error ?: ""))
+                }
                 if (stopping || live == null) return@post
                 when (s.state) {
                     RtmpSink.State.FAILED -> finishRecording(StopReason.LIVE_FAILED, s.error)
@@ -720,6 +745,13 @@ class RecordService : Service(), Recorder.Events {
         return b
     }
 
+    private fun destWord(ds: RtmpSink.Status?): String = getString(when (ds?.state) {
+        RtmpSink.State.LIVE, RtmpSink.State.ENDED -> R.string.live_d_ok
+        RtmpSink.State.FAILED -> R.string.live_d_failed
+        RtmpSink.State.RECONNECTING -> R.string.live_d_reconnecting
+        else -> R.string.live_d_connecting
+    }) + (ds?.takeIf { it.reconnects > 0 }?.let { " (" + getString(R.string.live_d_reconnects_fmt, Fmt.num(it.reconnects)) + ")" } ?: "")
+
     private fun liveReport(c: RecordConfig, reason: StopReason, detail: String?): String {
         val s = liveSink
         val r = recorder
@@ -734,7 +766,10 @@ class RecordService : Service(), Recorder.Events {
         if (s != null) {
             val mb = s.totalBytes / 1_000_000.0
             val avg = if (secs > 0) s.totalBytes * 8 / secs / 1000 else 0
-            sb.append(getString(R.string.live_rep_stats_fmt, String.format(java.util.Locale.US, "%.0f", mb), Fmt.num(avg / 1000), Fmt.num(s.dropped), Fmt.num(s.reconnects)))
+            val st = liveStatus
+            sb.append(getString(R.string.live_rep_stats_fmt, String.format(java.util.Locale.US, "%.0f", mb), Fmt.num(avg / 1000),
+                Fmt.num(st?.dropped ?: 0), Fmt.num(st?.reconnects ?: 0)))
+            for ((name, ds) in liveDests) sb.append('\n').append(getString(R.string.live_rep_dest_fmt, name, destWord(ds)))
         }
         extrasReport?.let { sb.append('\n').append(it) }
         return sb.toString().trimEnd()

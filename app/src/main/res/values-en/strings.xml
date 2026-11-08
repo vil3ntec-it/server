@@ -965,4 +965,24 @@ Recording ends cleanly before the storage is full.</string>
     <string name="yt_video_failed_fmt">Video settings not set: %1$s</string>
     <string name="sc_set_start">Start streams with this scene (▶)</string>
     <string name="hud_scene_live_fmt">On the stream: «%1$s» — viewers do not see the game</string>
+    <string name="live_on_title">Stream to this platform too</string>
+    <string name="live_on_desc">Every platform switched on gets this same stream at once (YouTube + Twitch + Kick…). If one drops out, the others go on.</string>
+    <string name="live_multi_fmt">At once to: %1$s
+Your internet needs about %2$s Mbps upload.</string>
+    <string name="live_single_fmt">Streaming to: %1$s</string>
+    <string name="live_cap_fmt">Quality goes down to %2$s Mbps for %1$s (it does not take more well).</string>
+    <string name="live_bad_url_fmt">%1$s: the server address is not right.</string>
+    <string name="live_no_key_fmt">%1$s: the stream key is empty.</string>
+    <string name="live_n_dest_failed_fmt">%1$s dropped out (%2$s). The stream goes on to the others.</string>
+    <string name="live_rep_dest_fmt">%1$s: %2$s</string>
+    <string name="live_d_ok">streamed to the end</string>
+    <string name="live_d_failed">dropped out</string>
+    <string name="live_d_reconnecting">reconnecting</string>
+    <string name="live_d_connecting">never connected</string>
+    <string name="live_d_reconnects_fmt">%1$s reconnects</string>
+    <string name="live_dest_line_fmt">• %1$s: %2$s</string>
+    <string name="live_ds_live_fmt">live · %1$s Mbps</string>
+    <string name="live_ds_connecting">connecting…</string>
+    <string name="live_ds_reconnecting">dropped, reconnecting…</string>
+    <string name="live_ds_failed">dropped out</string>
 </resources>

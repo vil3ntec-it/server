@@ -986,4 +986,24 @@
     <string name="yt_video_failed_fmt">تنظیماتِ ویدیو گذاشته نشد: %1$s</string>
     <string name="sc_set_start">شروعِ پخش با این صحنه (▶)</string>
     <string name="hud_scene_live_fmt">در پخش: «%1$s» — بیننده‌ها بازی را نمی‌بینند</string>
+    <string name="live_on_title">پخش به این پلتفرم هم</string>
+    <string name="live_on_desc">هر پلتفرمی که روشن باشد هم‌زمان همین پخش را می‌گیرد (یوتیوب + توییچ + کیک…). اگر یکی قطع شود، بقیه ادامه می‌دهند.</string>
+    <string name="live_multi_fmt">هم‌زمان به: %1$s
+اینترنتت باید حدودِ %2$s مگابیت در ثانیه آپلود داشته باشد.</string>
+    <string name="live_single_fmt">پخش به: %1$s</string>
+    <string name="live_cap_fmt">کیفیت برای %1$s تا %2$s مگابیت پایین می‌آید (بیشتر از این را خوب نمی‌گیرد).</string>
+    <string name="live_bad_url_fmt">%1$s: نشانیِ سرور درست نیست.</string>
+    <string name="live_no_key_fmt">%1$s: کلیدِ پخش خالی است.</string>
+    <string name="live_n_dest_failed_fmt">%1$s قطع شد (%2$s). پخش روی بقیه ادامه دارد.</string>
+    <string name="live_rep_dest_fmt">%1$s: %2$s</string>
+    <string name="live_d_ok">تا آخر پخش شد</string>
+    <string name="live_d_failed">قطع شد</string>
+    <string name="live_d_reconnecting">در حالِ وصل شدنِ دوباره</string>
+    <string name="live_d_connecting">وصل نشد</string>
+    <string name="live_d_reconnects_fmt">%1$s بار وصلِ دوباره</string>
+    <string name="live_dest_line_fmt">• %1$s: %2$s</string>
+    <string name="live_ds_live_fmt">زنده · %1$s مگابیت</string>
+    <string name="live_ds_connecting">در حالِ وصل شدن…</string>
+    <string name="live_ds_reconnecting">قطع شد، دوباره وصل می‌شود…</string>
+    <string name="live_ds_failed">قطع</string>
 </resources>

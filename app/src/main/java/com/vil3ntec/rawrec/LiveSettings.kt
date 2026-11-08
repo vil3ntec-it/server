@@ -17,15 +17,18 @@ import javax.crypto.spec.GCMParameterSpec
  */
 object LiveSettings {
 
-    /** A platform: its name, the server address it gives everyone (empty = it gives one per account). */
-    class Platform(val name: Int, val url: String, val help: Int)
+    /**
+     * A platform: its name, the server address it gives everyone (empty = it gives one per account),
+     * and the most video bit rate it takes well (Mbps, 0 = no limit worth keeping to).
+     */
+    class Platform(val name: Int, val url: String, val help: Int, val maxMbps: Int = 0)
 
     val PLATFORMS = listOf(
         Platform(R.string.live_p_youtube, "rtmps://a.rtmps.youtube.com/live2", R.string.live_help_youtube),
-        Platform(R.string.live_p_twitch, "rtmp://live.twitch.tv/app", R.string.live_help_twitch),
-        Platform(R.string.live_p_facebook, "rtmps://live-api-s.facebook.com:443/rtmp/", R.string.live_help_facebook),
-        Platform(R.string.live_p_kick, "", R.string.live_help_kick),
-        Platform(R.string.live_p_tiktok, "", R.string.live_help_tiktok),
+        Platform(R.string.live_p_twitch, "rtmp://live.twitch.tv/app", R.string.live_help_twitch, 8),
+        Platform(R.string.live_p_facebook, "rtmps://live-api-s.facebook.com:443/rtmp/", R.string.live_help_facebook, 9),
+        Platform(R.string.live_p_kick, "", R.string.live_help_kick, 8),
+        Platform(R.string.live_p_tiktok, "", R.string.live_help_tiktok, 6),
         Platform(R.string.live_p_other, "", R.string.live_help_other),
     )
 
@@ -41,8 +44,37 @@ object LiveSettings {
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE)
 
+    /** The platform open on the page (its address and key are edited there). */
     fun platform(ctx: Context) = SafePrefs.int(prefs(ctx), "live_platform", 0).coerceIn(0, PLATFORMS.size - 1)
-    fun setPlatform(ctx: Context, i: Int) = prefs(ctx).edit().putInt("live_platform", i).apply()
+    fun setPlatform(ctx: Context, i: Int) {
+        // the switches as they are now are kept (until 3.6 the open platform was the one streamed to)
+        val e = prefs(ctx).edit()
+        for (p in PLATFORMS.indices) if (!prefs(ctx).contains("live_on_$p")) e.putBoolean("live_on_$p", isOn(ctx, p))
+        e.putInt("live_platform", i).apply()
+    }
+
+    /** Streamed to: every platform switched on at once (the same picture and sound to each). */
+    fun isOn(ctx: Context, p: Int) = SafePrefs.bool(prefs(ctx), "live_on_$p", p == platform(ctx))
+    fun setOn(ctx: Context, p: Int, on: Boolean) {
+        val e = prefs(ctx).edit()
+        for (q in PLATFORMS.indices) if (!prefs(ctx).contains("live_on_$q")) e.putBoolean("live_on_$q", isOn(ctx, q))
+        e.putBoolean("live_on_$p", on).apply()
+    }
+
+    class Dest(val platform: Int, val name: String, val url: String, val key: String)
+
+    /** Where the stream goes: each platform switched on (the open one when none is). */
+    fun destinations(ctx: Context): List<Dest> {
+        val on = PLATFORMS.indices.filter { isOn(ctx, it) }.ifEmpty { listOf(platform(ctx)) }
+        return on.map { Dest(it, ctx.getString(PLATFORMS[it].name), url(ctx, it), key(ctx, it)) }
+    }
+
+    /** The video bit rate every chosen platform takes (Mbps): the chosen quality, or less for Twitch / Kick… */
+    fun mbps(ctx: Context): Int {
+        val q = QUALITIES[quality(ctx)].mbps
+        val caps = destinations(ctx).map { PLATFORMS[it.platform].maxMbps }.filter { it > 0 }
+        return if (caps.isEmpty()) q else minOf(q, caps.min())
+    }
     fun url(ctx: Context, p: Int) = SafePrefs.str(prefs(ctx), "live_url_$p").ifBlank { PLATFORMS[p].url }
     fun setUrl(ctx: Context, p: Int, u: String) = prefs(ctx).edit().putString("live_url_$p", u.trim()).apply()
     fun quality(ctx: Context) = SafePrefs.int(prefs(ctx), "live_quality", 1).coerceIn(0, QUALITIES.size - 1)
@@ -98,7 +130,7 @@ object LiveSettings {
         }
         return base.copy(
             preset = RecordConfig.PRESET_CUSTOM, codec = RecordConfig.CODEC_AVC, mode = RecordConfig.MODE_CBR,
-            bitrate = q.mbps, fps = q.fps, resShort = q.res, orient = RecordConfig.ORIENT_LANDSCAPE,
+            bitrate = mbps(ctx), fps = q.fps, resShort = q.res, orient = RecordConfig.ORIENT_LANDSCAPE,
             smartStart = false, rotateNewFile = false, ghostControl = false, invisibleControl = true,
             countdown = 0, testSeconds = 0, teamVoice = teamVoice(ctx), audioMode = audio,
         )

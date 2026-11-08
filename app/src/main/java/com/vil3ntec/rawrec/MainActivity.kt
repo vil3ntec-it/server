@@ -143,6 +143,7 @@ class MainActivity : Activity() {
     private var liveUrl: android.widget.EditText? = null
     private var liveKey: android.widget.EditText? = null
     private var liveHelp: TextView? = null
+    private var liveMulti: TextView? = null
     private var ytStatus: TextView? = null
     private var ytButton: Button? = null
     private var ytQuota: TextView? = null
@@ -1363,6 +1364,16 @@ class MainActivity : Activity() {
         dc.addView(liveKey, lp(4))
         liveHelp = text("", R.style.Text_Caption)
         dc.addView(liveHelp, lp(8))
+        // several platforms at once: each one switched on gets the same stream
+        toggles["live_on"] = Toggle(dc, "tog:live_on", R.drawable.ic_live, str(R.string.live_on_title), str(R.string.live_on_desc), top = 12) { on ->
+            LiveSettings.setOn(this, LiveSettings.platform(this), on); renderDests()
+        }
+        liveMulti = text("", R.style.Text_Body).apply {
+            setBackgroundResource(R.drawable.bg_inset)
+            setPaddingRelative(dp(14), dp(10), dp(14), dp(10))
+            tag = "live:multi"
+        }
+        dc.addView(liveMulti, lp(8))
         dc.addView(infoLine(R.drawable.ic_shield, str(R.string.live_key_safe), R.style.Text_Caption), lp(8))
 
         // ---- 3. what viewers see: a picture of the arrangement, edited by dragging
@@ -1851,6 +1862,24 @@ class MainActivity : Activity() {
         liveUrl?.setText(LiveSettings.url(this, p))
         liveKey?.setText(LiveSettings.key(this, p))
         liveHelp?.text = str(LiveSettings.PLATFORMS[p].help)
+        renderDests()
+    }
+
+    /** The switch of the open platform, a ✓ on each one switched on, and where the stream goes. */
+    private fun renderDests() {
+        val p = LiveSettings.platform(this)
+        toggles["live_on"]?.set(LiveSettings.isOn(this, p))
+        rows["live_p"]?.buttons?.forEachIndexed { i, b -> b.text = (if (LiveSettings.isOn(this, i)) "✓ " else "") + str(LiveSettings.PLATFORMS[i].name) }
+        val ds = LiveSettings.destinations(this)
+        val mbps = LiveSettings.mbps(this)
+        val q = LiveSettings.QUALITIES[LiveSettings.quality(this)].mbps
+        val sb = StringBuilder(if (ds.size > 1) str(R.string.live_multi_fmt, ds.joinToString(" + ") { it.name }, Fmt.num(mbps * ds.size))
+            else str(R.string.live_single_fmt, ds.firstOrNull()?.name ?: ""))
+        if (mbps < q) {
+            val by = ds.filter { LiveSettings.PLATFORMS[it.platform].maxMbps == mbps }.joinToString("، ") { it.name }
+            sb.append('\n').append(str(R.string.live_cap_fmt, by, Fmt.num(mbps)))
+        }
+        liveMulti?.text = sb.toString()
     }
 
     private fun saveLiveFields() {
@@ -1866,11 +1895,11 @@ class MainActivity : Activity() {
         }
         if (RecordService.state != RecordService.State.IDLE) { toast(R.string.toast_already); return }
         saveLiveFields()
-        val p = LiveSettings.platform(this)
-        val url = LiveSettings.url(this, p)
-        val key = LiveSettings.key(this, p)
-        try { RtmpPublisher.parse(url, key) } catch (_: Exception) { toast(R.string.live_bad_url); return }
-        if (key.isBlank() && !url.trimEnd('/').substringAfterLast('/').contains('?')) { toast(R.string.live_no_key); return }
+        // every platform switched on must be ready, else it is said which one
+        for (d in LiveSettings.destinations(this)) {
+            try { RtmpPublisher.parse(d.url, d.key) } catch (_: Exception) { Toast.makeText(this, str(R.string.live_bad_url_fmt, d.name), Toast.LENGTH_LONG).show(); return }
+            if (d.key.isBlank() && !d.url.trimEnd('/').substringAfterLast('/').contains('?')) { Toast.makeText(this, str(R.string.live_no_key_fmt, d.name), Toast.LENGTH_LONG).show(); return }
+        }
         pendingLive = true
         onStartClicked(0)
     }
@@ -1882,9 +1911,13 @@ class MainActivity : Activity() {
         LiveSettings.config(this, cfg, micOk).putInto(svc)
         svc.putExtra(RecordService.EXTRA_CODE, code)
         svc.putExtra(RecordService.EXTRA_DATA, data)
-        svc.putExtra(RecordService.EXTRA_LIVE_URL, LiveSettings.url(this, p))
-        svc.putExtra(RecordService.EXTRA_LIVE_KEY, LiveSettings.key(this, p))
-        svc.putExtra(RecordService.EXTRA_LIVE_NAME, str(LiveSettings.PLATFORMS[p].name))
+        val ds = LiveSettings.destinations(this)
+        svc.putExtra(RecordService.EXTRA_LIVE_URL, ds.firstOrNull()?.url ?: LiveSettings.url(this, p))
+        svc.putExtra(RecordService.EXTRA_LIVE_KEY, ds.firstOrNull()?.key ?: LiveSettings.key(this, p))
+        svc.putExtra(RecordService.EXTRA_LIVE_NAME, ds.firstOrNull()?.name ?: str(LiveSettings.PLATFORMS[p].name))
+        svc.putExtra(RecordService.EXTRA_LIVE_URLS, ds.map { it.url }.toTypedArray())
+        svc.putExtra(RecordService.EXTRA_LIVE_KEYS, ds.map { it.key }.toTypedArray())
+        svc.putExtra(RecordService.EXTRA_LIVE_NAMES, ds.map { it.name }.toTypedArray())
         startForegroundService(svc)
         ui.postDelayed({ moveTaskToBack(true) }, 400)
     }
@@ -1908,6 +1941,13 @@ class MainActivity : Activity() {
             s.state == RtmpSink.State.RECONNECTING -> str(R.string.live_s_reconnecting_fmt, time, Fmt.num(s.reconnects), s.error ?: "")
             else -> str(R.string.live_s_live_fmt, time, String.format(java.util.Locale.US, "%.1f", s.kbps / 1000.0),
                 Fmt.num(s.targetKbps / 1000), Fmt.num(s.dropped), Fmt.num(s.reconnects))
+        } + RecordService.liveDests.joinToString("") { (name, ds) ->
+            "\n" + str(R.string.live_dest_line_fmt, name, when (ds?.state) {
+                RtmpSink.State.LIVE -> str(R.string.live_ds_live_fmt, String.format(java.util.Locale.US, "%.1f", ds.kbps / 1000.0))
+                RtmpSink.State.RECONNECTING -> str(R.string.live_ds_reconnecting)
+                RtmpSink.State.FAILED -> str(R.string.live_ds_failed) + (ds.error?.let { " ($it)" } ?: "")
+                else -> str(R.string.live_ds_connecting)
+            })
         }
     }
 
