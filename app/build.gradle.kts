@@ -35,7 +35,10 @@ android {
         unitTests.isIncludeAndroidResources = true
         // Preview pictures of the real drawing code (PreviewRender, OverlayRender) only when asked:
         // gradle … -Drawrec.previewDir=/some/dir
-        unitTests.all { t -> System.getProperty("rawrec.previewDir")?.let { t.systemProperty("rawrec.previewDir", it) } }
+        unitTests.all { t ->
+            System.getProperty("rawrec.previewDir")?.let { t.systemProperty("rawrec.previewDir", it) }
+            t.maxHeapSize = "3g"
+        }
     }
 }
 
