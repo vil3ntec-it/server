@@ -74,6 +74,7 @@ class MainActivity : Activity() {
     private val REQ_PERMS = 11
     private val REQ_ONE = 12
     private val REQ_DELETE = 13
+    private val REQ_THUMB = 14
 
     private val prefs by lazy { getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE) }
     private val ui = Handler(Looper.getMainLooper())
@@ -223,6 +224,7 @@ class MainActivity : Activity() {
             IdleBubble.undismiss()
             if (tab == Tab.VIDEOS) refreshVideos()
             if (tab == Tab.ABOUT) refreshAbout()
+            if (tab == Tab.LIVE) refreshLayoutPreview()   // back from «چیدمانِ پخش»
             tick()
             // the report opens by itself after a test recording, or when a recording ended by itself
             // (screen locked, storage full, encoder lost …) so the owner sees why
@@ -1331,18 +1333,21 @@ class MainActivity : Activity() {
     private fun buildLive(): View {
         val pg = page(R.string.tab_live, R.string.page_live_sub)
         val root = pg.col
+        // ---- 1. status: start / end, and while live what YouTube shows
         val sc = card(root, R.string.live_status_title, R.drawable.ic_live, top = 8)
         liveStatusView = text("", R.style.Text_Body).apply {
             setBackgroundResource(R.drawable.bg_inset)
             setPaddingRelative(dp(14), dp(12), dp(14), dp(12))
         }
         sc.addView(liveStatusView, lp(6))
+        sc.addView(buildYtLiveBox(), lp(10))
         liveButton = button(str(R.string.live_start), R.style.Button_Record, R.drawable.ic_live).apply {
             onTap("live start/stop") { onLiveClicked() }
         }
         sc.addView(liveButton)
         sc.addView(text(str(R.string.live_one_app), R.style.Text_Caption), lp(8))
 
+        // ---- 2. where to
         val dc = card(root, R.string.live_dest_title, R.drawable.ic_link)
         val p0 = LiveSettings.platform(this)
         rows["live_p"] = Row(dc, "", "", LiveSettings.PLATFORMS.map { str(it.name) }, top = 4) { i ->
@@ -1360,11 +1365,33 @@ class MainActivity : Activity() {
         dc.addView(liveHelp, lp(8))
         dc.addView(infoLine(R.drawable.ic_shield, str(R.string.live_key_safe), R.style.Text_Caption), lp(8))
 
-        val qc = card(root, R.string.live_q_title, R.drawable.ic_quality)
+        // ---- 3. what viewers see: a picture of the arrangement, edited by dragging
+        val lc = card(root, R.string.lay_title, R.drawable.ic_layers)
+        lc.addView(text(str(R.string.lay_desc), R.style.Text_Caption), lp(4))
+        layoutPreview = android.widget.ImageView(this).apply {
+            adjustViewBounds = true
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            clipToOutline = true
+            background = roundBg(col(R.color.surface_2), 12)
+            contentDescription = str(R.string.lay_title)
+            onTap("layout preview") { openLayoutEditor() }
+        }
+        lc.addView(layoutPreview, lp(10))
+        lc.addView(button(str(R.string.lay_edit), R.style.Button_Tonal, R.drawable.ic_layers).apply {
+            tag = "lay:edit"
+            onTap("layout editor") { openLayoutEditor() }
+        })
+        refreshLayoutPreview()
+
+        // ---- 4. YouTube account, title and thumbnail · 5. the chat on the phone
+        buildLiveExtras(root)
+
+        // ---- less often: closed until opened
+        val qc = Section(root, "live_q", R.string.live_q_title, R.string.sec_live_q_desc, R.drawable.ic_quality).body
         qc.addView(text(str(R.string.live_q_desc), R.style.Text_Caption), lp(4))
         rows["live_q"] = Row(qc, "", "", LiveSettings.QUALITIES.map { str(it.label) }, vertical = true, top = 8) { i -> LiveSettings.setQuality(this, i) }
 
-        val ac = card(root, R.string.live_audio_title, R.drawable.ic_volume)
+        val ac = Section(root, "live_audio", R.string.live_audio_title, R.string.sec_live_audio_desc, R.drawable.ic_volume).body
         // Before 3.3 these saved the choice but left the switch as it was: they looked dead.
         toggles["live_team"] = Toggle(ac, "tog:live_team", R.drawable.ic_mic, str(R.string.live_team_title), str(R.string.live_team_desc), top = 0) { on ->
             LiveSettings.setTeamVoice(this, on)
@@ -1376,9 +1403,9 @@ class MainActivity : Activity() {
             toggles["live_mic"]?.set(on)
         }
 
-        buildLiveExtras(root)
+        buildLiveMore(root)
 
-        val pc = card(root, R.string.live_privacy_title, R.drawable.ic_shield)
+        val pc = Section(root, "live_privacy", R.string.live_privacy_title, R.string.sec_live_privacy_desc, R.drawable.ic_shield).body
         pc.addView(text(str(R.string.live_privacy_desc), R.style.Text_Body), lp(4))
         rows["live_p"]?.select(p0)
         rows["live_q"]?.select(LiveSettings.quality(this))
@@ -1388,6 +1415,125 @@ class MainActivity : Activity() {
         fillLiveFields()
         return pg.scroll
     }
+
+    private var thumbView: android.widget.ImageView? = null
+    private var thumbButtons: View? = null
+
+    private fun pickThumb() {
+        @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_GET_CONTENT).setType("image/*"), REQ_THUMB)
+    }
+
+    /** The chosen picture as YouTube wants a thumbnail: 1280×720 (cropped to 16:9), JPEG under 2 MB. */
+    private fun saveThumb(u: Uri) {
+        val src = contentResolver.openInputStream(u)?.use { android.graphics.BitmapFactory.decodeStream(it) } ?: return
+        val out = android.graphics.Bitmap.createBitmap(1280, 720, android.graphics.Bitmap.Config.ARGB_8888)
+        val sc = maxOf(1280f / src.width, 720f / src.height)
+        val w = src.width * sc; val h = src.height * sc
+        android.graphics.Canvas(out).drawBitmap(src, null, android.graphics.RectF((1280 - w) / 2f, (720 - h) / 2f, (1280 + w) / 2f, (720 + h) / 2f),
+            android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG))
+        var q = 92
+        var bytes: ByteArray
+        do {
+            val bo = java.io.ByteArrayOutputStream()
+            out.compress(android.graphics.Bitmap.CompressFormat.JPEG, q, bo)
+            bytes = bo.toByteArray(); q -= 8
+        } while (bytes.size > 1_900_000 && q > 40)
+        java.io.File(filesDir, "yt_thumb.jpg").writeBytes(bytes)
+        refreshThumb()
+    }
+
+    private fun refreshThumb() {
+        val v = thumbView ?: return
+        val f = LiveExtras.ytThumbFile(this)
+        if (f != null) { v.setImageBitmap(android.graphics.BitmapFactory.decodeFile(f.path)); v.contentDescription = str(R.string.yt_thumb_label) }
+        else { v.setImageResource(R.drawable.ic_file); v.scaleType = android.widget.ImageView.ScaleType.CENTER; v.contentDescription = str(R.string.yt_thumb_pick) }
+        if (f != null) v.scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+    }
+
+    // ---- while live: the stream as YouTube shows it
+    private var ytBox: LinearLayout? = null
+    private var ytThumbLive: android.widget.ImageView? = null
+    private var ytTitleLive: TextView? = null
+    private var ytStatsLive: TextView? = null
+    private var ytThumbFor: String? = null
+
+    private fun buildYtLiveBox(): View {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundResource(R.drawable.bg_inset)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            visibility = View.GONE
+            tag = "yt:live"
+        }
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        ytThumbLive = android.widget.ImageView(this).apply {
+            scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+            clipToOutline = true
+            background = roundBg(col(R.color.surface_3), 8)
+        }
+        row.addView(ytThumbLive, LinearLayout.LayoutParams(dp(128), dp(72)))
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(badge(str(R.string.yt_live_badge), R.color.on_accent, R.color.accent_fill, R.drawable.ic_live), wrap())
+        ytTitleLive = text("", R.style.Text_Label).apply { maxLines = 2 }
+        col.addView(ytTitleLive, lp(6))
+        row.addView(col, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginStart = dp(12) })
+        box.addView(row)
+        ytStatsLive = text("", R.style.Text_Caption)
+        box.addView(ytStatsLive, lp(8))
+        box.addView(button(str(R.string.yt_open), R.style.Button_Tonal, R.drawable.ic_play, h = 44, top = 8).apply {
+            onTap("open on youtube") {
+                RecordService.ytInfo?.let { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://youtu.be/" + it.videoId))) }
+            }
+        })
+        ytBox = box
+        return box
+    }
+
+    /** While live: the stream's picture, title, viewers / likes and how well YouTube receives it. */
+    private fun updateYtLive() {
+        val box = ytBox ?: return
+        val info = RecordService.ytInfo
+        if (!RecordService.isLive || info == null) { box.visibility = View.GONE; ytThumbFor = null; return }
+        box.visibility = View.VISIBLE
+        ytTitleLive?.text = info.title
+        val parts = ArrayList<String>()
+        if (RecordService.liveViewers >= 0) parts += str(R.string.yt_viewers_fmt, StreamOverlay.compact(RecordService.liveViewers))
+        if (RecordService.liveLikes >= 0) parts += str(R.string.yt_likes_fmt, StreamOverlay.compact(RecordService.liveLikes))
+        parts += str(when (info.health) {
+            "good" -> R.string.yt_health_good
+            "ok" -> R.string.yt_health_ok
+            "bad" -> R.string.yt_health_bad
+            "noData" -> R.string.yt_health_none
+            else -> R.string.yt_health_unknown
+        })
+        RecordService.liveNote?.let { parts += it }
+        ytStatsLive?.text = parts.joinToString("\n")
+        val url = info.thumb
+        if (url != null && ytThumbFor != info.videoId + url) {
+            ytThumbFor = info.videoId + url
+            bg.execute {
+                val b = try { java.net.URL(url).openStream().use { android.graphics.BitmapFactory.decodeStream(it) } } catch (_: Exception) { null }
+                if (b != null) ui.post { if (!isDestroyed) ytThumbLive?.setImageBitmap(b) }
+            }
+        }
+    }
+
+    private var layoutPreview: android.widget.ImageView? = null
+    private var lastFrame: android.graphics.Bitmap? = null
+
+    private fun openLayoutEditor() = startActivity(Intent(this, LayoutEditorActivity::class.java))
+
+    /** The arrangement as a picture, over the owner's last recording (loaded once, off the main thread). */
+    private fun refreshLayoutPreview() {
+        val v = layoutPreview ?: return
+        val w = (resources.displayMetrics.widthPixels.coerceAtMost(dp(720)) * 0.9f).toInt().coerceAtLeast(320)
+        v.setImageBitmap(LayoutEditorActivity.preview(this, w, lastFrame))
+        if (lastFrame == null) bg.execute {
+            val f = LayoutEditorActivity.lastFrame(this) ?: return@execute
+            ui.post { if (!isDestroyed) { lastFrame = f; layoutPreview?.setImageBitmap(LayoutEditorActivity.preview(this, w, f)) } }
+        }
+    }
+
 
     /** A text box of several lines (bot commands, timers); direction follows what is written. */
     private fun multiField(hint: String, onDone: (String) -> Unit): android.widget.EditText =
@@ -1429,6 +1575,25 @@ class MainActivity : Activity() {
         yc.addView(ytStatus, lp(10))
         ytButton = button(str(R.string.live_yt_signin), R.style.Button_Tonal, R.drawable.ic_key).apply { onTap("youtube sign-in") { onYtClicked() } }
         yc.addView(ytButton)
+        // the stream's title and thumbnail, set on YouTube when the stream starts
+        yc.addView(text(str(R.string.yt_title_label), R.style.Text_Label), lp(16))
+        yc.addView(textField(str(R.string.yt_title_hint), LiveExtras.ytTitle(ctx)) { LiveExtras.put(ctx, "yt_title", it.trim()) }, lp(4))
+        yc.addView(text(str(R.string.yt_thumb_label), R.style.Text_Label), lp(14))
+        yc.addView(text(str(R.string.yt_thumb_desc), R.style.Text_Caption), lp(2))
+        thumbView = android.widget.ImageView(this).apply {
+            adjustViewBounds = true
+            scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+            clipToOutline = true
+            background = roundBg(col(R.color.surface_2), 12)
+            onTap("thumbnail pick") { pickThumb() }
+        }
+        yc.addView(thumbView, LinearLayout.LayoutParams(MATCH_PARENT, dp(170)).apply { topMargin = dp(8) })
+        thumbButtons = buttonRow(
+            smallButton(R.string.yt_thumb_pick, R.drawable.ic_file) { pickThumb() },
+            smallButton(R.string.yt_thumb_remove, R.drawable.ic_delete) { java.io.File(filesDir, "yt_thumb.jpg").delete(); refreshThumb() },
+        )
+        yc.addView(thumbButtons, lp(8))
+        refreshThumb()
         yc.addView(text(str(R.string.live_yt_client), R.style.Text_Label), lp(12))
         ytClient = field("…apps.googleusercontent.com", false) { LiveExtras.setYtClientId(ctx, it) }.apply { setText(LiveExtras.ytClientId(ctx)) }
         yc.addView(ytClient, lp(4))
@@ -1441,13 +1606,37 @@ class MainActivity : Activity() {
         yc.addView(text(str(R.string.live_yt_setup), R.style.Text_Caption).apply { setTextIsSelectable(true) }, lp(4))
         refreshYt()
 
+        // ---- the chat on the phone
+        val hc = card(root, R.string.live_hud_title, R.drawable.ic_overlay)
+        toggles["hud_on"] = Toggle(hc, "tog:hud_on", R.drawable.ic_chat, str(R.string.live_hud_on_title), str(R.string.live_hud_on_desc), top = 0) { on ->
+            LiveExtras.put(ctx, "hud_on", on); toggles["hud_on"]?.set(on)
+        }.apply { set(LiveExtras.hud(ctx)) }
+        rows["hud_style"] = Row(hc, str(R.string.live_hud_style), str(R.string.live_hud_style_desc), listOf(str(R.string.live_style_bare),
+            str(R.string.live_style_faint), str(R.string.live_style_bubbles), str(R.string.live_style_compact)), top = 12) { i ->
+            LiveExtras.put(ctx, "hud_style", i)
+        }.apply { select(LiveExtras.hudStyle(ctx)) }
+        toggles["hud_stats"] = Toggle(hc, "tog:hud_stats", R.drawable.ic_eye, str(R.string.live_hud_stats_title), str(R.string.live_hud_stats_desc), top = 12) { on ->
+            LiveExtras.put(ctx, "hud_stats", on); toggles["hud_stats"]?.set(on)
+        }.apply { set(LiveExtras.hudStats(ctx)) }
+        rows["hud_size"] = Row(hc, str(R.string.live_hud_size), "", listOf(str(R.string.live_hud_s), str(R.string.live_hud_m), str(R.string.live_hud_l)), top = 12) { i ->
+            LiveExtras.put(ctx, "hud_size", i)
+        }.apply { select(LiveExtras.hudSize(ctx)) }
+        rows["hud_alpha"] = Row(hc, str(R.string.live_hud_alpha), str(R.string.live_hud_alpha_desc), listOf(str(R.string.live_alpha_1), str(R.string.live_alpha_2), str(R.string.live_alpha_3)), top = 12) { i ->
+            LiveExtras.put(ctx, "hud_alpha", i)
+        }.apply { select(LiveExtras.hudAlpha(ctx)) }
+
+    }
+
+    /** The translator, the bot and Twitch: closed sections under the main cards. */
+    private fun buildLiveMore(root: LinearLayout) {
+        val ctx = this
         // ---- Twitch
-        val tc = card(root, R.string.live_tw_title, R.drawable.ic_chat)
+        val tc = Section(root, "live_tw", R.string.live_tw_title, R.string.sec_live_tw_desc, R.drawable.ic_chat).body
         tc.addView(text(str(R.string.live_tw_desc), R.style.Text_Caption), lp(4))
         tc.addView(field(str(R.string.live_tw_hint), false) { LiveExtras.setTwChannel(ctx, it) }.apply { setText(SafePrefs.str(getSharedPreferences(RecordService.PREFS, MODE_PRIVATE), "tw_channel")) }, lp(10))
 
         // ---- the translator
-        val trc = card(root, R.string.tr_title, R.drawable.ic_translate)
+        val trc = Section(root, "live_tr", R.string.tr_title, R.string.sec_live_tr_desc, R.drawable.ic_translate).body
         trc.addView(text(str(R.string.tr_desc), R.style.Text_Caption), lp(4))
         toggles["tr_in"] = Toggle(trc, "tog:tr_in", R.drawable.ic_translate, str(R.string.tr_in_title), str(R.string.tr_in_desc), top = 10) { on ->
             LiveExtras.put(ctx, "tr_in", on); toggles["tr_in"]?.set(on)
@@ -1472,60 +1661,8 @@ class MainActivity : Activity() {
         })
         refreshTr()
 
-        // ---- the chat on the phone
-        val hc = card(root, R.string.live_hud_title, R.drawable.ic_overlay)
-        toggles["hud_on"] = Toggle(hc, "tog:hud_on", R.drawable.ic_chat, str(R.string.live_hud_on_title), str(R.string.live_hud_on_desc), top = 0) { on ->
-            LiveExtras.put(ctx, "hud_on", on); toggles["hud_on"]?.set(on)
-        }.apply { set(LiveExtras.hud(ctx)) }
-        rows["hud_style"] = Row(hc, str(R.string.live_hud_style), str(R.string.live_hud_style_desc), listOf(str(R.string.live_style_bare),
-            str(R.string.live_style_faint), str(R.string.live_style_bubbles), str(R.string.live_style_compact)), top = 12) { i ->
-            LiveExtras.put(ctx, "hud_style", i)
-        }.apply { select(LiveExtras.hudStyle(ctx)) }
-        toggles["hud_stats"] = Toggle(hc, "tog:hud_stats", R.drawable.ic_eye, str(R.string.live_hud_stats_title), str(R.string.live_hud_stats_desc), top = 12) { on ->
-            LiveExtras.put(ctx, "hud_stats", on); toggles["hud_stats"]?.set(on)
-        }.apply { set(LiveExtras.hudStats(ctx)) }
-        rows["hud_size"] = Row(hc, str(R.string.live_hud_size), "", listOf(str(R.string.live_hud_s), str(R.string.live_hud_m), str(R.string.live_hud_l)), top = 12) { i ->
-            LiveExtras.put(ctx, "hud_size", i)
-        }.apply { select(LiveExtras.hudSize(ctx)) }
-        rows["hud_alpha"] = Row(hc, str(R.string.live_hud_alpha), str(R.string.live_hud_alpha_desc), listOf(str(R.string.live_alpha_1), str(R.string.live_alpha_2), str(R.string.live_alpha_3)), top = 12) { i ->
-            LiveExtras.put(ctx, "hud_alpha", i)
-        }.apply { select(LiveExtras.hudAlpha(ctx)) }
-
-        // ---- on the stream
-        val oc = card(root, R.string.live_ov_title, R.drawable.ic_layers)
-        oc.addView(text(str(R.string.live_ov_desc), R.style.Text_Caption), lp(4))
-        fun tog(key: String, ic: Int, title: Int, desc: Int, value: Boolean, top: Int = 4) {
-            toggles[key] = Toggle(oc, "tog:$key", ic, str(title), str(desc), top) { on -> LiveExtras.put(ctx, key, on); toggles[key]?.set(on) }.apply { set(value) }
-        }
-        tog("ov_chat", R.drawable.ic_chat, R.string.live_ov_chat_title, R.string.live_ov_chat_desc, LiveExtras.chatOnStream(ctx), top = 10)
-        rows["ov_chat_pos"] = Row(oc, str(R.string.live_ov_chat_pos), "", positions(), top = 10) { i -> LiveExtras.put(ctx, "ov_chat_pos", i) }
-            .apply { select(LiveExtras.chatPos(ctx)) }
-        rows["ov_chat_style"] = Row(oc, str(R.string.live_ov_chat_style), "", listOf(str(R.string.live_style_bare),
-            str(R.string.live_style_glass), str(R.string.live_style_bubbles)), top = 10) { i -> LiveExtras.put(ctx, "ov_chat_style", i) }
-            .apply { select(LiveExtras.chatStyle(ctx)) }
-        tog("ov_alerts", R.drawable.ic_bell, R.string.live_ov_alerts_title, R.string.live_ov_alerts_desc, LiveExtras.alerts(ctx), top = 14)
-        tog("ov_subs", R.drawable.ic_people, R.string.live_ov_subs_title, R.string.live_ov_subs_desc, LiveExtras.subsBadge(ctx))
-        tog("ov_viewers", R.drawable.ic_eye, R.string.live_ov_viewers_title, R.string.live_ov_viewers_desc, LiveExtras.viewersBadge(ctx))
-        rows["ov_alert_pos"] = Row(oc, str(R.string.live_ov_alert_pos), "", positions(), top = 14) { i -> LiveExtras.put(ctx, "ov_alert_pos", i) }
-            .apply { select(LiveExtras.alertPos(ctx)) }
-        rows["ov_badge_pos"] = Row(oc, str(R.string.live_ov_badge_pos), "", positions(), top = 12) { i -> LiveExtras.put(ctx, "ov_badge_pos", i) }
-            .apply { select(LiveExtras.badgePos(ctx)) }
-        oc.addView(divider(top = 16))
-        tog("ov_goal", R.drawable.ic_flag, R.string.live_goal_title, R.string.live_goal_desc, LiveExtras.goal(ctx), top = 12)
-        rows["ov_goal_type"] = Row(oc, str(R.string.live_goal_type), "", listOf(str(R.string.live_goal_t_subs), str(R.string.live_goal_t_likes),
-            str(R.string.live_goal_t_members), str(R.string.live_goal_t_manual)), top = 12) { i -> LiveExtras.put(ctx, "ov_goal_type", i) }
-            .apply { select(LiveExtras.goalType(ctx)) }
-        oc.addView(text(str(R.string.live_goal_target), R.style.Text_Label), lp(12))
-        oc.addView(textField("1000", LiveExtras.goalTarget(ctx).toString(), number = true) {
-            ChatBot.toAsciiDigits(it.trim()).toIntOrNull()?.takeIf { v -> v > 0 }?.let { v -> LiveExtras.put(ctx, "ov_goal_target", v) }
-        }, lp(4))
-        oc.addView(text(str(R.string.live_goal_name), R.style.Text_Label), lp(12))
-        oc.addView(textField(str(R.string.live_goal_name), LiveExtras.goalTitle(ctx)) { LiveExtras.put(ctx, "ov_goal_title", it.trim()) }, lp(4))
-        rows["ov_goal_pos"] = Row(oc, str(R.string.live_goal_pos), "", positions(), top = 12) { i -> LiveExtras.put(ctx, "ov_goal_pos", i) }
-            .apply { select(LiveExtras.goalPos(ctx)) }
-
         // ---- the bot
-        val bc = card(root, R.string.live_bot_title, R.drawable.ic_bot)
+        val bc = Section(root, "live_bot", R.string.live_bot_title, R.string.sec_live_bot_desc, R.drawable.ic_bot).body
         fun btog(key: String, ic: Int, title: Int, desc: Int, value: Boolean, top: Int = 4) {
             toggles[key] = Toggle(bc, "tog:$key", ic, str(title), str(desc), top) { on -> LiveExtras.put(ctx, key, on); toggles[key]?.set(on) }.apply { set(value) }
         }
@@ -1722,6 +1859,7 @@ class MainActivity : Activity() {
 
     private fun updateLive() {
         val v = liveStatusView ?: return
+        updateYtLive()
         val s = RecordService.liveStatus
         if (!RecordService.isLive) {
             v.text = str(R.string.live_idle)
@@ -2807,6 +2945,7 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION") super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ_DELETE) { safely("deleted") { refreshVideos() }; return }
+        if (requestCode == REQ_THUMB) { if (resultCode == RESULT_OK) data?.data?.let { u -> act("thumbnail") { saveThumb(u) } }; return }
         if (requestCode != REQ_CAPTURE) return
         if (resultCode != RESULT_OK || data == null) { pendingLive = false; toast(R.string.toast_capture_denied); return }
         if (pendingLive) { pendingLive = false; act("start live") { startLive(resultCode, data) }; return }

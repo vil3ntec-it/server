@@ -35,6 +35,12 @@
             </intent-filter>
         </activity>
 
+        <!-- «چیدمانِ پخش»: drag what viewers see on the stream -->
+        <activity
+            android:name=".LayoutEditorActivity"
+            android:exported="false"
+            android:theme="@style/Theme.RawRec"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize" />
         <activity
             android:name=".QuickStartActivity"
             android:exported="false"

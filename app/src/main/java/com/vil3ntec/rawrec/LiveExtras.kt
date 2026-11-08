@@ -41,6 +41,10 @@ object LiveExtras {
         return YouTubeApi(ytClientId(ctx), ytSecret(ctx), ytToken(ctx)) { Quota.spend(app, it) }
     }
 
+    /** The stream's title and thumbnail, set on YouTube when the stream starts (empty = YouTube's own). */
+    fun ytTitle(ctx: Context) = s(ctx, "yt_title").trim()
+    fun ytThumbFile(ctx: Context): java.io.File? = java.io.File(ctx.filesDir, "yt_thumb.jpg").takeIf { it.isFile && it.length() > 0 }
+
     // ---- Twitch chat (read only, no sign-in)
     fun twChannel(ctx: Context) = s(ctx, "tw_channel").trim().removePrefix("#").removePrefix("@").lowercase()
         .substringAfterLast("twitch.tv/").substringBefore('/').substringBefore('?')

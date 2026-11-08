@@ -26,7 +26,11 @@ class YouTubeApi(
 ) {
 
     class DeviceCode(val deviceCode: String, val userCode: String, val url: String, val intervalS: Int, val expiresS: Int)
-    class Broadcast(val videoId: String, val chatId: String, val title: String)
+    class Broadcast(
+        val videoId: String, val chatId: String, val title: String,
+        /** The stream's picture on YouTube (its thumbnail), the stream it is bound to, and what an update must carry. */
+        val thumb: String? = null, val streamId: String? = null, val scheduled: String? = null, val description: String = "",
+    )
     class ChatItem(
         val id: String, val type: String, val authorId: String, val author: String, val text: String,
         val isOwner: Boolean, val isMod: Boolean, val isMember: Boolean, val amount: String?, val tier: String?,
@@ -81,6 +85,23 @@ class YouTubeApi(
 
         private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
+        fun httpBytes(method: String, url: String, body: ByteArray, type: String, token: String): String {
+            val c = URL(url).openConnection() as HttpURLConnection
+            c.requestMethod = method
+            c.connectTimeout = 15_000
+            c.readTimeout = 60_000
+            c.setRequestProperty("Authorization", "Bearer $token")
+            c.doOutput = true
+            c.setRequestProperty("Content-Type", type)
+            c.setFixedLengthStreamingMode(body.size)
+            c.outputStream.use { it.write(body) }
+            val code = c.responseCode
+            val text = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() } ?: ""
+            c.disconnect()
+            if (code !in 200..299) throw HttpError(code, text)
+            return text
+        }
+
         fun http(method: String, url: String, body: String?, type: String?, token: String?): String {
             val c = URL(url).openConnection() as HttpURLConnection
             c.requestMethod = method
@@ -133,11 +154,18 @@ class YouTubeApi(
     /** The broadcast that is live now (or about to be, while the stream starts). */
     fun currentBroadcast(): Broadcast? {
         for (status in listOf("active", "upcoming")) {
-            val items = get("liveBroadcasts?part=snippet,status&broadcastType=all&broadcastStatus=$status&maxResults=5").optJSONArray("items") ?: continue
+            val items = get("liveBroadcasts?part=snippet,status,contentDetails&broadcastType=all&broadcastStatus=$status&maxResults=5").optJSONArray("items") ?: continue
             for (i in 0 until items.length()) {
                 val b = items.getJSONObject(i)
-                val chat = b.getJSONObject("snippet").optString("liveChatId")
-                if (chat.isNotBlank()) return Broadcast(b.getString("id"), chat, b.getJSONObject("snippet").optString("title"))
+                val sn = b.getJSONObject("snippet")
+                val chat = sn.optString("liveChatId")
+                if (chat.isBlank()) continue
+                val th = sn.optJSONObject("thumbnails")
+                val thumb = listOf("maxres", "standard", "high", "medium", "default").firstNotNullOfOrNull { th?.optJSONObject(it)?.optString("url")?.ifBlank { null } }
+                return Broadcast(b.getString("id"), chat, sn.optString("title"), thumb,
+                    b.optJSONObject("contentDetails")?.optString("boundStreamId")?.ifBlank { null },
+                    sn.optString("scheduledStartTime").ifBlank { sn.optString("actualStartTime").ifBlank { null } },
+                    sn.optString("description"))
             }
         }
         return null
@@ -163,6 +191,30 @@ class YouTubeApi(
             .put("bannedUserDetails", JSONObject().put("channelId", channelId))
         if (seconds > 0) s.put("banDurationSeconds", seconds)
         call("POST", "liveChat/bans?part=snippet", JSONObject().put("snippet", s), 200)
+    }
+
+    /**
+     * How YouTube receives the picture: «good», «ok», «bad», «noData» (Google's words), or null
+     * when the stream is not known.
+     */
+    fun streamHealth(streamId: String): String? =
+        get("liveStreams?part=status&id=${enc(streamId)}").optJSONArray("items")?.optJSONObject(0)
+            ?.optJSONObject("status")?.optJSONObject("healthStatus")?.optString("status")?.ifBlank { null }
+
+    /** The stream's title on YouTube (50 units). */
+    fun setTitle(b: Broadcast, title: String) {
+        val sn = JSONObject().put("title", title.take(100)).put("description", b.description)
+        sn.put("scheduledStartTime", b.scheduled ?: java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date()))
+        call("PUT", "liveBroadcasts?part=snippet", JSONObject().put("id", b.videoId).put("snippet", sn), 50)
+    }
+
+    /** The stream's thumbnail (a JPEG up to 2 MB; 50 units). YouTube allows it on verified channels only. */
+    fun setThumbnail(videoId: String, jpeg: ByteArray) {
+        val url = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${enc(videoId)}"
+        spend(50)
+        try { httpBytes("POST", url, jpeg, "image/jpeg", token()) }
+        catch (e: HttpError) { if (e.code != 401) throw e; access = null; httpBytes("POST", url, jpeg, "image/jpeg", token()) }
     }
 
     /** Concurrent viewers and likes of the live video. */

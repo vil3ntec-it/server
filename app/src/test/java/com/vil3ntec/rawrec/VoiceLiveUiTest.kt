@@ -122,6 +122,15 @@ class VoiceLiveUiTest {
     private fun tab(a: Activity, t: MainActivity.Tab) = touch(a, byTag(a, "nav:${t.name}"))
     private fun openAudio(a: Activity) { tab(a, MainActivity.Tab.SETTINGS); touch(a, byTag(a, "sub:${MainActivity.Sub.AUDIO.name}")) }
     private fun kinds() = prefs().getInt("c_kinds", VoiceSources.ALL)
+    /** The «زنده» page with every closed section opened. */
+    private fun liveOpen(a: Activity) {
+        tab(a, MainActivity.Tab.LIVE)
+        for (k in listOf("live_q", "live_audio", "live_tw", "live_tr", "live_bot", "live_privacy")) {
+            val body = all(a.window.decorView).first { it.tag == "section:$k:body" }
+            if (body.visibility != View.VISIBLE) touch(a, byTag(a, "section:$k"))
+            assertTrue("section $k opens", shown(body))
+        }
+    }
     private fun chip(a: Activity, text: String): RadioButton =
         all(a.window.decorView).filterIsInstance<RadioButton>().firstOrNull { shown(it) && it.text.toString() == text }
             ?: throw AssertionError("no chip «$text» among " + all(a.window.decorView).filterIsInstance<RadioButton>().filter { shown(it) }.map { it.text })
@@ -314,14 +323,49 @@ class VoiceLiveUiTest {
         assertFalse(hud.bubble.isAttachedToWindow || hud.feedRoot.isAttachedToWindow || hud.panel.isAttachedToWindow)
     }
 
+    // ------------------------------------------------------------ «چیدمانِ پخش»
+
+    @Test fun layoutEditorMovesResizesAndHides() {
+        RuntimeEnvironment.setQualifiers("w891dp-h411dp-land-560dpi")
+        val ed = Robolectric.buildActivity(LayoutEditorActivity::class.java).setup().get()
+        idle()
+        val stage = all(ed.window.decorView).filterIsInstance<LayoutEditorActivity.Stage>().first()
+        assertTrue("stage laid out", stage.width > 0 && stage.height > 0)
+        val r = stage.rectOf(OverlayLayout.CHAT)!!
+        val before = OverlayLayout.place(app, OverlayLayout.CHAT)
+        // drag the chat 200 px to the right
+        val t = SystemClock.uptimeMillis()
+        stage.dispatchTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, r.centerX(), r.centerY(), 0))
+        for (i in 1..10) stage.dispatchTouchEvent(MotionEvent.obtain(t, t + i * 16L, MotionEvent.ACTION_MOVE, r.centerX() + i * 20f, r.centerY(), 0))
+        stage.dispatchTouchEvent(MotionEvent.obtain(t, t + 200, MotionEvent.ACTION_UP, r.centerX() + 200f, r.centerY(), 0))
+        idle()
+        val after = OverlayLayout.place(app, OverlayLayout.CHAT)
+        assertTrue("moved right and saved: ${before.x} → ${after.x}", after.x > before.x + 0.05f)
+        assertEquals("picked by the touch", OverlayLayout.CHAT, stage.selected)
+        // size
+        stage.resize(1.5f)
+        assertEquals(after.scale * 1.5f, OverlayLayout.place(app, OverlayLayout.CHAT).scale, 0.01f)
+        // the eye in the bottom bar: on the stream or not (the same switch as the chat panel's)
+        val was = OverlayLayout.shown(app, OverlayLayout.CHAT)
+        val eye = all(ed.window.decorView).filterIsInstance<TextView>().first {
+            shown(it) && (it.text == ed.getString(R.string.lay_shown) || it.text == ed.getString(R.string.lay_hidden)) }
+        eye.performClick(); idle()
+        assertEquals(!was, OverlayLayout.shown(app, OverlayLayout.CHAT))
+        assertEquals(!was, LiveExtras.chatOnStream(app))
+        // back to the default
+        OverlayLayout.reset(app)
+        assertEquals(OverlayLayout.item(OverlayLayout.CHAT).defX, OverlayLayout.place(app, OverlayLayout.CHAT).x, 0.001f)
+        assertNull(CrashLog.pending(app))
+    }
+
     // ------------------------------------------------------------ «زنده»
 
     @Test fun everyLiveSwitchFlipsAndIsSaved() {
         val a = launch()
-        tab(a, MainActivity.Tab.LIVE)
+        liveOpen(a)
         val keys = mapOf(
             "tog:live_team" to "live_team", "tog:live_mic" to "live_mic", "tog:hud_on" to "hud_on",
-            "tog:tr_in" to "tr_in", "tog:tr_out" to "tr_out", "tog:hud_stats" to "hud_stats", "tog:ov_chat" to "ov_chat", "tog:ov_alerts" to "ov_alerts", "tog:ov_subs" to "ov_subs", "tog:ov_viewers" to "ov_viewers", "tog:ov_goal" to "ov_goal",
+            "tog:tr_in" to "tr_in", "tog:tr_out" to "tr_out", "tog:hud_stats" to "hud_stats",
             "tog:bot_on" to "bot_on", "tog:bot_welcome" to "bot_welcome",
             "tog:mod_links" to "mod_links", "tog:mod_caps" to "mod_caps", "tog:mod_spam" to "mod_spam",
         )
@@ -340,18 +384,17 @@ class VoiceLiveUiTest {
 
     @Test fun everyLiveChoiceIsSelectedAndSaved() {
         val a = launch()
-        tab(a, MainActivity.Tab.LIVE)
+        liveOpen(a)
         val chips = all(a.window.decorView).filterIsInstance<RadioButton>().filter { shown(it) }
-        assertTrue("chips on the live page: ${chips.size}", chips.size >= 30)
+        assertTrue("chips on the live page: ${chips.size}", chips.size >= 20)
         for (c in chips) {
             if (!shown(c)) continue
             touch(a, c)
             assertTrue("chip «${c.text}» selected after a tap", c.isChecked)
         }
         // a few concrete values
-        touch(a, chip(a, a.getString(R.string.pos_br)))
-        touch(a, chip(a, a.getString(R.string.live_goal_t_manual)))
-        assertEquals(LiveExtras.GOAL_MANUAL, LiveExtras.goalType(app))
+        touch(a, chip(a, a.getString(R.string.tr_lang_tr)))
+        assertEquals("tr", LiveExtras.trTarget(app))
         touch(a, chip(a, a.getString(R.string.live_hud_l)))
         assertEquals(2, LiveExtras.hudSize(app))
         assertNull(CrashLog.pending(app))
@@ -359,7 +402,7 @@ class VoiceLiveUiTest {
 
     @Test fun liveTextFieldsAreSavedAndSecretsSealed() {
         val a = launch()
-        tab(a, MainActivity.Tab.LIVE)
+        liveOpen(a)
         fun field(hint: String) = all(a.window.decorView).filterIsInstance<android.widget.EditText>().first { shown(it) && it.hint?.toString() == hint }
         fun type(e: android.widget.EditText, s: String) { e.requestFocus(); e.setText(s); a.window.decorView.findFocus(); e.clearFocus(); idle() }
         type(field(a.getString(R.string.live_tw_hint)), "https://www.twitch.tv/SomeOne")
@@ -368,8 +411,8 @@ class VoiceLiveUiTest {
         assertEquals(setOf("!discord", "!phone"), LiveExtras.botConfig(app).commands.keys)
         type(field(a.getString(R.string.live_bot_timers_hint)), "۱۰ = hello")
         assertEquals(listOf(10 to "hello"), LiveExtras.botConfig(app).timers)
-        type(field("1000"), "250")
-        assertEquals(250, LiveExtras.goalTarget(app))
+        type(field(a.getString(R.string.yt_title_hint)), "Ranked grind 🔥")
+        assertEquals("Ranked grind 🔥", LiveExtras.ytTitle(app))
         type(field("…apps.googleusercontent.com"), "123-abc.apps.googleusercontent.com")
         assertEquals("123-abc.apps.googleusercontent.com", LiveExtras.ytClientId(app))
         // the YouTube button without a secret explains instead of doing nothing

@@ -41,7 +41,8 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
     private var u = 1f
 
     private var gen = 0
-    private var badges: Bitmap? = null; private var badgesGen = 0
+    private var subsBmp: Bitmap? = null; private var subsGen = 0
+    private var viewersBmp: Bitmap? = null; private var viewersGen = 0
     private var goalBmp: Bitmap? = null; private var goalGen = 0
     private var alertBmp: Bitmap? = null; private var alertGen = 0
     private var chatBmp: Bitmap? = null; private var chatGen = 0
@@ -49,13 +50,13 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
     // ---- what is shown (set by the service from the settings and the chat)
     var showSubs = true
     var showViewers = false
-    var badgePos = LiveExtras.POS_TL
     var showAlerts = true
-    var alertPos = LiveExtras.POS_TC
     var showGoal = false
-    var goalPos = LiveExtras.POS_BL
     var showChat = false
-    var chatPos = LiveExtras.POS_BL
+    /** Where each thing sits (OverlayLayout keys), as the owner arranged it in «چیدمانِ پخش». */
+    private var places: Map<String, OverlayLayout.Place> = OverlayLayout.ITEMS.associate { it.key to OverlayLayout.Place(it.defX, it.defY, 1f) }
+
+    fun setPlaces(p: Map<String, OverlayLayout.Place>) { places = p; push() }
     /** 0 no background (outlined text), 1 one glass box, 2 a bubble per message. */
     var chatStyle = 1
     private var subs = -1L
@@ -191,39 +192,41 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
     private fun push() {
         if (released) return
         val out = ArrayList<LookFilter.Layer>()
-        val margin = 28f * u
-        val gap = 12f * u
-        // Stacks per corner: badges, then the goal, then the alert (when they share a corner).
-        val used = HashMap<Int, Float>()
-        val placed = ArrayList<RectF>()
-        fun place(id: Int, b: Bitmap?, g: Int, pos: Int, alpha: Float = 1f, dy: Float = 0f) {
+        /** [b] scaled by its place, centred where the owner put it, kept inside the frame. */
+        fun place(id: Int, key: String, b: Bitmap?, g: Int, alpha: Float = 1f, dy: Float = 0f) {
             if (b == null) return
-            val w = b.width.toFloat(); val h = b.height.toFloat()
-            val x = when (pos % 3) { 0 -> margin; 1 -> (fw - w) / 2f; else -> fw - margin - w }
-            var off = used[pos] ?: 0f
-            val top = pos < 3
-            fun rect() = if (top) RectF(x, margin + off, x + w, margin + off + h) else RectF(x, fh - margin - off - h, x + w, fh - margin - off)
-            // e.g. wide counters at top-left and an alert at top-centre: the alert goes below them
-            var guard = 0
-            while (guard++ < 8) {
-                val r = rect()
-                val hit = placed.firstOrNull { RectF.intersects(it, r) } ?: break
-                off = if (top) hit.bottom + gap - margin else fh - margin - hit.top + gap
-            }
-            val r = rect()
-            placed += r
-            used[pos] = off + h + gap
-            out += LookFilter.Layer(id, b, g, x / fw, (r.top + if (top) dy else -dy) / fh, w / fw, h / fh, alpha)
+            val p = places[key] ?: return
+            val w = b.width * p.scale; val h = b.height * p.scale
+            val x = (p.x * fw - w / 2f).coerceIn(0f, maxOf(0f, fw - w))
+            val y = (p.y * fh - h / 2f).coerceIn(0f, maxOf(0f, fh - h))
+            out += LookFilter.Layer(id, b, g, x / fw, (y + dy) / fh, w / fw, h / fh, alpha)
         }
-        if (showSubs || showViewers) place(1, badges, badgesGen, badgePos)
-        if (showGoal) place(2, goalBmp, goalGen, goalPos)
-        if (showChat) place(4, chatBmp, chatGen, chatPos)
+        if (showSubs) place(1, OverlayLayout.SUBS, subsBmp, subsGen)
+        if (showViewers) place(5, OverlayLayout.VIEWERS, viewersBmp, viewersGen)
+        if (showGoal) place(2, OverlayLayout.GOAL, goalBmp, goalGen)
+        if (showChat) place(4, OverlayLayout.CHAT, chatBmp, chatGen)
         if (current != null && alertBmp != null) {
             val (a, dy) = alertMotion()
-            place(3, alertBmp, alertGen, alertPos, a, dy)
+            place(3, OverlayLayout.ALERT, alertBmp, alertGen, a, dy)
         }
         sink(out)
     }
+
+    /**
+     * Each thing as viewers would see it, with sample content, for «چیدمانِ پخش» (drawn by the
+     * same code as the stream, so what is arranged there is exactly what appears).
+     */
+    fun samples(): Map<String, Bitmap> = mapOf(
+        OverlayLayout.SUBS to badge(0, ctx.getString(R.string.ov_subs_fmt, compact(12_345))),
+        OverlayLayout.VIEWERS to badge(1, ctx.getString(R.string.ov_viewers_fmt, compact(1_234))),
+        OverlayLayout.GOAL to drawGoal(ctx.getString(R.string.ov_goal_subs_fmt, "13000"), 12_345, 13_000),
+        OverlayLayout.CHAT to drawChat(listOf(
+            ChatLine("1", "Ali", ctx.getString(R.string.lay_sample_chat1), Color.rgb(255, 138, 128)),
+            ChatLine("2", "Sara_99", "this clutch was insane", Color.rgb(61, 214, 140)),
+            ChatLine("3", "Navid", ltr("$5.00") + " — " + ctx.getString(R.string.lay_sample_chat2), Color.rgb(128, 216, 255), Color.argb(90, 255, 176, 32)),
+        )),
+        OverlayLayout.ALERT to drawAlert(Alert(Kind.SUBSCRIBER, "Sara_99")),
+    )
 
     // ------------------------------------------------------------ drawing
 
@@ -245,37 +248,38 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
     }
 
     private fun redrawBadges() {
-        val parts = ArrayList<Pair<Int, String>>()   // icon kind (0 people, 1 eye) and text
-        if (showSubs && subs >= 0) parts += 0 to ctx.getString(R.string.ov_subs_fmt, compact(subs))
-        if (showViewers && viewers >= 0) parts += 1 to ctx.getString(R.string.ov_viewers_fmt, compact(viewers))
-        if (parts.isEmpty()) { badges = null; return }
+        subsBmp = if (showSubs && subs >= 0) badge(0, ctx.getString(R.string.ov_subs_fmt, compact(subs))) else null
+        subsGen = ++gen
+        viewersBmp = if (showViewers && viewers >= 0) badge(1, ctx.getString(R.string.ov_viewers_fmt, compact(viewers))) else null
+        viewersGen = ++gen
+    }
+
+    /** One counter pill: [kind] 0 people (subscribers), 1 eye (viewers). */
+    private fun badge(kind: Int, text: String): Bitmap {
         val tp = paint(30f, true)
         val ic = 30f * u
         val pad = 18f * u
-        val between = 14f * u
         val h = 58f * u
-        val widths = parts.map { pad + ic + 10f * u + tp.measureText(it.second) + pad }
-        val w = widths.sum() + between * (parts.size - 1)
+        val w = pad + ic + 10f * u + tp.measureText(text) + pad
         val b = Bitmap.createBitmap(w.toInt() + 2, h.toInt() + 2, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)
-        var x = 0f
-        val order = if (rtl) parts.indices.reversed() else parts.indices
-        for (i in order) {
-            val (kind, text) = parts[i]
-            val r = RectF(x, 0f, x + widths[i], h)
-            glass(c, r, h / 2f)
-            val iconX = if (rtl) r.right - pad - ic else r.left + pad
-            if (kind == 0) person(c, iconX, (h - ic) / 2f, ic, Color.rgb(255, 59, 71)) else eye(c, iconX, (h - ic) / 2f, ic, Color.rgb(106, 166, 255))
-            val tx = if (rtl) iconX - 10f * u - tp.measureText(text) else iconX + ic + 10f * u
-            c.drawText(text, tx, h / 2f - (tp.descent() + tp.ascent()) / 2f, tp)
-            x += widths[i] + between
-        }
-        badges = b
-        badgesGen = ++gen
+        val r = RectF(0f, 0f, w, h)
+        glass(c, r, h / 2f)
+        val iconX = if (rtl) r.right - pad - ic else r.left + pad
+        if (kind == 0) person(c, iconX, (h - ic) / 2f, ic, Color.rgb(255, 59, 71)) else eye(c, iconX, (h - ic) / 2f, ic, Color.rgb(106, 166, 255))
+        val tx = if (rtl) iconX - 10f * u - tp.measureText(text) else iconX + ic + 10f * u
+        c.drawText(text, tx, h / 2f - (tp.descent() + tp.ascent()) / 2f, tp)
+        return b
     }
 
     private fun redrawGoal() {
         if (!showGoal) { goalBmp = null; return }
+        goalBmp = drawGoal(goalTitle, goalKnown, goalTarget)
+        goalGen = ++gen
+    }
+
+    private fun drawGoal(goalTitle: String, goalKnown: Long?, goalTarget: Long): Bitmap {
+        val goalNow = goalKnown ?: 0L
         val w = 600f * u
         val h = 112f * u
         val b = Bitmap.createBitmap(w.toInt() + 2, h.toInt() + 2, Bitmap.Config.ARGB_8888)
@@ -310,8 +314,7 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
         val pct = paint(20f, true)
         val ps = String.format(Locale.US, "%d%%", (k * 100).toInt())
         c.drawText(ps, bar.centerX() - pct.measureText(ps) / 2f, bar.centerY() - (pct.descent() + pct.ascent()) / 2f, pct)
-        goalBmp = b
-        goalGen = ++gen
+        return b
     }
 
     private fun drawChat(lines: List<ChatLine>): Bitmap {

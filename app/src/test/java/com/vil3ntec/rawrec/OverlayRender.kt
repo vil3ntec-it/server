@@ -158,6 +158,35 @@ class OverlayRender {
         }
     }
 
+    /** The «چیدمانِ پخش» editor, and the whole «زنده» page top to bottom. */
+    private fun screens(tag: String) {
+        val ed = org.robolectric.Robolectric.buildActivity(LayoutEditorActivity::class.java).setup().get()
+        shadowOf(Looper.getMainLooper()).idle()
+        val stage = allViews(ed.window.decorView).filterIsInstance<LayoutEditorActivity.Stage>().first()
+        stage.select(OverlayLayout.CHAT)
+        shadowOf(Looper.getMainLooper()).idle()
+        val root = ed.window.decorView
+        val b = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+        root.draw(Canvas(b))
+        File(dir, "layout-editor-$tag.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+
+        val a = org.robolectric.Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        shadowOf(Looper.getMainLooper()).idle()
+        allViews(a.window.decorView).first { it.tag == "nav:LIVE" }.performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        val scroll = allViews(a.window.decorView).filterIsInstance<android.widget.ScrollView>().first { it.isShown && it.getChildAt(0)?.height ?: 0 > 0 }
+        val content = scroll.getChildAt(0)
+        val lb = Bitmap.createBitmap(content.width, content.height, Bitmap.Config.ARGB_8888)
+        Canvas(lb).apply { drawColor(Color.rgb(14, 15, 18)); content.draw(this) }
+        File(dir, "live-page-$tag.png").outputStream().use { lb.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    private fun allViews(v: android.view.View, out: MutableList<android.view.View> = ArrayList()): MutableList<android.view.View> {
+        out += v
+        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) allViews(v.getChildAt(i), out)
+        return out
+    }
+
     private fun all(qualifiers: String, tag: String) {
         RuntimeEnvironment.setQualifiers(qualifiers)
         val app = RuntimeEnvironment.getApplication()
@@ -167,6 +196,7 @@ class OverlayRender {
         stream("$tag-giveaway", StreamOverlay.Alert(StreamOverlay.Kind.GIVEAWAY, "علی رضایی", "17"))
         hud(tag)
         styles(tag)
+        screens(tag)
         app.toString()
     }
 

@@ -125,6 +125,12 @@ class RecordService : Service(), Recorder.Events {
         @Volatile var liveStatus: RtmpSink.Status? = null; private set
         @Volatile var isLive = false; private set
         @Volatile var liveCovered = false; private set
+        /** The stream on YouTube while live (title, picture, health), and the latest counts; null otherwise. */
+        @Volatile var ytInfo: LiveChat.YtInfo? = null; private set
+        @Volatile var liveViewers = -1L; private set
+        @Volatile var liveLikes = -1L; private set
+        /** The latest note for the «زنده» page (title / thumbnail set or refused). */
+        @Volatile var liveNote: String? = null; private set
         /** Who asked to stop (ACTION_STOP): [SRC_APP], [SRC_NOTIFICATION] or [SRC_TILE]. */
         const val EXTRA_SRC = "src"
         const val SRC_APP = "app"
@@ -197,13 +203,16 @@ class RecordService : Service(), Recorder.Events {
 
         @Volatile private var current: WeakReference<RecordService>? = null
 
+        /** «چیدمانِ پخش» changed: a running stream takes the new places and switches at once. */
+        fun layoutChanged() { current?.get()?.let { s -> s.main.post { s.layoutChanged() } } }
+
         /** From the crash handler: finish a running recording so its file is saved before the process dies. */
         internal fun onProcessCrash(e: Throwable) {
             current?.get()?.emergencyFinish(e)
         }
     }
 
-    private val main = Handler(Looper.getMainLooper())
+    internal val main = Handler(Looper.getMainLooper())
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
     @Volatile private var projection: MediaProjection? = null
     @Volatile private var recorder: Recorder? = null
@@ -750,6 +759,7 @@ class RecordService : Service(), Recorder.Events {
 
     private fun startLiveExtras(r: Recorder) {
         extrasReport = null
+        ytInfo = null; liveViewers = -1; liveLikes = -1; liveNote = null
         membersThisStream = 0; alertsShown = 0
         streamChat.clear(); hudCaptured = null
         quotaAtStart = LiveExtras.Quota.used(this)
@@ -758,13 +768,10 @@ class RecordService : Service(), Recorder.Events {
             overlay = StreamOverlay(this) { f.setLayers(it) }.also { o ->
                 o.setSize(r.plan.width, r.plan.height)
                 o.showAlerts = LiveExtras.alerts(this)
-                o.alertPos = LiveExtras.alertPos(this)
                 o.showSubs = LiveExtras.subsBadge(this)
                 o.showViewers = LiveExtras.viewersBadge(this)
-                o.badgePos = LiveExtras.badgePos(this)
                 o.showGoal = LiveExtras.goal(this)
-                o.goalPos = LiveExtras.goalPos(this)
-                o.chatPos = LiveExtras.chatPos(this)
+                o.setPlaces(OverlayLayout.ITEMS.associate { it.key to OverlayLayout.place(this, it.key) })
                 o.chatStyle = LiveExtras.chatStyle(this)
                 o.refreshAll()
             }
@@ -799,6 +806,15 @@ class RecordService : Service(), Recorder.Events {
         main.postDelayed(botTick, 5000)
         updateGoal()
         pushStreamChat()
+    }
+
+    /** «چیدمانِ پخش» saved while live: places and switches apply at once. */
+    internal fun layoutChanged() {
+        overlay?.let { o ->
+            o.chatStyle = LiveExtras.chatStyle(this)
+            o.setPlaces(OverlayLayout.ITEMS.associate { it.key to OverlayLayout.place(this, it.key) })
+        }
+        applyStreamFlags()
     }
 
     private fun streamFlags(): Map<String, Boolean> = ChatHud.ON_STREAM.associateWith { LiveExtras.onStream(this, it) }
@@ -848,6 +864,7 @@ class RecordService : Service(), Recorder.Events {
         }
         try { lc?.stop() } catch (_: Exception) {}
         chat = null; bot = null
+        ytInfo = null
         try { hud?.hide() } catch (_: Exception) {}
         hud = null
         try { overlay?.release() } catch (_: Exception) {}
@@ -916,6 +933,7 @@ class RecordService : Service(), Recorder.Events {
             main.post { alert(StreamOverlay.Alert(StreamOverlay.Kind.SUBSCRIBER, name ?: "")); updateGoal() }
         }
         override fun onStats(s: LiveChat.Stats) {
+            liveViewers = s.viewers; liveLikes = s.likes
             main.post {
                 hud?.setStats(s.viewers, s.likes, s.subs)
                 hud?.setCanSend(chat?.canSend == true)
@@ -931,6 +949,8 @@ class RecordService : Service(), Recorder.Events {
             }
         }
         override fun onActionFailed(text: String) { main.post { hud?.note(text) } }
+        override fun onBroadcast(info: LiveChat.YtInfo) { ytInfo = info }
+        override fun onNote(text: String) { liveNote = text; main.post { hud?.note(text) } }
     }
 
     private fun onChat(m: LiveChat.Msg) {

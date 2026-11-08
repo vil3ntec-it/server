@@ -38,6 +38,9 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
 
     class Stats(val viewers: Long, val likes: Long, val subs: Long)
 
+    /** What the «زنده» page shows about the stream on YouTube. */
+    data class YtInfo(val videoId: String, val title: String, val thumb: String?, val health: String?)
+
     interface Listener {
         fun onMessage(m: Msg)
         fun onDeleted(id: String)
@@ -48,6 +51,10 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
         fun onState(youtube: String?, twitch: String?)
         /** An action (send, delete, time-out) failed. */
         fun onActionFailed(text: String)
+        /** The YouTube stream: found, or its title / health / picture changed. */
+        fun onBroadcast(info: YtInfo) {}
+        /** Something the owner should know (title or thumbnail set or refused). */
+        fun onNote(text: String) {}
     }
 
     private val yt: YouTubeApi? = LiveExtras.youTube(ctx)
@@ -58,6 +65,9 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
     @Volatile private var running = false
     @Volatile var chatId: String? = null; private set
     @Volatile private var videoId: String? = null
+    @Volatile private var bc: YouTubeApi.Broadcast? = null
+    @Volatile var ytInfo: YtInfo? = null; private set
+    private var health: String? = null
     @Volatile private var ytState: String? = null
     @Volatile private var twState: String? = null
     private var threads = ArrayList<Thread>()
@@ -161,15 +171,18 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
                         setYt(ctx.getString(R.string.chat_yt_looking))
                         sleep(if (System.currentTimeMillis() - startedAt < 120_000) 10_000 else 30_000); continue
                     }
-                    chatId = b.chatId; videoId = b.videoId
+                    chatId = b.chatId; videoId = b.videoId; bc = b
                     page = null; first = true
                     setYt(null)
+                    publish()
+                    applyOwnerChoices(api, b)
                 }
                 val now = System.currentTimeMillis()
                 if (now >= nextStats) {
                     nextStats = now + 30_000
                     videoId?.let { v -> val (a, b) = api.videoStats(v); viewers = a; likes = b }
                     l.onStats(Stats(viewers, likes, subs))
+                    bc?.streamId?.let { sid -> val h = try { api.streamHealth(sid) } catch (_: Exception) { null }; if (h != health) { health = h; publish() } }
                 }
                 if (now >= nextSubs) {
                     nextSubs = now + 60_000
@@ -217,6 +230,43 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
             } catch (e: Exception) {
                 setYt(ctx.getString(R.string.chat_yt_error_fmt, e.message ?: e.javaClass.simpleName))
                 sleep(30_000)
+            }
+        }
+    }
+
+    private fun publish() {
+        val b = bc ?: return
+        ytInfo = YtInfo(b.videoId, b.title, b.thumb, health)
+        l.onBroadcast(ytInfo!!)
+    }
+
+    /**
+     * The title and thumbnail the owner chose in the app, set on this stream once (each costs 50
+     * of the day's units). A thumbnail needs a verified YouTube channel: YouTube's refusal is shown.
+     */
+    private fun applyOwnerChoices(api: YouTubeApi, b: YouTubeApi.Broadcast) {
+        val p = ctx.getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE)
+        val title = LiveExtras.ytTitle(ctx)
+        if (title.isNotBlank() && title != b.title) {
+            try {
+                api.setTitle(b, title)
+                bc = YouTubeApi.Broadcast(b.videoId, b.chatId, title, b.thumb, b.streamId, b.scheduled, b.description)
+                publish()
+                l.onNote(ctx.getString(R.string.yt_title_set_fmt, title))
+            } catch (e: Exception) {
+                l.onNote(ctx.getString(R.string.yt_title_failed_fmt, (e as? YouTubeApi.Companion.HttpError)?.let { friendly(it) } ?: e.message ?: ""))
+            }
+        }
+        val thumb = LiveExtras.ytThumbFile(ctx)
+        val stamp = "${b.videoId}:${thumb?.lastModified()}"
+        if (thumb != null && SafePrefs.str(p, "yt_thumb_done") != stamp) {
+            try {
+                api.setThumbnail(b.videoId, thumb.readBytes())
+                p.edit().putString("yt_thumb_done", stamp).apply()
+                l.onNote(ctx.getString(R.string.yt_thumb_set))
+            } catch (e: Exception) {
+                val why = (e as? YouTubeApi.Companion.HttpError)?.let { if (it.code == 403) ctx.getString(R.string.yt_thumb_verify) else friendly(it) } ?: e.message ?: ""
+                l.onNote(ctx.getString(R.string.yt_thumb_failed_fmt, why))
             }
         }
     }
