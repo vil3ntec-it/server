@@ -167,7 +167,7 @@ object Scenes {
         val l = Layer(newId(), kind, ctx.getString(kindName(kind)), p = defaults(ctx, kind))
         when (kind) {
             Kind.CHAT -> { l.x = 0.18f; l.y = 0.62f }
-            Kind.ALERTS -> { l.x = 0.5f; l.y = 0.12f }
+            Kind.ALERTS -> { l.x = 0.5f; l.y = 0.12f; l.scale = 0.8f }
             Kind.GOAL -> { l.x = 0.18f; l.y = 0.92f }
             Kind.CAMERA -> { l.x = 0.86f; l.y = 0.78f; l.scale = 0.5f }
             Kind.WEB -> { l.scale = 0.5f }
@@ -248,7 +248,8 @@ object Scenes {
         game.layers += text(R.string.lay_viewers, ctx.getString(R.string.sc_viewers_text), 0f, 0f, 30, pill).apply {
             old(OverlayLayout.VIEWERS).let { x = it.x; y = it.y; scale = it.scale }; visible = LiveExtras.viewersBadge(ctx)
         }
-        game.layers += newLayer(ctx, Kind.ALERTS).apply { old(OverlayLayout.ALERT).let { x = it.x; y = it.y; scale = it.scale }; visible = LiveExtras.alerts(ctx) }
+        // (0.8: clear of the two counters at the top)
+        game.layers += newLayer(ctx, Kind.ALERTS).apply { old(OverlayLayout.ALERT).let { x = it.x; y = it.y; scale = it.scale * 0.8f }; visible = LiveExtras.alerts(ctx) }
 
         val soon = Scene(newId(), ctx.getString(R.string.sc_scene_soon), game = false, bg = Color.rgb(20, 22, 34))
         soon.layers += text(R.string.sc_k_text, ctx.getString(R.string.sc_soon_title), 0.5f, 0.42f, 110)
