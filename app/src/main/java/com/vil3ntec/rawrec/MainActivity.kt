@@ -1451,10 +1451,17 @@ class MainActivity : Activity() {
         toggles["hud_on"] = Toggle(hc, "tog:hud_on", R.drawable.ic_chat, str(R.string.live_hud_on_title), str(R.string.live_hud_on_desc), top = 0) { on ->
             LiveExtras.put(ctx, "hud_on", on); toggles["hud_on"]?.set(on)
         }.apply { set(LiveExtras.hud(ctx)) }
+        rows["hud_style"] = Row(hc, str(R.string.live_hud_style), str(R.string.live_hud_style_desc), listOf(str(R.string.live_style_bare),
+            str(R.string.live_style_faint), str(R.string.live_style_bubbles), str(R.string.live_style_compact)), top = 12) { i ->
+            LiveExtras.put(ctx, "hud_style", i)
+        }.apply { select(LiveExtras.hudStyle(ctx)) }
+        toggles["hud_stats"] = Toggle(hc, "tog:hud_stats", R.drawable.ic_eye, str(R.string.live_hud_stats_title), str(R.string.live_hud_stats_desc), top = 12) { on ->
+            LiveExtras.put(ctx, "hud_stats", on); toggles["hud_stats"]?.set(on)
+        }.apply { set(LiveExtras.hudStats(ctx)) }
         rows["hud_size"] = Row(hc, str(R.string.live_hud_size), "", listOf(str(R.string.live_hud_s), str(R.string.live_hud_m), str(R.string.live_hud_l)), top = 12) { i ->
             LiveExtras.put(ctx, "hud_size", i)
         }.apply { select(LiveExtras.hudSize(ctx)) }
-        rows["hud_alpha"] = Row(hc, str(R.string.live_hud_alpha), "", listOf(str(R.string.live_alpha_1), str(R.string.live_alpha_2), str(R.string.live_alpha_3)), top = 12) { i ->
+        rows["hud_alpha"] = Row(hc, str(R.string.live_hud_alpha), str(R.string.live_hud_alpha_desc), listOf(str(R.string.live_alpha_1), str(R.string.live_alpha_2), str(R.string.live_alpha_3)), top = 12) { i ->
             LiveExtras.put(ctx, "hud_alpha", i)
         }.apply { select(LiveExtras.hudAlpha(ctx)) }
 
@@ -1467,6 +1474,9 @@ class MainActivity : Activity() {
         tog("ov_chat", R.drawable.ic_chat, R.string.live_ov_chat_title, R.string.live_ov_chat_desc, LiveExtras.chatOnStream(ctx), top = 10)
         rows["ov_chat_pos"] = Row(oc, str(R.string.live_ov_chat_pos), "", positions(), top = 10) { i -> LiveExtras.put(ctx, "ov_chat_pos", i) }
             .apply { select(LiveExtras.chatPos(ctx)) }
+        rows["ov_chat_style"] = Row(oc, str(R.string.live_ov_chat_style), "", listOf(str(R.string.live_style_bare),
+            str(R.string.live_style_glass), str(R.string.live_style_bubbles)), top = 10) { i -> LiveExtras.put(ctx, "ov_chat_style", i) }
+            .apply { select(LiveExtras.chatStyle(ctx)) }
         tog("ov_alerts", R.drawable.ic_bell, R.string.live_ov_alerts_title, R.string.live_ov_alerts_desc, LiveExtras.alerts(ctx), top = 14)
         tog("ov_subs", R.drawable.ic_people, R.string.live_ov_subs_title, R.string.live_ov_subs_desc, LiveExtras.subsBadge(ctx))
         tog("ov_viewers", R.drawable.ic_eye, R.string.live_ov_viewers_title, R.string.live_ov_viewers_desc, LiveExtras.viewersBadge(ctx))

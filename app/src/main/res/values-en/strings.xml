@@ -612,7 +612,7 @@ Recording ends cleanly before the storage is full.</string>
     <string name="live_hud_s">Small</string>
     <string name="live_hud_m">Medium</string>
     <string name="live_hud_l">Large</string>
-    <string name="live_hud_alpha">Background</string>
+    <string name="live_hud_alpha">Strength</string>
     <string name="live_alpha_1">Clear</string>
     <string name="live_alpha_2">Half</string>
     <string name="live_alpha_3">Solid</string>
@@ -702,4 +702,15 @@ Recording ends cleanly before the storage is full.</string>
     <string name="live_ov_chat_title">Chat on the stream</string>
     <string name="live_ov_chat_desc">On: viewers see the chat on the picture too. Off: the chat is only on your phone. While live it changes at once with the eye button on the chat (also for thank-yous, counters and the goal bar).</string>
     <string name="live_ov_chat_pos">Chat position on the stream</string>
+    <string name="live_hud_style">How the chat looks over the game</string>
+    <string name="live_hud_style_desc">«No background»: only text with a thin shadow; no box covers the game.</string>
+    <string name="live_style_bare">No background</string>
+    <string name="live_style_faint">Faint shade</string>
+    <string name="live_style_bubbles">Bubbles</string>
+    <string name="live_style_compact">One line</string>
+    <string name="live_style_glass">Glass box</string>
+    <string name="live_hud_stats_title">Viewers, likes and subscribers over the game</string>
+    <string name="live_hud_stats_desc">Display only; touches pass through it to the game. Viewers do not see it (for the stream see «Viewer count» below).</string>
+    <string name="live_hud_alpha_desc">How strongly it shows.</string>
+    <string name="live_ov_chat_style">How the chat looks on the stream</string>
 </resources>

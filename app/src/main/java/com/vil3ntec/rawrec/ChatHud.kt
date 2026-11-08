@@ -34,8 +34,9 @@ import kotlin.math.abs
 /**
  * The live chat on the owner's phone while playing, in three pieces:
  *
- *  • the feed — the latest messages over the game, for reading only: touches go straight through
- *    it to the game (shooting, moving), it can never be hit by accident; old lines fade away;
+ *  • the feed — the viewer / like / subscriber numbers and the latest messages over the game, for
+ *    reading only: touches go straight through it to the game (shooting, moving), it can never be
+ *    hit by accident; by default without any background (shadowed text), old lines fade away;
  *  • the chat button — a small round button (drag it anywhere): tap it to open the panel;
  *  • the panel — the whole chat with a box to write, a tap on a message to answer, remove it or
  *    silence its writer, the giveaway and goal buttons, and «در پخش»: what viewers see (the chat,
@@ -71,8 +72,12 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
     private val feedW = dp(intArrayOf(240, 290, 340)[sizeLevel])
     private val feedLines = intArrayOf(4, 6, 8)[sizeLevel]
     private val bgAlpha = intArrayOf(120, 175, 230)[LiveExtras.hudAlpha(ctx)]
+    /** Over the game: 0 no background, 1 faint, 2 bubbles, 3 one line each (see LiveExtras.hudStyle). */
+    private val style = LiveExtras.hudStyle(ctx)
+    private val feedOpacity = floatArrayOf(0.7f, 0.85f, 1f)[LiveExtras.hudAlpha(ctx)]
+    private val showStats = LiveExtras.hudStats(ctx)
     private val textSp = floatArrayOf(12.5f, 13.5f, 14.5f)[sizeLevel]
-    private val bubbleSize = dp(48)
+    private val bubbleSize = dp(44)
 
     private var shown = false
     private var open = false
@@ -154,16 +159,30 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
     private val bubbleRing = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.argb(215, 16, 18, 24)); setStroke(dp(2), Color.argb(90, 255, 255, 255)) }
     internal val bubble = FrameLayout(ctx).apply {
         background = bubbleRing
+        alpha = 0.75f
         contentDescription = ctx.getString(R.string.hud_open)
         addView(ImageView(ctx).apply {
             setImageResource(R.drawable.ic_chat)
             imageTintList = ColorStateList.valueOf(Color.WHITE)
-        }, FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER))
+        }, FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
         addView(bubbleCount, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, dp(18), Gravity.TOP or Gravity.END))
     }
 
-    // ---- the feed (read only, touches pass through)
+    // ---- the feed (read only, touches pass through): the numbers on top, then the latest messages
+    internal val statsLine = TextView(ctx).apply {
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, textSp - 0.5f)
+        setTextColor(Color.WHITE)
+        typeface = Typeface.DEFAULT_BOLD
+        maxLines = 1
+        visibility = View.GONE
+    }
     internal val feed = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+    internal val feedRoot = LinearLayout(ctx).apply {
+        orientation = LinearLayout.VERTICAL
+        alpha = feedOpacity
+        addView(statsLine, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        addView(feed, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+    }
 
     // ---- the panel
     private val stats = label(12f, Color.argb(235, 255, 255, 255), true).apply { maxLines = 1 }
@@ -280,7 +299,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         setFocusable(false)
         main.removeCallbacksAndMessages(null)
         OverlayWindows.remove(wm, panelRoot)
-        OverlayWindows.remove(wm, feed)
+        OverlayWindows.remove(wm, feedRoot)
         OverlayWindows.remove(wm, bubble)
         shown = false
         open = false
@@ -314,6 +333,11 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         if (likes >= 0) parts += ctx.getString(R.string.hud_likes_fmt, StreamOverlay.compact(likes))
         if (subs >= 0) parts += ctx.getString(R.string.hud_subs_fmt, StreamOverlay.compact(subs))
         stats.text = if (parts.isEmpty()) ctx.getString(R.string.hud_title) else parts.joinToString("  ·  ")
+        // the same numbers over the game, read only
+        statsLine.text = parts.joinToString("   ")
+        statsLine.visibility = if (showStats && parts.isNotEmpty()) View.VISIBLE else View.GONE
+        styleLine(statsLine, null)
+        updateFeed()
     }
 
     fun setState(text: String?) {
@@ -371,29 +395,51 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
 
     private fun updateFeed() {
         if (!shown) return
-        val want = feedAllowed && !open && feed.childCount > 0
+        val want = feedAllowed && !open && (feed.childCount > 0 || statsLine.visibility == View.VISIBLE)
         if (want) {
             placeNearBubble(lpFeed, feedW, feedHeight())
-            if (feed.isAttachedToWindow) OverlayWindows.update(wm, feed, lpFeed)
-            else try { OverlayWindows.add(wm, feed, lpFeed.apply { width = feedW; height = WindowManager.LayoutParams.WRAP_CONTENT }) } catch (_: Exception) {}
-        } else OverlayWindows.remove(wm, feed)
+            if (feedRoot.isAttachedToWindow) OverlayWindows.update(wm, feedRoot, lpFeed)
+            else try { OverlayWindows.add(wm, feedRoot, lpFeed.apply { width = feedW; height = WindowManager.LayoutParams.WRAP_CONTENT }) } catch (_: Exception) {}
+        } else OverlayWindows.remove(wm, feedRoot)
     }
 
-    private fun feedHeight(): Int = feed.height.takeIf { it > 0 } ?: dp(30) * feed.childCount
+    private fun feedHeight(): Int = feedRoot.height.takeIf { it > 0 } ?: dp(30) * (feed.childCount + 1)
+
+    /**
+     * The look of a line over the game. Without a background the text keeps a dark outline-like
+     * shadow, so it reads on bright and dark game scenes alike without hiding the game.
+     */
+    private fun styleLine(tv: TextView, kind: LiveChat.Kind?) {
+        val paid = kind != null && kind != LiveChat.Kind.CHAT
+        when (style) {
+            0, 3 -> {
+                tv.background = null
+                tv.setShadowLayer(dp(3).toFloat(), 0f, 0f, Color.argb(255, 0, 0, 0))
+                tv.setPadding(dp(2), dp(1), dp(2), dp(1))
+                if (paid) tv.setTextColor(kindColor(kind!!, 255))
+            }
+            else -> {
+                tv.setShadowLayer(dp(2).toFloat(), 0f, dp(1).toFloat(), Color.argb(200, 0, 0, 0))
+                val a = if (style == 1) 70 else bgAlpha
+                tv.background = GradientDrawable().apply {
+                    cornerRadius = dp(10).toFloat()
+                    setColor(if (!paid) Color.argb(a, 12, 14, 18) else kindColor(kind!!, maxOf(a, 120)))
+                }
+                tv.setPadding(dp(9), dp(4), dp(9), dp(5))
+            }
+        }
+        if (style == 3) { tv.maxLines = 1; tv.ellipsize = android.text.TextUtils.TruncateAt.END }
+    }
 
     private fun addFeedLine(m: LiveChat.Msg) {
-        val tv = label(textSp).apply {
+        val tv = label(if (style == 3) textSp - 1f else textSp).apply {
             tag = m.id
             text = line(m)
             maxLines = 3
-            setShadowLayer(dp(2).toFloat(), 0f, dp(1).toFloat(), Color.argb(200, 0, 0, 0))
-            background = GradientDrawable().apply {
-                cornerRadius = dp(10).toFloat()
-                setColor(if (m.kind == LiveChat.Kind.CHAT) Color.argb(bgAlpha, 12, 14, 18) else kindColor(m.kind, maxOf(bgAlpha, 150)))
-            }
-            setPadding(dp(9), dp(4), dp(9), dp(5))
+            if (style == 0 || style == 3) typeface = Typeface.DEFAULT_BOLD
         }
-        feed.addView(tv, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(3) })
+        styleLine(tv, m.kind)
+        feed.addView(tv, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(if (style == 0 || style == 3) 1 else 3) })
         while (feed.childCount > feedLines) feed.removeViewAt(0)
         // Read in peace, then it leaves (paid messages stay longer).
         val stay = if (m.kind == LiveChat.Kind.CHAT) 20_000L else 40_000L

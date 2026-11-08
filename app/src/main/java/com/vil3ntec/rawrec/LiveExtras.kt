@@ -50,6 +50,12 @@ object LiveExtras {
     fun hud(ctx: Context) = b(ctx, "hud_on", true)
     fun hudSize(ctx: Context) = i(ctx, "hud_size", 1).coerceIn(0, 2)
     fun hudAlpha(ctx: Context) = i(ctx, "hud_alpha", 1).coerceIn(0, 2)
+    /** How the chat looks over the game: 0 no background (shadowed text), 1 faint, 2 bubbles, 3 one line each. */
+    fun hudStyle(ctx: Context) = i(ctx, "hud_style", 0).coerceIn(0, 3)
+    /** Viewers / likes / subscribers over the game (read only, touches pass through). */
+    fun hudStats(ctx: Context) = b(ctx, "hud_stats", true)
+    /** How the chat looks on the stream: 0 no background, 1 one glass box, 2 a bubble per message. */
+    fun chatStyle(ctx: Context) = i(ctx, "ov_chat_style", 1).coerceIn(0, 2)
 
     // ---- on the stream
     const val POS_TL = 0; const val POS_TC = 1; const val POS_TR = 2; const val POS_BL = 3; const val POS_BC = 4; const val POS_BR = 5

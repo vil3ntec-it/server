@@ -102,7 +102,7 @@ class OverlayRender {
             File(dir, "$name-$tag.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         // closed: the button and the read-only feed over the game
-        draw("hud-feed", listOf(hud.bubble, hud.feed))
+        draw("hud-feed", listOf(hud.bubble, hud.feedRoot))
         // open: the panel, with «در پخش» shown
         hud.openForPreview()
         (ChatHud::class.java.getDeclaredField("streamRow").apply { isAccessible = true }.get(hud) as android.view.View).visibility = android.view.View.VISIBLE
@@ -110,6 +110,51 @@ class OverlayRender {
         hud.panel.findViewWithTag<android.view.View>("x")   // (no-op: keeps the view tree laid out)
         draw("hud-panel", listOf(hud.panel))
         hud.hide()
+    }
+
+    /** Every look of the chat over the game, and of the chat on the stream. */
+    private fun styles(tag: String) {
+        val app = RuntimeEnvironment.getApplication()
+        val prefs = app.getSharedPreferences(RecordService.PREFS, android.content.Context.MODE_PRIVATE)
+        val pad = (16 * app.resources.displayMetrics.density).toInt()
+        for (st in 0..3) {
+            prefs.edit().putInt("hud_style", st).commit()
+            val hud = ChatHud(app, object : ChatHud.Actions {
+                override fun send(text: String) {}; override fun delete(m: LiveChat.Msg) {}; override fun timeout(m: LiveChat.Msg, seconds: Int) {}
+                override fun giveawayStart() {}; override fun giveawayDraw() {}; override fun giveawayStop() {}
+                override fun goalStep(d: Int) {}; override fun onStream(what: String, on: Boolean) {}
+            })
+            hud.show(); hud.setPrivate(true); hud.setStreamState(emptyMap()); hud.setStats(1234, 380, 12_345)
+            fun m(a: String, t: String, k: LiveChat.Kind = LiveChat.Kind.CHAT, amount: String? = null, member: Boolean = false) =
+                LiveChat.Msg("s$st$a", LiveChat.Platform.YOUTUBE, "c$a", a, t, k, amount, false, false, member, false)
+            hud.add(m("Ali", "سلام! بازی عالیه 🔥"))
+            hud.add(m("Sara_99", "this clutch was insane", member = true))
+            hud.add(m("Navid", "ممنون بابتِ پخش", LiveChat.Kind.SUPER, "$5.00"))
+            hud.add(m("Reza", "کدوم اسلحه بهتره؟"))
+            shadowOf(Looper.getMainLooper()).idle()
+            val v = hud.feedRoot
+            val b = game(v.width + pad * 2, v.height + pad * 2)
+            val c = Canvas(b); c.translate(pad.toFloat(), pad.toFloat()); v.draw(c)
+            File(dir, "hud-style$st-$tag.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            hud.hide()
+        }
+        prefs.edit().remove("hud_style").commit()
+        for (st in 0..2) {
+            var layers: List<LookFilter.Layer> = emptyList()
+            val o = StreamOverlay(app) { layers = it }
+            o.showSubs = false; o.showViewers = false; o.showGoal = false; o.showChat = true; o.chatStyle = st
+            o.setSize(1920, 1080)
+            o.setChat(listOf(
+                StreamOverlay.ChatLine("1", "Ali", "سلام! بازی عالیه 🔥", Color.rgb(255, 138, 128)),
+                StreamOverlay.ChatLine("2", "Sara_99", "this clutch was insane", Color.rgb(61, 214, 140)),
+                StreamOverlay.ChatLine("3", "Navid", StreamOverlay.ltr("$5.00") + " — ممنون بابتِ پخش", Color.rgb(128, 216, 255), Color.argb(90, 255, 176, 32)),
+            ))
+            val l = layers.first()
+            val b = game(l.bitmap.width + 80, l.bitmap.height + 80)
+            Canvas(b).drawBitmap(l.bitmap, 40f, 40f, null)
+            File(dir, "stream-chat-style$st-$tag.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            o.release()
+        }
     }
 
     private fun all(qualifiers: String, tag: String) {
@@ -120,6 +165,7 @@ class OverlayRender {
         stream("$tag-member", StreamOverlay.Alert(StreamOverlay.Kind.MEMBER, "NightWolf", "Gold"))
         stream("$tag-giveaway", StreamOverlay.Alert(StreamOverlay.Kind.GIVEAWAY, "علی رضایی", "17"))
         hud(tag)
+        styles(tag)
         app.toString()
     }
 

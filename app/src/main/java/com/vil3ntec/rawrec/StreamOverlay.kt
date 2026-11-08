@@ -56,6 +56,8 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
     var goalPos = LiveExtras.POS_BL
     var showChat = false
     var chatPos = LiveExtras.POS_BL
+    /** 0 no background (outlined text), 1 one glass box, 2 a bubble per message. */
+    var chatStyle = 1
     private var subs = -1L
     private var viewers = -1L
     private var goalTitle = ""
@@ -316,10 +318,12 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
         val w = 600f * u
         val pad = 18f * u
         val textW = (w - pad * 2).toInt()
+        val bare = chatStyle == 0
         val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = 29f * u
             color = Color.WHITE
-            setShadowLayer(3f * u, 0f, 1.5f * u, Color.argb(160, 0, 0, 0))
+            if (bare) { typeface = Typeface.DEFAULT_BOLD; setShadowLayer(4f * u, 0f, 0f, Color.BLACK) }
+            else setShadowLayer(3f * u, 0f, 1.5f * u, Color.argb(160, 0, 0, 0))
         }
         // newest last; as many as fit in the box
         val layouts = ArrayList<Pair<StaticLayout, ChatLine>>()
@@ -341,13 +345,18 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
         val bh = total + pad * 2 - 12f * u
         val b = Bitmap.createBitmap(w.toInt() + 2, bh.toInt() + 2, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)
-        glass(c, RectF(0f, 0f, w, bh), 22f * u)
+        if (chatStyle == 1) glass(c, RectF(0f, 0f, w, bh), 22f * u)
         var y = pad
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
         for ((sl, l) in layouts) {
+            // a bubble of the line's own width (style 2), or only the paid / member highlight
+            val lineW = (0 until sl.lineCount).maxOf { sl.getLineWidth(it) }
+            val left = if (rtl) w - pad - lineW - 10f * u else pad - 10f * u
+            val r = RectF(left, y - 5f * u, left + lineW + 20f * u, y + sl.height + 5f * u)
+            if (chatStyle == 2) { p.color = Color.argb(185, 14, 15, 20); c.drawRoundRect(r, 14f * u, 14f * u, p) }
             l.accent?.let {
                 p.color = it
-                c.drawRoundRect(RectF(pad - 8f * u, y - 4f * u, w - pad + 8f * u, y + sl.height + 4f * u), 12f * u, 12f * u, p)
+                c.drawRoundRect(if (chatStyle == 1) RectF(pad - 8f * u, y - 4f * u, w - pad + 8f * u, y + sl.height + 4f * u) else r, 12f * u, 12f * u, p)
             }
             c.save()
             c.translate(pad, y)

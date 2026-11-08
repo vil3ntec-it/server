@@ -633,7 +633,7 @@
     <string name="live_hud_s">کوچک</string>
     <string name="live_hud_m">متوسط</string>
     <string name="live_hud_l">بزرگ</string>
-    <string name="live_hud_alpha">پشتِ چت</string>
+    <string name="live_hud_alpha">پررنگی</string>
     <string name="live_alpha_1">شفاف</string>
     <string name="live_alpha_2">نیمه</string>
     <string name="live_alpha_3">پررنگ</string>
@@ -723,4 +723,15 @@
     <string name="live_ov_chat_title">چت در پخش</string>
     <string name="live_ov_chat_desc">روشن: بیننده‌ها هم چت را روی تصویر می‌بینند. خاموش: چت فقط روی گوشیِ خودت است. وسطِ پخش هم با دکمهٔ چشم روی چت (و برای تشکرها، شمارنده‌ها و نوارِ هدف) فوری عوض می‌شود.</string>
     <string name="live_ov_chat_pos">جای چت در پخش</string>
+    <string name="live_hud_style">شکلِ چت روی بازی</string>
+    <string name="live_hud_style_desc">«بی‌پس‌زمینه»: فقط نوشته با سایهٔ نازک، هیچ کادری جلوی بازی را نمی‌گیرد.</string>
+    <string name="live_style_bare">بی‌پس‌زمینه</string>
+    <string name="live_style_faint">سایهٔ کم‌رنگ</string>
+    <string name="live_style_bubbles">حباب</string>
+    <string name="live_style_compact">یک‌خطی</string>
+    <string name="live_style_glass">کادرِ شیشه‌ای</string>
+    <string name="live_hud_stats_title">شمارِ بیننده، لایک و مشترک روی بازی</string>
+    <string name="live_hud_stats_desc">فقط نمایش است؛ لمس از رویش رد می‌شود و به بازی می‌رسد. بیننده‌ها آن را نمی‌بینند (برای پخش، «شمارِ بیننده» پایین‌تر است).</string>
+    <string name="live_hud_alpha_desc">چقدر پررنگ دیده شود.</string>
+    <string name="live_ov_chat_style">شکلِ چت در پخش</string>
 </resources>

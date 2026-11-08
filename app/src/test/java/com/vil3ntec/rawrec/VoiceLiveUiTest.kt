@@ -207,7 +207,8 @@ class VoiceLiveUiTest {
         val p = pf.get(a) as android.media.MediaPlayer?
         val note = MainActivity::class.java.getDeclaredField("listenNote").apply { isAccessible = true }.get(a) as TextView?
         val kind = MainActivity::class.java.getDeclaredField("playingKind").apply { isAccessible = true }.get(a)
-        assertNotNull("playing the media part (note: «${note?.text}», playingKind $kind)", p)
+        assertNotNull("playing the media part (note: «${note?.text}», playingKind $kind, toast «${ShadowToast.getTextOfLatestToast()}», " +
+            "error «${CrashLog.pending(app)?.take(400)}», clip ${VoiceSources.clipFile(a, VoiceSources.MEDIA)?.length()})", p)
         assertTrue(p!!.isPlaying)
         touch(a, byTag(a, "listen:${VoiceSources.MEDIA}"))
         assertNull("the same button stops it", pf.get(a))
@@ -265,14 +266,19 @@ class VoiceLiveUiTest {
         hud.setStreamState(ChatHud.ON_STREAM.associateWith { false })
         hud.add(msg("1", "salam"))
         idle()
-        assertFalse("nothing over the game before the capture check", hud.feed.isAttachedToWindow)
+        assertFalse("nothing over the game before the capture check", hud.feedRoot.isAttachedToWindow)
         hud.setPrivate(true)
         idle()
         assertTrue("the feed shows the message", hud.feed.isAttachedToWindow && hud.feed.childCount == 1)
-        val lp = hud.feed.layoutParams as android.view.WindowManager.LayoutParams
+        val lp = hud.feedRoot.layoutParams as android.view.WindowManager.LayoutParams
         assertTrue("touches pass through the feed to the game", lp.flags and android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0)
         assertTrue("the button takes touches", (hud.bubble.layoutParams as android.view.WindowManager.LayoutParams).flags and
             android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE == 0)
+        hud.setStats(1234, 50, 9000)
+        idle()
+        assertTrue("numbers over the game", hud.statsLine.visibility == View.VISIBLE && hud.statsLine.text.contains("1,234"))
+        assertTrue("…inside the read-only window", hud.statsLine.parent === hud.feedRoot)
+        assertTrue("no background behind the lines by default", (hud.feed.getChildAt(0) as TextView).background == null)
         // the button opens the panel (the feed steps aside) and closes it again
         tapView(hud.bubble)
         assertTrue("panel open", hud.panel.isAttachedToWindow)
@@ -292,7 +298,8 @@ class VoiceLiveUiTest {
         idle()
         assertTrue("shown when the owner put the chat on the stream", hud.feed.isAttachedToWindow)
         hud.hide()
-        assertFalse(hud.bubble.isAttachedToWindow || hud.feed.isAttachedToWindow || hud.panel.isAttachedToWindow)
+        idle()   // windows leave on the next turn of the main loop
+        assertFalse(hud.bubble.isAttachedToWindow || hud.feedRoot.isAttachedToWindow || hud.panel.isAttachedToWindow)
     }
 
     // ------------------------------------------------------------ «زنده»
@@ -302,7 +309,7 @@ class VoiceLiveUiTest {
         tab(a, MainActivity.Tab.LIVE)
         val keys = mapOf(
             "tog:live_team" to "live_team", "tog:live_mic" to "live_mic", "tog:hud_on" to "hud_on",
-            "tog:ov_chat" to "ov_chat", "tog:ov_alerts" to "ov_alerts", "tog:ov_subs" to "ov_subs", "tog:ov_viewers" to "ov_viewers", "tog:ov_goal" to "ov_goal",
+            "tog:hud_stats" to "hud_stats", "tog:ov_chat" to "ov_chat", "tog:ov_alerts" to "ov_alerts", "tog:ov_subs" to "ov_subs", "tog:ov_viewers" to "ov_viewers", "tog:ov_goal" to "ov_goal",
             "tog:bot_on" to "bot_on", "tog:bot_welcome" to "bot_welcome",
             "tog:mod_links" to "mod_links", "tog:mod_caps" to "mod_caps", "tog:mod_spam" to "mod_spam",
         )

@@ -765,6 +765,7 @@ class RecordService : Service(), Recorder.Events {
                 o.showGoal = LiveExtras.goal(this)
                 o.goalPos = LiveExtras.goalPos(this)
                 o.chatPos = LiveExtras.chatPos(this)
+                o.chatStyle = LiveExtras.chatStyle(this)
                 o.refreshAll()
             }
         }
