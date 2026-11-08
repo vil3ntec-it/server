@@ -163,8 +163,6 @@ class RtmpSink(
         var failingSince = 0L
         var lastStat = System.nanoTime()
         var lastSent = 0L
-        var calmSince = 0L
-        var lastAdjust = 0L
         try {
             while (!stopped) {
                 if (pub == null) {
@@ -221,6 +219,7 @@ class RtmpSink(
                 val now = System.nanoTime()
                 if (now - lastStat >= 1_000_000_000L) {
                     kbps = ((p.bytesSent - lastSent) * 8 / 1000).toInt()
+                    rate.measured(kbps * 1000)
                     lastSent = p.bytesSent
                     lastStat = now
                     sent = sentBefore + p.bytesSent
@@ -228,24 +227,21 @@ class RtmpSink(
                 }
                 if (k == null) { try { p.flush() } catch (e: IOException) { lost(e) }; continue }
 
-                // Automatic quality: how long the oldest waiting frame has waited.
+                // Automatic quality ([RateControl]): how long the oldest waiting frame has waited, and
+                // what the connection really carried, decide the encoder's bit rate.
                 val lagUs = lastEnqueuedPts - k.pts
-                if (k.video && lagUs > 2_500_000L) {
-                    // Far behind: drop what is waiting, ask for a key frame, lower the bit rate.
-                    dropped += 1 + queue.count { it.video }
-                    queue.removeIf { it.video }
-                    needKey = true; keyWanted.set(true)
-                    adjust((target * 0.7).toInt()); lastAdjust = now; calmSince = 0L
-                    continue
-                }
-                if (lagUs > 1_000_000L && now - lastAdjust > 2_000_000_000L) { adjust((target * 0.8).toInt()); lastAdjust = now; calmSince = 0L }
-                else if (lagUs < 250_000L) {
-                    if (calmSince == 0L) calmSince = now
-                    // back up sooner (4.0): minutes at a low rate looked like blocks long after the internet was fine
-                    if (target < maxBitrate && now - calmSince > 5_000_000_000L && now - lastAdjust > 4_000_000_000L) {
-                        adjust((target * 1.2).toInt().coerceAtMost(maxBitrate)); lastAdjust = now; calmSince = now
+                when (rate.step(now, lagUs, k.video)) {
+                    RateControl.Act.DROP -> {
+                        // far behind all the same: drop what is waiting, a key frame next (the stream stays live)
+                        dropped += 1 + queue.count { it.video }
+                        queue.removeIf { it.video }
+                        needKey = true; keyWanted.set(true)
+                        apply(rate.target)
+                        continue
                     }
-                } else calmSince = 0L
+                    RateControl.Act.SET -> apply(rate.target)
+                    RateControl.Act.NONE -> {}
+                }
 
                 try {
                     if (k.video) {
@@ -293,14 +289,86 @@ class RtmpSink(
         status()
     }
 
-    /** Never below this (4.0: down to 1 Mbps the picture was all blocks; then frames are dropped instead). */
-    private val floor = maxOf(2_500_000, maxBitrate * 2 / 5).coerceAtMost(maxBitrate)
+    private val rate = RateControl(maxBitrate)
 
-    private fun adjust(bps: Int) {
-        val b = bps.coerceIn(floor, maxBitrate)
-        if (b == target) return
+    private fun apply(bps: Int) {
+        if (bps == target) return
+        target = bps
+        listener.onBitrate(bps)
+    }
+}
+
+/**
+ * The stream's automatic quality, by what the connection really carries (4.2).
+ *
+ * 4.0 kept the rate at least 40 % of the chosen one and went back up every 5 s: on a link (a VPN)
+ * that carried less, the frames piled up, were dropped every few seconds, the rate went up again —
+ * the stream on YouTube cut out every 3–4 s. Now:
+ *  - **down early and to what got through:** 0.7 s behind → the lower of ¾ of the rate and 85 % of
+ *    what the connection carried in the last seconds; down to 1 Mbps if that is all there is;
+ *  - **up slowly and never straight back into the wall:** after 10 s without delay, +10 % at most
+ *    every 8 s, and for a minute after the connection could not keep up, not above 90 % of the rate
+ *    it could not carry;
+ *  - frames are dropped only when 3.5 s behind all the same (a real break in the internet).
+ */
+class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(1_000_000, maxBps)) {
+    enum class Act { NONE, SET, DROP }
+
+    var target = maxBps; private set
+    private var lastAdjust = 0L
+    private var calmSince = 0L
+    /** How far behind it was when last lowered (0 = caught up since). */
+    private var lagAtAdjust = 0L
+    private var capBps = maxBps
+    private var capUntil = 0L
+    private val seen = IntArray(3)
+    private var seenN = 0
+
+    /** What the connection carried in the last second (bits). */
+    fun measured(bps: Int) { seen[seenN % seen.size] = bps; seenN++ }
+
+    /** The connection's recent rate (the mean of the last seconds; 0 = not known yet). */
+    val link: Int get() = if (seenN == 0) 0 else (0 until minOf(seenN, seen.size)).sumOf { seen[it].toLong() }.div(minOf(seenN, seen.size)).toInt()
+
+    fun step(nowNs: Long, lagUs: Long, video: Boolean): Act {
+        if (video && lagUs > 3_500_000L) {
+            behind(nowNs)
+            set(minOf((target * 0.6).toInt(), link.takeIf { it > 0 }?.let { (it * 0.8).toInt() } ?: Int.MAX_VALUE))
+            lastAdjust = nowNs; calmSince = 0L
+            return Act.DROP
+        }
+        if (lagUs > 700_000L) {
+            calmSince = 0L
+            // once lowered, the waiting frames need a moment to go out: lower again only while it still grows
+            val stillGrowing = lagAtAdjust == 0L || lagUs > lagAtAdjust
+            if (nowNs - lastAdjust < 1_500_000_000L || !stillGrowing) return Act.NONE
+            behind(nowNs)
+            lastAdjust = nowNs; lagAtAdjust = lagUs
+            return if (set(minOf((target * 0.75).toInt(), link.takeIf { it > 0 }?.let { (it * 0.85).toInt() } ?: Int.MAX_VALUE))) Act.SET else Act.NONE
+        }
+        lagAtAdjust = 0L
+        if (lagUs < 200_000L) {
+            if (calmSince == 0L) calmSince = nowNs
+            val cap = if (nowNs < capUntil) capBps else maxBps
+            if (target < cap && nowNs - calmSince > 10_000_000_000L && nowNs - lastAdjust > 8_000_000_000L) {
+                lastAdjust = nowNs; calmSince = nowNs
+                return if (set(minOf((target * 1.1).toInt(), cap))) Act.SET else Act.NONE
+            }
+        } else calmSince = 0L
+        return Act.NONE
+    }
+
+    /** The connection did not keep up at [target]: no going back above 90 % of it for a minute. */
+    private fun behind(nowNs: Long) {
+        capBps = maxOf(floorBps, (target * 0.9).toInt())
+        capUntil = nowNs + 60_000_000_000L
+    }
+
+    private fun set(bps: Int): Boolean {
+        val b = bps.coerceIn(floorBps, maxBps)
+        if (b == target) return false
         target = b
-        listener.onBitrate(b)
+        return true
     }
 }
 

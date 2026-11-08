@@ -110,6 +110,17 @@ object Scenes {
     fun mine(l: Layer): Boolean = l.kind != Kind.VIDEO && l.kind != Kind.CAMERA &&
         l.bool("mine", l.kind == Kind.CHAT || l.kind == Kind.GOAL || l.kind == Kind.TEXT || l.kind == Kind.ALERTS)
 
+    /**
+     * Who sees the layer: 0 the stream and the owner's own screen, 1 the stream only (viewers), 2 the
+     * owner's screen only (4.2: the chat or the viewer count for the owner alone). Before 4.2 the
+     * «on my screen too» switch: on = 0, off = 1. A video or the camera is on the stream only.
+     */
+    fun audience(l: Layer): Int = when {
+        l.kind == Kind.VIDEO || l.kind == Kind.CAMERA -> 1
+        l.p.has("who") -> l.int("who", 0).coerceIn(0, 2)
+        else -> if (mine(l)) 0 else 1
+    }
+
     /** A text with live numbers in it. */
     fun hasNumbers(l: Layer): Boolean = l.kind == Kind.TEXT && listOf("{viewers}", "{subs}", "{likes}", "{members}").any { l.str("text").contains(it) }
 

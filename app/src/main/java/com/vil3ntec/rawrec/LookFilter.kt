@@ -142,6 +142,8 @@ class LookFilter(private val look: Look, private val fps: Int) {
     /** The part of the screen drawn: x, y (from the bottom), width, height in screen fractions. */
     private val region = floatArrayOf(0f, 0f, 1f, 1f)
     @Volatile var cropped = false; private set
+    /** The part of the screen on the stream now (for the owner's own view, see OwnerMirror.Geo). */
+    @Volatile var regionNow: FloatArray = floatArrayOf(0f, 0f, 1f, 1f); private set
     private var lastBarsNs = 0L
     private var barsProg = 0
     private var barsFbo = 0
@@ -190,6 +192,7 @@ class LookFilter(private val look: Look, private val fps: Int) {
         if (seenTimes >= 2 && !near(want, region, 0.05f)) {
             want.copyInto(region)
             cropped = region[2] < 0.999f
+            regionNow = region.copyOf()
         }
     }
 

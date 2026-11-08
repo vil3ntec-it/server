@@ -419,7 +419,9 @@ class SceneEditorActivity : Activity() {
         fun txt(t: String, name: Int) = { Scenes.newLayer(this, Scenes.Kind.TEXT).apply { p.put("text", t); this.name = getString(name) } }
         val choices = listOf(
             Choice(getString(R.string.sc_k_text), getString(R.string.sc_d_text)) { Scenes.newLayer(this, Scenes.Kind.TEXT) },
-            Choice(getString(R.string.sc_k_counter), getString(R.string.sc_d_counter), txt(getString(R.string.sc_subs_text), R.string.lay_subs)),
+            Choice(getString(R.string.sc_k_subs), getString(R.string.sc_d_counter), txt(getString(R.string.sc_subs_text), R.string.lay_subs)),
+            Choice(getString(R.string.sc_k_viewers), getString(R.string.sc_d_counter), txt(getString(R.string.sc_viewers_text), R.string.sc_k_viewers)),
+            Choice(getString(R.string.sc_k_likes), getString(R.string.sc_d_counter), txt(getString(R.string.sc_likes_text), R.string.sc_k_likes)),
             Choice(getString(R.string.sc_k_clock), getString(R.string.sc_d_clock), txt("{time}", R.string.sc_k_clock)),
             Choice(getString(R.string.sc_k_image), getString(R.string.sc_d_image)) { Scenes.newLayer(this, Scenes.Kind.IMAGE) },
             Choice(getString(R.string.sc_k_video), getString(R.string.sc_d_video)) { Scenes.newLayer(this, Scenes.Kind.VIDEO) },
@@ -481,7 +483,9 @@ class SceneEditorActivity : Activity() {
             getString(R.string.sc_straight) to { snapshot(); l.rot = 0f; l.scale = 1f; changed(structure = true) })
         // the same thing on the owner's own screen while live (display only)
         if (l.kind != Scenes.Kind.VIDEO && l.kind != Scenes.Kind.CAMERA) {
-            switchRow(getString(R.string.sc_mine), Scenes.mine(l), "sc:p:mine") { l.p.put("mine", it) }
+            // who sees it: viewers and me, viewers only, or me only (the chat or the counts for me alone)
+            chips(getString(R.string.sc_who), listOf(getString(R.string.sc_who_both), getString(R.string.sc_who_stream), getString(R.string.sc_who_me)),
+                Scenes.audience(l), "sc:p:who") { l.p.put("who", it); l.p.put("mine", it != 1) }
             body.addView(label(getString(R.string.sc_mine_hint), 12f, col(R.color.text_secondary)), lpw(top = 2))
         }
         section(getString(R.string.sc_s_look))

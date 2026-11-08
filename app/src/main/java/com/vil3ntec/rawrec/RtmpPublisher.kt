@@ -193,7 +193,7 @@ class RtmpPublisher(
             val raw = Socket()
             try {
                 raw.tcpNoDelay = true
-                raw.sendBufferSize = 1 shl 20
+                raw.sendBufferSize = 512 * 1024
                 raw.connect(InetSocketAddress(a, target.port), connectTimeoutMs)
                 return ready(raw, where)
             } catch (e: Exception) {
@@ -253,7 +253,7 @@ class RtmpPublisher(
         val s = Socket()
         try {
             s.tcpNoDelay = true
-            s.sendBufferSize = 1 shl 20
+            s.sendBufferSize = 512 * 1024
             s.connect(if (pa.isUnresolved) InetSocketAddress(pa.hostString, pa.port) else pa, connectTimeoutMs)
             s.soTimeout = connectTimeoutMs
             val hp = target.host + ":" + target.port

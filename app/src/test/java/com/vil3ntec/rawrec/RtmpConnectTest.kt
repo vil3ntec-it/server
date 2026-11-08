@@ -202,4 +202,97 @@ class RtmpConnectTest {
         LiveExtras.put(app, "yt_privacy", "")
         assertEquals("left as it is", "", LiveExtras.ytPrivacyToSet(app))
     }
+
+    /**
+     * The owner's stream cut out every 3–4 s: a link that carried less than 4.0's 40 % floor. A link
+     * (bits a second, changing over time) against the encoder at the controller's rate, 100 ms steps.
+     */
+    private class Sim(maxBps: Int, val link: (Double) -> Double) {
+        val rc = RateControl(maxBps)
+        var drops = 0; var maxLagMs = 0L
+        /** What waits to go out: 100 ms of picture each, with how many bits are still left of it. */
+        private val queue = ArrayDeque<DoubleArray>()
+        private var sentThisSecond = 0.0
+        fun run(fromS: Double, toS: Double) {
+            var t = fromS
+            while (t < toS) {
+                queue.addLast(doubleArrayOf(rc.target * 0.1, rc.target * 0.1))
+                var room = link(t) * 0.1
+                while (room > 0 && queue.isNotEmpty()) {
+                    val c = queue.first(); val n = minOf(room, c[1])
+                    c[1] -= n; room -= n; sentThisSecond += n
+                    if (c[1] <= 0.0) queue.removeFirst()
+                }
+                if (((t * 10 + 0.5).toLong() % 10L) == 9L) { rc.measured(sentThisSecond.toInt()); sentThisSecond = 0.0 }
+                // how long the oldest waiting picture has waited (in picture time, as RtmpSink measures it)
+                val lagUs = (queue.sumOf { it[1] / it[0] } * 100_000).toLong()
+                maxLagMs = maxOf(maxLagMs, lagUs / 1000)
+                if (rc.step((t * 1e9).toLong(), lagUs, true) == RateControl.Act.DROP) { drops++; queue.clear() }
+                t += 0.1
+            }
+        }
+    }
+
+    @Test fun aNarrowLinkSettlesInsteadOfCuttingOutEveryFewSeconds() {
+        // 12 Mbps chosen, the VPN carries 4: down to what gets through, then steady
+        val s = Sim(12_000_000) { 4_000_000.0 }
+        val rc = s.rc
+        s.run(0.0, 30.0)
+        assertTrue("down below what the link carries: ${rc.target}", rc.target < 4_000_000)
+        val drops30 = s.drops
+        // the next 3 minutes: no frames dropped, the rate never far from what the link carries
+        var lowest = Int.MAX_VALUE; var highest = 0
+        s.maxLagMs = 0
+        var t = 30.0
+        while (t < 210.0) { s.run(t, t + 1.0); lowest = minOf(lowest, rc.target); highest = maxOf(highest, rc.target); t += 1.0 }
+        assertEquals("no frames dropped once settled (4.0 dropped every few seconds)", drops30, s.drops)
+        // once a minute it tries 10 % more (the link may have grown) and comes back before any delay shows
+        assertTrue("never far above what the link carries: highest ${highest}", highest <= 4_500_000)
+        assertTrue("and not starved: lowest ${lowest}", lowest >= 2_000_000)
+        assertTrue("at most one frame drop at the very start: ${s.drops}", s.drops <= 1)
+        assertTrue("viewers never more than 2 s behind once settled: ${s.maxLagMs} ms", s.maxLagMs < 2_000)
+    }
+
+    @Test fun aGoodLinkKeepsTheChosenRateAndAFreedLinkClimbsBack() {
+        val good = Sim(12_000_000) { 20_000_000.0 }
+        good.run(0.0, 120.0)
+        assertEquals("a link with room: the chosen rate, untouched", 12_000_000, good.rc.target)
+        assertEquals(0, good.drops)
+        // a narrow minute, then plenty again: back to the chosen rate within a few minutes, step by step
+        val s = Sim(12_000_000) { t -> if (t < 60) 5_000_000.0 else 20_000_000.0 }
+        s.run(0.0, 60.0)
+        assertTrue(s.rc.target < 5_000_000)
+        s.run(60.0, 420.0)
+        assertEquals("back to the chosen rate", 12_000_000, s.rc.target)
+        assertTrue("no drop once the link was free", s.drops <= 1)
+    }
+
+    @Test fun theOwnersViewLandsWhereTheStreamHasIt() {
+        // a tablet lying down, the game over the whole screen: the stream is this screen
+        val flat = OwnerMirror.Mapping.of(OwnerMirror.Geo(2560, 1600, floatArrayOf(0f, 0f, 1f, 1f)), 2560f, 1600f)
+        assertEquals(0.85f * 2560, flat.x(0.85f), 0.5f); assertEquals(0.3f * 1600, flat.y(0.3f), 0.5f); assertEquals(1f, flat.px, 0.001f)
+        // upright: the game a band in the middle, the stream shows that band (the bars cut)
+        val s = 1000f / 2560f
+        val r = floatArrayOf(780f / 2560f, (1600f - 1112.5f) / 1600f, s, s)
+        val up = OwnerMirror.Mapping.of(OwnerMirror.Geo(2560, 1600, r), 1600f, 2560f)
+        assertEquals("the picture's left edge: the screen's", 0f, up.x(0f), 1f)
+        assertEquals("its top: the band's top on the upright screen", 780f, up.y(0f), 1f)
+        assertEquals("its bottom: the band's bottom", 1780f, up.y(1f), 1f)
+        assertEquals("the chat on the right of the picture: on the right of the band", 0.85f * 1600, up.x(0.85f), 1f)
+        // no geometry: the screen itself
+        val none = OwnerMirror.Mapping.of(null, 1080f, 2400f)
+        assertEquals(540f, none.x(0.5f), 0.01f)
+    }
+
+    @Test fun eachLayerSaysWhoSeesIt() {
+        val chat = Scenes.newLayer(app, Scenes.Kind.CHAT)
+        assertEquals("the chat: viewers and me, as before", 0, Scenes.audience(chat))
+        chat.p.put("who", 2)
+        assertEquals("only me", 2, Scenes.audience(chat))
+        chat.p.put("who", 1)
+        assertEquals("viewers only", 1, Scenes.audience(chat))
+        val old = Scenes.newLayer(app, Scenes.Kind.TEXT).apply { p.put("mine", false) }
+        assertEquals("the old «on my screen» switch off: viewers only", 1, Scenes.audience(old))
+        assertEquals("a camera is on the stream only", 1, Scenes.audience(Scenes.newLayer(app, Scenes.Kind.CAMERA)))
+    }
 }

@@ -332,8 +332,10 @@ class SceneRenderer(
         val covered = away || !showing.game
         for (l in showing.layers) {
             if (!l.visible) continue
-            val mine = Scenes.mine(l)
-            val inPicture = screenInPicture && !covered && ((mine && mirrorOn) || (l.kind == Scenes.Kind.CHAT && phoneChat))
+            val who = Scenes.audience(l)
+            val mine = who != 1          // on the owner's screen
+            val onlyMine = who == 2      // on the owner's screen and never on the stream
+            val inPicture = onlyMine || (screenInPicture && !covered && ((mine && mirrorOn) || (l.kind == Scenes.Kind.CHAT && phoneChat)))
             var alpha = l.alpha
             var dy = 0f
             var natW: Float

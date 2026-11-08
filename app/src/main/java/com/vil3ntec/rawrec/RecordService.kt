@@ -450,7 +450,7 @@ class RecordService : Service(), Recorder.Events {
             val lv = live
             val r = if (lv != null) Recorder(this, p, c, plan, this, null, keepDisplay = false,
                 sinkFactory = {
-                    liveBorn = System.currentTimeMillis(); lastRtmpLog = ""; lastSendProblem = null; toldPrivate = false; toldAway = false
+                    liveBorn = System.currentTimeMillis(); lastRtmpLog = ""; lastSendProblem = null; toldPrivate = false; toldAway = false; capHot = false; capNet = false; toldNet = false
                     main.removeCallbacks(sendCheck); main.postDelayed(sendCheck, 13_000)
                     screenChecks = 0; main.removeCallbacks(screenCheck); main.postDelayed(screenCheck, 8_000)
                     (if (liveTargets.size > 1) MultiSink(liveTargets, plan.bitrate, liveListener) else RtmpSink(lv.url, lv.key, plan.bitrate, liveListener))
@@ -802,6 +802,7 @@ class RecordService : Service(), Recorder.Events {
                 }
                 if (stopping || live == null) return@post
                 checkSending()
+                followLink(s)
                 when (s.state) {
                     RtmpSink.State.FAILED -> finishRecording(StopReason.LIVE_FAILED,
                         listOfNotNull(LiveSettings.whyText(this@RecordService, s.why), s.error).joinToString(" — ").ifEmpty { null })
@@ -952,9 +953,14 @@ class RecordService : Service(), Recorder.Events {
         // the stream's chat, goal, counters… on the owner's own screen too, where they are on the stream
         val sr = scenes
         if (sr != null && overlays) mirror = OwnerMirror(this).also { m ->
+            // the owner's view placed through the stream's real geometry (an upright tablet, the bars cut)
+            m.geometry = { recorder?.let { rr -> OwnerMirror.Geo(rr.plan.width, rr.plan.height, rr.filter?.regionNow ?: floatArrayOf(0f, 0f, 1f, 1f)) } }
             sr.onMirror = { items ->
                 m.set(items)
-                hud?.setMirror(chat = m.shown && items.any { it.kind == Scenes.Kind.CHAT }, stats = m.shown && items.any { it.numbers })
+                // the scene has a chat of its own: that one decides who sees it (the owner too, or not): the
+                // panel's own lines over the game step aside, so the chat is never in a second place
+                val sceneChat = sr.showing.layers.any { it.visible && it.kind == Scenes.Kind.CHAT }
+                hud?.setMirror(chat = (m.shown && items.any { it.kind == Scenes.Kind.CHAT }) || sceneChat, stats = m.shown && items.any { it.numbers })
             }
         }
         if (f != null && (hud != null || mirror != null)) {
@@ -1696,14 +1702,40 @@ class RecordService : Service(), Recorder.Events {
      * the stream's rate by repeating them, and each picture gets more bits) until it has cooled.
      */
     private fun coolDown(s: Int) {
-        val f = recorder?.filter ?: return
-        if (live == null) return
+        if (live == null || recorder?.filter == null) return
         val hot = s >= android.os.PowerManager.THERMAL_STATUS_SEVERE
         val cool = s <= android.os.PowerManager.THERMAL_STATUS_LIGHT
-        if (hot && f.fpsCap == 0 && (recorder?.plan?.fps ?: 0) > 30) {
-            f.fpsCap = 30; RecLog.add(this, "thermal: 30 fps"); hud?.note(getString(R.string.hud_hot))
-        } else if (cool && f.fpsCap != 0) {
-            f.fpsCap = 0; RecLog.add(this, "thermal: full fps"); hud?.note(getString(R.string.hud_cool))
+        if (hot && !capHot) { capHot = true; RecLog.add(this, "thermal: 30 fps"); hud?.note(getString(R.string.hud_hot)) }
+        else if (cool && capHot) { capHot = false; RecLog.add(this, "thermal: full fps"); hud?.note(getString(R.string.hud_cool)) }
+        applyFpsCap()
+    }
+
+    /** 30 pictures a second while the phone is hot or the connection is narrow (each picture then gets twice the bits). */
+    private var capHot = false
+    private var capNet = false
+    private var toldNet = false
+
+    private fun applyFpsCap() {
+        val f = recorder?.filter ?: return
+        f.fpsCap = if ((capHot || capNet) && (recorder?.plan?.fps ?: 0) > 30) 30 else 0
+    }
+
+    /**
+     * The connection carries much less than the chosen rate (a slow upload or VPN): 30 pictures a second
+     * until it carries enough again, so the picture stays clean instead of turning into blocks — said once.
+     */
+    private fun followLink(s: RtmpSink.Status) {
+        val full = (recorder?.plan?.bitrate ?: return) / 1000
+        if (full <= 0 || s.state != RtmpSink.State.LIVE) return
+        val narrow = s.targetKbps < full * 55 / 100
+        val wide = s.targetKbps >= full * 75 / 100
+        if (narrow && !capNet) {
+            capNet = true; applyFpsCap()
+            RecLog.add(this, "link: ${s.targetKbps} of $full kbps, 30 fps")
+            if (!toldNet) { toldNet = true; hud?.note(getString(R.string.live_net_narrow_fmt, String.format(java.util.Locale.US, "%.1f", s.targetKbps / 1000.0))) }
+        } else if (wide && capNet) {
+            capNet = false; applyFpsCap()
+            RecLog.add(this, "link: ${s.targetKbps} of $full kbps, full fps")
         }
     }
 

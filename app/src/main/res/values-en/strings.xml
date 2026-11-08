@@ -927,7 +927,7 @@ Recording ends cleanly before the storage is full.</string>
     <string name="sc_mirror">Mirror</string>
     <string name="sc_camera_hint">The camera turns on only while streaming, and only while this scene is on the stream.</string>
     <string name="sc_mine">On my screen too</string>
-    <string name="sc_mine_hint">While live it shows on your own phone too, at this very place and size; display only, touches go to the game.</string>
+    <string name="sc_mine_hint">«Only me»: while live, only on your own phone, at this very place and size, and not on the stream. «Viewers only»: only on the stream. On the phone it is display only; touches go to the game.</string>
     <string name="tr_more">More languages…</string>
     <string name="tr_as_written">as written</string>
     <string name="yt_vid_desc">Set on YouTube when the stream starts, and at once if you change them while live. «As on YouTube» leaves it alone.</string>
@@ -1077,4 +1077,13 @@ Your internet needs about %2$s Mbps upload.</string>
     <string name="live_away_title">«Be right back» when I leave the game</string>
     <string name="live_away_desc">Off (default): when the game is off the screen (watching your own stream on YouTube, say), viewers see the game\'s last picture, not a banner.</string>
     <string name="live_away_last">The game is off the screen; viewers see its last picture until you are back.</string>
+    <string name="live_net_narrow_fmt">The upload (or VPN) carries about %1$s Mbps now; the stream goes on at that and 30 fps so it neither breaks nor turns blocky. It goes back up by itself when there is more.</string>
+    <string name="sc_who">Who sees it</string>
+    <string name="sc_who_both">Viewers and me</string>
+    <string name="sc_who_stream">Viewers only</string>
+    <string name="sc_who_me">Only me</string>
+    <string name="sc_k_subs">Subscriber count</string>
+    <string name="sc_k_viewers">Viewer count</string>
+    <string name="sc_k_likes">Like count</string>
+    <string name="sc_likes_text">👍 {likes}</string>
 </resources>

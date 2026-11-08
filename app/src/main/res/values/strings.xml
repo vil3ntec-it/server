@@ -948,7 +948,7 @@
     <string name="sc_mirror">آینه‌ای</string>
     <string name="sc_camera_hint">دوربین فقط هنگامِ پخش و فقط وقتی این صحنه روی پخش است روشن می‌شود.</string>
     <string name="sc_mine">روی صفحهٔ خودم هم</string>
-    <string name="sc_mine_hint">هنگامِ پخش همین‌جا و همین اندازه روی صفحهٔ گوشیِ خودت هم دیده می‌شود؛ فقط نمایش است و لمس به بازی می‌رسد.</string>
+    <string name="sc_mine_hint">«فقط من»: هنگامِ پخش فقط روی صفحهٔ گوشیِ خودت، همان‌جا و همان اندازه، و در پخش نیست. «فقط بیننده‌ها»: فقط در پخش. روی گوشی فقط نمایش است و لمس به بازی می‌رسد.</string>
     <string name="tr_more">زبان‌های دیگر…</string>
     <string name="tr_as_written">همان‌طور که نوشتم</string>
     <string name="yt_vid_desc">این‌ها هنگامِ شروعِ پخش روی یوتیوب گذاشته می‌شوند، و اگر وسطِ پخش عوضشان کنی همان لحظه. «همان یوتیوب» یعنی دست نخورد.</string>
@@ -1098,4 +1098,13 @@
     <string name="live_away_title">وقتی از بازی بیرون رفتم «برمی‌گردم» پخش شود</string>
     <string name="live_away_desc">خاموش (پیش‌فرض): اگر بازی روی صفحه نباشد، مثلاً وقتی پخشِ خودت را در یوتیوب نگاه می‌کنی، بیننده‌ها آخرین تصویرِ بازی را می‌بینند، نه بنر.</string>
     <string name="live_away_last">بازی روی صفحه نیست؛ بیننده‌ها آخرین تصویرِ بازی را می‌بینند تا برگردی.</string>
+    <string name="live_net_narrow_fmt">اینترنتِ آپلود (یا VPN) الان حدودِ %1$s مگابیت می‌کشد؛ پخش با همین و ۳۰ فریم ادامه دارد تا قطع نشود و شطرنجی نشود. وقتی بیشتر شد، خودکار برمی‌گردد.</string>
+    <string name="sc_who">چه کسی ببیند</string>
+    <string name="sc_who_both">بیننده‌ها و من</string>
+    <string name="sc_who_stream">فقط بیننده‌ها</string>
+    <string name="sc_who_me">فقط من</string>
+    <string name="sc_k_subs">تعدادِ مشترک‌ها</string>
+    <string name="sc_k_viewers">تعدادِ بیننده‌ها</string>
+    <string name="sc_k_likes">تعدادِ لایک‌ها</string>
+    <string name="sc_likes_text">👍 {likes}</string>
 </resources>
