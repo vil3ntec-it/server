@@ -1644,10 +1644,25 @@ class MainActivity : Activity() {
         toggles["tr_out"] = Toggle(trc, "tog:tr_out", R.drawable.ic_send, str(R.string.tr_out_title), str(R.string.tr_out_desc)) { on ->
             LiveExtras.put(ctx, "tr_out", on); toggles["tr_out"]?.set(on)
         }.apply { set(LiveExtras.trOut(ctx)) }
-        rows["tr_target"] = Row(trc, str(R.string.tr_target_title), "", ChatTranslator.TARGETS.map { str(it.second) }, top = 12) { i ->
-            LiveExtras.put(ctx, "tr_target", ChatTranslator.TARGETS[i].first)
-            refreshTr()
-        }.apply { select(ChatTranslator.TARGETS.indexOfFirst { it.first == LiveExtras.trTarget(ctx) }.coerceAtLeast(0)) }
+        // five common ones as buttons, and every other language in a list
+        val five = listOf("en" to R.string.tr_lang_en, "ar" to R.string.tr_lang_ar, "tr" to R.string.tr_lang_tr, "es" to R.string.tr_lang_es, "ru" to R.string.tr_lang_ru)
+        fun markTarget() {
+            val r = rows["tr_target"] ?: return
+            val t = LiveExtras.trTarget(ctx)
+            val i = five.indexOfFirst { it.first == t }
+            r.buttons.lastOrNull()?.text = if (i >= 0) str(R.string.tr_more) else ChatTranslator.name(ctx, t) + " ▾"
+            r.select(if (i >= 0) i else five.size)
+        }
+        rows["tr_target"] = Row(trc, str(R.string.tr_target_title), "", five.map { str(it.second) } + str(R.string.tr_more), top = 12) { i ->
+            if (i < five.size) { LiveExtras.setTrTarget(ctx, five[i].first); markTarget(); refreshTr() }
+            else android.app.AlertDialog.Builder(ctx).setTitle(R.string.tr_target_title)
+                .setItems(ChatTranslator.LANGS.map { ChatTranslator.name(ctx, it) + "  ·  " + ChatTranslator.nativeName(it) }.toTypedArray()) { _, k ->
+                    LiveExtras.setTrTarget(ctx, ChatTranslator.LANGS[k]); refreshTr()
+                }
+                .setOnDismissListener { markTarget() }
+                .show()
+        }
+        markTarget()
         trStatus = text("", R.style.Text_Body).apply {
             setBackgroundResource(R.drawable.bg_inset)
             setPaddingRelative(dp(14), dp(12), dp(14), dp(12))

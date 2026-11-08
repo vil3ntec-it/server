@@ -926,4 +926,8 @@ Recording ends cleanly before the storage is full.</string>
     <string name="sc_mask_circle">Circle</string>
     <string name="sc_mirror">Mirror</string>
     <string name="sc_camera_hint">The camera turns on only while streaming, and only while this scene is on the stream.</string>
+    <string name="sc_mine">On my screen too</string>
+    <string name="sc_mine_hint">While live it shows on your own phone too, at this very place and size; display only, touches go to the game.</string>
+    <string name="tr_more">More languages…</string>
+    <string name="tr_as_written">as written</string>
 </resources>

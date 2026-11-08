@@ -947,4 +947,8 @@
     <string name="sc_mask_circle">دایره</string>
     <string name="sc_mirror">آینه‌ای</string>
     <string name="sc_camera_hint">دوربین فقط هنگامِ پخش و فقط وقتی این صحنه روی پخش است روشن می‌شود.</string>
+    <string name="sc_mine">روی صفحهٔ خودم هم</string>
+    <string name="sc_mine_hint">هنگامِ پخش همین‌جا و همین اندازه روی صفحهٔ گوشیِ خودت هم دیده می‌شود؛ فقط نمایش است و لمس به بازی می‌رسد.</string>
+    <string name="tr_more">زبان‌های دیگر…</string>
+    <string name="tr_as_written">همان‌طور که نوشتم</string>
 </resources>

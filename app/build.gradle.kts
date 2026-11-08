@@ -13,8 +13,8 @@ android {
         targetSdk = 35
         // ML Kit's translator brings native code: phones only (no emulator ABIs), smaller APK.
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
-        versionCode = 30
-        versionName = "3.4"
+        versionCode = 31
+        versionName = "3.5"
     }
 
 
@@ -47,6 +47,8 @@ android {
 dependencies {
     // «مترجمِ چت»: Google ML Kit translation, on the phone (language packs downloaded once).
     implementation("com.google.mlkit:translate:17.0.3")
+    // which language a viewer wrote in (on the phone, ~1 MB), so any language comes out in Persian
+    implementation("com.google.mlkit:language-id:17.0.6")
     // Tests only (nothing here goes into the APK): launch tests in app/src/test.
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.17")

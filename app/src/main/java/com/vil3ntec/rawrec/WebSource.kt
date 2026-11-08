@@ -101,14 +101,16 @@ class WebSource(private val ctx: Context, private val host: Host, private val on
         val v = WebView(ctx).apply {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
-            settings.mediaPlaybackRequiresUserGesture = false
+            settings.mediaPlaybackRequiresUserGesture = true   // nothing starts playing by itself
             settings.loadWithOverviewMode = true
             settings.useWideViewPort = true
             setInitialScale(zoom)
             if (transparent) setBackgroundColor(Color.TRANSPARENT)
             webChromeClient = WebChromeClient()
             webViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView, u: String?, favicon: Bitmap?) { view.evaluateJavascript(SILENT, null) }
                 override fun onPageFinished(view: WebView, u: String?) {
+                    view.evaluateJavascript(SILENT, null)
                     // the owner's own CSS, and a clear page background when asked (like OBS)
                     val rules = (if (transparent) "html,body{background:transparent!important;}" else "") + css
                     if (rules.isNotBlank()) view.evaluateJavascript(
@@ -144,6 +146,19 @@ class WebSource(private val ctx: Context, private val host: Host, private val on
     }
 
     fun reload() { web?.reload() }
+
+    companion object {
+        /**
+         * The page stays silent: a sound from it would come out of the speaker, into the microphone
+         * and so into the stream (a live page of the stream itself would repeat every sound without end).
+         */
+        private const val SILENT = "(function(){if(window.__rrSilent)return;window.__rrSilent=1;" +
+            "function m(){document.querySelectorAll('video,audio').forEach(function(e){e.muted=true;e.volume=0;});}" +
+            "m();setInterval(m,1000);try{new MutationObserver(m).observe(document.documentElement,{childList:true,subtree:true});}catch(e){}" +
+            "try{var A=window.AudioContext||window.webkitAudioContext;if(A){var r=A.prototype.resume;A.prototype.resume=function(){var c=this;" +
+            "try{c.suspend();}catch(e){}return Promise.resolve();};var o=A;var W=function(){var c=new o();try{c.suspend();}catch(e){}return c;};" +
+            "W.prototype=o.prototype;window.AudioContext=W;window.webkitAudioContext=W;}}catch(e){}})()"
+    }
 
     fun release() {
         running = false

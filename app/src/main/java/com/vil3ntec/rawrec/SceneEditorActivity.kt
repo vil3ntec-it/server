@@ -471,6 +471,11 @@ class SceneEditorActivity : Activity() {
         slider(getString(R.string.sc_rotation), -180, 180, l.rot.toInt(), { "$it°" }, "sc:p:rot") { l.rot = it.toFloat(); changed(false) }
         buttons(getString(R.string.sc_center) to { snapshot(); l.x = 0.5f; l.y = 0.5f; changed(false) },
             getString(R.string.sc_straight) to { snapshot(); l.rot = 0f; l.scale = 1f; changed(structure = true) })
+        // the same thing on the owner's own screen while live (display only)
+        if (l.kind != Scenes.Kind.VIDEO && l.kind != Scenes.Kind.CAMERA) {
+            switchRow(getString(R.string.sc_mine), Scenes.mine(l), "sc:p:mine") { l.p.put("mine", it) }
+            body.addView(label(getString(R.string.sc_mine_hint), 12f, col(R.color.text_secondary)), lpw(top = 2))
+        }
         section(getString(R.string.sc_s_look))
         when (l.kind) {
             Scenes.Kind.TEXT -> textProps(l)
@@ -534,7 +539,7 @@ class SceneEditorActivity : Activity() {
                 switchRow(getString(R.string.sc_goal_pct), l.bool("pct", true)) { l.p.put("pct", it) }
             }
             Scenes.Kind.SHAPE -> {
-                slider(getString(R.string.sc_width), 4, 1920, l.int("w", 600)) { l.p.put("w", it); changed(false) }
+                slider(getString(R.string.sc_width), 4, 2600, l.int("w", 600)) { l.p.put("w", it); changed(false) }
                 slider(getString(R.string.sc_height), 4, 1080, l.int("h", 120)) { l.p.put("h", it); changed(false) }
                 colorRow(getString(R.string.sc_fill), l.int("color", Color.argb(200, 14, 15, 20))) { l.p.put("color", it) }
                 slider(getString(R.string.sc_corner), 0, 540, l.int("radius", 24)) { l.p.put("radius", it); changed(false) }
@@ -638,15 +643,19 @@ class SceneEditorActivity : Activity() {
         fun release() { for (w in webs.values) w.release(); webs.clear() }
         fun reloadWeb(id: String) { webs[id]?.reload() }
 
+        /** The stream's own shape (this phone's screen sideways): what is placed here is where it is on the stream. */
+        private val aspect = Scenes.aspect(ctx)
+
         override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
             val pad = 12 * d
             var fw = w - 2 * pad
-            var fh = fw * 9f / 16f
-            if (fh > h - 2 * pad) { fh = h - 2 * pad; fw = fh * 16f / 9f }
+            var fh = fw / aspect
+            if (fh > h - 2 * pad) { fh = h - 2 * pad; fw = fh * aspect }
             frame.set((w - fw) / 2f, (h - fh) / 2f, (w + fw) / 2f, (h + fh) / 2f)
         }
 
-        private val k get() = frame.width() / 1920f
+        /** View pixels per pixel of a frame 1080 high. */
+        private val k get() = frame.height() / 1080f
 
         /** The layer's picture as it would be on the stream (sample numbers and messages in the editor). */
         private fun pic(l: Scenes.Layer): Bitmap? {
@@ -697,8 +706,7 @@ class SceneEditorActivity : Activity() {
 
         /** Size on the picture (view pixels) of the layer's visible (cropped) part. */
         private fun sizeOf(l: Scenes.Layer, b: Bitmap, raw: Boolean = false): PointF {
-            var w = b.width.toFloat(); var h = b.height.toFloat()
-            if (w > 1920f || h > 1080f) { val f = minOf(1920f / w, 1080f / h); w *= f; h *= f }
+            val (w, h) = Scenes.fit(b.width.toFloat(), b.height.toFloat(), 1080f * aspect)
             val c = if (raw) l.crop else Scenes.cropFor(l, w, h)
             return PointF(w * (c[2] - c[0]) * l.scale * k, h * (c[3] - c[1]) * l.scale * k)
         }
@@ -716,7 +724,7 @@ class SceneEditorActivity : Activity() {
             // behind the layers: the game (the owner's last recording) or the scene's colour / picture
             if (s.game) {
                 val bg = lastFrame
-                if (bg != null) c.drawBitmap(bg, null, frame, paint)
+                if (bg != null) { c.save(); c.clipRect(frame); c.drawBitmap(bg, null, cover(bg, frame), paint); c.restore() }
                 else { paint.shader = LinearGradient(frame.left, frame.top, frame.right, frame.bottom, Color.rgb(52, 74, 60), Color.rgb(120, 104, 74), Shader.TileMode.CLAMP); c.drawRect(frame, paint); paint.shader = null }
             } else {
                 paint.color = s.bg; c.drawRect(frame, paint); paint.color = Color.BLACK
@@ -936,26 +944,26 @@ class SceneEditorActivity : Activity() {
          * numbers, or with real [data] and [alert] (tests draw the stream this way). The game is [lastFrame].
          */
         fun preview(ctx: Context, w: Int, lastFrame: Bitmap?, scene: Scenes.Scene? = null, data: LayerPainter.Data? = null, alert: LayerPainter.Alert? = null): Bitmap {
-            val h = w * 9 / 16
+            val a = Scenes.aspect(ctx)
+            val h = (w / a).toInt().coerceAtLeast(1)
             val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val c = Canvas(out)
             val p = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
             val all = RectF(0f, 0f, w.toFloat(), h.toFloat())
             val s = scene ?: Scenes.load(ctx).current
-            if (!s.game) { c.drawColor(s.bg); LayerPainter.image(ctx, s.bgImage)?.let { c.drawBitmap(it, null, all, p) } }
-            else if (lastFrame != null) c.drawBitmap(lastFrame, null, all, p)
+            if (!s.game) { c.drawColor(s.bg); LayerPainter.image(ctx, s.bgImage)?.let { c.drawBitmap(it, null, cover(it, all), p) } }
+            else if (lastFrame != null) c.drawBitmap(lastFrame, null, cover(lastFrame, all), p)
             else { p.shader = LinearGradient(0f, 0f, w.toFloat(), h.toFloat(), Color.rgb(52, 74, 60), Color.rgb(120, 104, 74), Shader.TileMode.CLAMP); c.drawRect(all, p); p.shader = null }
             val sample = data == null
             val d = data ?: LayerPainter.Data().apply { subs = 12_345; viewers = 1_234; likes = 890; startedAt = System.currentTimeMillis() - 3_725_000 }
-            val k = w / 1920f
+            val k = h / 1080f
             for (l in s.layers) {
                 if (!l.visible) continue
                 val b = when (l.kind) {
                     Scenes.Kind.TEXT, Scenes.Kind.SHAPE, Scenes.Kind.CHAT, Scenes.Kind.GOAL, Scenes.Kind.ALERTS, Scenes.Kind.IMAGE -> LayerPainter.paint(ctx, l, d, alert, sample)
                     else -> LayerPainter.placeholder(ctx, 1280, if (l.kind == Scenes.Kind.CAMERA) 960 else 720, ctx.getString(Scenes.kindName(l.kind)), 0)
                 } ?: continue
-                var bw = b.width.toFloat(); var bh = b.height.toFloat()
-                if (bw > 1920f || bh > 1080f) { val f = minOf(1920f / bw, 1080f / bh); bw *= f; bh *= f }
+                val (bw, bh) = Scenes.fit(b.width.toFloat(), b.height.toFloat(), 1080f * a)
                 val cr = Scenes.cropFor(l, bw, bh)
                 val sw = bw * (cr[2] - cr[0]) * l.scale * k; val sh = bh * (cr[3] - cr[1]) * l.scale * k
                 c.save(); c.translate(l.x * w, l.y * h); c.rotate(l.rot)
@@ -971,6 +979,13 @@ class SceneEditorActivity : Activity() {
                 c.restore()
             }
             return out
+        }
+
+        /** Where [b] goes to fill [r] completely, keeping its shape (the rest is cut off). */
+        fun cover(b: Bitmap, r: RectF): RectF {
+            val f = maxOf(r.width() / b.width, r.height() / b.height)
+            val w = b.width * f; val h = b.height * f
+            return RectF(r.centerX() - w / 2, r.centerY() - h / 2, r.centerX() + w / 2, r.centerY() + h / 2)
         }
 
         /** The last recording's picture, or null (call off the main thread). */

@@ -35,6 +35,12 @@ object VoiceSources {
 
     val KINDS = listOf(GAME, MEDIA, OTHER)
 
+    /** Apps whose sound is the stream itself when watched on the phone while live (YouTube, YouTube Studio). */
+    fun echoUids(ctx: Context): List<Int> = listOf("com.google.android.youtube", "com.google.android.apps.youtube.creator",
+        "com.google.android.apps.youtube.music", "com.google.android.youtube.tv").mapNotNull {
+        try { ctx.packageManager.getApplicationInfo(it, 0).uid } catch (_: Exception) { null }
+    }
+
     fun usageOf(kind: Int) = when (kind) {
         GAME -> AudioAttributes.USAGE_GAME
         MEDIA -> AudioAttributes.USAGE_MEDIA

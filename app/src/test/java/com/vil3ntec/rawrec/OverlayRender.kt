@@ -58,6 +58,30 @@ class OverlayRender {
         save(SceneEditorActivity.preview(app, 1920, game(1920, 1080), scene, data(), alert), "stream-$tag")
     }
 
+    /** The owner's own screen while live: the game, and the scene's «on my screen too» layers where the stream has them. */
+    private fun ownerScreen(tag: String) {
+        val app = RuntimeEnvironment.getApplication()
+        val sc = Scenes.reload(app).current
+        sc.layers.forEach { it.visible = true }
+        val d = data()
+        val items = sc.layers.filter { Scenes.mine(it) }.mapNotNull { l ->
+            val alert = if (l.kind == Scenes.Kind.ALERTS) LayerPainter.Alert(LayerPainter.AlertKind.SUBSCRIBER, "Sara_99") else null
+            LayerPainter.paint(app, l, d, alert, sample = false)?.let { b ->
+                OwnerMirror.Item(l.kind, b, l.x, l.y, 0f, l.scale, l.rot, Scenes.cropFor(l, b.width.toFloat(), b.height.toFloat()), l.alpha, 0f, Scenes.hasNumbers(l))
+            }
+        }
+        val m = OwnerMirror(app)
+        m.set(items)
+        val real = android.graphics.Point()
+        @Suppress("DEPRECATION") app.getSystemService(android.view.WindowManager::class.java)!!.defaultDisplay.getRealSize(real)
+        val v = m.viewForTests
+        v.measure(android.view.View.MeasureSpec.makeMeasureSpec(real.x, android.view.View.MeasureSpec.EXACTLY), android.view.View.MeasureSpec.makeMeasureSpec(real.y, android.view.View.MeasureSpec.EXACTLY))
+        v.layout(0, 0, real.x, real.y)
+        val out = game(real.x, real.y)
+        v.draw(Canvas(out))
+        save(out, "owner-screen-$tag")
+    }
+
     /** Every starting scene, and one with each kind of layer turned, cropped and coloured. */
     private fun scenes(tag: String) {
         val app = RuntimeEnvironment.getApplication()
@@ -223,6 +247,7 @@ class OverlayRender {
         stream("$tag-member", LayerPainter.Alert(LayerPainter.AlertKind.MEMBER, "NightWolf", "Gold"))
         stream("$tag-giveaway", LayerPainter.Alert(LayerPainter.AlertKind.GIVEAWAY, "علی رضایی", "17"))
         scenes(tag)
+        ownerScreen(tag)
         hud(tag)
         styles(tag)
         screens(tag)

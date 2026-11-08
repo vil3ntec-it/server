@@ -86,6 +86,29 @@ object Scenes {
     /** Where the owner's pictures and videos for the layers are kept. */
     fun mediaDir(ctx: Context) = File(ctx.filesDir, "scene_media").apply { mkdirs() }
 
+    /**
+     * The stream's shape: this phone's screen held sideways (the stream is the screen, so a 20:9
+     * phone streams 20:9). Sizes everywhere are in pixels of a frame 1080 high (the short side).
+     */
+    fun aspect(ctx: Context): Float {
+        val dm = android.util.DisplayMetrics()
+        try { @Suppress("DEPRECATION") ctx.getSystemService(android.view.WindowManager::class.java)?.defaultDisplay?.getRealMetrics(dm) } catch (_: Exception) {}
+        val lo = minOf(dm.widthPixels, dm.heightPixels); val hi = maxOf(dm.widthPixels, dm.heightPixels)
+        val a = if (lo > 0) hi.toFloat() / lo else 0f
+        return if (a > 1f) a.coerceIn(1.25f, 2.6f) else 16f / 9f
+    }
+
+    /** [w]×[h] (pixels of a frame 1080 high) made to fit inside a frame [designW]×1080. */
+    fun fit(w: Float, h: Float, designW: Float): Pair<Float, Float> =
+        if (w > designW || h > 1080f) { val k = minOf(designW / w, 1080f / h); (w * k) to (h * k) } else w to h
+
+    /** Shown on the owner's own screen too (the chat, goal, counters and alerts are, unless turned off). */
+    fun mine(l: Layer): Boolean = l.kind != Kind.VIDEO && l.kind != Kind.CAMERA &&
+        l.bool("mine", l.kind == Kind.CHAT || l.kind == Kind.GOAL || l.kind == Kind.TEXT || l.kind == Kind.ALERTS)
+
+    /** A text with live numbers in it. */
+    fun hasNumbers(l: Layer): Boolean = l.kind == Kind.TEXT && listOf("{viewers}", "{subs}", "{likes}", "{members}").any { l.str("text").contains(it) }
+
     /** The part of a [w]×[h] source that is shown: the owner's crop, made square for a round camera. */
     fun cropFor(l: Layer, w: Float, h: Float): FloatArray {
         val c = l.crop

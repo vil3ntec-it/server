@@ -147,7 +147,7 @@ object LayerPainter {
     }
 
     fun shape(l: Scenes.Layer): Bitmap {
-        val w = l.int("w", 600).coerceIn(4, 1920)
+        val w = l.int("w", 600).coerceIn(4, 2600)
         val h = l.int("h", 120).coerceIn(4, 1080)
         val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)

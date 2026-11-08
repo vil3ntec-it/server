@@ -45,9 +45,40 @@ class SceneRenderer(
     @Volatile private var released = false
     /** Called when the scene or a layer's switch changed (the chat panel shows them). */
     var onChanged: () -> Unit = {}
-    /** The whole screen is captured with the phone's own chat on it: chat layers are not drawn a second time. */
-    var phoneChatInPicture = false
+    /**
+     * The whole screen is captured and the owner's screen shows the scene's own layers ([onMirror]):
+     * those (and the phone's chat) are in the picture already, so they are not drawn a second time.
+     */
+    var screenInPicture = false
         set(v) { if (field != v) { field = v; push() } }
+    /** [OwnerMirror] is on the screen (its layers are in a whole-screen picture). */
+    var mirrorOn = false
+        set(v) { if (field != v) { field = v; push() } }
+    /** The chat panel's own feed is over the game (in a whole-screen picture when a chat layer is on). */
+    var phoneChat = false
+        set(v) { if (field != v) { field = v; push() } }
+    /** The layers marked «on my screen too», for [OwnerMirror] (none while away from the game). */
+    var onMirror: (List<OwnerMirror.Item>) -> Unit = {}
+    /** Viewers' messages in Persian for the owner's own copy of the chat (the stream keeps the original). */
+    private val ownerText = LinkedHashMap<String, String>()
+    private var ownerChat: Pair<String, Bitmap?>? = null
+
+    fun ownerText(id: String, text: String) {
+        ownerText[id] = text
+        while (ownerText.size > 200) ownerText.remove(ownerText.keys.first())
+        if (data.chat.any { it.id == id }) push()
+    }
+
+    /** The chat as the owner reads it: translated lines in place of the originals. */
+    private fun ownerPic(l: Scenes.Layer, b: Bitmap): Bitmap {
+        if (l.kind != Scenes.Kind.CHAT || data.chat.none { it.id in ownerText }) return b
+        val sig = l.id + l.p.toString() + data.chat.joinToString { it.id + (ownerText[it.id] ?: "") }
+        ownerChat?.let { if (it.first == sig) return it.second ?: b }
+        val lines = data.chat.map { c -> ownerText[c.id]?.let { LayerPainter.ChatLine(c.id, c.author, it, c.nameColor, c.accent) } ?: c }
+        val pic = try { LayerPainter.chat(ctx, l, lines) } catch (_: Throwable) { null }
+        ownerChat = sig to pic
+        return pic ?: b
+    }
 
     /** The scene on the stream now (the «away» scene while the game is off the screen). */
     val showing: Scenes.Scene get() = if (away) project.scene(project.away) ?: project.current else project.current
@@ -294,8 +325,13 @@ class SceneRenderer(
     fun push() {
         if (released) return
         val out = ArrayList<LookFilter.Layer>()
+        val mirror = ArrayList<OwnerMirror.Item>()
+        // the scene's own background replaces the screen (or «برمی‌گردم» does): the screen is not in the picture then
+        val covered = away || !showing.game
         for (l in showing.layers) {
-            if (!l.visible || (l.kind == Scenes.Kind.CHAT && phoneChatInPicture)) continue
+            if (!l.visible) continue
+            val mine = Scenes.mine(l)
+            val inPicture = screenInPicture && !covered && ((mine && mirrorOn) || (l.kind == Scenes.Kind.CHAT && phoneChat))
             var alpha = l.alpha
             var dy = 0f
             var natW: Float
@@ -325,17 +361,22 @@ class SceneRenderer(
                     if (l.kind == Scenes.Kind.ALERTS) { val (a, d) = alertMotion(); alpha *= a; dy = d }
                 }
             }
-            // natural size: pixels of a 1920×1080 frame, anything bigger fitted inside it (as in the editor)
-            if (natW > 1920f || natH > 1080f) { val k = minOf(1920f / natW, 1080f / natH); natW *= k; natH *= k }
+            // natural size in pixels of a frame 1080 high, anything bigger fitted inside it (as in the editor);
+            // on the stream one such pixel is [unit] real ones, the same across and down (nothing stretched)
+            val unit = minOf(fw, fh) / 1080f
+            Scenes.fit(natW, natH, fw / unit).let { natW = it.first; natH = it.second }
             val c = Scenes.cropFor(l, natW, natH)
-            val wPx = natW * (c[2] - c[0]) * l.scale
-            val hPx = natH * (c[3] - c[1]) * l.scale
-            val wF = wPx / 1920f; val hF = hPx / 1080f
+            val wF = natW * (c[2] - c[0]) * l.scale * unit / fw
+            val hF = natH * (c[3] - c[1]) * l.scale * unit / fh
             val x = l.x - wF / 2f
-            val y = l.y - hF / 2f + dy / 1080f
+            val y = l.y - hF / 2f + dy * unit / fh
+            if (mine && bmp != null && !away)
+                mirror += OwnerMirror.Item(l.kind, ownerPic(l, bmp), l.x, l.y, dy, l.scale, l.rot, c.copyOf(), alpha, corner, Scenes.hasNumbers(l))
+            if (inPicture) continue
             out += LookFilter.Layer(numId(l.id), bmp, g, x, y, wF, hF, alpha, l.rot, c.copyOf(), ext, corner * l.scale,
                 l.kind == Scenes.Kind.CAMERA && l.bool("mirror", true))
         }
+        onMirror(mirror)
         filter.setLayers(out)
     }
 
@@ -380,6 +421,7 @@ class SceneRenderer(
         gifs.clear()
         camera?.release(); camera = null
         try { filter.setLayers(emptyList()) } catch (_: Throwable) {}
+        try { onMirror(emptyList()) } catch (_: Throwable) {}
         coverSink(null)
     }
 

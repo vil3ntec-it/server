@@ -61,6 +61,14 @@ object OverlayWindows {
         views += v
     }
 
+    /**
+     * The most a window may cover and still let touches reach the app under it: Android 12+ blocks
+     * touches that pass through a more opaque window of another app.
+     */
+    fun passThroughAlpha(ctx: Context): Float = if (android.os.Build.VERSION.SDK_INT >= 31) try {
+        ctx.getSystemService(android.hardware.input.InputManager::class.java)?.maximumObscuringOpacityForTouch?.coerceIn(0.1f, 1f) ?: 0.8f
+    } catch (_: Throwable) { 0.8f } else 1f
+
     fun update(wm: WindowManager?, v: View, lp: WindowManager.LayoutParams) {
         if (v in views) try { wm?.updateViewLayout(v, lp) } catch (_: Exception) {}
     }

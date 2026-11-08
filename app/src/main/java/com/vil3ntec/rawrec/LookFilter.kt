@@ -91,7 +91,7 @@ class LookFilter(private val look: Look, private val fps: Int) {
      * One picture over the stream: [bitmap] (uploaded once per [gen]) or, when [ext] > 0, a live
      * source (video, camera) from [createExternal]. ([x], [y], [w], [h]) is the unturned rectangle
      * in frame fractions, turned by [rot] degrees about its centre; [crop] keeps a part of the
-     * source (left, top, right, bottom fractions); [corner] rounds it (frame pixels, ≥ half the
+     * source (left, top, right, bottom fractions); [corner] rounds it (pixels of a frame 1080 high, ≥ half the
      * short side = a circle); [mirror] flips it left-right.
      */
     class Layer(
@@ -189,8 +189,8 @@ class LookFilter(private val look: Look, private val fps: Int) {
             val c = l.crop ?: FULL
             GLES20.glUniform4f(GLES20.glGetUniformLocation(prog, "crop"), c[0], c[1], c[2], c[3])
             GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "mirror"), if (l.mirror) 1f else 0f)
-            // corner radius given in frame pixels of a 1920-wide frame: scaled to this output
-            GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "corner"), (l.corner * outW / 1920f).coerceAtMost(minOf(pw, ph) / 2f))
+            // corner radius given in pixels of a frame 1080 high (short side): scaled to this output
+            GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "corner"), (l.corner * minOf(outW, outH) / 1080f).coerceAtMost(minOf(pw, ph) / 2f))
             GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "alpha"), l.alpha.coerceIn(0f, 1f))
             val pos = GLES20.glGetAttribLocation(prog, "pos")
             GLES20.glEnableVertexAttribArray(pos)

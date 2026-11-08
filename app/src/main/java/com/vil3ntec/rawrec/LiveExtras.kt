@@ -67,6 +67,12 @@ object LiveExtras {
     /** The owner's Persian messages sent in [trTarget] (the chat panel's EN/FA button). */
     fun trOut(ctx: Context) = b(ctx, "tr_out", true)
     fun trTarget(ctx: Context): String = s(ctx, "tr_target").ifBlank { "en" }
+    /** The languages picked last (newest first), shown first in the chat's language list. */
+    fun trRecent(ctx: Context): List<String> = s(ctx, "tr_recent").split(',').filter { it.isNotBlank() }
+    fun setTrTarget(ctx: Context, code: String) {
+        put(ctx, "tr_target", code)
+        put(ctx, "tr_recent", (listOf(code) + trRecent(ctx).filter { it != code }).take(6).joinToString(","))
+    }
 
     // ---- on the stream
     const val POS_TL = 0; const val POS_TC = 1; const val POS_TR = 2; const val POS_BL = 3; const val POS_BC = 4; const val POS_BR = 5

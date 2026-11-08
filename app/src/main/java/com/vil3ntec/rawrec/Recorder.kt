@@ -747,6 +747,9 @@ class Recorder(
             capturedKinds = mask
             val c = AudioPlaybackCaptureConfiguration.Builder(projection)
             for (k in VoiceSources.KINDS) if (mask and k != 0) c.addMatchingUsage(VoiceSources.usageOf(k))
+            // Live: YouTube playing on this phone would be the stream itself coming back a few seconds
+            // late, captured again and again (one sound repeated without end) — never taken in.
+            if (sinkFactory != null) for (uid in VoiceSources.echoUids(ctx)) try { c.excludeUid(uid) } catch (_: Exception) {}
             b.setAudioPlaybackCaptureConfig(c.build())
         }
         val r = b.build()

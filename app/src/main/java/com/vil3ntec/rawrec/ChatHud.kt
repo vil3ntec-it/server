@@ -106,6 +106,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
     }
     /** Not touchable: every touch on it goes to the game underneath. */
     private val lpFeed = overlay(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+        .apply { alpha = OverlayWindows.passThroughAlpha(ctx) }   // (Android 12+: a more opaque one would stop the touch)
     private val lpPanel = overlay(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
         WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH).apply { softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN }
 
@@ -248,14 +249,21 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         setOnEditorActionListener { _, id, _ -> if (id == EditorInfo.IME_ACTION_SEND) { sendNow(); true } else false }
     }
     private val sendBtn = iconBtn(R.drawable.ic_send, ctx.getString(R.string.hud_send)) { sendNow() }
-    /** EN / FA: what the owner's Persian goes out as (the translator), one tap to switch. */
-    internal val langChip = chip("") { setTrOut(!LiveExtras.trOut(ctx)) }.apply {
+    /** The language the owner's Persian goes out in (FA = as written): a tap opens every language right here. */
+    internal val langChip = chip("") { toggleLangs() }.apply {
         contentDescription = ctx.getString(R.string.tr_chip_desc)
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(30)).apply { marginEnd = dp(6) }
     }
     private val readOnly = label(11.5f, Color.argb(170, 255, 255, 255)).apply {
         text = ctx.getString(R.string.hud_read_only)
         setPadding(dp(10), dp(4), dp(10), dp(8))
+    }
+    private val langRow = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+    internal val langScroll = HorizontalScrollView(ctx).apply {
+        isHorizontalScrollBarEnabled = false
+        setPadding(dp(8), dp(2), dp(8), dp(2))
+        addView(langRow)
+        visibility = View.GONE
     }
     private val inputRow = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -277,6 +285,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         addView(selInfo)
         addView(modRow)
         addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        addView(langScroll)
         addView(inputRow)
         addView(readOnly)
     }
@@ -295,8 +304,31 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         renderLang()
     }
 
-    private fun setTrOut(on: Boolean) {
-        LiveExtras.put(ctx, "tr_out", on)
+    private fun toggleLangs() {
+        if (langScroll.visibility == View.VISIBLE) { langScroll.visibility = View.GONE; return }
+        langRow.removeAllViews()
+        val on = LiveExtras.trOut(ctx)
+        val target = LiveExtras.trTarget(ctx)
+        val sel = Color.argb(170, 106, 166, 255)
+        langRow.addView(chip("FA · " + ctx.getString(R.string.tr_as_written), if (!on) sel else Color.argb(46, 255, 255, 255)) { pickLang(null) }.apply { tag = "lang:fa" })
+        val recent = LiveExtras.trRecent(ctx).filter { it in ChatTranslator.LANGS }
+        for (code in (listOf(target).filter { it in ChatTranslator.LANGS } + recent + ChatTranslator.LANGS).distinct())
+            langRow.addView(chip(code.uppercase() + " · " + ChatTranslator.nativeName(code), if (on && code == target) sel else Color.argb(46, 255, 255, 255)) {
+                pickLang(code)
+            }.apply { tag = "lang:$code" })
+        langScroll.visibility = View.VISIBLE
+        langScroll.scrollTo(0, 0)
+    }
+
+    /** null = send what is written (Persian) as it is. */
+    private fun pickLang(code: String?) {
+        if (code == null) LiveExtras.put(ctx, "tr_out", false)
+        else {
+            LiveExtras.put(ctx, "tr_out", true)
+            LiveExtras.setTrTarget(ctx, code)
+            ChatTranslator.prepare(ctx)   // that language's pack, once (in the background)
+        }
+        langScroll.visibility = View.GONE
         renderLang()
     }
 
@@ -380,8 +412,23 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         stats.text = if (parts.isEmpty()) ctx.getString(R.string.hud_title) else parts.joinToString("  ·  ")
         // the same numbers over the game, read only
         statsLine.text = parts.joinToString("   ")
-        statsLine.visibility = if (showStats && parts.isNotEmpty()) View.VISIBLE else View.GONE
+        statsLine.visibility = if (showStats && !mirrorStats && parts.isNotEmpty()) View.VISIBLE else View.GONE
         styleLine(statsLine, null)
+        updateFeed()
+    }
+
+    private var mirrorChat = false
+    private var mirrorStats = false
+
+    /**
+     * The stream's own chat / counters are on the screen already (where they are on the stream):
+     * the feed and the number line over the game step aside, so nothing is there twice.
+     */
+    fun setMirror(chat: Boolean, stats: Boolean) {
+        if (chat == mirrorChat && stats == mirrorStats) return
+        mirrorChat = chat; mirrorStats = stats
+        feed.visibility = if (chat) View.GONE else View.VISIBLE
+        statsLine.visibility = if (showStats && !stats && statsLine.text.isNotEmpty()) View.VISIBLE else View.GONE
         updateFeed()
     }
 
@@ -451,7 +498,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
 
     private fun updateFeed() {
         if (!shown) return
-        val want = feedAllowed && !open && (feed.childCount > 0 || statsLine.visibility == View.VISIBLE)
+        val want = feedAllowed && !open && ((feed.childCount > 0 && !mirrorChat) || statsLine.visibility == View.VISIBLE)
         if (want) {
             placeNearBubble(lpFeed, feedW, feedHeight())
             if (feedRoot.isAttachedToWindow) OverlayWindows.update(wm, feedRoot, lpFeed)

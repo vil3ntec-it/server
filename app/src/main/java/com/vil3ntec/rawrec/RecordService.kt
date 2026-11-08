@@ -748,6 +748,8 @@ class RecordService : Service(), Recorder.Events {
     private var hud: ChatHud? = null
     /** The owner's scenes and layers on the stream (null when the GPU stage is not running). */
     private var scenes: SceneRenderer? = null
+    /** The scene's layers on the owner's own screen (display only). */
+    private var mirror: OwnerMirror? = null
     private var probe: CaptureProbe? = null
     private var alertsShown = 0
     /** When each message came, for the stream's chat (old ones leave after 45 s). */
@@ -773,33 +775,51 @@ class RecordService : Service(), Recorder.Events {
             }
         }
         val lc = LiveChat(this, chatListener)
-        if (!lc.hasYouTube && !lc.hasTwitch) return
-        chat = lc
-        bot = ChatBot(LiveExtras.botConfig(this))
-        lc.start()
-        if (LiveExtras.trIn(this) || LiveExtras.trOut(this)) ChatTranslator.prepare(this)
-        if (LiveExtras.hud(this) && Settings.canDrawOverlays(this)) {
+        val hasChat = lc.hasYouTube || lc.hasTwitch
+        if (hasChat) {
+            chat = lc
+            bot = ChatBot(LiveExtras.botConfig(this))
+            lc.start()
+            if (LiveExtras.trIn(this) || LiveExtras.trOut(this)) ChatTranslator.prepare(this)
+        }
+        val overlays = Settings.canDrawOverlays(this)
+        if (hasChat && LiveExtras.hud(this) && overlays) {
             val h = ChatHud(this, hudActions)
             hud = h
             h.setStats(-1, -1, -1)
             h.setGiveaway(false, 0)
             h.setCanSend(false)
             hudScenes()
-            if (f != null) {
-                // Shown once it is known for real whether viewers would see it (see CaptureProbe).
-                probe = CaptureProbe(this, f, r.plan.width, r.plan.height, { liveCovered }) { captured ->
-                    probe = null
-                    RecLog.add(this, "chat panel: " + if (captured) "whole screen captured" else "only the game captured")
-                    if (stopping) return@CaptureProbe
-                    hudCaptured = captured
-                    hud?.show()
-                    hud?.setPrivate(!captured)
-                    scenes?.phoneChatInPicture = captured   // the phone's own chat is in the picture then
-                }
-                main.postDelayed(startProbe, 1500)
-            } else { h.show(); h.setPrivate(false) }
         }
-        main.postDelayed(botTick, 5000)
+        // the stream's chat, goal, counters… on the owner's own screen too, where they are on the stream
+        val sr = scenes
+        if (sr != null && overlays) mirror = OwnerMirror(this).also { m ->
+            sr.onMirror = { items ->
+                m.set(items)
+                hud?.setMirror(chat = m.shown && items.any { it.kind == Scenes.Kind.CHAT }, stats = m.shown && items.any { it.numbers })
+            }
+        }
+        if (f != null && (hud != null || mirror != null)) {
+            // Shown once it is known for real whether viewers would see it (see CaptureProbe).
+            probe = CaptureProbe(this, f, r.plan.width, r.plan.height, { liveCovered }) { captured ->
+                probe = null
+                RecLog.add(this, "chat panel: " + if (captured) "whole screen captured" else "only the game captured")
+                if (stopping) return@CaptureProbe
+                hudCaptured = captured
+                hud?.show()
+                hud?.setPrivate(!captured)
+                mirror?.show()
+                // the whole screen in the picture: what the phone shows is not drawn a second time
+                scenes?.let { sr ->
+                    sr.mirrorOn = mirror?.shown == true
+                    sr.phoneChat = hud != null
+                    sr.screenInPicture = captured
+                    sr.push()
+                }
+            }
+            main.postDelayed(startProbe, 1500)
+        } else hud?.let { it.show(); it.setPrivate(false) }
+        if (hasChat) main.postDelayed(botTick, 5000)
     }
 
     /** The editor saved while live: the scenes as they are now on the phone. */
@@ -840,6 +860,8 @@ class RecordService : Service(), Recorder.Events {
         hud = null
         try { scenes?.release() } catch (_: Exception) {}
         scenes = null
+        try { mirror?.hide() } catch (_: Exception) {}
+        mirror = null
     }
 
     private val botTick = object : Runnable {
@@ -910,7 +932,7 @@ class RecordService : Service(), Recorder.Events {
         hud?.add(m)
         // A viewer writing in another language: shown to the owner in Persian (the stream keeps the original).
         if (hud != null && LiveExtras.trIn(this) && ChatTranslator.needsPersian(m.text)) {
-            ChatTranslator.toPersian(this, m.text) { fa -> if (fa != null) main.post { hud?.setTranslation(m.id, fa) } }
+            ChatTranslator.toPersian(this, m.text) { fa -> if (fa != null) main.post { hud?.setTranslation(m.id, fa); scenes?.ownerText(m.id, fa) } }
         }
         hud?.setCanSend(chat?.canSend == true)
         val b = bot

@@ -285,16 +285,27 @@ class VoiceLiveUiTest {
         assertTrue("touches pass through the feed to the game", lp.flags and android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0)
         assertTrue("the button takes touches", (hud.bubble.layoutParams as android.view.WindowManager.LayoutParams).flags and
             android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE == 0)
-        // the translator's EN/FA button beside the box
-        val out0 = LiveExtras.trOut(app)
-        hud.langChip.performClick()
-        assertEquals("EN/FA switches what my Persian goes out as", !out0, LiveExtras.trOut(app))
-        assertEquals(if (!out0) "EN" else "FA", hud.langChip.text.toString())
-        hud.langChip.performClick()
-        assertEquals(out0, LiveExtras.trOut(app))
+        // the language button beside the box: every language right here, FA = as written
+        fun pick(tag: String) {
+            hud.langChip.performClick()
+            assertEquals("the list opens", View.VISIBLE, hud.langScroll.visibility)
+            all(hud.langScroll).first { it.tag == tag }.performClick()
+            assertEquals("…and closes", View.GONE, hud.langScroll.visibility)
+        }
+        pick("lang:fa")
+        assertFalse(LiveExtras.trOut(app)); assertEquals("FA", hud.langChip.text.toString())
+        pick("lang:en")
+        assertTrue(LiveExtras.trOut(app)); assertEquals("en", LiveExtras.trTarget(app)); assertEquals("EN", hud.langChip.text.toString())
+        pick("lang:ar")
+        assertEquals("ar", LiveExtras.trTarget(app)); assertEquals("AR", hud.langChip.text.toString())
+        assertTrue("more than fifty languages to pick from", ChatTranslator.LANGS.size > 50 && "ja" in ChatTranslator.LANGS)
+        assertEquals("the last ones first", listOf("ar", "en"), LiveExtras.trRecent(app).take(2))
+        pick("lang:en")
         // a translation replaces the viewer's text on the phone
         hud.setTranslation("1", "سلام فارسی")
         assertTrue((hud.feed.getChildAt(0) as TextView).text.toString().contains("سلام فارسی"))
+        assertTrue("Arabic is translated", ChatTranslator.needsPersian("كيف حالك يا أخي") && ChatTranslator.needsPersian("привет как дела"))
+        assertFalse("Persian is not", ChatTranslator.needsPersian("چطوری داداش، بازی خیلی خوبه"))
         assertTrue(ChatTranslator.needsPersian("this clutch was insane") && !ChatTranslator.needsPersian("سلام داداش gg") &&
             !ChatTranslator.needsPersian("😂😂") && !ChatTranslator.needsPersian("ok"[0].toString()))
         hud.setStats(1234, 50, 9000)

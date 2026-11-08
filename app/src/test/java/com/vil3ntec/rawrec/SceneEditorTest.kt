@@ -214,6 +214,52 @@ class SceneEditorTest {
         assertEquals(Color.rgb(255, 0, 0), got)
     }
 
+    @Test fun theEditorHasTheStreamsShape() {
+        open()
+        val a = Scenes.aspect(app)
+        assertEquals("this phone sideways", 891f / 411f, a, 0.06f)
+        val p = SceneEditorActivity.preview(app, 1000, null)
+        assertEquals("the picture is as wide as the stream", 1000f / a, p.height.toFloat(), 1.5f)
+    }
+
+    @Test fun onMyScreenTooIsTheOwnersChoice() {
+        val ed = open()
+        val l = add(ed, R.string.sc_k_text)
+        assertTrue("texts are on my screen too unless I say no", Scenes.mine(l))
+        tag(ed, "sc:p:mine").performClick(); idle()
+        assertFalse(Scenes.mine(l))
+        assertFalse("never the camera", Scenes.mine(Scenes.newLayer(app, Scenes.Kind.CAMERA)))
+        assertTrue(Scenes.hasNumbers(Scenes.newLayer(app, Scenes.Kind.TEXT).apply { p.put("text", "{viewers} watching") }))
+    }
+
+    @Test fun theOwnerSeesEachLayerWhereTheStreamHasIt() {
+        RuntimeEnvironment.setQualifiers("w891dp-h411dp-land-560dpi")
+        val m = OwnerMirror(app)
+        val red = Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.RED) }
+        m.set(listOf(OwnerMirror.Item(Scenes.Kind.TEXT, red, 0.25f, 0.5f, 0f, 1f, 0f, floatArrayOf(0f, 0f, 1f, 1f), 1f, 0f, true)))
+        val real = android.graphics.Point()
+        @Suppress("DEPRECATION") app.getSystemService(android.view.WindowManager::class.java)!!.defaultDisplay.getRealSize(real)
+        val v = m.viewForTests
+        v.measure(View.MeasureSpec.makeMeasureSpec(real.x, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(real.y, View.MeasureSpec.EXACTLY))
+        v.layout(0, 0, real.x, real.y)
+        val out = Bitmap.createBitmap(real.x, real.y, Bitmap.Config.ARGB_8888)
+        v.draw(Canvas(out))
+        val cx = (0.25f * real.x).toInt(); val cy = real.y / 2
+        assertEquals("at its place", Color.RED, out.getPixel(cx, cy))
+        assertEquals("nothing elsewhere", 0, Color.alpha(out.getPixel((0.75f * real.x).toInt(), cy)))
+        // 100 pixels of a frame 1080 high: the same share of this screen's height, as wide as it is high
+        val half = 50f * minOf(real.x, real.y) / 1080f
+        assertEquals(Color.RED, out.getPixel((cx + half - 3).toInt(), cy))
+        assertEquals(0, Color.alpha(out.getPixel((cx + half + 3).toInt(), cy)))
+        assertEquals(Color.RED, out.getPixel(cx, (cy + half - 3).toInt()))
+        assertEquals(0, Color.alpha(out.getPixel(cx, (cy + half + 3).toInt())))
+        m.show(); idle()
+        val lp = v.layoutParams as android.view.WindowManager.LayoutParams
+        assertTrue("touches go to the game", lp.flags and android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0)
+        m.hide(); idle()
+        assertFalse(v.isAttachedToWindow)
+    }
+
     @Test fun aRoundCameraIsACircle() {
         val l = Scenes.newLayer(app, Scenes.Kind.CAMERA).apply { p.put("mask", 2) }
         for ((w, h) in listOf(1280f to 960f, 720f to 1280f)) {
