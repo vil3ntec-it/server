@@ -116,7 +116,8 @@ class SceneEditorTest {
         val field = all(ed.window.decorView).filterIsInstance<EditText>().first { it.tag == "sc:p:text" }
         field.setText("سلام {subs}")
         assertEquals("سلام {subs}", l.str("text"))
-        assertTrue(LayerPainter.vars(l.str("text"), LayerPainter.Data().apply { subs = 12_345 }).contains("12,345"))
+        // as YouTube gives it (rounded to three figures): short
+        assertEquals("سلام 12.3K", LayerPainter.vars(l.str("text"), LayerPainter.Data().apply { subs = 12_345 }))
         // drag it 200 px to the right
         val c0 = stage.pointOf(l.id)!!
         val x0 = l.x
@@ -211,6 +212,17 @@ class SceneEditorTest {
         all(d2.window!!.decorView).filterIsInstance<EditText>().first().setText("#40FF0000")
         d2.getButton(AlertDialog.BUTTON_POSITIVE).performClick(); idle()
         assertEquals(Color.rgb(255, 0, 0), got)
+    }
+
+    @Test fun aRoundCameraIsACircle() {
+        val l = Scenes.newLayer(app, Scenes.Kind.CAMERA).apply { p.put("mask", 2) }
+        for ((w, h) in listOf(1280f to 960f, 720f to 1280f)) {
+            val c = Scenes.cropFor(l, w, h)
+            assertEquals("square for $w×$h", 1f, w * (c[2] - c[0]) / (h * (c[3] - c[1])), 0.001f)
+            assertEquals("centred", 0.5f, (c[0] + c[2]) / 2f, 0.001f)
+        }
+        l.p.put("mask", 1)
+        assertTrue(Scenes.cropFor(l, 1280f, 960f).contentEquals(l.crop))
     }
 
     @Test fun alertTextsAreTheOwnersOwn() {

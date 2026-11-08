@@ -696,10 +696,10 @@ class SceneEditorActivity : Activity() {
         }
 
         /** Size on the picture (view pixels) of the layer's visible (cropped) part. */
-        private fun sizeOf(l: Scenes.Layer, b: Bitmap): PointF {
+        private fun sizeOf(l: Scenes.Layer, b: Bitmap, raw: Boolean = false): PointF {
             var w = b.width.toFloat(); var h = b.height.toFloat()
             if (w > 1920f || h > 1080f) { val f = minOf(1920f / w, 1080f / h); w *= f; h *= f }
-            val c = l.crop
+            val c = if (raw) l.crop else Scenes.cropFor(l, w, h)
             return PointF(w * (c[2] - c[0]) * l.scale * k, h * (c[3] - c[1]) * l.scale * k)
         }
 
@@ -737,7 +737,7 @@ class SceneEditorActivity : Activity() {
                 c.translate(ce.x, ce.y)
                 c.rotate(l.rot)
                 val dst = RectF(-sz.x / 2, -sz.y / 2, sz.x / 2, sz.y / 2)
-                val cr = l.crop
+                val cr = Scenes.cropFor(l, b.width.toFloat(), b.height.toFloat())
                 val src = Rect((cr[0] * b.width).toInt(), (cr[1] * b.height).toInt(), (cr[2] * b.width).toInt(), (cr[3] * b.height).toInt())
                 val corner = when (l.kind) {
                     Scenes.Kind.CAMERA -> when (l.int("mask", 1)) { 2 -> 99999f; 1 -> 36f; else -> 0f }
@@ -759,7 +759,7 @@ class SceneEditorActivity : Activity() {
             if (l != null) {
                 val b = pic(l)
                 if (b != null) {
-                    val sz = sizeOf(l, b)
+                    val sz = sizeOf(l, b, raw = cropping)
                     val ce = center(l)
                     c.save(); c.translate(ce.x, ce.y); c.rotate(l.rot)
                     if (cropping) drawCrop(c, l, b, sz)
@@ -773,7 +773,8 @@ class SceneEditorActivity : Activity() {
                     }
                     c.restore()
                 }
-            } else c.drawText(getString(R.string.sc_hint), frame.centerX(), frame.bottom - 14 * d, hint)
+            } else c.drawText(getString(R.string.sc_hint), frame.centerX(),
+                if (height - frame.bottom > 26 * d) frame.bottom + 20 * d else frame.bottom - 14 * d, hint)
         }
 
         /** Crop mode: the whole source dimmed, the kept part clear, a handle on each of its edges. */
@@ -832,7 +833,7 @@ class SceneEditorActivity : Activity() {
                     if (l != null && !l.locked) {
                         val b = pic(l)
                         if (b != null) {
-                            val sz = sizeOf(l, b)
+                            val sz = sizeOf(l, b, raw = cropping)
                             val p = local(l, e.x, e.y)
                             if (cropping) {
                                 val keep = RectF(-sz.x / 2, -sz.y / 2, sz.x / 2, sz.y / 2)
@@ -905,7 +906,7 @@ class SceneEditorActivity : Activity() {
         private fun dragCrop(l: Scenes.Layer, x: Float, y: Float) {
             val b = pic(l) ?: return
             val cr = l.crop
-            val sz = sizeOf(l, b)
+            val sz = sizeOf(l, b, raw = true)
             val fw = sz.x / (cr[2] - cr[0]); val fh = sz.y / (cr[3] - cr[1])
             val p = local(l, x, y)
             // in source fractions, measured from the full source's top-left
@@ -955,7 +956,7 @@ class SceneEditorActivity : Activity() {
                 } ?: continue
                 var bw = b.width.toFloat(); var bh = b.height.toFloat()
                 if (bw > 1920f || bh > 1080f) { val f = minOf(1920f / bw, 1080f / bh); bw *= f; bh *= f }
-                val cr = l.crop
+                val cr = Scenes.cropFor(l, bw, bh)
                 val sw = bw * (cr[2] - cr[0]) * l.scale * k; val sh = bh * (cr[3] - cr[1]) * l.scale * k
                 c.save(); c.translate(l.x * w, l.y * h); c.rotate(l.rot)
                 val corner = when (l.kind) {

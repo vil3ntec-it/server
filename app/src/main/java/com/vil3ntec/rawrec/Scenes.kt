@@ -86,6 +86,15 @@ object Scenes {
     /** Where the owner's pictures and videos for the layers are kept. */
     fun mediaDir(ctx: Context) = File(ctx.filesDir, "scene_media").apply { mkdirs() }
 
+    /** The part of a [w]×[h] source that is shown: the owner's crop, made square for a round camera. */
+    fun cropFor(l: Layer, w: Float, h: Float): FloatArray {
+        val c = l.crop
+        if (l.kind != Kind.CAMERA || l.int("mask", 1) != 2 || w <= 0f || h <= 0f) return c
+        val pw = w * (c[2] - c[0]); val ph = h * (c[3] - c[1])
+        return if (pw > ph) { val d = (pw - ph) / 2f / w; floatArrayOf(c[0] + d, c[1], c[2] - d, c[3]) }
+        else { val d = (ph - pw) / 2f / h; floatArrayOf(c[0], c[1] + d, c[2], c[3] - d) }
+    }
+
     /** Pictures and videos no layer or scene uses any more (deleted layers, replaced files). */
     fun cleanMedia(ctx: Context, p: Project) {
         val used = HashSet<String>()

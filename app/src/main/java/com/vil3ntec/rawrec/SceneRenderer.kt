@@ -327,7 +327,7 @@ class SceneRenderer(
             }
             // natural size: pixels of a 1920×1080 frame, anything bigger fitted inside it (as in the editor)
             if (natW > 1920f || natH > 1080f) { val k = minOf(1920f / natW, 1080f / natH); natW *= k; natH *= k }
-            val c = l.crop
+            val c = Scenes.cropFor(l, natW, natH)
             val wPx = natW * (c[2] - c[0]) * l.scale
             val hPx = natH * (c[3] - c[1]) * l.scale
             val wF = wPx / 1920f; val hF = hPx / 1080f

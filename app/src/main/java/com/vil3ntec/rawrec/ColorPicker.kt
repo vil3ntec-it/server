@@ -71,24 +71,35 @@ object ColorPicker {
             override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, af: Int) {}
             override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
         })
-        root.addView(sv, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(170)))
-        root.addView(hue, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(30)).apply { topMargin = dp(12) })
-        if (alpha) root.addView(al, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(30)).apply { topMargin = dp(10) })
+        // landscape (the scene editor): the square on one side, everything else beside it, nothing below the fold
+        val wide = ctx.resources.configuration.screenWidthDp > ctx.resources.configuration.screenHeightDp
+        root.orientation = if (wide) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+        val side = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        if (wide) {
+            root.addView(sv, LinearLayout.LayoutParams(0, dp(210), 1f))
+            root.addView(side, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(16) })
+        } else {
+            root.addView(sv, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(170)))
+            root.addView(side, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) })
+        }
+        side.addView(hue, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(30)))
+        if (alpha) side.addView(al, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(30)).apply { topMargin = dp(10) })
         val row = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         row.addView(preview, LinearLayout.LayoutParams(dp(48), dp(40)))
         row.addView(hex, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(12) })
-        root.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) })
-        val sw = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-        for (c in SWATCHES) {
-            if (!alpha && Color.alpha(c) < 255) continue
-            sw.addView(TextView(ctx).apply {
+        side.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) })
+        // quick colours: two rows of six
+        val quick = SWATCHES.filter { alpha || Color.alpha(it) == 255 }
+        for (part in quick.chunked(6)) {
+            val sw = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+            for (c in part) sw.addView(TextView(ctx).apply {
                 background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(c); setStroke(dp(1), Color.GRAY) }
                 text = if (c == Color.TRANSPARENT) "∅" else ""
                 gravity = Gravity.CENTER; setTextColor(Color.GRAY)
                 setOnClickListener { Color.colorToHSV(c, hsv); a = Color.alpha(c); exact = c; refresh() }
-            }, LinearLayout.LayoutParams(0, dp(26), 1f).apply { marginEnd = dp(4) })
+            }, LinearLayout.LayoutParams(dp(30), dp(30)).apply { marginEnd = dp(8) })
+            side.addView(sw, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(10) })
         }
-        root.addView(sw, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) })
         refresh()
         AlertDialog.Builder(ctx)
             .setTitle(title)
@@ -104,19 +115,22 @@ object ColorPicker {
         var hue = 0f; var s = 1f; var v = 1f
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f * resources.displayMetrics.density; color = Color.WHITE }
+        private val inset get() = 12f * resources.displayMetrics.density
         override fun onDraw(c: Canvas) {
-            val r = RectF(0f, 0f, width.toFloat(), height.toFloat())
-            val sat = LinearGradient(0f, 0f, r.right, 0f, Color.WHITE, Color.HSVToColor(floatArrayOf(hue, 1f, 1f)), Shader.TileMode.CLAMP)
-            val dark = LinearGradient(0f, 0f, 0f, r.bottom, Color.TRANSPARENT, Color.BLACK, Shader.TileMode.CLAMP)
+            val i = inset
+            val r = RectF(i, i, width - i, height - i)
+            val sat = LinearGradient(r.left, 0f, r.right, 0f, Color.WHITE, Color.HSVToColor(floatArrayOf(hue, 1f, 1f)), Shader.TileMode.CLAMP)
+            val dark = LinearGradient(0f, r.top, 0f, r.bottom, Color.TRANSPARENT, Color.BLACK, Shader.TileMode.CLAMP)
             p.shader = ComposeShader(sat, dark, PorterDuff.Mode.SRC_OVER)
             c.drawRoundRect(r, 12f, 12f, p)
             p.shader = null
-            c.drawCircle(s * width, (1 - v) * height, 10f * resources.displayMetrics.density, ring)
+            c.drawCircle(r.left + s * r.width(), r.top + (1 - v) * r.height(), 10f * resources.displayMetrics.density, ring)
         }
         @SuppressLint("ClickableViewAccessibility")
         override fun onTouchEvent(e: MotionEvent): Boolean {
             parent?.requestDisallowInterceptTouchEvent(true)
-            onPick((e.x / width).coerceIn(0f, 1f), 1f - (e.y / height).coerceIn(0f, 1f))
+            val i = inset
+            onPick(((e.x - i) / (width - 2 * i)).coerceIn(0f, 1f), 1f - ((e.y - i) / (height - 2 * i)).coerceIn(0f, 1f))
             return true
         }
     }
@@ -129,30 +143,32 @@ object ColorPicker {
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         private val knob = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 3f * resources.displayMetrics.density; color = Color.WHITE }
         override fun onDraw(c: Canvas) {
-            val r = RectF(0f, 0f, width.toFloat(), height.toFloat())
+            val i = height / 2f
+            val r = RectF(i, 0f, width - i, height.toFloat())
             if (kind == HUE) {
-                p.shader = LinearGradient(0f, 0f, r.right, 0f, IntArray(7) { Color.HSVToColor(floatArrayOf(it * 60f, 1f, 1f)) }, null, Shader.TileMode.CLAMP)
-                c.drawRoundRect(r, r.height() / 2, r.height() / 2, p)
+                p.shader = LinearGradient(r.left, 0f, r.right, 0f, IntArray(7) { Color.HSVToColor(floatArrayOf(it * 60f, 1f, 1f)) }, null, Shader.TileMode.CLAMP)
+                c.drawRoundRect(RectF(0f, 0f, width.toFloat(), height.toFloat()), r.height() / 2, r.height() / 2, p)
             } else {
                 val sq = r.height() / 2
                 var x = 0f
-                var i = 0
-                while (x < r.right) {
+                var n = 0
+                while (x < width) {
                     p.shader = null
-                    p.color = if (i % 2 == 0) Color.LTGRAY else Color.WHITE; c.drawRect(x, 0f, x + sq, sq, p)
-                    p.color = if (i % 2 == 0) Color.WHITE else Color.LTGRAY; c.drawRect(x, sq, x + sq, r.bottom, p)
-                    x += sq; i++
+                    p.color = if (n % 2 == 0) Color.LTGRAY else Color.WHITE; c.drawRect(x, 0f, x + sq, sq, p)
+                    p.color = if (n % 2 == 0) Color.WHITE else Color.LTGRAY; c.drawRect(x, sq, x + sq, r.bottom, p)
+                    x += sq; n++
                 }
-                p.shader = LinearGradient(0f, 0f, r.right, 0f, Color.argb(0, Color.red(base), Color.green(base), Color.blue(base)), base or (0xFF shl 24), Shader.TileMode.CLAMP)
-                c.drawRect(r, p)
+                p.shader = LinearGradient(r.left, 0f, r.right, 0f, Color.argb(0, Color.red(base), Color.green(base), Color.blue(base)), base or (0xFF shl 24), Shader.TileMode.CLAMP)
+                c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), p)
             }
             p.shader = null
-            c.drawCircle(pos * width, height / 2f, height / 2f - 2f, knob)
+            c.drawCircle(r.left + pos * r.width(), height / 2f, height / 2f - 2f, knob)
         }
         @SuppressLint("ClickableViewAccessibility")
         override fun onTouchEvent(e: MotionEvent): Boolean {
             parent?.requestDisallowInterceptTouchEvent(true)
-            onPick((e.x / width).coerceIn(0f, 1f))
+            val i = height / 2f
+            onPick(((e.x - i) / (width - 2 * i)).coerceIn(0f, 1f))
             return true
         }
         companion object { const val HUE = 0; const val ALPHA = 1 }
