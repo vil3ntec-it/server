@@ -35,7 +35,7 @@ class SegMuxer(
     private val segLimit: Long,
     private val baseName: String,
     private val events: Events,
-) {
+) : MediaSink {
     constructor(ctx: Context, hasAudio: Boolean, segLimit: Long, baseName: String, events: Events) :
         this(MediaStoreSink(ctx), hasAudio, segLimit, baseName, events)
 
@@ -108,9 +108,9 @@ class SegMuxer(
     private val keyWanted = AtomicBoolean(false)
     private val parts = TreeMap<Int, Part>()
     private val writer = Thread({ writerLoop() }, "rawrec-mux")
-    @Volatile var waitNs = 0L; private set          // time encoder threads waited for a free buffer
-    @Volatile var totalBytes = 0L; private set
-    @Volatile var videoBytes = 0L; private set
+    @Volatile override var waitNs = 0L; private set          // time encoder threads waited for a free buffer
+    @Volatile override var totalBytes = 0L; private set
+    @Volatile override var videoBytes = 0L; private set
     @Volatile var audioBytes = 0L; private set
     @Volatile var maxQueued = 0; private set
     @Volatile var writeRecoveries = 0; private set
@@ -146,16 +146,16 @@ class SegMuxer(
     // ------------------------------------------------------------ producer side (encoder threads)
 
     /** Queues one encoded video frame. @return true if the encoder should make the next frame a key frame. */
-    fun submitVideo(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int): Boolean {
+    override fun submitVideo(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int): Boolean {
         submitSample(K_VIDEO, src, offset, size, ptsUs, flags)
         return keyWanted.getAndSet(false)
     }
 
-    fun submitAudio(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int) =
+    override fun submitAudio(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int) =
         submitSample(K_AUDIO, src, offset, size, ptsUs, flags)
 
-    fun videoFormat(f: MediaFormat) = submitFormat(K_VFMT, f)
-    fun audioFormat(f: MediaFormat) = submitFormat(K_AFMT, f)
+    override fun videoFormat(f: MediaFormat) = submitFormat(K_VFMT, f)
+    override fun audioFormat(f: MediaFormat) = submitFormat(K_AFMT, f)
 
     /**
      * The video encoder was replaced (rotation). Everything queued before this belongs to the old
@@ -163,20 +163,20 @@ class SegMuxer(
      * [discardCurrent] («شروعِ هوشمند») the current part is deleted and the new one becomes the
      * single file.
      */
-    fun newPart(discardCurrent: Boolean) = put(obtainItem().also { it.kind = if (discardCurrent) K_RESTART else K_NEW_PART })
+    override fun newPart(discardCurrent: Boolean) = put(obtainItem().also { it.kind = if (discardCurrent) K_RESTART else K_NEW_PART })
 
     /**
      * The video encoder failed and a new one with the same settings took over. If its stream headers
      * are identical (the usual case) the recording simply goes on in the same file; otherwise the
      * new encoder's first key frame opens a new part.
      */
-    fun encoderReplaced() = put(obtainItem().also { it.kind = K_REPLACED })
+    override fun encoderReplaced() = put(obtainItem().also { it.kind = K_REPLACED })
 
     /** Audio failed before it produced anything: continue with video only. */
-    fun dropAudio() = put(obtainItem().also { it.kind = K_NO_AUDIO })
+    override fun dropAudio() = put(obtainItem().also { it.kind = K_NO_AUDIO })
 
     /** Flushes everything, closes the last part and waits until every part is finalized. */
-    fun finish() {
+    override fun finish() {
         if (!finished) {
             finished = true
             put(obtainItem().also { it.kind = K_FINISH })
@@ -188,7 +188,7 @@ class SegMuxer(
      * The process is about to die (uncaught exception): close the open parts within [timeoutMs] so
      * they are playable MP4s, from whichever thread is crashing.
      */
-    fun emergencyFinish(timeoutMs: Long) {
+    override fun emergencyFinish(timeoutMs: Long) {
         if (Thread.currentThread() === writer || !writer.isAlive) {
             finished = true
             try { finishInternal() } catch (_: Throwable) {}
@@ -201,10 +201,10 @@ class SegMuxer(
         try { writer.join(timeoutMs) } catch (_: Throwable) {}
     }
 
-    fun parts(): List<Part> = synchronized(parts) { parts.values.filter { it.ok }.toList() }
+    override fun parts(): List<Part> = synchronized(parts) { parts.values.filter { it.ok }.toList() }
 
     /** True when every part that was opened has been closed (finalized or deleted). */
-    val allClosed: Boolean get() = synchronized(parts) { parts.values.all { it.finished } }
+    override val allClosed: Boolean get() = synchronized(parts) { parts.values.all { it.finished } }
 
     private fun submitSample(kind: Int, src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int) {
         if (finished) return

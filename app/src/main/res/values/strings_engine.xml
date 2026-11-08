@@ -21,6 +21,7 @@
     <string name="vs_team_out">در ویدیو نیست</string>
     <string name="vs_rep_mixed">حرفِ یارها داخلِ خودِ صدای بازی است؛ برای این‌که صدای بازی کم نشود جدا نشد.</string>
     <string name="vs_rep_unknown">جای حرفِ یارها هنوز معلوم نیست (یک ضبطِ بیش از ۱۵ ثانیه با حرفِ آن‌ها بگیر).</string>
+    <string name="eng_reason_live">پخشِ زنده به سرور وصل نشد یا ۳ دقیقه قطع ماند (کلید، نشانی یا اینترنت را بررسی کن).</string>
     <string name="eng_n_show_control">نمایشِ دکمه</string>
     <string name="eng_toast_control_hidden">دکمهٔ ضبط پنهان شد. برای توقف از اعلان یا کاشیِ تنظیماتِ سریع استفاده کن؛ «نمایشِ دکمه» در اعلان آن را برمی‌گرداند.</string>
 

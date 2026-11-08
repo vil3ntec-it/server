@@ -71,6 +71,69 @@ class LookFilter(private val look: Look, private val fps: Int) {
     private var lastNs = 0L
     @Volatile var drawn = 0L; private set
 
+    // ---- «برمی‌گردم» (live): a still picture drawn instead of the screen, ~30 times a second so the
+    // stream never stops flowing while the game is away or the owner wants privacy.
+    @Volatile private var coverOn = false
+    private var coverTex = 0
+    private var coverProg = 0
+    private val coverTick = object : Runnable {
+        override fun run() {
+            if (!coverOn) return
+            drawCover()
+            h.postDelayed(this, 33)
+        }
+    }
+
+    /** Shows [b] instead of the screen; null = the screen again. */
+    fun setCover(b: android.graphics.Bitmap?) {
+        h.post {
+            if (dpy == EGL14.EGL_NO_DISPLAY) return@post
+            try {
+                EGL14.eglMakeCurrent(dpy, pbuffer, pbuffer, ctx)
+                if (b == null) {
+                    coverOn = false
+                    h.removeCallbacks(coverTick)
+                    if (coverTex != 0) { GLES20.glDeleteTextures(1, intArrayOf(coverTex), 0); coverTex = 0 }
+                    return@post
+                }
+                if (coverProg == 0) coverProg = program(VS_COVER, FS_COVER)
+                if (coverTex == 0) {
+                    val t = IntArray(1)
+                    GLES20.glGenTextures(1, t, 0)
+                    coverTex = t[0]
+                }
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, coverTex)
+                GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+                GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+                GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+                GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+                android.opengl.GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, b, 0)
+                coverOn = true
+                h.removeCallbacks(coverTick)
+                h.post(coverTick)
+            } catch (_: Throwable) {}
+        }
+    }
+
+    private fun drawCover() {
+        if (out == EGL14.EGL_NO_SURFACE || coverTex == 0) return
+        try {
+            EGL14.eglMakeCurrent(dpy, out, out, ctx)
+            GLES20.glViewport(0, 0, outW, outH)
+            GLES20.glUseProgram(coverProg)
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, coverTex)
+            GLES20.glUniform1i(GLES20.glGetUniformLocation(coverProg, "tex"), 0)
+            val pos = GLES20.glGetAttribLocation(coverProg, "pos")
+            GLES20.glEnableVertexAttribArray(pos)
+            GLES20.glVertexAttribPointer(pos, 2, GLES20.GL_FLOAT, false, 0, QUAD)
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+            GLES20.glDisableVertexAttribArray(pos)
+            EGLExt.eglPresentationTimeANDROID(dpy, out, System.nanoTime())
+            EGL14.eglSwapBuffers(dpy, out)
+        } catch (_: Throwable) {}
+    }
+
     /** What the virtual display draws into. */
     lateinit var input: Surface
         private set
@@ -177,6 +240,7 @@ class LookFilter(private val look: Look, private val fps: Int) {
             }
             EGL14.eglMakeCurrent(dpy, out, out, ctx)
             st.updateTexImage()
+            if (coverOn) return   // the screen is taken (so it can send the next one) but not shown
             val ts = st.timestamp
             if (fps > 0 && lastNs > 0 && ts - lastNs < 1_000_000_000L / fps * 9 / 10) return
             lastNs = ts
@@ -235,6 +299,22 @@ class LookFilter(private val look: Look, private val fps: Int) {
         private val QUAD: FloatBuffer = ByteBuffer.allocateDirect(8 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer().apply {
             put(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)); position(0)
         }
+
+        private const val VS_COVER = """
+attribute vec2 pos;
+varying vec2 uv;
+void main() {
+    gl_Position = vec4(pos, 0.0, 1.0);
+    uv = vec2(pos.x * 0.5 + 0.5, 0.5 - pos.y * 0.5);
+}
+"""
+
+        private const val FS_COVER = """
+precision mediump float;
+uniform sampler2D tex;
+varying vec2 uv;
+void main() { gl_FragColor = texture2D(tex, uv); }
+"""
 
         private const val VS = """
 attribute vec2 pos;

@@ -65,7 +65,7 @@ import java.util.concurrent.Executors
  */
 class MainActivity : Activity() {
 
-    enum class Tab { HOME, QUALITY, VIDEOS, SETTINGS, ABOUT }
+    enum class Tab { HOME, LIVE, QUALITY, VIDEOS, SETTINGS, ABOUT }
     enum class Sub { NONE, VIDEO, AUDIO, CONTROLS, STORAGE, PERMS, LANG }
 
     override fun attachBaseContext(newBase: Context) = super.attachBaseContext(AppLang.wrap(newBase))
@@ -135,6 +135,13 @@ class MainActivity : Activity() {
     private val toggles = HashMap<String, Toggle>()
     private var resValues = intArrayOf(0)
     private var lookImage: android.widget.ImageView? = null
+    // «زنده»
+    private var pendingLive = false
+    private var liveStatusView: TextView? = null
+    private var liveButton: Button? = null
+    private var liveUrl: android.widget.EditText? = null
+    private var liveKey: android.widget.EditText? = null
+    private var liveHelp: TextView? = null
     private var teamDesc: TextView? = null
     private var lookCaption: TextView? = null
     private var lookSummary: TextView? = null
@@ -697,6 +704,7 @@ class MainActivity : Activity() {
         twoPane = contentWidthDp >= 720
         compactHeight = c.screenHeightDp < 520
         screens[Tab.HOME] = buildHome()
+        screens[Tab.LIVE] = buildLive()
         screens[Tab.VIDEOS] = buildVideos()
         screens[Tab.QUALITY] = buildQuality()
         screens[Tab.SETTINGS] = buildSettings()
@@ -739,6 +747,7 @@ class MainActivity : Activity() {
 
     private val navOrder get() = listOf(
         Triple(Tab.HOME, R.string.tab_record, R.drawable.ic_rec),
+        Triple(Tab.LIVE, R.string.tab_live, R.drawable.ic_live),
         Triple(Tab.VIDEOS, R.string.tab_videos, R.drawable.ic_library),
         Triple(Tab.QUALITY, R.string.tab_quality, R.drawable.ic_quality),
         Triple(Tab.SETTINGS, R.string.tab_settings, R.drawable.ic_settings),
@@ -1293,6 +1302,140 @@ class MainActivity : Activity() {
             .setNegativeButton(R.string.cancel, null)
             .show()
         d.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(col(R.color.error))
+    }
+
+    // ------------------------------------------------------------ «زنده»: live streaming
+
+    private fun field(hint: String, secret: Boolean, onDone: (String) -> Unit): android.widget.EditText =
+        android.widget.EditText(this).apply {
+            this.hint = hint
+            setTextColor(col(R.color.text_primary))
+            setHintTextColor(col(R.color.text_secondary))
+            textSize = 15f
+            setSingleLine()
+            textDirection = View.TEXT_DIRECTION_LTR
+            setBackgroundResource(R.drawable.bg_inset)
+            setPaddingRelative(dp(14), dp(12), dp(14), dp(12))
+            inputType = if (secret) android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            else android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+            setOnFocusChangeListener { _, has -> if (!has) onDone(text.toString()) }
+        }
+
+    private fun buildLive(): View {
+        val pg = page(R.string.tab_live, R.string.page_live_sub)
+        val root = pg.col
+        val sc = card(root, R.string.live_status_title, R.drawable.ic_live, top = 8)
+        liveStatusView = text("", R.style.Text_Body).apply {
+            setBackgroundResource(R.drawable.bg_inset)
+            setPaddingRelative(dp(14), dp(12), dp(14), dp(12))
+        }
+        sc.addView(liveStatusView, lp(6))
+        liveButton = button(str(R.string.live_start), R.style.Button_Record, R.drawable.ic_live).apply {
+            onTap("live start/stop") { onLiveClicked() }
+        }
+        sc.addView(liveButton)
+        sc.addView(text(str(R.string.live_one_app), R.style.Text_Caption), lp(8))
+
+        val dc = card(root, R.string.live_dest_title, R.drawable.ic_link)
+        val p0 = LiveSettings.platform(this)
+        rows["live_p"] = Row(dc, "", "", LiveSettings.PLATFORMS.map { str(it.name) }, top = 4) { i ->
+            saveLiveFields()
+            LiveSettings.setPlatform(this, i)
+            fillLiveFields()
+        }
+        dc.addView(text(str(R.string.live_url_title), R.style.Text_Label), lp(12))
+        liveUrl = field("rtmps://…", false) { LiveSettings.setUrl(this, LiveSettings.platform(this), it) }
+        dc.addView(liveUrl, lp(4))
+        dc.addView(text(str(R.string.live_key_title), R.style.Text_Label), lp(12))
+        liveKey = field(str(R.string.live_key_hint), true) { LiveSettings.setKey(this, LiveSettings.platform(this), it) }
+        dc.addView(liveKey, lp(4))
+        liveHelp = text("", R.style.Text_Caption)
+        dc.addView(liveHelp, lp(8))
+        dc.addView(infoLine(R.drawable.ic_shield, str(R.string.live_key_safe), R.style.Text_Caption), lp(8))
+
+        val qc = card(root, R.string.live_q_title, R.drawable.ic_quality)
+        qc.addView(text(str(R.string.live_q_desc), R.style.Text_Caption), lp(4))
+        rows["live_q"] = Row(qc, "", "", LiveSettings.QUALITIES.map { str(it.label) }, vertical = true, top = 8) { i -> LiveSettings.setQuality(this, i) }
+
+        val ac = card(root, R.string.live_audio_title, R.drawable.ic_volume)
+        toggles["live_team"] = Toggle(ac, "tog:live_team", R.drawable.ic_mic, str(R.string.live_team_title), str(R.string.live_team_desc), top = 0) { on ->
+            LiveSettings.setTeamVoice(this, on)
+        }
+        toggles["live_mic"] = Toggle(ac, "tog:live_mic", R.drawable.ic_mic, str(R.string.live_mic_title), str(R.string.live_mic_desc)) { on ->
+            LiveSettings.setMic(this, on)
+        }
+
+        val pc = card(root, R.string.live_privacy_title, R.drawable.ic_shield)
+        pc.addView(text(str(R.string.live_privacy_desc), R.style.Text_Body), lp(4))
+        rows["live_p"]?.select(p0)
+        rows["live_q"]?.select(LiveSettings.quality(this))
+        toggles["live_team"]?.set(LiveSettings.teamVoice(this))
+        toggles["live_mic"]?.set(LiveSettings.mic(this))
+        fillLiveFields()
+        return pg.scroll
+    }
+
+    private fun fillLiveFields() {
+        val p = LiveSettings.platform(this)
+        liveUrl?.setText(LiveSettings.url(this, p))
+        liveKey?.setText(LiveSettings.key(this, p))
+        liveHelp?.text = str(LiveSettings.PLATFORMS[p].help)
+    }
+
+    private fun saveLiveFields() {
+        val p = LiveSettings.platform(this)
+        liveUrl?.text?.toString()?.let { LiveSettings.setUrl(this, p, it) }
+        liveKey?.text?.toString()?.let { LiveSettings.setKey(this, p, it) }
+    }
+
+    private fun onLiveClicked() {
+        if (RecordService.isLive) {
+            startService(Intent(this, RecordService::class.java).setAction(RecordService.ACTION_STOP).putExtra(RecordService.EXTRA_SRC, RecordService.SRC_APP))
+            return
+        }
+        if (RecordService.state != RecordService.State.IDLE) { toast(R.string.toast_already); return }
+        saveLiveFields()
+        val p = LiveSettings.platform(this)
+        val url = LiveSettings.url(this, p)
+        val key = LiveSettings.key(this, p)
+        try { RtmpPublisher.parse(url, key) } catch (_: Exception) { toast(R.string.live_bad_url); return }
+        if (key.isBlank() && !url.trimEnd('/').substringAfterLast('/').contains('?')) { toast(R.string.live_no_key); return }
+        pendingLive = true
+        onStartClicked(0)
+    }
+
+    private fun startLive(code: Int, data: Intent) {
+        val p = LiveSettings.platform(this)
+        val micOk = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val svc = Intent(this, RecordService::class.java).setAction(RecordService.ACTION_START)
+        LiveSettings.config(this, cfg, micOk).putInto(svc)
+        svc.putExtra(RecordService.EXTRA_CODE, code)
+        svc.putExtra(RecordService.EXTRA_DATA, data)
+        svc.putExtra(RecordService.EXTRA_LIVE_URL, LiveSettings.url(this, p))
+        svc.putExtra(RecordService.EXTRA_LIVE_KEY, LiveSettings.key(this, p))
+        svc.putExtra(RecordService.EXTRA_LIVE_NAME, str(LiveSettings.PLATFORMS[p].name))
+        startForegroundService(svc)
+        ui.postDelayed({ moveTaskToBack(true) }, 400)
+    }
+
+    private fun updateLive() {
+        val v = liveStatusView ?: return
+        val s = RecordService.liveStatus
+        if (!RecordService.isLive) {
+            v.text = str(R.string.live_idle)
+            liveButton?.text = str(R.string.live_start)
+            return
+        }
+        liveButton?.text = str(R.string.live_end)
+        val secs = if (RecordService.startedAt > 0) (System.currentTimeMillis() - RecordService.startedAt) / 1000 else 0
+        val time = String.format(java.util.Locale.US, "%d:%02d:%02d", secs / 3600, secs / 60 % 60, secs % 60)
+        v.text = when {
+            s == null || s.state == RtmpSink.State.CONNECTING -> str(R.string.live_s_connecting)
+            RecordService.liveCovered -> str(R.string.live_s_brb_fmt, time)
+            s.state == RtmpSink.State.RECONNECTING -> str(R.string.live_s_reconnecting_fmt, time, Fmt.num(s.reconnects), s.error ?: "")
+            else -> str(R.string.live_s_live_fmt, time, String.format(java.util.Locale.US, "%.1f", s.kbps / 1000.0),
+                Fmt.num(s.targetKbps / 1000), Fmt.num(s.dropped), Fmt.num(s.reconnects))
+        }
     }
 
     // ------------------------------------------------------------ «کیفیت»: presets visible, the technical part in a closed section
@@ -2022,6 +2165,7 @@ class MainActivity : Activity() {
     private fun tick() = safely("tick") { tickInner() }
 
     private fun tickInner() {
+        updateLive()
         val s = RecordService.state
         val recording = s == RecordService.State.RECORDING || s == RecordService.State.PAUSED
         val paused = s == RecordService.State.PAUSED
@@ -2205,6 +2349,7 @@ class MainActivity : Activity() {
     }
 
     private fun askCapture() {
+        if (pendingLive) { launchCapture(); return }
         if (RecordService.instantReady) {
             // «ضبطِ فوری»: the permission is still held — straight to the recording, no dialog.
             act("start instant") {
@@ -2240,7 +2385,8 @@ class MainActivity : Activity() {
         @Suppress("DEPRECATION") super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ_DELETE) { safely("deleted") { refreshVideos() }; return }
         if (requestCode != REQ_CAPTURE) return
-        if (resultCode != RESULT_OK || data == null) { toast(R.string.toast_capture_denied); return }
+        if (resultCode != RESULT_OK || data == null) { pendingLive = false; toast(R.string.toast_capture_denied); return }
+        if (pendingLive) { pendingLive = false; act("start live") { startLive(resultCode, data) }; return }
         act("start service") {
             val svc = Intent(this, RecordService::class.java).setAction(RecordService.ACTION_START)
             cfg.copy(testSeconds = pendingTest).putInto(svc)

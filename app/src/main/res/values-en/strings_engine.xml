@@ -20,6 +20,7 @@
     <string name="vs_team_out">not in the video</string>
     <string name="vs_rep_mixed">The teammates are inside the game sound itself; not separated so the game sound stays complete.</string>
     <string name="vs_rep_unknown">Where the teammates come in is not known yet (record more than 15 s while they talk).</string>
+    <string name="eng_reason_live">The live stream could not reach the server or stayed disconnected for 3 minutes (check the key, the address or the internet).</string>
     <string name="eng_n_show_control">Show control</string>
     <string name="eng_toast_control_hidden">Recording control hidden. Stop from the notification or the Quick Settings tile; “Show control” in the notification brings it back.</string>
 

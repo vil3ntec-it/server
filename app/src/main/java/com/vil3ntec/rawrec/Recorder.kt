@@ -102,6 +102,10 @@ class Recorder(
     private val keptDisplay: VirtualDisplay? = null,
     /** At the end the virtual display is only detached, not released, so the next recording can use it. */
     private val keepDisplay: Boolean = false,
+    /** «پخشِ زنده»: where the encoded frames go instead of an MP4 file ([RtmpSink]). */
+    private val sinkFactory: (() -> MediaSink)? = null,
+    /** Live: the GPU stage is always on, so «برمی‌گردم» can replace the picture at any moment. */
+    private val forceLook: Boolean = false,
 ) : SegMuxer.Events {
 
     interface Events {
@@ -161,7 +165,7 @@ class Recorder(
     private var videoThread: Thread? = null
     private var audioThread: Thread? = null
     private var aac: MediaCodec? = null
-    private lateinit var muxer: SegMuxer
+    private lateinit var muxer: MediaSink
     val stats = RecStats()
 
     // pause / resume
@@ -203,14 +207,14 @@ class Recorder(
         // Friendly name, e.g. "RawRec 2026-10-31 17-02.mp4"; parts become "… (۲).mp4".
         val stamp = SimpleDateFormat("yyyy-MM-dd HH-mm", Locale.US).format(Date())
         val prefix = if (cfg.testSeconds > 0) "RawRec test " else "RawRec "
-        muxer = SegMuxer(ctx, cfg.hasAudio, cfg.segmentBytes, prefix + stamp, this)
+        muxer = sinkFactory?.invoke() ?: SegMuxer(ctx, cfg.hasAudio, cfg.segmentBytes, prefix + stamp, this)
         try {
             val first = VideoEnc(plan)
             try { first.prepare() } catch (e: Exception) { first.release(); throw e }
             droppedOptions = first.dropped
             enc = first
             val lk = cfg.look()
-            if (!lk.neutral) {
+            if (!lk.neutral || forceLook) {
                 // The GPU path, when the device gives one; otherwise the screen goes straight in as before.
                 look = try {
                     LookFilter(lk, plan.fps).also { f ->
@@ -263,6 +267,14 @@ class Recorder(
             throw e
         }
     }
+
+    /** Live: the encoder's bit rate, set by the automatic quality of [RtmpSink]. */
+    fun setVideoBitrate(bps: Int) {
+        try { enc?.codec?.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, bps) }) } catch (_: Exception) {}
+    }
+
+    /** Live «برمی‌گردم»: this picture instead of the screen (null = the screen again). */
+    fun setCover(b: android.graphics.Bitmap?) { look?.setCover(b) }
 
     /** The virtual display, for the next recording of «ضبطِ فوری». */
     val virtualDisplay: VirtualDisplay? get() = display

@@ -58,7 +58,8 @@ enum class StopReason(val text: Int, val byUser: Boolean) {
     START_FAILED(R.string.eng_reason_start, false),
     SERVICE_ENDED(R.string.eng_reason_service, false),
     CRASH(R.string.eng_reason_crash, false),
-    PROCESS_DIED(R.string.eng_reason_killed, false);
+    PROCESS_DIED(R.string.eng_reason_killed, false),
+    LIVE_FAILED(R.string.eng_reason_live, false);
 
     companion object {
         fun of(name: String?): StopReason? = values().firstOrNull { it.name == name }
@@ -115,6 +116,15 @@ class RecordService : Service(), Recorder.Events {
         const val ACTION_SHOW_CONTROL = "rawrec.SHOW_CONTROL"
         const val EXTRA_CODE = "code"
         const val EXTRA_DATA = "data"
+        /** «پخشِ زنده»: server address, stream key (in memory only) and the chosen video bit rate. */
+        const val EXTRA_LIVE_URL = "live_url"
+        const val EXTRA_LIVE_KEY = "live_key"
+        const val EXTRA_LIVE_NAME = "live_name"
+
+        /** The live stream's state for the app's «زنده» page; null when not live. */
+        @Volatile var liveStatus: RtmpSink.Status? = null; private set
+        @Volatile var isLive = false; private set
+        @Volatile var liveCovered = false; private set
         /** Who asked to stop (ACTION_STOP): [SRC_APP], [SRC_NOTIFICATION] or [SRC_TILE]. */
         const val EXTRA_SRC = "src"
         const val SRC_APP = "app"
@@ -197,6 +207,12 @@ class RecordService : Service(), Recorder.Events {
     private val prefs by lazy { getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
     @Volatile private var projection: MediaProjection? = null
     @Volatile private var recorder: Recorder? = null
+    private class LiveTarget(val url: String, val key: String, val name: String)
+    private var live: LiveTarget? = null
+    private var liveSink: RtmpSink? = null
+    private var coverManual = false
+    private var coverAuto = false
+    private var micBeforeCover = false
     /** «ضبطِ فوری»: the virtual display kept (detached) between recordings of the same permission. */
     private var keptDisplay: android.hardware.display.VirtualDisplay? = null
     private var cfg: RecordConfig? = null
@@ -251,6 +267,13 @@ class RecordService : Service(), Recorder.Events {
         }
         Encoders.probeAv1Muxer(this)
         val c0 = RecordConfig.from(intent)
+        live = intent.getStringExtra(EXTRA_LIVE_URL)?.takeIf { it.isNotBlank() }?.let {
+            LiveTarget(it, intent.getStringExtra(EXTRA_LIVE_KEY) ?: "", intent.getStringExtra(EXTRA_LIVE_NAME) ?: "")
+        }
+        isLive = live != null
+        liveStatus = null
+        liveSink = null
+        coverManual = false; coverAuto = false; liveCovered = false
         val micOk = granted(Manifest.permission.RECORD_AUDIO)
         val overlayOk = Settings.canDrawOverlays(this)
         val camOk = c0.facecam > 0 && granted(Manifest.permission.CAMERA) && overlayOk
@@ -329,6 +352,7 @@ class RecordService : Service(), Recorder.Events {
                 override fun onCapturedContentVisibilityChanged(isVisible: Boolean) {
                     main.post {
                         if (state == State.IDLE || stopping) return@post
+                        if (live != null) { coverAuto = !isVisible; applyCover(); return@post }
                         if (isVisible) removeNotice("hidden") else addNotice("hidden", getString(R.string.eng_notice_content_hidden))
                     }
                 }
@@ -389,11 +413,14 @@ class RecordService : Service(), Recorder.Events {
         val c = cfg ?: return
         try {
             val plan = Planner.plan(c, DisplayInfo.read(this)) ?: throw IllegalStateException(getString(R.string.toast_no_encoder))
-            val r = Recorder(this, p, c, plan, this, keptDisplay, keepDisplay = instantEnabled(this))
-            ActiveRec.begin(this)
+            val lv = live
+            val r = if (lv != null) Recorder(this, p, c, plan, this, null, keepDisplay = false,
+                sinkFactory = { RtmpSink(lv.url, lv.key, plan.bitrate, liveListener).also { liveSink = it } }, forceLook = true)
+            else Recorder(this, p, c, plan, this, keptDisplay, keepDisplay = instantEnabled(this))
+            if (lv == null) ActiveRec.begin(this)
             try { r.start() } catch (e: Exception) { ActiveRec.end(this); throw e }
             recorder = r
-            if (instantEnabled(this)) keptDisplay = r.virtualDisplay
+            if (lv == null && instantEnabled(this)) keptDisplay = r.virtualDisplay
             startedAt = System.currentTimeMillis()
             recordStartWall = startedAt
             requestedSource = plan.sourceWidth to plan.sourceHeight
@@ -601,6 +628,7 @@ class RecordService : Service(), Recorder.Events {
 
     private fun togglePause() {
         if (stopping) return
+        if (live != null) { coverManual = !coverManual; applyCover(); return }   // live: «برمی‌گردم», the stream keeps flowing
         val r = recorder ?: return
         if (r.paused && ghost && control != null) { ghostClose(); return }
         if (r.paused) {
@@ -615,6 +643,89 @@ class RecordService : Service(), Recorder.Events {
         }
         control?.setPaused(state == State.PAUSED)
         notifyRecording()
+    }
+
+    // ------------------------------------------------------------ live
+
+    private val liveListener = object : RtmpSink.Listener {
+        override fun onStatus(s: RtmpSink.Status) {
+            main.post {
+                liveStatus = s
+                if (stopping || live == null) return@post
+                when (s.state) {
+                    RtmpSink.State.FAILED -> finishRecording(StopReason.LIVE_FAILED, s.error)
+                    RtmpSink.State.RECONNECTING -> addNotice("live", getString(R.string.live_n_reconnecting_fmt, s.reconnects))
+                    else -> removeNotice("live")
+                }
+                notifyRecording()
+            }
+        }
+        override fun onBitrate(bps: Int) { recorder?.setVideoBitrate(bps) }
+    }
+
+    /** «برمی‌گردم» on or off: by the owner (panel, notification) or because the game left the screen. */
+    private fun applyCover() {
+        val r = recorder ?: return
+        val on = coverManual || coverAuto
+        if (on == liveCovered) { control?.setPaused(on); return }
+        liveCovered = on
+        if (on) {
+            micBeforeCover = r.micMuted
+            r.micMuted = true
+            r.setCover(coverPicture(r.plan.width, r.plan.height))
+        } else {
+            r.micMuted = micBeforeCover
+            r.setCover(null)
+        }
+        control?.setPaused(on)
+        notifyRecording()
+    }
+
+    /** The «برمی‌گردم» picture at the stream's size. */
+    private fun coverPicture(w: Int, h: Int): android.graphics.Bitmap {
+        val b = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(b)
+        val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        p.shader = android.graphics.LinearGradient(0f, 0f, w.toFloat(), h.toFloat(),
+            android.graphics.Color.rgb(20, 22, 30), android.graphics.Color.rgb(46, 22, 30), android.graphics.Shader.TileMode.CLAMP)
+        c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), p)
+        p.shader = null
+        p.color = getColor(R.color.eng_rec_red)
+        c.drawCircle(w / 2f, h * 0.36f, h * 0.06f, p)
+        p.color = android.graphics.Color.WHITE
+        p.textAlign = android.graphics.Paint.Align.CENTER
+        p.textSize = h * 0.09f
+        p.isFakeBoldText = true
+        c.drawText(getString(R.string.live_brb), w / 2f, h * 0.58f, p)
+        p.isFakeBoldText = false
+        p.textSize = h * 0.045f
+        p.color = android.graphics.Color.argb(200, 255, 255, 255)
+        c.drawText(getString(R.string.live_brb_sub), w / 2f, h * 0.68f, p)
+        live?.name?.takeIf { it.isNotBlank() }?.let {
+            p.textSize = h * 0.035f
+            p.color = android.graphics.Color.argb(140, 255, 255, 255)
+            c.drawText(it, w / 2f, h * 0.9f, p)
+        }
+        return b
+    }
+
+    private fun liveReport(c: RecordConfig, reason: StopReason, detail: String?): String {
+        val s = liveSink
+        val r = recorder
+        val sb = StringBuilder()
+        sb.append(getString(R.string.rep_title_fmt, BuildInfo.version(this))).append('\n')
+        sb.append(getString(R.string.live_rep_title_fmt, live?.name ?: "")).append('\n')
+        sb.append(getString(R.string.eng_rep_reason_fmt, getString(reason.text))).append('\n')
+        if (!detail.isNullOrBlank()) sb.append(getString(R.string.eng_rep_detail_fmt, detail)).append('\n')
+        val secs = ((System.currentTimeMillis() - startedAt) / 1000).coerceAtLeast(0)
+        if (startedAt > 0) sb.append(getString(R.string.live_rep_time_fmt, String.format(java.util.Locale.US, "%d:%02d:%02d", secs / 3600, secs / 60 % 60, secs % 60))).append('\n')
+        if (r != null) sb.append(Texts.short(r.plan)).append('\n')
+        if (s != null) {
+            val mb = s.totalBytes / 1_000_000.0
+            val avg = if (secs > 0) s.totalBytes * 8 / secs / 1000 else 0
+            sb.append(getString(R.string.live_rep_stats_fmt, String.format(java.util.Locale.US, "%.0f", mb), Fmt.num(avg / 1000), Fmt.num(s.dropped), Fmt.num(s.reconnects)))
+        }
+        return sb.toString().trimEnd()
     }
 
     // ------------------------------------------------------------ floating control
@@ -637,7 +748,7 @@ class RecordService : Service(), Recorder.Events {
             else facecam = try { FacecamOverlay(this@RecordService, cfg?.facecam?.takeIf { it > 0 } ?: 2).also { it.show() } } catch (_: Exception) { null }
             control?.setCam(on = facecam != null, available = true)
         }
-        override fun delete() = finishRecording(StopReason.DELETED)
+        override fun delete() { if (live == null) finishRecording(StopReason.DELETED) }
         override fun hideControl() {
             if (ghost) { ghostClose(); return }
             control?.hide()
@@ -757,8 +868,9 @@ class RecordService : Service(), Recorder.Events {
         val c = cfg
         val started = r != null
         val delete = reason == StopReason.DELETED
-        // «ضبطِ فوری»: a recording the owner ended keeps the permission for the next one.
-        val keep = reason.byUser && instantEnabled(this) && p != null && keptDisplay != null && r != null
+        // «ضبطِ فوری»: a recording the owner ended keeps the permission for the next one (not after live).
+        val keep = live == null && reason.byUser && instantEnabled(this) && p != null && keptDisplay != null && r != null
+        val wasLive = live != null
         keepingPermission = keep
         val error: String? = if (reason.byUser) null else getString(reason.text)
         val fixes = recoveries
@@ -785,7 +897,8 @@ class RecordService : Service(), Recorder.Events {
                     parts = emptyList()
                 }
                 if (r == null || r.allPartsClosed) ActiveRec.end(this)
-                report = if (r != null && c != null && !delete) buildReport(r, c, parts, reason, detail, fixes) else null
+                report = if (wasLive && c != null) liveReport(c, reason, detail)
+                else if (r != null && c != null && !delete) buildReport(r, c, parts, reason, detail, fixes) else null
             } catch (_: Throwable) {
             } finally {
                 main.post { afterSave(parts, report, error, c, started, delete) }
@@ -796,12 +909,14 @@ class RecordService : Service(), Recorder.Events {
     private fun afterSave(parts: List<SegMuxer.Part>, report: String?, error: String?, c: RecordConfig?, started: Boolean, delete: Boolean) {
         try {
             if (!delete) saveLast(parts, report, error, c?.testSeconds ?: 0)
-            if (delete) showDone(parts, getString(R.string.notice_deleted))
+            if (isLive) showLiveDone(report, error)
+            else if (delete) showDone(parts, getString(R.string.notice_deleted))
             else if (started || error != null) showDone(parts, error)
         } catch (_: Exception) {}
         state = State.IDLE
         startedAt = 0L; pausedSince = 0L; countdownLeft = 0
         recorder = null
+        isLive = false; live = null; liveSink = null; liveCovered = false
         refreshTile()
         if (keepingPermission && projection != null && keptDisplay != null) {
             // «ضبطِ فوری»: stay in the foreground with the permission; the next start needs no dialog.
@@ -1129,7 +1244,13 @@ class RecordService : Service(), Recorder.Events {
         val open = PendingIntent.getActivity(this, 2, Intent(this, MainActivity::class.java), flags)
         val s = state
         val r = recorder
-        val title = getString(when (s) {
+        val ls = liveStatus
+        val title = if (live != null && (s == State.RECORDING || s == State.PAUSED)) getString(when {
+            liveCovered -> R.string.live_n_brb
+            ls?.state == RtmpSink.State.RECONNECTING -> R.string.live_n_reconnecting
+            ls?.state == RtmpSink.State.LIVE -> R.string.live_n_live
+            else -> R.string.live_n_connecting
+        }) else getString(when (s) {
             State.RECORDING -> R.string.n_recording
             State.PAUSED -> R.string.n_paused
             State.SAVING -> R.string.n_saving
@@ -1137,7 +1258,9 @@ class RecordService : Service(), Recorder.Events {
         })
         val text = when (s) {
             State.PREPARING -> if (countdownLeft > 0) getString(R.string.n_countdown_fmt, countdownLeft) else getString(R.string.state_preparing)
-            State.RECORDING, State.PAUSED -> r?.let { Texts.short(it.plan) } ?: ""
+            State.RECORDING, State.PAUSED -> if (live != null && ls != null)
+                getString(R.string.live_n_text_fmt, String.format(java.util.Locale.US, "%.1f", ls.kbps / 1000.0), Fmt.num(ls.dropped))
+            else r?.let { Texts.short(it.plan) } ?: ""
             State.SAVING -> getString(R.string.n_saving_text)
             else -> ""
         }
@@ -1152,16 +1275,29 @@ class RecordService : Service(), Recorder.Events {
         if (notice.isNotEmpty()) b.setStyle(Notification.BigTextStyle().bigText(text + "\n" + notice))
         if (s == State.RECORDING) b.setUsesChronometer(true).setWhen(startedAt).setShowWhen(true)
         if (s == State.RECORDING || s == State.PAUSED) {
-            b.addAction(action(if (s == State.PAUSED) R.drawable.eng_ic_play else R.drawable.eng_ic_pause,
+            if (live != null) b.addAction(action(R.drawable.ic_shield, getString(if (liveCovered) R.string.live_back else R.string.live_brb_action), pause))
+            else b.addAction(action(if (s == State.PAUSED) R.drawable.eng_ic_play else R.drawable.eng_ic_pause,
                 getString(if (s == State.PAUSED) R.string.n_resume else R.string.n_pause), pause))
         }
-        if (s != State.SAVING) b.addAction(action(R.drawable.eng_ic_stop, getString(if (s == State.PREPARING) R.string.btn_cancel else R.string.n_stop), stop))
+        if (s != State.SAVING) b.addAction(action(R.drawable.eng_ic_stop, getString(if (s == State.PREPARING) R.string.btn_cancel else if (live != null) R.string.live_end else R.string.n_stop), stop))
         if ((controlHidden || (ghost && control == null && (s == State.RECORDING || s == State.PAUSED))) && s != State.SAVING) {
             val show = PendingIntent.getService(this, 8, Intent(this, RecordService::class.java).setAction(ACTION_SHOW_CONTROL), flags)
             b.addAction(action(R.drawable.eng_ic_visible, getString(R.string.eng_n_show_control), show))
         }
         if (Build.VERSION.SDK_INT >= 31) b.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
         return b.build()
+    }
+
+    private fun showLiveDone(report: String?, error: String?) {
+        val nm = getSystemService(NotificationManager::class.java) ?: return
+        val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        val pi = PendingIntent.getActivity(this, 7, Intent(this, MainActivity::class.java).putExtra("show_report", true), flags)
+        val text = error ?: report?.lines()?.drop(3)?.joinToString(" • ") ?: ""
+        val b = Notification.Builder(this, CH_DONE).setSmallIcon(R.drawable.eng_ic_rec)
+            .setColor(getColor(R.color.eng_rec_red)).setAutoCancel(true)
+            .setContentTitle(getString(if (error == null) R.string.live_n_done else R.string.live_n_failed))
+            .setContentText(text).setStyle(Notification.BigTextStyle().bigText(text)).setContentIntent(pi)
+        try { nm.notify(NOTIF_DONE, b.build()) } catch (_: Exception) {}
     }
 
     private fun showDone(parts: List<SegMuxer.Part>, error: String?) {

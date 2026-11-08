@@ -1,0 +1,101 @@
+package com.vil3ntec.rawrec
+
+import android.content.Context
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
+
+/**
+ * «پخشِ زنده» settings. The stream key is a secret (anyone with it can stream on the owner's
+ * channel): it is kept encrypted with a key from the phone's Android Keystore, never in plain text,
+ * never in a log or a report.
+ */
+object LiveSettings {
+
+    /** A platform: its name, the server address it gives everyone (empty = it gives one per account). */
+    class Platform(val name: Int, val url: String, val help: Int)
+
+    val PLATFORMS = listOf(
+        Platform(R.string.live_p_youtube, "rtmps://a.rtmps.youtube.com/live2", R.string.live_help_youtube),
+        Platform(R.string.live_p_twitch, "rtmp://live.twitch.tv/app", R.string.live_help_twitch),
+        Platform(R.string.live_p_facebook, "rtmps://live-api-s.facebook.com:443/rtmp/", R.string.live_help_facebook),
+        Platform(R.string.live_p_kick, "", R.string.live_help_kick),
+        Platform(R.string.live_p_tiktok, "", R.string.live_help_tiktok),
+        Platform(R.string.live_p_other, "", R.string.live_help_other),
+    )
+
+    /** Quality: short side, frame rate, video Mbps. 1080p60 is what YouTube recommends for games. */
+    class Quality(val label: Int, val res: Int, val fps: Int, val mbps: Int)
+
+    val QUALITIES = listOf(
+        Quality(R.string.live_q_720, 720, 60, 5),
+        Quality(R.string.live_q_1080, 1080, 60, 9),
+        Quality(R.string.live_q_1080_30, 1080, 30, 6),
+        Quality(R.string.live_q_1440, 1440, 60, 15),
+    )
+
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE)
+
+    fun platform(ctx: Context) = SafePrefs.int(prefs(ctx), "live_platform", 0).coerceIn(0, PLATFORMS.size - 1)
+    fun setPlatform(ctx: Context, i: Int) = prefs(ctx).edit().putInt("live_platform", i).apply()
+    fun url(ctx: Context, p: Int) = SafePrefs.str(prefs(ctx), "live_url_$p").ifBlank { PLATFORMS[p].url }
+    fun setUrl(ctx: Context, p: Int, u: String) = prefs(ctx).edit().putString("live_url_$p", u.trim()).apply()
+    fun quality(ctx: Context) = SafePrefs.int(prefs(ctx), "live_quality", 1).coerceIn(0, QUALITIES.size - 1)
+    fun setQuality(ctx: Context, i: Int) = prefs(ctx).edit().putInt("live_quality", i).apply()
+    fun teamVoice(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_team", false)
+    fun setTeamVoice(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("live_team", on).apply()
+    fun mic(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_mic", true)
+    fun setMic(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("live_mic", on).apply()
+
+    fun key(ctx: Context, p: Int): String = try {
+        val s = SafePrefs.str(prefs(ctx), "live_key_$p")
+        if (s.isBlank()) "" else {
+            val all = Base64.decode(s, Base64.NO_WRAP)
+            val c = Cipher.getInstance("AES/GCM/NoPadding")
+            c.init(Cipher.DECRYPT_MODE, secret(), GCMParameterSpec(128, all, 0, 12))
+            String(c.doFinal(all, 12, all.size - 12), Charsets.UTF_8)
+        }
+    } catch (_: Exception) { "" }
+
+    fun setKey(ctx: Context, p: Int, key: String) {
+        val e = prefs(ctx).edit()
+        if (key.isBlank()) { e.remove("live_key_$p").apply(); return }
+        try {
+            val c = Cipher.getInstance("AES/GCM/NoPadding")
+            c.init(Cipher.ENCRYPT_MODE, secret())
+            val ct = c.doFinal(key.trim().toByteArray(Charsets.UTF_8))
+            e.putString("live_key_$p", Base64.encodeToString(c.iv + ct, Base64.NO_WRAP)).apply()
+        } catch (_: Exception) {}
+    }
+
+    private fun secret(): SecretKey {
+        val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (ks.getKey("rawrec_live", null) as? SecretKey)?.let { return it }
+        val g = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        g.init(KeyGenParameterSpec.Builder("rawrec_live", KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setKeySize(256).build())
+        return g.generateKey()
+    }
+
+    /** The recording settings turned into a live stream: H.264 (what every platform takes), steady bit rate. */
+    fun config(ctx: Context, base: RecordConfig, micAllowed: Boolean): RecordConfig {
+        val q = QUALITIES[quality(ctx)]
+        val audio = when {
+            base.audioMode == RecordConfig.AUDIO_NONE -> RecordConfig.AUDIO_NONE
+            mic(ctx) && micAllowed -> RecordConfig.AUDIO_BOTH
+            else -> RecordConfig.AUDIO_INTERNAL
+        }
+        return base.copy(
+            preset = RecordConfig.PRESET_CUSTOM, codec = RecordConfig.CODEC_AVC, mode = RecordConfig.MODE_CBR,
+            bitrate = q.mbps, fps = q.fps, resShort = q.res, orient = RecordConfig.ORIENT_LANDSCAPE,
+            smartStart = false, rotateNewFile = false, ghostControl = false, invisibleControl = true,
+            countdown = 0, testSeconds = 0, teamVoice = teamVoice(ctx), audioMode = audio,
+        )
+    }
+}
