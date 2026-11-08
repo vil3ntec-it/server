@@ -1,10 +1,11 @@
-shaders checked 7, failed 0
+shaders checked 8, failed 0
 OK   VS_COVER (vert)
 OK   FS_COVER (frag)
 OK   VS_LAYER (vert)
 OK   FS_LAYER (frag)
 OK   FS_LAYER_EXT (frag)
 OK   VS (vert)
+OK   FS_PLAIN (frag)
 OK   FS (frag)
 OK   link VS_LAYER + FS_LAYER
 OK   link VS_LAYER + FS_LAYER_EXT
