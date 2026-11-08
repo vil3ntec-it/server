@@ -34,10 +34,13 @@ class MultiStreamTest {
     }
 
     @Test fun platformsAreSwitchedOnAndTheRateFitsTheStrictest() {
-        LiveSettings.setQuality(app, 1)   // 1080p60, 9 Mbps
+        LiveSettings.setQuality(app, 1)   // 1080p60, 12 Mbps
         LiveSettings.setPlatform(app, 0)
         assertEquals("until anything is switched: the open platform", listOf(0), LiveSettings.destinations(app).map { it.platform })
-        assertEquals(9, LiveSettings.mbps(app))
+        assertEquals(12, LiveSettings.mbps(app))
+        LiveSettings.setLiveRate(app, 25)
+        assertEquals("the owner's own rate", 25, LiveSettings.mbps(app))
+        LiveSettings.setLiveRate(app, 0)
         LiveSettings.setOn(app, 1, true)    // + Twitch
         assertEquals(listOf(0, 1), LiveSettings.destinations(app).map { it.platform })
         assertEquals("Twitch takes up to 8", 8, LiveSettings.mbps(app))

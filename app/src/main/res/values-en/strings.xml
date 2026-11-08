@@ -323,10 +323,10 @@
     <string name="live_help_other">Paste the server address (rtmp:// or rtmps://) and the key the platform gave you.</string>
     <string name="live_q_title">Stream quality</string>
     <string name="live_q_desc">If the internet weakens, quality drops automatically so the stream does not break, and comes back later. A dropped connection reconnects automatically.</string>
-    <string name="live_q_720">720p, 60 fps (5 Mbps upload)</string>
-    <string name="live_q_1080">1080p, 60 fps (9 Mbps upload) — recommended</string>
-    <string name="live_q_1080_30">1080p, 30 fps (6 Mbps upload)</string>
-    <string name="live_q_1440">1440p, 60 fps (15 Mbps upload)</string>
+    <string name="live_q_720">720p, 60 fps (7 Mbps upload)</string>
+    <string name="live_q_1080">1080p, 60 fps (12 Mbps upload) — recommended</string>
+    <string name="live_q_1080_30">1080p, 30 fps (8 Mbps upload)</string>
+    <string name="live_q_1440">1440p, 60 fps (24 Mbps upload)</string>
     <string name="live_audio_title">Stream sound</string>
     <string name="live_team_title">Teammates\' voices in the stream</string>
     <string name="live_team_desc">Off: teammates\' talk is not streamed; game and character sounds stay complete. (Separate from recording; detection is the «Teammates\' voices» of Settings.)</string>
@@ -1030,4 +1030,13 @@ Your internet needs about %2$s Mbps upload.</string>
     <string name="yt_private_note">This live is «Private»: only you (signed in) can see it, and it does not show on the channel. To be seen, set «Who can watch» to «Public».</string>
     <string name="live_no_screen">No picture from the screen reaches RawRec: the stream goes out, but only the background and layers are seen. If you chose «one app» in Android\'s window, open that game; otherwise end the stream, start again and choose «Entire screen».</string>
     <string name="br_device_max_fmt">%1$s Mbps (the phone\'s most)</string>
+    <!-- 4.0 -->
+    <string name="live_rate_title">Stream bit rate</string>
+    <string name="live_rate_desc">More = a cleaner picture in fast motion, but it needs more upload. YouTube takes up to 51 Mbps.</string>
+    <string name="live_rate_auto">the quality\'s own</string>
+    <string name="live_record_title">Record too</string>
+    <string name="live_record_desc">The stream\'s very picture is saved on the phone too; no second encoder, so the phone gets no hotter.</string>
+    <string name="hud_hot">The phone got hot: to keep it cool, the stream is at 30 fps for now.</string>
+    <string name="hud_cool">The phone cooled down: full frame rate again.</string>
+    <string name="live_record_failed_fmt">The recording on the phone stopped (%1$s); what was recorded is kept and the stream goes on.</string>
 </resources>

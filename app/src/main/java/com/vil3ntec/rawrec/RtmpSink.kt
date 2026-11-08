@@ -241,8 +241,9 @@ class RtmpSink(
                 if (lagUs > 1_000_000L && now - lastAdjust > 2_000_000_000L) { adjust((target * 0.8).toInt()); lastAdjust = now; calmSince = 0L }
                 else if (lagUs < 250_000L) {
                     if (calmSince == 0L) calmSince = now
-                    if (target < maxBitrate && now - calmSince > 10_000_000_000L && now - lastAdjust > 5_000_000_000L) {
-                        adjust((target * 1.1).toInt().coerceAtMost(maxBitrate)); lastAdjust = now; calmSince = now
+                    // back up sooner (4.0): minutes at a low rate looked like blocks long after the internet was fine
+                    if (target < maxBitrate && now - calmSince > 5_000_000_000L && now - lastAdjust > 4_000_000_000L) {
+                        adjust((target * 1.2).toInt().coerceAtMost(maxBitrate)); lastAdjust = now; calmSince = now
                     }
                 } else calmSince = 0L
 
@@ -292,8 +293,11 @@ class RtmpSink(
         status()
     }
 
+    /** Never below this (4.0: down to 1 Mbps the picture was all blocks; then frames are dropped instead). */
+    private val floor = maxOf(2_500_000, maxBitrate * 2 / 5).coerceAtMost(maxBitrate)
+
     private fun adjust(bps: Int) {
-        val b = bps.coerceIn(1_000_000, maxBitrate)
+        val b = bps.coerceIn(floor, maxBitrate)
         if (b == target) return
         target = b
         listener.onBitrate(b)

@@ -343,10 +343,10 @@
     <string name="live_help_other">نشانیِ سرور (rtmp:// یا rtmps://) و کلیدی که سکو داده را بچسبان.</string>
     <string name="live_q_title">کیفیتِ پخش</string>
     <string name="live_q_desc">اگر اینترنت ضعیف شود، کیفیت خودکار پایین می‌آید تا پخش قطع نشود و بعد برمی‌گردد. اگر قطع شود، خودکار دوباره وصل می‌شود.</string>
-    <string name="live_q_720">۷۲۰p، ۶۰ فریم (۵ مگابیت آپلود)</string>
-    <string name="live_q_1080">۱۰۸۰p، ۶۰ فریم (۹ مگابیت آپلود) — پیشنهادی</string>
-    <string name="live_q_1080_30">۱۰۸۰p، ۳۰ فریم (۶ مگابیت آپلود)</string>
-    <string name="live_q_1440">۱۴۴۰p، ۶۰ فریم (۱۵ مگابیت آپلود)</string>
+    <string name="live_q_720">۷۲۰p، ۶۰ فریم (۷ مگابیت آپلود)</string>
+    <string name="live_q_1080">۱۰۸۰p، ۶۰ فریم (۱۲ مگابیت آپلود) — پیشنهادی</string>
+    <string name="live_q_1080_30">۱۰۸۰p، ۳۰ فریم (۸ مگابیت آپلود)</string>
+    <string name="live_q_1440">۱۴۴۰p، ۶۰ فریم (۲۴ مگابیت آپلود)</string>
     <string name="live_audio_title">صدای پخش</string>
     <string name="live_team_title">حرفِ یارها در پخش</string>
     <string name="live_team_desc">خاموش: حرفِ هم‌تیمی‌ها در پخش نمی‌آید؛ صدای بازی و کاراکترها کامل می‌ماند. (از ضبط جداست؛ تشخیص همان «صدای یارها»ی تنظیمات است.)</string>
@@ -1051,4 +1051,13 @@
     <string name="yt_private_note">این پخش «خصوصی» است: فقط خودت (با همین حساب) آن را می‌بینی و در کانال دیده نمی‌شود. برای دیده شدن، «چه کسی ببیند» را «عمومی» کن.</string>
     <string name="live_no_screen">تصویری از صفحه به RawRec نمی‌رسد؛ پخش می‌رود ولی فقط پس‌زمینه و لایه‌ها دیده می‌شوند. اگر در پنجرهٔ اندروید «یک برنامه» را زدی، همان بازی را باز کن؛ وگرنه پخش را ببند، دوباره شروع کن و «کلِ صفحه» (Entire screen) را بزن.</string>
     <string name="br_device_max_fmt">%1$s Mbps (بیشترینِ گوشی)</string>
+    <!-- 4.0 -->
+    <string name="live_rate_title">بیت‌ریتِ پخش</string>
+    <string name="live_rate_desc">بیشتر = تصویرِ تمیزتر در حرکتِ تند، ولی اینترنتِ آپلودِ بیشتری می‌خواهد. یوتیوب تا ۵۱ مگابیت می‌گیرد.</string>
+    <string name="live_rate_auto">خودِ کیفیت</string>
+    <string name="live_record_title">ضبط هم بشود</string>
+    <string name="live_record_desc">همان تصویرِ پخش روی گوشی هم ذخیره می‌شود؛ رمزگذارِ دوم ندارد، پس گوشی گرم‌تر نمی‌شود.</string>
+    <string name="hud_hot">گوشی داغ شد: برای خنک ماندن، پخش موقتاً ۳۰ فریم است.</string>
+    <string name="hud_cool">گوشی خنک شد: پخش دوباره با فریمِ کامل.</string>
+    <string name="live_record_failed_fmt">ضبطِ روی گوشی ایستاد (%1$s)؛ آنچه ضبط شد نگه داشته شد و پخش ادامه دارد.</string>
 </resources>

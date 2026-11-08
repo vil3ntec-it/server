@@ -319,8 +319,9 @@ class FloatingControl(
             if (deleteArmed) { disarm(); actions.delete() } else arm()
         }
         hideButton.setOnClickListener { actions.hideControl() }
-        attachDrag(timer) { if (ghost) actions.hideControl() else collapse() }
-        attachDrag(dotFrame) { expand() }
+        attachDrag(timer, { if (ghost) actions.hideControl() else collapse() })
+        // live with the chat: one tap opens the chat, two taps or holding open these buttons
+        attachDrag(dotFrame, { val t = dotTap; if (t != null) t() else expand() }, alt = { expand() }, altOn = { dotTap != null })
         fy = SafePrefs.float(prefs, "pill_fy", 0.3f).coerceIn(0f, 1f)
         right = SafePrefs.bool(prefs, "pill_right", true)
         setTime(0)
@@ -397,6 +398,11 @@ class FloatingControl(
     }
 
     fun onDisplayChanged() { if (shown) place() }
+
+    /** Live: a tap on the dot opens the chat (null = it opens these buttons, as when recording). */
+    var dotTap: (() -> Unit)? = null
+    /** The dot was dragged somewhere else (the chat follows it). */
+    var onMoved: (() -> Unit)? = null
 
     fun collapse() { expanded = false; disarm(); main.removeCallbacks(autoCollapse); render() }
     fun expand() { expanded = true; touched(); render() }
@@ -502,15 +508,22 @@ class FloatingControl(
     val y get() = lp.y
 
     @SuppressLint("ClickableViewAccessibility")
-    private fun attachDrag(v: View, onTap: () -> Unit) {
+    private fun attachDrag(v: View, onTap: () -> Unit, alt: () -> Unit = {}, altOn: () -> Boolean = { false }) {
         val slop = ViewConfiguration.get(ctx).scaledTouchSlop
         var dx0 = 0f; var dy0 = 0f; var x0 = 0; var y0 = 0; var moved = false
+        // [altOn]: one tap waits a moment — a second tap, or holding, is [alt] instead
+        var held = false
+        var pending: Runnable? = null
+        val hold = Runnable { if (!moved) { held = true; v.isPressed = false; v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); alt() } }
         v.setOnTouchListener { _, e ->
             when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { dx0 = e.rawX; dy0 = e.rawY; x0 = lp.x; y0 = lp.y; moved = false; v.isPressed = true; touched() }
+                MotionEvent.ACTION_DOWN -> {
+                    dx0 = e.rawX; dy0 = e.rawY; x0 = lp.x; y0 = lp.y; moved = false; held = false; v.isPressed = true; touched()
+                    if (altOn()) main.postDelayed(hold, 450)
+                }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = e.rawX - dx0; val dy = e.rawY - dy0
-                    if (!moved && (abs(dx) > slop || abs(dy) > slop)) { moved = true; v.isPressed = false }
+                    if (!moved && (abs(dx) > slop || abs(dy) > slop)) { moved = true; v.isPressed = false; main.removeCallbacks(hold) }
                     if (moved) {
                         lp.x = x0 + dx.toInt(); lp.y = y0 + dy.toInt()
                         if (shown) OverlayWindows.update(wm, root, lp)
@@ -518,9 +531,16 @@ class FloatingControl(
                 }
                 MotionEvent.ACTION_UP -> {
                     v.isPressed = false
-                    if (moved) snap() else { v.performClick(); onTap() }
+                    main.removeCallbacks(hold)
+                    when {
+                        held -> {}
+                        moved -> snap()
+                        !altOn() -> { v.performClick(); onTap() }
+                        pending != null -> { main.removeCallbacks(pending!!); pending = null; alt() }
+                        else -> { val r = Runnable { pending = null; v.performClick(); onTap() }; pending = r; main.postDelayed(r, 260) }
+                    }
                 }
-                MotionEvent.ACTION_CANCEL -> { v.isPressed = false; if (moved) snap() }
+                MotionEvent.ACTION_CANCEL -> { v.isPressed = false; main.removeCallbacks(hold); if (moved) snap() }
             }
             true
         }
@@ -534,6 +554,7 @@ class FloatingControl(
         fy = (lp.y.toFloat() / (h - vh).coerceAtLeast(1)).coerceIn(0f, 1f)
         prefs.edit().putBoolean("pill_right", right).putFloat("pill_fy", fy).apply()
         place()
+        onMoved?.invoke()
     }
 }
 

@@ -108,4 +108,37 @@ class RtmpConnectTest {
         assertEquals("unknown phone: the usual ones", listOf(6, 10, 15, 20, 30, 50), Encoders.bitrateChoices(0))
         assertEquals("a most that is a step itself is not twice", 1, Encoders.bitrateChoices(200).count { it == 200 })
     }
+
+    @Test fun recordingWhileLiveUsesTheSameFrames() {
+        class Fake(val wantsKey: Boolean) : MediaSink {
+            var video = 0; var audio = 0; var finished = false
+            override fun submitVideo(src: java.nio.ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int): Boolean { video++; src.position(src.limit()); return wantsKey }
+            override fun submitAudio(src: java.nio.ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int) { audio++ }
+            override fun videoFormat(f: android.media.MediaFormat) {}
+            override fun audioFormat(f: android.media.MediaFormat) {}
+            override fun newPart(discardCurrent: Boolean) {}
+            override fun encoderReplaced() {}
+            override fun dropAudio() {}
+            override fun finish() { finished = true }
+            override fun emergencyFinish(timeoutMs: Long) { finished = true }
+            override fun parts(): List<SegMuxer.Part> = emptyList()
+            override val allClosed = true
+            override val totalBytes = 7L
+            override val videoBytes = 7L
+            override val waitNs = 0L
+        }
+        val live = Fake(false); val file = Fake(true)
+        val t = TeeSink(live, file)
+        val b = java.nio.ByteBuffer.allocate(16)
+        assertTrue("a key frame asked by either is asked", t.submitVideo(b, 0, 16, 0, 0))
+        t.submitAudio(b, 0, 16, 0, 0)
+        assertEquals(1, live.video); assertEquals(1, file.video); assertEquals(1, file.audio)
+        assertEquals("the recording's own size", 7L, t.totalBytes)
+        // the file fails (storage full): the stream goes on alone
+        t.stopFile()
+        t.submitVideo(b, 0, 16, 1, 0)
+        assertEquals(2, live.video); assertEquals(1, file.video)
+        t.finish()
+        assertTrue(live.finished)
+    }
 }

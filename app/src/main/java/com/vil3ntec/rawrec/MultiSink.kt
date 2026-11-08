@@ -85,3 +85,49 @@ class MultiSink(dests: List<LiveSettings.Dest>, maxBitrate: Int, private val lis
         }
     }
 }
+
+/**
+ * Live and a recording at once from one encoder: the very same frames go to the stream and to the
+ * file (no second encoding, so the phone works no harder and gets no hotter). Should the file fail
+ * (storage full), only the recording stops; the stream goes on.
+ */
+class TeeSink(private val live: MediaSink, private val file: MediaSink) : MediaSink {
+    @Volatile private var fileOn = true
+
+    /** The recording gave up: it is closed (what was written is kept), the stream goes on. */
+    fun stopFile() {
+        if (!fileOn) return
+        fileOn = false
+        Thread({ try { file.finish() } catch (_: Exception) {} }, "rawrec-tee-close").start()
+    }
+
+    // the stream first: it only copies; the file may move the buffer's position
+    override fun submitVideo(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int): Boolean {
+        val a = live.submitVideo(src, offset, size, ptsUs, flags)
+        val b = fileOn && file.submitVideo(src, offset, size, ptsUs, flags)
+        return a || b
+    }
+    override fun submitAudio(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int) {
+        live.submitAudio(src, offset, size, ptsUs, flags)
+        if (fileOn) file.submitAudio(src, offset, size, ptsUs, flags)
+    }
+    override fun videoFormat(f: MediaFormat) { live.videoFormat(f); if (fileOn) file.videoFormat(f) }
+    override fun audioFormat(f: MediaFormat) { live.audioFormat(f); if (fileOn) file.audioFormat(f) }
+    override fun newPart(discardCurrent: Boolean) { live.newPart(discardCurrent); if (fileOn) file.newPart(discardCurrent) }
+    override fun encoderReplaced() { live.encoderReplaced(); if (fileOn) file.encoderReplaced() }
+    override fun dropAudio() { live.dropAudio(); file.dropAudio() }
+    override fun finish() {
+        val t = Thread({ try { live.finish() } catch (_: Exception) {} }, "rawrec-tee-live").apply { start() }
+        if (fileOn) file.finish()
+        try { t.join(5_000) } catch (_: InterruptedException) {}
+    }
+    override fun emergencyFinish(timeoutMs: Long) {
+        live.emergencyFinish(timeoutMs / 3)
+        if (fileOn) file.emergencyFinish(timeoutMs * 2 / 3)
+    }
+    override fun parts(): List<SegMuxer.Part> = file.parts()
+    override val allClosed: Boolean get() = file.allClosed
+    override val totalBytes: Long get() = file.totalBytes
+    override val videoBytes: Long get() = file.videoBytes
+    override val waitNs: Long get() = file.waitNs
+}

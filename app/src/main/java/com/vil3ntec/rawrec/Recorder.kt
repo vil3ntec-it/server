@@ -106,6 +106,8 @@ class Recorder(
     private val sinkFactory: (() -> MediaSink)? = null,
     /** Live: the GPU stage is always on, so «برمی‌گردم» can replace the picture at any moment. */
     private val forceLook: Boolean = false,
+    /** Live: also record the same frames to a file ([TeeSink]). */
+    private val alsoRecord: Boolean = false,
 ) : SegMuxer.Events {
 
     interface Events {
@@ -207,7 +209,12 @@ class Recorder(
         // Friendly name, e.g. "RawRec 2026-10-31 17-02.mp4"; parts become "… (۲).mp4".
         val stamp = SimpleDateFormat("yyyy-MM-dd HH-mm", Locale.US).format(Date())
         val prefix = if (cfg.testSeconds > 0) "RawRec test " else "RawRec "
-        muxer = sinkFactory?.invoke() ?: SegMuxer(ctx, cfg.hasAudio, cfg.segmentBytes, prefix + stamp, this)
+        val liveSink = sinkFactory?.invoke()
+        muxer = when {
+            liveSink == null -> SegMuxer(ctx, cfg.hasAudio, cfg.segmentBytes, prefix + stamp, this)
+            alsoRecord -> TeeSink(liveSink, SegMuxer(ctx, cfg.hasAudio, cfg.segmentBytes, "RawRec live " + stamp, this))
+            else -> liveSink
+        }
         try {
             val first = VideoEnc(plan)
             try { first.prepare() } catch (e: Exception) { first.release(); throw e }
@@ -394,7 +401,8 @@ class Recorder(
                 // 1.8's 5 s GOP a seek had to decode up to 5 s first: the picture lagged, the sound ran
                 // ahead and then the picture «teleported» (the owner). 1.0's «pulsing» with a 1 s GOP
                 // came from CBR; the quality range (QP) now keeps every frame at the same quality.
-                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+                // live: a key frame every 2 s (what the platforms ask; at 1 s half the bits went into key frames)
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, if (sinkFactory != null) 2 else 1)
                 // Static screens still produce frames, but only after two frame periods, so normal
                 // frame-time jitter never inserts duplicate frames (judder).
                 setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 2_000_000L / p.fps)
@@ -948,6 +956,8 @@ class Recorder(
     override fun onAudioGivenUp() = events.onAudioProblem("timeout")
     override fun onPartOpened(index: Int, reason: Int) = events.onPartOpened(index, reason)
     override fun onWriteError(message: String) {
+        // live with a recording: only the recording stops, the stream goes on
+        (muxer as? TeeSink)?.let { it.stopFile(); events.onAudioProblem("record: $message"); return }
         if (running) { running = false; events.onFatal(StopReason.WRITE_ERROR, message) }
     }
     override fun onWriteRecovered(message: String) = events.onWriteRecovered(message)

@@ -446,9 +446,9 @@ class RecordService : Service(), Recorder.Events {
                     screenChecks = 0; main.removeCallbacks(screenCheck); main.postDelayed(screenCheck, 8_000)
                     (if (liveTargets.size > 1) MultiSink(liveTargets, plan.bitrate, liveListener) else RtmpSink(lv.url, lv.key, plan.bitrate, liveListener))
                         .also { liveSink = it }
-                }, forceLook = true)
+                }, forceLook = true, alsoRecord = LiveSettings.recordToo(this))
             else Recorder(this, p, c, plan, this, keptDisplay, keepDisplay = instantEnabled(this))
-            if (lv == null) ActiveRec.begin(this)
+            if (lv == null || LiveSettings.recordToo(this)) ActiveRec.begin(this)
             try { r.start() } catch (e: Exception) { ActiveRec.end(this); throw e }
             recorder = r
             if (lv == null && instantEnabled(this)) keptDisplay = r.virtualDisplay
@@ -878,6 +878,7 @@ class RecordService : Service(), Recorder.Events {
         if (hasChat && LiveExtras.hud(this) && overlays) {
             val h = ChatHud(this, hudActions)
             hud = h
+            linkCircle()
             h.setStats(-1, -1, -1)
             h.setGiveaway(false, 0)
             h.setCanSend(false)
@@ -1175,9 +1176,23 @@ class RecordService : Service(), Recorder.Events {
             control?.hide()
             control = null
             controlHidden = true
+            hud?.anchorTo(null, null)   // the chat gets its own button back
             Toast.makeText(this@RecordService, R.string.eng_toast_control_hidden, Toast.LENGTH_LONG).show()
             notifyRecording()
         }
+    }
+
+    /**
+     * Live with the chat: one circle on the screen — a tap on the record dot opens the chat, two taps
+     * or holding open its buttons; the chat's own button stays away. Without the dot, the chat's button.
+     */
+    private fun linkCircle() {
+        val h = hud ?: return
+        val c = control
+        if (c == null || live == null) { h.anchorTo(null, null); return }
+        c.dotTap = { hud?.toggleOpen() }
+        c.onMoved = { control?.let { hud?.anchorTo(it.x, it.y) } }
+        h.anchorTo(c.x, c.y)
     }
 
     /** «نمایشِ دکمه» in the notification after the control was hidden. */
@@ -1188,6 +1203,7 @@ class RecordService : Service(), Recorder.Events {
         if (!Settings.canDrawOverlays(this)) return
         control = makeControl(c)?.also { it.expand() }
         controlHidden = control == null
+        linkCircle()
         main.removeCallbacks(pillTick)
         main.post(pillTick)
         notifyRecording()
@@ -1543,6 +1559,7 @@ class RecordService : Service(), Recorder.Events {
         main.post {
             if (message.startsWith("rotate:")) addNotice("rotate", getString(R.string.notice_rotate_fail_fmt, message))
             else if (message.startsWith("look:")) addNotice("look", getString(R.string.eng_notice_look_fail))
+            else if (message.startsWith("record:")) addNotice("record", getString(R.string.live_record_failed_fmt, message.removePrefix("record:").trim()))
             else addNotice("audio", getString(R.string.notice_audio_fmt, message))
             RecLog.add(this, "notice: $message")
         }
@@ -1598,8 +1615,25 @@ class RecordService : Service(), Recorder.Events {
             if (s > maxThermal) { maxThermal = s; RecLog.add(this, "thermal: $s") }
             if (s >= android.os.PowerManager.THERMAL_STATUS_SEVERE) addNotice("hot", getString(R.string.eng_notice_hot))
             else if (s < android.os.PowerManager.THERMAL_STATUS_MODERATE) removeNotice("hot")
+            coolDown(s)
         }
         try { pm.addThermalStatusListener(mainExecutor, l); thermalListener = l } catch (_: Exception) {}
+    }
+
+    /**
+     * Live on a hot phone: the GPU stage draws 30 pictures a second instead of 60 (the encoder keeps
+     * the stream's rate by repeating them, and each picture gets more bits) until it has cooled.
+     */
+    private fun coolDown(s: Int) {
+        val f = recorder?.filter ?: return
+        if (live == null) return
+        val hot = s >= android.os.PowerManager.THERMAL_STATUS_SEVERE
+        val cool = s <= android.os.PowerManager.THERMAL_STATUS_LIGHT
+        if (hot && f.fpsCap == 0 && (recorder?.plan?.fps ?: 0) > 30) {
+            f.fpsCap = 30; RecLog.add(this, "thermal: 30 fps"); hud?.note(getString(R.string.hud_hot))
+        } else if (cool && f.fpsCap != 0) {
+            f.fpsCap = 0; RecLog.add(this, "thermal: full fps"); hud?.note(getString(R.string.hud_cool))
+        }
     }
 
     private fun stopThermalWatch() {

@@ -1418,7 +1418,15 @@ class MainActivity : Activity() {
         // ---- less often: closed until opened
         val qc = Section(root, "live_q", R.string.live_q_title, R.string.sec_live_q_desc, R.drawable.ic_quality).body
         qc.addView(text(str(R.string.live_q_desc), R.style.Text_Caption), lp(4))
-        rows["live_q"] = Row(qc, "", "", LiveSettings.QUALITIES.map { str(it.label) }, vertical = true, top = 8) { i -> LiveSettings.setQuality(this, i) }
+        rows["live_q"] = Row(qc, "", "", LiveSettings.QUALITIES.map { str(it.label) }, vertical = true, top = 8) { i -> LiveSettings.setQuality(this, i); renderDests() }
+        // the bit rate itself, when the quality's own is not enough (blocks in fast motion)
+        rows["live_rate"] = Row(qc, str(R.string.live_rate_title), str(R.string.live_rate_desc),
+            LiveSettings.LIVE_RATES.map { if (it == 0) str(R.string.live_rate_auto) else "$it Mbps" }, top = 14) { i ->
+            LiveSettings.setLiveRate(this, LiveSettings.LIVE_RATES[i]); renderDests()
+        }
+        toggles["live_record"] = Toggle(qc, "tog:live_record", R.drawable.ic_quality, str(R.string.live_record_title), str(R.string.live_record_desc), top = 14) { on ->
+            LiveSettings.setRecordToo(this, on); toggles["live_record"]?.set(on)
+        }
 
         val ac = Section(root, "live_audio", R.string.live_audio_title, R.string.sec_live_audio_desc, R.drawable.ic_volume).body
         // Before 3.3 these saved the choice but left the switch as it was: they looked dead.
@@ -1438,6 +1446,8 @@ class MainActivity : Activity() {
         pc.addView(text(str(R.string.live_privacy_desc), R.style.Text_Body), lp(4))
         rows["live_p"]?.select(p0)
         rows["live_q"]?.select(LiveSettings.quality(this))
+        rows["live_rate"]?.select(LiveSettings.LIVE_RATES.indexOf(LiveSettings.liveRate(this)))
+        toggles["live_record"]?.set(LiveSettings.recordToo(this))
         toggles["live_team"]?.set(LiveSettings.teamVoice(this))
         toggles["live_mic"]?.set(LiveSettings.mic(this))
         refreshLiveVoice()
@@ -2122,7 +2132,8 @@ class MainActivity : Activity() {
         rows["codec"] = Row(adv, str(R.string.codec_title), str(R.string.codec_desc),
             listOf(str(R.string.codec_auto), "HEVC / H.265", "H.264 / AVC", if (av1) "AV1" else str(R.string.codec_av1_missing)),
             ic = R.drawable.ic_memory, chipIcons = listOf(R.drawable.ic_sparkle), top = 8) { i -> change(true) { it.copy(codec = i) } }
-        rows["br"] = Row(adv, str(R.string.br_title), str(R.string.br_desc), brValues.map {
+        // 4.0: the bit rate in sight (not inside «پیشرفته»): up to the most this phone's encoder takes
+        rows["br"] = Row(qc, str(R.string.br_title), str(R.string.br_desc), brValues.map {
             when (it) {
                 RecordConfig.BR_AUTO_HIGH -> str(R.string.br_auto_high)
                 RecordConfig.BR_AUTO_BALANCED -> str(R.string.br_auto_light)

@@ -105,6 +105,9 @@ class LookFilter(private val look: Look, private val fps: Int) {
     private var lastPts = 0L
     private var lastDrawNs = 0L
 
+    /** Fewer pictures a second for a while (a hot phone); 0 = the full rate. */
+    @Volatile var fpsCap = 0
+
     /** Pictures the screen has sent so far (whether drawn or not): 0 = nothing captured at all. */
     @Volatile var screenFrames = 0L; private set
     /** The last error while drawing (kept for the report instead of being lost). */
@@ -524,7 +527,8 @@ class LookFilter(private val look: Look, private val fps: Int) {
             screenFrames++
             if (coverOn) return   // the screen is taken (so it can send the next one) but not shown
             val ts = st.timestamp
-            if (fps > 0 && lastNs > 0 && ts - lastNs < 1_000_000_000L / fps * 9 / 10) return
+            val f = fpsCap.takeIf { it in 1 until fps } ?: fps
+            if (f > 0 && lastNs > 0 && ts - lastNs < 1_000_000_000L / f * 9 / 10) return
             lastNs = ts
             st.getTransformMatrix(stMatrix)
             draw()

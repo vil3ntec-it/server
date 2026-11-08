@@ -36,11 +36,21 @@ object LiveSettings {
     class Quality(val label: Int, val res: Int, val fps: Int, val mbps: Int)
 
     val QUALITIES = listOf(
-        Quality(R.string.live_q_720, 720, 60, 5),
-        Quality(R.string.live_q_1080, 1080, 60, 9),
-        Quality(R.string.live_q_1080_30, 1080, 30, 6),
-        Quality(R.string.live_q_1440, 1440, 60, 15),
+        // 4.0: what YouTube itself asks for a game in motion (9 Mbps at 1080p60 broke up into blocks)
+        Quality(R.string.live_q_720, 720, 60, 7),
+        Quality(R.string.live_q_1080, 1080, 60, 12),
+        Quality(R.string.live_q_1080_30, 1080, 30, 8),
+        Quality(R.string.live_q_1440, 1440, 60, 24),
     )
+
+    /** The stream's bit rate when the owner picks one (Mbps; 0 = the quality's own). 51 = YouTube's most. */
+    val LIVE_RATES = listOf(0, 6, 9, 12, 15, 20, 25, 30, 40, 51)
+    fun liveRate(ctx: Context) = SafePrefs.int(prefs(ctx), "live_mbps", 0).takeIf { it in LIVE_RATES } ?: 0
+    fun setLiveRate(ctx: Context, m: Int) = prefs(ctx).edit().putInt("live_mbps", m).apply()
+
+    /** Record on the phone while live too: the very same pictures (no second encoder, so no extra heat). */
+    fun recordToo(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_record", false)
+    fun setRecordToo(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("live_record", on).apply()
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE)
 
@@ -98,7 +108,7 @@ object LiveSettings {
 
     /** The video bit rate every chosen platform takes (Mbps): the chosen quality, or less for Twitch / Kick… */
     fun mbps(ctx: Context): Int {
-        val q = QUALITIES[quality(ctx)].mbps
+        val q = liveRate(ctx).takeIf { it > 0 } ?: QUALITIES[quality(ctx)].mbps
         val caps = destinations(ctx).map { PLATFORMS[it.platform].maxMbps }.filter { it > 0 }
         return if (caps.isEmpty()) q else minOf(q, caps.min())
     }

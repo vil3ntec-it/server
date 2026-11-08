@@ -408,13 +408,41 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
 
     // ---------------------------------------------------------------- public
 
+    /** The stream's record dot is the chat button too (one circle on the screen, not two). */
+    private var anchored = false
+
+    /**
+     * One circle: the panel opens next to the record dot at ([x], [y]) and this button stays off the
+     * screen; null = this button again (the record dot was hidden).
+     */
+    fun anchorTo(x: Int?, y: Int?) {
+        if (x == null || y == null) {
+            if (!anchored) return
+            anchored = false
+            if (shown) try { OverlayWindows.add(wm, bubble, lpBubble.apply { width = bubbleSize; height = bubbleSize }) } catch (_: Exception) {}
+            return
+        }
+        val was = anchored
+        anchored = true
+        lpBubble.x = x; lpBubble.y = y
+        if (shown && !was) OverlayWindows.remove(wm, bubble)
+        if (shown && open) { placeNearBubble(lpPanel, panelW, panelH); OverlayWindows.update(wm, panelRoot, lpPanel) }
+        updateFeed()
+    }
+
+    /** A tap on the record dot: the chat opens, or closes. */
+    fun toggleOpen() { if (shown) setOpen(!open) }
+
+    /** Messages not read yet (shown on the record dot while the chat is closed). */
+    val unreadCount get() = if (open) 0 else unread
+
     /** The chat button (and the feed, once allowed) on the screen. */
     fun show() {
         if (shown) return
         try {
             readScreen()
             clamp()
-            OverlayWindows.add(wm, bubble, lpBubble.apply { width = bubbleSize; height = bubbleSize })
+            if (!anchored) OverlayWindows.add(wm, bubble, lpBubble.apply { width = bubbleSize; height = bubbleSize })
             shown = true
             renderBubble()
             updateFeed()
