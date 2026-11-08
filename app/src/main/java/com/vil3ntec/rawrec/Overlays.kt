@@ -269,6 +269,8 @@ class FloatingControl(
     private var shown = false
     private var right = true
     private var fy = 0.3f
+    /** Across the screen: 0 = left edge … 1 = right edge (4.1: anywhere, not only at the sides). */
+    private var fx = 1f
 
     val isExpanded get() = expanded
 
@@ -324,6 +326,7 @@ class FloatingControl(
         attachDrag(dotFrame, { val t = dotTap; if (t != null) t() else expand() }, alt = { expand() }, altOn = { dotTap != null })
         fy = SafePrefs.float(prefs, "pill_fy", 0.3f).coerceIn(0f, 1f)
         right = SafePrefs.bool(prefs, "pill_right", true)
+        fx = SafePrefs.float(prefs, "pill_fx", if (right) 1f else 0f).coerceIn(0f, 1f)
         setTime(0)
         setPaused(false)
         setMic(on = true, available = true)
@@ -497,7 +500,7 @@ class FloatingControl(
     private fun place() {
         val (w, h) = screen()
         val (vw, vh) = size()
-        lp.x = if (right) (w - vw).coerceAtLeast(0) else 0
+        lp.x = (fx * (w - vw).coerceAtLeast(0)).toInt()
         lp.y = (fy * (h - vh).coerceAtLeast(0)).toInt()
         if (shown) OverlayWindows.update(wm, root, lp)
     }
@@ -546,13 +549,14 @@ class FloatingControl(
         }
     }
 
-    /** Release after a drag: stick to the nearest side, keep the height, remember it. */
+    /** Release after a drag: it stays exactly where it was let go (kept on the screen), remembered. */
     private fun snap() {
         val (w, h) = screen()
         val (vw, vh) = size()
-        right = lp.x + vw / 2 > w / 2
+        fx = (lp.x.toFloat() / (w - vw).coerceAtLeast(1)).coerceIn(0f, 1f)
         fy = (lp.y.toFloat() / (h - vh).coerceAtLeast(1)).coerceIn(0f, 1f)
-        prefs.edit().putBoolean("pill_right", right).putFloat("pill_fy", fy).apply()
+        right = fx > 0.5f
+        prefs.edit().putBoolean("pill_right", right).putFloat("pill_fx", fx).putFloat("pill_fy", fy).apply()
         place()
         onMoved?.invoke()
     }

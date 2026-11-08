@@ -48,6 +48,13 @@ object LiveSettings {
     fun liveRate(ctx: Context) = SafePrefs.int(prefs(ctx), "live_mbps", 0).takeIf { it in LIVE_RATES } ?: 0
     fun setLiveRate(ctx: Context, m: Int) = prefs(ctx).edit().putInt("live_mbps", m).apply()
 
+    /**
+     * The game left the screen («one app» shared, and another app in front): «برمی‌گردم» on the stream
+     * (true) or the game's last picture stays (false, 4.1: the banner looked like the stream was broken).
+     */
+    fun awayBanner(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_away_banner", false)
+    fun setAwayBanner(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("live_away_banner", on).apply()
+
     // ---- Shorts (YouTube «Dual stream», Encoder): a 9:16 picture with the vertical stream key
     fun shortsOn(ctx: Context) = SafePrefs.bool(prefs(ctx), "shorts_on", false)
     fun setShortsOn(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("shorts_on", on).apply()

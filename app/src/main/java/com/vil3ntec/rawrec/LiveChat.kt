@@ -188,8 +188,7 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
                                 created = true
                                 try {
                                     api.createBroadcast(sid, LiveExtras.ytTitle(ctx).ifBlank { ctx.getString(R.string.yt_default_title_fmt, LiveExtras.ytChannel(ctx).ifBlank { "Live" }) },
-                                        LiveExtras.ytDesc(ctx), LiveExtras.ytPrivacy(ctx).takeIf { it in listOf("public", "unlisted", "private") } ?: "public",
-                                        when (LiveExtras.ytKids(ctx)) { "yes" -> true; "no" -> false; else -> false })
+                                        LiveExtras.ytDesc(ctx), LiveExtras.ytPrivacyToSet(ctx).ifEmpty { "public" }, LiveExtras.ytKidsToSet(ctx) ?: false)
                                     l.onNote(ctx.getString(R.string.yt_created))
                                     lastLook = 0L
                                     sleep(3_000); continue
@@ -332,8 +331,8 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
         val want = YouTubeApi.VideoChange(
             title = LiveExtras.ytTitle(ctx).ifBlank { null },
             description = LiveExtras.ytDesc(ctx).ifBlank { null },
-            privacy = LiveExtras.ytPrivacy(ctx).takeIf { it in listOf("public", "unlisted", "private") },
-            kids = when (LiveExtras.ytKids(ctx)) { "yes" -> true; "no" -> false; else -> null },
+            privacy = LiveExtras.ytPrivacyToSet(ctx).ifEmpty { null },
+            kids = LiveExtras.ytKidsToSet(ctx),
             category = LiveExtras.ytCategory(ctx).ifBlank { null },
             tags = LiveExtras.ytTags(ctx).takeIf { it.isNotEmpty() },
             embeddable = when (LiveExtras.ytEmbed(ctx)) { "yes" -> true; "no" -> false; else -> null },

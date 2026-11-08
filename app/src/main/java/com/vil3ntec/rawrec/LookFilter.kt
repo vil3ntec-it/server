@@ -195,10 +195,66 @@ class LookFilter(private val look: Look, private val fps: Int) {
 
     private fun near(a: FloatArray, b: FloatArray, d: Float) = (0..3).all { kotlin.math.abs(a[it] - b[it]) <= d }
 
+    // ---- the game off the screen («one app» shared, another app in front): Android then sends black,
+    // so the last good picture is kept on the GPU and drawn instead until the game is back.
+    @Volatile private var holding = false
+    private var heldFbo = 0
+    private var heldTex = 0
+    private var heldProg = 0
+
+    /** [on]: keep showing the game's last picture (with the layers over it); off: the screen again. */
+    fun hold(on: Boolean) {
+        h.post {
+            if (dpy == EGL14.EGL_NO_DISPLAY) return@post
+            if (!on) { holding = false; return@post }
+            if (holding || out == EGL14.EGL_NO_SURFACE || drawn == 0L) return@post
+            try {
+                EGL14.eglMakeCurrent(dpy, out, out, ctx)
+                if (heldFbo == 0) {
+                    val t = IntArray(1)
+                    GLES20.glGenTextures(1, t, 0); heldTex = t[0]
+                    GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, heldTex)
+                    GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, outW, outH, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, null)
+                    GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+                    GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+                    GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+                    GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+                    GLES20.glGenFramebuffers(1, t, 0); heldFbo = t[0]
+                    GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, heldFbo)
+                    GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0, GLES20.GL_TEXTURE_2D, heldTex, 0)
+                }
+                GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, heldFbo)
+                GLES20.glDisable(GLES20.GL_BLEND)
+                draw()   // the last screen picture (black bars cut), without the layers
+                GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+                holding = true
+            } catch (t: Throwable) {
+                try { GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0) } catch (_: Throwable) {}
+                drawError = "hold: " + (t.message ?: t.javaClass.simpleName)
+            }
+        }
+    }
+
+    /** The kept picture into the viewport ([vx], [vy], [vw], [vh]). */
+    private fun drawHeld(vx: Int = 0, vy: Int = 0, vw: Int = outW, vh: Int = outH) {
+        if (heldProg == 0) heldProg = program(VS_HELD, FS_COVER)
+        GLES20.glViewport(vx, vy, vw, vh)
+        GLES20.glDisable(GLES20.GL_BLEND)
+        GLES20.glUseProgram(heldProg)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, heldTex)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(heldProg, "tex"), 0)
+        val pos = GLES20.glGetAttribLocation(heldProg, "pos")
+        GLES20.glEnableVertexAttribArray(pos)
+        GLES20.glVertexAttribPointer(pos, 2, GLES20.GL_FLOAT, false, 0, QUAD)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        GLES20.glDisableVertexAttribArray(pos)
+    }
+
     /** The last screen picture again (black before the first), the layers over it. GL thread. */
     private fun redraw() {
         EGL14.eglMakeCurrent(dpy, out, out, ctx)
-        if (drawn > 0) draw() else {
+        if (holding) drawHeld() else if (drawn > 0) draw() else {
             GLES20.glViewport(0, 0, outW, outH)
             GLES20.glClearColor(0f, 0f, 0f, 1f)
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
@@ -478,6 +534,7 @@ class LookFilter(private val look: Look, private val fps: Int) {
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
             val g = shortsGame
             if (coverOn) drawPic2(coverTex, g, false)
+            else if (holding) drawHeld(g.left, h2 - g.bottom, g.width(), g.height())
             else if (drawn > 0) draw(g.left, h2 - g.bottom, g.width(), g.height())
             shortsTop?.let { drawPic2(shortsTopTex, it, true) }
             shortsBottom?.let { drawPic2(shortsBottomTex, it, true) }
@@ -685,6 +742,7 @@ class LookFilter(private val look: Look, private val fps: Int) {
             st.updateTexImage()
             screenFrames++
             if (coverOn) return   // the screen is taken (so it can send the next one) but not shown
+            if (holding) return   // the game is off the screen (black comes): the kept picture is drawn instead
             val ts = st.timestamp
             val f = fpsCap.takeIf { it in 1 until fps } ?: fps
             if (f > 0 && lastNs > 0 && ts - lastNs < 1_000_000_000L / f * 9 / 10) return
@@ -882,6 +940,16 @@ varying vec2 uv;
 void main() {
     gl_Position = vec4(pos, 0.0, 1.0);
     uv = (stm * vec4(region.xy + (pos * 0.5 + 0.5) * region.zw, 0.0, 1.0)).xy;
+}
+"""
+
+        /** A picture of the frame's own orientation (the kept last picture) over the whole viewport. */
+        private const val VS_HELD = """
+attribute vec2 pos;
+varying vec2 uv;
+void main() {
+    gl_Position = vec4(pos, 0.0, 1.0);
+    uv = pos * 0.5 + 0.5;
 }
 """
 

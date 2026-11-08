@@ -1409,6 +1409,11 @@ class MainActivity : Activity() {
             onTap("layout preview") { openLayoutEditor() }
         }
         lc.addView(layoutPreview, lp(10))
+        // the game off the screen (another app in front): its last picture, or «برمی‌گردم»
+        toggles["live_away"] = Toggle(lc, "tog:live_away", R.drawable.ic_layers, str(R.string.live_away_title), str(R.string.live_away_desc), top = 12) { on ->
+            LiveSettings.setAwayBanner(this, on); toggles["live_away"]?.set(on)
+        }
+        toggles["live_away"]?.set(LiveSettings.awayBanner(this))
         lc.addView(button(str(R.string.lay_edit), R.style.Button_Tonal, R.drawable.ic_layers).apply {
             tag = "lay:edit"
             onTap("layout editor") { openLayoutEditor() }
@@ -1720,12 +1725,20 @@ class MainActivity : Activity() {
         }
         // «خصوصی» hides the live from everyone but the owner (and from the channel page): said under the choice
         val privNote = text(str(R.string.yt_private_note), R.style.Text_Caption).apply { tag = "yt:private_note" }
-        ytRow("yt_privacy", R.string.yt_privacy_title, R.string.yt_privacy_desc, listOf("" to R.string.yt_keep,
-            "public" to R.string.yt_p_public, "unlisted" to R.string.yt_p_unlisted, "private" to R.string.yt_p_private)) {
-            privNote.visibility = if (it == "private") View.VISIBLE else View.GONE
+        fun renderPrivNote() {
+            val priv = SafePrefs.str(prefs, "yt_privacy") == "private"
+            privNote.text = str(if (LiveExtras.chatOpen(ctx)) R.string.yt_private_chat_open else R.string.yt_private_note)
+            privNote.visibility = if (priv) View.VISIBLE else View.GONE
         }
-        privNote.visibility = if (SafePrefs.str(prefs, "yt_privacy") == "private") View.VISIBLE else View.GONE
+        ytRow("yt_privacy", R.string.yt_privacy_title, R.string.yt_privacy_desc, listOf("" to R.string.yt_keep,
+            "public" to R.string.yt_p_public, "unlisted" to R.string.yt_p_unlisted, "private" to R.string.yt_p_private)) { renderPrivNote() }
         yc.addView(privNote, lp(4))
+        // the live chat: YouTube closes it for a private live and one «for kids»; this keeps it open
+        toggles["yt_chat_open"] = Toggle(yc, "tog:yt_chat_open", R.drawable.ic_chat, str(R.string.yt_chat_open_title), str(R.string.yt_chat_open_desc), top = 12) { on ->
+            LiveExtras.setChatOpen(ctx, on); toggles["yt_chat_open"]?.set(on); renderPrivNote()
+        }
+        toggles["yt_chat_open"]?.set(LiveExtras.chatOpen(ctx))
+        renderPrivNote()
         ytRow("yt_kids", R.string.yt_kids_title, R.string.yt_kids_desc, listOf("" to R.string.yt_keep, "no" to R.string.yt_kids_no, "yes" to R.string.yt_kids_yes))
         ytRow("yt_embed", R.string.yt_embed_title, R.string.yt_embed_desc, listOf("" to R.string.yt_keep, "yes" to R.string.yt_embed_yes, "no" to R.string.yt_embed_no))
         ytRow("yt_category", R.string.yt_cat_title, null, listOf("" to R.string.yt_keep, "20" to R.string.yt_cat_gaming, "24" to R.string.yt_cat_ent,

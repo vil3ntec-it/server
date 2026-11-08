@@ -377,7 +377,16 @@ class RecordService : Service(), Recorder.Events {
                 override fun onCapturedContentVisibilityChanged(isVisible: Boolean) {
                     main.post {
                         if (state == State.IDLE || stopping) return@post
-                        if (live != null) { coverAuto = !isVisible; applyCover(); return@post }
+                        if (live != null) {
+                            RecLog.add(this@RecordService, "captured app " + if (isVisible) "on screen" else "off screen")
+                            // the banner only when the owner wants it; otherwise the game's last picture stays
+                            if (LiveSettings.awayBanner(this@RecordService)) { coverAuto = !isVisible; applyCover() }
+                            else {
+                                recorder?.filter?.hold(!isVisible)
+                                if (!isVisible && !toldAway) { toldAway = true; hud?.note(getString(R.string.live_away_last)) }
+                            }
+                            return@post
+                        }
                         if (isVisible) removeNotice("hidden") else addNotice("hidden", getString(R.string.eng_notice_content_hidden))
                     }
                 }
@@ -441,7 +450,7 @@ class RecordService : Service(), Recorder.Events {
             val lv = live
             val r = if (lv != null) Recorder(this, p, c, plan, this, null, keepDisplay = false,
                 sinkFactory = {
-                    liveBorn = System.currentTimeMillis(); lastRtmpLog = ""; lastSendProblem = null; toldPrivate = false
+                    liveBorn = System.currentTimeMillis(); lastRtmpLog = ""; lastSendProblem = null; toldPrivate = false; toldAway = false
                     main.removeCallbacks(sendCheck); main.postDelayed(sendCheck, 13_000)
                     screenChecks = 0; main.removeCallbacks(screenCheck); main.postDelayed(screenCheck, 8_000)
                     (if (liveTargets.size > 1) MultiSink(liveTargets, plan.bitrate, liveListener) else RtmpSink(lv.url, lv.key, plan.bitrate, liveListener))
@@ -685,6 +694,7 @@ class RecordService : Service(), Recorder.Events {
     private var lastRtmpLog = ""
     private var lastSendProblem: String? = null
     private var toldPrivate = false
+    private var toldAway = false
 
     /** Why nothing reaches the platform now — on the panel over the game, in the notification and the log. */
     private fun checkSending() {
@@ -1164,13 +1174,12 @@ class RecordService : Service(), Recorder.Events {
     private fun sendOut(text: String, mine: Boolean) {
         val lc = chat ?: return
         if (!lc.canSend) { if (mine) hud?.note(getString(R.string.hud_n_cant_send)); return }
-        if (!LiveExtras.trOut(this) || !ChatTranslator.isPersian(text)) { lc.send(text); return }
-        if (mine) hud?.note(getString(R.string.tr_translating))
+        if (!LiveExtras.trOut(this) || !ChatTranslator.isPersian(text)) { lc.send(text); if (mine) hud?.addMine(text, null); return }
         ChatTranslator.fromPersian(this, text) { out ->
             main.post {
                 if (stopping) return@post
                 when {
-                    out != null -> { lc.send(out); if (mine) hud?.note(getString(R.string.tr_sent_fmt, out)) }
+                    out != null -> { lc.send(out); if (mine) hud?.addMine(out, text) }
                     mine -> hud?.note(getString(R.string.tr_failed_fmt, ChatTranslator.error ?: ""))
                     else -> lc.send(text)
                 }

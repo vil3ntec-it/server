@@ -1069,4 +1069,12 @@ Your internet needs about %2$s Mbps upload.</string>
     <string name="shorts_no_youtube">Shorts are YouTube only: switch YouTube on under «Where to stream».</string>
     <string name="shorts_failed_fmt">Shorts dropped out (%1$s); the main stream goes on.</string>
     <string name="shorts_encoder_failed">This phone did not run two encoders at once; no Shorts, the main stream goes on.</string>
+    <string name="yt_chat_open_title">Live chat always open</string>
+    <string name="yt_chat_open_desc">YouTube closes the chat of a «Private» live and of one «for kids»; with this on, the live is never private (unlisted instead) nor for kids, so the chat stays open. Off: whatever you choose above.</string>
+    <string name="yt_private_chat_open">«Live chat always open» is on, so «Unlisted» is used instead of Private (only those with the link see it) to keep the chat open.</string>
+    <string name="hud_me">Me</string>
+    <string name="hud_grip">Move the chat</string>
+    <string name="live_away_title">«Be right back» when I leave the game</string>
+    <string name="live_away_desc">Off (default): when the game is off the screen (watching your own stream on YouTube, say), viewers see the game\'s last picture, not a banner.</string>
+    <string name="live_away_last">The game is off the screen; viewers see its last picture until you are back.</string>
 </resources>

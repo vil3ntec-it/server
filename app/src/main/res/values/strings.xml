@@ -1090,4 +1090,12 @@
     <string name="shorts_no_youtube">شورت فقط با یوتیوب است: یوتیوب را در «کجا پخش شود» روشن کن.</string>
     <string name="shorts_failed_fmt">شورت قطع شد (%1$s)؛ پخشِ اصلی ادامه دارد.</string>
     <string name="shorts_encoder_failed">این گوشی دو رمزگذار را با هم اجرا نکرد؛ شورت نیست، پخشِ اصلی ادامه دارد.</string>
+    <string name="yt_chat_open_title">چتِ پخش همیشه باز</string>
+    <string name="yt_chat_open_desc">یوتیوب چتِ پخشِ «خصوصی» و «برای کودکان» را می‌بندد؛ روشن که باشد، پخش هرگز خصوصی (به‌جایش فهرست‌نشده) و برای کودکان نمی‌شود تا چت باز بماند. خاموش: هر چه در بالا انتخاب کنی.</string>
+    <string name="yt_private_chat_open">«چتِ پخش همیشه باز» روشن است، پس به‌جای خصوصی «فهرست‌نشده» گذاشته می‌شود (فقط کسی که لینک دارد می‌بیند) تا چت باز بماند.</string>
+    <string name="hud_me">من</string>
+    <string name="hud_grip">جابه‌جا کردنِ چت</string>
+    <string name="live_away_title">وقتی از بازی بیرون رفتم «برمی‌گردم» پخش شود</string>
+    <string name="live_away_desc">خاموش (پیش‌فرض): اگر بازی روی صفحه نباشد، مثلاً وقتی پخشِ خودت را در یوتیوب نگاه می‌کنی، بیننده‌ها آخرین تصویرِ بازی را می‌بینند، نه بنر.</string>
+    <string name="live_away_last">بازی روی صفحه نیست؛ بیننده‌ها آخرین تصویرِ بازی را می‌بینند تا برگردی.</string>
 </resources>

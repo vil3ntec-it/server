@@ -320,9 +320,17 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         addView(sendBtn)
         visibility = View.GONE
     }
+    /** The grip on top of the chat: drag it to put the chat anywhere; it stays there (also when opened again). */
+    internal val grip = FrameLayout(ctx).apply {
+        tag = "hud:grip"
+        contentDescription = ctx.getString(R.string.hud_grip)
+        addView(View(ctx).apply { background = GradientDrawable().apply { cornerRadius = dp(3).toFloat(); setColor(Color.argb(150, 255, 255, 255)) } },
+            FrameLayout.LayoutParams(dp(44), dp(5), Gravity.CENTER))
+    }
     internal val panel = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL
         background = glass(16, maxOf(bgAlpha, 200))
+        addView(grip, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(22)))
         addView(header)
         addView(warn)
         addView(state)
@@ -340,6 +348,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
 
     init {
         dragBubble()
+        dragChat()
         input.setOnTouchListener { _, e -> if (e.action == MotionEvent.ACTION_DOWN) setFocusable(true); false }
         panelRoot.setOnTouchListener { _, e -> if (e.action == MotionEvent.ACTION_OUTSIDE && focusable) setFocusable(false); false }
         val back = View.OnKeyListener { _, code, e ->
@@ -426,7 +435,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         anchored = true
         lpBubble.x = x; lpBubble.y = y
         if (shown && !was) OverlayWindows.remove(wm, bubble)
-        if (shown && open) { placeNearBubble(lpPanel, panelW, panelH); OverlayWindows.update(wm, panelRoot, lpPanel) }
+        if (shown && open) { placeChat(lpPanel, panelW, panelH); OverlayWindows.update(wm, panelRoot, lpPanel) }
         updateFeed()
     }
 
@@ -559,10 +568,36 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         drawBtn.text = ctx.getString(R.string.hud_give_draw_fmt, entries)
     }
 
+    private var mineSeq = 0
+
+    /**
+     * The owner's own message, at once and like everyone's (name in yellow with 👑, the text white;
+     * Persian written and sent translated: the Persian, the sent words under it). The copy YouTube
+     * sends back a few seconds later takes this line's place instead of showing twice.
+     */
+    fun addMine(sent: String, original: String?) {
+        val me = LiveExtras.ytChannel(ctx).ifBlank { ctx.getString(R.string.hud_me) }
+        val m = LiveChat.Msg("mine:" + mineSeq++, LiveChat.Platform.YOUTUBE, "", me, sent, LiveChat.Kind.CHAT, null,
+            owner = true, mod = false, member = false, history = false)
+        if (original != null && original != sent) translations[m.id] = original
+        add(m)
+    }
+
     fun add(m: LiveChat.Msg) {
+        // YouTube's copy of the owner's own message: it takes the place of the line shown at once
+        if (m.owner && !m.id.startsWith("mine:")) {
+            val i = items.indexOfFirst { it.first.id.startsWith("mine:") && it.first.text.trim() == m.text.trim() }
+            if (i >= 0) {
+                val (old, tv) = items[i]
+                translations.remove(old.id)?.let { translations[m.id] = it }
+                items[i] = m to tv
+                tv.text = line(m, withOriginal = translations.containsKey(m.id))
+                return
+            }
+        }
         // the panel's full list
         val tv = label(textSp).apply {
-            text = line(m)
+            text = line(m, withOriginal = m.owner && translations.containsKey(m.id))
             setPadding(0, dp(3), 0, dp(3))
             if (m.kind != LiveChat.Kind.CHAT) {
                 background = GradientDrawable().apply { cornerRadius = dp(8).toFloat(); setColor(kindColor(m.kind, 60)) }
@@ -616,7 +651,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         val sending = sendLine.visibility == View.VISIBLE
         val want = !open && ((feedAllowed && ((feed.childCount > 0 && !mirrorChat) || statsLine.visibility == View.VISIBLE || sceneLine.visibility == View.VISIBLE)) || sending)
         if (want) {
-            placeNearBubble(lpFeed, feedW, feedHeight())
+            placeChat(lpFeed, feedW, feedHeight())
             if (feedRoot.isAttachedToWindow) OverlayWindows.update(wm, feedRoot, lpFeed)
             else try { OverlayWindows.add(wm, feedRoot, lpFeed.apply { width = feedW; height = WindowManager.LayoutParams.WRAP_CONTENT }) } catch (_: Exception) {}
         } else OverlayWindows.remove(wm, feedRoot)
@@ -677,7 +712,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         if (o) {
             unread = 0
             readScreen()
-            placeNearBubble(lpPanel, panelW, panelH)
+            placeChat(lpPanel, panelW, panelH)
             try { OverlayWindows.add(wm, panelRoot, lpPanel) } catch (_: Exception) { open = false }
             scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
         } else {
@@ -796,6 +831,39 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         lpBubble.y = lpBubble.y.coerceIn(0, maxOf(0, screenH - bubbleSize))
     }
 
+    /** Where the owner put the chat (its top-left corner); -1 = not yet: beside the button. */
+    private var chatX = SafePrefs.int(prefs, "hud_chat_x", -1)
+    private var chatY = SafePrefs.int(prefs, "hud_chat_y", -1)
+
+    /** The chat where the owner put it (kept on the screen), else beside the button. */
+    private fun placeChat(lp: WindowManager.LayoutParams, w: Int, h: Int) {
+        if (chatX < 0 || chatY < 0) { placeNearBubble(lp, w, h); return }
+        lp.x = chatX.coerceIn(0, maxOf(0, screenW - w))
+        lp.y = chatY.coerceIn(0, maxOf(0, screenH - h))
+    }
+
+    /** Dragging the grip moves the chat; where it is let go is remembered (the button no longer carries it). */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun dragChat() {
+        var sx = 0f; var sy = 0f; var ox = 0; var oy = 0
+        grip.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { sx = e.rawX; sy = e.rawY; ox = lpPanel.x; oy = lpPanel.y; readScreen() }
+                MotionEvent.ACTION_MOVE -> {
+                    lpPanel.x = (ox + (e.rawX - sx).toInt()).coerceIn(0, maxOf(0, screenW - panelW))
+                    lpPanel.y = (oy + (e.rawY - sy).toInt()).coerceIn(0, maxOf(0, screenH - panelH))
+                    if (open) OverlayWindows.update(wm, panelRoot, lpPanel)
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    chatX = lpPanel.x; chatY = lpPanel.y
+                    prefs.edit().putInt("hud_chat_x", chatX).putInt("hud_chat_y", chatY).apply()
+                    updateFeed()
+                }
+            }
+            true
+        }
+    }
+
     /** Beside the button: on its side of the screen, below it in the upper half, above it in the lower half. */
     private fun placeNearBubble(lp: WindowManager.LayoutParams, w: Int, h: Int) {
         val gap = dp(6)
@@ -820,7 +888,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
                     if (moved) {
                         lpBubble.x = ox + dx.toInt(); lpBubble.y = oy + dy.toInt(); clamp()
                         OverlayWindows.update(wm, bubble, lpBubble)
-                        if (open) { placeNearBubble(lpPanel, panelW, panelH); OverlayWindows.update(wm, panelRoot, lpPanel) }
+                        if (open) { placeChat(lpPanel, panelW, panelH); OverlayWindows.update(wm, panelRoot, lpPanel) }
                         updateFeed()
                     }
                     true

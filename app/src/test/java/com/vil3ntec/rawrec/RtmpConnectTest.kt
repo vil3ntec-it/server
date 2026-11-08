@@ -189,4 +189,17 @@ class RtmpConnectTest {
         assertEquals("at the bottom", 1280, big.game.bottom)
         assertTrue("bigger than the frame's width", big.game.width() > 720)
     }
+
+    @Test fun theLiveChatStaysOpenWhenAsked() {
+        LiveExtras.put(app, "yt_privacy", "private")
+        LiveExtras.put(app, "yt_kids", "yes")
+        assertTrue("on unless switched off", LiveExtras.chatOpen(app))
+        assertEquals("never private (YouTube closes its chat): unlisted", "unlisted", LiveExtras.ytPrivacyToSet(app))
+        assertEquals("never for kids (no chat either)", false, LiveExtras.ytKidsToSet(app))
+        LiveExtras.setChatOpen(app, false)
+        assertEquals("off: the owner's own choice", "private", LiveExtras.ytPrivacyToSet(app))
+        assertEquals(true, LiveExtras.ytKidsToSet(app))
+        LiveExtras.put(app, "yt_privacy", "")
+        assertEquals("left as it is", "", LiveExtras.ytPrivacyToSet(app))
+    }
 }

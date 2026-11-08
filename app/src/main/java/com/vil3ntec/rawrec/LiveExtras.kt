@@ -47,6 +47,20 @@ object LiveExtras {
     // ---- the live video on YouTube ("" = leave it as YouTube has it)
     /** public / unlisted / private */
     fun ytPrivacy(ctx: Context) = s(ctx, "yt_privacy")
+
+    /**
+     * «چت همیشه باز» (on unless switched off): YouTube closes the live chat of a private live and of
+     * one «made for kids», and no API opens it — so with it on, the live is never made private (it is
+     * unlisted instead: only those with the link) and never «for kids».
+     */
+    fun chatOpen(ctx: Context) = SafePrefs.bool(prefs(ctx), "yt_chat_open", true)
+    fun setChatOpen(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("yt_chat_open", on).apply()
+    /** What is asked of YouTube: the owner's choice, or "" = left as it is. */
+    fun ytPrivacyToSet(ctx: Context): String {
+        val p = ytPrivacy(ctx).takeIf { it in listOf("public", "unlisted", "private") } ?: ""
+        return if (p == "private" && chatOpen(ctx)) "unlisted" else p
+    }
+    fun ytKidsToSet(ctx: Context): Boolean? = if (chatOpen(ctx)) false else when (ytKids(ctx)) { "yes" -> true; "no" -> false; else -> null }
     /** yes / no: made for kids */
     fun ytKids(ctx: Context) = s(ctx, "yt_kids")
     /** yes / no: other sites may show the video */
@@ -57,7 +71,7 @@ object LiveExtras {
     fun ytTags(ctx: Context): List<String> = s(ctx, "yt_tags").split(',', '،', '\n', '#').map { it.trim() }.filter { it.isNotEmpty() }
     /** Everything above in one string: when it changes while live, it is applied again at once. */
     fun ytChoicesStamp(ctx: Context) = listOf(ytTitle(ctx), ytPrivacy(ctx), ytKids(ctx), ytEmbed(ctx), ytCategory(ctx), ytDesc(ctx),
-        ytTags(ctx).joinToString(","), ytThumbFile(ctx)?.lastModified()?.toString() ?: "").joinToString("\u0001")
+        ytTags(ctx).joinToString(","), ytThumbFile(ctx)?.lastModified()?.toString() ?: "", chatOpen(ctx).toString()).joinToString("\u0001")
 
     // ---- Twitch chat (read only, no sign-in)
     fun twChannel(ctx: Context) = s(ctx, "tw_channel").trim().removePrefix("#").removePrefix("@").lowercase()
