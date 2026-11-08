@@ -1,4 +1,4 @@
-tests 193, failed 4, skipped 0
+tests 195, failed 6, skipped 0
 FAIL com.vil3ntec.rawrec.InteractionTest.everyToggleResponds[33]: java.lang.NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress
     java.lang.NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress
     	at java.base/java.lang.Class.getDeclaredMethods0(Native Method)
@@ -12,14 +12,24 @@ FAIL com.vil3ntec.rawrec.InteractionTest.oldVideoSettingsAreResetOnceIn13: java.
     java.lang.AssertionError: expected:<0> but was:<1>
     	at org.junit.Assert.fail(Assert.java:89)
     	at org.junit.Assert.failNotEquals(Assert.java:835)
-    	at com.vil3ntec.rawrec.InteractionTest.oldVideoSettingsAreResetOnceIn13(InteractionTest.kt:480)
-FAIL com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar[34]: java.lang.AssertionError: playing the media part (note: «»)
-    java.lang.AssertionError: playing the media part (note: «»)
+    	at com.vil3ntec.rawrec.InteractionTest.oldVideoSettingsAreResetOnceIn13(InteractionTest.kt:481)
+FAIL com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar[34]: java.lang.AssertionError: playing the media part (note: «», playingKind 0)
+    java.lang.AssertionError: playing the media part (note: «», playingKind 0)
     	at org.junit.Assert.fail(Assert.java:89)
     	at org.junit.Assert.assertTrue(Assert.java:42)
-    	at com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar(VoiceLiveUiTest.kt:209)
-FAIL com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar: java.lang.AssertionError: playing the media part (note: «»)
-    java.lang.AssertionError: playing the media part (note: «»)
+    	at com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar(VoiceLiveUiTest.kt:210)
+FAIL com.vil3ntec.rawrec.VoiceLiveUiTest.chatOverTheGameNeverTakesATouchAndTheButtonOpensIt[34]: java.lang.AssertionError
+    java.lang.AssertionError
+    	at org.junit.Assert.fail(Assert.java:87)
+    	at org.junit.Assert.assertTrue(Assert.java:42)
+    	at com.vil3ntec.rawrec.VoiceLiveUiTest.chatOverTheGameNeverTakesATouchAndTheButtonOpensIt(VoiceLiveUiTest.kt:295)
+FAIL com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar: java.lang.AssertionError: playing the media part (note: «», playingKind 0)
+    java.lang.AssertionError: playing the media part (note: «», playingKind 0)
     	at org.junit.Assert.fail(Assert.java:89)
     	at org.junit.Assert.assertTrue(Assert.java:42)
-    	at com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar(VoiceLiveUiTest.kt:209)
+    	at com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar(VoiceLiveUiTest.kt:210)
+FAIL com.vil3ntec.rawrec.VoiceLiveUiTest.chatOverTheGameNeverTakesATouchAndTheButtonOpensIt: java.lang.AssertionError
+    java.lang.AssertionError
+    	at org.junit.Assert.fail(Assert.java:87)
+    	at org.junit.Assert.assertTrue(Assert.java:42)
+    	at com.vil3ntec.rawrec.VoiceLiveUiTest.chatOverTheGameNeverTakesATouchAndTheButtonOpensIt(VoiceLiveUiTest.kt:295)
