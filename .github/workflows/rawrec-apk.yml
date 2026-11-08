@@ -13,11 +13,21 @@ jobs:
           distribution: temurin
           java-version: "17"
       # ‎ubuntu-latest‎ خودش Android SDK دارد (ANDROID_HOME)؛ setup-android@v3 با «sdkmanager tools» می‌شکست
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.10.2"
+      # Gradle downloaded directly, with retries (GitHub's cache service answered 504 again and again)
+      - name: Gradle 8.10.2
+        run: |
+          for i in 1 2 3 4 5; do
+            curl -fsSL --retry 5 --retry-delay 10 -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.10.2-bin.zip && break
+            sleep 20
+          done
+          unzip -q /tmp/gradle.zip -d /tmp && echo "/tmp/gradle-8.10.2/bin" >> "$GITHUB_PATH"
       - name: Build unsigned release APK
-        run: gradle :app:assembleRelease --no-daemon --stacktrace
+        run: |
+          for i in 1 2 3; do
+            gradle :app:assembleRelease --no-daemon --stacktrace && exit 0
+            echo "build attempt $i failed (network?), retrying"; sleep 30
+          done
+          exit 1
       - name: Commit APK back to this temporary branch
         run: |
           set -e
