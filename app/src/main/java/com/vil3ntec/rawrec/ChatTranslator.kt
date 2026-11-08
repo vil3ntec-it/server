@@ -18,11 +18,10 @@ import java.util.concurrent.TimeUnit
  * The chat translator: viewers' messages in any other language become Persian for the owner, and
  * what the owner writes in Persian goes out in the language they pick (from the chat itself).
  *
- * Google's ML Kit runs on the phone itself: which language a message is in is found on the phone
- * (no download), and each language's pack (~30 MB) is downloaded once, the first time it is
- * needed; after that it works without internet, at once, with nothing sent anywhere. Persian
- * messages are never translated (they stay exactly as written). Off the main thread; answers come
- * back through the callbacks (any thread).
+ * First Google Translate online (far better with everyday, friendly Persian: «داداش»، «میخام»،
+ * «چطوری»); without internet, or when Google does not answer, ML Kit on the phone itself (each
+ * language's pack, ~30 MB, downloaded once). Persian messages are never translated (they stay
+ * exactly as written). Off the main thread; answers come back through the callbacks (any thread).
  */
 object ChatTranslator {
 
@@ -135,11 +134,54 @@ object ChatTranslator {
         return if (latin >= 2 && latin * 2 >= text.count { it.isLetter() }) "en" else null
     }
 
+    // ------------------------------------------------------------ online (Google Translate)
+
+    /** Tests: answers in place of Google (url → response body, null = no answer). */
+    @Volatile internal var transport: ((String) -> String?)? = null
+    @Volatile private var onlineOffUntil = 0L
+
+    /**
+     * [text] from [src] ("auto" = found by Google) into [dst]: the translation and the language it
+     * was in; null when there is no internet or Google does not answer (then the phone's own
+     * translator is used, and Google is left alone for a few minutes).
+     */
+    private fun online(text: String, src: String, dst: String): Pair<String, String>? {
+        if (System.currentTimeMillis() < onlineOffUntil) return null
+        val url = "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&sl=" + enc(src) + "&tl=" + enc(dst) + "&q=" + enc(text)
+        val body = try {
+            transport?.let { it(url) } ?: run {
+                val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                c.connectTimeout = 5_000; c.readTimeout = 6_000; c.instanceFollowRedirects = false
+                c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) RawRec")
+                val code = c.responseCode
+                val t = if (code == 200) c.inputStream.bufferedReader().use { it.readText() } else null
+                c.disconnect()
+                t
+            }
+        } catch (_: Exception) { null }
+        if (body == null) { onlineOffUntil = System.currentTimeMillis() + 3 * 60_000; return null }
+        return try {
+            val a = org.json.JSONArray(body)
+            val segs = a.getJSONArray(0)
+            val sb = StringBuilder()
+            for (i in 0 until segs.length()) segs.optJSONArray(i)?.optString(0)?.let { if (it != "null") sb.append(it) }
+            val out = sb.toString().trim()
+            if (out.isEmpty()) null else out to a.optString(2).ifBlank { src }
+        } catch (_: Exception) { null }
+    }
+
+    private fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8")
+
     /** [text] in Persian for the owner; null when it could not be translated (it is shown as it is). */
     fun toPersian(ctx: Context, text: String, done: (String?) -> Unit) {
         val key = "fa|$text"
         synchronized(cache) { cache[key] }?.let { done(it); return }
         exec.execute {
+            online(text, "auto", "fa")?.let { (out, from) ->
+                val r = out.takeIf { from.substringBefore('-') != "fa" && it != text }
+                if (r != null) synchronized(cache) { cache[key] = r }
+                done(r); return@execute
+            }
             val src = detect(text)
             // The first message in a language waits for that language's one-time download.
             if (src == null || !ensurePair(src, "fa")) { done(null); return@execute }
@@ -156,6 +198,10 @@ object ChatTranslator {
         val key = "$target|$text"
         synchronized(cache) { cache[key] }?.let { done(it); return }
         exec.execute {
+            online(text, "fa", target)?.let { (out, _) ->
+                synchronized(cache) { cache[key] = out }
+                done(out); return@execute
+            }
             if (!ensureReady(target)) { done(null); return@execute }
             val out = try { Tasks.await(client("fa", target).translate(text), 10, TimeUnit.SECONDS) } catch (_: Throwable) { null }
             val r = out?.trim()?.takeIf { it.isNotEmpty() }

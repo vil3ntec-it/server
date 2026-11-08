@@ -1008,4 +1008,6 @@
     <string name="live_ds_failed">قطع</string>
     <string name="yt_went_live">یوتیوب پخش را منتظر نگه داشته بود؛ زنده شد.</string>
     <string name="yt_waiting_fmt">یوتیوب پخش را منتظر نگه داشته (یک پخشِ زمان‌بندی‌شده). در YouTube Studio «Go live» را بزن یا آن پخشِ قدیمی را پاک کن. (%1$s)</string>
+    <string name="tr_preview_wait">ترجمه…</string>
+    <string name="tr_preview_failed">ترجمه نشد؛ همان‌طور که نوشتی نمی‌رود تا دوباره امتحان شود.</string>
 </resources>

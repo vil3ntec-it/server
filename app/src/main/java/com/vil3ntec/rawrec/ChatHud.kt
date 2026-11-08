@@ -277,6 +277,13 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         addView(langRow)
         visibility = View.GONE
     }
+    /** While typing (translator on): exactly what will be sent, so a wrong translation is seen before it goes. */
+    internal val trPreview = label(12f, Color.argb(225, 170, 205, 255)).apply {
+        setPadding(dp(14), 0, dp(14), dp(6))
+        maxLines = 3
+        visibility = View.GONE
+    }
+    private val previewR = Runnable { previewNow() }
     private val inputRow = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
@@ -299,6 +306,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         addView(langScroll)
         addView(inputRow)
+        addView(trPreview)
         addView(readOnly)
     }
     private val panelRoot = FrameLayout(ctx).apply { addView(panel, FrameLayout.LayoutParams(panelW, panelH)) }
@@ -314,6 +322,25 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         panelRoot.setOnKeyListener(back)
         input.setOnKeyListener(back)
         renderLang()
+        input.addTextChangedListener(object : android.text.TextWatcher {
+            override fun afterTextChanged(e: android.text.Editable?) { input.removeCallbacks(previewR); input.postDelayed(previewR, 500) }
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        })
+    }
+
+    private fun previewNow() {
+        val t = input.text.toString().trim()
+        if (t.isEmpty() || !LiveExtras.trOut(ctx) || !ChatTranslator.isPersian(t)) { trPreview.visibility = View.GONE; return }
+        val target = LiveExtras.trTarget(ctx).uppercase()
+        trPreview.text = ctx.getString(R.string.tr_preview_wait)
+        trPreview.visibility = View.VISIBLE
+        ChatTranslator.fromPersian(ctx, t) { out ->
+            input.post {
+                if (input.text.toString().trim() != t) return@post
+                trPreview.text = if (out != null) "→ $target: $out" else ctx.getString(R.string.tr_preview_failed)
+            }
+        }
     }
 
     private fun toggleLangs() {
@@ -676,6 +703,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         if (t.isEmpty()) return
         actions.send(t)
         input.setText("")
+        trPreview.visibility = View.GONE
         setFocusable(false)
     }
 
