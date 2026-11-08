@@ -87,6 +87,8 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
     private val streamState = LinkedHashMap<String, Boolean>()
     private var unread = 0
     private val items = ArrayList<Pair<LiveChat.Msg, TextView>>()
+    /** Persian translations of viewers' messages (by message id), shown instead of the original. */
+    private val translations = HashMap<String, String>()
     private var selected: LiveChat.Msg? = null
     private var canSend = false
     private var focusable = false
@@ -238,6 +240,11 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         setOnEditorActionListener { _, id, _ -> if (id == EditorInfo.IME_ACTION_SEND) { sendNow(); true } else false }
     }
     private val sendBtn = iconBtn(R.drawable.ic_send, ctx.getString(R.string.hud_send)) { sendNow() }
+    /** EN / FA: what the owner's Persian goes out as (the translator), one tap to switch. */
+    internal val langChip = chip("") { setTrOut(!LiveExtras.trOut(ctx)) }.apply {
+        contentDescription = ctx.getString(R.string.tr_chip_desc)
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(30)).apply { marginEnd = dp(6) }
+    }
     private val readOnly = label(11.5f, Color.argb(170, 255, 255, 255)).apply {
         text = ctx.getString(R.string.hud_read_only)
         setPadding(dp(10), dp(4), dp(10), dp(8))
@@ -246,6 +253,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(8), dp(4), dp(6), dp(8))
+        addView(langChip)
         addView(input, LinearLayout.LayoutParams(0, dp(36), 1f))
         addView(sendBtn)
         visibility = View.GONE
@@ -277,6 +285,20 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         panelRoot.setOnKeyListener(back)
         input.setOnKeyListener(back)
         renderStream()
+        renderLang()
+    }
+
+    private fun setTrOut(on: Boolean) {
+        LiveExtras.put(ctx, "tr_out", on)
+        renderLang()
+    }
+
+    private fun renderLang() {
+        val on = LiveExtras.trOut(ctx)
+        val target = LiveExtras.trTarget(ctx).uppercase()
+        langChip.text = if (on) target else "FA"
+        (langChip.background as? GradientDrawable)?.setColor(if (on) Color.argb(150, 106, 166, 255) else Color.argb(46, 255, 255, 255))
+        input.hint = if (on) ctx.getString(R.string.hud_hint_tr_fmt, target) else ctx.getString(R.string.hud_hint)
     }
 
     // ---------------------------------------------------------------- public
@@ -372,6 +394,17 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         // the feed over the game: the newest few, each fading after a while
         addFeedLine(m)
         if (!open) { unread++; renderBubble() }
+    }
+
+    /** A viewer's message in Persian: replaces the original on the phone (the panel keeps the original under it). */
+    fun setTranslation(id: String, fa: String) {
+        translations[id] = fa
+        items.firstOrNull { it.first.id == id }?.let { (m, tv) -> tv.text = line(m, withOriginal = true) }
+        for (j in 0 until feed.childCount) {
+            val v = feed.getChildAt(j) as? TextView ?: continue
+            if (v.tag == id) items.firstOrNull { it.first.id == id }?.let { v.text = line(it.first) }
+        }
+        feed.post { updateFeed() }
     }
 
     fun remove(id: String) {
@@ -487,8 +520,9 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         bubbleCount.visibility = if (unread > 0 && !open) View.VISIBLE else View.GONE
     }
 
-    private fun line(m: LiveChat.Msg): CharSequence {
+    private fun line(m: LiveChat.Msg, withOriginal: Boolean = false): CharSequence {
         val sb = SpannableStringBuilder()
+        val tr = translations[m.id]
         val tag = when {
             m.owner -> "👑 "
             m.mod -> "🛡 "
@@ -515,7 +549,16 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
             sb.append(extra)
             sb.setSpan(ForegroundColorSpan(kindColor(m.kind, 255)), e, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
-        if (m.text.isNotBlank()) sb.append(if (m.kind == LiveChat.Kind.GIFT && m.platform == LiveChat.Platform.TWITCH) " → " else ": ").append(m.text)
+        if (m.text.isNotBlank()) sb.append(if (m.kind == LiveChat.Kind.GIFT && m.platform == LiveChat.Platform.TWITCH) " → " else ": ").append(tr ?: m.text)
+        if (tr != null) {
+            sb.append(" 🌐")
+            if (withOriginal) {
+                val o = sb.length
+                sb.append("\n").append(m.text)
+                sb.setSpan(ForegroundColorSpan(Color.argb(150, 255, 255, 255)), o, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                sb.setSpan(android.text.style.RelativeSizeSpan(0.85f), o, sb.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
         return sb
     }
 

@@ -734,4 +734,26 @@
     <string name="live_hud_stats_desc">فقط نمایش است؛ لمس از رویش رد می‌شود و به بازی می‌رسد. بیننده‌ها آن را نمی‌بینند (برای پخش، «شمارِ بیننده» پایین‌تر است).</string>
     <string name="live_hud_alpha_desc">چقدر پررنگ دیده شود.</string>
     <string name="live_ov_chat_style">شکلِ چت در پخش</string>
+    <string name="tr_title">مترجمِ چت</string>
+    <string name="tr_desc">چتِ انگلیسی برایت فارسی نشان داده می‌شود و تو فارسی می‌نویسی، انگلیسی فرستاده می‌شود. ترجمه روی خودِ گوشی انجام می‌شود: یک بار بستهٔ زبان (حدودِ ۳۰ مگابایت) دانلود می‌شود و بعد بی اینترنت، فوری و بی‌محدودیت کار می‌کند. پیامِ فارسی هیچ‌وقت ترجمه نمی‌شود.</string>
+    <string name="tr_in_title">چتِ انگلیسی برای من فارسی شود</string>
+    <string name="tr_in_desc">روی گوشی ترجمه را می‌بینی (با 🌐) و در چتِ باز اصلش زیرش است. بیننده‌ها همان متنِ اصلی را می‌بینند.</string>
+    <string name="tr_out_title">پیام‌های فارسیِ من ترجمه شوند</string>
+    <string name="tr_out_desc">فارسی می‌نویسی و به زبانِ کانال فرستاده می‌شود؛ زیرش می‌بینی دقیقاً چه رفت. روی چت با دکمهٔ EN/FA کنارِ جعبهٔ پیام عوض می‌شود: FA = همان فارسی برود. پیام‌های ربات هم ترجمه می‌شوند.</string>
+    <string name="tr_target_title">زبانِ کانال (پیام‌های من به این زبان بروند)</string>
+    <string name="tr_lang_en">انگلیسی</string>
+    <string name="tr_lang_ar">عربی</string>
+    <string name="tr_lang_tr">ترکی</string>
+    <string name="tr_lang_es">اسپانیایی</string>
+    <string name="tr_lang_ru">روسی</string>
+    <string name="tr_download">دانلودِ مترجم (یک بار)</string>
+    <string name="tr_s_off">هنوز دانلود نشده. دکمهٔ زیر را بزن (یا در اولین پخش خودش دانلود می‌شود).</string>
+    <string name="tr_s_downloading">در حالِ دانلودِ بستهٔ زبان…</string>
+    <string name="tr_s_ready">● آماده: روی همین گوشی، بی اینترنت ترجمه می‌کند.</string>
+    <string name="tr_s_failed_fmt">دانلود نشد: %1$s — اینترنت (یا فیلترشکن) را بررسی کن و دوباره بزن.</string>
+    <string name="tr_chip_desc">زبانِ پیامِ من: ترجمه یا همان فارسی</string>
+    <string name="hud_hint_tr_fmt">فارسی بنویس، %1$s می‌رود…</string>
+    <string name="tr_translating">در حالِ ترجمه…</string>
+    <string name="tr_sent_fmt">فرستاده شد: %1$s</string>
+    <string name="tr_failed_fmt">ترجمه نشد، پس فرستاده نشد. برای فرستادنِ همان فارسی، دکمهٔ کنارِ جعبه را روی FA بگذار. %1$s</string>
 </resources>

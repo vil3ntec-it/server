@@ -774,6 +774,7 @@ class RecordService : Service(), Recorder.Events {
         chat = lc
         bot = ChatBot(LiveExtras.botConfig(this))
         lc.start()
+        if (LiveExtras.trIn(this) || LiveExtras.trOut(this)) ChatTranslator.prepare(this)
         if (LiveExtras.hud(this) && Settings.canDrawOverlays(this)) {
             val h = ChatHud(this, hudActions)
             hud = h
@@ -935,6 +936,10 @@ class RecordService : Service(), Recorder.Events {
     private fun onChat(m: LiveChat.Msg) {
         if (stopping) return
         hud?.add(m)
+        // A viewer writing in another language: shown to the owner in Persian (the stream keeps the original).
+        if (hud != null && LiveExtras.trIn(this) && ChatTranslator.needsPersian(m.text)) {
+            ChatTranslator.toPersian(this, m.text) { fa -> if (fa != null) main.post { hud?.setTranslation(m.id, fa) } }
+        }
         hud?.setCanSend(chat?.canSend == true)
         val b = bot
         if (m.history) { b?.markSeen(m.authorId); return }
@@ -976,7 +981,7 @@ class RecordService : Service(), Recorder.Events {
     private fun runBot(outs: List<ChatBot.Out>) {
         val lc = chat ?: return
         for (o in outs) when (o) {
-            is ChatBot.Out.Send -> if (lc.canSend) lc.send(o.text)
+            is ChatBot.Out.Send -> sendOut(o.text, mine = false)
             is ChatBot.Out.Delete -> {
                 lc.deleteId(o.id); hud?.remove(o.id)
                 if (streamChat.removeAll { it.second.id == o.id }) pushStreamChat()
@@ -995,11 +1000,30 @@ class RecordService : Service(), Recorder.Events {
         }
     }
 
-    private val hudActions = object : ChatHud.Actions {
-        override fun send(text: String) {
-            val lc = chat ?: return
-            if (lc.canSend) lc.send(text) else hud?.note(getString(R.string.hud_n_cant_send))
+    /**
+     * A message into the chat. With the translator on, Persian goes out in the channel's language
+     * (the owner sees what was sent); if it can't be translated the owner's message is not sent
+     * as Persian by surprise (they can switch the panel's button to FA), the bot's goes as written.
+     */
+    private fun sendOut(text: String, mine: Boolean) {
+        val lc = chat ?: return
+        if (!lc.canSend) { if (mine) hud?.note(getString(R.string.hud_n_cant_send)); return }
+        if (!LiveExtras.trOut(this) || !ChatTranslator.isPersian(text)) { lc.send(text); return }
+        if (mine) hud?.note(getString(R.string.tr_translating))
+        ChatTranslator.fromPersian(this, text) { out ->
+            main.post {
+                if (stopping) return@post
+                when {
+                    out != null -> { lc.send(out); if (mine) hud?.note(getString(R.string.tr_sent_fmt, out)) }
+                    mine -> hud?.note(getString(R.string.tr_failed_fmt, ChatTranslator.error ?: ""))
+                    else -> lc.send(text)
+                }
+            }
         }
+    }
+
+    private val hudActions = object : ChatHud.Actions {
+        override fun send(text: String) = sendOut(text, mine = true)
         override fun delete(m: LiveChat.Msg) {
             chat?.delete(m); hud?.remove(m.id)
             if (streamChat.removeAll { it.second.id == m.id }) pushStreamChat()

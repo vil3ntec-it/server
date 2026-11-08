@@ -57,6 +57,13 @@ object LiveExtras {
     /** How the chat looks on the stream: 0 no background, 1 one glass box, 2 a bubble per message. */
     fun chatStyle(ctx: Context) = i(ctx, "ov_chat_style", 1).coerceIn(0, 2)
 
+    // ---- the chat translator
+    /** Viewers' messages in another language shown to the owner in Persian. */
+    fun trIn(ctx: Context) = b(ctx, "tr_in", true)
+    /** The owner's Persian messages sent in [trTarget] (the chat panel's EN/FA button). */
+    fun trOut(ctx: Context) = b(ctx, "tr_out", true)
+    fun trTarget(ctx: Context): String = s(ctx, "tr_target").ifBlank { "en" }
+
     // ---- on the stream
     const val POS_TL = 0; const val POS_TC = 1; const val POS_TR = 2; const val POS_BL = 3; const val POS_BC = 4; const val POS_BR = 5
     fun alerts(ctx: Context) = b(ctx, "ov_alerts", true)

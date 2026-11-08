@@ -713,4 +713,26 @@ Recording ends cleanly before the storage is full.</string>
     <string name="live_hud_stats_desc">Display only; touches pass through it to the game. Viewers do not see it (for the stream see «Viewer count» below).</string>
     <string name="live_hud_alpha_desc">How strongly it shows.</string>
     <string name="live_ov_chat_style">How the chat looks on the stream</string>
+    <string name="tr_title">Chat translator</string>
+    <string name="tr_desc">English chat is shown to you in Persian, and what you write in Persian goes out in English. It runs on the phone itself: one download of the language pack (~30 MB), then it works offline, at once, with no limit. Persian messages are never translated.</string>
+    <string name="tr_in_title">Show other languages to me in Persian</string>
+    <string name="tr_in_desc">On your phone you see the translation (with 🌐), and the original under it in the open chat. Viewers see the original.</string>
+    <string name="tr_out_title">Translate my Persian messages</string>
+    <string name="tr_out_desc">You write Persian and it goes out in the channel\'s language; you see exactly what was sent. On the chat, the EN/FA button beside the box switches it: FA = send the Persian as is. The bot\'s messages are translated too.</string>
+    <string name="tr_target_title">Channel language (my messages go out in it)</string>
+    <string name="tr_lang_en">English</string>
+    <string name="tr_lang_ar">Arabic</string>
+    <string name="tr_lang_tr">Turkish</string>
+    <string name="tr_lang_es">Spanish</string>
+    <string name="tr_lang_ru">Russian</string>
+    <string name="tr_download">Download the translator (once)</string>
+    <string name="tr_s_off">Not downloaded yet. Tap below (or it downloads by itself on the first stream).</string>
+    <string name="tr_s_downloading">Downloading the language pack…</string>
+    <string name="tr_s_ready">● Ready: translates on this phone, offline.</string>
+    <string name="tr_s_failed_fmt">Download failed: %1$s — check the internet (or VPN) and tap again.</string>
+    <string name="tr_chip_desc">My message language: translated or Persian as is</string>
+    <string name="hud_hint_tr_fmt">Write Persian, it goes as %1$s…</string>
+    <string name="tr_translating">Translating…</string>
+    <string name="tr_sent_fmt">Sent: %1$s</string>
+    <string name="tr_failed_fmt">Not translated, so not sent. To send the Persian as is, set the button beside the box to FA. %1$s</string>
 </resources>

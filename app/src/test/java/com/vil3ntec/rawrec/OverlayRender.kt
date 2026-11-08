@@ -89,6 +89,7 @@ class OverlayRender {
         hud.add(m("NightWolf", "", k = LiveChat.Kind.MEMBER, amount = "Gold"))
         hud.add(m("TwitchFan", "gg", p = LiveChat.Platform.TWITCH))
         hud.add(m("Me", "مرسی بچه‌ها ❤", owner = true))
+        hud.setTranslation("idSara_99this clutch was insane", "این حرکت فوق‌العاده بود")
         hud.note(app.getString(R.string.hud_n_winner_fmt, "Sara_99", "17"))
         shadowOf(Looper.getMainLooper()).idle()
         val pad = (16 * app.resources.displayMetrics.density).toInt()

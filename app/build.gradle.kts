@@ -11,8 +11,10 @@ android {
         applicationId = "com.vil3ntec.rawrec"
         minSdk = 29
         targetSdk = 35
-        versionCode = 29
-        versionName = "3.3"
+        // ML Kit's translator brings native code: phones only (no emulator ABIs), smaller APK.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        versionCode = 30
+        versionName = "3.4"
     }
 
 
@@ -43,6 +45,8 @@ android {
 }
 
 dependencies {
+    // «مترجمِ چت»: Google ML Kit translation, on the phone (language packs downloaded once).
+    implementation("com.google.mlkit:translate:17.0.3")
     // Tests only (nothing here goes into the APK): launch tests in app/src/test.
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.17")

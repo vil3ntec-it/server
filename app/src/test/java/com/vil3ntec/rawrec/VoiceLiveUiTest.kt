@@ -274,6 +274,18 @@ class VoiceLiveUiTest {
         assertTrue("touches pass through the feed to the game", lp.flags and android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0)
         assertTrue("the button takes touches", (hud.bubble.layoutParams as android.view.WindowManager.LayoutParams).flags and
             android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE == 0)
+        // the translator's EN/FA button beside the box
+        val out0 = LiveExtras.trOut(app)
+        hud.langChip.performClick()
+        assertEquals("EN/FA switches what my Persian goes out as", !out0, LiveExtras.trOut(app))
+        assertEquals(if (!out0) "EN" else "FA", hud.langChip.text.toString())
+        hud.langChip.performClick()
+        assertEquals(out0, LiveExtras.trOut(app))
+        // a translation replaces the viewer's text on the phone
+        hud.setTranslation("1", "سلام فارسی")
+        assertTrue((hud.feed.getChildAt(0) as TextView).text.toString().contains("سلام فارسی"))
+        assertTrue(ChatTranslator.needsPersian("this clutch was insane") && !ChatTranslator.needsPersian("سلام داداش gg") &&
+            !ChatTranslator.needsPersian("😂😂") && !ChatTranslator.needsPersian("ok"[0].toString()))
         hud.setStats(1234, 50, 9000)
         idle()
         assertTrue("numbers over the game", hud.statsLine.visibility == View.VISIBLE && hud.statsLine.text.contains("1,234"))
@@ -309,7 +321,7 @@ class VoiceLiveUiTest {
         tab(a, MainActivity.Tab.LIVE)
         val keys = mapOf(
             "tog:live_team" to "live_team", "tog:live_mic" to "live_mic", "tog:hud_on" to "hud_on",
-            "tog:hud_stats" to "hud_stats", "tog:ov_chat" to "ov_chat", "tog:ov_alerts" to "ov_alerts", "tog:ov_subs" to "ov_subs", "tog:ov_viewers" to "ov_viewers", "tog:ov_goal" to "ov_goal",
+            "tog:tr_in" to "tr_in", "tog:tr_out" to "tr_out", "tog:hud_stats" to "hud_stats", "tog:ov_chat" to "ov_chat", "tog:ov_alerts" to "ov_alerts", "tog:ov_subs" to "ov_subs", "tog:ov_viewers" to "ov_viewers", "tog:ov_goal" to "ov_goal",
             "tog:bot_on" to "bot_on", "tog:bot_welcome" to "bot_welcome",
             "tog:mod_links" to "mod_links", "tog:mod_caps" to "mod_caps", "tog:mod_spam" to "mod_spam",
         )

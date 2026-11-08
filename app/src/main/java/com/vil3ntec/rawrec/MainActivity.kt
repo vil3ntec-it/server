@@ -1446,6 +1446,32 @@ class MainActivity : Activity() {
         tc.addView(text(str(R.string.live_tw_desc), R.style.Text_Caption), lp(4))
         tc.addView(field(str(R.string.live_tw_hint), false) { LiveExtras.setTwChannel(ctx, it) }.apply { setText(SafePrefs.str(getSharedPreferences(RecordService.PREFS, MODE_PRIVATE), "tw_channel")) }, lp(10))
 
+        // ---- the translator
+        val trc = card(root, R.string.tr_title, R.drawable.ic_translate)
+        trc.addView(text(str(R.string.tr_desc), R.style.Text_Caption), lp(4))
+        toggles["tr_in"] = Toggle(trc, "tog:tr_in", R.drawable.ic_translate, str(R.string.tr_in_title), str(R.string.tr_in_desc), top = 10) { on ->
+            LiveExtras.put(ctx, "tr_in", on); toggles["tr_in"]?.set(on)
+        }.apply { set(LiveExtras.trIn(ctx)) }
+        toggles["tr_out"] = Toggle(trc, "tog:tr_out", R.drawable.ic_send, str(R.string.tr_out_title), str(R.string.tr_out_desc)) { on ->
+            LiveExtras.put(ctx, "tr_out", on); toggles["tr_out"]?.set(on)
+        }.apply { set(LiveExtras.trOut(ctx)) }
+        rows["tr_target"] = Row(trc, str(R.string.tr_target_title), "", ChatTranslator.TARGETS.map { str(it.second) }, top = 12) { i ->
+            LiveExtras.put(ctx, "tr_target", ChatTranslator.TARGETS[i].first)
+            refreshTr()
+        }.apply { select(ChatTranslator.TARGETS.indexOfFirst { it.first == LiveExtras.trTarget(ctx) }.coerceAtLeast(0)) }
+        trStatus = text("", R.style.Text_Body).apply {
+            setBackgroundResource(R.drawable.bg_inset)
+            setPaddingRelative(dp(14), dp(12), dp(14), dp(12))
+        }
+        trc.addView(trStatus, lp(12))
+        trc.addView(button(str(R.string.tr_download), R.style.Button_Tonal, R.drawable.ic_translate).apply {
+            onTap("translator download") {
+                ChatTranslator.prepare(ctx) { ui.post { if (!isDestroyed) refreshTr() } }
+                refreshTr()
+            }
+        })
+        refreshTr()
+
         // ---- the chat on the phone
         val hc = card(root, R.string.live_hud_title, R.drawable.ic_overlay)
         toggles["hud_on"] = Toggle(hc, "tog:hud_on", R.drawable.ic_chat, str(R.string.live_hud_on_title), str(R.string.live_hud_on_desc), top = 0) { on ->
@@ -1541,6 +1567,17 @@ class MainActivity : Activity() {
             vk != 0 -> str(R.string.vs_found_fmt, str(VoiceSources.nameRes(vk)), if (gk != 0) str(VoiceSources.nameRes(gk)) else "—")
             VoiceSources.mixed(this) -> str(R.string.vs_found_mixed)
             else -> str(R.string.vs_team_unknown)
+        }
+    }
+
+    private var trStatus: TextView? = null
+
+    private fun refreshTr() {
+        trStatus?.text = when (ChatTranslator.state) {
+            ChatTranslator.State.READY -> str(R.string.tr_s_ready)
+            ChatTranslator.State.DOWNLOADING -> str(R.string.tr_s_downloading)
+            ChatTranslator.State.FAILED -> str(R.string.tr_s_failed_fmt, ChatTranslator.error ?: "")
+            ChatTranslator.State.OFF -> str(R.string.tr_s_off)
         }
     }
 

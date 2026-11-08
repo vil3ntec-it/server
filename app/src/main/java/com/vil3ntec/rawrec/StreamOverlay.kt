@@ -350,9 +350,10 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
         for ((sl, l) in layouts) {
             // a bubble of the line's own width (style 2), or only the paid / member highlight
-            val lineW = (0 until sl.lineCount).maxOf { sl.getLineWidth(it) }
-            val left = if (rtl) w - pad - lineW - 10f * u else pad - 10f * u
-            val r = RectF(left, y - 5f * u, left + lineW + 20f * u, y + sl.height + 5f * u)
+            // where the text really is (a line can run right-to-left or left-to-right by its first letter)
+            val lineL = (0 until sl.lineCount).minOf { sl.getLineLeft(it) }
+            val lineR = (0 until sl.lineCount).maxOf { sl.getLineRight(it) }
+            val r = RectF(pad + lineL - 10f * u, y - 5f * u, pad + lineR + 10f * u, y + sl.height + 5f * u)
             if (chatStyle == 2) { p.color = Color.argb(185, 14, 15, 20); c.drawRoundRect(r, 14f * u, 14f * u, p) }
             l.accent?.let {
                 p.color = it
