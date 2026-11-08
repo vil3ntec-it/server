@@ -740,6 +740,10 @@ class RecordService : Service(), Recorder.Events {
     private var probe: CaptureProbe? = null
     private var membersThisStream = 0
     private var alertsShown = 0
+    /** The chat on the stream: the latest messages and when they came. */
+    private val streamChat = ArrayDeque<Pair<Long, StreamOverlay.ChatLine>>()
+    /** The capture check's answer: true = the whole screen is captured (the phone's chat is in the picture). */
+    private var hudCaptured: Boolean? = null
     /** Written when the stream ends, read by the report thread. */
     @Volatile private var extrasReport: String? = null
     private var quotaAtStart = 0
@@ -747,6 +751,7 @@ class RecordService : Service(), Recorder.Events {
     private fun startLiveExtras(r: Recorder) {
         extrasReport = null
         membersThisStream = 0; alertsShown = 0
+        streamChat.clear(); hudCaptured = null
         quotaAtStart = LiveExtras.Quota.used(this)
         val f = r.filter
         if (f != null) {
@@ -759,6 +764,7 @@ class RecordService : Service(), Recorder.Events {
                 o.badgePos = LiveExtras.badgePos(this)
                 o.showGoal = LiveExtras.goal(this)
                 o.goalPos = LiveExtras.goalPos(this)
+                o.chatPos = LiveExtras.chatPos(this)
                 o.refreshAll()
             }
         }
@@ -773,20 +779,54 @@ class RecordService : Service(), Recorder.Events {
             h.setStats(-1, -1, -1)
             h.setGiveaway(false, 0)
             h.setCanSend(false)
+            h.setStreamState(streamFlags())
             if (f != null) {
                 // Shown once it is known for real whether viewers would see it (see CaptureProbe).
                 probe = CaptureProbe(this, f, r.plan.width, r.plan.height, { liveCovered }) { captured ->
                     probe = null
                     RecLog.add(this, "chat panel: " + if (captured) "whole screen captured" else "only the game captured")
                     if (stopping) return@CaptureProbe
+                    hudCaptured = captured
                     hud?.show()
                     hud?.setPrivate(!captured)
+                    pushStreamChat()
                 }
                 main.postDelayed(startProbe, 1500)
             } else { h.show(); h.setPrivate(false) }
         }
         main.postDelayed(botTick, 5000)
         updateGoal()
+        pushStreamChat()
+    }
+
+    private fun streamFlags(): Map<String, Boolean> = ChatHud.ON_STREAM.associateWith { LiveExtras.onStream(this, it) }
+
+    /** «در پخش» changed (from the chat panel while live): what viewers see changes at once. */
+    private fun applyStreamFlags() {
+        overlay?.let { o ->
+            o.showAlerts = LiveExtras.alerts(this)
+            o.showSubs = LiveExtras.subsBadge(this)
+            o.showViewers = LiveExtras.viewersBadge(this)
+            o.showGoal = LiveExtras.goal(this)
+            o.refreshAll()
+        }
+        updateGoal()
+        pushStreamChat()
+        hud?.setStreamState(streamFlags())
+    }
+
+    /**
+     * The chat on the stream, when the owner wants it there. With the whole screen captured the
+     * phone's own chat feed is already in the picture, so it is not drawn a second time.
+     */
+    private fun pushStreamChat() {
+        val o = overlay ?: return
+        val now = System.currentTimeMillis()
+        while (streamChat.isNotEmpty() && now - streamChat.first().first > 45_000) streamChat.removeFirst()
+        val show = LiveExtras.chatOnStream(this) && !(hud != null && hudCaptured == true)
+        val changed = o.showChat != show
+        o.showChat = show
+        if (show || changed) o.setChat(if (show) streamChat.map { it.second } else emptyList())
     }
 
     private val startProbe = Runnable { if (!stopping) probe?.start() }
@@ -816,6 +856,7 @@ class RecordService : Service(), Recorder.Events {
         override fun run() {
             if (stopping || chat == null) return
             bot?.let { if (chat?.canSend == true) runBot(it.tick(vars())) }
+            if (streamChat.isNotEmpty() && System.currentTimeMillis() - streamChat.first().first > 45_000) pushStreamChat()
             main.postDelayed(this, 5000)
         }
     }
@@ -863,7 +904,12 @@ class RecordService : Service(), Recorder.Events {
 
     private val chatListener = object : LiveChat.Listener {
         override fun onMessage(m: LiveChat.Msg) { main.post { onChat(m) } }
-        override fun onDeleted(id: String) { main.post { hud?.remove(id) } }
+        override fun onDeleted(id: String) {
+            main.post {
+                hud?.remove(id)
+                if (streamChat.removeAll { it.second.id == id }) pushStreamChat()
+            }
+        }
         override fun onSubscriber(name: String?) {
             main.post { alert(StreamOverlay.Alert(StreamOverlay.Kind.SUBSCRIBER, name ?: "")); updateGoal() }
         }
@@ -891,6 +937,21 @@ class RecordService : Service(), Recorder.Events {
         hud?.setCanSend(chat?.canSend == true)
         val b = bot
         if (m.history) { b?.markSeen(m.authorId); return }
+        val text = when (m.kind) {
+            LiveChat.Kind.SUPER, LiveChat.Kind.CHEER -> listOfNotNull(m.amount?.let { StreamOverlay.ltr(it) }, m.text.ifBlank { null }).joinToString(" — ")
+            else -> m.text
+        }
+        val accent = when (m.kind) {
+            LiveChat.Kind.SUPER -> android.graphics.Color.argb(90, 255, 176, 32)
+            LiveChat.Kind.MEMBER, LiveChat.Kind.SUB -> android.graphics.Color.argb(80, 61, 214, 140)
+            LiveChat.Kind.GIFT, LiveChat.Kind.CHEER, LiveChat.Kind.RAID -> android.graphics.Color.argb(80, 186, 120, 255)
+            else -> null
+        }
+        if (text.isNotBlank() || m.kind != LiveChat.Kind.CHAT) {
+            streamChat.addLast(System.currentTimeMillis() to StreamOverlay.ChatLine(m.id, m.author, text, ChatHud.nameColor(m), accent))
+            while (streamChat.size > 8) streamChat.removeFirst()
+            pushStreamChat()
+        }
         when (m.kind) {
             LiveChat.Kind.SUPER -> alert(StreamOverlay.Alert(StreamOverlay.Kind.SUPER, m.author, m.amount, m.text))
             LiveChat.Kind.MEMBER -> { membersThisStream++; alert(StreamOverlay.Alert(StreamOverlay.Kind.MEMBER, m.author, m.amount)) }
@@ -915,7 +976,10 @@ class RecordService : Service(), Recorder.Events {
         val lc = chat ?: return
         for (o in outs) when (o) {
             is ChatBot.Out.Send -> if (lc.canSend) lc.send(o.text)
-            is ChatBot.Out.Delete -> { lc.deleteId(o.id); hud?.remove(o.id) }
+            is ChatBot.Out.Delete -> {
+                lc.deleteId(o.id); hud?.remove(o.id)
+                if (streamChat.removeAll { it.second.id == o.id }) pushStreamChat()
+            }
             is ChatBot.Out.Timeout -> {
                 // A time-out costs 200 of the day's 10 000: only while plenty is left (removing still works).
                 if (LiveExtras.Quota.left(this) > 2_000) {
@@ -935,7 +999,14 @@ class RecordService : Service(), Recorder.Events {
             val lc = chat ?: return
             if (lc.canSend) lc.send(text) else hud?.note(getString(R.string.hud_n_cant_send))
         }
-        override fun delete(m: LiveChat.Msg) { chat?.delete(m); hud?.remove(m.id) }
+        override fun delete(m: LiveChat.Msg) {
+            chat?.delete(m); hud?.remove(m.id)
+            if (streamChat.removeAll { it.second.id == m.id }) pushStreamChat()
+        }
+        override fun onStream(what: String, on: Boolean) {
+            LiveExtras.put(this@RecordService, what, on)
+            applyStreamFlags()
+        }
         override fun timeout(m: LiveChat.Msg, seconds: Int) {
             chat?.timeout(m, seconds)
             hud?.note(if (seconds > 0) getString(R.string.hud_n_timeout_fmt, m.author, Fmt.num(seconds)) else getString(R.string.hud_n_banned_fmt, m.author))

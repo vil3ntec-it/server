@@ -42,8 +42,14 @@ class OverlayRender {
         var layers: List<LookFilter.Layer> = emptyList()
         val app = RuntimeEnvironment.getApplication()
         val o = StreamOverlay(app) { layers = it }
-        o.showSubs = true; o.showViewers = true; o.showGoal = true
+        o.showSubs = true; o.showViewers = true; o.showGoal = true; o.showChat = true
         o.setSize(w, h)
+        o.setChat(listOf(
+            StreamOverlay.ChatLine("1", "Ali", "سلام! بازی عالیه 🔥", Color.rgb(255, 138, 128)),
+            StreamOverlay.ChatLine("2", "Sara_99", "this clutch was insane", Color.rgb(61, 214, 140)),
+            StreamOverlay.ChatLine("3", "Navid", StreamOverlay.ltr("$5.00") + " — ممنون بابتِ پخش", Color.rgb(128, 216, 255), Color.argb(90, 255, 176, 32)),
+            StreamOverlay.ChatLine("4", "ModReza", "!discord", Color.rgb(106, 166, 255)),
+        ))
         o.setStats(1234, 12_345)
         o.setGoal(app.getString(R.string.ov_goal_subs_fmt, "13000"), 12_345, 13_000)
         if (alert != null) o.alert(alert)
@@ -65,9 +71,11 @@ class OverlayRender {
             override fun giveawayDraw() {}
             override fun giveawayStop() {}
             override fun goalStep(d: Int) {}
+            override fun onStream(what: String, on: Boolean) {}
         })
         hud.show()
         hud.setPrivate(true)
+        hud.setStreamState(mapOf(ChatHud.ON_CHAT to true, ChatHud.ON_ALERTS to true, ChatHud.ON_SUBS to true, ChatHud.ON_VIEWERS to false, ChatHud.ON_GOAL to true))
         hud.setCanSend(true)
         hud.setStats(1234, 380, 12_345)
         hud.setGiveaway(true, 17)
@@ -83,13 +91,24 @@ class OverlayRender {
         hud.add(m("Me", "مرسی بچه‌ها ❤", owner = true))
         hud.note(app.getString(R.string.hud_n_winner_fmt, "Sara_99", "17"))
         shadowOf(Looper.getMainLooper()).idle()
-        val root = OverlayWindowsAccess.last() ?: return
         val pad = (16 * app.resources.displayMetrics.density).toInt()
-        val b = game(root.width + pad * 2, root.height + pad * 2)
-        val c = Canvas(b)
-        c.translate(pad.toFloat(), pad.toFloat())
-        root.draw(c)
-        File(dir, "hud-$tag.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        fun draw(name: String, views: List<android.view.View>) {
+            val w = views.maxOf { it.width } + pad * 2
+            val h = views.sumOf { it.height } + pad * (views.size + 1)
+            val b = game(w, h)
+            val c = Canvas(b)
+            var y = pad.toFloat()
+            for (v in views) { c.save(); c.translate(pad.toFloat(), y); v.draw(c); c.restore(); y += v.height + pad }
+            File(dir, "$name-$tag.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        // closed: the button and the read-only feed over the game
+        draw("hud-feed", listOf(hud.bubble, hud.feed))
+        // open: the panel, with «در پخش» shown
+        hud.openForPreview()
+        (ChatHud::class.java.getDeclaredField("streamRow").apply { isAccessible = true }.get(hud) as android.view.View).visibility = android.view.View.VISIBLE
+        shadowOf(Looper.getMainLooper()).idle()
+        hud.panel.findViewWithTag<android.view.View>("x")   // (no-op: keeps the view tree laid out)
+        draw("hud-panel", listOf(hud.panel))
         hud.hide()
     }
 

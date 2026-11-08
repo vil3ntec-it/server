@@ -59,6 +59,20 @@ object LiveExtras {
     fun viewersBadge(ctx: Context) = b(ctx, "ov_viewers", false)
     fun badgePos(ctx: Context) = i(ctx, "ov_badge_pos", POS_TL).coerceIn(0, 5)
 
+    /** «چت در پخش»: viewers see the chat on the picture too. */
+    fun chatOnStream(ctx: Context) = b(ctx, "ov_chat", false)
+    fun chatPos(ctx: Context) = i(ctx, "ov_chat_pos", POS_BL).coerceIn(0, 5)
+
+    /** The «در پخش» switches by key (ChatHud.ON_STREAM), with the same defaults as above. */
+    fun onStream(ctx: Context, key: String): Boolean = when (key) {
+        "ov_chat" -> chatOnStream(ctx)
+        "ov_alerts" -> alerts(ctx)
+        "ov_subs" -> subsBadge(ctx)
+        "ov_viewers" -> viewersBadge(ctx)
+        "ov_goal" -> goal(ctx)
+        else -> false
+    }
+
     const val GOAL_SUBS = 0; const val GOAL_LIKES = 1; const val GOAL_MEMBERS = 2; const val GOAL_MANUAL = 3
     fun goal(ctx: Context) = b(ctx, "ov_goal", false)
     fun goalType(ctx: Context) = i(ctx, "ov_goal_type", GOAL_SUBS).coerceIn(0, 3)

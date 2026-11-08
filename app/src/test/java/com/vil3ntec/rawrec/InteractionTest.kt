@@ -473,10 +473,11 @@ class InteractionTest {
 
     @Test fun oldVideoSettingsAreResetOnceIn13() {
         prefs().edit().putInt("c_preset", 3).putInt("c_br", 50).apply()
-        launch()
+        val first = launch()
         assertEquals(RecordConfig.BR_AUTO_HIGH, prefs().getInt("c_br", 0))
-        // Reset to «مثلِ صفحه», which on a screen faster than 60 Hz became «۶۰ فریم» (cfg_ver 4 and 8).
-        val expected = if (DisplayInfo.read(app).refresh > 60) RecordConfig.PRESET_60 else RecordConfig.PRESET_SCREEN
+        // Reset to «مثلِ صفحه», which on a screen faster than 60 Hz became «۶۰ فریم» (cfg_ver 4 and 8),
+        // judged by the screen as the app saw it.
+        val expected = if (DisplayInfo.read(first).refresh > 60) RecordConfig.PRESET_60 else RecordConfig.PRESET_SCREEN
         assertEquals(expected, prefs().getInt("c_preset", -1))
         prefs().edit().putInt("c_preset", 3).putInt("c_br", 50).apply()
         launch()

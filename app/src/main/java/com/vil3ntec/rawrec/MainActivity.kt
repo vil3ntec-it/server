@@ -1464,7 +1464,10 @@ class MainActivity : Activity() {
         fun tog(key: String, ic: Int, title: Int, desc: Int, value: Boolean, top: Int = 4) {
             toggles[key] = Toggle(oc, "tog:$key", ic, str(title), str(desc), top) { on -> LiveExtras.put(ctx, key, on); toggles[key]?.set(on) }.apply { set(value) }
         }
-        tog("ov_alerts", R.drawable.ic_bell, R.string.live_ov_alerts_title, R.string.live_ov_alerts_desc, LiveExtras.alerts(ctx), top = 10)
+        tog("ov_chat", R.drawable.ic_chat, R.string.live_ov_chat_title, R.string.live_ov_chat_desc, LiveExtras.chatOnStream(ctx), top = 10)
+        rows["ov_chat_pos"] = Row(oc, str(R.string.live_ov_chat_pos), "", positions(), top = 10) { i -> LiveExtras.put(ctx, "ov_chat_pos", i) }
+            .apply { select(LiveExtras.chatPos(ctx)) }
+        tog("ov_alerts", R.drawable.ic_bell, R.string.live_ov_alerts_title, R.string.live_ov_alerts_desc, LiveExtras.alerts(ctx), top = 14)
         tog("ov_subs", R.drawable.ic_people, R.string.live_ov_subs_title, R.string.live_ov_subs_desc, LiveExtras.subsBadge(ctx))
         tog("ov_viewers", R.drawable.ic_eye, R.string.live_ov_viewers_title, R.string.live_ov_viewers_desc, LiveExtras.viewersBadge(ctx))
         rows["ov_alert_pos"] = Row(oc, str(R.string.live_ov_alert_pos), "", positions(), top = 14) { i -> LiveExtras.put(ctx, "ov_alert_pos", i) }

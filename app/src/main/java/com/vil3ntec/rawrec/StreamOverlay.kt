@@ -29,6 +29,8 @@ import java.util.Locale
 class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter.Layer>) -> Unit) {
 
     enum class Kind { SUBSCRIBER, SUPER, MEMBER, GIFT, CHEER, RAID, GIVEAWAY, GOAL }
+    /** A chat message as viewers see it on the stream; [accent] colours paid / member lines. */
+    class ChatLine(val id: String, val author: String, val text: String, val nameColor: Int, val accent: Int? = null)
     class Alert(val kind: Kind, val name: String, val detail: String? = null, val comment: String? = null)
 
     private val main = Handler(Looper.getMainLooper())
@@ -42,6 +44,7 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
     private var badges: Bitmap? = null; private var badgesGen = 0
     private var goalBmp: Bitmap? = null; private var goalGen = 0
     private var alertBmp: Bitmap? = null; private var alertGen = 0
+    private var chatBmp: Bitmap? = null; private var chatGen = 0
 
     // ---- what is shown (set by the service from the settings and the chat)
     var showSubs = true
@@ -51,6 +54,8 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
     var alertPos = LiveExtras.POS_TC
     var showGoal = false
     var goalPos = LiveExtras.POS_BL
+    var showChat = false
+    var chatPos = LiveExtras.POS_BL
     private var subs = -1L
     private var viewers = -1L
     private var goalTitle = ""
@@ -98,6 +103,13 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
             alert(Alert(Kind.GOAL, title, "${grouped(now)} / ${grouped(t)}"))
         }
         redrawGoal(); push()
+    }
+
+    /** The latest messages (oldest first) for the chat on the stream; empty = none shown. */
+    fun setChat(lines: List<ChatLine>) {
+        chatBmp = if (lines.isEmpty()) null else drawChat(lines)
+        chatGen = ++gen
+        push()
     }
 
     /** Settings changed while live. */
@@ -203,6 +215,7 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
         }
         if (showSubs || showViewers) place(1, badges, badgesGen, badgePos)
         if (showGoal) place(2, goalBmp, goalGen, goalPos)
+        if (showChat) place(4, chatBmp, chatGen, chatPos)
         if (current != null && alertBmp != null) {
             val (a, dy) = alertMotion()
             place(3, alertBmp, alertGen, alertPos, a, dy)
@@ -297,6 +310,52 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
         c.drawText(ps, bar.centerX() - pct.measureText(ps) / 2f, bar.centerY() - (pct.descent() + pct.ascent()) / 2f, pct)
         goalBmp = b
         goalGen = ++gen
+    }
+
+    private fun drawChat(lines: List<ChatLine>): Bitmap {
+        val w = 600f * u
+        val pad = 18f * u
+        val textW = (w - pad * 2).toInt()
+        val tp = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 29f * u
+            color = Color.WHITE
+            setShadowLayer(3f * u, 0f, 1.5f * u, Color.argb(160, 0, 0, 0))
+        }
+        // newest last; as many as fit in the box
+        val layouts = ArrayList<Pair<StaticLayout, ChatLine>>()
+        var total = 0f
+        for (l in lines.reversed()) {
+            val sb = android.text.SpannableStringBuilder()
+            sb.append(l.author)
+            sb.setSpan(android.text.style.ForegroundColorSpan(l.nameColor), 0, sb.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            sb.setSpan(android.text.style.StyleSpan(Typeface.BOLD), 0, sb.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (l.text.isNotBlank()) sb.append(": ").append(l.text)
+            val sl = StaticLayout.Builder.obtain(sb, 0, sb.length, tp, textW)
+                .setAlignment(Layout.Alignment.ALIGN_NORMAL).setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).build()
+            val h = sl.height + 12f * u
+            if (layouts.isNotEmpty() && total + h > 430f * u) break
+            layouts += sl to l
+            total += h
+        }
+        layouts.reverse()
+        val bh = total + pad * 2 - 12f * u
+        val b = Bitmap.createBitmap(w.toInt() + 2, bh.toInt() + 2, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b)
+        glass(c, RectF(0f, 0f, w, bh), 22f * u)
+        var y = pad
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        for ((sl, l) in layouts) {
+            l.accent?.let {
+                p.color = it
+                c.drawRoundRect(RectF(pad - 8f * u, y - 4f * u, w - pad + 8f * u, y + sl.height + 4f * u), 12f * u, 12f * u, p)
+            }
+            c.save()
+            c.translate(pad, y)
+            sl.draw(c)
+            c.restore()
+            y += sl.height + 12f * u
+        }
+        return b
     }
 
     private fun drawAlert(a: Alert): Bitmap {

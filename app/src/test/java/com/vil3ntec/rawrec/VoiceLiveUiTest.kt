@@ -198,7 +198,7 @@ class VoiceLiveUiTest {
         val dir = File(app.filesDir, "voice").apply { mkdirs() }
         val f = File(dir, "k${VoiceSources.MEDIA}.wav")
         f.writeBytes(VoiceAnalyzer.wav(ShortArray(16_000) { (it % 200 - 100).toShort() }))
-        ShadowMediaPlayer.addMediaInfo(DataSource.toDataSource(f.path), ShadowMediaPlayer.MediaInfo(1000, 0))
+        ShadowMediaPlayer.addMediaInfo(DataSource.toDataSource(f.path), ShadowMediaPlayer.MediaInfo(600_000, 0))
         val a = launch()
         openAudio(a)
         val play = byTag(a, "listen:${VoiceSources.MEDIA}")
@@ -206,7 +206,8 @@ class VoiceLiveUiTest {
         val pf = MainActivity::class.java.getDeclaredField("player").apply { isAccessible = true }
         val p = pf.get(a) as android.media.MediaPlayer?
         val note = MainActivity::class.java.getDeclaredField("listenNote").apply { isAccessible = true }.get(a) as TextView?
-        assertNotNull("playing the media part (note: «${note?.text}»)", p)
+        val kind = MainActivity::class.java.getDeclaredField("playingKind").apply { isAccessible = true }.get(a)
+        assertNotNull("playing the media part (note: «${note?.text}», playingKind $kind)", p)
         assertTrue(p!!.isPlaying)
         touch(a, byTag(a, "listen:${VoiceSources.MEDIA}"))
         assertNull("the same button stops it", pf.get(a))
@@ -236,6 +237,64 @@ class VoiceLiveUiTest {
         assertFalse(sw(a, "tog:aec"))
     }
 
+    // ------------------------------------------------------------ the chat over the game
+
+    private fun msg(id: String, text: String) = LiveChat.Msg(id, LiveChat.Platform.YOUTUBE, "c$id", "Ali", text,
+        LiveChat.Kind.CHAT, null, false, false, false, false)
+
+    private fun tapView(v: View) {
+        val t = SystemClock.uptimeMillis()
+        v.dispatchTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, v.width / 2f, v.height / 2f, 0))
+        v.dispatchTouchEvent(MotionEvent.obtain(t, t + 40, MotionEvent.ACTION_UP, v.width / 2f, v.height / 2f, 0))
+        idle()
+    }
+
+    @Test fun chatOverTheGameNeverTakesATouchAndTheButtonOpensIt() {
+        val calls = ArrayList<Pair<String, Boolean>>()
+        val hud = ChatHud(app, object : ChatHud.Actions {
+            override fun send(text: String) {}
+            override fun delete(m: LiveChat.Msg) {}
+            override fun timeout(m: LiveChat.Msg, seconds: Int) {}
+            override fun giveawayStart() {}
+            override fun giveawayDraw() {}
+            override fun giveawayStop() {}
+            override fun goalStep(d: Int) {}
+            override fun onStream(what: String, on: Boolean) { calls += what to on }
+        })
+        hud.show()
+        hud.setStreamState(ChatHud.ON_STREAM.associateWith { false })
+        hud.add(msg("1", "salam"))
+        idle()
+        assertFalse("nothing over the game before the capture check", hud.feed.isAttachedToWindow)
+        hud.setPrivate(true)
+        idle()
+        assertTrue("the feed shows the message", hud.feed.isAttachedToWindow && hud.feed.childCount == 1)
+        val lp = hud.feed.layoutParams as android.view.WindowManager.LayoutParams
+        assertTrue("touches pass through the feed to the game", lp.flags and android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0)
+        assertTrue("the button takes touches", (hud.bubble.layoutParams as android.view.WindowManager.LayoutParams).flags and
+            android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE == 0)
+        // the button opens the panel (the feed steps aside) and closes it again
+        tapView(hud.bubble)
+        assertTrue("panel open", hud.panel.isAttachedToWindow)
+        assertFalse("feed hidden while the panel is open", hud.feed.isAttachedToWindow)
+        // «در پخش»: the chat chip asks for the chat on the stream
+        val chatChip = all(hud.panel).filterIsInstance<TextView>().first { it.text.toString().endsWith(app.getString(R.string.hud_s_chat)) && it.isClickable }
+        chatChip.performClick()
+        assertEquals(listOf(ChatHud.ON_CHAT to true), calls)
+        tapView(hud.bubble)
+        assertFalse("panel closed", hud.panel.isAttachedToWindow)
+        assertTrue(hud.feed.isAttachedToWindow)
+        // whole screen captured: the phone's chat would be in the stream → only when the chat is meant to be there
+        hud.setPrivate(false)
+        idle()
+        assertFalse("hidden from viewers when the chat is not on the stream", hud.feed.isAttachedToWindow)
+        hud.setStreamState(ChatHud.ON_STREAM.associateWith { it == ChatHud.ON_CHAT })
+        idle()
+        assertTrue("shown when the owner put the chat on the stream", hud.feed.isAttachedToWindow)
+        hud.hide()
+        assertFalse(hud.bubble.isAttachedToWindow || hud.feed.isAttachedToWindow || hud.panel.isAttachedToWindow)
+    }
+
     // ------------------------------------------------------------ «زنده»
 
     @Test fun everyLiveSwitchFlipsAndIsSaved() {
@@ -243,7 +302,7 @@ class VoiceLiveUiTest {
         tab(a, MainActivity.Tab.LIVE)
         val keys = mapOf(
             "tog:live_team" to "live_team", "tog:live_mic" to "live_mic", "tog:hud_on" to "hud_on",
-            "tog:ov_alerts" to "ov_alerts", "tog:ov_subs" to "ov_subs", "tog:ov_viewers" to "ov_viewers", "tog:ov_goal" to "ov_goal",
+            "tog:ov_chat" to "ov_chat", "tog:ov_alerts" to "ov_alerts", "tog:ov_subs" to "ov_subs", "tog:ov_viewers" to "ov_viewers", "tog:ov_goal" to "ov_goal",
             "tog:bot_on" to "bot_on", "tog:bot_welcome" to "bot_welcome",
             "tog:mod_links" to "mod_links", "tog:mod_caps" to "mod_caps", "tog:mod_spam" to "mod_spam",
         )

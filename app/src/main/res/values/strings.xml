@@ -628,8 +628,8 @@
     <string name="live_tw_hint">نامِ کانال در توییچ</string>
     <string name="live_hud_title">چت روی گوشی</string>
     <string name="live_hud_on_title">نمایشِ چت روی بازی</string>
-    <string name="live_hud_on_desc">پنجرهٔ کوچکی که فقط تو می‌بینی (وقتی «یک برنامه» را انتخاب کنی). RawRec خودش می‌سنجد؛ اگر «کلِ صفحه» پخش شود چت جمع می‌ماند و هشدار می‌دهد. پیام را لمس کن: پاسخ، حذف، سکوت، بستن.</string>
-    <string name="live_hud_size">اندازه</string>
+    <string name="live_hud_on_desc">پیام‌های تازه روی بازی دیده می‌شوند ولی لمس از رویشان رد می‌شود: تیر زدن و حرکت هیچ‌وقت به چت نمی‌خورد. برای نوشتن، دکمهٔ گردِ چت را بزن (هر جا خواستی بکشش). روی گوشی فقط خودت می‌بینی (با «یک برنامه»)؛ RawRec خودش می‌سنجد و اگر «کلِ صفحه» پخش شود، چت روی گوشی فقط وقتی می‌آید که «چت در پخش» روشن باشد.</string>
+    <string name="live_hud_size">اندازه (و چند پیام روی بازی: ۴، ۶ یا ۸)</string>
     <string name="live_hud_s">کوچک</string>
     <string name="live_hud_m">متوسط</string>
     <string name="live_hud_l">بزرگ</string>
@@ -714,4 +714,13 @@
     <string name="vs_off_now_toast_fmt">«%1$s» دیگر ضبط نمی‌شود.</string>
     <string name="vs_on_now_toast_fmt">«%1$s» ضبط می‌شود.</string>
     <string name="vs_need_one">دست‌کم یک بخش باید ضبط شود. برای این‌که صدای برنامه‌ها اصلاً ضبط نشود، بالای همین صفحه «صدا» را روی «میکروفون» یا «بی‌صدا» بگذار.</string>
+    <string name="hud_on_stream">در پخش: بیننده‌ها چه ببینند</string>
+    <string name="hud_s_chat">چت</string>
+    <string name="hud_s_alerts">تشکرها</string>
+    <string name="hud_s_subs">شمارِ مشترک</string>
+    <string name="hud_s_viewers">شمارِ بیننده</string>
+    <string name="hud_s_goal">نوارِ هدف</string>
+    <string name="live_ov_chat_title">چت در پخش</string>
+    <string name="live_ov_chat_desc">روشن: بیننده‌ها هم چت را روی تصویر می‌بینند. خاموش: چت فقط روی گوشیِ خودت است. وسطِ پخش هم با دکمهٔ چشم روی چت (و برای تشکرها، شمارنده‌ها و نوارِ هدف) فوری عوض می‌شود.</string>
+    <string name="live_ov_chat_pos">جای چت در پخش</string>
 </resources>

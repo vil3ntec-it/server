@@ -607,8 +607,8 @@ Recording ends cleanly before the storage is full.</string>
     <string name="live_tw_hint">Twitch channel name</string>
     <string name="live_hud_title">Chat on the phone</string>
     <string name="live_hud_on_title">Show the chat over the game</string>
-    <string name="live_hud_on_desc">A small window only you see (when you pick «Share one app»). RawRec checks it itself; if the whole screen is streamed the chat stays folded and warns you. Tap a message: reply, remove, time-out, ban.</string>
-    <string name="live_hud_size">Size</string>
+    <string name="live_hud_on_desc">New messages show over the game but touches pass through them: shooting and moving never hit the chat. To write, tap the round chat button (drag it anywhere). On the phone only you see it (with «Share one app»); RawRec checks it, and if the whole screen is streamed the chat shows on the phone only when «Chat on the stream» is on.</string>
+    <string name="live_hud_size">Size (and how many messages over the game: 4, 6 or 8)</string>
     <string name="live_hud_s">Small</string>
     <string name="live_hud_m">Medium</string>
     <string name="live_hud_l">Large</string>
@@ -693,4 +693,13 @@ Recording ends cleanly before the storage is full.</string>
     <string name="vs_off_now_toast_fmt">«%1$s» is no longer recorded.</string>
     <string name="vs_on_now_toast_fmt">«%1$s» is recorded.</string>
     <string name="vs_need_one">At least one part must be recorded. To record no app sound at all, set «Audio» at the top of this page to «Microphone» or «No audio».</string>
+    <string name="hud_on_stream">On the stream: what viewers see</string>
+    <string name="hud_s_chat">Chat</string>
+    <string name="hud_s_alerts">Thank-yous</string>
+    <string name="hud_s_subs">Subscribers</string>
+    <string name="hud_s_viewers">Viewers</string>
+    <string name="hud_s_goal">Goal bar</string>
+    <string name="live_ov_chat_title">Chat on the stream</string>
+    <string name="live_ov_chat_desc">On: viewers see the chat on the picture too. Off: the chat is only on your phone. While live it changes at once with the eye button on the chat (also for thank-yous, counters and the goal bar).</string>
+    <string name="live_ov_chat_pos">Chat position on the stream</string>
 </resources>

@@ -2,10 +2,13 @@ package com.vil3ntec.rawrec
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Handler
+import android.os.Looper
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
@@ -29,11 +32,18 @@ import android.widget.TextView
 import kotlin.math.abs
 
 /**
- * The live chat on the owner's phone: messages, viewers / likes / subscribers, a box to write in,
- * and a tap on a message to answer, remove it or silence its writer. A floating window over the
- * game that is NOT in the stream when Android captures a single app («Share one app»); with the
- * whole screen captured it would be, so then it stays a small bubble and says so when opened
- * (checked for real by [RecordService], not guessed). Main thread.
+ * The live chat on the owner's phone while playing, in three pieces:
+ *
+ *  • the feed — the latest messages over the game, for reading only: touches go straight through
+ *    it to the game (shooting, moving), it can never be hit by accident; old lines fade away;
+ *  • the chat button — a small round button (drag it anywhere): tap it to open the panel;
+ *  • the panel — the whole chat with a box to write, a tap on a message to answer, remove it or
+ *    silence its writer, the giveaway and goal buttons, and «در پخش»: what viewers see (the chat,
+ *    thank-yous, counters, goal), switched on and off at once while streaming.
+ *
+ * None of it is in the stream when Android captures one app («Share one app»). With the whole
+ * screen captured it would be, so then the feed is shown only if the owner put the chat on the
+ * stream anyway (checked for real by [RecordService], not guessed). Main thread.
  */
 class ChatHud(private val ctx: Context, private val actions: Actions) {
 
@@ -45,40 +55,51 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         fun giveawayDraw()
         fun giveawayStop()
         fun goalStep(d: Int)
+        /** «در پخش»: [what] (one of [ON_STREAM]) shown to viewers or not. */
+        fun onStream(what: String, on: Boolean)
     }
 
     private val wm = ctx.getSystemService(WindowManager::class.java)
+    private val main = Handler(Looper.getMainLooper())
     private val d = ctx.resources.displayMetrics.density
     private fun dp(v: Int) = (v * d).toInt()
     private val prefs = ctx.getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE)
 
     private val sizeLevel = LiveExtras.hudSize(ctx)
-    private val panelW = dp(intArrayOf(260, 320, 380)[sizeLevel])
-    private val panelH = dp(intArrayOf(230, 300, 380)[sizeLevel])
-    private val bgAlpha = intArrayOf(150, 195, 235)[LiveExtras.hudAlpha(ctx)]
+    private val panelW = dp(intArrayOf(270, 320, 380)[sizeLevel])
+    private val panelH = dp(intArrayOf(250, 310, 380)[sizeLevel])
+    private val feedW = dp(intArrayOf(240, 290, 340)[sizeLevel])
+    private val feedLines = intArrayOf(4, 6, 8)[sizeLevel]
+    private val bgAlpha = intArrayOf(120, 175, 230)[LiveExtras.hudAlpha(ctx)]
     private val textSp = floatArrayOf(12.5f, 13.5f, 14.5f)[sizeLevel]
+    private val bubbleSize = dp(48)
 
-    private var expanded = false
     private var shown = false
-    /** null = not known yet; false = the whole screen is captured (viewers would see this). */
+    private var open = false
+    /** null = not known yet; false = the whole screen is captured (viewers would see what is here). */
     private var private: Boolean? = null
+    private var chatOnStream = false
+    private val streamState = LinkedHashMap<String, Boolean>()
     private var unread = 0
     private val items = ArrayList<Pair<LiveChat.Msg, TextView>>()
     private var selected: LiveChat.Msg? = null
     private var canSend = false
     private var focusable = false
+    private var screenW = 0
+    private var screenH = 0
 
-    private val lp = WindowManager.LayoutParams(
+    private fun overlay(flags: Int) = WindowManager.LayoutParams(
         WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
-        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
-        PixelFormat.TRANSLUCENT,
-    ).apply {
-        gravity = Gravity.TOP or Gravity.LEFT
-        x = SafePrefs.int(prefs, "hud_x", dp(16)); y = SafePrefs.int(prefs, "hud_y", dp(64))
-        softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
+        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, flags, PixelFormat.TRANSLUCENT,
+    ).apply { gravity = Gravity.TOP or Gravity.LEFT }
+
+    private val lpBubble = overlay(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE).apply {
+        x = SafePrefs.int(prefs, "hud_x", dp(12)); y = SafePrefs.int(prefs, "hud_y", dp(96))
     }
+    /** Not touchable: every touch on it goes to the game underneath. */
+    private val lpFeed = overlay(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+    private val lpPanel = overlay(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH).apply { softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN }
 
     // ---------------------------------------------------------------- views
 
@@ -96,7 +117,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
 
     private fun iconBtn(res: Int, desc: String, click: () -> Unit) = ImageView(ctx).apply {
         setImageResource(res)
-        imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
+        imageTintList = ColorStateList.valueOf(Color.WHITE)
         setPadding(dp(8), dp(8), dp(8), dp(8))
         contentDescription = desc
         background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.argb(40, 255, 255, 255)) }
@@ -122,9 +143,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         visibility = View.GONE
     }
 
-    private val root = FrameLayout(ctx)
-
-    // collapsed: a round bubble with the unread count
+    // ---- the button
     private val bubbleCount = label(11f, Color.WHITE, true).apply {
         gravity = Gravity.CENTER
         background = GradientDrawable().apply { cornerRadius = dp(9).toFloat(); setColor(Color.rgb(255, 59, 71)) }
@@ -132,27 +151,30 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         minWidth = dp(18)
         visibility = View.GONE
     }
-    private val bubble = FrameLayout(ctx).apply {
-        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.argb(220, 16, 18, 24)); setStroke(dp(1), Color.argb(80, 255, 255, 255)) }
+    private val bubbleRing = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.argb(215, 16, 18, 24)); setStroke(dp(2), Color.argb(90, 255, 255, 255)) }
+    internal val bubble = FrameLayout(ctx).apply {
+        background = bubbleRing
+        contentDescription = ctx.getString(R.string.hud_open)
         addView(ImageView(ctx).apply {
             setImageResource(R.drawable.ic_chat)
-            imageTintList = android.content.res.ColorStateList.valueOf(Color.WHITE)
-            contentDescription = ctx.getString(R.string.hud_open)
-        }, FrameLayout.LayoutParams(dp(26), dp(26), Gravity.CENTER))
+            imageTintList = ColorStateList.valueOf(Color.WHITE)
+        }, FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER))
         addView(bubbleCount, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, dp(18), Gravity.TOP or Gravity.END))
     }
 
-    // expanded
+    // ---- the feed (read only, touches pass through)
+    internal val feed = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+
+    // ---- the panel
     private val stats = label(12f, Color.argb(235, 255, 255, 255), true).apply { maxLines = 1 }
-    private val dot = View(ctx).apply { background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.rgb(255, 59, 71)) } }
     private val header = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(10), dp(6), dp(6), dp(6))
-        addView(dot, LinearLayout.LayoutParams(dp(9), dp(9)).apply { marginEnd = dp(8) })
         addView(stats, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        addView(iconBtn(R.drawable.ic_gift, ctx.getString(R.string.hud_tools)) { toggleTools() })
-        addView(iconBtn(R.drawable.eng_ic_minimize, ctx.getString(R.string.hud_close)) { setExpanded(false) })
+        addView(iconBtn(R.drawable.ic_eye, ctx.getString(R.string.hud_on_stream)) { toggle(streamRow) })
+        addView(iconBtn(R.drawable.ic_gift, ctx.getString(R.string.hud_tools)) { toggle(tools) })
+        addView(iconBtn(R.drawable.ic_close, ctx.getString(R.string.hud_close)) { setOpen(false) })
     }
     private val warn = label(11.5f, Color.rgb(255, 176, 32)).apply {
         text = ctx.getString(R.string.hud_whole_screen)
@@ -163,6 +185,10 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         setPadding(dp(10), dp(2), dp(10), dp(4))
         visibility = View.GONE
     }
+    private val streamChips = LinkedHashMap<String, TextView>()
+    private val streamRow = row(*ON_STREAM.map { key ->
+        chip("") { actions.onStream(key, !(streamState[key] ?: false)) }.also { streamChips[key] = it }
+    }.toTypedArray()).apply { setPadding(dp(8), 0, dp(8), dp(4)) }
     private val giveBtn = chip(ctx.getString(R.string.hud_give_start)) { actions.giveawayStart() }
     private val drawBtn = chip(ctx.getString(R.string.hud_give_draw_fmt, 0), Color.argb(90, 106, 166, 255)) { actions.giveawayDraw() }
     private val endBtn = chip(ctx.getString(R.string.hud_give_end)) { actions.giveawayStop() }
@@ -205,12 +231,13 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         addView(sendBtn)
         visibility = View.GONE
     }
-    private val panel = LinearLayout(ctx).apply {
+    internal val panel = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL
-        background = glass(16)
+        background = glass(16, maxOf(bgAlpha, 200))
         addView(header)
         addView(warn)
         addView(state)
+        addView(streamRow)
         addView(tools)
         addView(selInfo)
         addView(modRow)
@@ -218,43 +245,60 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         addView(inputRow)
         addView(readOnly)
     }
+    private val panelRoot = FrameLayout(ctx).apply { addView(panel, FrameLayout.LayoutParams(panelW, panelH)) }
 
     init {
-        dragWith(header)
-        dragWith(bubble, tap = { setExpanded(true) })
+        dragBubble()
         input.setOnTouchListener { _, e -> if (e.action == MotionEvent.ACTION_DOWN) setFocusable(true); false }
-        root.setOnTouchListener { _, e -> if (e.action == MotionEvent.ACTION_OUTSIDE && focusable) setFocusable(false); false }
-        root.isFocusableInTouchMode = true
-        val back = View.OnKeyListener { _, code, e -> if (code == KeyEvent.KEYCODE_BACK && e.action == KeyEvent.ACTION_UP && focusable) { setFocusable(false); true } else false }
-        root.setOnKeyListener(back)
+        panelRoot.setOnTouchListener { _, e -> if (e.action == MotionEvent.ACTION_OUTSIDE && focusable) setFocusable(false); false }
+        val back = View.OnKeyListener { _, code, e ->
+            if (code == KeyEvent.KEYCODE_BACK && e.action == KeyEvent.ACTION_UP) { if (focusable) setFocusable(false) else setOpen(false); true } else false
+        }
+        panelRoot.isFocusableInTouchMode = true
+        panelRoot.setOnKeyListener(back)
         input.setOnKeyListener(back)
+        renderStream()
     }
 
     // ---------------------------------------------------------------- public
 
+    /** The chat button (and the feed, once allowed) on the screen. */
     fun show() {
         if (shown) return
         try {
-            OverlayWindows.add(wm, root, lp)
+            readScreen()
+            clamp()
+            OverlayWindows.add(wm, bubble, lpBubble.apply { width = bubbleSize; height = bubbleSize })
             shown = true
-            render()
+            renderBubble()
+            updateFeed()
         } catch (_: Exception) { shown = false }
     }
 
     fun hide() {
         if (!shown) return
         setFocusable(false)
-        OverlayWindows.remove(wm, root)
+        main.removeCallbacksAndMessages(null)
+        OverlayWindows.remove(wm, panelRoot)
+        OverlayWindows.remove(wm, feed)
+        OverlayWindows.remove(wm, bubble)
         shown = false
+        open = false
     }
 
-    /** The result of the capture check: [p] false = viewers would see the panel. */
+    /** The result of the capture check: [p] false = viewers would see what is drawn here. */
     fun setPrivate(p: Boolean) {
         private = p
         warn.visibility = if (p) View.GONE else View.VISIBLE
-        // Private: open as the owner left it; otherwise stays a bubble until opened knowingly.
-        if (p && SafePrefs.bool(prefs, "hud_open", true)) setExpanded(true, remember = false)
-        render()
+        updateFeed()
+    }
+
+    /** What viewers see (keys of [ON_STREAM]); the chat's switch also decides the feed in whole-screen capture. */
+    fun setStreamState(state: Map<String, Boolean>) {
+        streamState.clear(); streamState.putAll(state)
+        chatOnStream = state[ON_CHAT] == true
+        renderStream()
+        updateFeed()
     }
 
     fun setCanSend(b: Boolean) {
@@ -285,6 +329,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
     }
 
     fun add(m: LiveChat.Msg) {
+        // the panel's full list
         val tv = label(textSp).apply {
             text = line(m)
             setPadding(0, dp(3), 0, dp(3))
@@ -299,13 +344,17 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         items += m to tv
         while (items.size > 80) { list.removeView(items.removeAt(0).second) }
         if (atBottom) scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
-        if (!expanded && !m.history) { unread++; renderBubble() }
+        if (m.history) return
+        // the feed over the game: the newest few, each fading after a while
+        addFeedLine(m)
+        if (!open) { unread++; renderBubble() }
     }
 
     fun remove(id: String) {
         val i = items.indexOfFirst { it.first.id == id }
-        if (i < 0) return
-        list.removeView(items.removeAt(i).second)
+        if (i >= 0) list.removeView(items.removeAt(i).second)
+        for (j in feed.childCount - 1 downTo 0) if (feed.getChildAt(j).tag == id) feed.removeViewAt(j)
+        updateFeed()
     }
 
     /** A short line from the app (an action that failed, the giveaway winner…). */
@@ -315,7 +364,82 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
     }
 
-    // ---------------------------------------------------------------- inside
+    // ---------------------------------------------------------------- feed
+
+    /** The feed is seen when nothing here is in the stream, or when the chat is meant to be in it anyway. */
+    private val feedAllowed: Boolean get() = private == true || (private == false && chatOnStream)
+
+    private fun updateFeed() {
+        if (!shown) return
+        val want = feedAllowed && !open && feed.childCount > 0
+        if (want) {
+            placeNearBubble(lpFeed, feedW, feedHeight())
+            if (feed.isAttachedToWindow) OverlayWindows.update(wm, feed, lpFeed)
+            else try { OverlayWindows.add(wm, feed, lpFeed.apply { width = feedW; height = WindowManager.LayoutParams.WRAP_CONTENT }) } catch (_: Exception) {}
+        } else OverlayWindows.remove(wm, feed)
+    }
+
+    private fun feedHeight(): Int = feed.height.takeIf { it > 0 } ?: dp(30) * feed.childCount
+
+    private fun addFeedLine(m: LiveChat.Msg) {
+        val tv = label(textSp).apply {
+            tag = m.id
+            text = line(m)
+            maxLines = 3
+            setShadowLayer(dp(2).toFloat(), 0f, dp(1).toFloat(), Color.argb(200, 0, 0, 0))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(if (m.kind == LiveChat.Kind.CHAT) Color.argb(bgAlpha, 12, 14, 18) else kindColor(m.kind, maxOf(bgAlpha, 150)))
+            }
+            setPadding(dp(9), dp(4), dp(9), dp(5))
+        }
+        feed.addView(tv, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(3) })
+        while (feed.childCount > feedLines) feed.removeViewAt(0)
+        // Read in peace, then it leaves (paid messages stay longer).
+        val stay = if (m.kind == LiveChat.Kind.CHAT) 20_000L else 40_000L
+        main.postDelayed({
+            tv.animate().alpha(0f).setDuration(600).withEndAction { feed.removeView(tv); updateFeed() }.start()
+        }, stay)
+        updateFeed()
+        feed.post { updateFeed() }   // the real height after layout (the feed grows upwards near the bottom)
+    }
+
+    // ---------------------------------------------------------------- panel
+
+    private fun setOpen(o: Boolean) {
+        if (open == o) return
+        open = o
+        if (o) {
+            unread = 0
+            readScreen()
+            placeNearBubble(lpPanel, panelW, panelH)
+            try { OverlayWindows.add(wm, panelRoot, lpPanel) } catch (_: Exception) { open = false }
+            scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+        } else {
+            setFocusable(false)
+            select(null)
+            OverlayWindows.remove(wm, panelRoot)
+        }
+        renderBubble()
+        updateFeed()
+    }
+
+    private fun renderStream() {
+        val names = mapOf(ON_CHAT to R.string.hud_s_chat, ON_ALERTS to R.string.hud_s_alerts, ON_SUBS to R.string.hud_s_subs,
+            ON_VIEWERS to R.string.hud_s_viewers, ON_GOAL to R.string.hud_s_goal)
+        for ((key, tv) in streamChips) {
+            val on = streamState[key] == true
+            tv.text = (if (on) "● " else "○ ") + ctx.getString(names[key] ?: R.string.hud_s_chat)
+            (tv.background as? GradientDrawable)?.setColor(if (on) Color.argb(150, 255, 59, 71) else Color.argb(46, 255, 255, 255))
+        }
+        // The button's ring is red while the chat is shown to viewers.
+        bubbleRing.setStroke(dp(2), if (chatOnStream) Color.rgb(255, 59, 71) else Color.argb(90, 255, 255, 255))
+    }
+
+    private fun renderBubble() {
+        bubbleCount.text = if (unread > 99) "99+" else unread.toString()
+        bubbleCount.visibility = if (unread > 0 && !open) View.VISIBLE else View.GONE
+    }
 
     private fun line(m: LiveChat.Msg): CharSequence {
         val sb = SpannableStringBuilder()
@@ -347,13 +471,6 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         }
         if (m.text.isNotBlank()) sb.append(if (m.kind == LiveChat.Kind.GIFT && m.platform == LiveChat.Platform.TWITCH) " → " else ": ").append(m.text)
         return sb
-    }
-
-    private fun nameColor(m: LiveChat.Msg): Int = when {
-        m.owner -> Color.rgb(255, 196, 64)
-        m.mod -> Color.rgb(106, 166, 255)
-        m.member -> Color.rgb(61, 214, 140)
-        else -> NAME_COLORS[(m.authorId.hashCode() and 0x7fffffff) % NAME_COLORS.size]
     }
 
     private fun kindColor(k: LiveChat.Kind, a: Int) = when (k) {
@@ -393,77 +510,59 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         setFocusable(false)
     }
 
-    private fun toggleTools() { tools.visibility = if (tools.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
-
-    private fun setExpanded(e: Boolean, remember: Boolean = true) {
-        expanded = e
-        if (remember) prefs.edit().putBoolean("hud_open", e).apply()
-        if (e) unread = 0
-        if (!e) setFocusable(false)
-        render()
-    }
-
-    private fun render() {
-        root.removeAllViews()
-        if (expanded) {
-            root.addView(panel, FrameLayout.LayoutParams(panelW, panelH))
-            scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
-        } else {
-            root.addView(bubble, FrameLayout.LayoutParams(dp(52), dp(52)))
-            renderBubble()
-        }
-        clampToScreen()
-        if (shown) OverlayWindows.update(wm, root, lp)
-    }
-
-    private fun renderBubble() {
-        bubbleCount.text = if (unread > 99) "99+" else unread.toString()
-        bubbleCount.visibility = if (unread > 0) View.VISIBLE else View.GONE
-    }
+    private fun toggle(v: View) { v.visibility = if (v.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
 
     private fun setFocusable(f: Boolean) {
         if (focusable == f) return
         focusable = f
-        lp.flags = if (f) lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-        else lp.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-        if (shown) OverlayWindows.update(wm, root, lp)
+        lpPanel.flags = if (f) lpPanel.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        else lpPanel.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        if (open) OverlayWindows.update(wm, panelRoot, lpPanel)
         val imm = ctx.getSystemService(InputMethodManager::class.java)
         if (f) input.post { input.requestFocus(); imm?.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT) }
         else { imm?.hideSoftInputFromWindow(input.windowToken, 0); input.clearFocus() }
     }
 
-    private var screenW = 0
-    private var screenH = 0
+    // ---------------------------------------------------------------- placing
 
-    /** [fresh]: read the screen size again (not on every move of a drag). */
-    private fun clampToScreen(fresh: Boolean = true) {
-        if (fresh || screenW == 0) DisplayInfo.read(ctx).let { screenW = it.width; screenH = it.height }
-        val w = if (expanded) panelW else dp(52)
-        val h = if (expanded) panelH else dp(52)
+    private fun readScreen() = DisplayInfo.read(ctx).let { screenW = it.width; screenH = it.height }
+
+    private fun clamp() {
+        lpBubble.x = lpBubble.x.coerceIn(0, maxOf(0, screenW - bubbleSize))
+        lpBubble.y = lpBubble.y.coerceIn(0, maxOf(0, screenH - bubbleSize))
+    }
+
+    /** Beside the button: on its side of the screen, below it in the upper half, above it in the lower half. */
+    private fun placeNearBubble(lp: WindowManager.LayoutParams, w: Int, h: Int) {
+        val gap = dp(6)
+        val leftHalf = lpBubble.x + bubbleSize / 2 < screenW / 2
+        lp.x = if (leftHalf) lpBubble.x else lpBubble.x + bubbleSize - w
+        lp.y = if (lpBubble.y + bubbleSize / 2 < screenH / 2) lpBubble.y + bubbleSize + gap else lpBubble.y - gap - h
         lp.x = lp.x.coerceIn(0, maxOf(0, screenW - w))
         lp.y = lp.y.coerceIn(0, maxOf(0, screenH - h))
     }
 
-    /** Drag [v] to move the window; a tap without movement calls [tap]. */
+    /** Drag the button anywhere (the feed and the panel follow); a tap opens or closes the panel. */
     @SuppressLint("ClickableViewAccessibility")
-    private fun dragWith(v: View, tap: (() -> Unit)? = null) {
+    private fun dragBubble() {
         val slop = ViewConfiguration.get(ctx).scaledTouchSlop
         var sx = 0f; var sy = 0f; var ox = 0; var oy = 0; var moved = false
-        v.setOnTouchListener { _, e ->
+        bubble.setOnTouchListener { _, e ->
             when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    sx = e.rawX; sy = e.rawY; ox = lp.x; oy = lp.y; moved = false
-                    DisplayInfo.read(ctx).let { screenW = it.width; screenH = it.height }
-                    true
-                }
+                MotionEvent.ACTION_DOWN -> { sx = e.rawX; sy = e.rawY; ox = lpBubble.x; oy = lpBubble.y; moved = false; readScreen(); true }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = e.rawX - sx; val dy = e.rawY - sy
                     if (!moved && (abs(dx) > slop || abs(dy) > slop)) moved = true
-                    if (moved) { lp.x = ox + dx.toInt(); lp.y = oy + dy.toInt(); clampToScreen(fresh = false); OverlayWindows.update(wm, root, lp) }
+                    if (moved) {
+                        lpBubble.x = ox + dx.toInt(); lpBubble.y = oy + dy.toInt(); clamp()
+                        OverlayWindows.update(wm, bubble, lpBubble)
+                        if (open) { placeNearBubble(lpPanel, panelW, panelH); OverlayWindows.update(wm, panelRoot, lpPanel) }
+                        updateFeed()
+                    }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (moved) prefs.edit().putInt("hud_x", lp.x).putInt("hud_y", lp.y).apply() else tap?.invoke()
+                    if (moved) prefs.edit().putInt("hud_x", lpBubble.x).putInt("hud_y", lpBubble.y).apply() else setOpen(!open)
                     true
                 }
                 else -> false
@@ -471,10 +570,29 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         }
     }
 
+    /** For the preview pictures: open the panel as a tap on the button does. */
+    internal fun openForPreview() = setOpen(true)
+
     companion object {
+        const val ON_CHAT = "ov_chat"
+        const val ON_ALERTS = "ov_alerts"
+        const val ON_SUBS = "ov_subs"
+        const val ON_VIEWERS = "ov_viewers"
+        const val ON_GOAL = "ov_goal"
+        /** «در پخش»: the switches, which are the same settings as on the «زنده» page. */
+        val ON_STREAM = listOf(ON_CHAT, ON_ALERTS, ON_SUBS, ON_VIEWERS, ON_GOAL)
+
         private val NAME_COLORS = intArrayOf(
             Color.rgb(255, 138, 128), Color.rgb(255, 209, 128), Color.rgb(204, 255, 144), Color.rgb(128, 216, 255),
             Color.rgb(179, 136, 255), Color.rgb(255, 128, 171), Color.rgb(167, 255, 235), Color.rgb(255, 255, 141),
         )
+
+        /** The same colour for a name on the phone and on the stream. */
+        fun nameColor(m: LiveChat.Msg): Int = when {
+            m.owner -> Color.rgb(255, 196, 64)
+            m.mod -> Color.rgb(106, 166, 255)
+            m.member -> Color.rgb(61, 214, 140)
+            else -> NAME_COLORS[(m.authorId.hashCode() and 0x7fffffff) % NAME_COLORS.size]
+        }
     }
 }
