@@ -99,4 +99,13 @@ class RtmpConnectTest {
         assertEquals(app.getString(R.string.live_route_proxy), LiveSettings.routeText(app, "proxy 127.0.0.1:10809"))
         assertEquals(app.getString(R.string.live_route_direct), LiveSettings.routeText(app, "direct 142.250.180.12"))
     }
+
+    @Test fun bitRatesGoUpToWhatThePhoneTakes() {
+        val c = Encoders.bitrateChoices(160)
+        assertTrue("past 50", c.containsAll(listOf(50, 60, 80, 100, 120, 150)))
+        assertEquals("the phone's own most is the last", 160, c.last())
+        assertFalse(c.any { it > 160 })
+        assertEquals("unknown phone: the usual ones", listOf(6, 10, 15, 20, 30, 50), Encoders.bitrateChoices(0))
+        assertEquals("a most that is a step itself is not twice", 1, Encoders.bitrateChoices(200).count { it == 200 })
+    }
 }

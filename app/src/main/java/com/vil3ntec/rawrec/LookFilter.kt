@@ -105,6 +105,46 @@ class LookFilter(private val look: Look, private val fps: Int) {
     private var lastPts = 0L
     private var lastDrawNs = 0L
 
+    /** Pictures the screen has sent so far (whether drawn or not): 0 = nothing captured at all. */
+    @Volatile var screenFrames = 0L; private set
+    /** The last error while drawing (kept for the report instead of being lost). */
+    @Volatile var drawError: String? = null; private set
+    @Volatile private var flowing = false
+
+    /**
+     * Live: the stream never waits for the screen. A picture goes to the encoder at once (black
+     * until the screen sends one) and then at least ~10 times a second — the last screen picture
+     * with the layers over it — so the platform gets a stream even when the screen sends nothing
+     * (a still screen, or «one app» shared and that app not on the screen).
+     */
+    fun startFlowing() {
+        flowing = true
+        h.post(flowTick)
+    }
+
+    private val flowTick = object : Runnable {
+        override fun run() {
+            if (!flowing || dpy == EGL14.EGL_NO_DISPLAY) return
+            if (!coverOn && out != EGL14.EGL_NO_SURFACE && System.nanoTime() - lastDrawNs > 100_000_000L) {
+                try { redraw() } catch (t: Throwable) { drawError = "flow: " + (t.message ?: t.javaClass.simpleName) }
+            }
+            h.postDelayed(this, 100)
+        }
+    }
+
+    /** The last screen picture again (black before the first), the layers over it. GL thread. */
+    private fun redraw() {
+        EGL14.eglMakeCurrent(dpy, out, out, ctx)
+        if (drawn > 0) draw() else {
+            GLES20.glViewport(0, 0, outW, outH)
+            GLES20.glClearColor(0f, 0f, 0f, 1f)
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+        }
+        latchExternals()
+        drawLayers()
+        present(System.nanoTime())
+    }
+
     /** Replaces what is drawn over the screen (empty = nothing). Cheap when only positions or alpha change. */
     fun setLayers(list: List<Layer>) {
         layers = list
@@ -291,15 +331,9 @@ class LookFilter(private val look: Look, private val fps: Int) {
      * screen picture is drawn again with the overlay (only when nothing came for a while).
      */
     private fun refresh() {
-        if (out == EGL14.EGL_NO_SURFACE || coverOn || drawn == 0L) return
+        if (out == EGL14.EGL_NO_SURFACE || coverOn || (drawn == 0L && !flowing)) return
         if (System.nanoTime() - lastDrawNs < 120_000_000L) return
-        try {
-            EGL14.eglMakeCurrent(dpy, out, out, ctx)
-            draw()
-            latchExternals()
-            drawLayers()
-            present(System.nanoTime())
-        } catch (_: Throwable) {}
+        try { redraw() } catch (t: Throwable) { drawError = "refresh: " + (t.message ?: t.javaClass.simpleName) }
     }
 
     // ---- privacy check of the chat on the phone: the colour of one point of the captured screen
@@ -412,7 +446,9 @@ class LookFilter(private val look: Look, private val fps: Int) {
     }
 
     fun release() {
+        flowing = false
         runSync {
+            h.removeCallbacks(flowTick)
             try { if (::st.isInitialized) st.release() } catch (_: Throwable) {}
             try { if (::input.isInitialized) input.release() } catch (_: Throwable) {}
             if (dpy != EGL14.EGL_NO_DISPLAY) {
@@ -485,6 +521,7 @@ class LookFilter(private val look: Look, private val fps: Int) {
             }
             EGL14.eglMakeCurrent(dpy, out, out, ctx)
             st.updateTexImage()
+            screenFrames++
             if (coverOn) return   // the screen is taken (so it can send the next one) but not shown
             val ts = st.timestamp
             if (fps > 0 && lastNs > 0 && ts - lastNs < 1_000_000_000L / fps * 9 / 10) return
@@ -496,7 +533,7 @@ class LookFilter(private val look: Look, private val fps: Int) {
             drawLayers()
             present(ts)
             drawn++
-        } catch (_: Throwable) {}
+        } catch (t: Throwable) { drawError = "frame: " + (t.message ?: t.javaClass.simpleName) }
     }
 
     private fun draw() {

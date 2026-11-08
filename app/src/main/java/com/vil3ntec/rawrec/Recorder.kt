@@ -218,8 +218,11 @@ class Recorder(
                 // The GPU path, when the device gives one; otherwise the screen goes straight in as before.
                 look = try {
                     LookFilter(lk, plan.fps).also { f ->
-                        try { f.start(plan.width, plan.height); f.setOutput(first.surface, plan.width, plan.height) }
-                        catch (t: Throwable) { f.release(); throw t }
+                        try {
+                            f.start(plan.width, plan.height); f.setOutput(first.surface, plan.width, plan.height)
+                            // live: the stream flows from the first moment, whatever the screen sends
+                            if (sinkFactory != null) f.startFlowing()
+                        } catch (t: Throwable) { f.release(); throw t }
                     }
                 } catch (t: Throwable) {
                     events.onAudioProblem("look: " + (t.message ?: t.javaClass.simpleName))

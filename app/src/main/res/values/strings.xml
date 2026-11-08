@@ -1049,4 +1049,6 @@
     <string name="live_test_key_ok">✓ این کلیدِ پخش مالِ همین کانالِ یوتیوب است.</string>
     <string name="live_test_key_bad">✗ این کلیدِ پخش در کانالِ یوتیوبی که وصل کرده‌ای نیست؛ آن را از YouTube Studio → Go live → Stream دوباره کپی کن.</string>
     <string name="yt_private_note">این پخش «خصوصی» است: فقط خودت (با همین حساب) آن را می‌بینی و در کانال دیده نمی‌شود. برای دیده شدن، «چه کسی ببیند» را «عمومی» کن.</string>
+    <string name="live_no_screen">تصویری از صفحه به RawRec نمی‌رسد؛ پخش می‌رود ولی فقط پس‌زمینه و لایه‌ها دیده می‌شوند. اگر در پنجرهٔ اندروید «یک برنامه» را زدی، همان بازی را باز کن؛ وگرنه پخش را ببند، دوباره شروع کن و «کلِ صفحه» (Entire screen) را بزن.</string>
+    <string name="br_device_max_fmt">%1$s Mbps (بیشترینِ گوشی)</string>
 </resources>

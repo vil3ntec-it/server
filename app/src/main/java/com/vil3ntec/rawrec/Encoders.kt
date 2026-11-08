@@ -161,6 +161,19 @@ object Encoders {
 
     fun maxBitrate(i: MediaCodecInfo, mime: String): Int = video(i, mime)?.bitrateRange?.upper ?: 20_000_000
 
+    /** The most this phone's hardware video encoders take (Mbps, the best of HEVC / H.264 / AV1); 0 = unknown. */
+    val deviceMaxMbps: Int by lazy {
+        listOf(HEVC, AVC, AV1).mapNotNull { m -> hardwareFor(m)?.let { video(it, m)?.bitrateRange?.upper } }
+            .maxOrNull()?.let { it / 1_000_000 } ?: 0
+    }
+
+    /** Fixed bit rates the owner can pick (Mbps): the usual ones, then higher steps up to the phone's own most. */
+    fun bitrateChoices(maxMbps: Int = deviceMaxMbps): List<Int> {
+        val base = listOf(6, 10, 15, 20, 30, 50)
+        val more = listOf(60, 80, 100, 120, 150, 200, 250, 300, 400, 500, 600, 800, 1000, 1500, 2000).filter { it < maxMbps }
+        return base + more + listOfNotNull(maxMbps.takeIf { it > 50 && it !in more && it <= 2000 })
+    }
+
     fun supportsMode(i: MediaCodecInfo, mime: String, codecMode: Int): Boolean = try {
         i.getCapabilitiesForType(mime)?.encoderCapabilities?.isBitrateModeSupported(codecMode) == true
     } catch (_: Throwable) { false }
@@ -512,7 +525,7 @@ object Planner {
         val bw = if (upscaled) d.width else fit.width
         val bh = if (upscaled) (d.height * 1.35).toInt() else fit.height
         val want = if (cfg.bitrate < 0) autoBitrate(bw, bh, fps, mime, cfg.bitrate)
-        else cfg.bitrate.coerceIn(1, 300) * 1_000_000
+        else cfg.bitrate.coerceIn(1, 2000) * 1_000_000
         var bitrate = min(want, encMax)
         val cq = Encoders.supportsMode(info, mime, EncoderCapabilities.BITRATE_MODE_CQ)
         val vbr = Encoders.supportsMode(info, mime, EncoderCapabilities.BITRATE_MODE_VBR)

@@ -157,7 +157,10 @@ class MainActivity : Activity() {
     private var lookSummary: TextView? = null
     private var lookShown: String? = null
     private var fpsValues = intArrayOf(0)
-    private val brValues = intArrayOf(RecordConfig.BR_AUTO_HIGH, RecordConfig.BR_AUTO_BALANCED, RecordConfig.BR_MAX, 6, 10, 15, 20, 30, 50)
+    /** Automatic choices, then fixed rates up to the most this phone's encoder takes (not stopped at 50). */
+    private val brValues: IntArray by lazy {
+        (listOf(RecordConfig.BR_AUTO_HIGH, RecordConfig.BR_AUTO_BALANCED, RecordConfig.BR_MAX) + Encoders.bitrateChoices()).toIntArray()
+    }
     private val gains = floatArrayOf(0.5f, 0.75f, 1f, 1.5f, 2f, 3f)
     private val countdowns = intArrayOf(0, 3, 5, 10)
 
@@ -2124,6 +2127,7 @@ class MainActivity : Activity() {
                 RecordConfig.BR_AUTO_HIGH -> str(R.string.br_auto_high)
                 RecordConfig.BR_AUTO_BALANCED -> str(R.string.br_auto_light)
                 RecordConfig.BR_MAX -> str(R.string.br_auto_max)
+                Encoders.deviceMaxMbps -> if (it > 50) str(R.string.br_device_max_fmt, Fmt.num(it)) else "$it Mbps"
                 else -> "$it Mbps"
             }
         }, ic = R.drawable.ic_bitrate, chipIcons = listOf(R.drawable.ic_sparkle, R.drawable.ic_sparkle, R.drawable.ic_sparkle)) { i -> change(true) { it.copy(bitrate = brValues[i]) } }

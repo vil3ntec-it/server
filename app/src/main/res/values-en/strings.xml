@@ -1028,4 +1028,6 @@ Your internet needs about %2$s Mbps upload.</string>
     <string name="live_test_key_ok">✓ This stream key belongs to this YouTube channel.</string>
     <string name="live_test_key_bad">✗ This stream key is not in the YouTube channel you connected; copy it again from YouTube Studio → Go live → Stream.</string>
     <string name="yt_private_note">This live is «Private»: only you (signed in) can see it, and it does not show on the channel. To be seen, set «Who can watch» to «Public».</string>
+    <string name="live_no_screen">No picture from the screen reaches RawRec: the stream goes out, but only the background and layers are seen. If you chose «one app» in Android\'s window, open that game; otherwise end the stream, start again and choose «Entire screen».</string>
+    <string name="br_device_max_fmt">%1$s Mbps (the phone\'s most)</string>
 </resources>

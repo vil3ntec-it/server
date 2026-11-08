@@ -443,6 +443,7 @@ class RecordService : Service(), Recorder.Events {
                 sinkFactory = {
                     liveBorn = System.currentTimeMillis(); lastRtmpLog = ""; lastSendProblem = null; toldPrivate = false
                     main.removeCallbacks(sendCheck); main.postDelayed(sendCheck, 13_000)
+                    screenChecks = 0; main.removeCallbacks(screenCheck); main.postDelayed(screenCheck, 8_000)
                     (if (liveTargets.size > 1) MultiSink(liveTargets, plan.bitrate, liveListener) else RtmpSink(lv.url, lv.key, plan.bitrate, liveListener))
                         .also { liveSink = it }
                 }, forceLook = true)
@@ -701,6 +702,25 @@ class RecordService : Service(), Recorder.Events {
     }
 
     private val sendCheck = Runnable { checkSending() }
+
+    /**
+     * Whether the screen sends any picture at all (the stream flows anyway, but then only the scene's
+     * background goes out): said plainly, with what to press in Android's window. In the log either way.
+     */
+    private var screenChecks = 0
+    private val screenCheck = object : Runnable {
+        override fun run() {
+            if (stopping || live == null) return
+            val f = recorder?.filter ?: return
+            RecLog.add(this@RecordService, "screen: ${f.screenFrames} pictures, ${f.drawn} drawn" + (f.drawError?.let { ", error: $it" } ?: ""))
+            if (f.screenFrames == 0L && !liveCovered) {
+                val t = getString(R.string.live_no_screen)
+                addNotice("screen", t)
+                hud?.note(t)
+            } else removeNotice("screen")
+            if (++screenChecks < 3) main.postDelayed(this, 12_000)
+        }
+    }
 
     private val liveListener = object : RtmpSink.Listener {
         override fun onStatus(s: RtmpSink.Status) {
