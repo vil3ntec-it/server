@@ -34,6 +34,10 @@ data class RecordConfig(
     val lookBright: Int = 1,     // 0 darker, 1 as is, 2 brighter
     val lookWarm: Int = 1,       // 0 cooler, 1 as is, 2 warmer
     val lookClarity: Int = 0,    // «جزئیاتِ دور»: 0 off, 1 light, 2 medium, 3 strong
+    // «صدای یارها»: which kinds of the other apps' sound are captured (VoiceSources bits) and whether
+    // the teammates' voice chat comes in. Game sound is never left out (VoiceSources.effectiveMask).
+    val audioKinds: Int = VoiceSources.ALL,
+    val teamVoice: Boolean = true,
     val gameMode: Boolean = false,   // «حالتِ بازی»: Android 14+ single-app capture, the control stays visible
     val testSeconds: Int = 0,       // > 0: stop by itself after this many seconds and show the report
     // No split by size since 2.0 (RawRec's own MP4 writer has no 4 GB limit); MediaMuxer files
@@ -72,6 +76,7 @@ data class RecordConfig(
         i.putExtra("float", floatingButton); i.putExtra("invis", invisibleControl); i.putExtra("ghost", ghostControl)
         i.putExtra("smart", smartStart); i.putExtra("game", gameMode); i.putExtra("rotnew", rotateNewFile)
         i.putExtra("lk", intArrayOf(lookSharp, lookContrast, lookColor, lookBright, lookWarm, lookClarity))
+        i.putExtra("kinds", audioKinds); i.putExtra("team", teamVoice)
         i.putExtra("test", testSeconds); i.putExtra("seg", segmentBytes)
     }
 
@@ -134,6 +139,8 @@ data class RecordConfig(
             lookBright = i.getIntArrayExtra("lk")?.getOrNull(3) ?: 1,
             lookWarm = i.getIntArrayExtra("lk")?.getOrNull(4) ?: 1,
             lookClarity = i.getIntArrayExtra("lk")?.getOrNull(5) ?: 0,
+            audioKinds = i.getIntExtra("kinds", VoiceSources.ALL),
+            teamVoice = i.getBooleanExtra("team", true),
             gameMode = i.getBooleanExtra("game", false),
             testSeconds = i.getIntExtra("test", 0),
             segmentBytes = i.getLongExtra("seg", Long.MAX_VALUE),
@@ -166,6 +173,8 @@ data class RecordConfig(
                 lookBright = i("c_lk_bri", 1).coerceIn(0, 2),
                 lookWarm = i("c_lk_warm", 1).coerceIn(0, 2),
                 lookClarity = i("c_lk_cla", 0).coerceIn(0, 3),
+                audioKinds = i("c_kinds", VoiceSources.ALL).let { if (it and VoiceSources.ALL == 0) VoiceSources.ALL else it and VoiceSources.ALL },
+                teamVoice = SafePrefs.bool(p, "c_team", true),
                 gameMode = SafePrefs.bool(p, "c_game", false),
             )
         }

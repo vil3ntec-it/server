@@ -12,6 +12,15 @@
     <string name="eng_notice_look_fail">«ظاهرِ ویدیو» روی این گوشی راه نیفتاد؛ ضبط بی ادیت (طبیعی) ادامه دارد.</string>
     <string name="eng_rep_smart_fmt">فشرده‌سازیِ هوشمند: کیفیتِ میانگینِ فریم‌ها QP %1$s (هرچه کمتر، دقیق‌تر)؛ بیت‌ریت در پایان %2$s مگابیت (۰ = تغییری لازم نشد).</string>
     <string name="eng_rep_smart_none">فشرده‌سازیِ هوشمند: این گوشی کیفیتِ فریم‌ها را گزارش نکرد، پس بیت‌ریتِ انتخاب‌شده دست نخورد (کیفیت پایین نیامد).</string>
+    <string name="vs_rep_fmt">صداها: %1$s</string>
+    <string name="vs_rep_kind_fmt">«%1$s» ٪%2$s %3$s</string>
+    <string name="vs_in">(ضبط شد)</string>
+    <string name="vs_out">(ضبط نشد)</string>
+    <string name="vs_rep_voice_fmt">حرفِ یارها از «%1$s» می‌آید — %2$s. صدای بازی کامل است.</string>
+    <string name="vs_team_in">در ویدیو هست</string>
+    <string name="vs_team_out">در ویدیو نیست</string>
+    <string name="vs_rep_mixed">حرفِ یارها داخلِ خودِ صدای بازی است؛ برای این‌که صدای بازی کم نشود جدا نشد.</string>
+    <string name="vs_rep_unknown">جای حرفِ یارها هنوز معلوم نیست (یک ضبطِ بیش از ۱۵ ثانیه با حرفِ آن‌ها بگیر).</string>
     <string name="eng_n_show_control">نمایشِ دکمه</string>
     <string name="eng_toast_control_hidden">دکمهٔ ضبط پنهان شد. برای توقف از اعلان یا کاشیِ تنظیماتِ سریع استفاده کن؛ «نمایشِ دکمه» در اعلان آن را برمی‌گرداند.</string>
 

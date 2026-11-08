@@ -11,8 +11,8 @@ android {
         applicationId = "com.vil3ntec.rawrec"
         minSdk = 29
         targetSdk = 35
-        versionCode = 26
-        versionName = "3.0"
+        versionCode = 27
+        versionName = "3.1"
     }
 
 

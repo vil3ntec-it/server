@@ -726,13 +726,14 @@ class Recorder(
             )
             .setBufferSizeInBytes(maxOf(minBuf * minBufMul, floor))
         if (source != null) b.setAudioSource(source)
-        else b.setAudioPlaybackCaptureConfig(
-            AudioPlaybackCaptureConfiguration.Builder(projection)
-                .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-                .addMatchingUsage(AudioAttributes.USAGE_GAME)
-                .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
-                .build()
-        )
+        else {
+            // «صدای یارها»: only the chosen kinds; the game's own kind is always in (VoiceSources).
+            val mask = VoiceSources.effectiveMask(ctx, cfg)
+            capturedKinds = mask
+            val c = AudioPlaybackCaptureConfiguration.Builder(projection)
+            for (k in VoiceSources.KINDS) if (mask and k != 0) c.addMatchingUsage(VoiceSources.usageOf(k))
+            b.setAudioPlaybackCaptureConfig(c.build())
+        }
         val r = b.build()
         if (r.state != AudioRecord.STATE_INITIALIZED) { r.release(); throw IllegalStateException("AudioRecord not initialized") }
         return r
@@ -750,6 +751,7 @@ class Recorder(
             internal?.startRecording()
             mic?.startRecording()
             audioOk = true
+            if (internal != null) voiceMeter = try { VoiceSources.Meter(projection).also { it.start() } } catch (_: Throwable) { null }
 
             val frames = 1024
             val stereo = ShortArray(frames * 2)
@@ -849,6 +851,7 @@ class Recorder(
                 events.onAudioProblem(e.message ?: e.javaClass.simpleName)
             }
         } finally {
+            try { voiceMeter?.stop() } catch (_: Throwable) {}
             try { internal?.stop() } catch (_: Exception) {}
             try { internal?.release() } catch (_: Exception) {}
             try { mic?.stop() } catch (_: Exception) {}
@@ -859,6 +862,11 @@ class Recorder(
     }
 
     private var audioFormatSent = false   // audio thread only
+
+    /** The kinds of other apps' sound this recording captured (VoiceSources bits). */
+    @Volatile var capturedKinds = VoiceSources.ALL; private set
+    /** Levels of the three kinds, measured apart, to find which one carries the teammates. */
+    @Volatile var voiceMeter: VoiceSources.Meter? = null; private set
 
     /** Monotonic time (µs) at which frame [frame] of [r] was captured, or null if the device can't say. */
     private fun captureUs(r: AudioRecord?, ts: AudioTimestamp, frame: Long): Long? {

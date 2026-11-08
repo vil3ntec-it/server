@@ -773,6 +773,7 @@ class RecordService : Service(), Recorder.Events {
             var report: String? = null
             try {
                 try { r?.stop() } catch (_: Throwable) {}
+                try { r?.voiceMeter?.learn(this) } catch (_: Throwable) {}
                 if (!keep) {
                     try { r?.virtualDisplay?.release() } catch (_: Throwable) {}
                     try { p?.stop() } catch (_: Throwable) {}
@@ -885,6 +886,24 @@ class RecordService : Service(), Recorder.Events {
             if (why != 0) block.append('\n').append(getString(R.string.eng_rep_part_fmt, pt.index, getString(why)))
         }
         if (fixes > 0) block.append('\n').append(getString(R.string.eng_rep_recovered_fmt, fixes))
+        // «صدای یارها»: what each kind of sound did, and what was left out.
+        r.voiceMeter?.let { m ->
+            val s = m.summary()
+            if (s.isNotEmpty()) {
+                val parts = VoiceSources.KINDS.filter { s.containsKey(it) }.joinToString("، ") { k ->
+                    getString(R.string.vs_rep_kind_fmt, getString(VoiceSources.nameRes(k)), Fmt.num(s[k]!!.first),
+                        getString(if (r.capturedKinds and k != 0) R.string.vs_in else R.string.vs_out))
+                }
+                block.append('\n').append(getString(R.string.vs_rep_fmt, parts))
+                val v = VoiceSources.voiceKind(this)
+                block.append('\n').append(when {
+                    v != 0 -> getString(R.string.vs_rep_voice_fmt, getString(VoiceSources.nameRes(v)),
+                        getString(if (c.teamVoice) R.string.vs_team_in else R.string.vs_team_out))
+                    VoiceSources.mixed(this) -> getString(R.string.vs_rep_mixed)
+                    else -> getString(R.string.vs_rep_unknown)
+                })
+            }
+        }
         // «فشرده‌سازیِ هوشمند»: what the encoder reported, so the size is never a mystery.
         if (r.qpAverage > 0) block.append('\n').append(getString(R.string.eng_rep_smart_fmt, String.format(java.util.Locale.US, "%.1f", r.qpAverage),
             Fmt.num(maxOf(r.smartBitrate, 0) / 1_000_000)))

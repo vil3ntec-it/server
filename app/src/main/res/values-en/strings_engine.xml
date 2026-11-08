@@ -11,6 +11,15 @@
     <string name="eng_notice_look_fail">«Video look» could not start on this phone; recording continues without it (natural).</string>
     <string name="eng_rep_smart_fmt">Smart compression: average frame quality QP %1$s (lower = finer); bit rate at the end %2$s Mbps (0 = no change needed).</string>
     <string name="eng_rep_smart_none">Smart compression: this phone did not report frame quality, so the chosen bit rate was left alone (no quality lost).</string>
+    <string name="vs_rep_fmt">Sounds: %1$s</string>
+    <string name="vs_rep_kind_fmt">«%1$s» %2$s%% %3$s</string>
+    <string name="vs_in">(recorded)</string>
+    <string name="vs_out">(left out)</string>
+    <string name="vs_rep_voice_fmt">Teammates come in «%1$s» — %2$s. Game sound is complete.</string>
+    <string name="vs_team_in">in the video</string>
+    <string name="vs_team_out">not in the video</string>
+    <string name="vs_rep_mixed">The teammates are inside the game sound itself; not separated so the game sound stays complete.</string>
+    <string name="vs_rep_unknown">Where the teammates come in is not known yet (record more than 15 s while they talk).</string>
     <string name="eng_n_show_control">Show control</string>
     <string name="eng_toast_control_hidden">Recording control hidden. Stop from the notification or the Quick Settings tile; “Show control” in the notification brings it back.</string>
 

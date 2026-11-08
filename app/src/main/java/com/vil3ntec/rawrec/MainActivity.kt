@@ -135,6 +135,7 @@ class MainActivity : Activity() {
     private val toggles = HashMap<String, Toggle>()
     private var resValues = intArrayOf(0)
     private var lookImage: android.widget.ImageView? = null
+    private var teamDesc: TextView? = null
     private var lookCaption: TextView? = null
     private var lookSummary: TextView? = null
     private var lookShown: String? = null
@@ -403,6 +404,7 @@ class MainActivity : Activity() {
             .putBoolean("c_smart", c.smartStart).putBoolean("c_game", c.gameMode).putBoolean("c_rotnew", c.rotateNewFile)
             .putInt("c_lk_sharp", c.lookSharp).putInt("c_lk_con", c.lookContrast).putInt("c_lk_col", c.lookColor)
             .putInt("c_lk_bri", c.lookBright).putInt("c_lk_warm", c.lookWarm).putInt("c_lk_cla", c.lookClarity)
+            .putInt("c_kinds", c.audioKinds).putBoolean("c_team", c.teamVoice)
             .apply()
     }
 
@@ -644,6 +646,8 @@ class MainActivity : Activity() {
             tile.isActivated = on
             if (Build.VERSION.SDK_INT >= 30) root.stateDescription = str(if (on) R.string.on else R.string.off)
         }
+
+        fun setDesc(d: String) { descView.text = d; descView.visibility = if (d.isEmpty()) View.GONE else View.VISIBLE }
 
         fun enable(e: Boolean) {
             root.isEnabled = e
@@ -1461,6 +1465,22 @@ class MainActivity : Activity() {
         val gainLabels = gains.map { "${(it * 100).toInt()}%" }
         rows["gg"] = Row(c, str(R.string.gg_title), str(R.string.gg_desc), gainLabels, ic = R.drawable.ic_gamepad) { i -> change(false) { it.copy(gameGain = gains[i]) } }
         rows["mg"] = Row(c, str(R.string.mg_title), str(R.string.mg_desc), gainLabels, ic = R.drawable.ic_mic) { i -> change(false) { it.copy(micGain = gains[i]) } }
+        // «صدای یارها»: game sound always stays, only the teammates' voice chat can be left out.
+        val vc = card(pg.col, R.string.vs_title, R.drawable.ic_volume, top = 12)
+        teamDesc = text("", R.style.Text_Caption)
+        vc.addView(teamDesc, lp(6))
+        toggles["team"] = Toggle(vc, "tog:team", R.drawable.ic_mic, str(R.string.vs_team_title), str(R.string.vs_team_desc)) { on ->
+            change(false) { it.copy(teamVoice = on) }
+        }
+        vc.addView(text(str(R.string.vs_kinds_desc), R.style.Text_Caption), lp(12))
+        for (k in VoiceSources.KINDS) {
+            toggles["kind$k"] = Toggle(vc, "tog:kind$k", R.drawable.ic_volume, str(VoiceSources.nameRes(k)), "") { on ->
+                if (!on && k == VoiceSources.gameKind(this)) {
+                    toast(R.string.vs_cant_game)
+                    refreshAll()
+                } else change(false) { it.copy(audioKinds = if (on) it.audioKinds or k else it.audioKinds and k.inv()) }
+            }
+        }
         return pg.scroll
     }
 
@@ -1766,6 +1786,30 @@ class MainActivity : Activity() {
         rows["cam"]?.select(c.facecam)
         rows["gg"]?.root?.visibility = if (c.usesInternal) View.VISIBLE else View.GONE
         rows["mg"]?.root?.visibility = if (c.usesMic) View.VISIBLE else View.GONE
+        // «صدای یارها»: what the last recording found, and the switches.
+        val vk = VoiceSources.voiceKind(this)
+        val gk = VoiceSources.gameKind(this)
+        teamDesc?.text = when {
+            vk != 0 -> str(R.string.vs_found_fmt, str(VoiceSources.nameRes(vk)), if (gk != 0) str(VoiceSources.nameRes(gk)) else "—")
+            VoiceSources.mixed(this) -> str(R.string.vs_found_mixed)
+            else -> str(R.string.vs_found_none)
+        }
+        toggles["team"]?.set(c.teamVoice)
+        toggles["team"]?.enable(vk != 0)
+        for (k in VoiceSources.KINDS) {
+            val t = toggles["kind$k"] ?: continue
+            t.set(c.audioKinds and k != 0 || k == gk)
+            // Until a recording showed which kind is the game, none can be switched off (game sound first).
+            t.enable(gk != 0 && k != gk)
+            val act = VoiceSources.lastActivity(this, k)
+            t.setDesc(when {
+                k == gk -> str(R.string.vs_kind_game_fmt, Fmt.num(act.coerceAtLeast(0)))
+                k == vk -> str(R.string.vs_kind_voice_fmt, Fmt.num(act.coerceAtLeast(0)))
+                act >= 0 -> str(R.string.vs_kind_fmt, Fmt.num(act))
+                else -> str(R.string.vs_kind_unknown)
+            })
+        }
+        (toggles["team"]?.root?.parent as? View)?.visibility = if (c.usesInternal) View.VISIBLE else View.GONE
         toggles["ghost"]?.root?.visibility = if (c.floatingButton && !c.gameMode) View.VISIBLE else View.GONE
         toggles["invis"]?.root?.visibility = if (c.floatingButton && !c.gameMode && !c.ghostControl) View.VISIBLE else View.GONE
 
