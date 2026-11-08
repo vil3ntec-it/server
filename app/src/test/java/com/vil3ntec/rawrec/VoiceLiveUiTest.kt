@@ -310,8 +310,7 @@ class VoiceLiveUiTest {
             !ChatTranslator.needsPersian("😂😂") && !ChatTranslator.needsPersian("ok"[0].toString()))
         hud.setStats(1234, 50, 9000)
         idle()
-        assertTrue("numbers over the game", hud.statsLine.visibility == View.VISIBLE && hud.statsLine.text.contains("1,234"))
-        assertTrue("…inside the read-only window", hud.statsLine.parent === hud.feedRoot)
+        assertEquals("no number line of its own over the game (the owner sees the scene's own counters)", View.GONE, hud.statsLine.visibility)
         assertTrue("no background behind the lines by default", (hud.feed.getChildAt(0) as TextView).background == null)
         // the button opens the panel (the feed steps aside) and closes it again
         tapView(hud.bubble)
@@ -346,7 +345,7 @@ class VoiceLiveUiTest {
         liveOpen(a)
         val keys = mapOf(
             "tog:live_team" to "live_team", "tog:live_mic" to "live_mic", "tog:hud_on" to "hud_on",
-            "tog:tr_in" to "tr_in", "tog:tr_out" to "tr_out", "tog:hud_stats" to "hud_stats",
+            "tog:tr_in" to "tr_in", "tog:tr_out" to "tr_out",
             "tog:bot_on" to "bot_on", "tog:bot_welcome" to "bot_welcome",
             "tog:mod_links" to "mod_links", "tog:mod_caps" to "mod_caps", "tog:mod_spam" to "mod_spam",
         )

@@ -77,7 +77,8 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
     /** Over the game: 0 no background, 1 faint, 2 bubbles, 3 one line each (see LiveExtras.hudStyle). */
     private val style = LiveExtras.hudStyle(ctx)
     private val feedOpacity = floatArrayOf(0.7f, 0.85f, 1f)[LiveExtras.hudAlpha(ctx)]
-    private val showStats = LiveExtras.hudStats(ctx)
+    /** No number line of its own over the game: the owner sees the counters viewers see (the scene's own, on the screen too). */
+    private val showStats = false
     private val textSp = floatArrayOf(12.5f, 13.5f, 14.5f)[sizeLevel]
     private val bubbleSize = dp(44)
 

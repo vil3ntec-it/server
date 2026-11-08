@@ -165,18 +165,31 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
                     setYt(ctx.getString(R.string.chat_quota_out))
                     sleep(60_000); continue
                 }
-                if (chatId == null) {
-                    val b = api.currentBroadcast()
+                // which of the channel's streams takes our key (once; the broadcast is the one bound to it)
+                if (streamId == null && System.currentTimeMillis() - streamTried > 60_000) {
+                    streamTried = System.currentTimeMillis()
+                    streamId = try { api.streamIdForKey(ourKey()) } catch (e: YouTubeApi.Companion.HttpError) { if (quotaGone(e)) throw e; null }
+                }
+                val waiting = bc?.let { !it.isLive } ?: false
+                if (chatId == null || (waiting && System.currentTimeMillis() - lastLook > 15_000)) {
+                    lastLook = System.currentTimeMillis()
+                    val b = api.currentBroadcast(streamId)
                     if (b == null) {
                         setYt(ctx.getString(R.string.chat_yt_looking))
                         sleep(if (System.currentTimeMillis() - startedAt < 120_000) 10_000 else 30_000); continue
                     }
-                    chatId = b.chatId; videoId = b.videoId; bc = b
-                    page = null; first = true
+                    if (b.videoId != bc?.videoId) {
+                        chatId = b.chatId.ifBlank { null }; videoId = b.videoId
+                        page = null; first = true
+                        appliedStamp = ""
+                    }
+                    bc = b
                     setYt(null)
                     publish()
-                    applyOwnerChoices(api, b)
+                    if (b.isLive) waitingSince = 0L else goLiveIfWaiting(api, b)
+                    if (LiveExtras.ytChoicesStamp(ctx) != appliedStamp) applyOwnerChoices(api, b)
                 }
+                if (chatId == null) { sleep(10_000); continue }   // (a broadcast without its chat yet)
                 // the owner changed the video's settings in the app while live: applied at once
                 bc?.let { b -> if (LiveExtras.ytChoicesStamp(ctx) != appliedStamp) applyOwnerChoices(api, b) }
                 val now = System.currentTimeMillis()
@@ -236,52 +249,73 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
         }
     }
 
+    private var streamId: String? = null
+    private var streamTried = 0L
+    private var lastLook = 0L
+    private var waitingSince = 0L
+    private var goLiveTries = 0
+
+    /** The YouTube stream key this stream is sent with (the platform switched on with a YouTube address). */
+    private fun ourKey(): String =
+        LiveSettings.destinations(ctx).firstOrNull { it.url.contains("youtube", ignoreCase = true) }?.key ?: LiveSettings.key(ctx, 0)
+
+    /**
+     * YouTube holds the broadcast back (a scheduled event that waits for «Go live» in Studio) while
+     * the picture arrives: it is put live, as the owner asked by starting the stream. At most three
+     * tries; when YouTube refuses, the owner is told what to press.
+     */
+    private fun goLiveIfWaiting(api: YouTubeApi, b: YouTubeApi.Broadcast) {
+        val sid = b.streamId ?: return
+        val now = System.currentTimeMillis()
+        if (waitingSince == 0L) waitingSince = now
+        if (now - waitingSince < 20_000 || goLiveTries >= 3) return
+        val (status, _) = try { api.streamStatus(sid) } catch (_: Exception) { "" to null }
+        if (status != "active") return   // the picture is not there yet
+        goLiveTries++
+        try {
+            if (b.lifeCycle == "ready" && b.monitor) api.transition(b.videoId, "testing") else api.transition(b.videoId, "live")
+            l.onNote(ctx.getString(R.string.yt_went_live))
+        } catch (e: Exception) {
+            if (goLiveTries >= 3) l.onNote(ctx.getString(R.string.yt_waiting_fmt, (e as? YouTubeApi.Companion.HttpError)?.let { friendly(it) } ?: e.message ?: ""))
+        }
+    }
+
     private fun publish() {
         val b = bc ?: return
         ytInfo = YtInfo(b.videoId, b.title, b.thumb, health)
         l.onBroadcast(ytInfo!!)
     }
 
-    /**
-     * The title and thumbnail the owner chose in the app, set on this stream once (each costs 50
-     * of the day's units). A thumbnail needs a verified YouTube channel: YouTube's refusal is shown.
-     */
     private var appliedStamp = ""
 
     /**
-     * What the owner chose for the video in the app: title, description, who can watch it, «made for
-     * kids» (one update), category, tags and embedding (another), and the thumbnail. Only what differs
-     * from YouTube is sent; once per stream, and again when the owner changes it while live.
+     * What the owner chose for the video in the app (title, description, who can watch it, «made for
+     * kids», category, tags, embedding) on the video itself, and the thumbnail. YouTube is read first
+     * and only what differs is sent; once per stream, and again when the owner changes it while live.
      */
     private fun applyOwnerChoices(api: YouTubeApi, b: YouTubeApi.Broadcast) {
         val p = ctx.getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE)
         appliedStamp = LiveExtras.ytChoicesStamp(ctx)
-        val title = LiveExtras.ytTitle(ctx).takeIf { it.isNotBlank() && it != b.title }
-        val desc = LiveExtras.ytDesc(ctx).takeIf { it.isNotBlank() && it != b.description }
-        val privacy = LiveExtras.ytPrivacy(ctx).takeIf { it in listOf("public", "unlisted", "private") && it != b.privacy }
-        val kids = when (LiveExtras.ytKids(ctx)) { "yes" -> true; "no" -> false; else -> null }?.takeIf { it != b.kids }
-        if (title != null || desc != null || privacy != null || kids != null) {
+        val want = YouTubeApi.VideoChange(
+            title = LiveExtras.ytTitle(ctx).ifBlank { null },
+            description = LiveExtras.ytDesc(ctx).ifBlank { null },
+            privacy = LiveExtras.ytPrivacy(ctx).takeIf { it in listOf("public", "unlisted", "private") },
+            kids = when (LiveExtras.ytKids(ctx)) { "yes" -> true; "no" -> false; else -> null },
+            category = LiveExtras.ytCategory(ctx).ifBlank { null },
+            tags = LiveExtras.ytTags(ctx).takeIf { it.isNotEmpty() },
+            embeddable = when (LiveExtras.ytEmbed(ctx)) { "yes" -> true; "no" -> false; else -> null },
+        )
+        if (listOf(want.title, want.description, want.privacy, want.kids, want.category, want.tags, want.embeddable).any { it != null }) {
             try {
-                val nb = api.updateBroadcast(b, title, desc, privacy, kids)
-                bc = nb
-                publish()
-                if (title != null) l.onNote(ctx.getString(R.string.yt_title_set_fmt, title))
-                if (privacy != null) l.onNote(ctx.getString(R.string.yt_privacy_set_fmt, ctx.getString(when (privacy) {
+                val changed = api.updateVideo(b.videoId, want)
+                if ("title" in changed) {
+                    bc = YouTubeApi.Broadcast(b.videoId, b.chatId, want.title!!, b.thumb, b.streamId, b.scheduled, b.description, b.privacy, b.kids, b.lifeCycle, b.autoStart, b.monitor)
+                    publish()
+                    l.onNote(ctx.getString(R.string.yt_title_set_fmt, want.title))
+                }
+                if ("privacy" in changed) l.onNote(ctx.getString(R.string.yt_privacy_set_fmt, ctx.getString(when (want.privacy) {
                     "unlisted" -> R.string.yt_p_unlisted; "private" -> R.string.yt_p_private; else -> R.string.yt_p_public })))
-                if (desc != null || kids != null) l.onNote(ctx.getString(R.string.yt_settings_set))
-            } catch (e: Exception) {
-                l.onNote(ctx.getString(R.string.yt_title_failed_fmt, (e as? YouTubeApi.Companion.HttpError)?.let { friendly(it) } ?: e.message ?: ""))
-            }
-        }
-        val cat = LiveExtras.ytCategory(ctx)
-        val tags = LiveExtras.ytTags(ctx)
-        val embed = LiveExtras.ytEmbed(ctx)
-        val vStamp = listOf(b.videoId, cat, tags.joinToString(","), embed).joinToString("|")
-        if ((cat.isNotBlank() || tags.isNotEmpty() || embed.isNotBlank()) && SafePrefs.str(p, "yt_video_done") != vStamp) {
-            try {
-                api.updateVideo(b.videoId, cat.ifBlank { null }, tags.takeIf { it.isNotEmpty() }, when (embed) { "yes" -> true; "no" -> false; else -> null })
-                p.edit().putString("yt_video_done", vStamp).apply()
-                l.onNote(ctx.getString(R.string.yt_settings_set))
+                if (changed.any { it != "title" && it != "privacy" }) l.onNote(ctx.getString(R.string.yt_settings_set))
             } catch (e: Exception) {
                 l.onNote(ctx.getString(R.string.yt_video_failed_fmt, (e as? YouTubeApi.Companion.HttpError)?.let { friendly(it) } ?: e.message ?: ""))
             }

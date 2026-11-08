@@ -32,7 +32,15 @@ class YouTubeApi(
         val thumb: String? = null, val streamId: String? = null, val scheduled: String? = null, val description: String = "",
         /** Who can watch it (public / unlisted / private) and whether it is marked as made for kids. */
         val privacy: String = "", val kids: Boolean? = null,
-    )
+        /** YouTube's stage: created, ready, testing, liveStarting, live, complete… */
+        val lifeCycle: String = "",
+        /** It goes live by itself when the picture arrives (a scheduled event may wait for «Go live»). */
+        val autoStart: Boolean = true,
+        /** It is first shown to the owner only (testing) before going live. */
+        val monitor: Boolean = false,
+    ) {
+        val isLive: Boolean get() = lifeCycle == "live" || lifeCycle == "liveStarting"
+    }
     class ChatItem(
         val id: String, val type: String, val authorId: String, val author: String, val text: String,
         val isOwner: Boolean, val isMod: Boolean, val isMember: Boolean, val amount: String?, val tier: String?,
@@ -169,26 +177,63 @@ class YouTubeApi(
     fun channelTitle(): String =
         get("channels?part=snippet&mine=true").optJSONArray("items")?.optJSONObject(0)?.optJSONObject("snippet")?.optString("title") ?: ""
 
-    /** The broadcast that is live now (or about to be, while the stream starts). */
-    fun currentBroadcast(): Broadcast? {
-        for (status in listOf("active", "upcoming")) {
-            val items = get("liveBroadcasts?part=snippet,status,contentDetails&broadcastType=all&broadcastStatus=$status&maxResults=5").optJSONArray("items") ?: continue
-            for (i in 0 until items.length()) {
-                val b = items.getJSONObject(i)
-                val sn = b.getJSONObject("snippet")
-                val chat = sn.optString("liveChatId")
-                if (chat.isBlank()) continue
-                val th = sn.optJSONObject("thumbnails")
-                val thumb = listOf("maxres", "standard", "high", "medium", "default").firstNotNullOfOrNull { th?.optJSONObject(it)?.optString("url")?.ifBlank { null } }
-                val st = b.optJSONObject("status")
-                return Broadcast(b.getString("id"), chat, sn.optString("title"), thumb,
-                    b.optJSONObject("contentDetails")?.optString("boundStreamId")?.ifBlank { null },
-                    sn.optString("scheduledStartTime").ifBlank { sn.optString("actualStartTime").ifBlank { null } },
-                    sn.optString("description"), st?.optString("privacyStatus") ?: "",
-                    if (st?.has("selfDeclaredMadeForKids") == true) st.optBoolean("selfDeclaredMadeForKids") else null)
-            }
+    /** The id of the channel's stream that takes [key] (the «stream key» RawRec sends to), or null. */
+    fun streamIdForKey(key: String): String? {
+        val k = key.trim().substringBefore('?')
+        if (k.isEmpty()) return null
+        val items = get("liveStreams?part=id,cdn&mine=true&maxResults=50").optJSONArray("items") ?: return null
+        for (i in 0 until items.length()) {
+            val st = items.getJSONObject(i)
+            if (st.optJSONObject("cdn")?.optJSONObject("ingestionInfo")?.optString("streamName") == k) return st.optString("id").ifBlank { null }
         }
         return null
+    }
+
+    /** Whether YouTube receives the picture on stream [id] («active») and how well. */
+    fun streamStatus(id: String): Pair<String, String?> {
+        val st = get("liveStreams?part=status&id=${enc(id)}").optJSONArray("items")?.optJSONObject(0)?.optJSONObject("status")
+        return (st?.optString("streamStatus") ?: "") to st?.optJSONObject("healthStatus")?.optString("status")?.ifBlank { null }
+    }
+
+    private fun parse(b: JSONObject): Broadcast? {
+        val sn = b.getJSONObject("snippet")
+        val chat = sn.optString("liveChatId")
+        val th = sn.optJSONObject("thumbnails")
+        val thumb = listOf("maxres", "standard", "high", "medium", "default").firstNotNullOfOrNull { th?.optJSONObject(it)?.optString("url")?.ifBlank { null } }
+        val st = b.optJSONObject("status")
+        val cd = b.optJSONObject("contentDetails")
+        return Broadcast(b.getString("id"), chat, sn.optString("title"), thumb,
+            cd?.optString("boundStreamId")?.ifBlank { null },
+            sn.optString("scheduledStartTime").ifBlank { sn.optString("actualStartTime").ifBlank { null } },
+            sn.optString("description"), st?.optString("privacyStatus") ?: "",
+            if (st?.has("selfDeclaredMadeForKids") == true) st.optBoolean("selfDeclaredMadeForKids") else null,
+            st?.optString("lifeCycleStatus") ?: "",
+            cd?.optBoolean("enableAutoStart", true) ?: true,
+            cd?.optJSONObject("monitorStream")?.optBoolean("enableMonitorStream", false) ?: false)
+    }
+
+    /**
+     * The broadcast this stream goes to: the one bound to the stream that takes our key (live first,
+     * then one waiting for the picture); without a key, only one that is live now. Never an old
+     * scheduled event that merely happens to be «upcoming» on the channel.
+     */
+    fun currentBroadcast(streamId: String? = null): Broadcast? {
+        val all = ArrayList<Broadcast>()
+        for (status in listOf("active", "upcoming")) {
+            val items = get("liveBroadcasts?part=snippet,status,contentDetails&broadcastType=all&broadcastStatus=$status&maxResults=25").optJSONArray("items") ?: continue
+            for (i in 0 until items.length()) parse(items.getJSONObject(i))?.let { all += it }
+        }
+        if (streamId != null) {
+            val mine = all.filter { it.streamId == streamId && it.lifeCycle != "complete" && it.lifeCycle != "revoked" }
+            (mine.firstOrNull { it.isLive } ?: mine.firstOrNull { it.lifeCycle == "testing" || it.lifeCycle == "testStarting" }
+                ?: mine.firstOrNull { it.lifeCycle == "ready" })?.let { return it }
+        }
+        return all.firstOrNull { it.isLive && it.chatId.isNotBlank() }
+    }
+
+    /** Moves the broadcast to [to] (testing / live), as «Go live» in YouTube Studio does (50 units). */
+    fun transition(id: String, to: String) {
+        call("POST", "liveBroadcasts/transition?broadcastStatus=${enc(to)}&id=${enc(id)}&part=status", null, 50)
     }
 
     fun chat(chatId: String, page: String?): ChatPage {
@@ -221,68 +266,54 @@ class YouTubeApi(
         get("liveStreams?part=status&id=${enc(streamId)}").optJSONArray("items")?.optJSONObject(0)
             ?.optJSONObject("status")?.optJSONObject("healthStatus")?.optString("status")?.ifBlank { null }
 
-    /**
-     * The stream's title, description, who can watch it (public / unlisted / private) and «made for
-     * kids», in one update (50 units); null = as it is. Everything an update would otherwise wipe is
-     * sent back as it was. Returns the broadcast as it is now.
-     */
-    fun updateBroadcast(b: Broadcast, title: String?, description: String?, privacy: String?, kids: Boolean?): Broadcast {
-        val parts = ArrayList<String>()
-        val body = JSONObject().put("id", b.videoId)
-        val newTitle = (title ?: b.title).take(100)
-        val newDesc = (description ?: b.description).take(5000)
-        if (title != null || description != null) {
-            parts += "snippet"
-            body.put("snippet", JSONObject().put("title", newTitle).put("description", newDesc)
-                .put("scheduledStartTime", b.scheduled ?: java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
-                    .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date())))
-        }
-        val newPrivacy = privacy ?: b.privacy.ifBlank { "public" }
-        val newKids = kids ?: b.kids
-        if (privacy != null || kids != null) {
-            parts += "status"
-            val st = JSONObject().put("privacyStatus", newPrivacy)
-            if (newKids != null) st.put("selfDeclaredMadeForKids", newKids)
-            body.put("status", st)
-        }
-        if (parts.isEmpty()) return b
-        call("PUT", "liveBroadcasts?part=" + parts.joinToString(","), body, 50)
-        return Broadcast(b.videoId, b.chatId, newTitle, b.thumb, b.streamId, b.scheduled, newDesc, newPrivacy, newKids)
-    }
+    /** What the owner chose for the video; null = as YouTube has it. */
+    class VideoChange(
+        val title: String? = null, val description: String? = null, val privacy: String? = null, val kids: Boolean? = null,
+        val category: String? = null, val tags: List<String>? = null, val embeddable: Boolean? = null,
+    )
 
     /**
-     * The video's category, tags and whether other sites may show it (embedding); null = as it is.
-     * Reads the video first (1 unit) so nothing else changes, then one update (50 units).
+     * The live video's title, description, who can watch it, «made for kids», category, tags and
+     * embedding — on the video itself (the broadcast's schedule is never touched). Reads the video
+     * first (1 unit) and sends one update (50 units) only when something differs; everything not
+     * chosen is sent back as it was. Returns what changed.
      */
-    fun updateVideo(videoId: String, category: String?, tags: List<String>?, embeddable: Boolean?) {
-        if (category == null && tags == null && embeddable == null) return
+    fun updateVideo(videoId: String, c: VideoChange): Set<String> {
         val v = get("videos?part=snippet,status&id=${enc(videoId)}").optJSONArray("items")?.optJSONObject(0)
             ?: throw IllegalStateException("video not found")
         val sn = v.optJSONObject("snippet") ?: JSONObject()
         val st = v.optJSONObject("status") ?: JSONObject()
+        fun clean(t: String) = t.replace("<", "").replace(">", "")
+        val changed = LinkedHashSet<String>()
+        val title = c.title?.let { clean(it).take(100) }?.takeIf { it.isNotBlank() && it != sn.optString("title") }?.also { changed += "title" } ?: sn.optString("title")
+        val desc = c.description?.let { clean(it).take(5000) }?.takeIf { it != sn.optString("description") }?.also { changed += "description" } ?: sn.optString("description")
+        val cat = c.category?.takeIf { it != sn.optString("categoryId") }?.also { changed += "category" } ?: sn.optString("categoryId").ifBlank { "20" }
+        val oldTags = sn.optJSONArray("tags")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
+        val tags = c.tags?.let { fitTags(it) }?.takeIf { it != oldTags }?.also { changed += "tags" } ?: oldTags
+        val privacy = c.privacy?.takeIf { it != st.optString("privacyStatus") }?.also { changed += "privacy" } ?: st.optString("privacyStatus").ifBlank { "public" }
+        val oldKids = if (st.has("selfDeclaredMadeForKids")) st.optBoolean("selfDeclaredMadeForKids") else null
+        val kids = c.kids?.takeIf { it != oldKids }?.also { changed += "kids" } ?: oldKids
+        val embed = c.embeddable?.takeIf { it != st.optBoolean("embeddable", true) }?.also { changed += "embed" } ?: st.optBoolean("embeddable", true)
+        if (changed.isEmpty()) return changed
         val parts = ArrayList<String>()
         val body = JSONObject().put("id", videoId)
-        if (category != null || tags != null) {
+        if (changed.any { it in listOf("title", "description", "category", "tags") }) {
             parts += "snippet"
-            val s2 = JSONObject().put("title", sn.optString("title")).put("description", sn.optString("description"))
-                .put("categoryId", category ?: sn.optString("categoryId").ifBlank { "20" })
-            val keepTags = sn.optJSONArray("tags")
-            when {
-                tags != null -> s2.put("tags", JSONArray(fitTags(tags)))
-                keepTags != null -> s2.put("tags", keepTags)
-            }
+            val s2 = JSONObject().put("title", title).put("description", desc).put("categoryId", cat)
+            if (tags.isNotEmpty()) s2.put("tags", JSONArray(tags))
             for (k in listOf("defaultLanguage", "defaultAudioLanguage")) sn.optString(k).ifBlank { null }?.let { s2.put(k, it) }
             body.put("snippet", s2)
         }
-        if (embeddable != null) {
+        if (changed.any { it in listOf("privacy", "kids", "embed") }) {
             parts += "status"
-            val s3 = JSONObject().put("privacyStatus", st.optString("privacyStatus").ifBlank { "public" }).put("embeddable", embeddable)
+            val s3 = JSONObject().put("privacyStatus", privacy).put("embeddable", embed)
             st.optString("license").ifBlank { null }?.let { s3.put("license", it) }
             if (st.has("publicStatsViewable")) s3.put("publicStatsViewable", st.optBoolean("publicStatsViewable"))
-            if (st.has("selfDeclaredMadeForKids")) s3.put("selfDeclaredMadeForKids", st.optBoolean("selfDeclaredMadeForKids"))
+            if (kids != null) s3.put("selfDeclaredMadeForKids", kids)
             body.put("status", s3)
         }
         call("PUT", "videos?part=" + parts.joinToString(","), body, 50)
+        return changed
     }
 
     /** The stream's thumbnail (a JPEG up to 2 MB; 50 units). YouTube allows it on verified channels only. */

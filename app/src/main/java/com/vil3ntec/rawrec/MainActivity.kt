@@ -1643,9 +1643,6 @@ class MainActivity : Activity() {
             str(R.string.live_style_faint), str(R.string.live_style_bubbles), str(R.string.live_style_compact)), top = 12) { i ->
             LiveExtras.put(ctx, "hud_style", i)
         }.apply { select(LiveExtras.hudStyle(ctx)) }
-        toggles["hud_stats"] = Toggle(hc, "tog:hud_stats", R.drawable.ic_eye, str(R.string.live_hud_stats_title), str(R.string.live_hud_stats_desc), top = 12) { on ->
-            LiveExtras.put(ctx, "hud_stats", on); toggles["hud_stats"]?.set(on)
-        }.apply { set(LiveExtras.hudStats(ctx)) }
         rows["hud_size"] = Row(hc, str(R.string.live_hud_size), "", listOf(str(R.string.live_hud_s), str(R.string.live_hud_m), str(R.string.live_hud_l)), top = 12) { i ->
             LiveExtras.put(ctx, "hud_size", i)
         }.apply { select(LiveExtras.hudSize(ctx)) }

@@ -985,4 +985,6 @@ Your internet needs about %2$s Mbps upload.</string>
     <string name="live_ds_connecting">connecting…</string>
     <string name="live_ds_reconnecting">dropped, reconnecting…</string>
     <string name="live_ds_failed">dropped out</string>
+    <string name="yt_went_live">YouTube was holding the stream back; it is live now.</string>
+    <string name="yt_waiting_fmt">YouTube is holding the stream back (a scheduled event). Press «Go live» in YouTube Studio or delete that old event. (%1$s)</string>
 </resources>
