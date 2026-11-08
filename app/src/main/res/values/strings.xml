@@ -1025,4 +1025,8 @@
     <string name="yt_link_copy">کپیِ لینک</string>
     <string name="yt_link_share">فرستادنِ لینک</string>
     <string name="yt_link_copied">لینکِ پخش کپی شد.</string>
+    <string name="yt_default_title_fmt">%1$s زنده است!</string>
+    <string name="yt_created">در یوتیوب یک پخشِ زنده ساختم و به کلیدِ پخشت وصل کردم؛ با رسیدنِ تصویر زنده می‌شود.</string>
+    <string name="yt_create_failed_fmt">ساختنِ پخش در یوتیوب نشد: %1$s</string>
+    <string name="chat_yt_no_key">یوتیوب: کلیدِ پخشی که در برنامه گذاشتی در این کانال پیدا نشد. کلید را از YouTube Studio → Go live → Stream دوباره کپی کن.</string>
 </resources>

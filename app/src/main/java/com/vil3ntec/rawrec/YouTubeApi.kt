@@ -231,6 +231,24 @@ class YouTubeApi(
         return all.firstOrNull { it.isLive && it.chatId.isNotBlank() }
     }
 
+    /**
+     * A new live on the channel, bound to stream [streamId] (the one our key goes to): it goes live by
+     * itself as soon as the picture arrives (100 units). Returns its id.
+     */
+    fun createBroadcast(streamId: String, title: String, description: String, privacy: String, kids: Boolean?): String {
+        val now = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date())
+        val st = JSONObject().put("privacyStatus", privacy)
+        if (kids != null) st.put("selfDeclaredMadeForKids", kids)
+        val body = JSONObject()
+            .put("snippet", JSONObject().put("title", title.replace("<", "").replace(">", "").take(100)).put("description", description.take(5000)).put("scheduledStartTime", now))
+            .put("status", st)
+            .put("contentDetails", JSONObject().put("enableAutoStart", true).put("enableAutoStop", true).put("enableDvr", true)
+                .put("monitorStream", JSONObject().put("enableMonitorStream", false)))
+        val id = JSONObject(call("POST", "liveBroadcasts?part=snippet,status,contentDetails", body, 50)).getString("id")
+        call("POST", "liveBroadcasts/bind?id=${enc(id)}&streamId=${enc(streamId)}&part=id,contentDetails", null, 50)
+        return id
+    }
+
     /** Moves the broadcast to [to] (testing / live), as «Go live» in YouTube Studio does (50 units). */
     fun transition(id: String, to: String) {
         call("POST", "liveBroadcasts/transition?broadcastStatus=${enc(to)}&id=${enc(id)}&part=status", null, 50)

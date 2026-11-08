@@ -1004,4 +1004,8 @@ Your internet needs about %2$s Mbps upload.</string>
     <string name="yt_link_copy">Copy link</string>
     <string name="yt_link_share">Send link</string>
     <string name="yt_link_copied">Stream link copied.</string>
+    <string name="yt_default_title_fmt">%1$s is live!</string>
+    <string name="yt_created">A live was made on YouTube and tied to your stream key; it goes live as the picture arrives.</string>
+    <string name="yt_create_failed_fmt">Could not make the live on YouTube: %1$s</string>
+    <string name="chat_yt_no_key">YouTube: the stream key in the app is not one of this channel\'s. Copy it again from YouTube Studio → Go live → Stream.</string>
 </resources>

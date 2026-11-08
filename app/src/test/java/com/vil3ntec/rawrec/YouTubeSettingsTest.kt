@@ -38,6 +38,7 @@ class YouTubeSettingsTest {
                 u.contains("broadcastStatus=active") -> active
                 u.contains("broadcastStatus=upcoming") -> upcoming
                 m == "GET" && u.contains("videos?part=snippet,status") -> video
+                m == "POST" && u.contains("liveBroadcasts?part=snippet,status,contentDetails") -> """{"id":"new1"}"""
                 else -> "{}"
             }
         }
@@ -61,6 +62,19 @@ class YouTubeSettingsTest {
         // going live is asked of YouTube like «Go live» in Studio
         api.transition("ours", "live")
         assertTrue(calls.last().second.contains("liveBroadcasts/transition?broadcastStatus=live&id=ours"))
+    }
+
+    @Test fun aLiveIsMadeForOurKeyWhenThereIsNone() {
+        fake()
+        val api = YouTubeApi("c", "s", "r")
+        assertEquals("new1", api.createBroadcast("s-ours", "VIL3N <live>", "", "unlisted", false))
+        val ins = calls.first { it.first == "POST" && it.second.contains("liveBroadcasts?part=snippet,status,contentDetails") }
+        val j = JSONObject(ins.third!!)
+        assertEquals("goes live by itself when the picture arrives", true, j.getJSONObject("contentDetails").getBoolean("enableAutoStart"))
+        assertEquals(false, j.getJSONObject("contentDetails").getJSONObject("monitorStream").getBoolean("enableMonitorStream"))
+        assertEquals("unlisted", j.getJSONObject("status").getString("privacyStatus"))
+        assertEquals("VIL3N live", j.getJSONObject("snippet").getString("title"))
+        assertTrue("tied to our stream", calls.last().second.contains("liveBroadcasts/bind?id=new1&streamId=s-ours"))
     }
 
     @Test fun onlyWhatChangesIsSentToTheVideo() {

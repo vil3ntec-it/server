@@ -179,8 +179,29 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
                     lastLook = System.currentTimeMillis()
                     val b = api.currentBroadcast(streamId)
                     if (b == null) {
-                        setYt(ctx.getString(R.string.chat_yt_looking))
-                        sleep(if (System.currentTimeMillis() - startedAt < 120_000) 10_000 else 30_000); continue
+                        val sid = streamId
+                        val waited = System.currentTimeMillis() - startedAt
+                        when {
+                            // nothing on the channel for our key: a live is made for it (as streaming apps do)
+                            sid != null && !created && waited > 15_000 -> {
+                                created = true
+                                try {
+                                    api.createBroadcast(sid, LiveExtras.ytTitle(ctx).ifBlank { ctx.getString(R.string.yt_default_title_fmt, LiveExtras.ytChannel(ctx).ifBlank { "Live" }) },
+                                        LiveExtras.ytDesc(ctx), LiveExtras.ytPrivacy(ctx).takeIf { it in listOf("public", "unlisted", "private") } ?: "public",
+                                        when (LiveExtras.ytKids(ctx)) { "yes" -> true; "no" -> false; else -> false })
+                                    l.onNote(ctx.getString(R.string.yt_created))
+                                    lastLook = 0L
+                                    sleep(3_000); continue
+                                } catch (e: YouTubeApi.Companion.HttpError) {
+                                    if (quotaGone(e)) throw e
+                                    l.onNote(ctx.getString(R.string.yt_create_failed_fmt, friendly(e)))
+                                }
+                            }
+                            // our key is not one of this channel's streams: said plainly
+                            sid == null && streamTried > 0 && waited > 15_000 -> setYt(ctx.getString(R.string.chat_yt_no_key))
+                            else -> setYt(ctx.getString(R.string.chat_yt_looking))
+                        }
+                        sleep(if (waited < 120_000) 10_000 else 30_000); continue
                     }
                     if (b.videoId != bc?.videoId) {
                         chatId = b.chatId.ifBlank { null }; videoId = b.videoId
@@ -263,6 +284,8 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
     private var lastLook = 0L
     private var waitingSince = 0L
     private var goLiveTries = 0
+    /** A live was made on the channel for this stream (once). */
+    private var created = false
 
     /** The YouTube stream key this stream is sent with (the platform switched on with a YouTube address). */
     private fun ourKey(): String =
