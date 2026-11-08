@@ -20,7 +20,7 @@
     <string name="vs_team_in">در ویدیو هست</string>
     <string name="vs_team_out">در ویدیو نیست</string>
     <string name="vs_rep_mixed">حرفِ یارها داخلِ خودِ صدای بازی است؛ برای این‌که صدای بازی کم نشود جدا نشد.</string>
-    <string name="vs_rep_unknown">جای حرفِ یارها هنوز معلوم نیست (یک ضبطِ بیش از ۱۵ ثانیه با حرفِ آن‌ها بگیر).</string>
+    <string name="vs_rep_unknown">جای حرفِ یارها هنوز معلوم نیست (یک ضبطِ بیش از ۱۰ ثانیه با حرفِ آن‌ها بگیر، یا در «صدا» گوش بده و انتخاب کن).</string>
     <string name="eng_reason_live">پخشِ زنده به سرور وصل نشد یا ۳ دقیقه قطع ماند (کلید، نشانی یا اینترنت را بررسی کن).</string>
     <string name="eng_n_show_control">نمایشِ دکمه</string>
     <string name="eng_toast_control_hidden">دکمهٔ ضبط پنهان شد. برای توقف از اعلان یا کاشیِ تنظیماتِ سریع استفاده کن؛ «نمایشِ دکمه» در اعلان آن را برمی‌گرداند.</string>
@@ -60,4 +60,7 @@
     <string name="eng_reason_service">اندروید سرویسِ ضبط را بست؛ فایل سالم بسته شد.</string>
     <string name="eng_reason_crash">برنامه به خطا خورد؛ ویدیو پیش از بسته شدنِ برنامه ذخیره شد.</string>
     <string name="eng_reason_killed">ضبط ناگهان قطع شد: اندروید برنامه را بست (کمبودِ حافظه یا «توقف» در فهرستِ برنامه‌های فعال). بخشی که در حالِ ضبط بود قابلِ ذخیره نبود.</string>
+    <string name="vs_rep_not_measured_fmt">جدا اندازه گرفته نشد (این گوشی ضبطِ جدای آن را نداد): %1$s</string>
+    <string name="vs_rep_aec_on">میکروفون: صدای بلندگو (بازی و یارها) از آن حذف شد؛ فقط صدای خودت.</string>
+    <string name="vs_rep_aec_none">میکروفون: این گوشی حذفِ صدای بلندگو ندارد؛ اگر بی‌هدفون بودی، حرفِ یارها ممکن است از میکروفون آمده باشد.</string>
 </resources>

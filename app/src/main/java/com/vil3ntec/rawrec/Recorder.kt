@@ -763,6 +763,16 @@ class Recorder(
         try {
             if (cfg.usesInternal) internal = newRecord(null, AudioFormat.CHANNEL_IN_STEREO, 4, 65_536)
             if (cfg.usesMic) mic = newRecord(MediaRecorder.AudioSource.MIC, AudioFormat.CHANNEL_IN_MONO, 4, 32_768)
+            // Without headphones the speaker's sound (game, teammates) reaches the microphone too;
+            // the game's sound is already taken directly, so the microphone keeps only the owner's voice.
+            if (mic != null && internal != null && VoiceSources.aec(ctx)) {
+                aecState = try {
+                    if (android.media.audiofx.AcousticEchoCanceler.isAvailable()) {
+                        aec = android.media.audiofx.AcousticEchoCanceler.create(mic.audioSessionId)
+                        if (aec?.setEnabled(true) == android.media.audiofx.AudioEffect.SUCCESS && aec?.enabled == true) AEC_ON else AEC_NONE
+                    } else AEC_NONE
+                } catch (_: Throwable) { AEC_NONE }
+            }
             internal?.startRecording()
             mic?.startRecording()
             audioOk = true
@@ -797,6 +807,7 @@ class Recorder(
                     if (mic != null) {
                         val mg = if (micMuted) 0f else cfg.micGain
                         val m = mic.read(mono, 0, got, AudioRecord.READ_NON_BLOCKING).coerceAtLeast(0)
+                        if (!micMuted) voiceMeter?.feedMic(mono, m)
                         for (i in 0 until m) {
                             val s = (mono[i] * mg).toInt()
                             stereo[2 * i] = clamp(stereo[2 * i] + s)
@@ -867,6 +878,8 @@ class Recorder(
             }
         } finally {
             try { voiceMeter?.stop() } catch (_: Throwable) {}
+            try { aec?.release() } catch (_: Throwable) {}
+            aec = null
             try { internal?.stop() } catch (_: Exception) {}
             try { internal?.release() } catch (_: Exception) {}
             try { mic?.stop() } catch (_: Exception) {}
@@ -882,6 +895,9 @@ class Recorder(
     @Volatile var capturedKinds = VoiceSources.ALL; private set
     /** Levels of the three kinds, measured apart, to find which one carries the teammates. */
     @Volatile var voiceMeter: VoiceSources.Meter? = null; private set
+    private var aec: android.media.audiofx.AcousticEchoCanceler? = null
+    /** Speaker sound removed from the microphone: [AEC_OFF] not asked / no mic, [AEC_ON], [AEC_NONE] the phone has none. */
+    @Volatile var aecState = AEC_OFF; private set
 
     /** Monotonic time (µs) at which frame [frame] of [r] was captured, or null if the device can't say. */
     private fun captureUs(r: AudioRecord?, ts: AudioTimestamp, frame: Long): Long? {
@@ -925,6 +941,9 @@ class Recorder(
 
     companion object {
         private const val RATE = 48_000
+        const val AEC_OFF = 0
+        const val AEC_ON = 1
+        const val AEC_NONE = 2
         private const val MAX_RECOVERIES = 5
     }
 }

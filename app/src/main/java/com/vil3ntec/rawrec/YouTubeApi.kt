@@ -49,6 +49,9 @@ class YouTubeApi(
                 j.optInt("interval", 5), j.optInt("expires_in", 1800))
         }
 
+        /** What [pollDevice] gives when Google asks to ask less often (wait 5 s longer from now on). */
+        const val SLOW_DOWN = "slow_down"
+
         /** Polls once: the refresh token when the owner has approved, null while waiting; throws when refused. */
         fun pollDevice(clientId: String, secret: String, deviceCode: String): String? {
             return try {
@@ -58,7 +61,11 @@ class YouTubeApi(
                 j.optString("refresh_token").ifBlank { null } ?: throw IOException("no refresh token")
             } catch (e: HttpError) {
                 val err = try { JSONObject(e.body).optString("error") } catch (_: Exception) { "" }
-                if (err == "authorization_pending" || err == "slow_down") null else throw IOException(err.ifBlank { e.message })
+                when (err) {
+                    "authorization_pending" -> null
+                    "slow_down" -> SLOW_DOWN
+                    else -> throw IOException(err.ifBlank { e.message })
+                }
             }
         }
 

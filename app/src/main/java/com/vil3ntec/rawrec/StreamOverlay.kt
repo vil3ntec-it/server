@@ -55,6 +55,7 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
     private var viewers = -1L
     private var goalTitle = ""
     private var goalNow = 0L
+    private var goalKnown: Long? = null
     private var goalTarget = 1L
     private var goalReached = false
     private var goalStartedBelow = false
@@ -80,14 +81,19 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
         redrawBadges(); push()
     }
 
-    /** The goal: [now] of [target]. Reaching it (after starting below it) gives one celebration alert. */
-    fun setGoal(title: String, now: Long, target: Long) {
+    /**
+     * The goal: [now] of [target]; [now] null = not known yet (the bar shows «… / target»).
+     * Reaching it after a known value below it gives one celebration alert (a goal already passed
+     * when the stream starts is not celebrated).
+     */
+    fun setGoal(title: String, now: Long?, target: Long) {
         val t = target.coerceAtLeast(1)
-        if (title == goalTitle && now == goalNow && t == goalTarget) return
+        if (title == goalTitle && now == goalKnown && t == goalTarget) return
         if (goalTarget != t) { goalReached = false; goalStartedBelow = false }
-        goalTitle = title; goalNow = now; goalTarget = t
-        if (now < t) goalStartedBelow = true
-        if (showGoal && !goalReached && goalStartedBelow && now >= t) {
+        goalTitle = title; goalTarget = t; goalKnown = now
+        goalNow = now ?: 0
+        if (now != null && now < t) goalStartedBelow = true
+        if (now != null && showGoal && !goalReached && goalStartedBelow && now >= t) {
             goalReached = true
             alert(Alert(Kind.GOAL, title, "${Fmt.num(now)} / ${Fmt.num(t)}"))
         }
@@ -254,7 +260,7 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
         val title = paint(30f, true)
         val num = paint(28f, true, Color.argb(235, 255, 255, 255))
         val t = TextUtils.ellipsize(goalTitle, title, w - pad * 2 - 170f * u, TextUtils.TruncateAt.END).toString()
-        val ns = "${Fmt.num(goalNow)} / ${Fmt.num(goalTarget)}"
+        val ns = "${goalKnown?.let { Fmt.num(it) } ?: "…"} / ${Fmt.num(goalTarget)}"
         val base = pad + 30f * u
         if (rtl) {
             c.drawText(t, w - pad - title.measureText(t), base, title)

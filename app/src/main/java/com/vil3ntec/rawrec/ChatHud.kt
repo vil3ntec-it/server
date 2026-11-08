@@ -432,12 +432,16 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         else { imm?.hideSoftInputFromWindow(input.windowToken, 0); input.clearFocus() }
     }
 
-    private fun clampToScreen() {
-        val info = DisplayInfo.read(ctx)
+    private var screenW = 0
+    private var screenH = 0
+
+    /** [fresh]: read the screen size again (not on every move of a drag). */
+    private fun clampToScreen(fresh: Boolean = true) {
+        if (fresh || screenW == 0) DisplayInfo.read(ctx).let { screenW = it.width; screenH = it.height }
         val w = if (expanded) panelW else dp(52)
         val h = if (expanded) panelH else dp(52)
-        lp.x = lp.x.coerceIn(0, maxOf(0, info.width - w))
-        lp.y = lp.y.coerceIn(0, maxOf(0, info.height - h))
+        lp.x = lp.x.coerceIn(0, maxOf(0, screenW - w))
+        lp.y = lp.y.coerceIn(0, maxOf(0, screenH - h))
     }
 
     /** Drag [v] to move the window; a tap without movement calls [tap]. */
@@ -447,11 +451,15 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         var sx = 0f; var sy = 0f; var ox = 0; var oy = 0; var moved = false
         v.setOnTouchListener { _, e ->
             when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { sx = e.rawX; sy = e.rawY; ox = lp.x; oy = lp.y; moved = false; true }
+                MotionEvent.ACTION_DOWN -> {
+                    sx = e.rawX; sy = e.rawY; ox = lp.x; oy = lp.y; moved = false
+                    DisplayInfo.read(ctx).let { screenW = it.width; screenH = it.height }
+                    true
+                }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = e.rawX - sx; val dy = e.rawY - sy
                     if (!moved && (abs(dx) > slop || abs(dy) > slop)) moved = true
-                    if (moved) { lp.x = ox + dx.toInt(); lp.y = oy + dy.toInt(); clampToScreen(); OverlayWindows.update(wm, root, lp) }
+                    if (moved) { lp.x = ox + dx.toInt(); lp.y = oy + dy.toInt(); clampToScreen(fresh = false); OverlayWindows.update(wm, root, lp) }
                     true
                 }
                 MotionEvent.ACTION_UP -> {

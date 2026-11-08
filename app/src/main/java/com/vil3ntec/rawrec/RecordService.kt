@@ -850,8 +850,8 @@ class RecordService : Service(), Recorder.Events {
         val o = overlay ?: return
         if (!o.showGoal) return
         val now = goalNow()
-        if (now < 0) return   // not known yet (YouTube not answered)
-        o.setGoal(goalTitle(), now, LiveExtras.goalTarget(this).toLong())
+        // Not known yet (YouTube has not answered): the bar shows «… / target» meanwhile.
+        o.setGoal(goalTitle(), now.takeIf { it >= 0 }, LiveExtras.goalTarget(this).toLong())
     }
 
     private fun alert(a: StreamOverlay.Alert) {
@@ -1240,11 +1240,14 @@ class RecordService : Service(), Recorder.Events {
         r.voiceMeter?.let { m ->
             val s = m.summary()
             if (s.isNotEmpty()) {
-                val parts = VoiceSources.KINDS.filter { s.containsKey(it) }.joinToString("، ") { k ->
+                val parts = (VoiceSources.KINDS + VoiceSources.MIC).filter { s.containsKey(it) }.joinToString("، ") { k ->
                     getString(R.string.vs_rep_kind_fmt, getString(VoiceSources.nameRes(k)), Fmt.num(s[k]!!.first),
-                        getString(if (r.capturedKinds and k != 0) R.string.vs_in else R.string.vs_out))
+                        getString(if (k == VoiceSources.MIC || r.capturedKinds and k != 0) R.string.vs_in else R.string.vs_out))
                 }
                 block.append('\n').append(getString(R.string.vs_rep_fmt, parts))
+                val missing = VoiceSources.KINDS.filter { it !in m.opened }
+                if (missing.isNotEmpty()) block.append('\n').append(getString(R.string.vs_rep_not_measured_fmt,
+                    missing.joinToString("، ") { getString(VoiceSources.nameRes(it)) }))
                 val v = VoiceSources.voiceKind(this)
                 block.append('\n').append(when {
                     v != 0 -> getString(R.string.vs_rep_voice_fmt, getString(VoiceSources.nameRes(v)),
@@ -1253,6 +1256,10 @@ class RecordService : Service(), Recorder.Events {
                     else -> getString(R.string.vs_rep_unknown)
                 })
             }
+        }
+        when (r.aecState) {
+            Recorder.AEC_ON -> block.append('\n').append(getString(R.string.vs_rep_aec_on))
+            Recorder.AEC_NONE -> block.append('\n').append(getString(R.string.vs_rep_aec_none))
         }
         // «فشرده‌سازیِ هوشمند»: what the encoder reported, so the size is never a mystery.
         if (r.qpAverage > 0) block.append('\n').append(getString(R.string.eng_rep_smart_fmt, String.format(java.util.Locale.US, "%.1f", r.qpAverage),

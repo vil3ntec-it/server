@@ -276,7 +276,7 @@ class InteractionTest {
     @Test fun everyToggleResponds() {
         val a = launch()
         var flipped = 0
-        for (s in listOf(MainActivity.Sub.VIDEO, MainActivity.Sub.CONTROLS)) {
+        for (s in listOf(MainActivity.Sub.VIDEO, MainActivity.Sub.AUDIO, MainActivity.Sub.CONTROLS)) {
             openSub(a, s)
             val tags = all(a.window.decorView).mapNotNull { it.tag as? String }.filter { it.startsWith("tog:") && !it.endsWith(":switch") }
             assertTrue("toggles on ${s.name}", tags.isNotEmpty())
@@ -321,6 +321,7 @@ class InteractionTest {
             { openSub(a, MainActivity.Sub.VIDEO) },
             { openSub(a, MainActivity.Sub.AUDIO) },
             { openSub(a, MainActivity.Sub.CONTROLS) },
+            { tab(a, MainActivity.Tab.LIVE) },
         )
         for (go in pages) {
             go()

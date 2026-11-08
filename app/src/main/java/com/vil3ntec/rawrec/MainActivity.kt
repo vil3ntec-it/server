@@ -240,6 +240,7 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         ui.removeCallbacks(tickR)
+        stopListen()
     }
 
     override fun onDestroy() {
@@ -1364,11 +1365,15 @@ class MainActivity : Activity() {
         rows["live_q"] = Row(qc, "", "", LiveSettings.QUALITIES.map { str(it.label) }, vertical = true, top = 8) { i -> LiveSettings.setQuality(this, i) }
 
         val ac = card(root, R.string.live_audio_title, R.drawable.ic_volume)
+        // Before 3.3 these saved the choice but left the switch as it was: they looked dead.
         toggles["live_team"] = Toggle(ac, "tog:live_team", R.drawable.ic_mic, str(R.string.live_team_title), str(R.string.live_team_desc), top = 0) { on ->
             LiveSettings.setTeamVoice(this, on)
+            toggles["live_team"]?.set(on)
+            refreshLiveVoice()
         }
         toggles["live_mic"] = Toggle(ac, "tog:live_mic", R.drawable.ic_mic, str(R.string.live_mic_title), str(R.string.live_mic_desc)) { on ->
             LiveSettings.setMic(this, on)
+            toggles["live_mic"]?.set(on)
         }
 
         buildLiveExtras(root)
@@ -1379,6 +1384,7 @@ class MainActivity : Activity() {
         rows["live_q"]?.select(LiveSettings.quality(this))
         toggles["live_team"]?.set(LiveSettings.teamVoice(this))
         toggles["live_mic"]?.set(LiveSettings.mic(this))
+        refreshLiveVoice()
         fillLiveFields()
         return pg.scroll
     }
@@ -1506,6 +1512,25 @@ class MainActivity : Activity() {
         bc.addView(textField("!join", SafePrefs.str(getSharedPreferences(RecordService.PREFS, MODE_PRIVATE), "give_word")) { LiveExtras.put(ctx, "give_word", it.trim()) }, lp(6))
     }
 
+    /** Under «حرفِ یارها در پخش»: what is known about where the teammates come in (same as «صدا»). */
+    private fun refreshLiveVoice() {
+        toggles["live_team"]?.setDesc(str(R.string.live_team_desc) + "\n" + voiceStatus())
+    }
+
+    private fun voiceStatus(): String {
+        val vk = VoiceSources.voiceKind(this)
+        val gk = VoiceSources.gameKind(this)
+        val pick = VoiceSources.pick(this)
+        return when {
+            pick == VoiceSources.MIC -> str(R.string.vs_found_user_mic)
+            pick != 0 && pick == gk -> str(R.string.vs_pick_game_note)
+            pick != 0 -> str(R.string.vs_found_user_fmt, str(VoiceSources.nameRes(pick)))
+            vk != 0 -> str(R.string.vs_found_fmt, str(VoiceSources.nameRes(vk)), if (gk != 0) str(VoiceSources.nameRes(gk)) else "—")
+            VoiceSources.mixed(this) -> str(R.string.vs_found_mixed)
+            else -> str(R.string.vs_team_unknown)
+        }
+    }
+
     private fun refreshYt() {
         val st = ytStatus ?: return
         if (ytSigning) return
@@ -1538,9 +1563,11 @@ class MainActivity : Activity() {
                 ui.post { if (!isDestroyed) showYtCode(dc) }
                 val until = System.currentTimeMillis() + dc.expiresS * 1000L
                 var token: String? = null
+                var wait = dc.intervalS.coerceAtLeast(5)
                 while (token == null && System.currentTimeMillis() < until && ytSigning) {
-                    Thread.sleep(dc.intervalS.coerceAtLeast(5) * 1000L)
+                    Thread.sleep(wait * 1000L)
                     token = YouTubeApi.pollDevice(id, secret, dc.deviceCode)
+                    if (token == YouTubeApi.SLOW_DOWN) { token = null; wait += 5 }
                 }
                 if (token == null) throw java.io.IOException("expired_token")
                 LiveExtras.setYtToken(app, token)
@@ -1834,23 +1861,137 @@ class MainActivity : Activity() {
         val gainLabels = gains.map { "${(it * 100).toInt()}%" }
         rows["gg"] = Row(c, str(R.string.gg_title), str(R.string.gg_desc), gainLabels, ic = R.drawable.ic_gamepad) { i -> change(false) { it.copy(gameGain = gains[i]) } }
         rows["mg"] = Row(c, str(R.string.mg_title), str(R.string.mg_desc), gainLabels, ic = R.drawable.ic_mic) { i -> change(false) { it.copy(micGain = gains[i]) } }
-        // «صدای یارها»: game sound always stays, only the teammates' voice chat can be left out.
+        // «صدای یارها»: only the teammates' voice chat can be left out; every switch here works at once,
+        // and each part can be listened to (the last recording's sound of it), so nothing is guessed.
         val vc = card(pg.col, R.string.vs_title, R.drawable.ic_volume, top = 12)
         teamDesc = text("", R.style.Text_Caption)
         vc.addView(teamDesc, lp(6))
         toggles["team"] = Toggle(vc, "tog:team", R.drawable.ic_mic, str(R.string.vs_team_title), str(R.string.vs_team_desc)) { on ->
             change(false) { it.copy(teamVoice = on) }
         }
-        vc.addView(text(str(R.string.vs_kinds_desc), R.style.Text_Caption), lp(12))
-        for (k in VoiceSources.KINDS) {
-            toggles["kind$k"] = Toggle(vc, "tog:kind$k", R.drawable.ic_volume, str(VoiceSources.nameRes(k)), "") { on ->
-                if (!on && k == VoiceSources.gameKind(this)) {
-                    toast(R.string.vs_cant_game)
-                    refreshAll()
-                } else change(false) { it.copy(audioKinds = if (on) it.audioKinds or k else it.audioKinds and k.inv()) }
+        toggles["aec"] = Toggle(vc, "tog:aec", R.drawable.ic_mic_off, str(R.string.vs_aec_title), str(R.string.vs_aec_desc)) { on ->
+            VoiceSources.setAec(this, on)
+            refreshAll()
+        }
+        vc.addView(text(str(R.string.vs_listen_title), R.style.Text_Label).apply { startIcon(R.drawable.ic_headset, 18, tint(R.color.text_secondary), 8) }, lp(18))
+        vc.addView(text(str(R.string.vs_listen_desc), R.style.Text_Caption), lp(4))
+        val listenBox = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listenButtons.clear()
+        for ((i, k) in (VoiceSources.KINDS + VoiceSources.MIC).withIndex()) {
+            val b = Button(this, null, 0, R.style.Button_Small).apply {
+                tag = "listen:$k"
+                setCompoundDrawablesRelative(icon(R.drawable.ic_play, 18), null, null, null)
+                onTap("listen $k") { listen(k) }
             }
+            listenButtons[k] = b
+            listenBox.addView(b, LinearLayout.LayoutParams(WRAP_CONTENT, dp(48)).apply { if (i > 0) marginStart = dp(8) })
+        }
+        vc.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(listenBox) }, lp(10))
+        listenNote = text("", R.style.Text_Caption)
+        vc.addView(listenNote, lp(6))
+        rows["vs_pick"] = Row(vc, str(R.string.vs_pick_title), str(R.string.vs_pick_desc),
+            listOf(str(R.string.vs_pick_auto)) + PICKS.drop(1).map { str(VoiceSources.nameRes(it)) }, top = 18) { i ->
+            val k = PICKS[i]
+            VoiceSources.setPick(this, k)
+            if (k != 0 && k == VoiceSources.gameKind(this)) toast(R.string.vs_pick_game_note)
+            if (k == VoiceSources.MIC) VoiceSources.setAec(this, true)
+            refreshAll()
+        }
+        vc.addView(text(str(R.string.vs_kinds_desc), R.style.Text_Caption), lp(16))
+        for (k in VoiceSources.KINDS) {
+            toggles["kind$k"] = Toggle(vc, "tog:kind$k", R.drawable.ic_volume, str(VoiceSources.nameRes(k)), "") { on -> onKindSwitch(k, on) }
         }
         return pg.scroll
+    }
+
+    private val PICKS = listOf(0, VoiceSources.GAME, VoiceSources.MEDIA, VoiceSources.OTHER, VoiceSources.MIC)
+    private val listenButtons = LinkedHashMap<Int, Button>()
+    private var listenNote: TextView? = null
+    private var player: android.media.MediaPlayer? = null
+    private var playingKind = 0
+
+    /** A part's switch: [on] is what the owner wants for it now; what is shown is what will really be recorded. */
+    private fun onKindSwitch(k: Int, on: Boolean) {
+        val gk = VoiceSources.gameKind(this)
+        if (on) {
+            if (k == gk) VoiceSources.setGameOffConfirmed(this, false)
+            // Switching the teammates' part back on means: record them.
+            val team = cfg.teamVoice || k == VoiceSources.voiceKind(this)
+            change(false) { it.copy(audioKinds = it.audioKinds or k, teamVoice = team) }
+            toastText(str(R.string.vs_on_now_toast_fmt, str(VoiceSources.nameRes(k))))
+            return
+        }
+        val eff = VoiceSources.effectiveMask(this, cfg)
+        if (eff and k.inv() and VoiceSources.ALL == 0) { toast(R.string.vs_need_one); refreshAll(); return }
+        if (k == gk) {
+            AlertDialog.Builder(this)
+                .setIcon(icon(R.drawable.ic_alert, 24, tint(R.color.warning)))
+                .setTitle(R.string.vs_game_off_title)
+                .setMessage(str(R.string.vs_game_off_msg_fmt, str(VoiceSources.nameRes(k)), Fmt.num(VoiceSources.lastActivity(this, k).coerceAtLeast(0))))
+                .setPositiveButton(R.string.vs_game_off_yes) { _, _ ->
+                    act("game sound off") {
+                        VoiceSources.setGameOffConfirmed(this, true)
+                        change(false) { it.copy(audioKinds = it.audioKinds and k.inv()) }
+                        toastText(str(R.string.vs_off_now_toast_fmt, str(VoiceSources.nameRes(k))))
+                    }
+                }
+                .setNegativeButton(R.string.cancel) { _, _ -> refreshAll() }
+                .setOnCancelListener { refreshAll() }
+                .show()
+            return
+        }
+        change(false) { it.copy(audioKinds = it.audioKinds and k.inv()) }
+        toastText(str(R.string.vs_off_now_toast_fmt, str(VoiceSources.nameRes(k))))
+    }
+
+    private fun toastText(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
+
+    /** «گوش بده»: plays the last recording's sound of one part; the same button again stops it. */
+    private fun listen(k: Int) {
+        val again = playingKind == k
+        stopListen()
+        if (again) return
+        val f = VoiceSources.clipFile(this, k)
+        if (f == null) {
+            listenNote?.text = if ((VoiceSources.KINDS + VoiceSources.MIC).any { VoiceSources.clipFile(this, it) != null })
+                str(R.string.vs_listen_empty_fmt, str(VoiceSources.nameRes(k))) else str(R.string.vs_listen_none)
+            return
+        }
+        val p = android.media.MediaPlayer()
+        try {
+            p.setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            p.setDataSource(f.path)
+            p.setOnCompletionListener { stopListen() }
+            p.prepare()
+            p.start()
+        } catch (e: Exception) {
+            p.release()
+            listenNote?.text = str(R.string.error_action_fmt, e.message ?: e.javaClass.simpleName)
+            return
+        }
+        player = p
+        playingKind = k
+        listenNote?.text = str(R.string.vs_listen_playing_fmt, str(VoiceSources.nameRes(k)))
+        refreshListen()
+    }
+
+    private fun stopListen() {
+        try { player?.stop() } catch (_: Exception) {}
+        try { player?.release() } catch (_: Exception) {}
+        player = null
+        if (playingKind != 0) { playingKind = 0; listenNote?.text = "" }
+        refreshListen()
+    }
+
+    private fun refreshListen() {
+        for ((k, b) in listenButtons) {
+            val has = VoiceSources.clipFile(this, k) != null
+            b.text = str(VoiceSources.nameRes(k))
+            b.setCompoundDrawablesRelative(icon(if (playingKind == k) R.drawable.ic_stop else R.drawable.ic_play, 18), null, null, null)
+            b.alpha = if (has) 1f else 0.5f
+            b.isActivated = playingKind == k
+        }
     }
 
     private fun buildSubControls(): View {
@@ -1876,8 +2017,8 @@ class MainActivity : Activity() {
             prefs.edit().putBoolean(RecordService.PREF_INSTANT, once).apply()
             if (!once && RecordService.instantReady) startService(Intent(this, RecordService::class.java).setAction(RecordService.ACTION_RELEASE))
         }
-        toggles["bubble"] = Toggle(c, "tog:bubble", R.drawable.eng_ic_rec, str(R.string.bubble_title), str(R.string.bubble_desc)) { on -> IdleBubble.setEnabled(this, on) }
-        toggles["ready"] = Toggle(c, "tog:ready", R.drawable.ic_bell, str(R.string.ready_title), str(R.string.ready_desc)) { on -> ReadyNotice.setEnabled(this, on) }
+        toggles["bubble"] = Toggle(c, "tog:bubble", R.drawable.eng_ic_rec, str(R.string.bubble_title), str(R.string.bubble_desc)) { on -> IdleBubble.setEnabled(this, on); toggles["bubble"]?.set(on) }
+        toggles["ready"] = Toggle(c, "tog:ready", R.drawable.ic_bell, str(R.string.ready_title), str(R.string.ready_desc)) { on -> ReadyNotice.setEnabled(this, on); toggles["ready"]?.set(on) }
         toggles["shake"] = Toggle(c, "tog:shake", R.drawable.ic_vibrate, str(R.string.shake_title), str(R.string.shake_desc)) { on -> change(false) { it.copy(shakeStop = on) } }
         val c2 = card(pg.col, null, top = 12)
         rows["cd"] = Row(c2, str(R.string.cd_title), str(R.string.cd_desc),
@@ -2155,29 +2296,35 @@ class MainActivity : Activity() {
         rows["cam"]?.select(c.facecam)
         rows["gg"]?.root?.visibility = if (c.usesInternal) View.VISIBLE else View.GONE
         rows["mg"]?.root?.visibility = if (c.usesMic) View.VISIBLE else View.GONE
-        // «صدای یارها»: what the last recording found, and the switches.
+        // «صدای یارها»: what the last recording found (or the owner picked), and the switches — all of
+        // them work at once; each shows what will really be recorded.
         val vk = VoiceSources.voiceKind(this)
         val gk = VoiceSources.gameKind(this)
-        teamDesc?.text = when {
-            vk != 0 -> str(R.string.vs_found_fmt, str(VoiceSources.nameRes(vk)), if (gk != 0) str(VoiceSources.nameRes(gk)) else "—")
-            VoiceSources.mixed(this) -> str(R.string.vs_found_mixed)
-            else -> str(R.string.vs_found_none)
-        }
+        val pick = VoiceSources.pick(this)
+        teamDesc?.text = voiceStatus()
+        refreshLiveVoice()
         toggles["team"]?.set(c.teamVoice)
-        toggles["team"]?.enable(vk != 0)
+        toggles["aec"]?.set(VoiceSources.aec(this))
+        toggles["aec"]?.root?.visibility = if (c.usesMic && c.usesInternal) View.VISIBLE else View.GONE
+        rows["vs_pick"]?.select(PICKS.indexOf(pick).coerceAtLeast(0))
+        val eff = VoiceSources.effectiveMask(this, c)
         for (k in VoiceSources.KINDS) {
             val t = toggles["kind$k"] ?: continue
-            t.set(c.audioKinds and k != 0 || k == gk)
-            // Until a recording showed which kind is the game, none can be switched off (game sound first).
-            t.enable(gk != 0 && k != gk)
+            val on = eff and k != 0
+            t.set(on)
             val act = VoiceSources.lastActivity(this, k)
-            t.setDesc(when {
+            var d = when {
                 k == gk -> str(R.string.vs_kind_game_fmt, Fmt.num(act.coerceAtLeast(0)))
                 k == vk -> str(R.string.vs_kind_voice_fmt, Fmt.num(act.coerceAtLeast(0)))
                 act >= 0 -> str(R.string.vs_kind_fmt, Fmt.num(act))
+                gk != 0 -> str(R.string.vs_kind_not_measured)
                 else -> str(R.string.vs_kind_unknown)
-            })
+            }
+            if (!on) d += " " + str(R.string.vs_kind_off_now)
+            else if (gk == 0) d += "\n" + str(R.string.vs_kind_maybe_game)
+            t.setDesc(d)
         }
+        refreshListen()
         (toggles["team"]?.root?.parent as? View)?.visibility = if (c.usesInternal) View.VISIBLE else View.GONE
         toggles["ghost"]?.root?.visibility = if (c.floatingButton && !c.gameMode) View.VISIBLE else View.GONE
         toggles["invis"]?.root?.visibility = if (c.floatingButton && !c.gameMode && !c.ghostControl) View.VISIBLE else View.GONE

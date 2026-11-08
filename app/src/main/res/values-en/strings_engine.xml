@@ -19,7 +19,7 @@
     <string name="vs_team_in">in the video</string>
     <string name="vs_team_out">not in the video</string>
     <string name="vs_rep_mixed">The teammates are inside the game sound itself; not separated so the game sound stays complete.</string>
-    <string name="vs_rep_unknown">Where the teammates come in is not known yet (record more than 15 s while they talk).</string>
+    <string name="vs_rep_unknown">Where the teammates come in is not known yet (record more than 10 s while they talk, or listen and pick in «Audio»).</string>
     <string name="eng_reason_live">The live stream could not reach the server or stayed disconnected for 3 minutes (check the key, the address or the internet).</string>
     <string name="eng_n_show_control">Show control</string>
     <string name="eng_toast_control_hidden">Recording control hidden. Stop from the notification or the Quick Settings tile; “Show control” in the notification brings it back.</string>
@@ -59,4 +59,7 @@
     <string name="eng_reason_service">Android closed the recording service; the file was closed cleanly.</string>
     <string name="eng_reason_crash">The app hit an error; the video was saved before the app closed.</string>
     <string name="eng_reason_killed">The recording was cut off: Android closed the app (low memory, or “Stop” in the active-apps list). The part being recorded could not be saved.</string>
+    <string name="vs_rep_not_measured_fmt">Not measured apart (this phone did not give a separate capture): %1$s</string>
+    <string name="vs_rep_aec_on">Microphone: the speaker\'s sound (game, teammates) was removed from it; only your voice.</string>
+    <string name="vs_rep_aec_none">Microphone: this phone has no speaker-sound removal; without headphones the teammates may have come in through the microphone.</string>
 </resources>
