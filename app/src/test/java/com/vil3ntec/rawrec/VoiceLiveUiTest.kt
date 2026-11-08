@@ -275,6 +275,10 @@ class VoiceLiveUiTest {
         hud.show()
         hud.setScenes(listOf("g" to "بازی", "b" to "برمی‌گردم"), "g", listOf(Triple("c", "چت", false), Triple("t", "متن", true)))
         hud.setChatOnStream(false)
+        // the stream's link, one tap to copy
+        hud.setLink("https://youtu.be/abc123")
+        hud.linkBtn.performClick()
+        assertEquals("https://youtu.be/abc123", app.getSystemService(android.content.ClipboardManager::class.java)!!.primaryClip?.getItemAt(0)?.text.toString())
         hud.add(msg("1", "salam"))
         idle()
         assertFalse("nothing over the game before the capture check", hud.feedRoot.isAttachedToWindow)

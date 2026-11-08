@@ -125,6 +125,21 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         if (bold) typeface = Typeface.DEFAULT_BOLD
     }
 
+    /** The stream's own address on YouTube (copied with a tap, to watch it or send it to friends). */
+    private var link: String? = null
+    internal val linkBtn: ImageView by lazy {
+        iconBtn(R.drawable.ic_link, ctx.getString(R.string.hud_link)) {
+            val l = link ?: run { note(ctx.getString(R.string.hud_link_none)); return@iconBtn }
+            ctx.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(android.content.ClipData.newPlainText("live", l))
+            note(ctx.getString(R.string.hud_link_copied_fmt, l))
+        }.apply { alpha = 0.45f; tag = "hud:link" }
+    }
+
+    fun setLink(url: String?) {
+        link = url
+        linkBtn.alpha = if (url != null) 1f else 0.45f
+    }
+
     private fun iconBtn(res: Int, desc: String, click: () -> Unit) = ImageView(ctx).apply {
         setImageResource(res)
         imageTintList = ColorStateList.valueOf(Color.WHITE)
@@ -207,6 +222,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(10), dp(6), dp(6), dp(6))
         addView(stats, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        addView(linkBtn)
         addView(iconBtn(R.drawable.ic_eye, ctx.getString(R.string.hud_on_stream)) { toggle(streamRow) })
         addView(iconBtn(R.drawable.ic_gift, ctx.getString(R.string.hud_tools)) { toggle(tools) })
         addView(iconBtn(R.drawable.ic_close, ctx.getString(R.string.hud_close)) { setOpen(false) })

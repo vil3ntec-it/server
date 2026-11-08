@@ -1019,4 +1019,10 @@
     <string name="yt_rx_no">✗ تصویر به یوتیوب نمی‌رسد (کلیدِ پخش یا اینترنت را ببین).</string>
     <string name="yt_vis_private">🔒 خصوصی: فقط خودت می‌بینی.</string>
     <string name="yt_vis_unlisted">🔗 فهرست‌نشده: فقط با لینک دیده می‌شود.</string>
+    <string name="hud_link">لینکِ پخش</string>
+    <string name="hud_link_none">لینکِ پخش هنوز از یوتیوب نیامده.</string>
+    <string name="hud_link_copied_fmt">لینکِ پخش کپی شد: %1$s</string>
+    <string name="yt_link_copy">کپیِ لینک</string>
+    <string name="yt_link_share">فرستادنِ لینک</string>
+    <string name="yt_link_copied">لینکِ پخش کپی شد.</string>
 </resources>

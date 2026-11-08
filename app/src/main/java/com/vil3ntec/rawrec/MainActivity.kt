@@ -1465,6 +1465,7 @@ class MainActivity : Activity() {
     private var ytBox: LinearLayout? = null
     private var ytThumbLive: android.widget.ImageView? = null
     private var ytTitleLive: TextView? = null
+    private var ytLinkLive: TextView? = null
     private var ytStatsLive: TextView? = null
     private var ytThumbFor: String? = null
 
@@ -1491,11 +1492,33 @@ class MainActivity : Activity() {
         box.addView(row)
         ytStatsLive = text("", R.style.Text_Caption)
         box.addView(ytStatsLive, lp(8))
+        // the stream's own link: to watch it, copy it or send it
+        ytLinkLive = text("", R.style.Text_Body).apply {
+            textDirection = View.TEXT_DIRECTION_LTR
+            setTextIsSelectable(true)
+            setTextColor(col(R.color.sel))
+            tag = "yt:link"
+        }
+        box.addView(ytLinkLive, lp(8))
         box.addView(button(str(R.string.yt_open), R.style.Button_Tonal, R.drawable.ic_play, h = 44, top = 8).apply {
             onTap("open on youtube") {
                 RecordService.ytInfo?.let { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://youtu.be/" + it.videoId))) }
             }
         })
+        box.addView(buttonRow(
+            smallButton(R.string.yt_link_copy, R.drawable.ic_copy) {
+                RecordService.ytInfo?.let { i ->
+                    getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(android.content.ClipData.newPlainText("live", "https://youtu.be/" + i.videoId))
+                    toast(R.string.yt_link_copied)
+                }
+            },
+            smallButton(R.string.yt_link_share, R.drawable.ic_share) {
+                RecordService.ytInfo?.let { i ->
+                    startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
+                        .putExtra(Intent.EXTRA_TEXT, i.title + "\nhttps://youtu.be/" + i.videoId), str(R.string.yt_link_share)))
+                }
+            },
+        ), lp(8))
         ytBox = box
         return box
     }
@@ -1507,6 +1530,7 @@ class MainActivity : Activity() {
         if (!RecordService.isLive || info == null) { box.visibility = View.GONE; ytThumbFor = null; return }
         box.visibility = View.VISIBLE
         ytTitleLive?.text = info.title
+        ytLinkLive?.text = "https://youtu.be/" + info.videoId
         val parts = ArrayList<String>()
         // what YouTube itself says: on the air or held back, the picture arriving, who can watch
         parts += str(when (info.lifeCycle) {

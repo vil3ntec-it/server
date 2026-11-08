@@ -960,9 +960,15 @@ class RecordService : Service(), Recorder.Events {
             }
         }
         override fun onActionFailed(text: String) { main.post { hud?.note(text) } }
-        override fun onBroadcast(info: LiveChat.YtInfo) { ytInfo = info }
+        override fun onBroadcast(info: LiveChat.YtInfo) {
+            ytInfo = info
+            main.post { hud?.setLink(liveLink(info)) }
+        }
         override fun onNote(text: String) { liveNote = text; main.post { hud?.note(text) } }
     }
+
+    /** The stream's address on YouTube (the video itself; its chat opens beside it). */
+    private fun liveLink(info: LiveChat.YtInfo) = "https://youtu.be/" + info.videoId
 
     private fun onChat(m: LiveChat.Msg) {
         if (stopping) return

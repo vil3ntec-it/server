@@ -998,4 +998,10 @@ Your internet needs about %2$s Mbps upload.</string>
     <string name="yt_rx_no">✗ The picture does not reach YouTube (check the stream key or the internet).</string>
     <string name="yt_vis_private">🔒 Private: only you can see it.</string>
     <string name="yt_vis_unlisted">🔗 Unlisted: only people with the link.</string>
+    <string name="hud_link">Stream link</string>
+    <string name="hud_link_none">YouTube has not given the stream\'s link yet.</string>
+    <string name="hud_link_copied_fmt">Stream link copied: %1$s</string>
+    <string name="yt_link_copy">Copy link</string>
+    <string name="yt_link_share">Send link</string>
+    <string name="yt_link_copied">Stream link copied.</string>
 </resources>
