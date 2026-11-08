@@ -75,6 +75,9 @@ class MainActivity : Activity() {
     private val REQ_ONE = 12
     private val REQ_DELETE = 13
     private val REQ_THUMB = 14
+    private val REQ_SHORTS_PIC = 23
+    private var shortsPreview: android.widget.ImageView? = null
+    private var shortsKey: android.widget.EditText? = null
 
     private val prefs by lazy { getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE) }
     private val ui = Handler(Looper.getMainLooper())
@@ -1428,6 +1431,43 @@ class MainActivity : Activity() {
             LiveSettings.setRecordToo(this, on); toggles["live_record"]?.set(on)
         }
 
+        // ---- Shorts: the same live upright too (YouTube «Dual stream», a second key); the picture shown as it goes out
+        val sh = Section(root, "live_shorts", R.string.shorts_title, R.string.shorts_sec_desc, R.drawable.ic_live).body
+        toggles["shorts_on"] = Toggle(sh, "tog:shorts_on", R.drawable.ic_live, str(R.string.shorts_on_title), str(R.string.shorts_on_desc), top = 0) { on ->
+            LiveSettings.setShortsOn(this, on); toggles["shorts_on"]?.set(on)
+            if (on && LiveSettings.destinations(this).none { it.platform == 0 }) Toast.makeText(this, str(R.string.shorts_no_youtube), Toast.LENGTH_LONG).show()
+        }
+        sh.addView(text(str(R.string.shorts_steps), R.style.Text_Caption), lp(8))
+        shortsKey = field(str(R.string.shorts_key_hint), true) { LiveSettings.setShortsKey(this, it) }.apply { tag = "shorts:key"; setText(LiveSettings.shortsKey(this@MainActivity)) }
+        sh.addView(shortsKey, lp(8))
+        fun shortsRow(key: String, title: Int, opts: List<Int>, cur: Int) {
+            rows[key] = Row(sh, str(title), "", opts.map { str(it) }, top = 12) { i -> LiveSettings.setShortsInt(this, key, i); refreshShortsPreview() }
+                .apply { select(cur) }
+        }
+        shortsRow("shorts_size", R.string.shorts_size_title, listOf(R.string.shorts_size_720, R.string.shorts_size_1080), LiveSettings.shortsSize(this))
+        shortsRow("shorts_place", R.string.shorts_place_title, listOf(R.string.shorts_place_top, R.string.shorts_place_mid, R.string.shorts_place_bottom), LiveSettings.shortsPlace(this))
+        shortsRow("shorts_zoom", R.string.shorts_zoom_title, listOf(R.string.shorts_zoom_whole, R.string.shorts_zoom_big, R.string.shorts_zoom_full), LiveSettings.shortsZoom(this))
+        shortsRow("shorts_top", R.string.shorts_top_title, listOf(R.string.shorts_top_none, R.string.shorts_top_text, R.string.shorts_top_pic), LiveSettings.shortsTop(this))
+        sh.addView(button(str(R.string.shorts_pick), R.style.Button_Tonal, R.drawable.ic_file, top = 8).apply {
+            tag = "shorts:pick"
+            onTap("shorts picture") { @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_GET_CONTENT).setType("image/*"), REQ_SHORTS_PIC) }
+        })
+        toggles["shorts_chat"] = Toggle(sh, "tog:shorts_chat", R.drawable.ic_chat, str(R.string.shorts_chat_title), str(R.string.shorts_chat_desc), top = 12) { on ->
+            LiveSettings.setShortsChat(this, on); toggles["shorts_chat"]?.set(on); refreshShortsPreview()
+        }
+        shortsPreview = android.widget.ImageView(this).apply {
+            adjustViewBounds = true
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            clipToOutline = true
+            background = roundBg(col(R.color.surface_2), 12)
+            tag = "shorts:preview"
+            contentDescription = str(R.string.shorts_title)
+        }
+        sh.addView(shortsPreview, LinearLayout.LayoutParams(dp(180), WRAP_CONTENT).apply { topMargin = dp(12); gravity = android.view.Gravity.CENTER_HORIZONTAL })
+        toggles["shorts_on"]?.set(LiveSettings.shortsOn(this))
+        toggles["shorts_chat"]?.set(LiveSettings.shortsChat(this))
+        refreshShortsPreview()
+
         val ac = Section(root, "live_audio", R.string.live_audio_title, R.string.sec_live_audio_desc, R.drawable.ic_volume).body
         // Before 3.3 these saved the choice but left the switch as it was: they looked dead.
         toggles["live_team"] = Toggle(ac, "tog:live_team", R.drawable.ic_mic, str(R.string.live_team_title), str(R.string.live_team_desc), top = 0) { on ->
@@ -1463,6 +1503,24 @@ class MainActivity : Activity() {
     }
 
     /** The chosen picture as YouTube wants a thumbnail: 1280×720 (cropped to 16:9), JPEG under 2 MB. */
+    /** The tall picture as it will go out (the game as a grey box until a stream has run). */
+    private fun refreshShortsPreview() {
+        val v = shortsPreview ?: return
+        val d = DisplayInfo.read(this)
+        val aspect = maxOf(d.width, d.height) / minOf(d.width, d.height).coerceAtLeast(1).toFloat()
+        try { v.setImageBitmap(Shorts.preview(this, null, aspect)) } catch (_: Exception) {}
+    }
+
+    /** The picture above the game in Shorts, kept at most 1080 wide. */
+    private fun saveShortsPic(u: Uri) {
+        val src = contentResolver.openInputStream(u)?.use { android.graphics.BitmapFactory.decodeStream(it) } ?: return
+        val k = minOf(1f, 1080f / src.width)
+        val b = if (k < 1f) android.graphics.Bitmap.createScaledBitmap(src, (src.width * k).toInt(), (src.height * k).toInt(), true) else src
+        Shorts.pictureFile(this).outputStream().use { b.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        if (LiveSettings.shortsTop(this) != 2) { LiveSettings.setShortsInt(this, "shorts_top", 2); rows["shorts_top"]?.select(2) }
+        refreshShortsPreview()
+    }
+
     private fun saveThumb(u: Uri) {
         val src = contentResolver.openInputStream(u)?.use { android.graphics.BitmapFactory.decodeStream(it) } ?: return
         val out = android.graphics.Bitmap.createBitmap(1280, 720, android.graphics.Bitmap.Config.ARGB_8888)
@@ -3129,6 +3187,7 @@ class MainActivity : Activity() {
         @Suppress("DEPRECATION") super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ_DELETE) { safely("deleted") { refreshVideos() }; return }
         if (requestCode == REQ_THUMB) { if (resultCode == RESULT_OK) data?.data?.let { u -> act("thumbnail") { saveThumb(u) } }; return }
+        if (requestCode == REQ_SHORTS_PIC) { if (resultCode == RESULT_OK) data?.data?.let { u -> act("shorts picture") { saveShortsPic(u) } }; return }
         if (requestCode != REQ_CAPTURE) return
         if (resultCode != RESULT_OK || data == null) { pendingLive = false; toast(R.string.toast_capture_denied); return }
         if (pendingLive) { pendingLive = false; act("start live") { startLive(resultCode, data) }; return }

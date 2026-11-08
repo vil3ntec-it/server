@@ -170,4 +170,23 @@ class RtmpConnectTest {
         assertTrue("a frame just before the second counts (frame times jitter)", KeyClock.due(0, 985_000, 1_000_000))
         assertFalse("before the first key frame: not due", KeyClock.due(-1, 5_000_000, 1_000_000))
     }
+
+    @Test fun shortsPutTheGameWhereTheOwnerSays() {
+        // a 16:10 tablet picture in a 720×1280 tall frame
+        val mid = Shorts.layout(720, 1280, 1.6f, 1, 0)
+        assertEquals("the whole game across", 720, mid.game.width())
+        assertEquals(450, mid.game.height())
+        assertEquals("in the middle", 415, mid.game.top)
+        assertEquals("room above for the title or picture", 415, mid.top!!.height())
+        assertEquals("and below for the chat", 415, mid.bottom!!.height())
+        val top = Shorts.layout(720, 1280, 1.6f, 0, 0)
+        assertEquals(0, top.game.top); assertNull("nothing above a game at the top", top.top)
+        val full = Shorts.layout(720, 1280, 1.6f, 1, 2)
+        assertEquals("the whole height", 1280, full.game.height())
+        assertTrue("the sides cut evenly", full.game.left < 0 && full.game.right > 720 && full.game.left == 720 - full.game.right)
+        assertNull(full.top); assertNull(full.bottom)
+        val big = Shorts.layout(720, 1280, 1.6f, 2, 1)
+        assertEquals("at the bottom", 1280, big.game.bottom)
+        assertTrue("bigger than the frame's width", big.game.width() > 720)
+    }
 }

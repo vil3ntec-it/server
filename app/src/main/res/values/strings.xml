@@ -1060,4 +1060,34 @@
     <string name="hud_hot">گوشی داغ شد: برای خنک ماندن، پخش موقتاً ۳۰ فریم است.</string>
     <string name="hud_cool">گوشی خنک شد: پخش دوباره با فریمِ کامل.</string>
     <string name="live_record_failed_fmt">ضبطِ روی گوشی ایستاد (%1$s)؛ آنچه ضبط شد نگه داشته شد و پخش ادامه دارد.</string>
+    <!-- 4.1 Shorts -->
+    <string name="shorts_title">شورت (پخشِ عمودی)</string>
+    <string name="shorts_sec_desc">همین پخش، ایستاده، در بخشِ شورتِ یوتیوب</string>
+    <string name="shorts_on_title">پخش در شورت هم باشد</string>
+    <string name="shorts_on_desc">یک تصویرِ ایستادهٔ ۹:۱۶ هم ساخته و با کلیدِ دوم فرستاده می‌شود؛ چت یکی است.</string>
+    <string name="shorts_steps">۱) در YouTube Studio ← Go live ← Stream، در Stream settings گزینهٔ «Dual stream» را روشن کن و «Encoder» را بزن (پیش از شروعِ پخش).\n۲) کلیدِ پخشِ عمودی (Vertical stream key) را کپی کن و این‌جا بگذار.\n۳) «چه کسی ببیند» را «عمومی» کن تا در شورت دیده شود.</string>
+    <string name="shorts_key_hint">کلیدِ پخشِ عمودی</string>
+    <string name="shorts_size_title">اندازه</string>
+    <string name="shorts_size_720">۷۲۰×۱۲۸۰ (خنک‌تر)</string>
+    <string name="shorts_size_1080">۱۰۸۰×۱۹۲۰</string>
+    <string name="shorts_place_title">جای بازی</string>
+    <string name="shorts_place_top">بالا</string>
+    <string name="shorts_place_mid">وسط</string>
+    <string name="shorts_place_bottom">پایین</string>
+    <string name="shorts_zoom_title">بزرگیِ بازی</string>
+    <string name="shorts_zoom_whole">کلِ بازی</string>
+    <string name="shorts_zoom_big">بزرگ‌تر</string>
+    <string name="shorts_zoom_full">تمام‌قد</string>
+    <string name="shorts_top_title">بالای بازی</string>
+    <string name="shorts_top_none">هیچ</string>
+    <string name="shorts_top_text">عنوانِ پخش</string>
+    <string name="shorts_top_pic">عکس</string>
+    <string name="shorts_pick">انتخابِ عکسِ بالا</string>
+    <string name="shorts_chat_title">چت زیرِ بازی</string>
+    <string name="shorts_chat_desc">پیام‌های تازه در جای خالیِ زیرِ بازی.</string>
+    <string name="shorts_game">بازی</string>
+    <string name="shorts_sample_msg">این هم چت است</string>
+    <string name="shorts_no_youtube">شورت فقط با یوتیوب است: یوتیوب را در «کجا پخش شود» روشن کن.</string>
+    <string name="shorts_failed_fmt">شورت قطع شد (%1$s)؛ پخشِ اصلی ادامه دارد.</string>
+    <string name="shorts_encoder_failed">این گوشی دو رمزگذار را با هم اجرا نکرد؛ شورت نیست، پخشِ اصلی ادامه دارد.</string>
 </resources>

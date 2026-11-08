@@ -1039,4 +1039,34 @@ Your internet needs about %2$s Mbps upload.</string>
     <string name="hud_hot">The phone got hot: to keep it cool, the stream is at 30 fps for now.</string>
     <string name="hud_cool">The phone cooled down: full frame rate again.</string>
     <string name="live_record_failed_fmt">The recording on the phone stopped (%1$s); what was recorded is kept and the stream goes on.</string>
+    <!-- 4.1 Shorts -->
+    <string name="shorts_title">Shorts (vertical live)</string>
+    <string name="shorts_sec_desc">This very stream, upright, in YouTube\'s Shorts feed</string>
+    <string name="shorts_on_title">Stream to Shorts too</string>
+    <string name="shorts_on_desc">An upright 9:16 picture is made too and sent with a second key; the chat is one.</string>
+    <string name="shorts_steps">1) In YouTube Studio → Go live → Stream, under Stream settings turn on «Dual stream» and choose «Encoder» (before going live).\n2) Copy the Vertical stream key and put it here.\n3) Set «Who can watch» to Public to be seen in Shorts.</string>
+    <string name="shorts_key_hint">Vertical stream key</string>
+    <string name="shorts_size_title">Size</string>
+    <string name="shorts_size_720">720×1280 (cooler)</string>
+    <string name="shorts_size_1080">1080×1920</string>
+    <string name="shorts_place_title">Where the game is</string>
+    <string name="shorts_place_top">Top</string>
+    <string name="shorts_place_mid">Middle</string>
+    <string name="shorts_place_bottom">Bottom</string>
+    <string name="shorts_zoom_title">Game size</string>
+    <string name="shorts_zoom_whole">Whole game</string>
+    <string name="shorts_zoom_big">Bigger</string>
+    <string name="shorts_zoom_full">Full height</string>
+    <string name="shorts_top_title">Above the game</string>
+    <string name="shorts_top_none">Nothing</string>
+    <string name="shorts_top_text">Stream title</string>
+    <string name="shorts_top_pic">Picture</string>
+    <string name="shorts_pick">Pick the top picture</string>
+    <string name="shorts_chat_title">Chat below the game</string>
+    <string name="shorts_chat_desc">New messages in the free space below the game.</string>
+    <string name="shorts_game">Game</string>
+    <string name="shorts_sample_msg">this is the chat</string>
+    <string name="shorts_no_youtube">Shorts are YouTube only: switch YouTube on under «Where to stream».</string>
+    <string name="shorts_failed_fmt">Shorts dropped out (%1$s); the main stream goes on.</string>
+    <string name="shorts_encoder_failed">This phone did not run two encoders at once; no Shorts, the main stream goes on.</string>
 </resources>

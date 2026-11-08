@@ -446,7 +446,7 @@ class RecordService : Service(), Recorder.Events {
                     screenChecks = 0; main.removeCallbacks(screenCheck); main.postDelayed(screenCheck, 8_000)
                     (if (liveTargets.size > 1) MultiSink(liveTargets, plan.bitrate, liveListener) else RtmpSink(lv.url, lv.key, plan.bitrate, liveListener))
                         .also { liveSink = it }
-                }, forceLook = true, alsoRecord = LiveSettings.recordToo(this))
+                }, forceLook = true, alsoRecord = LiveSettings.recordToo(this), shorts = shortsOut())
             else Recorder(this, p, c, plan, this, keptDisplay, keepDisplay = instantEnabled(this))
             if (lv == null || LiveSettings.recordToo(this)) ActiveRec.begin(this)
             try { r.start() } catch (e: Exception) { ActiveRec.end(this); throw e }
@@ -472,6 +472,7 @@ class RecordService : Service(), Recorder.Events {
             main.postDelayed(spaceCheck, 2000)
             if (c.testSeconds > 0) main.postDelayed(testDone, c.testSeconds * 1000L)
             if (lv != null) try { startLiveExtras(r) } catch (e: Exception) { RecLog.add(this, "live extras: ${e.message}") }
+            if (lv != null) try { applyShortsLayout() } catch (e: Exception) { RecLog.add(this, "shorts layout: ${e.message}") }
         } catch (e: Exception) {
             finishRecording(StopReason.START_FAILED, e.message ?: e.javaClass.simpleName)
         }
@@ -703,6 +704,59 @@ class RecordService : Service(), Recorder.Events {
 
     private val sendCheck = Runnable { checkSending() }
 
+    // ------------------------------------------------------------ Shorts (YouTube «Dual stream»)
+
+    private var shortsSink: RtmpSink? = null
+    private var shortsStatus: RtmpSink.Status? = null
+    private var shortsLayout: Shorts.Layout? = null
+    private var lastShortsLog = ""
+    private val shortsLines = ArrayList<Pair<String, String>>()
+    private val shortsColors = ArrayList<Int>()
+
+    /** The tall picture and its own connection (the vertical key), when switched on with YouTube. */
+    private fun shortsOut(): Recorder.ShortsOut? {
+        if (!LiveSettings.shortsReady(this)) return null
+        val (w, h) = Shorts.SIZES[LiveSettings.shortsSize(this)]
+        val br = LiveSettings.shortsBitrate(this)
+        shortsStatus = null; lastShortsLog = ""
+        val sink = RtmpSink(LiveSettings.url(this, 0), LiveSettings.shortsKey(this), br, shortsListener)
+        shortsSink = sink
+        RecLog.add(this, "shorts: ${w}x$h ${br / 1_000_000} Mbps")
+        return Recorder.ShortsOut(w, h, br, sink)
+    }
+
+    private val shortsListener = object : RtmpSink.Listener {
+        override fun onStatus(s: RtmpSink.Status) {
+            main.post {
+                shortsStatus = s
+                val line = "shorts: ${s.state}" + (s.why?.let { " why=$it" } ?: "") + (s.error?.let { " err=$it" } ?: "")
+                if (line != lastShortsLog) { lastShortsLog = line; RecLog.add(this@RecordService, line) }
+                if (s.state == RtmpSink.State.FAILED && !stopping)
+                    hud?.note(getString(R.string.shorts_failed_fmt, LiveSettings.whyText(this@RecordService, s.why) ?: s.error ?: ""))
+            }
+        }
+        override fun onBitrate(bps: Int) { recorder?.setShortsBitrate(bps) }
+    }
+
+    /** Where the game, the title / picture and the chat are in the tall picture (as set on the live page). */
+    private fun applyShortsLayout() {
+        if (shortsSink == null) return
+        val r = recorder ?: return
+        val f = r.filter ?: return
+        val (w, h) = Shorts.SIZES[LiveSettings.shortsSize(this)]
+        val l = Shorts.layout(w, h, r.plan.width / r.plan.height.toFloat(), LiveSettings.shortsPlace(this), LiveSettings.shortsZoom(this))
+        shortsLayout = l
+        f.setShortsLayout(l.game, l.top, l.top?.let { Shorts.topPicture(this, LiveSettings.shortsTop(this), it) },
+            if (LiveSettings.shortsChat(this)) l.bottom else null)
+    }
+
+    /** The chat below the game, redrawn at most ~3 times a second. */
+    private val shortsChatDraw = Runnable {
+        val b = shortsLayout?.bottom ?: return@Runnable
+        if (!LiveSettings.shortsChat(this)) return@Runnable
+        recorder?.filter?.setShortsChat(Shorts.chatPicture(shortsLines.toList(), shortsColors.toList(), b.width(), b.height()))
+    }
+
     /**
      * Whether the screen sends any picture at all (the stream flows anyway, but then only the scene's
      * background goes out): said plainly, with what to press in Android's window. In the log either way.
@@ -822,6 +876,7 @@ class RecordService : Service(), Recorder.Events {
             sb.append(getString(R.string.live_rep_stats_fmt, String.format(java.util.Locale.US, "%.0f", mb), Fmt.num(avg / 1000),
                 Fmt.num(st?.dropped ?: 0), Fmt.num(st?.reconnects ?: 0)))
             for ((name, ds) in liveDests) sb.append('\n').append(getString(R.string.live_rep_dest_fmt, name, destWord(ds)))
+            if (shortsSink != null) sb.append('\n').append(getString(R.string.live_rep_dest_fmt, getString(R.string.shorts_title), destWord(shortsStatus)))
         }
         // how the connection went this time (the way, each failure and its reason; never the key)
         val log = RecLog.text(this).lines()
@@ -1033,6 +1088,11 @@ class RecordService : Service(), Recorder.Events {
     private fun liveLink(info: LiveChat.YtInfo) = "https://youtu.be/" + info.videoId
 
     private fun onChat(m: LiveChat.Msg) {
+        if (shortsSink != null && shortsLayout?.bottom != null && m.text.isNotBlank()) {
+            shortsLines += m.author to m.text; shortsColors += ChatHud.nameColor(m)
+            while (shortsLines.size > 12) { shortsLines.removeAt(0); shortsColors.removeAt(0) }
+            main.removeCallbacks(shortsChatDraw); main.postDelayed(shortsChatDraw, 300)
+        }
         if (stopping) return
         hud?.add(m)
         // A viewer writing in another language: shown to the owner in Persian (the stream keeps the original).
@@ -1355,6 +1415,7 @@ class RecordService : Service(), Recorder.Events {
         startedAt = 0L; pausedSince = 0L; countdownLeft = 0
         recorder = null
         isLive = false; live = null; liveSink = null; liveCovered = false
+        shortsSink = null; shortsLayout = null; shortsLines.clear(); shortsColors.clear(); main.removeCallbacks(shortsChatDraw)
         refreshTile()
         if (keepingPermission && projection != null && keptDisplay != null) {
             // «ضبطِ فوری»: stay in the foreground with the permission; the next start needs no dialog.
@@ -1559,6 +1620,7 @@ class RecordService : Service(), Recorder.Events {
         main.post {
             if (message.startsWith("rotate:")) addNotice("rotate", getString(R.string.notice_rotate_fail_fmt, message))
             else if (message.startsWith("look:")) addNotice("look", getString(R.string.eng_notice_look_fail))
+            else if (message.startsWith("shorts:")) { addNotice("shorts", getString(R.string.shorts_encoder_failed)); hud?.note(getString(R.string.shorts_encoder_failed)) }
             else if (message.startsWith("record:")) addNotice("record", getString(R.string.live_record_failed_fmt, message.removePrefix("record:").trim()))
             else addNotice("audio", getString(R.string.notice_audio_fmt, message))
             RecLog.add(this, "notice: $message")

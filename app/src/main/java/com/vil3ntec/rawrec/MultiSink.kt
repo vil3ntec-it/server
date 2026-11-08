@@ -131,3 +131,32 @@ class TeeSink(private val live: MediaSink, private val file: MediaSink) : MediaS
     override val videoBytes: Long get() = file.videoBytes
     override val waitNs: Long get() = file.waitNs
 }
+
+/**
+ * The stream ([main]) with the Shorts connection ([extra]) beside it: the sound goes to both, the
+ * pictures only to [main] (the tall picture has its own encoder, see Recorder.startShorts). The
+ * end of either is not the end of the other.
+ */
+class SoundToo(private val main: MediaSink, private val extra: MediaSink) : MediaSink {
+    override fun submitVideo(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int) = main.submitVideo(src, offset, size, ptsUs, flags)
+    override fun submitAudio(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int) {
+        extra.submitAudio(src, offset, size, ptsUs, flags)   // it only copies; [main] may move the position
+        main.submitAudio(src, offset, size, ptsUs, flags)
+    }
+    override fun videoFormat(f: MediaFormat) = main.videoFormat(f)
+    override fun audioFormat(f: MediaFormat) { extra.audioFormat(f); main.audioFormat(f) }
+    override fun newPart(discardCurrent: Boolean) = main.newPart(discardCurrent)
+    override fun encoderReplaced() = main.encoderReplaced()
+    override fun dropAudio() { extra.dropAudio(); main.dropAudio() }
+    override fun finish() {
+        val t = Thread({ try { extra.finish() } catch (_: Exception) {} }, "rawrec-shorts-end").apply { start() }
+        main.finish()
+        try { t.join(4_000) } catch (_: InterruptedException) {}
+    }
+    override fun emergencyFinish(timeoutMs: Long) { extra.emergencyFinish(timeoutMs / 3); main.emergencyFinish(timeoutMs * 2 / 3) }
+    override fun parts(): List<SegMuxer.Part> = main.parts()
+    override val allClosed: Boolean get() = main.allClosed
+    override val totalBytes: Long get() = main.totalBytes
+    override val videoBytes: Long get() = main.videoBytes
+    override val waitNs: Long get() = main.waitNs
+}

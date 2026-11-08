@@ -183,7 +183,8 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
                         val waited = System.currentTimeMillis() - startedAt
                         when {
                             // nothing on the channel for our key: a live is made for it (as streaming apps do)
-                            sid != null && !created && waited > 15_000 -> {
+                            // with Shorts the live is the one set up in Studio («Dual stream»): never another one made
+                            sid != null && !created && waited > 15_000 && !LiveSettings.shortsReady(ctx) -> {
                                 created = true
                                 try {
                                     api.createBroadcast(sid, LiveExtras.ytTitle(ctx).ifBlank { ctx.getString(R.string.yt_default_title_fmt, LiveExtras.ytChannel(ctx).ifBlank { "Live" }) },

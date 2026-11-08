@@ -48,6 +48,32 @@ object LiveSettings {
     fun liveRate(ctx: Context) = SafePrefs.int(prefs(ctx), "live_mbps", 0).takeIf { it in LIVE_RATES } ?: 0
     fun setLiveRate(ctx: Context, m: Int) = prefs(ctx).edit().putInt("live_mbps", m).apply()
 
+    // ---- Shorts (YouTube «Dual stream», Encoder): a 9:16 picture with the vertical stream key
+    fun shortsOn(ctx: Context) = SafePrefs.bool(prefs(ctx), "shorts_on", false)
+    fun setShortsOn(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("shorts_on", on).apply()
+    fun shortsKey(ctx: Context): String = open(SafePrefs.str(prefs(ctx), "shorts_key"))
+    fun setShortsKey(ctx: Context, key: String) {
+        val e = prefs(ctx).edit()
+        if (key.isBlank()) { e.remove("shorts_key").apply(); return }
+        seal(key.trim())?.let { e.putString("shorts_key", it).apply() }
+    }
+    /** 0 = 720×1280 (cooler), 1 = 1080×1920. */
+    fun shortsSize(ctx: Context) = SafePrefs.int(prefs(ctx), "shorts_size", 0).coerceIn(0, Shorts.SIZES.size - 1)
+    /** The game in the tall picture: 0 top, 1 middle, 2 bottom. */
+    fun shortsPlace(ctx: Context) = SafePrefs.int(prefs(ctx), "shorts_place", 1).coerceIn(0, 2)
+    /** 0 the whole game, 1 bigger (sides cut), 2 the whole height. */
+    fun shortsZoom(ctx: Context) = SafePrefs.int(prefs(ctx), "shorts_zoom", 0).coerceIn(0, 2)
+    /** Above the game: 0 nothing, 1 the stream's title, 2 a picture. */
+    fun shortsTop(ctx: Context) = SafePrefs.int(prefs(ctx), "shorts_top", 1).coerceIn(0, 2)
+    /** The chat below the game. */
+    fun shortsChat(ctx: Context) = SafePrefs.bool(prefs(ctx), "shorts_chat", true)
+    fun setShortsInt(ctx: Context, k: String, v: Int) = prefs(ctx).edit().putInt(k, v).apply()
+    fun setShortsChat(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("shorts_chat", on).apply()
+    /** The tall picture's bit rate: YouTube's own advice for each size. */
+    fun shortsBitrate(ctx: Context) = if (shortsSize(ctx) == 0) 4_500_000 else 8_000_000
+    /** Shorts go out: switched on, a key given, and YouTube among the platforms. */
+    fun shortsReady(ctx: Context) = shortsOn(ctx) && shortsKey(ctx).isNotBlank() && destinations(ctx).any { it.platform == 0 }
+
     /** Record on the phone while live too: the very same pictures (no second encoder, so no extra heat). */
     fun recordToo(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_record", false)
     fun setRecordToo(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("live_record", on).apply()

@@ -387,6 +387,104 @@ class LookFilter(private val look: Look, private val fps: Int) {
         lastDrawNs = System.nanoTime()
         EGLExt.eglPresentationTimeANDROID(dpy, out, t)
         EGL14.eglSwapBuffers(dpy, out)
+        drawShorts(t)
+    }
+
+    // ---- Shorts (YouTube «Dual stream»): the same picture in a tall 9:16 frame for a second encoder,
+    // drawn right after each frame of the stream with the same time. The game in its rectangle (the
+    // black bars cut as above), the title or picture above it and the chat below.
+    private var out2: EGLSurface = EGL14.EGL_NO_SURFACE
+    private var w2 = 0
+    private var h2 = 0
+    private var shortsGame = android.graphics.Rect()
+    private var shortsTop: android.graphics.Rect? = null
+    private var shortsBottom: android.graphics.Rect? = null
+    private var shortsTopTex = 0
+    private var shortsBottomTex = 0
+    @Volatile var shortsError: String? = null; private set
+
+    /** The second encoder's input (null = no tall picture). */
+    fun setShortsOutput(s: Surface?, w: Int, h0: Int) = runSync {
+        if (out2 != EGL14.EGL_NO_SURFACE) {
+            EGL14.eglMakeCurrent(dpy, pbuffer, pbuffer, ctx)
+            EGL14.eglDestroySurface(dpy, out2)
+            out2 = EGL14.EGL_NO_SURFACE
+        }
+        if (s != null && s.isValid) {
+            out2 = EGL14.eglCreateWindowSurface(dpy, cfg, s, intArrayOf(EGL14.EGL_NONE), 0)
+            w2 = w; h2 = h0
+        }
+    }
+
+    /** Where the game is in the tall picture, and what is above it ([topPic]) — set once, or when changed. */
+    fun setShortsLayout(game: android.graphics.Rect, top: android.graphics.Rect?, topPic: android.graphics.Bitmap?, bottom: android.graphics.Rect?) {
+        h.post {
+            if (dpy == EGL14.EGL_NO_DISPLAY) return@post
+            try {
+                EGL14.eglMakeCurrent(dpy, pbuffer, pbuffer, ctx)
+                shortsGame = game; shortsTop = top; shortsBottom = bottom
+                shortsTopTex = upload2d(shortsTopTex, topPic)
+            } catch (t: Throwable) { shortsError = "layout: " + (t.message ?: t.javaClass.simpleName) }
+        }
+    }
+
+    /** The chat below the game (a picture of that part's size; null = none). */
+    fun setShortsChat(b: android.graphics.Bitmap?) {
+        h.post {
+            if (dpy == EGL14.EGL_NO_DISPLAY) return@post
+            try {
+                EGL14.eglMakeCurrent(dpy, pbuffer, pbuffer, ctx)
+                shortsBottomTex = upload2d(shortsBottomTex, b)
+            } catch (t: Throwable) { shortsError = "chat: " + (t.message ?: t.javaClass.simpleName) }
+        }
+    }
+
+    private fun upload2d(old: Int, b: android.graphics.Bitmap?): Int {
+        if (b == null || b.isRecycled) { if (old != 0) GLES20.glDeleteTextures(1, intArrayOf(old), 0); return 0 }
+        val t = if (old != 0) old else IntArray(1).also { GLES20.glGenTextures(1, it, 0) }[0]
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, t)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        android.opengl.GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, b, 0)
+        return t
+    }
+
+    /** A 2D picture over the rectangle [r] of the tall frame (y from the top). */
+    private fun drawPic2(tex2: Int, r: android.graphics.Rect, blend: Boolean) {
+        if (tex2 == 0 || r.width() <= 0 || r.height() <= 0) return
+        if (coverProg == 0) coverProg = program(VS_COVER, FS_COVER)
+        GLES20.glViewport(r.left, h2 - r.bottom, r.width(), r.height())
+        if (blend) { GLES20.glEnable(GLES20.GL_BLEND); GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA) } else GLES20.glDisable(GLES20.GL_BLEND)
+        GLES20.glUseProgram(coverProg)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex2)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(coverProg, "tex"), 0)
+        val pos = GLES20.glGetAttribLocation(coverProg, "pos")
+        GLES20.glEnableVertexAttribArray(pos)
+        GLES20.glVertexAttribPointer(pos, 2, GLES20.GL_FLOAT, false, 0, QUAD)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        GLES20.glDisableVertexAttribArray(pos)
+        GLES20.glDisable(GLES20.GL_BLEND)
+    }
+
+    private fun drawShorts(t: Long) {
+        if (out2 == EGL14.EGL_NO_SURFACE) return
+        try {
+            EGL14.eglMakeCurrent(dpy, out2, out2, ctx)
+            GLES20.glViewport(0, 0, w2, h2)
+            GLES20.glClearColor(0f, 0f, 0f, 1f)
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+            val g = shortsGame
+            if (coverOn) drawPic2(coverTex, g, false)
+            else if (drawn > 0) draw(g.left, h2 - g.bottom, g.width(), g.height())
+            shortsTop?.let { drawPic2(shortsTopTex, it, true) }
+            shortsBottom?.let { drawPic2(shortsBottomTex, it, true) }
+            EGLExt.eglPresentationTimeANDROID(dpy, out2, t)
+            EGL14.eglSwapBuffers(dpy, out2)
+        } catch (e: Throwable) { shortsError = "draw: " + (e.message ?: e.javaClass.simpleName) }
+        finally { try { EGL14.eglMakeCurrent(dpy, out, out, ctx) } catch (_: Throwable) {} }
     }
 
     /**
@@ -517,11 +615,12 @@ class LookFilter(private val look: Look, private val fps: Int) {
             if (dpy != EGL14.EGL_NO_DISPLAY) {
                 EGL14.eglMakeCurrent(dpy, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
                 if (out != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(dpy, out)
+                if (out2 != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(dpy, out2)
                 if (pbuffer != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(dpy, pbuffer)
                 if (ctx != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(dpy, ctx)
                 EGL14.eglTerminate(dpy)
             }
-            out = EGL14.EGL_NO_SURFACE; pbuffer = EGL14.EGL_NO_SURFACE; ctx = EGL14.EGL_NO_CONTEXT; dpy = EGL14.EGL_NO_DISPLAY
+            out = EGL14.EGL_NO_SURFACE; out2 = EGL14.EGL_NO_SURFACE; pbuffer = EGL14.EGL_NO_SURFACE; ctx = EGL14.EGL_NO_CONTEXT; dpy = EGL14.EGL_NO_DISPLAY
         }
         thread.quitSafely()
     }
@@ -604,8 +703,8 @@ class LookFilter(private val look: Look, private val fps: Int) {
         } catch (t: Throwable) { drawError = "frame: " + (t.message ?: t.javaClass.simpleName) }
     }
 
-    private fun draw() {
-        GLES20.glViewport(0, 0, outW, outH)
+    private fun draw(vx: Int = 0, vy: Int = 0, vw: Int = outW, vh: Int = outH) {
+        GLES20.glViewport(vx, vy, vw, vh)
         GLES20.glUseProgram(prog)
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, tex)

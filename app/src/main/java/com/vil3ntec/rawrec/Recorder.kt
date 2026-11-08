@@ -108,7 +108,12 @@ class Recorder(
     private val forceLook: Boolean = false,
     /** Live: also record the same frames to a file ([TeeSink]). */
     private val alsoRecord: Boolean = false,
+    /** Live: the tall 9:16 picture for YouTube Shorts too («Dual stream»), with its own connection. */
+    private val shorts: ShortsOut? = null,
 ) : SegMuxer.Events {
+
+    /** The Shorts picture: its size, bit rate, and where it goes (an [RtmpSink] with the vertical key). */
+    class ShortsOut(val w: Int, val h: Int, val bitrate: Int, val sink: MediaSink)
 
     interface Events {
         /** The recording cannot go on; [detail] is the technical message for the report. */
@@ -215,6 +220,8 @@ class Recorder(
             alsoRecord -> TeeSink(liveSink, SegMuxer(ctx, cfg.hasAudio, cfg.segmentBytes, "RawRec live " + stamp, this))
             else -> liveSink
         }
+        // Shorts: the sound goes to the tall picture's connection too (its pictures come from its own encoder)
+        if (liveSink != null && shorts != null) muxer = SoundToo(muxer, shorts.sink)
         try {
             val first = VideoEnc(plan)
             try { first.prepare() } catch (e: Exception) { first.release(); throw e }
@@ -229,6 +236,7 @@ class Recorder(
                             f.start(plan.width, plan.height); f.setOutput(first.surface, plan.width, plan.height)
                             // live: the stream flows from the first moment, whatever the screen sends
                             if (sinkFactory != null) f.startFlowing()
+                            if (shorts != null) startShorts(f, shorts)
                         } catch (t: Throwable) { f.release(); throw t }
                     }
                 } catch (t: Throwable) {
@@ -269,6 +277,8 @@ class Recorder(
             display = null
             try { look?.release() } catch (_: Throwable) {}
             look = null
+            shortsCodec?.let { c -> try { c.release() } catch (_: Exception) {} }
+            shortsCodec = null
             enc?.release()
             enc = null
             aac?.let { a -> try { a.release() } catch (_: Exception) {} }
@@ -276,6 +286,76 @@ class Recorder(
             muxer.finish()
             throw e
         }
+    }
+
+    // ------------------------------------------------------------ Shorts (the tall picture)
+
+    @Volatile private var shortsCodec: MediaCodec? = null
+    private var shortsThread: Thread? = null
+
+    /**
+     * A second H.264 encoder for the 9:16 picture the GPU stage draws after each frame (same time,
+     * same sound). Should this phone not run two encoders at once, the main stream goes on alone.
+     */
+    private fun startShorts(f: LookFilter, so: ShortsOut) {
+        var c: MediaCodec? = null
+        try {
+            c = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+            val fps = plan.fps.coerceIn(24, 60)
+            var ok = false
+            for (full in listOf(true, false)) {
+                val fm = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, so.w, so.h).apply {
+                    setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+                    setInteger(MediaFormat.KEY_BIT_RATE, so.bitrate)
+                    setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+                    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
+                    setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 2_000_000L / fps)
+                    if (full) {
+                        setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
+                        setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileHigh)
+                        setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
+                    }
+                }
+                try { c.configure(fm, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE); ok = true; break } catch (_: Exception) { c.reset() }
+            }
+            if (!ok) throw IllegalStateException("encoder refused ${so.w}x${so.h}")
+            val input = c.createInputSurface()
+            c.start()
+            f.setShortsOutput(input, so.w, so.h)
+            shortsCodec = c
+            val codec = c
+            shortsThread = Thread({ shortsLoop(codec, so.sink) }, "rawrec-shorts").apply { start() }
+        } catch (e: Exception) {
+            try { c?.release() } catch (_: Exception) {}
+            shortsCodec = null
+            events.onAudioProblem("shorts: " + (e.message ?: e.javaClass.simpleName))
+        }
+    }
+
+    private fun shortsLoop(c: MediaCodec, sink: MediaSink) {
+        val info = MediaCodec.BufferInfo()
+        val deadline = { !running }
+        var endBy = 0L
+        while (true) {
+            if (deadline()) { if (endBy == 0L) endBy = System.nanoTime() + 2_000_000_000L else if (System.nanoTime() > endBy) return }
+            val idx = try { c.dequeueOutputBuffer(info, 10_000) } catch (_: Exception) { return }
+            if (idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) sink.videoFormat(c.outputFormat)
+            else if (idx >= 0) {
+                val eos = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0 && info.size > 0) {
+                    val b = try { c.getOutputBuffer(idx) } catch (_: Exception) { null }
+                    if (b != null && sink.submitVideo(b, info.offset, info.size, info.presentationTimeUs, info.flags))
+                        try { c.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0) }) } catch (_: Exception) {}
+                }
+                try { c.releaseOutputBuffer(idx, false) } catch (_: Exception) { return }
+                if (eos) return
+            }
+        }
+    }
+
+    /** The Shorts picture's bit rate, set by its connection's automatic quality. */
+    fun setShortsBitrate(bps: Int) {
+        try { shortsCodec?.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, bps) }) } catch (_: Exception) {}
     }
 
     /** Live: the encoder's bit rate, set by the automatic quality of [RtmpSink]. */
@@ -351,8 +431,13 @@ class Recorder(
             running = false
             e = enc
             try { e?.codec?.signalEndOfInputStream() } catch (_: Exception) {}
+            try { shortsCodec?.signalEndOfInputStream() } catch (_: Exception) {}
         }
         videoThread?.join(5000)
+        shortsThread?.join(3000)
+        try { look?.setShortsOutput(null, 0, 0) } catch (_: Throwable) {}
+        shortsCodec?.let { c -> try { c.stop() } catch (_: Exception) {}; try { c.release() } catch (_: Exception) {} }
+        shortsCodec = null
         audioThread?.join(5000)
         stats.flush()
         releaseOrDetach()
