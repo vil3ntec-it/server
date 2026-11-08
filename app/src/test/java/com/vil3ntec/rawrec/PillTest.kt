@@ -125,20 +125,26 @@ class PillTest {
         f.hide()
     }
 
-    @Test fun dragSnapsToTheNearestEdge() {
+    /** 4.1 (the owner): it stays exactly where it is let go — not pushed to a side — and comes back there. */
+    @Test fun dragLeavesItWhereItIsDropped() {
         val (f, _) = shown()
         assertTrue(f.onRightEdge)
+        val x0 = f.x
         val timer = find(f, "pill:timer")!!
         val t = SystemClock.uptimeMillis()
         f.root.dispatchTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, 30f, 30f, 0).apply { setLocation(30f, 30f) })
         val down = MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, 1000f, 500f, 0)
-        val move = MotionEvent.obtain(t, t + 50, MotionEvent.ACTION_MOVE, 100f, 900f, 0)
-        val up = MotionEvent.obtain(t, t + 100, MotionEvent.ACTION_UP, 100f, 900f, 0)
+        val move = MotionEvent.obtain(t, t + 50, MotionEvent.ACTION_MOVE, 800f, 600f, 0)
+        val up = MotionEvent.obtain(t, t + 100, MotionEvent.ACTION_UP, 800f, 600f, 0)
         timer.dispatchTouchEvent(down); timer.dispatchTouchEvent(move); timer.dispatchTouchEvent(up)
         idle()
-        assertFalse("snapped to the left edge", f.onRightEdge)
-        assertEquals(0, f.x)
+        val want = (x0 - 200).coerceAtLeast(0)
+        assertTrue("moved left by the drag", want < x0)
+        assertTrue("exactly where it was let go (not a side): ${f.x} vs $want", kotlin.math.abs(f.x - want) <= 1)
         f.hide()
+        val (g, _) = shown()
+        assertTrue("the same place next time: ${g.x} vs $want", kotlin.math.abs(g.x - want) <= 1)
+        g.hide()
     }
 
     /** «Start as a dot»: a visible dot at the edge; taps where it is never stop or pause the recording. */
