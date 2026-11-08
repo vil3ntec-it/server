@@ -15,22 +15,12 @@ android {
         versionName = "3.3"
     }
 
-    signingConfigs {
-        create("release") {
-            storeFile = file("rawrec.jks")
-            storePassword = "rawrec123"
-            keyAlias = "rawrec"
-            keyPassword = "rawrec123"
-        }
-    }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
         }
         debug {
-            signingConfig = signingConfigs.getByName("release")
         }
     }
 
