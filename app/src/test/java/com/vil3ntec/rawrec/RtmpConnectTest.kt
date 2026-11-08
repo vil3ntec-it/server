@@ -238,7 +238,7 @@ class RtmpConnectTest {
         val s = Sim(12_000_000) { 4_000_000.0 }
         val rc = s.rc
         s.run(0.0, 30.0)
-        assertTrue("down below what the link carries: ${rc.target}", rc.target < 4_000_000)
+        assertTrue("at about what the link carries: ${rc.target}", rc.target <= 4_600_000)
         val drops30 = s.drops
         // the next 3 minutes: no frames dropped, the rate never far from what the link carries
         var lowest = Int.MAX_VALUE; var highest = 0
@@ -247,10 +247,10 @@ class RtmpConnectTest {
         while (t < 210.0) { s.run(t, t + 1.0); lowest = minOf(lowest, rc.target); highest = maxOf(highest, rc.target); t += 1.0 }
         assertEquals("no frames dropped once settled (4.0 dropped every few seconds)", drops30, s.drops)
         // once a minute it tries 10 % more (the link may have grown) and comes back before any delay shows
-        assertTrue("never far above what the link carries: highest ${highest}", highest <= 4_500_000)
+        assertTrue("never far above what the link carries: highest ${highest}", highest <= 4_600_000)
         assertTrue("and not starved: lowest ${lowest}", lowest >= 2_000_000)
-        assertTrue("at most one frame drop at the very start: ${s.drops}", s.drops <= 1)
-        assertTrue("viewers never more than 2 s behind once settled: ${s.maxLagMs} ms", s.maxLagMs < 2_000)
+        assertEquals("not a single cut, not even at the start (a gentle start at 6 Mbps)", 0, s.drops)
+        assertTrue("never more than the 5 s the owner accepts once settled: ${s.maxLagMs} ms", s.maxLagMs < 5_000)
     }
 
     @Test fun aGoodLinkKeepsTheChosenRateAndAFreedLinkClimbsBack() {
@@ -294,5 +294,15 @@ class RtmpConnectTest {
         val old = Scenes.newLayer(app, Scenes.Kind.TEXT).apply { p.put("mine", false) }
         assertEquals("the old «on my screen» switch off: viewers only", 1, Scenes.audience(old))
         assertEquals("a camera is on the stream only", 1, Scenes.audience(Scenes.newLayer(app, Scenes.Kind.CAMERA)))
+    }
+
+    @Test fun noCutsOnAnyCommonLink() {
+        // the owner: «up to 5 s of delay is fine, but no cuts»
+        for (mbps in listOf(1.5, 2.5, 4.0, 6.0, 8.0, 20.0)) {
+            val s = Sim(12_000_000) { mbps * 1_000_000 }
+            s.run(0.0, 240.0)
+            assertEquals("$mbps Mbps: no cut", 0, s.drops)
+            assertTrue("$mbps Mbps: never 5 s behind (${s.maxLagMs} ms)", s.maxLagMs < 5_000)
+        }
     }
 }

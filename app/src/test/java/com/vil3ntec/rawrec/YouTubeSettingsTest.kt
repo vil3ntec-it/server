@@ -72,6 +72,7 @@ class YouTubeSettingsTest {
         val j = JSONObject(ins.third!!)
         assertEquals("goes live by itself when the picture arrives", true, j.getJSONObject("contentDetails").getBoolean("enableAutoStart"))
         assertEquals(false, j.getJSONObject("contentDetails").getJSONObject("monitorStream").getBoolean("enableMonitorStream"))
+        assertEquals("viewers keep a few seconds in hand: no stalls", "normal", j.getJSONObject("contentDetails").getString("latencyPreference"))
         assertEquals("unlisted", j.getJSONObject("status").getString("privacyStatus"))
         assertEquals("VIL3N live", j.getJSONObject("snippet").getString("title"))
         assertTrue("tied to our stream", calls.last().second.contains("liveBroadcasts/bind?id=new1&streamId=s-ours"))

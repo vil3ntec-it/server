@@ -1727,6 +1727,8 @@ class RecordService : Service(), Recorder.Events {
     private fun followLink(s: RtmpSink.Status) {
         val full = (recorder?.plan?.bitrate ?: return) / 1000
         if (full <= 0 || s.state != RtmpSink.State.LIVE) return
+        // the first 20 s the rate is still climbing from its gentle start: not a narrow link
+        if (System.currentTimeMillis() - liveBorn < 20_000L) return
         val narrow = s.targetKbps < full * 55 / 100
         val wide = s.targetKbps >= full * 75 / 100
         if (narrow && !capNet) {

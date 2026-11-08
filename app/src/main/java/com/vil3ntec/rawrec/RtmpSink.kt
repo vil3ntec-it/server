@@ -188,6 +188,8 @@ class RtmpSink(
                         needKey = true
                         keyWanted.set(true)
                         state = State.LIVE
+                        // the encoder starts at the controller's gentle starting rate (it runs by now)
+                        if (!started) { started = true; apply(rate.target) }
                         if (liveSinceMs == 0L || failingSince != 0L) liveSinceMs = System.currentTimeMillis()
                         failingSince = 0L
                         backoffMs = 1_000L
@@ -290,6 +292,7 @@ class RtmpSink(
     }
 
     private val rate = RateControl(maxBitrate)
+    private var started = false
 
     private fun apply(bps: Int) {
         if (bps == target) return
@@ -304,17 +307,23 @@ class RtmpSink(
  * 4.0 kept the rate at least 40 % of the chosen one and went back up every 5 s: on a link (a VPN)
  * that carried less, the frames piled up, were dropped every few seconds, the rate went up again —
  * the stream on YouTube cut out every 3–4 s. Now:
- *  - **down early and to what got through:** 0.7 s behind → the lower of ¾ of the rate and 85 % of
- *    what the connection carried in the last seconds; down to 1 Mbps if that is all there is;
+ *  - **never a cut for a short slow patch** (the owner: «up to 5 s of delay is fine, no cuts»):
+ *    1.5 s behind → the lower of ¾ of the rate and 85 % of what the connection carried in the last
+ *    seconds; down to 1 Mbps if that is all there is;
  *  - **up slowly and never straight back into the wall:** after 10 s without delay, +10 % at most
  *    every 8 s, and for a minute after the connection could not keep up, not above 90 % of the rate
  *    it could not carry;
- *  - frames are dropped only when 3.5 s behind all the same (a real break in the internet).
+ *  - frames are dropped only when 6 s behind all the same (a real break in the internet).
  */
 class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(1_000_000, maxBps)) {
     enum class Act { NONE, SET, DROP }
 
-    var target = maxBps; private set
+    /**
+     * A gentle start: at most 6 Mbps for the first seconds, then up quickly while the link keeps up
+     * (+20 % every 3 s) — a weak link is found before a pile of frames made at the full rate cuts the
+     * stream; a good one reaches the chosen rate within about 15 s.
+     */
+    var target = minOf(maxBps, maxOf(floorBps, START_BPS)); private set
     private var lastAdjust = 0L
     private var calmSince = 0L
     /** How far behind it was when last lowered (0 = caught up since). */
@@ -330,32 +339,67 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(1_0
     /** The connection's recent rate (the mean of the last seconds; 0 = not known yet). */
     val link: Int get() = if (seenN == 0) 0 else (0 until minOf(seenN, seen.size)).sumOf { seen[it].toLong() }.div(minOf(seenN, seen.size)).toInt()
 
+    private var firstNs = 0L
+    /** The last lowering was made before the link's rate was known. */
+    private var blind = false
+
     fun step(nowNs: Long, lagUs: Long, video: Boolean): Act {
-        if (video && lagUs > 3_500_000L) {
+        if (firstNs == 0L) firstNs = nowNs
+        // the first 15 s: the chosen rate may be far above what the link carries — found out sooner,
+        // before the frames made meanwhile pile up into a cut
+        val slowUs = if (nowNs - firstNs < 15_000_000_000L) 700_000L else SLOW_US
+        if (video && lagUs > DROP_US) {
             behind(nowNs)
             set(minOf((target * 0.6).toInt(), link.takeIf { it > 0 }?.let { (it * 0.8).toInt() } ?: Int.MAX_VALUE))
             lastAdjust = nowNs; calmSince = 0L
             return Act.DROP
         }
-        if (lagUs > 700_000L) {
+        if (lagUs > slowUs) {
             calmSince = 0L
-            // once lowered, the waiting frames need a moment to go out: lower again only while it still grows
-            val stillGrowing = lagAtAdjust == 0L || lagUs > lagAtAdjust
-            if (nowNs - lastAdjust < 1_500_000_000L || !stillGrowing) return Act.NONE
+            // once lowered (to what the link carried), the frames made before still have to go out and the
+            // delay grows a little longer: lowered again only after 4 s, or sooner when 3 s behind
+            val starting = nowNs - firstNs < 15_000_000_000L
+            val wait = when {
+                lagAtAdjust == 0L -> 0L
+                blind || starting -> 1_000_000_000L    // lowered before the link was known: look again soon
+                lagUs > 3_000_000L -> 1_500_000_000L
+                else -> 4_000_000_000L
+            }
+            if (nowNs - lastAdjust < wait) return Act.NONE
+            val l = link
+            // already below what the link carries: the delay is only frames made before going out —
+            // lowered further only when 3 s behind, and never below 70 % of the link (no needless blocks)
+            if (l > 0 && target <= l * 0.85 && lagUs <= 3_000_000L) return Act.NONE
             behind(nowNs)
-            lastAdjust = nowNs; lagAtAdjust = lagUs
-            return if (set(minOf((target * 0.75).toInt(), link.takeIf { it > 0 }?.let { (it * 0.85).toInt() } ?: Int.MAX_VALUE))) Act.SET else Act.NONE
+            lastAdjust = nowNs; lagAtAdjust = lagUs; blind = l <= 0
+            val want = if (l > 0) maxOf(minOf((target * 0.75).toInt(), (l * 0.85).toInt()), (l * 0.7).toInt()) else (target * 0.75).toInt()
+            return if (set(minOf(want, target))) Act.SET else Act.NONE
         }
         lagAtAdjust = 0L
-        if (lagUs < 200_000L) {
+        if (lagUs < CALM_US) {
             if (calmSince == 0L) calmSince = nowNs
             val cap = if (nowNs < capUntil) capBps else maxBps
-            if (target < cap && nowNs - calmSince > 10_000_000_000L && nowNs - lastAdjust > 8_000_000_000L) {
+            // never held back yet (the start): quicker steps; afterwards slow and careful
+            val fresh = capUntil == 0L
+            val calmFor = if (fresh) 3_000_000_000L else 10_000_000_000L
+            val since = if (fresh) 3_000_000_000L else 8_000_000_000L
+            if (target < cap && nowNs - calmSince > calmFor && nowNs - lastAdjust > since) {
                 lastAdjust = nowNs; calmSince = nowNs
-                return if (set(minOf((target * 1.1).toInt(), cap))) Act.SET else Act.NONE
+                return if (set(minOf((target * (if (fresh) 1.2 else 1.1)).toInt(), cap))) Act.SET else Act.NONE
             }
         } else calmSince = 0L
         return Act.NONE
+    }
+
+    companion object {
+        /** Behind this far: the rate is lowered. */
+        const val SLOW_US = 1_500_000L
+        /** Behind this far all the same: what waits is dropped (the internet broke); never for less. */
+        const val DROP_US = 6_000_000L
+        /** Caught up: the rate may go back up. */
+        const val CALM_US = 400_000L
+        /** Where a stream starts (see [target]). */
+        const val START_BPS = 6_000_000
     }
 
     /** The connection did not keep up at [target]: no going back above 90 % of it for a minute. */
