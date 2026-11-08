@@ -453,7 +453,8 @@ class RecordService : Service(), Recorder.Events {
                     liveBorn = System.currentTimeMillis(); lastRtmpLog = ""; lastSendProblem = null; toldPrivate = false; toldAway = false; capHot = false; capNet = false; toldNet = false
                     main.removeCallbacks(sendCheck); main.postDelayed(sendCheck, 13_000)
                     screenChecks = 0; main.removeCallbacks(screenCheck); main.postDelayed(screenCheck, 8_000)
-                    (if (liveTargets.size > 1) MultiSink(liveTargets, plan.bitrate, liveListener) else RtmpSink(lv.url, lv.key, plan.bitrate, liveListener))
+                    val auto = LiveSettings.autoQuality(this)
+                    (if (liveTargets.size > 1) MultiSink(liveTargets, plan.bitrate, liveListener, auto) else RtmpSink(lv.url, lv.key, plan.bitrate, liveListener, auto))
                         .also { liveSink = it }
                 }, forceLook = true, alsoRecord = LiveSettings.recordToo(this), shorts = shortsOut())
             else Recorder(this, p, c, plan, this, keptDisplay, keepDisplay = instantEnabled(this))
@@ -729,7 +730,7 @@ class RecordService : Service(), Recorder.Events {
         val (w, h) = Shorts.SIZES[LiveSettings.shortsSize(this)]
         val br = LiveSettings.shortsBitrate(this)
         shortsStatus = null; lastShortsLog = ""
-        val sink = RtmpSink(LiveSettings.url(this, 0), LiveSettings.shortsKey(this), br, shortsListener)
+        val sink = RtmpSink(LiveSettings.url(this, 0), LiveSettings.shortsKey(this), br, shortsListener, LiveSettings.autoQuality(this))
         shortsSink = sink
         RecLog.add(this, "shorts: ${w}x$h ${br / 1_000_000} Mbps")
         return Recorder.ShortsOut(w, h, br, sink)

@@ -1427,6 +1427,9 @@ class MainActivity : Activity() {
         val qc = Section(root, "live_q", R.string.live_q_title, R.string.sec_live_q_desc, R.drawable.ic_quality).body
         qc.addView(text(str(R.string.live_q_desc), R.style.Text_Caption), lp(4))
         rows["live_q"] = Row(qc, "", "", LiveSettings.QUALITIES.map { str(it.label) }, vertical = true, top = 8) { i -> LiveSettings.setQuality(this, i); renderDests() }
+        // automatic or manual: the rate follows the internet (never a cut), or the chosen one exactly
+        rows["live_auto"] = Row(qc, str(R.string.live_auto_title), str(R.string.live_auto_desc),
+            listOf(str(R.string.live_auto_on), str(R.string.live_auto_off)), top = 14) { i -> LiveSettings.setAutoQuality(this, i == 0) }
         // the bit rate itself, when the quality's own is not enough (blocks in fast motion)
         rows["live_rate"] = Row(qc, str(R.string.live_rate_title), str(R.string.live_rate_desc),
             LiveSettings.LIVE_RATES.map { if (it == 0) str(R.string.live_rate_auto) else "$it Mbps" }, top = 14) { i ->
@@ -1492,6 +1495,7 @@ class MainActivity : Activity() {
         rows["live_p"]?.select(p0)
         rows["live_q"]?.select(LiveSettings.quality(this))
         rows["live_rate"]?.select(LiveSettings.LIVE_RATES.indexOf(LiveSettings.liveRate(this)))
+        rows["live_auto"]?.select(if (LiveSettings.autoQuality(this)) 0 else 1)
         toggles["live_record"]?.set(LiveSettings.recordToo(this))
         toggles["live_team"]?.set(LiveSettings.teamVoice(this))
         toggles["live_mic"]?.set(LiveSettings.mic(this))

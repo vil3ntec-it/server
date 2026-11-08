@@ -1086,4 +1086,8 @@ Your internet needs about %2$s Mbps upload.</string>
     <string name="sc_k_viewers">Viewer count</string>
     <string name="sc_k_likes">Like count</string>
     <string name="sc_likes_text">👍 {likes}</string>
+    <string name="live_auto_title">Quality control</string>
+    <string name="live_auto_desc">Automatic: the quality always fits the internet (or VPN), so the stream never stalls or cuts; up to 5 s of delay. Manual: exactly the bit rate below, never changed; smooth only if your upload carries it.</string>
+    <string name="live_auto_on">Automatic (recommended)</string>
+    <string name="live_auto_off">Manual</string>
 </resources>

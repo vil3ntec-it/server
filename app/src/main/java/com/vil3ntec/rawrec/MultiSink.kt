@@ -9,7 +9,7 @@ import java.nio.ByteBuffer
  * platform that drops out reconnects on its own while the others go on. The stream ends only when
  * every platform has given up. The bit rate follows the slowest connection still streaming.
  */
-class MultiSink(dests: List<LiveSettings.Dest>, maxBitrate: Int, private val listener: RtmpSink.Listener) : MediaSink {
+class MultiSink(dests: List<LiveSettings.Dest>, maxBitrate: Int, private val listener: RtmpSink.Listener, adaptive: Boolean = true) : MediaSink {
 
     class Dest(val name: String) {
         lateinit var sink: RtmpSink
@@ -32,7 +32,7 @@ class MultiSink(dests: List<LiveSettings.Dest>, maxBitrate: Int, private val lis
                     mine.target = bps
                     listener.onBitrate(slowest())
                 }
-            })
+            }, adaptive)
         }
     }
 

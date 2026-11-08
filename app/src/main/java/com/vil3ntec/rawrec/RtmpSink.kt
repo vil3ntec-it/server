@@ -24,6 +24,8 @@ class RtmpSink(
     private val key: String,
     private val maxBitrate: Int,
     private val listener: Listener,
+    /** Automatic quality ([RateControl]); false = the owner's rate exactly, never changed. */
+    private val adaptive: Boolean = true,
 ) : MediaSink {
 
     enum class State { CONNECTING, LIVE, RECONNECTING, FAILED, ENDED }
@@ -189,7 +191,7 @@ class RtmpSink(
                         keyWanted.set(true)
                         state = State.LIVE
                         // the encoder starts at the controller's gentle starting rate (it runs by now)
-                        if (!started) { started = true; apply(rate.target) }
+                        if (!started) { started = true; if (adaptive) apply(rate.target) }
                         if (liveSinceMs == 0L || failingSince != 0L) liveSinceMs = System.currentTimeMillis()
                         failingSince = 0L
                         backoffMs = 1_000L
@@ -232,13 +234,13 @@ class RtmpSink(
                 // Automatic quality ([RateControl]): how long the oldest waiting frame has waited, and
                 // what the connection really carried, decide the encoder's bit rate.
                 val lagUs = lastEnqueuedPts - k.pts
-                when (rate.step(now, lagUs, k.video)) {
+                when (if (adaptive) rate.step(now, lagUs, k.video) else manual(lagUs, k.video)) {
                     RateControl.Act.DROP -> {
                         // far behind all the same: drop what is waiting, a key frame next (the stream stays live)
                         dropped += 1 + queue.count { it.video }
                         queue.removeIf { it.video }
                         needKey = true; keyWanted.set(true)
-                        apply(rate.target)
+                        if (adaptive) apply(rate.target)
                         continue
                     }
                     RateControl.Act.SET -> apply(rate.target)
@@ -293,6 +295,13 @@ class RtmpSink(
 
     private val rate = RateControl(maxBitrate)
     private var started = false
+
+    /**
+     * Manual quality: the owner's rate, never lowered. What waits is dropped only when 10 s behind
+     * (the internet carries far less than the rate chosen) — the stream never runs out of memory.
+     */
+    private fun manual(lagUs: Long, video: Boolean): RateControl.Act =
+        if (video && lagUs > 10_000_000L) RateControl.Act.DROP else RateControl.Act.NONE
 
     private fun apply(bps: Int) {
         if (bps == target) return

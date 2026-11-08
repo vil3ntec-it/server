@@ -81,6 +81,13 @@ object LiveSettings {
     /** Shorts go out: switched on, a key given, and YouTube among the platforms. */
     fun shortsReady(ctx: Context) = shortsOn(ctx) && shortsKey(ctx).isNotBlank() && destinations(ctx).any { it.platform == 0 }
 
+    /**
+     * Automatic quality (on unless switched off): the rate follows what the internet carries, so the
+     * stream never stops. Off: the chosen rate exactly — smooth only if the upload carries it.
+     */
+    fun autoQuality(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_auto_quality", true)
+    fun setAutoQuality(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("live_auto_quality", on).apply()
+
     /** Record on the phone while live too: the very same pictures (no second encoder, so no extra heat). */
     fun recordToo(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_record", false)
     fun setRecordToo(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("live_record", on).apply()

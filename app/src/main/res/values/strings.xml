@@ -1107,4 +1107,8 @@
     <string name="sc_k_viewers">تعدادِ بیننده‌ها</string>
     <string name="sc_k_likes">تعدادِ لایک‌ها</string>
     <string name="sc_likes_text">👍 {likes}</string>
+    <string name="live_auto_title">کنترلِ کیفیت</string>
+    <string name="live_auto_desc">خودکار: کیفیت همیشه به اندازهٔ اینترنت (یا VPN) می‌ماند، پس پخش هرگز گیر نمی‌کند و قطع نمی‌شود؛ تا ۵ ثانیه تأخیر. دستی: دقیقاً همان بیت‌ریتِ پایین و هیچ تغییری؛ فقط وقتی روان است که آپلودِ تو آن را بکشد.</string>
+    <string name="live_auto_on">خودکار (پیشنهادی)</string>
+    <string name="live_auto_off">دستی</string>
 </resources>
