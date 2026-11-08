@@ -11,6 +11,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
+import kotlin.math.abs
 
 /**
  * One track for [Mp4Writer], as the encoder describes it (built from its MediaFormat in the app).
@@ -30,6 +31,8 @@ class Mp4Track(
     val transfer: Int = -1,
     val matrix: Int = -1,
     val fullRange: Boolean = false,
+    /** Video: the planned frame rate; frames are laid on its grid (constant frame rate). 0 = as recorded. */
+    val frameRate: Int = 0,
 )
 
 /**
@@ -63,7 +66,11 @@ class Mp4Writer(
 
         private const val VIDEO_TS = 90_000
         private const val MOVIE_TS = 1000
-        private const val MAGIC = 0x52524A31   // "RRJ1"
+        private const val MAGIC = 0x52524A31   // "RRJ1" (2.x, no frame rate)
+        private const val MAGIC2 = 0x52524A32  // "RRJ2" (3.0: + frame rate per track)
+        /** A chunk (run of one track's samples) is written once it holds this much time or data. */
+        private const val CHUNK_US = 500_000L
+        private const val CHUNK_BYTES = 4 shl 20
         private const val FLUSH_EVERY = 48
         private const val SYNC_NS = 5_000_000_000L
 
@@ -77,7 +84,8 @@ class Mp4Writer(
             var mdatStart = 0L
             try {
                 DataInputStream(BufferedInputStream(FileInputStream(journal), 1 shl 16)).use { inp ->
-                    if (inp.readInt() != MAGIC) return false
+                    val magic = inp.readInt()
+                    if (magic != MAGIC && magic != MAGIC2) return false
                     mdatStart = inp.readLong()
                     val n = inp.readInt()
                     if (n !in 1..8) return false
@@ -88,10 +96,11 @@ class Mp4Writer(
                         val w = inp.readInt(); val h = inp.readInt()
                         val sr = inp.readInt(); val chs = inp.readInt(); val br = inp.readInt()
                         val pr = inp.readInt(); val tr = inp.readInt(); val mx = inp.readInt(); val full = inp.readBoolean()
+                        val fr = if (magic == MAGIC2) inp.readInt() else 0
                         val cn = inp.readInt()
                         val csd = ArrayList<ByteArray>()
                         repeat(cn) { val b = ByteArray(inp.readInt()); inp.readFully(b); csd += b }
-                        tracks += Mp4Track(video, mime, w, h, sr, chs, br, csd, pr, tr, mx, full)
+                        tracks += Mp4Track(video, mime, w, h, sr, chs, br, csd, pr, tr, mx, full, fr)
                     }
                     val st = State(tracks.map { TrackState(it, entryFor(it)) })
                     state = st
@@ -342,6 +351,12 @@ class Mp4Writer(
     }
 
     /** One encoded sample of [track], in decode order. Video may be Annex-B (start codes) or length-prefixed. */
+    /**
+     * One encoded sample of [track], in decode order. Video may be Annex-B (start codes) or length-
+     * prefixed. Samples are gathered per track and written as chunks of about half a second (3.0):
+     * 2.x wrote every sample as its own chunk, and the index of a long recording grew to hundreds of
+     * thousands of entries — players and editors were slow to open and to seek in it.
+     */
     fun write(track: Int, src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, key: Boolean) {
         check(started && !finished)
         if (size <= 0) return
@@ -350,15 +365,60 @@ class Mp4Writer(
         else src.duplicate().also { it.limit(offset + size); it.position(offset) }
         val n = data.remaining()
         if (n <= 0) return
-        val at = pos
-        while (data.hasRemaining()) pos += ch.write(data, pos)
-        t.add(at, n, ptsUs, key)
-        journalAdd(track, at, n, ptsUs, key)
+        val c = chunks[track]
+        c.add(data, n, ptsUs, key)
+        if (c.bytes >= CHUNK_BYTES || ptsUs - c.firstPts >= CHUNK_US) flushChunk(track)
+    }
+
+    /** Writes [track]'s gathered samples as one chunk, right where the file ends. */
+    private fun flushChunk(track: Int) {
+        val c = chunks[track]
+        if (c.count == 0) return
+        val t = st.tracks[track]
+        var at = pos
+        val b = ByteBuffer.wrap(c.buf, 0, c.bytes)
+        while (b.hasRemaining()) pos += ch.write(b, pos)
+        for (i in 0 until c.count) {
+            t.add(at, c.size[i], c.pts[i], c.key[i])
+            journalAdd(track, at, c.size[i], c.pts[i], c.key[i])
+            at += c.size[i]
+        }
+        c.clear()
+    }
+
+    private fun flushAll() {
+        // Oldest first, so the file stays in time order.
+        chunks.indices.filter { chunks[it].count > 0 }.sortedBy { chunks[it].firstPts }.forEach { flushChunk(it) }
+    }
+
+    private val chunks: List<Pending> by lazy { specs.map { Pending() } }
+
+    /** One track's samples not yet written. */
+    private class Pending {
+        var buf = ByteArray(1 shl 16)
+        var bytes = 0
+        var count = 0
+        var size = IntArray(64)
+        var pts = LongArray(64)
+        var key = BooleanArray(64)
+        val firstPts get() = if (count > 0) pts[0] else Long.MAX_VALUE
+
+        fun add(data: ByteBuffer, n: Int, p: Long, k: Boolean) {
+            if (bytes + n > buf.size) buf = buf.copyOf(maxOf(buf.size * 2, bytes + n))
+            data.get(buf, bytes, n)
+            bytes += n
+            if (count == size.size) { size = size.copyOf(count * 2); pts = pts.copyOf(count * 2); key = key.copyOf(count * 2) }
+            size[count] = n; pts[count] = p; key[count] = k
+            count++
+        }
+
+        fun clear() { bytes = 0; count = 0 }
     }
 
     /** Writes the index; the file is complete and playable afterwards. */
     fun finish() {
         if (!started || finished) return
+        flushAll()
         finished = true
         closeJournal()
         writeIndex(ch, st, mdatStart, pos)
@@ -375,7 +435,7 @@ class Mp4Writer(
     val bytesWritten get() = pos
 
     /** Tests: what a killed process left behind (its journal up to the last flush). */
-    internal fun flushJournalForTest() { try { jOut?.flush() } catch (_: Exception) {} }
+    internal fun flushJournalForTest() { flushAll(); try { jOut?.flush() } catch (_: Exception) {} }
 
     // ------------------------------------------------------------ Annex-B → 4-byte lengths
 
@@ -430,7 +490,7 @@ class Mp4Writer(
         try {
             val fos = FileOutputStream(f)
             val out = DataOutputStream(BufferedOutputStream(fos, 1 shl 15))
-            out.writeInt(MAGIC)
+            out.writeInt(MAGIC2)
             out.writeLong(mdatStart)
             out.writeInt(specs.size)
             for (t in specs) {
@@ -438,6 +498,7 @@ class Mp4Writer(
                 out.writeInt(t.width); out.writeInt(t.height)
                 out.writeInt(t.sampleRate); out.writeInt(t.channels); out.writeInt(t.bitrate)
                 out.writeInt(t.primaries); out.writeInt(t.transfer); out.writeInt(t.matrix); out.writeBoolean(t.fullRange)
+                out.writeInt(t.frameRate)
                 out.writeInt(t.csd.size)
                 for (c in t.csd) { out.writeInt(c.size); out.write(c) }
             }
@@ -501,6 +562,25 @@ private class State(val tracks: List<TrackState>) {
         var firstUs = Long.MAX_VALUE
         for (i in 0 until n) if (t.pts[i] < firstUs) firstUs = t.pts[i]
         val p = LongArray(n) { Math.round((t.pts[it] - firstUs) * ts / 1_000_000.0) }
+        // Video on the frame-rate grid (3.0): the screen hands frames over at its own 120/165 Hz rhythm,
+        // so 60 fps frames came 12 or 18 ms apart; editors such as CapCut mis-time variable frame
+        // rates (picture and sound drift, the seek bar is off). Each frame goes to the nearest slot of
+        // the grid, never two in one slot, never more than two slots from its real time — otherwise
+        // the real times are kept.
+        val fps = t.spec.frameRate
+        if (t.spec.video && fps in 1..480 && n > 1) {
+            val order = (0 until n).sortedBy { t.pts[it] }
+            val slot = LongArray(n)
+            var prev = -1L
+            var ok = true
+            for (idx in order) {
+                val raw = Math.round((t.pts[idx] - firstUs) * fps / 1_000_000.0)
+                val k = maxOf(raw, prev + 1)
+                if (k - raw > 2) { ok = false; break }
+                slot[idx] = k; prev = k
+            }
+            if (ok) for (i in 0 until n) p[i] = Math.round(slot[i] * ts.toDouble() / fps)
+        }
         // Decode times: the presentation times in order (frames come out of the encoder in decode
         // order; with B-frames a later-shown frame comes first), strictly increasing.
         val s = p.copyOf()
@@ -515,6 +595,9 @@ private class State(val tracks: List<TrackState>) {
             t.spec.video -> (ts / 30).toLong()
             else -> 1024L
         }
+        // AAC frames are 1024 samples: rounding the microsecond times gave 1023/1025 — kept exact. A
+        // real gap (lost audio) stays as it is.
+        if (!t.spec.video && t.spec.mime == Mp4Writer.AAC) for (i in 0 until n) if (abs(dur[i] - 1024L) <= 8) dur[i] = 1024L
         var reordered = false
         val c = LongArray(n) { val v = p[it] - s[it] + shift; if (v != 0L) reordered = true; v }
         return Timing(ts, dur, if (reordered) c else null, shift, firstUs, s[n - 1] - s[0] + dur[n - 1])
@@ -547,8 +630,10 @@ private class State(val tracks: List<TrackState>) {
             matrix()
             u32(if (v) t.spec.width.toLong() shl 16 else 0); u32(if (v) t.spec.height.toLong() shl 16 else 0)
         }
-        box("edts") {
-            val empty = delayMs > 0
+        // Edit list only when there is something to shift (3.0): some editors ignore edit lists, so a
+        // start a few ms apart (under one video frame) is not signalled at all.
+        val empty = delayMs > 30
+        if (empty || tm.shift > 0) box("edts") {
             full("elst", 0, 0) {
                 u32(if (empty) 2 else 1)
                 if (empty) { u32(delayMs); u32(0xFFFFFFFFL); u16(1); u16(0) }

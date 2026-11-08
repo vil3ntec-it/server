@@ -372,10 +372,11 @@ class Recorder(
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
                 setInteger(MediaFormat.KEY_BIT_RATE, p.bitrate)
                 setInteger(MediaFormat.KEY_FRAME_RATE, p.fps)
-                // 5 s GOP: key frames are the most expensive frames; 1.0's 1 s GOP with CBR spent the
-                // budget on them every second and starved the frames in between ("pulsing"
-                // blockiness). A pause, a part split or a recovery asks for one when it is needed.
-                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 5)
+                // 1 s GOP (3.0): a seek in the gallery or CapCut starts at the key frame before it. With
+                // 1.8's 5 s GOP a seek had to decode up to 5 s first: the picture lagged, the sound ran
+                // ahead and then the picture «teleported» (the owner). 1.0's «pulsing» with a 1 s GOP
+                // came from CBR; the quality range (QP) now keeps every frame at the same quality.
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
                 // Static screens still produce frames, but only after two frame periods, so normal
                 // frame-time jitter never inserts duplicate frames (judder).
                 setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 2_000_000L / p.fps)
@@ -402,9 +403,10 @@ class Recorder(
                     setInteger(MediaFormat.KEY_VIDEO_QP_B_MIN, lo)
                 }
                 if ("complexity" !in drop && p.complexity >= 0) setInteger(MediaFormat.KEY_COMPLEXITY, p.complexity)
-                // B-frames save size at equal quality; encoders that can't do them ignore the key.
-                // (1.0 dropped out-of-order frames in the muxer, which made B-frames corrupt.)
-                if ("bframes" !in drop && p.mime != Encoders.AV1) setInteger(MediaFormat.KEY_MAX_B_FRAMES, 2)
+                // No B-frames (3.0): frames in display order, no composition offsets or edit-list shift —
+                // editors (CapCut) and gallery seek bars land exactly, decoding a seek is quicker, and
+                // the encoder does less work (cooler). The quality range holds the picture.
+                if ("bframes" !in drop && p.mime != Encoders.AV1) setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
                 if ("profile" !in drop && p.profile > 0) setInteger(MediaFormat.KEY_PROFILE, p.profile)
                 if ("level" !in drop && "profile" !in drop && p.level > 0) setInteger(MediaFormat.KEY_LEVEL, p.level)
                 if ("color" !in drop) {
@@ -470,6 +472,8 @@ class Recorder(
      */
     private fun trackFormat(v: VideoEnc): MediaFormat {
         val f = v.codec.outputFormat
+        // The writer lays the frames on this frame rate's grid (constant frame rate for editors).
+        if (!f.containsKey(MediaFormat.KEY_FRAME_RATE)) f.setInteger(MediaFormat.KEY_FRAME_RATE, v.plan.fps)
         if ("color" !in v.dropped) {
             if (!f.containsKey(MediaFormat.KEY_COLOR_STANDARD)) f.setInteger(MediaFormat.KEY_COLOR_STANDARD, MediaFormat.COLOR_STANDARD_BT709)
             if (!f.containsKey(MediaFormat.KEY_COLOR_RANGE)) f.setInteger(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED)

@@ -67,6 +67,7 @@ class SegMuxer(
         private const val K_RESTART = 8
         private const val K_REPLACED = 9
         private const val AUDIO_WAIT_NS = 2_000_000_000L
+        private const val AUDIO_START_WAIT_NS = 1_500_000_000L
         private const val TAIL_NS = 1_500_000_000L
         private const val MAX_WRITE_RECOVERIES = 3
         private const val WRITE_RETRY_WINDOW_NS = 10_000_000_000L
@@ -130,6 +131,12 @@ class SegMuxer(
     private var lastWriteFailNs = 0L
     private var fatalSent = false
     private val pending = ArrayList<Item>()
+    // 3.0: the first part waits for the sound (at most AUDIO_START_WAIT_NS) and starts at a key frame
+    // after it, with the sound of those moments kept here — so picture and sound start together and no
+    // edit list is needed to line them up (some editors ignore edit lists: «the sound runs ahead»).
+    private val preRoll = ArrayDeque<Item>()
+    private var audioSeen = false
+    private var waitAudioSinceNs = 0L
     private var pendingSinceNs = 0L
     private val closers = ArrayList<Thread>()
     private val outInfo = MediaCodec.BufferInfo()
@@ -403,8 +410,13 @@ class SegMuxer(
         val key = info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
         var s = seg
         if (s == null) {
+            if (audioWanted && !audioSeen && segIndex == 0) {
+                if (waitAudioSinceNs == 0L) waitAudioSinceNs = System.nanoTime()
+                if (System.nanoTime() - waitAudioSinceNs < AUDIO_START_WAIT_NS) { recycle(it); return }
+            }
             if (!key) { recycle(it); keyWanted.set(true); return }
             s = open(info.presentationTimeUs, openReason)
+            drainPreRoll(s)
             openReason = REASON_START
             awaitKey = false
         } else if (forceReason >= 0 && !key) {
@@ -444,7 +456,27 @@ class SegMuxer(
         recycle(it)
     }
 
+    private fun drainPreRoll(s: Seg) {
+        while (preRoll.isNotEmpty()) {
+            val a = preRoll.removeFirst()
+            val pts = a.info.presentationTimeUs
+            if (s.aTrack >= 0 && pts >= s.base && pts > s.lastA) {
+                s.lastA = pts
+                write(s, s.aTrack, a)
+                audioBytes += a.info.size
+            }
+            recycle(a)
+        }
+    }
+
     private fun onAudio(it: Item) {
+        if (seg == null && tail == null && audioWanted) {
+            // Before the first part: keep the last moments of sound; ask for a key frame once it starts.
+            if (!audioSeen) { audioSeen = true; keyWanted.set(true) }
+            preRoll.addLast(it)
+            while (preRoll.size > 1 && it.info.presentationTimeUs - preRoll.first().info.presentationTimeUs > 1_500_000L) recycle(preRoll.removeFirst())
+            return
+        }
         val s = seg
         val pts = it.info.presentationTimeUs
         val t = tail
@@ -544,6 +576,7 @@ class SegMuxer(
 
     private fun finishInternal() {
         dropPending()
+        while (preRoll.isNotEmpty()) recycle(preRoll.removeFirst())
         // Drain anything still queued after FINISH was requested.
         while (true) { val it = queue.poll() ?: break; recycle(it) }
         closeTail()
@@ -699,6 +732,7 @@ class MediaStoreSink(private val ctx: Context) : PartSink {
                 else -> -1
             }
             return Mp4Track(
+                frameRate = if (video) int(MediaFormat.KEY_FRAME_RATE, 0) else 0,
                 video = video, mime = mime, width = w, height = h,
                 sampleRate = int(MediaFormat.KEY_SAMPLE_RATE, 0), channels = int(MediaFormat.KEY_CHANNEL_COUNT, 0),
                 bitrate = int(MediaFormat.KEY_BIT_RATE, 0), csd = csd,
