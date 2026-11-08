@@ -39,7 +39,11 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
     class Stats(val viewers: Long, val likes: Long, val subs: Long)
 
     /** What the «زنده» page shows about the stream on YouTube. */
-    data class YtInfo(val videoId: String, val title: String, val thumb: String?, val health: String?)
+    data class YtInfo(
+        val videoId: String, val title: String, val thumb: String?, val health: String?,
+        /** YouTube's own words: the broadcast's stage (live, testing, ready…), who can watch, whether the picture arrives. */
+        val lifeCycle: String = "", val privacy: String = "", val receiving: Boolean? = null,
+    )
 
     interface Listener {
         fun onMessage(m: Msg)
@@ -197,7 +201,11 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
                     nextStats = now + 30_000
                     videoId?.let { v -> val (a, b) = api.videoStats(v); viewers = a; likes = b }
                     l.onStats(Stats(viewers, likes, subs))
-                    bc?.streamId?.let { sid -> val h = try { api.streamHealth(sid) } catch (_: Exception) { null }; if (h != health) { health = h; publish() } }
+                    bc?.streamId?.let { sid ->
+                        val (st, h) = try { api.streamStatus(sid) } catch (_: Exception) { "" to null }
+                        val rec = if (st.isEmpty()) null else st == "active"
+                        if (h != health || rec != receiving) { health = h; receiving = rec; publish() }
+                    }
                 }
                 if (now >= nextSubs) {
                     nextSubs = now + 60_000
@@ -250,6 +258,7 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
     }
 
     private var streamId: String? = null
+    @Volatile private var receiving: Boolean? = null
     private var streamTried = 0L
     private var lastLook = 0L
     private var waitingSince = 0L
@@ -282,7 +291,7 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
 
     private fun publish() {
         val b = bc ?: return
-        ytInfo = YtInfo(b.videoId, b.title, b.thumb, health)
+        ytInfo = YtInfo(b.videoId, b.title, b.thumb, health, b.lifeCycle, b.privacy, receiving)
         l.onBroadcast(ytInfo!!)
     }
 

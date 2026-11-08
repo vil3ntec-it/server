@@ -989,4 +989,13 @@ Your internet needs about %2$s Mbps upload.</string>
     <string name="yt_waiting_fmt">YouTube is holding the stream back (a scheduled event). Press «Go live» in YouTube Studio or delete that old event. (%1$s)</string>
     <string name="tr_preview_wait">Translating…</string>
     <string name="tr_preview_failed">Not translated; it is not sent until it works.</string>
+    <string name="yt_st_live">✓ Live on YouTube.</string>
+    <string name="yt_st_testing">⚠ YouTube shows the stream to you only (testing) and has not put it live; RawRec does it, else press «Go live» in YouTube Studio.</string>
+    <string name="yt_st_waiting">⚠ YouTube is holding the stream back (scheduled); RawRec puts it live, else press «Go live» in YouTube Studio.</string>
+    <string name="yt_st_unknown">YouTube\'s state of the stream is not known yet…</string>
+    <string name="yt_st_other">⚠ YouTube sees this broadcast as ended or not valid.</string>
+    <string name="yt_rx_yes">✓ The picture reaches YouTube.</string>
+    <string name="yt_rx_no">✗ The picture does not reach YouTube (check the stream key or the internet).</string>
+    <string name="yt_vis_private">🔒 Private: only you can see it.</string>
+    <string name="yt_vis_unlisted">🔗 Unlisted: only people with the link.</string>
 </resources>

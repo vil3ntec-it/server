@@ -1010,4 +1010,13 @@
     <string name="yt_waiting_fmt">یوتیوب پخش را منتظر نگه داشته (یک پخشِ زمان‌بندی‌شده). در YouTube Studio «Go live» را بزن یا آن پخشِ قدیمی را پاک کن. (%1$s)</string>
     <string name="tr_preview_wait">ترجمه…</string>
     <string name="tr_preview_failed">ترجمه نشد؛ همان‌طور که نوشتی نمی‌رود تا دوباره امتحان شود.</string>
+    <string name="yt_st_live">✓ روی یوتیوب زنده است.</string>
+    <string name="yt_st_testing">⚠ یوتیوب پخش را فقط برای تو (آزمایشی) نشان می‌دهد و هنوز زنده نکرده؛ برنامه خودش زنده‌اش می‌کند، اگر نشد در YouTube Studio «Go live» را بزن.</string>
+    <string name="yt_st_waiting">⚠ یوتیوب پخش را «منتظر» نگه داشته (زمان‌بندی‌شده)؛ برنامه خودش زنده‌اش می‌کند، اگر نشد در YouTube Studio «Go live» را بزن.</string>
+    <string name="yt_st_unknown">وضعیتِ پخش در یوتیوب هنوز معلوم نیست…</string>
+    <string name="yt_st_other">⚠ یوتیوب این پخش را تمام‌شده یا نامعتبر می‌داند.</string>
+    <string name="yt_rx_yes">✓ تصویر به یوتیوب می‌رسد.</string>
+    <string name="yt_rx_no">✗ تصویر به یوتیوب نمی‌رسد (کلیدِ پخش یا اینترنت را ببین).</string>
+    <string name="yt_vis_private">🔒 خصوصی: فقط خودت می‌بینی.</string>
+    <string name="yt_vis_unlisted">🔗 فهرست‌نشده: فقط با لینک دیده می‌شود.</string>
 </resources>

@@ -1508,6 +1508,19 @@ class MainActivity : Activity() {
         box.visibility = View.VISIBLE
         ytTitleLive?.text = info.title
         val parts = ArrayList<String>()
+        // what YouTube itself says: on the air or held back, the picture arriving, who can watch
+        parts += str(when (info.lifeCycle) {
+            "live", "liveStarting" -> R.string.yt_st_live
+            "testing", "testStarting" -> R.string.yt_st_testing
+            "ready", "created" -> R.string.yt_st_waiting
+            "" -> R.string.yt_st_unknown
+            else -> R.string.yt_st_other
+        })
+        info.receiving?.let { parts += str(if (it) R.string.yt_rx_yes else R.string.yt_rx_no) }
+        when (info.privacy) {
+            "private" -> parts += str(R.string.yt_vis_private)
+            "unlisted" -> parts += str(R.string.yt_vis_unlisted)
+        }
         if (RecordService.liveViewers >= 0) parts += str(R.string.yt_viewers_fmt, Num.compact(RecordService.liveViewers))
         if (RecordService.liveLikes >= 0) parts += str(R.string.yt_likes_fmt, Num.compact(RecordService.liveLikes))
         parts += str(when (info.health) {

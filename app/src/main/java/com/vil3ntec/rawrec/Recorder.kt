@@ -733,6 +733,17 @@ class Recorder(
     }
 
     private fun newRecord(source: Int?, channelMask: Int, minBufMul: Int, floor: Int): AudioRecord {
+        // live: first without YouTube's sound (an echo of the stream itself); should this phone refuse
+        // that rule, the game's sound is taken without it rather than not at all
+        val tries = if (source == null && sinkFactory != null) listOf(true, false) else listOf(false)
+        var last: Exception? = null
+        for (exclude in tries) {
+            try { return newRecordOnce(source, channelMask, minBufMul, floor, exclude) } catch (e: Exception) { last = e }
+        }
+        throw last ?: IllegalStateException("AudioRecord not initialized")
+    }
+
+    private fun newRecordOnce(source: Int?, channelMask: Int, minBufMul: Int, floor: Int, excludeEcho: Boolean): AudioRecord {
         val minBuf = AudioRecord.getMinBufferSize(RATE, channelMask, AudioFormat.ENCODING_PCM_16BIT)
         val b = AudioRecord.Builder()
             .setAudioFormat(
@@ -747,9 +758,7 @@ class Recorder(
             capturedKinds = mask
             val c = AudioPlaybackCaptureConfiguration.Builder(projection)
             for (k in VoiceSources.KINDS) if (mask and k != 0) c.addMatchingUsage(VoiceSources.usageOf(k))
-            // Live: YouTube playing on this phone would be the stream itself coming back a few seconds
-            // late, captured again and again (one sound repeated without end) — never taken in.
-            if (sinkFactory != null) for (uid in VoiceSources.echoUids(ctx)) try { c.excludeUid(uid) } catch (_: Exception) {}
+            if (excludeEcho) for (uid in VoiceSources.echoUids(ctx)) c.excludeUid(uid)
             b.setAudioPlaybackCaptureConfig(c.build())
         }
         val r = b.build()
