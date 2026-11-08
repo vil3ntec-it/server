@@ -135,6 +135,66 @@ class LookFilter(private val look: Look, private val fps: Int) {
         }
     }
 
+    // ---- live: black bars around the game cut away. A tablet held upright shows a landscape game as
+    // a band in the middle of an upright screen; that screen put whole into the landscape stream left
+    // the game at 39 % of the picture (4.0, the owner's screenshots). The part of the screen holding
+    // the picture is found (twice a second, on a 160×100 copy) and drawn over the whole frame.
+    /** The part of the screen drawn: x, y (from the bottom), width, height in screen fractions. */
+    private val region = floatArrayOf(0f, 0f, 1f, 1f)
+    @Volatile var cropped = false; private set
+    private var lastBarsNs = 0L
+    private var barsProg = 0
+    private var barsFbo = 0
+    private var barsTex = 0
+    private val barsPx = ByteBuffer.allocateDirect(BARS_W * BARS_H * 4).order(ByteOrder.nativeOrder())
+    private var seen: FloatArray? = null
+    private var seenTimes = 0
+
+    private fun findBars() {
+        if (barsProg == 0) barsProg = program(VS, FS_PLAIN)
+        if (barsFbo == 0) {
+            val t = IntArray(1)
+            GLES20.glGenTextures(1, t, 0); barsTex = t[0]
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, barsTex)
+            GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, BARS_W, BARS_H, 0, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, null)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+            GLES20.glGenFramebuffers(1, t, 0); barsFbo = t[0]
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, barsFbo)
+            GLES20.glFramebufferTexture2D(GLES20.GL_FRAMEBUFFER, GLES20.GL_COLOR_ATTACHMENT0, GLES20.GL_TEXTURE_2D, barsTex, 0)
+        }
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, barsFbo)
+        GLES20.glViewport(0, 0, BARS_W, BARS_H)
+        GLES20.glDisable(GLES20.GL_BLEND)
+        GLES20.glUseProgram(barsProg)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, tex)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(barsProg, "tex"), 0)
+        GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(barsProg, "stm"), 1, false, stMatrix, 0)
+        GLES20.glUniform4f(GLES20.glGetUniformLocation(barsProg, "region"), 0f, 0f, 1f, 1f)
+        val pos = GLES20.glGetAttribLocation(barsProg, "pos")
+        GLES20.glEnableVertexAttribArray(pos)
+        GLES20.glVertexAttribPointer(pos, 2, GLES20.GL_FLOAT, false, 0, QUAD)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        GLES20.glDisableVertexAttribArray(pos)
+        barsPx.clear()
+        GLES20.glReadPixels(0, 0, BARS_W, BARS_H, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, barsPx)
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+        GLES20.glViewport(0, 0, outW, outH)
+        val px = ByteArray(BARS_W * BARS_H * 4)
+        barsPx.position(0); barsPx.get(px)
+        val want = barsRegion(px, BARS_W, BARS_H) ?: return
+        // the same answer twice in a row (a second) before the picture changes: no jumping on a dark scene
+        val prev = seen
+        if (prev != null && near(prev, want, 0.02f)) seenTimes++ else { seen = want; seenTimes = 1 }
+        if (seenTimes >= 2 && !near(want, region, 0.05f)) {
+            want.copyInto(region)
+            cropped = region[2] < 0.999f
+        }
+    }
+
+    private fun near(a: FloatArray, b: FloatArray, d: Float) = (0..3).all { kotlin.math.abs(a[it] - b[it]) <= d }
+
     /** The last screen picture again (black before the first), the layers over it. GL thread. */
     private fun redraw() {
         EGL14.eglMakeCurrent(dpy, out, out, ctx)
@@ -537,6 +597,10 @@ class LookFilter(private val look: Look, private val fps: Int) {
             drawLayers()
             present(ts)
             drawn++
+            if (flowing && System.nanoTime() - lastBarsNs > 500_000_000L) {
+                lastBarsNs = System.nanoTime()
+                try { findBars() } catch (t: Throwable) { drawError = "bars: " + (t.message ?: t.javaClass.simpleName) }
+            }
         } catch (t: Throwable) { drawError = "frame: " + (t.message ?: t.javaClass.simpleName) }
     }
 
@@ -556,6 +620,7 @@ class LookFilter(private val look: Look, private val fps: Int) {
         GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "warm"), look.warmth)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "clarity"), look.clarity)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "dither"), look.dither)
+        GLES20.glUniform4f(GLES20.glGetUniformLocation(prog, "region"), region[0], region[1], region[2], region[3])
         val pos = GLES20.glGetAttribLocation(prog, "pos")
         GLES20.glEnableVertexAttribArray(pos)
         GLES20.glVertexAttribPointer(pos, 2, GLES20.GL_FLOAT, false, 0, QUAD)
@@ -584,6 +649,36 @@ class LookFilter(private val look: Look, private val fps: Int) {
     }
 
     companion object {
+        private const val BARS_W = 160
+        private const val BARS_H = 100
+
+        /**
+         * The part of a screen picture ([px], RGBA rows from the bottom) that holds the picture, as
+         * x, y, width, height fractions — the frame's own shape, so nothing is stretched — or the
+         * whole screen. Only bars the system makes count: black, the same on both sides (a dark
+         * scene or a small button on a bar does not). Null = nothing to go by (all black).
+         */
+        fun barsRegion(px: ByteArray, w: Int, h: Int): FloatArray? {
+            fun lit(x: Int, y: Int): Boolean {
+                val i = (y * w + x) * 4
+                return (px[i].toInt() and 255) > 16 || (px[i + 1].toInt() and 255) > 16 || (px[i + 2].toInt() and 255) > 16
+            }
+            // a row / column is picture when at least 15 % of it is not black (a button on a bar is less)
+            val rows = (0 until h).map { y -> (0 until w).count { x -> lit(x, y) } * 100 >= w * 15 }
+            val cols = (0 until w).map { x -> (0 until h).count { y -> lit(x, y) } * 100 >= h * 15 }
+            val y0 = rows.indexOfFirst { it }; val y1 = rows.indexOfLast { it }
+            val x0 = cols.indexOfFirst { it }; val x1 = cols.indexOfLast { it }
+            if (y0 < 0 || x0 < 0) return null
+            val l = x0.toFloat() / w; val r = (x1 + 1).toFloat() / w
+            val b = y0.toFloat() / h; val t = (y1 + 1).toFloat() / h
+            val whole = floatArrayOf(0f, 0f, 1f, 1f)
+            val centred = kotlin.math.abs(l - (1f - r)) < 0.04f && kotlin.math.abs(b - (1f - t)) < 0.04f
+            val s = maxOf(r - l, t - b)
+            if (!centred || s > 0.9f) return whole
+            val cx = (l + r) / 2f; val cy = (b + t) / 2f
+            return floatArrayOf((cx - s / 2f).coerceIn(0f, 1f - s), (cy - s / 2f).coerceIn(0f, 1f - s), s, s)
+        }
+
         private val QUAD: FloatBuffer = ByteBuffer.allocateDirect(8 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer().apply {
             put(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)); position(0)
         }
@@ -683,10 +778,22 @@ void main() {
         private const val VS = """
 attribute vec2 pos;
 uniform mat4 stm;
+uniform vec4 region;
 varying vec2 uv;
 void main() {
     gl_Position = vec4(pos, 0.0, 1.0);
-    uv = (stm * vec4(pos * 0.5 + 0.5, 0.0, 1.0)).xy;
+    uv = (stm * vec4(region.xy + (pos * 0.5 + 0.5) * region.zw, 0.0, 1.0)).xy;
+}
+"""
+
+        /** The screen as it is (no look): what the black-bar check reads. */
+        private const val FS_PLAIN = """
+#extension GL_OES_EGL_image_external : require
+precision mediump float;
+uniform samplerExternalOES tex;
+varying vec2 uv;
+void main() {
+    gl_FragColor = texture2D(tex, uv);
 }
 """
 

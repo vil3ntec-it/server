@@ -141,4 +141,25 @@ class RtmpConnectTest {
         t.finish()
         assertTrue(live.finished)
     }
+
+    @Test fun theGameFillsTheStreamWhenTheTabletIsUpright() {
+        // the owner's screenshot: an upright screen (game in a band in the middle) put whole into the
+        // landscape picture — the game was 784×492 of 1999×1253 (39 %); a record dot on a bar too
+        val w = 160; val h = 100
+        fun frame(lit: (Int, Int) -> Boolean) = ByteArray(w * h * 4).also { px ->
+            for (y in 0 until h) for (x in 0 until w) if (lit(x, y)) { val i = (y * w + x) * 4; px[i] = 90; px[i + 1] = 80; px[i + 2] = 70; px[i + 3] = -1 }
+        }
+        val band = frame { x, y -> (x in 49..110 && y in 30..68) || (x in 50..53 && y in 8..12) }
+        val r = LookFilter.barsRegion(band, w, h)!!
+        assertEquals("from the band's left", 0.306f, r[0], 0.02f)
+        assertEquals(0.30f, r[1], 0.02f)
+        assertEquals("the band fills the picture", 0.39f, r[2], 0.02f)
+        assertEquals("the frame's own shape (not stretched)", r[2], r[3], 0.0001f)
+        // the game over the whole screen: nothing cut
+        assertEquals(listOf(0f, 0f, 1f, 1f), LookFilter.barsRegion(frame { _, _ -> true }, w, h)!!.toList())
+        // a dark sky only at the top (not bars on both sides): nothing cut
+        assertEquals(listOf(0f, 0f, 1f, 1f), LookFilter.barsRegion(frame { _, y -> y < 75 }, w, h)!!.toList())
+        // all black: no answer (the picture stays as it is)
+        assertNull(LookFilter.barsRegion(frame { _, _ -> false }, w, h))
+    }
 }
