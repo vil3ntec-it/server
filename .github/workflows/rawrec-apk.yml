@@ -28,6 +28,12 @@ jobs:
             echo "build attempt $i failed (network?), retrying"; sleep 30
           done
           exit 1
+      - name: Shaders (GLSL ES 1.00, as phones compile them)
+        continue-on-error: true
+        run: |
+          (sudo apt-get install -y -qq glslang-tools || (sudo apt-get update -qq && sudo apt-get install -y -qq glslang-tools)) >/dev/null
+          mkdir -p out
+          python3 .github/glsl_check.py app/src/main/java/com/vil3ntec/rawrec/LookFilter.kt out/shaders-3.4.txt
       - name: All unit tests (every control tapped like a finger) + preview pictures
         continue-on-error: true
         timeout-minutes: 60
@@ -61,6 +67,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f out/RawRec-3.4-unsigned.apk
-          git add -f out/previews-3.4 out/tests-3.4.txt || true
+          git add -f out/previews-3.4 out/tests-3.4.txt out/shaders-3.4.txt || true
           git commit -m "APK (unsigned) — temporary"
           git push

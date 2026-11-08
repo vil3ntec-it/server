@@ -87,7 +87,17 @@ class LookFilter(private val look: Look, private val fps: Int) {
     // ---- live overlays: small pictures drawn over the screen (alerts, subscriber count, goal bar),
     // each uploaded once and then only moved / faded. [x],[y],[w],[h] are fractions of the frame
     // from its top-left corner. Bitmaps handed over here are never drawn into again by the caller.
-    class Layer(val id: Int, val bitmap: android.graphics.Bitmap, val gen: Int, val x: Float, val y: Float, val w: Float, val h: Float, val alpha: Float)
+    /**
+     * One picture over the stream: [bitmap] (uploaded once per [gen]) or, when [ext] > 0, a live
+     * source (video, camera) from [createExternal]. ([x], [y], [w], [h]) is the unturned rectangle
+     * in frame fractions, turned by [rot] degrees about its centre; [crop] keeps a part of the
+     * source (left, top, right, bottom fractions); [corner] rounds it (frame pixels, ≥ half the
+     * short side = a circle); [mirror] flips it left-right.
+     */
+    class Layer(
+        val id: Int, val bitmap: android.graphics.Bitmap?, val gen: Int, val x: Float, val y: Float, val w: Float, val h: Float, val alpha: Float,
+        val rot: Float = 0f, val crop: FloatArray? = null, val ext: Int = 0, val corner: Float = 0f, val mirror: Boolean = false,
+    )
 
     @Volatile private var layers: List<Layer> = emptyList()
     private val layerTex = HashMap<Int, IntArray>()   // id → [texture, gen]
@@ -114,48 +124,157 @@ class LookFilter(private val look: Look, private val fps: Int) {
             GLES20.glDeleteTextures(1, intArrayOf(layerTex.remove(id)!![0]), 0)
         }
         for (l in list) {
+            val bmp = l.bitmap ?: continue
             val t = layerTex.getOrPut(l.id) {
                 val a = IntArray(1)
                 GLES20.glGenTextures(1, a, 0)
                 intArrayOf(a[0], -1)
             }
-            if (t[1] == l.gen || l.bitmap.isRecycled) continue
+            if (t[1] == l.gen || bmp.isRecycled) continue
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, t[0])
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
             GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
-            android.opengl.GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, l.bitmap, 0)
+            android.opengl.GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bmp, 0)
             t[1] = l.gen
         }
     }
 
     /** The layers over what was just drawn; Android bitmaps are premultiplied, so ONE / 1−α. */
+    /** A layer program that would not build on this GPU: the layers are left out, the picture goes on. */
+    private var layersBroken = false
+
     private fun drawLayers() {
+        if (layersBroken || layers.isEmpty()) return
+        try { drawLayersNow() } catch (t: Throwable) {
+            layersBroken = true
+            try { GLES20.glDisable(GLES20.GL_BLEND) } catch (_: Throwable) {}
+            android.util.Log.w("LookFilter", "layers off: " + t.message)
+        }
+    }
+
+    private fun drawLayersNow() {
         val list = layers
-        if (list.isEmpty()) return
-        if (layerProg == 0) layerProg = program(VS_LAYER, FS_COVER_A)
+        if (layerProg == 0) layerProg = program(VS_LAYER, FS_LAYER)
+        if (extProg == 0 && list.any { it.ext > 0 }) extProg = program(VS_LAYER, FS_LAYER_EXT)
         GLES20.glViewport(0, 0, outW, outH)
-        GLES20.glUseProgram(layerProg)
         GLES20.glEnable(GLES20.GL_BLEND)
         GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
-        GLES20.glUniform1i(GLES20.glGetUniformLocation(layerProg, "tex"), 0)
-        val rect = GLES20.glGetUniformLocation(layerProg, "rect")
-        val alpha = GLES20.glGetUniformLocation(layerProg, "alpha")
-        val pos = GLES20.glGetAttribLocation(layerProg, "pos")
-        GLES20.glEnableVertexAttribArray(pos)
-        GLES20.glVertexAttribPointer(pos, 2, GLES20.GL_FLOAT, false, 0, QUAD)
         for (l in list) {
-            val t = layerTex[l.id] ?: continue
-            if (t[1] != l.gen || l.alpha <= 0f) continue
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, t[0])
-            GLES20.glUniform4f(rect, l.x, l.y, l.x + l.w, l.y + l.h)
-            GLES20.glUniform1f(alpha, l.alpha.coerceIn(0f, 1f))
+            if (l.alpha <= 0f) continue
+            val prog: Int
+            if (l.ext > 0) {
+                val e = externals[l.ext] ?: continue
+                if (!e.ready || extProg == 0) continue
+                prog = extProg
+                GLES20.glUseProgram(prog)
+                GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, e.tex)
+                GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(prog, "stm"), 1, false, e.matrix, 0)
+            } else {
+                val t = layerTex[l.id] ?: continue
+                if (t[1] != l.gen) continue
+                prog = layerProg
+                GLES20.glUseProgram(prog)
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, t[0])
+            }
+            GLES20.glUniform1i(GLES20.glGetUniformLocation(prog, "tex"), 0)
+            val pw = l.w * outW; val ph = l.h * outH
+            GLES20.glUniform2f(GLES20.glGetUniformLocation(prog, "center"), l.x * outW + pw / 2f, l.y * outH + ph / 2f)
+            GLES20.glUniform2f(GLES20.glGetUniformLocation(prog, "size"), pw, ph)
+            GLES20.glUniform2f(GLES20.glGetUniformLocation(prog, "box"), pw, ph)   // the same, for the fragment shader (own precision)
+            GLES20.glUniform2f(GLES20.glGetUniformLocation(prog, "outSize"), outW.toFloat(), outH.toFloat())
+            GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "angle"), Math.toRadians(l.rot.toDouble()).toFloat())
+            val c = l.crop ?: FULL
+            GLES20.glUniform4f(GLES20.glGetUniformLocation(prog, "crop"), c[0], c[1], c[2], c[3])
+            GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "mirror"), if (l.mirror) 1f else 0f)
+            // corner radius given in frame pixels of a 1920-wide frame: scaled to this output
+            GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "corner"), (l.corner * outW / 1920f).coerceAtMost(minOf(pw, ph) / 2f))
+            GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "alpha"), l.alpha.coerceIn(0f, 1f))
+            val pos = GLES20.glGetAttribLocation(prog, "pos")
+            GLES20.glEnableVertexAttribArray(pos)
+            GLES20.glVertexAttribPointer(pos, 2, GLES20.GL_FLOAT, false, 0, QUAD)
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+            GLES20.glDisableVertexAttribArray(pos)
         }
-        GLES20.glDisableVertexAttribArray(pos)
         GLES20.glDisable(GLES20.GL_BLEND)
+    }
+
+    // ---- live sources over the stream (video files, the camera): a texture each, fed by a Surface
+    private class External(val tex: Int, val st: SurfaceTexture, val surface: Surface) {
+        val matrix = FloatArray(16).also { android.opengl.Matrix.setIdentityM(it, 0) }
+        val raw = FloatArray(16)
+        /** Degrees the picture is turned (the camera's sensor against the screen). */
+        @Volatile var turn = 0f
+        @Volatile var fresh = false
+        var ready = false
+    }
+
+    /** Turns a live source's picture by [deg] (about its centre), e.g. the camera upright. */
+    fun setExternalRotation(id: Int, deg: Float) { h.post { externals[id]?.turn = deg } }
+    private val externals = HashMap<Int, External>()
+    private var extProg = 0
+    private var nextExt = 1
+
+    /**
+     * A new live source: returns its id (for [Layer.ext]) and the Surface a video player or the
+     * camera draws into ([w]×[h] its buffer size, when the producer does not set one). 0 / null when
+     * the GPU stage is not running.
+     */
+    fun createExternal(w: Int, h: Int): Pair<Int, Surface>? {
+        var out: Pair<Int, Surface>? = null
+        runSync {
+            if (dpy == EGL14.EGL_NO_DISPLAY) return@runSync
+            EGL14.eglMakeCurrent(dpy, pbuffer, pbuffer, ctx)
+            val t = IntArray(1)
+            GLES20.glGenTextures(1, t, 0)
+            GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, t[0])
+            GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+            GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+            val st = SurfaceTexture(t[0])
+            if (w > 0 && h > 0) st.setDefaultBufferSize(w, h)
+            val id = nextExt++
+            val e = External(t[0], st, Surface(st))
+            st.setOnFrameAvailableListener({ e.fresh = true; refresh() }, this.h)
+            externals[id] = e
+            out = id to e.surface
+        }
+        return out
+    }
+
+    fun releaseExternal(id: Int) {
+        h.post {
+            val e = externals.remove(id) ?: return@post
+            try { e.surface.release() } catch (_: Throwable) {}
+            try { e.st.release() } catch (_: Throwable) {}
+            try {
+                if (dpy != EGL14.EGL_NO_DISPLAY) { EGL14.eglMakeCurrent(dpy, pbuffer, pbuffer, ctx); GLES20.glDeleteTextures(1, intArrayOf(e.tex), 0) }
+            } catch (_: Throwable) {}
+        }
+    }
+
+    /** New frames of the live sources into their textures (GL thread, before the layers are drawn). */
+    private fun latchExternals() {
+        for (e in externals.values) if (e.fresh) {
+            e.fresh = false
+            try {
+                e.st.updateTexImage()
+                e.st.getTransformMatrix(e.raw)
+                if (e.turn == 0f) System.arraycopy(e.raw, 0, e.matrix, 0, 16)
+                else {
+                    val r = FloatArray(16)
+                    android.opengl.Matrix.setIdentityM(r, 0)
+                    android.opengl.Matrix.translateM(r, 0, 0.5f, 0.5f, 0f)
+                    android.opengl.Matrix.rotateM(r, 0, e.turn, 0f, 0f, 1f)
+                    android.opengl.Matrix.translateM(r, 0, -0.5f, -0.5f, 0f)
+                    android.opengl.Matrix.multiplyMM(e.matrix, 0, e.raw, 0, r, 0)
+                }
+                e.ready = true
+            } catch (_: Throwable) {}
+        }
     }
 
     /** Frame times only ever go forward (the screen's and the cover's / refresh's clocks meet here). */
@@ -177,6 +296,7 @@ class LookFilter(private val look: Look, private val fps: Int) {
         try {
             EGL14.eglMakeCurrent(dpy, out, out, ctx)
             draw()
+            latchExternals()
             drawLayers()
             present(System.nanoTime())
         } catch (_: Throwable) {}
@@ -253,6 +373,7 @@ class LookFilter(private val look: Look, private val fps: Int) {
             GLES20.glVertexAttribPointer(pos, 2, GLES20.GL_FLOAT, false, 0, QUAD)
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
             GLES20.glDisableVertexAttribArray(pos)
+            latchExternals()
             drawLayers()
             present(System.nanoTime())
         } catch (_: Throwable) {}
@@ -371,6 +492,7 @@ class LookFilter(private val look: Look, private val fps: Int) {
             st.getTransformMatrix(stMatrix)
             draw()
             if (probeAt != null) readProbe()
+            latchExternals()
             drawLayers()
             present(ts)
             drawn++
@@ -441,25 +563,80 @@ varying vec2 uv;
 void main() { gl_FragColor = texture2D(tex, uv); }
 """
 
+        private val FULL = floatArrayOf(0f, 0f, 1f, 1f)
+
+        // A layer: its rectangle turned about its centre, in output pixels; uv from the crop.
         private const val VS_LAYER = """
 attribute vec2 pos;
-uniform vec4 rect;
+uniform vec2 center;
+uniform vec2 size;
+uniform vec2 outSize;
+uniform float angle;
+uniform vec4 crop;
+uniform float mirror;
 varying vec2 uv;
+varying vec2 lp;
 void main() {
     vec2 p = pos * 0.5 + 0.5;
-    uv = vec2(p.x, 1.0 - p.y);
-    float x = mix(rect.x, rect.z, p.x);
-    float y = mix(rect.w, rect.y, p.y);
-    gl_Position = vec4(x * 2.0 - 1.0, 1.0 - y * 2.0, 0.0, 1.0);
+    vec2 local = vec2(p.x - 0.5, 0.5 - p.y) * size;
+    float c = cos(angle);
+    float s = sin(angle);
+    vec2 px = center + vec2(local.x * c - local.y * s, local.x * s + local.y * c);
+    gl_Position = vec4(px.x / outSize.x * 2.0 - 1.0, 1.0 - px.y / outSize.y * 2.0, 0.0, 1.0);
+    float u = mirror > 0.5 ? 1.0 - p.x : p.x;
+    uv = vec2(mix(crop.x, crop.z, u), mix(crop.y, crop.w, 1.0 - p.y));
+    lp = vec2(p.x, 1.0 - p.y) * size;
 }
 """
 
-        private const val FS_COVER_A = """
+        // Rounded corners (a circle when the radius is half the short side), soft-edged.
+        private const val ROUND = """
+float rr(vec2 p, vec2 s, float r) {
+    vec2 q = abs(p - s * 0.5) - (s * 0.5 - vec2(r));
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+"""
+
+        // pixel positions up to 1920 need more than mediump (fp16 steps by 1 px there) for smooth corners
+        private const val PRECISION = """
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
 precision mediump float;
+#endif
+"""
+
+        private const val FS_LAYER = PRECISION + """
 uniform sampler2D tex;
 uniform float alpha;
+uniform float corner;
+uniform vec2 box;
 varying vec2 uv;
-void main() { gl_FragColor = texture2D(tex, uv) * alpha; }
+varying vec2 lp;
+""" + ROUND + """
+void main() {
+    float k = corner > 0.0 ? clamp(0.5 - rr(lp, box, corner), 0.0, 1.0) : 1.0;
+    gl_FragColor = texture2D(tex, uv) * alpha * k;
+}
+"""
+
+        // Video / camera frames (opaque): the producer's transform, premultiplied out.
+        private const val FS_LAYER_EXT = """
+#extension GL_OES_EGL_image_external : require
+""" + PRECISION + """
+uniform samplerExternalOES tex;
+uniform mat4 stm;
+uniform float alpha;
+uniform float corner;
+uniform vec2 box;
+varying vec2 uv;
+varying vec2 lp;
+""" + ROUND + """
+void main() {
+    float k = (corner > 0.0 ? clamp(0.5 - rr(lp, box, corner), 0.0, 1.0) : 1.0) * alpha;
+    vec2 t = (stm * vec4(uv.x, 1.0 - uv.y, 0.0, 1.0)).xy;
+    gl_FragColor = vec4(texture2D(tex, t).rgb * k, k);
+}
 """
 
         private const val VS = """

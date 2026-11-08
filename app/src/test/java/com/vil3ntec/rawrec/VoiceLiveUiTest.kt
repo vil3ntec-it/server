@@ -260,7 +260,7 @@ class VoiceLiveUiTest {
     }
 
     @Test fun chatOverTheGameNeverTakesATouchAndTheButtonOpensIt() {
-        val calls = ArrayList<Pair<String, Boolean>>()
+        val calls = ArrayList<String>()
         val hud = ChatHud(app, object : ChatHud.Actions {
             override fun send(text: String) {}
             override fun delete(m: LiveChat.Msg) {}
@@ -269,10 +269,12 @@ class VoiceLiveUiTest {
             override fun giveawayDraw() {}
             override fun giveawayStop() {}
             override fun goalStep(d: Int) {}
-            override fun onStream(what: String, on: Boolean) { calls += what to on }
+            override fun onScene(id: String) { calls += "scene:$id" }
+            override fun onLayer(id: String, on: Boolean) { calls += "layer:$id:$on" }
         })
         hud.show()
-        hud.setStreamState(ChatHud.ON_STREAM.associateWith { false })
+        hud.setScenes(listOf("g" to "بازی", "b" to "برمی‌گردم"), "g", listOf(Triple("c", "چت", false), Triple("t", "متن", true)))
+        hud.setChatOnStream(false)
         hud.add(msg("1", "salam"))
         idle()
         assertFalse("nothing over the game before the capture check", hud.feedRoot.isAttachedToWindow)
@@ -304,10 +306,13 @@ class VoiceLiveUiTest {
         tapView(hud.bubble)
         assertTrue("panel open", hud.panel.isAttachedToWindow)
         assertFalse("feed hidden while the panel is open", hud.feed.isAttachedToWindow)
-        // «در پخش»: the chat chip asks for the chat on the stream
-        val chatChip = all(hud.panel).filterIsInstance<TextView>().first { it.text.toString().endsWith(app.getString(R.string.hud_s_chat)) && it.isClickable }
-        chatChip.performClick()
-        assertEquals(listOf(ChatHud.ON_CHAT to true), calls)
+        // «در پخش»: the scene to switch to, and each layer of the one on the stream on / off
+        fun chip(t: String) = all(hud.panel).filterIsInstance<TextView>().first { it.text.toString() == t && it.isClickable }
+        chip("○ چت").performClick()
+        chip("● متن").performClick()
+        chip("▶ بازی").performClick()
+        chip("برمی‌گردم").performClick()
+        assertEquals(listOf("layer:c:true", "layer:t:false", "scene:b"), calls)
         tapView(hud.bubble)
         assertFalse("panel closed", hud.panel.isAttachedToWindow)
         assertTrue(hud.feed.isAttachedToWindow)
@@ -315,47 +320,12 @@ class VoiceLiveUiTest {
         hud.setPrivate(false)
         idle()
         assertFalse("hidden from viewers when the chat is not on the stream", hud.feed.isAttachedToWindow)
-        hud.setStreamState(ChatHud.ON_STREAM.associateWith { it == ChatHud.ON_CHAT })
+        hud.setChatOnStream(true)
         idle()
         assertTrue("shown when the owner put the chat on the stream", hud.feed.isAttachedToWindow)
         hud.hide()
         idle()   // windows leave on the next turn of the main loop
         assertFalse(hud.bubble.isAttachedToWindow || hud.feedRoot.isAttachedToWindow || hud.panel.isAttachedToWindow)
-    }
-
-    // ------------------------------------------------------------ «چیدمانِ پخش»
-
-    @Test fun layoutEditorMovesResizesAndHides() {
-        RuntimeEnvironment.setQualifiers("w891dp-h411dp-land-560dpi")
-        val ed = Robolectric.buildActivity(LayoutEditorActivity::class.java).setup().get()
-        idle()
-        val stage = all(ed.window.decorView).filterIsInstance<LayoutEditorActivity.Stage>().first()
-        assertTrue("stage laid out", stage.width > 0 && stage.height > 0)
-        val r = stage.rectOf(OverlayLayout.CHAT)!!
-        val before = OverlayLayout.place(app, OverlayLayout.CHAT)
-        // drag the chat 200 px to the right
-        val t = SystemClock.uptimeMillis()
-        stage.dispatchTouchEvent(MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, r.centerX(), r.centerY(), 0))
-        for (i in 1..10) stage.dispatchTouchEvent(MotionEvent.obtain(t, t + i * 16L, MotionEvent.ACTION_MOVE, r.centerX() + i * 20f, r.centerY(), 0))
-        stage.dispatchTouchEvent(MotionEvent.obtain(t, t + 200, MotionEvent.ACTION_UP, r.centerX() + 200f, r.centerY(), 0))
-        idle()
-        val after = OverlayLayout.place(app, OverlayLayout.CHAT)
-        assertTrue("moved right and saved: ${before.x} → ${after.x}", after.x > before.x + 0.05f)
-        assertEquals("picked by the touch", OverlayLayout.CHAT, stage.selected)
-        // size
-        stage.resize(1.5f)
-        assertEquals(after.scale * 1.5f, OverlayLayout.place(app, OverlayLayout.CHAT).scale, 0.01f)
-        // the eye in the bottom bar: on the stream or not (the same switch as the chat panel's)
-        val was = OverlayLayout.shown(app, OverlayLayout.CHAT)
-        val eye = all(ed.window.decorView).filterIsInstance<TextView>().first {
-            shown(it) && (it.text == ed.getString(R.string.lay_shown) || it.text == ed.getString(R.string.lay_hidden)) }
-        eye.performClick(); idle()
-        assertEquals(!was, OverlayLayout.shown(app, OverlayLayout.CHAT))
-        assertEquals(!was, LiveExtras.chatOnStream(app))
-        // back to the default
-        OverlayLayout.reset(app)
-        assertEquals(OverlayLayout.item(OverlayLayout.CHAT).defX, OverlayLayout.place(app, OverlayLayout.CHAT).x, 0.001f)
-        assertNull(CrashLog.pending(app))
     }
 
     // ------------------------------------------------------------ «زنده»

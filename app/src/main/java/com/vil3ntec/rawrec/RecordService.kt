@@ -679,13 +679,14 @@ class RecordService : Service(), Recorder.Events {
         val on = coverManual || coverAuto
         if (on == liveCovered) { control?.setPaused(on); return }
         liveCovered = on
+        val sr = scenes
         if (on) {
             micBeforeCover = r.micMuted
             r.micMuted = true
-            r.setCover(coverPicture(r.plan.width, r.plan.height))
+            if (sr != null) sr.setAway(true) else r.setCover(coverPicture(r.plan.width, r.plan.height))
         } else {
             r.micMuted = micBeforeCover
-            r.setCover(null)
+            if (sr != null) sr.setAway(false) else r.setCover(null)
         }
         control?.setPaused(on)
         notifyRecording()
@@ -745,12 +746,12 @@ class RecordService : Service(), Recorder.Events {
     private var chat: LiveChat? = null
     private var bot: ChatBot? = null
     private var hud: ChatHud? = null
-    private var overlay: StreamOverlay? = null
+    /** The owner's scenes and layers on the stream (null when the GPU stage is not running). */
+    private var scenes: SceneRenderer? = null
     private var probe: CaptureProbe? = null
-    private var membersThisStream = 0
     private var alertsShown = 0
-    /** The chat on the stream: the latest messages and when they came. */
-    private val streamChat = ArrayDeque<Pair<Long, StreamOverlay.ChatLine>>()
+    /** When each message came, for the stream's chat (old ones leave after 45 s). */
+    private val chatTimes = HashMap<String, Long>()
     /** The capture check's answer: true = the whole screen is captured (the phone's chat is in the picture). */
     private var hudCaptured: Boolean? = null
     /** Written when the stream ends, read by the report thread. */
@@ -760,24 +761,19 @@ class RecordService : Service(), Recorder.Events {
     private fun startLiveExtras(r: Recorder) {
         extrasReport = null
         ytInfo = null; liveViewers = -1; liveLikes = -1; liveNote = null
-        membersThisStream = 0; alertsShown = 0
-        streamChat.clear(); hudCaptured = null
+        alertsShown = 0
+        chatTimes.clear(); hudCaptured = null
         quotaAtStart = LiveExtras.Quota.used(this)
         val f = r.filter
         if (f != null) {
-            overlay = StreamOverlay(this) { f.setLayers(it) }.also { o ->
-                o.setSize(r.plan.width, r.plan.height)
-                o.showAlerts = LiveExtras.alerts(this)
-                o.showSubs = LiveExtras.subsBadge(this)
-                o.showViewers = LiveExtras.viewersBadge(this)
-                o.showGoal = LiveExtras.goal(this)
-                o.setPlaces(OverlayLayout.ITEMS.associate { it.key to OverlayLayout.place(this, it.key) })
-                o.chatStyle = LiveExtras.chatStyle(this)
-                o.refreshAll()
+            scenes = SceneRenderer(this, f) { cover -> recorder?.setCover(cover) }.also { sr ->
+                sr.data.manual = LiveExtras.goalManual(this).toLong()
+                sr.onChanged = { hudScenes() }
+                sr.start(r.plan.width, r.plan.height)
             }
         }
         val lc = LiveChat(this, chatListener)
-        if (!lc.hasYouTube && !lc.hasTwitch) { updateGoal(); return }
+        if (!lc.hasYouTube && !lc.hasTwitch) return
         chat = lc
         bot = ChatBot(LiveExtras.botConfig(this))
         lc.start()
@@ -788,7 +784,7 @@ class RecordService : Service(), Recorder.Events {
             h.setStats(-1, -1, -1)
             h.setGiveaway(false, 0)
             h.setCanSend(false)
-            h.setStreamState(streamFlags())
+            hudScenes()
             if (f != null) {
                 // Shown once it is known for real whether viewers would see it (see CaptureProbe).
                 probe = CaptureProbe(this, f, r.plan.width, r.plan.height, { liveCovered }) { captured ->
@@ -798,53 +794,28 @@ class RecordService : Service(), Recorder.Events {
                     hudCaptured = captured
                     hud?.show()
                     hud?.setPrivate(!captured)
-                    pushStreamChat()
+                    scenes?.phoneChatInPicture = captured   // the phone's own chat is in the picture then
                 }
                 main.postDelayed(startProbe, 1500)
             } else { h.show(); h.setPrivate(false) }
         }
         main.postDelayed(botTick, 5000)
-        updateGoal()
-        pushStreamChat()
     }
 
-    /** «چیدمانِ پخش» saved while live: places and switches apply at once. */
+    /** The editor saved while live: the scenes as they are now on the phone. */
     internal fun layoutChanged() {
-        overlay?.let { o ->
-            o.chatStyle = LiveExtras.chatStyle(this)
-            o.setPlaces(OverlayLayout.ITEMS.associate { it.key to OverlayLayout.place(this, it.key) })
-        }
-        applyStreamFlags()
+        scenes?.reload()
+        hudScenes()
     }
 
-    private fun streamFlags(): Map<String, Boolean> = ChatHud.ON_STREAM.associateWith { LiveExtras.onStream(this, it) }
-
-    /** «در پخش» changed (from the chat panel while live): what viewers see changes at once. */
-    private fun applyStreamFlags() {
-        overlay?.let { o ->
-            o.showAlerts = LiveExtras.alerts(this)
-            o.showSubs = LiveExtras.subsBadge(this)
-            o.showViewers = LiveExtras.viewersBadge(this)
-            o.showGoal = LiveExtras.goal(this)
-            o.refreshAll()
-        }
-        updateGoal()
-        pushStreamChat()
-        hud?.setStreamState(streamFlags())
-    }
-
-    /**
-     * The chat on the stream, when the owner wants it there. With the whole screen captured the
-     * phone's own chat feed is already in the picture, so it is not drawn a second time.
-     */
-    private fun pushStreamChat() {
-        val o = overlay ?: return
-        val now = System.currentTimeMillis()
-        while (streamChat.isNotEmpty() && now - streamChat.first().first > 45_000) streamChat.removeFirst()
-        val show = LiveExtras.chatOnStream(this) && !(hud != null && hudCaptured == true)
-        val changed = o.showChat != show
-        o.showChat = show
-        if (show || changed) o.setChat(if (show) streamChat.map { it.second } else emptyList())
+    /** The chat panel's scene and layer switches, as they are now. */
+    private fun hudScenes() {
+        val h = hud ?: return
+        val sr = scenes
+        if (sr == null) { h.setScenes(emptyList(), "", emptyList()); h.setChatOnStream(false); return }
+        val sc = sr.showing
+        h.setScenes(sr.project.scenes.map { it.id to it.name }, sc.id, sc.layers.map { Triple(it.id, it.name, it.visible) })
+        h.setChatOnStream(sr.chatShown)
     }
 
     private val startProbe = Runnable { if (!stopping) probe?.start() }
@@ -867,15 +838,15 @@ class RecordService : Service(), Recorder.Events {
         ytInfo = null
         try { hud?.hide() } catch (_: Exception) {}
         hud = null
-        try { overlay?.release() } catch (_: Exception) {}
-        overlay = null
+        try { scenes?.release() } catch (_: Exception) {}
+        scenes = null
     }
 
     private val botTick = object : Runnable {
         override fun run() {
             if (stopping || chat == null) return
             bot?.let { if (chat?.canSend == true) runBot(it.tick(vars())) }
-            if (streamChat.isNotEmpty() && System.currentTimeMillis() - streamChat.first().first > 45_000) pushStreamChat()
+            scenes?.expireChat(45_000, chatTimes)
             main.postDelayed(this, 5000)
         }
     }
@@ -887,58 +858,39 @@ class RecordService : Service(), Recorder.Events {
             likes = lc?.likes?.coerceAtLeast(0) ?: 0, uptimeS = up, goal = goalText())
     }
 
-    private fun goalNow(): Long = when (LiveExtras.goalType(this)) {
-        LiveExtras.GOAL_SUBS -> chat?.subs ?: -1
-        LiveExtras.GOAL_LIKES -> chat?.likes ?: -1
-        LiveExtras.GOAL_MEMBERS -> membersThisStream.toLong()
-        else -> LiveExtras.goalManual(this).toLong()
+    /** The first goal bar of the scene on the stream, as a sentence for the bot's !goal. */
+    private fun goalText(): String {
+        val sr = scenes ?: return ""
+        val g = sr.showing.layers.firstOrNull { it.kind == Scenes.Kind.GOAL } ?: sr.project.scenes.flatMap { it.layers }.firstOrNull { it.kind == Scenes.Kind.GOAL } ?: return ""
+        val count = g.str("count", "subs")
+        var v = sr.data.value(count)
+        if (v >= 0 && g.bool("since", false)) v -= sr.data.base[count] ?: v
+        return "${LayerPainter.vars(g.str("title"), sr.data)}: ${if (v < 0) "…" else Num.grouped(v)} / ${Num.grouped(g.int("target", 1000).toLong())}"
     }
 
-    private fun goalTitle(): String = LiveExtras.goalTitle(this).ifBlank {
-        val t = Fmt.num(LiveExtras.goalTarget(this))
-        getString(when (LiveExtras.goalType(this)) {
-            LiveExtras.GOAL_SUBS -> R.string.ov_goal_subs_fmt
-            LiveExtras.GOAL_LIKES -> R.string.ov_goal_likes_fmt
-            LiveExtras.GOAL_MEMBERS -> R.string.ov_goal_members_fmt
-            else -> R.string.ov_goal_manual_fmt
-        }, t)
-    }
-
-    private fun goalText(): String = "${goalTitle()}: ${Fmt.num(goalNow().coerceAtLeast(0))} / ${Fmt.num(LiveExtras.goalTarget(this))}"
-
-    private fun updateGoal() {
-        val o = overlay ?: return
-        if (!o.showGoal) return
-        val now = goalNow()
-        // Not known yet (YouTube has not answered): the bar shows «… / target» meanwhile.
-        o.setGoal(goalTitle(), now.takeIf { it >= 0 }, LiveExtras.goalTarget(this).toLong())
-    }
-
-    private fun alert(a: StreamOverlay.Alert) {
-        val o = overlay ?: return
-        if (!o.showAlerts) return
+    private fun alert(a: LayerPainter.Alert) {
+        val sr = scenes ?: return
         alertsShown++
-        o.alert(a)
+        sr.alert(a)
     }
 
     private val chatListener = object : LiveChat.Listener {
         override fun onMessage(m: LiveChat.Msg) { main.post { onChat(m) } }
         override fun onDeleted(id: String) {
-            main.post {
-                hud?.remove(id)
-                if (streamChat.removeAll { it.second.id == id }) pushStreamChat()
-            }
+            main.post { hud?.remove(id); scenes?.unchat(id) }
         }
         override fun onSubscriber(name: String?) {
-            main.post { alert(StreamOverlay.Alert(StreamOverlay.Kind.SUBSCRIBER, name ?: "")); updateGoal() }
+            main.post {
+                scenes?.counted(LayerPainter.AlertKind.SUBSCRIBER, 1, name ?: "")
+                alert(LayerPainter.Alert(LayerPainter.AlertKind.SUBSCRIBER, name ?: ""))
+            }
         }
         override fun onStats(s: LiveChat.Stats) {
             liveViewers = s.viewers; liveLikes = s.likes
             main.post {
                 hud?.setStats(s.viewers, s.likes, s.subs)
                 hud?.setCanSend(chat?.canSend == true)
-                overlay?.setStats(s.viewers, s.subs)
-                updateGoal()
+                scenes?.stats(s.viewers, s.likes, s.subs)
             }
         }
         override fun onState(youtube: String?, twitch: String?) {
@@ -964,7 +916,7 @@ class RecordService : Service(), Recorder.Events {
         val b = bot
         if (m.history) { b?.markSeen(m.authorId); return }
         val text = when (m.kind) {
-            LiveChat.Kind.SUPER, LiveChat.Kind.CHEER -> listOfNotNull(m.amount?.let { StreamOverlay.ltr(it) }, m.text.ifBlank { null }).joinToString(" — ")
+            LiveChat.Kind.SUPER, LiveChat.Kind.CHEER -> listOfNotNull(m.amount?.let { Num.ltr(it) }, m.text.ifBlank { null }).joinToString(" — ")
             else -> m.text
         }
         val accent = when (m.kind) {
@@ -974,23 +926,23 @@ class RecordService : Service(), Recorder.Events {
             else -> null
         }
         if (text.isNotBlank() || m.kind != LiveChat.Kind.CHAT) {
-            streamChat.addLast(System.currentTimeMillis() to StreamOverlay.ChatLine(m.id, m.author, text, ChatHud.nameColor(m), accent))
-            while (streamChat.size > 8) streamChat.removeFirst()
-            pushStreamChat()
+            chatTimes[m.id] = System.currentTimeMillis()
+            if (chatTimes.size > 200) chatTimes.keys.take(100).forEach { chatTimes.remove(it) }
+            scenes?.chat(LayerPainter.ChatLine(m.id, m.author, text, ChatHud.nameColor(m), accent))
         }
+        val sr = scenes
         when (m.kind) {
-            LiveChat.Kind.SUPER -> alert(StreamOverlay.Alert(StreamOverlay.Kind.SUPER, m.author, m.amount, m.text))
-            LiveChat.Kind.MEMBER -> { membersThisStream++; alert(StreamOverlay.Alert(StreamOverlay.Kind.MEMBER, m.author, m.amount)) }
-            LiveChat.Kind.SUB -> { membersThisStream++; alert(StreamOverlay.Alert(StreamOverlay.Kind.SUBSCRIBER, m.author)) }
+            LiveChat.Kind.SUPER -> { sr?.counted(LayerPainter.AlertKind.SUPER, 1, m.author); alert(LayerPainter.Alert(LayerPainter.AlertKind.SUPER, m.author, m.amount, m.text)) }
+            LiveChat.Kind.MEMBER -> { sr?.counted(LayerPainter.AlertKind.MEMBER); alert(LayerPainter.Alert(LayerPainter.AlertKind.MEMBER, m.author, m.amount)) }
+            LiveChat.Kind.SUB -> { sr?.counted(LayerPainter.AlertKind.MEMBER); alert(LayerPainter.Alert(LayerPainter.AlertKind.SUBSCRIBER, m.author)) }
             LiveChat.Kind.GIFT -> {
-                membersThisStream += m.amount?.toIntOrNull()?.coerceIn(1, 100) ?: 1
-                alert(StreamOverlay.Alert(StreamOverlay.Kind.GIFT, m.author, m.amount))
+                sr?.counted(LayerPainter.AlertKind.GIFT, m.amount?.toIntOrNull()?.coerceIn(1, 100) ?: 1)
+                alert(LayerPainter.Alert(LayerPainter.AlertKind.GIFT, m.author, m.amount))
             }
-            LiveChat.Kind.CHEER -> alert(StreamOverlay.Alert(StreamOverlay.Kind.CHEER, m.author, m.amount))
-            LiveChat.Kind.RAID -> alert(StreamOverlay.Alert(StreamOverlay.Kind.RAID, m.author, m.amount))
+            LiveChat.Kind.CHEER -> alert(LayerPainter.Alert(LayerPainter.AlertKind.CHEER, m.author, m.amount))
+            LiveChat.Kind.RAID -> alert(LayerPainter.Alert(LayerPainter.AlertKind.RAID, m.author, m.amount))
             LiveChat.Kind.CHAT -> {}
         }
-        if (m.kind != LiveChat.Kind.CHAT) updateGoal()
         if (b == null) return
         val yt = m.platform == LiveChat.Platform.YOUTUBE
         runBot(b.onMessage(ChatBot.In(m.id, m.authorId, m.author, m.text, m.owner, m.mod, m.member,
@@ -1002,10 +954,7 @@ class RecordService : Service(), Recorder.Events {
         val lc = chat ?: return
         for (o in outs) when (o) {
             is ChatBot.Out.Send -> sendOut(o.text, mine = false)
-            is ChatBot.Out.Delete -> {
-                lc.deleteId(o.id); hud?.remove(o.id)
-                if (streamChat.removeAll { it.second.id == o.id }) pushStreamChat()
-            }
+            is ChatBot.Out.Delete -> { lc.deleteId(o.id); hud?.remove(o.id); scenes?.unchat(o.id) }
             is ChatBot.Out.Timeout -> {
                 // A time-out costs 200 of the day's 10 000: only while plenty is left (removing still works).
                 if (LiveExtras.Quota.left(this) > 2_000) {
@@ -1014,7 +963,7 @@ class RecordService : Service(), Recorder.Events {
                 }
             }
             is ChatBot.Out.Winner -> {
-                alert(StreamOverlay.Alert(StreamOverlay.Kind.GIVEAWAY, o.name, Fmt.num(o.entries)))
+                alert(LayerPainter.Alert(LayerPainter.AlertKind.GIVEAWAY, o.name, Fmt.num(o.entries)))
                 hud?.note(getString(R.string.hud_n_winner_fmt, o.name, Fmt.num(o.entries)))
             }
         }
@@ -1044,14 +993,9 @@ class RecordService : Service(), Recorder.Events {
 
     private val hudActions = object : ChatHud.Actions {
         override fun send(text: String) = sendOut(text, mine = true)
-        override fun delete(m: LiveChat.Msg) {
-            chat?.delete(m); hud?.remove(m.id)
-            if (streamChat.removeAll { it.second.id == m.id }) pushStreamChat()
-        }
-        override fun onStream(what: String, on: Boolean) {
-            LiveExtras.put(this@RecordService, what, on)
-            applyStreamFlags()
-        }
+        override fun delete(m: LiveChat.Msg) { chat?.delete(m); hud?.remove(m.id); scenes?.unchat(m.id) }
+        override fun onScene(id: String) { scenes?.select(id) }
+        override fun onLayer(id: String, on: Boolean) { scenes?.setLayerVisible(id, on) }
         override fun timeout(m: LiveChat.Msg, seconds: Int) {
             chat?.timeout(m, seconds)
             hud?.note(if (seconds > 0) getString(R.string.hud_n_timeout_fmt, m.author, Fmt.num(seconds)) else getString(R.string.hud_n_banned_fmt, m.author))
@@ -1072,9 +1016,10 @@ class RecordService : Service(), Recorder.Events {
             hud?.setGiveaway(false, 0)
         }
         override fun goalStep(d: Int) {
-            if (LiveExtras.goalType(this@RecordService) != LiveExtras.GOAL_MANUAL) { hud?.note(getString(R.string.hud_n_goal_auto)); return }
-            LiveExtras.setGoalManual(this@RecordService, LiveExtras.goalManual(this@RecordService) + d)
-            updateGoal()
+            val v = (LiveExtras.goalManual(this@RecordService) + d).coerceAtLeast(0)
+            LiveExtras.setGoalManual(this@RecordService, v)
+            scenes?.setManual(v.toLong())
+            hud?.note(getString(R.string.hud_n_goal_manual_fmt, Fmt.num(v)))
         }
     }
 

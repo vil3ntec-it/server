@@ -1497,8 +1497,8 @@ class MainActivity : Activity() {
         box.visibility = View.VISIBLE
         ytTitleLive?.text = info.title
         val parts = ArrayList<String>()
-        if (RecordService.liveViewers >= 0) parts += str(R.string.yt_viewers_fmt, StreamOverlay.compact(RecordService.liveViewers))
-        if (RecordService.liveLikes >= 0) parts += str(R.string.yt_likes_fmt, StreamOverlay.compact(RecordService.liveLikes))
+        if (RecordService.liveViewers >= 0) parts += str(R.string.yt_viewers_fmt, Num.compact(RecordService.liveViewers))
+        if (RecordService.liveLikes >= 0) parts += str(R.string.yt_likes_fmt, Num.compact(RecordService.liveLikes))
         parts += str(when (info.health) {
             "good" -> R.string.yt_health_good
             "ok" -> R.string.yt_health_ok
@@ -1521,16 +1521,16 @@ class MainActivity : Activity() {
     private var layoutPreview: android.widget.ImageView? = null
     private var lastFrame: android.graphics.Bitmap? = null
 
-    private fun openLayoutEditor() = startActivity(Intent(this, LayoutEditorActivity::class.java))
+    private fun openLayoutEditor() = startActivity(Intent(this, SceneEditorActivity::class.java))
 
     /** The arrangement as a picture, over the owner's last recording (loaded once, off the main thread). */
     private fun refreshLayoutPreview() {
         val v = layoutPreview ?: return
         val w = (resources.displayMetrics.widthPixels.coerceAtMost(dp(720)) * 0.9f).toInt().coerceAtLeast(320)
-        v.setImageBitmap(LayoutEditorActivity.preview(this, w, lastFrame))
+        v.setImageBitmap(SceneEditorActivity.preview(this, w, lastFrame))
         if (lastFrame == null) bg.execute {
-            val f = LayoutEditorActivity.lastFrame(this) ?: return@execute
-            ui.post { if (!isDestroyed) { lastFrame = f; layoutPreview?.setImageBitmap(LayoutEditorActivity.preview(this, w, f)) } }
+            val f = SceneEditorActivity.lastFrame(this) ?: return@execute
+            ui.post { if (!isDestroyed) { lastFrame = f; layoutPreview?.setImageBitmap(SceneEditorActivity.preview(this, w, f)) } }
         }
     }
 

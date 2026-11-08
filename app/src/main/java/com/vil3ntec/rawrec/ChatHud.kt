@@ -39,8 +39,8 @@ import kotlin.math.abs
  *    hit by accident; by default without any background (shadowed text), old lines fade away;
  *  • the chat button — a small round button (drag it anywhere): tap it to open the panel;
  *  • the panel — the whole chat with a box to write, a tap on a message to answer, remove it or
- *    silence its writer, the giveaway and goal buttons, and «در پخش»: what viewers see (the chat,
- *    thank-yous, counters, goal), switched on and off at once while streaming.
+ *    silence its writer, the giveaway and goal buttons, and «در پخش»: the owner's scenes (one tap
+ *    switches the stream) and the layers of the scene on the stream, each on or off at once.
  *
  * None of it is in the stream when Android captures one app («Share one app»). With the whole
  * screen captured it would be, so then the feed is shown only if the owner put the chat on the
@@ -56,8 +56,10 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         fun giveawayDraw()
         fun giveawayStop()
         fun goalStep(d: Int)
-        /** «در پخش»: [what] (one of [ON_STREAM]) shown to viewers or not. */
-        fun onStream(what: String, on: Boolean)
+        /** Switch the stream to the owner's scene [id]. */
+        fun onScene(id: String)
+        /** A layer of the scene on the stream shown to viewers or not. */
+        fun onLayer(id: String, on: Boolean)
     }
 
     private val wm = ctx.getSystemService(WindowManager::class.java)
@@ -84,7 +86,6 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
     /** null = not known yet; false = the whole screen is captured (viewers would see what is here). */
     private var private: Boolean? = null
     private var chatOnStream = false
-    private val streamState = LinkedHashMap<String, Boolean>()
     private var unread = 0
     private val items = ArrayList<Pair<LiveChat.Msg, TextView>>()
     /** Persian translations of viewers' messages (by message id), shown instead of the original. */
@@ -206,10 +207,17 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         setPadding(dp(10), dp(2), dp(10), dp(4))
         visibility = View.GONE
     }
-    private val streamChips = LinkedHashMap<String, TextView>()
-    private val streamRow = row(*ON_STREAM.map { key ->
-        chip("") { actions.onStream(key, !(streamState[key] ?: false)) }.also { streamChips[key] = it }
-    }.toTypedArray()).apply { setPadding(dp(8), 0, dp(8), dp(4)) }
+    // «در پخش»: the scenes (one tap switches the stream) and the layers of the one on the stream
+    private val sceneChips = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+    private val layerChips = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+    private val streamRow = LinearLayout(ctx).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(8), 0, dp(8), dp(4))
+        addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(sceneChips) })
+        addView(HorizontalScrollView(ctx).apply { isHorizontalScrollBarEnabled = false; addView(layerChips) },
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(4) })
+        visibility = View.GONE
+    }
     private val giveBtn = chip(ctx.getString(R.string.hud_give_start)) { actions.giveawayStart() }
     private val drawBtn = chip(ctx.getString(R.string.hud_give_draw_fmt, 0), Color.argb(90, 106, 166, 255)) { actions.giveawayDraw() }
     private val endBtn = chip(ctx.getString(R.string.hud_give_end)) { actions.giveawayStop() }
@@ -284,7 +292,6 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         panelRoot.isFocusableInTouchMode = true
         panelRoot.setOnKeyListener(back)
         input.setOnKeyListener(back)
-        renderStream()
         renderLang()
     }
 
@@ -334,11 +341,27 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         updateFeed()
     }
 
-    /** What viewers see (keys of [ON_STREAM]); the chat's switch also decides the feed in whole-screen capture. */
-    fun setStreamState(state: Map<String, Boolean>) {
-        streamState.clear(); streamState.putAll(state)
-        chatOnStream = state[ON_CHAT] == true
-        renderStream()
+    /** The owner's scenes (the one on the stream marked) and that scene's layers with their switches. */
+    fun setScenes(scenes: List<Pair<String, String>>, active: String, layers: List<Triple<String, String, Boolean>>) {
+        sceneChips.removeAllViews()
+        for ((id, name) in scenes) {
+            val on = id == active
+            sceneChips.addView(chip((if (on) "▶ " else "") + name, if (on) Color.argb(170, 255, 59, 71) else Color.argb(46, 255, 255, 255)) {
+                if (!on) actions.onScene(id)
+            })
+        }
+        layerChips.removeAllViews()
+        for ((id, name, visible) in layers) {
+            layerChips.addView(chip((if (visible) "● " else "○ ") + name, if (visible) Color.argb(120, 106, 166, 255) else Color.argb(46, 255, 255, 255)) {
+                actions.onLayer(id, !visible)
+            })
+        }
+    }
+
+    /** A chat layer is in the stream: decides the phone's chat in a whole-screen capture, and the button's red ring. */
+    fun setChatOnStream(on: Boolean) {
+        chatOnStream = on
+        bubbleRing.setStroke(dp(2), if (on) Color.rgb(255, 59, 71) else Color.argb(90, 255, 255, 255))
         updateFeed()
     }
 
@@ -351,9 +374,9 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
 
     fun setStats(viewers: Long, likes: Long, subs: Long) {
         val parts = ArrayList<String>()
-        if (viewers >= 0) parts += ctx.getString(R.string.hud_viewers_fmt, StreamOverlay.compact(viewers))
-        if (likes >= 0) parts += ctx.getString(R.string.hud_likes_fmt, StreamOverlay.compact(likes))
-        if (subs >= 0) parts += ctx.getString(R.string.hud_subs_fmt, StreamOverlay.compact(subs))
+        if (viewers >= 0) parts += ctx.getString(R.string.hud_viewers_fmt, Num.compact(viewers))
+        if (likes >= 0) parts += ctx.getString(R.string.hud_likes_fmt, Num.compact(likes))
+        if (subs >= 0) parts += ctx.getString(R.string.hud_subs_fmt, Num.compact(subs))
         stats.text = if (parts.isEmpty()) ctx.getString(R.string.hud_title) else parts.joinToString("  ·  ")
         // the same numbers over the game, read only
         statsLine.text = parts.joinToString("   ")
@@ -501,18 +524,6 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         }
         renderBubble()
         updateFeed()
-    }
-
-    private fun renderStream() {
-        val names = mapOf(ON_CHAT to R.string.hud_s_chat, ON_ALERTS to R.string.hud_s_alerts, ON_SUBS to R.string.hud_s_subs,
-            ON_VIEWERS to R.string.hud_s_viewers, ON_GOAL to R.string.hud_s_goal)
-        for ((key, tv) in streamChips) {
-            val on = streamState[key] == true
-            tv.text = (if (on) "● " else "○ ") + ctx.getString(names[key] ?: R.string.hud_s_chat)
-            (tv.background as? GradientDrawable)?.setColor(if (on) Color.argb(150, 255, 59, 71) else Color.argb(46, 255, 255, 255))
-        }
-        // The button's ring is red while the chat is shown to viewers.
-        bubbleRing.setStroke(dp(2), if (chatOnStream) Color.rgb(255, 59, 71) else Color.argb(90, 255, 255, 255))
     }
 
     private fun renderBubble() {
@@ -668,8 +679,6 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         const val ON_SUBS = "ov_subs"
         const val ON_VIEWERS = "ov_viewers"
         const val ON_GOAL = "ov_goal"
-        /** «در پخش»: the switches, which are the same settings as on the «زنده» page. */
-        val ON_STREAM = listOf(ON_CHAT, ON_ALERTS, ON_SUBS, ON_VIEWERS, ON_GOAL)
 
         private val NAME_COLORS = intArrayOf(
             Color.rgb(255, 138, 128), Color.rgb(255, 209, 128), Color.rgb(204, 255, 144), Color.rgb(128, 216, 255),

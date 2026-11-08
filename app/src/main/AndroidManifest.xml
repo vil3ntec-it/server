@@ -35,10 +35,12 @@
             </intent-filter>
         </activity>
 
-        <!-- «چیدمانِ پخش»: drag what viewers see on the stream -->
+        <!-- «صحنه‌ها و لایه‌ها»: what viewers see on the stream, freely placed -->
         <activity
-            android:name=".LayoutEditorActivity"
+            android:name=".SceneEditorActivity"
             android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.RawRec"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize" />
         <activity

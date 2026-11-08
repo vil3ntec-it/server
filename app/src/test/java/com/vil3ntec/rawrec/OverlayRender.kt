@@ -37,28 +37,49 @@ class OverlayRender {
         return b
     }
 
-    private fun stream(tag: String, alert: StreamOverlay.Alert?) {
-        val w = 1920; val h = 1080
-        var layers: List<LookFilter.Layer> = emptyList()
+    private fun data() = LayerPainter.Data().apply {
+        subs = 12_345; viewers = 1_234; likes = 890; members = 7; supers = 3
+        startedAt = System.currentTimeMillis() - 3_725_000; lastSub = "Sara_99"; lastSuper = "Navid"
+        chat = listOf(
+            LayerPainter.ChatLine("1", "Ali", "سلام! بازی عالیه 🔥", Color.rgb(255, 138, 128)),
+            LayerPainter.ChatLine("2", "Sara_99", "this clutch was insane", Color.rgb(61, 214, 140)),
+            LayerPainter.ChatLine("3", "Navid", Num.ltr("$5.00") + " — ممنون بابتِ پخش", Color.rgb(128, 216, 255), Color.argb(90, 255, 176, 32)),
+            LayerPainter.ChatLine("4", "ModReza", "!discord", Color.rgb(106, 166, 255)),
+        )
+    }
+
+    private fun save(b: Bitmap, name: String) = File(dir, "$name.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+
+    /** What viewers see: a scene as the stream draws it (1920×1080), with an alert. */
+    private fun stream(tag: String, alert: LayerPainter.Alert?) {
         val app = RuntimeEnvironment.getApplication()
-        val o = StreamOverlay(app) { layers = it }
-        o.showSubs = true; o.showViewers = true; o.showGoal = true; o.showChat = true
-        o.setSize(w, h)
-        o.setChat(listOf(
-            StreamOverlay.ChatLine("1", "Ali", "سلام! بازی عالیه 🔥", Color.rgb(255, 138, 128)),
-            StreamOverlay.ChatLine("2", "Sara_99", "this clutch was insane", Color.rgb(61, 214, 140)),
-            StreamOverlay.ChatLine("3", "Navid", StreamOverlay.ltr("$5.00") + " — ممنون بابتِ پخش", Color.rgb(128, 216, 255), Color.argb(90, 255, 176, 32)),
-            StreamOverlay.ChatLine("4", "ModReza", "!discord", Color.rgb(106, 166, 255)),
-        ))
-        o.setStats(1234, 12_345)
-        o.setGoal(app.getString(R.string.ov_goal_subs_fmt, "13000"), 12_345, 13_000)
-        if (alert != null) o.alert(alert)
-        shadowOf(Looper.getMainLooper()).idle()
-        val out = game(w, h)
-        val c = Canvas(out)
-        for (l in layers) c.drawBitmap(l.bitmap, null, RectF(l.x * w, l.y * h, (l.x + l.w) * w, (l.y + l.h) * h), Paint(Paint.FILTER_BITMAP_FLAG))
-        File(dir, "stream-$tag.png").outputStream().use { out.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        o.release()
+        val scene = Scenes.reload(app).current
+        scene.layers.forEach { it.visible = true }
+        save(SceneEditorActivity.preview(app, 1920, game(1920, 1080), scene, data(), alert), "stream-$tag")
+    }
+
+    /** Every starting scene, and one with each kind of layer turned, cropped and coloured. */
+    private fun scenes(tag: String) {
+        val app = RuntimeEnvironment.getApplication()
+        val proj = Scenes.reload(app)
+        for ((i, sc) in proj.scenes.withIndex()) save(SceneEditorActivity.preview(app, 1920, game(1920, 1080), sc, data(), null), "scene$i-$tag")
+        val img = Bitmap.createBitmap(900, 500, Bitmap.Config.ARGB_8888).also { b ->
+            val c = Canvas(b); c.drawColor(Color.rgb(30, 120, 220))
+            c.drawRect(0f, 0f, 450f, 250f, Paint().apply { color = Color.rgb(255, 176, 32) })
+            c.drawCircle(675f, 375f, 100f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE })
+        }
+        val f = File(Scenes.mediaDir(app), "show.png"); f.outputStream().use { img.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        val s = Scenes.Scene(Scenes.newId(), "show", game = true)
+        s.layers += Scenes.newLayer(app, Scenes.Kind.SHAPE).apply { x = 0.5f; y = 0.93f; p.put("w", 1920).put("h", 150).put("radius", 0) }
+        s.layers += Scenes.newLayer(app, Scenes.Kind.IMAGE).apply { x = 0.82f; y = 0.3f; scale = 0.5f; rot = -8f; crop = floatArrayOf(0f, 0f, 0.5f, 1f); p.put("file", f.path).put("radius", 40) }
+        s.layers += Scenes.newLayer(app, Scenes.Kind.TEXT).apply { x = 0.5f; y = 0.08f; rot = 4f; p.put("text", "🔴 LIVE · {viewers} بیننده · {uptime}").put("bg", Color.argb(220, 255, 59, 71)).put("size", 48).put("font", 4) }
+        s.layers += Scenes.newLayer(app, Scenes.Kind.TEXT).apply { x = 0.5f; y = 0.93f; p.put("text", "{subs} مشترک — آخرین: {last_sub}").put("color", Color.rgb(255, 230, 0)).put("size", 44) }
+        s.layers += Scenes.newLayer(app, Scenes.Kind.GOAL).apply { x = 0.2f; y = 0.8f; p.put("c1", Color.rgb(61, 214, 140)).put("c2", Color.rgb(0, 200, 255)).put("title", "هدفِ امروز: {subs}") }
+        s.layers += Scenes.newLayer(app, Scenes.Kind.CHAT).apply { x = 0.17f; y = 0.42f; p.put("style", 2) }
+        s.layers += Scenes.newLayer(app, Scenes.Kind.ALERTS).apply { p.put("color", Color.rgb(186, 120, 255)).put("t_super", "وای {name}! {amount} ❤").put("image", f.path) }
+        s.layers += Scenes.newLayer(app, Scenes.Kind.CAMERA).apply { p.put("mask", 2) }
+        save(SceneEditorActivity.preview(app, 1920, game(1920, 1080), s, data(),
+            LayerPainter.Alert(LayerPainter.AlertKind.SUPER, "Navid Gamer", "$5.00", "ممنون بابتِ پخش!")), "scene-show-$tag")
     }
 
     private fun hud(tag: String) {
@@ -71,11 +92,14 @@ class OverlayRender {
             override fun giveawayDraw() {}
             override fun giveawayStop() {}
             override fun goalStep(d: Int) {}
-            override fun onStream(what: String, on: Boolean) {}
+            override fun onScene(id: String) {}
+            override fun onLayer(id: String, on: Boolean) {}
         })
         hud.show()
         hud.setPrivate(true)
-        hud.setStreamState(mapOf(ChatHud.ON_CHAT to true, ChatHud.ON_ALERTS to true, ChatHud.ON_SUBS to true, ChatHud.ON_VIEWERS to false, ChatHud.ON_GOAL to true))
+        hud.setScenes(listOf("g" to "بازی", "s" to "به‌زودی", "b" to "برمی‌گردم", "e" to "پایان"), "g",
+            listOf(Triple("c", "چت", true), Triple("a", "تشکر", true), Triple("n", "شمارِ مشترک", true), Triple("w", "صفحهٔ وب", false), Triple("q", "هدف", true)))
+        hud.setChatOnStream(true)
         hud.setCanSend(true)
         hud.setStats(1234, 380, 12_345)
         hud.setGiveaway(true, 17)
@@ -123,9 +147,9 @@ class OverlayRender {
             val hud = ChatHud(app, object : ChatHud.Actions {
                 override fun send(text: String) {}; override fun delete(m: LiveChat.Msg) {}; override fun timeout(m: LiveChat.Msg, seconds: Int) {}
                 override fun giveawayStart() {}; override fun giveawayDraw() {}; override fun giveawayStop() {}
-                override fun goalStep(d: Int) {}; override fun onStream(what: String, on: Boolean) {}
+                override fun goalStep(d: Int) {}; override fun onScene(id: String) {}; override fun onLayer(id: String, on: Boolean) {}
             })
-            hud.show(); hud.setPrivate(true); hud.setStreamState(emptyMap()); hud.setStats(1234, 380, 12_345)
+            hud.show(); hud.setPrivate(true); hud.setStats(1234, 380, 12_345)
             fun m(a: String, t: String, k: LiveChat.Kind = LiveChat.Kind.CHAT, amount: String? = null, member: Boolean = false) =
                 LiveChat.Msg("s$st$a", LiveChat.Platform.YOUTUBE, "c$a", a, t, k, amount, false, false, member, false)
             hud.add(m("Ali", "سلام! بازی عالیه 🔥"))
@@ -141,34 +165,38 @@ class OverlayRender {
         }
         prefs.edit().remove("hud_style").commit()
         for (st in 0..2) {
-            var layers: List<LookFilter.Layer> = emptyList()
-            val o = StreamOverlay(app) { layers = it }
-            o.showSubs = false; o.showViewers = false; o.showGoal = false; o.showChat = true; o.chatStyle = st
-            o.setSize(1920, 1080)
-            o.setChat(listOf(
-                StreamOverlay.ChatLine("1", "Ali", "سلام! بازی عالیه 🔥", Color.rgb(255, 138, 128)),
-                StreamOverlay.ChatLine("2", "Sara_99", "this clutch was insane", Color.rgb(61, 214, 140)),
-                StreamOverlay.ChatLine("3", "Navid", StreamOverlay.ltr("$5.00") + " — ممنون بابتِ پخش", Color.rgb(128, 216, 255), Color.argb(90, 255, 176, 32)),
-            ))
-            val l = layers.first()
-            val b = game(l.bitmap.width + 80, l.bitmap.height + 80)
-            Canvas(b).drawBitmap(l.bitmap, 40f, 40f, null)
-            File(dir, "stream-chat-style$st-$tag.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            o.release()
+            val l = Scenes.newLayer(app, Scenes.Kind.CHAT).apply { p.put("style", st) }
+            val pic = LayerPainter.chat(app, l, data().chat)!!
+            val b = game(pic.width + 80, pic.height + 80)
+            Canvas(b).drawBitmap(pic, 40f, 40f, null)
+            save(b, "stream-chat-style$st-$tag")
         }
     }
 
-    /** The «چیدمانِ پخش» editor, and the whole «زنده» page top to bottom. */
+    /** The «صحنه‌ها و لایه‌ها» editor (layers, a layer's settings, the add list), and the whole «زنده» page. */
     private fun screens(tag: String) {
-        val ed = org.robolectric.Robolectric.buildActivity(LayoutEditorActivity::class.java).setup().get()
+        val ed = org.robolectric.Robolectric.buildActivity(SceneEditorActivity::class.java).setup().get()
         shadowOf(Looper.getMainLooper()).idle()
-        val stage = allViews(ed.window.decorView).filterIsInstance<LayoutEditorActivity.Stage>().first()
-        stage.select(OverlayLayout.CHAT)
+        fun shot(name: String, root: android.view.View) {
+            val b = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+            root.draw(Canvas(b)); save(b, "$name-$tag")
+        }
+        shot("scene-editor", ed.window.decorView)
+        ed.select(ed.scene().layers.first { it.kind == Scenes.Kind.CHAT }.id)
         shadowOf(Looper.getMainLooper()).idle()
-        val root = ed.window.decorView
-        val b = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
-        root.draw(Canvas(b))
-        File(dir, "layout-editor-$tag.png").outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        shot("scene-editor-chat", ed.window.decorView)
+        ed.select(ed.scene().layers.first { it.kind == Scenes.Kind.TEXT }.id)
+        shadowOf(Looper.getMainLooper()).idle()
+        shot("scene-editor-text", ed.window.decorView)
+        allViews(ed.window.decorView).first { it.tag == "sc:tab:layers" }.performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        allViews(ed.window.decorView).first { it.tag == "sc:add" }.performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+        shot("scene-add", org.robolectric.shadows.ShadowDialog.getLatestDialog().window!!.decorView)
+        org.robolectric.shadows.ShadowDialog.getLatestDialog().dismiss()
+        ColorPicker.show(ed, "رنگ", Color.rgb(255, 59, 71)) {}
+        shadowOf(Looper.getMainLooper()).idle()
+        shot("color-picker", org.robolectric.shadows.ShadowDialog.getLatestDialog().window!!.decorView)
 
         val a = org.robolectric.Robolectric.buildActivity(MainActivity::class.java).setup().get()
         shadowOf(Looper.getMainLooper()).idle()
@@ -190,10 +218,11 @@ class OverlayRender {
     private fun all(qualifiers: String, tag: String) {
         RuntimeEnvironment.setQualifiers(qualifiers)
         val app = RuntimeEnvironment.getApplication()
-        stream("$tag-super", StreamOverlay.Alert(StreamOverlay.Kind.SUPER, "Navid Gamer", "$5.00", "ممنون بابتِ پخش، این ماپ رو خیلی خوب بازی کردی! ادامه بده"))
-        stream("$tag-sub", StreamOverlay.Alert(StreamOverlay.Kind.SUBSCRIBER, "Sara_99"))
-        stream("$tag-member", StreamOverlay.Alert(StreamOverlay.Kind.MEMBER, "NightWolf", "Gold"))
-        stream("$tag-giveaway", StreamOverlay.Alert(StreamOverlay.Kind.GIVEAWAY, "علی رضایی", "17"))
+        stream("$tag-super", LayerPainter.Alert(LayerPainter.AlertKind.SUPER, "Navid Gamer", "$5.00", "ممنون بابتِ پخش، این ماپ رو خیلی خوب بازی کردی! ادامه بده"))
+        stream("$tag-sub", LayerPainter.Alert(LayerPainter.AlertKind.SUBSCRIBER, "Sara_99"))
+        stream("$tag-member", LayerPainter.Alert(LayerPainter.AlertKind.MEMBER, "NightWolf", "Gold"))
+        stream("$tag-giveaway", LayerPainter.Alert(LayerPainter.AlertKind.GIVEAWAY, "علی رضایی", "17"))
+        scenes(tag)
         hud(tag)
         styles(tag)
         screens(tag)
