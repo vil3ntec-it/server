@@ -592,7 +592,17 @@ class Recorder(
         val adj = pts - pausedTotalUs              // only shifts by the paused time; never wall-clock
         stats.onFrame(adj, key, 1_000_000L / plan.fps)
         if (muxer.submitVideo(buf, info.offset, info.size, adj, info.flags)) requestKeyFrame()
+        // A key frame every second of video BY TIME (4.0). The encoder counts its interval in frames
+        // of the set rate: set to the screen's 120–165 fps while a game draws 40–60, «every second»
+        // became every 2–5 s — the gallery's seek bar showed nothing new until 2–5 s had passed.
+        if (key) { lastKeyUs = adj; keyAsked = false }
+        else if (KeyClock.due(lastKeyUs, adj, keyEveryUs) && !keyAsked) { keyAsked = true; requestKeyFrame() }
     }
+
+    private var lastKeyUs = -1L
+    private var keyAsked = false
+    /** Live: every 2 s (what the platforms ask); a recording: every second (a seek lands at once). */
+    private val keyEveryUs get() = if (sinkFactory != null) 2_000_000L else 1_000_000L
 
     /**
      * Rotation in automatic mode: a new encoder at the new size, the virtual display resized onto
@@ -971,4 +981,9 @@ class Recorder(
         const val AEC_NONE = 2
         private const val MAX_RECOVERIES = 5
     }
+}
+
+/** When a key frame is due: [everyUs] of video time since the last one (none yet = not due). */
+object KeyClock {
+    fun due(lastKeyUs: Long, nowUs: Long, everyUs: Long): Boolean = lastKeyUs >= 0 && nowUs - lastKeyUs >= everyUs - 20_000L
 }

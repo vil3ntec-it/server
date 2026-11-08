@@ -162,4 +162,12 @@ class RtmpConnectTest {
         // all black: no answer (the picture stays as it is)
         assertNull(LookFilter.barsRegion(frame { _, _ -> false }, w, h))
     }
+
+    @Test fun aKeyFrameEverySecondByTimeNotByFrameCount() {
+        // 165 fps set, the game drawing 40: frames 25 ms apart — the next key frame is due after 1 s of video
+        assertFalse(KeyClock.due(0, 500_000, 1_000_000))
+        assertTrue(KeyClock.due(0, 1_000_000, 1_000_000))
+        assertTrue("a frame just before the second counts (frame times jitter)", KeyClock.due(0, 985_000, 1_000_000))
+        assertFalse("before the first key frame: not due", KeyClock.due(-1, 5_000_000, 1_000_000))
+    }
 }
