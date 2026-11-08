@@ -44,7 +44,9 @@ jobs:
                   for bad in list(tc.findall('failure')) + list(tc.findall('error')):
                       fail += 1
                       msg = (bad.get('message') or '')[:300].replace('\n', ' ')
-                      lines.append(f"FAIL {tc.get('classname')}.{tc.get('name')}: {msg}\n    {(bad.text or '').strip().splitlines()[:6]}")
+                      tr = (bad.text or '').strip().splitlines()
+                      keep = tr[:3] + [l for l in tr[3:] if 'com.vil3ntec' in l or 'Caused by' in l][:14]
+                      lines.append(f"FAIL {tc.get('classname')}.{tc.get('name')}: {msg}\n    " + "\n    ".join(keep))
           open('out/tests-3.3.txt', 'w').write(f"tests {tot}, failed {fail}, skipped {skip}\n" + "\n".join(lines) + "\n")
           print(open('out/tests-3.3.txt').read())
           PY

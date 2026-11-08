@@ -123,7 +123,8 @@ class VoiceLiveUiTest {
     private fun openAudio(a: Activity) { tab(a, MainActivity.Tab.SETTINGS); touch(a, byTag(a, "sub:${MainActivity.Sub.AUDIO.name}")) }
     private fun kinds() = prefs().getInt("c_kinds", VoiceSources.ALL)
     private fun chip(a: Activity, text: String): RadioButton =
-        all(a.window.decorView).filterIsInstance<RadioButton>().first { shown(it) && it.text.toString() == text }
+        all(a.window.decorView).filterIsInstance<RadioButton>().firstOrNull { shown(it) && it.text.toString() == text }
+            ?: throw AssertionError("no chip «$text» among " + all(a.window.decorView).filterIsInstance<RadioButton>().filter { shown(it) }.map { it.text })
     private fun cfg() = RecordConfig.fromPrefs(prefs())
 
     // ------------------------------------------------------------ «صدای یارها»
@@ -158,7 +159,7 @@ class VoiceLiveUiTest {
         touch(a, byTag(a, "tog:kind2")); touch(a, byTag(a, "tog:kind4"))
         assertEquals(VoiceSources.GAME, VoiceSources.effectiveMask(app, cfg()))
         touch(a, byTag(a, "tog:kind1"))
-        assertEquals("explained, not silently «record everything»", app.getString(R.string.vs_need_one), ShadowToast.getTextOfLatestToast())
+        assertEquals("explained, not silently «record everything»", a.getString(R.string.vs_need_one), ShadowToast.getTextOfLatestToast())
         assertTrue(sw(a, "tog:kind1"))
         assertEquals(VoiceSources.GAME, VoiceSources.effectiveMask(app, cfg()))
     }
@@ -204,21 +205,22 @@ class VoiceLiveUiTest {
         touch(a, play)
         val pf = MainActivity::class.java.getDeclaredField("player").apply { isAccessible = true }
         val p = pf.get(a) as android.media.MediaPlayer?
-        assertNotNull("playing the media part", p)
+        val note = MainActivity::class.java.getDeclaredField("listenNote").apply { isAccessible = true }.get(a) as TextView?
+        assertNotNull("playing the media part (note: «${note?.text}»)", p)
         assertTrue(p!!.isPlaying)
         touch(a, byTag(a, "listen:${VoiceSources.MEDIA}"))
         assertNull("the same button stops it", pf.get(a))
         touch(a, byTag(a, "listen:${VoiceSources.OTHER}"))
         assertTrue("a part without sound says so",
-            all(a.window.decorView).any { shown(it) && it is TextView && it.text.toString() == app.getString(R.string.vs_listen_empty_fmt, app.getString(R.string.vs_other)) })
+            all(a.window.decorView).any { shown(it) && it is TextView && it.text.toString() == a.getString(R.string.vs_listen_empty_fmt, a.getString(R.string.vs_other)) })
         // pick: the teammates are in «رسانه»
-        touch(a, chip(a, app.getString(R.string.vs_media)))
+        touch(a, chip(a, a.getString(R.string.vs_media)))
         assertEquals(VoiceSources.MEDIA, prefs().getInt("vs_pick", 0))
-        assertTrue(all(a.window.decorView).any { shown(it) && it is TextView && it.text.toString() == app.getString(R.string.vs_found_user_fmt, app.getString(R.string.vs_media)) })
+        assertTrue(all(a.window.decorView).any { shown(it) && it is TextView && it.text.toString() == a.getString(R.string.vs_found_user_fmt, a.getString(R.string.vs_media)) })
         touch(a, byTag(a, "tog:team"))
         assertEquals("picked part left out, game stays", VoiceSources.ALL and VoiceSources.MEDIA.inv(), VoiceSources.effectiveMask(app, cfg()))
         // pick «خودکار» again
-        touch(a, chip(a, app.getString(R.string.vs_pick_auto)))
+        touch(a, chip(a, a.getString(R.string.vs_pick_auto)))
         assertEquals(0, prefs().getInt("vs_pick", -1))
         assertNull(CrashLog.pending(app))
     }
@@ -269,10 +271,10 @@ class VoiceLiveUiTest {
             assertTrue("chip «${c.text}» selected after a tap", c.isChecked)
         }
         // a few concrete values
-        touch(a, chip(a, app.getString(R.string.pos_br)))
-        touch(a, chip(a, app.getString(R.string.live_goal_t_manual)))
+        touch(a, chip(a, a.getString(R.string.pos_br)))
+        touch(a, chip(a, a.getString(R.string.live_goal_t_manual)))
         assertEquals(LiveExtras.GOAL_MANUAL, LiveExtras.goalType(app))
-        touch(a, chip(a, app.getString(R.string.live_hud_l)))
+        touch(a, chip(a, a.getString(R.string.live_hud_l)))
         assertEquals(2, LiveExtras.hudSize(app))
         assertNull(CrashLog.pending(app))
     }
@@ -282,19 +284,19 @@ class VoiceLiveUiTest {
         tab(a, MainActivity.Tab.LIVE)
         fun field(hint: String) = all(a.window.decorView).filterIsInstance<android.widget.EditText>().first { shown(it) && it.hint?.toString() == hint }
         fun type(e: android.widget.EditText, s: String) { e.requestFocus(); e.setText(s); a.window.decorView.findFocus(); e.clearFocus(); idle() }
-        type(field(app.getString(R.string.live_tw_hint)), "https://www.twitch.tv/SomeOne")
+        type(field(a.getString(R.string.live_tw_hint)), "https://www.twitch.tv/SomeOne")
         assertEquals("someone", LiveExtras.twChannel(app))
-        type(field(app.getString(R.string.live_bot_cmds_hint)), "!discord = d.gg/x\n!phone: RawRec")
+        type(field(a.getString(R.string.live_bot_cmds_hint)), "!discord = d.gg/x\n!phone: RawRec")
         assertEquals(setOf("!discord", "!phone"), LiveExtras.botConfig(app).commands.keys)
-        type(field(app.getString(R.string.live_bot_timers_hint)), "۱۰ = hello")
+        type(field(a.getString(R.string.live_bot_timers_hint)), "۱۰ = hello")
         assertEquals(listOf(10 to "hello"), LiveExtras.botConfig(app).timers)
         type(field("1000"), "250")
         assertEquals(250, LiveExtras.goalTarget(app))
         type(field("…apps.googleusercontent.com"), "123-abc.apps.googleusercontent.com")
         assertEquals("123-abc.apps.googleusercontent.com", LiveExtras.ytClientId(app))
         // the YouTube button without a secret explains instead of doing nothing
-        touch(a, all(a.window.decorView).first { shown(it) && it is android.widget.Button && it.text == app.getString(R.string.live_yt_signin) })
-        assertEquals(app.getString(R.string.live_yt_need_client), ShadowToast.getTextOfLatestToast())
+        touch(a, all(a.window.decorView).first { shown(it) && it is android.widget.Button && it.text == a.getString(R.string.live_yt_signin) })
+        assertEquals(a.getString(R.string.live_yt_need_client), ShadowToast.getTextOfLatestToast())
         assertNull(CrashLog.pending(app))
     }
 }

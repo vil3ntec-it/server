@@ -475,7 +475,9 @@ class InteractionTest {
         prefs().edit().putInt("c_preset", 3).putInt("c_br", 50).apply()
         launch()
         assertEquals(RecordConfig.BR_AUTO_HIGH, prefs().getInt("c_br", 0))
-        assertEquals(RecordConfig.PRESET_SCREEN, prefs().getInt("c_preset", -1))
+        // Reset to «مثلِ صفحه», which on a screen faster than 60 Hz became «۶۰ فریم» (cfg_ver 4 and 8).
+        val expected = if (DisplayInfo.read(app).refresh > 60) RecordConfig.PRESET_60 else RecordConfig.PRESET_SCREEN
+        assertEquals(expected, prefs().getInt("c_preset", -1))
         prefs().edit().putInt("c_preset", 3).putInt("c_br", 50).apply()
         launch()
         assertEquals("a choice made in 1.3 is kept", 50, prefs().getInt("c_br", 0))

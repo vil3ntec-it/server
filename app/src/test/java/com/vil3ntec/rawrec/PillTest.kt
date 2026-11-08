@@ -87,6 +87,12 @@ class PillTest {
             val v = find(f, "pill:$k")!!
             assertTrue("$k ≥ 48dp", v.width >= min && v.height >= min)
             tap(f, v)
+            if (k == "stop") {
+                // Two taps since 2.x: the first only arms it, so a finger that slips in a game ends nothing.
+                assertEquals("stop: first tap only arms", 0, c[k])
+                assertTrue("stop armed", f.stopIsArmed)
+                tap(f, find(f, "pill:stop")!!)
+            }
             assertEquals("$k pressed once", 1, c[k])
         }
         f.hide()

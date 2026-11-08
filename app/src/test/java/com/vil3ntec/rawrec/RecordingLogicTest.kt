@@ -241,6 +241,7 @@ class RecordingLogicTest {
         val m = SegMuxer(sink, true, 8L * 30, "RawRec split", ev)
         m.audioFormat(MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, 48_000, 2))
         m.videoFormat(fmt(1080, 2400))
+        audio(m, 0)   // since 3.0 the first part opens once sound has come (it starts with audio), as on a phone
         for (i in 0 until 25) { frame(m, 1080, 2400, i * 10_000L, i == 0); audio(m, i * 10_000L + 5_000) }
         // The encoder answers the key-frame request a few frames late: every frame until then stays in part 1.
         frame(m, 1080, 2400, 250_000, true)

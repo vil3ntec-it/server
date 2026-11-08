@@ -95,7 +95,7 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
         if (now != null && now < t) goalStartedBelow = true
         if (now != null && showGoal && !goalReached && goalStartedBelow && now >= t) {
             goalReached = true
-            alert(Alert(Kind.GOAL, title, "${Fmt.num(now)} / ${Fmt.num(t)}"))
+            alert(Alert(Kind.GOAL, title, "${grouped(now)} / ${grouped(t)}"))
         }
         redrawGoal(); push()
     }
@@ -181,15 +181,25 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
         val gap = 12f * u
         // Stacks per corner: badges, then the goal, then the alert (when they share a corner).
         val used = HashMap<Int, Float>()
+        val placed = ArrayList<RectF>()
         fun place(id: Int, b: Bitmap?, g: Int, pos: Int, alpha: Float = 1f, dy: Float = 0f) {
             if (b == null) return
             val w = b.width.toFloat(); val h = b.height.toFloat()
             val x = when (pos % 3) { 0 -> margin; 1 -> (fw - w) / 2f; else -> fw - margin - w }
-            val off = used[pos] ?: 0f
+            var off = used[pos] ?: 0f
             val top = pos < 3
-            val y = if (top) margin + off + dy else fh - margin - off - h - dy
+            fun rect() = if (top) RectF(x, margin + off, x + w, margin + off + h) else RectF(x, fh - margin - off - h, x + w, fh - margin - off)
+            // e.g. wide counters at top-left and an alert at top-centre: the alert goes below them
+            var guard = 0
+            while (guard++ < 8) {
+                val r = rect()
+                val hit = placed.firstOrNull { RectF.intersects(it, r) } ?: break
+                off = if (top) hit.bottom + gap - margin else fh - margin - hit.top + gap
+            }
+            val r = rect()
+            placed += r
             used[pos] = off + h + gap
-            out += LookFilter.Layer(id, b, g, x / fw, y / fh, w / fw, h / fh, alpha)
+            out += LookFilter.Layer(id, b, g, x / fw, (r.top + if (top) dy else -dy) / fh, w / fw, h / fh, alpha)
         }
         if (showSubs || showViewers) place(1, badges, badgesGen, badgePos)
         if (showGoal) place(2, goalBmp, goalGen, goalPos)
@@ -260,7 +270,7 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
         val title = paint(30f, true)
         val num = paint(28f, true, Color.argb(235, 255, 255, 255))
         val t = TextUtils.ellipsize(goalTitle, title, w - pad * 2 - 170f * u, TextUtils.TruncateAt.END).toString()
-        val ns = "${goalKnown?.let { Fmt.num(it) } ?: "…"} / ${Fmt.num(goalTarget)}"
+        val ns = ltr("${goalKnown?.let { grouped(it) } ?: "…"} / ${grouped(goalTarget)}")
         val base = pad + 30f * u
         if (rtl) {
             c.drawText(t, w - pad - title.measureText(t), base, title)
@@ -277,6 +287,7 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
         if (k > 0f) {
             val fillW = (bar.width() * k).coerceAtLeast(bar.height())
             val fill = if (rtl) RectF(bar.right - fillW, bar.top, bar.right, bar.bottom) else RectF(bar.left, bar.top, bar.left + fillW, bar.bottom)
+            p.color = Color.WHITE   // full alpha: the paint's alpha would dim the gradient
             p.shader = LinearGradient(fill.left, 0f, fill.right, 0f, Color.rgb(255, 59, 71), Color.rgb(255, 176, 32), Shader.TileMode.CLAMP)
             c.drawRoundRect(fill, bar.height() / 2, bar.height() / 2, p)
             p.shader = null
@@ -291,10 +302,10 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
     private fun drawAlert(a: Alert): Bitmap {
         val (title, color, mark) = when (a.kind) {
             Kind.SUBSCRIBER -> Triple(ctx.getString(R.string.ov_a_sub), Color.rgb(255, 59, 71), "❤")
-            Kind.SUPER -> Triple(ctx.getString(R.string.ov_a_super_fmt, a.detail ?: ""), Color.rgb(255, 176, 32), "$")
+            Kind.SUPER -> Triple(ctx.getString(R.string.ov_a_super_fmt, ltr(a.detail ?: "")), Color.rgb(255, 176, 32), "$")
             Kind.MEMBER -> Triple(if (a.detail.isNullOrBlank()) ctx.getString(R.string.ov_a_member) else ctx.getString(R.string.ov_a_member_fmt, a.detail), Color.rgb(61, 214, 140), "★")
             Kind.GIFT -> Triple(ctx.getString(R.string.ov_a_gift_fmt, a.detail ?: "1"), Color.rgb(186, 120, 255), "🎁")
-            Kind.CHEER -> Triple(ctx.getString(R.string.ov_a_cheer_fmt, a.detail ?: ""), Color.rgb(186, 120, 255), "◆")
+            Kind.CHEER -> Triple(ctx.getString(R.string.ov_a_cheer_fmt, ltr(a.detail ?: "")), Color.rgb(186, 120, 255), "◆")
             Kind.RAID -> Triple(ctx.getString(R.string.ov_a_raid_fmt, a.detail ?: ""), Color.rgb(106, 166, 255), "⚑")
             Kind.GIVEAWAY -> Triple(ctx.getString(R.string.ov_a_giveaway_fmt, a.detail ?: ""), Color.rgb(106, 166, 255), "🎉")
             Kind.GOAL -> Triple(ctx.getString(R.string.ov_a_goal), Color.rgb(255, 176, 32), "🏆")
@@ -375,6 +386,11 @@ class StreamOverlay(private val ctx: Context, private val sink: (List<LookFilter
     companion object {
         private const val IN = 350L
         private const val OUT = 350L
+
+        /** Numbers and amounts stay left-to-right inside Persian text («$5.00», not «5.00$»). */
+        fun ltr(s: String) = if (s.isEmpty()) s else "\u2066$s\u2069"
+
+        fun grouped(n: Long): String = String.format(Locale.US, "%,d", n)
 
         /** 1234 → 1,234; 12345 → 12.3K; 1234567 → 1.23M. */
         fun compact(n: Long): String = when {
