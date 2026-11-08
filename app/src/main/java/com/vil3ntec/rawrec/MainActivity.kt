@@ -144,6 +144,8 @@ class MainActivity : Activity() {
     private var liveKey: android.widget.EditText? = null
     private var liveHelp: TextView? = null
     private var liveMulti: TextView? = null
+    private var liveTest: TextView? = null
+    private var liveTestBtn: Button? = null
     private var ytStatus: TextView? = null
     private var ytButton: Button? = null
     private var ytQuota: TextView? = null
@@ -1374,6 +1376,19 @@ class MainActivity : Activity() {
             tag = "live:multi"
         }
         dc.addView(liveMulti, lp(8))
+        // the way to each platform's server, tried without going live (VPN / filter / key)
+        liveTestBtn = button(str(R.string.live_test), R.style.Button_Tonal, R.drawable.ic_link, top = 10).apply {
+            tag = "live:test"
+            onTap("live test") { testConnection() }
+        }
+        dc.addView(liveTestBtn)
+        liveTest = text("", R.style.Text_Body).apply {
+            setBackgroundResource(R.drawable.bg_inset)
+            setPaddingRelative(dp(14), dp(10), dp(14), dp(10))
+            tag = "live:test_result"
+            visibility = View.GONE
+        }
+        dc.addView(liveTest, lp(8))
         dc.addView(infoLine(R.drawable.ic_shield, str(R.string.live_key_safe), R.style.Text_Caption), lp(8))
 
         // ---- 3. what viewers see: a picture of the arrangement, edited by dragging
@@ -1628,12 +1643,18 @@ class MainActivity : Activity() {
         yc.addView(textField(str(R.string.yt_title_hint), LiveExtras.ytTitle(ctx)) { LiveExtras.put(ctx, "yt_title", it.trim()) }, lp(4))
         // who can watch the video and the like: set on YouTube when the stream starts, and at once while live
         yc.addView(text(str(R.string.yt_vid_desc), R.style.Text_Caption), lp(6))
-        fun ytRow(key: String, title: Int, desc: Int?, opts: List<Pair<String, Int>>) {
-            rows[key] = Row(yc, str(title), desc?.let { str(it) } ?: "", opts.map { str(it.second) }, top = 14) { i -> LiveExtras.put(ctx, key, opts[i].first) }
+        fun ytRow(key: String, title: Int, desc: Int?, opts: List<Pair<String, Int>>, picked: (String) -> Unit = {}) {
+            rows[key] = Row(yc, str(title), desc?.let { str(it) } ?: "", opts.map { str(it.second) }, top = 14) { i -> LiveExtras.put(ctx, key, opts[i].first); picked(opts[i].first) }
                 .apply { select(opts.indexOfFirst { it.first == SafePrefs.str(prefs, key) }.coerceAtLeast(0)) }
         }
+        // «خصوصی» hides the live from everyone but the owner (and from the channel page): said under the choice
+        val privNote = text(str(R.string.yt_private_note), R.style.Text_Caption).apply { tag = "yt:private_note" }
         ytRow("yt_privacy", R.string.yt_privacy_title, R.string.yt_privacy_desc, listOf("" to R.string.yt_keep,
-            "public" to R.string.yt_p_public, "unlisted" to R.string.yt_p_unlisted, "private" to R.string.yt_p_private))
+            "public" to R.string.yt_p_public, "unlisted" to R.string.yt_p_unlisted, "private" to R.string.yt_p_private)) {
+            privNote.visibility = if (it == "private") View.VISIBLE else View.GONE
+        }
+        privNote.visibility = if (SafePrefs.str(prefs, "yt_privacy") == "private") View.VISIBLE else View.GONE
+        yc.addView(privNote, lp(4))
         ytRow("yt_kids", R.string.yt_kids_title, R.string.yt_kids_desc, listOf("" to R.string.yt_keep, "no" to R.string.yt_kids_no, "yes" to R.string.yt_kids_yes))
         ytRow("yt_embed", R.string.yt_embed_title, R.string.yt_embed_desc, listOf("" to R.string.yt_keep, "yes" to R.string.yt_embed_yes, "no" to R.string.yt_embed_no))
         ytRow("yt_category", R.string.yt_cat_title, null, listOf("" to R.string.yt_keep, "20" to R.string.yt_cat_gaming, "24" to R.string.yt_cat_ent,
@@ -1938,6 +1959,44 @@ class MainActivity : Activity() {
         onStartClicked(0)
     }
 
+    /**
+     * «آزمایشِ اتصال»: for each platform switched on, the way to its server, the secure handshake
+     * and RTMP's «connect» — all but publishing, so nothing goes out on the channel. For YouTube
+     * (signed in) also whether the key is one of the channel's. Off the main thread.
+     */
+    private fun testConnection() {
+        saveLiveFields()
+        val out = liveTest ?: return
+        val ds = LiveSettings.destinations(this)
+        out.visibility = View.VISIBLE
+        out.text = str(R.string.live_test_running, ds.joinToString(" + ") { it.name })
+        liveTestBtn?.isEnabled = false
+        val app = applicationContext
+        Thread({
+            val lines = ArrayList<String>()
+            for (d in ds) {
+                lines += try {
+                    val p = RtmpPublisher(d.url, d.key)
+                    val ms = p.probe()
+                    RecLog.add(app, "test ${d.name}: ok ${ms}ms via ${p.route}")
+                    str(R.string.live_test_ok_fmt, d.name, Fmt.num(ms), LiveSettings.routeText(this, p.route))
+                } catch (e: Exception) {
+                    val why = (e as? RtmpPublisher.Failure)?.why ?: RtmpPublisher.classify(e, null, proxy = false)
+                    val k = d.key.trim().substringBefore('?')
+                    val msg = (e.message ?: e.javaClass.simpleName).let { if (k.length >= 4) it.replace(k, "•••") else it }
+                    RecLog.add(app, "test ${d.name}: $why $msg")
+                    str(R.string.live_test_fail_fmt, d.name, LiveSettings.whyText(this, why) ?: "", msg)
+                }
+                // the key itself, where YouTube can be asked (the connection test cannot tell a wrong key)
+                if (d.url.contains("youtube", ignoreCase = true) && d.key.isNotBlank()) {
+                    val yt = LiveExtras.youTube(app)
+                    if (yt != null) try { lines += str(if (yt.streamIdForKey(d.key) != null) R.string.live_test_key_ok else R.string.live_test_key_bad) } catch (_: Exception) {}
+                }
+            }
+            ui.post { out.text = lines.joinToString("\n\n"); liveTestBtn?.isEnabled = true }
+        }, "rawrec-live-test").start()
+    }
+
     private fun startLive(code: Int, data: Intent) {
         val p = LiveSettings.platform(this)
         val micOk = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -1970,6 +2029,9 @@ class MainActivity : Activity() {
         val secs = if (RecordService.startedAt > 0) (System.currentTimeMillis() - RecordService.startedAt) / 1000 else 0
         val time = String.format(java.util.Locale.US, "%d:%02d:%02d", secs / 3600, secs / 60 % 60, secs % 60)
         v.text = when {
+            // not connecting yet: why, in words, and what the connection itself said
+            s != null && s.state == RtmpSink.State.CONNECTING && (s.why != null || s.noPicture) ->
+                str(R.string.live_s_connecting_why_fmt, LiveSettings.whyText(this, s.why) ?: str(R.string.live_why_no_picture), s.error ?: "")
             s == null || s.state == RtmpSink.State.CONNECTING -> str(R.string.live_s_connecting)
             RecordService.liveCovered -> str(R.string.live_s_brb_fmt, time)
             s.state == RtmpSink.State.RECONNECTING -> str(R.string.live_s_reconnecting_fmt, time, Fmt.num(s.reconnects), s.error ?: "")

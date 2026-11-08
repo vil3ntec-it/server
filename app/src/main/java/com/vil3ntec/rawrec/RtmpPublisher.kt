@@ -7,9 +7,15 @@ import java.io.DataInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.net.Inet4Address
+import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.ProxySelector
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.net.URI
+import java.net.UnknownHostException
 import java.util.Random
 import javax.net.ssl.SSLSocketFactory
 
@@ -35,6 +41,27 @@ class RtmpPublisher(
 
     class Target(val tls: Boolean, val host: String, val port: Int, val app: String, val tcUrl: String, val streamName: String)
 
+    /** Why a connection did not come about, as the owner can act on it. */
+    enum class Why {
+        /** The server's name was not found (no internet, or its name is blocked). */
+        DNS,
+        /** The name leads to a private address (a filter's page), or the connection is cut at the secure handshake: blocked on this network. */
+        BLOCKED,
+        /** No answer from the server (no internet, or the way to it is closed). */
+        UNREACHABLE,
+        /** The phone's proxy did not open the way to the server. */
+        PROXY,
+        /** Something answered that is not a streaming server. */
+        NOT_RTMP,
+        /** The server answered and said no (the application or the stream key). */
+        REJECTED,
+        /** No answer to «publish»: the stream key is not one the server knows. */
+        KEY,
+    }
+
+    /** A connection that did not come about: [why] for the owner, the message for the report. */
+    class Failure(val why: Why, message: String) : IOException(message)
+
     companion object {
         private const val CHUNK = 4096
 
@@ -57,9 +84,31 @@ class RtmpPublisher(
             val tc = "${u.scheme}://$host${if (u.port > 0) ":${u.port}" else ""}/$path"
             return Target(tls, host, port, path, tc, name + query)
         }
+
+        /** An address no public platform has: what a filter's DNS gives for a blocked name. */
+        fun filtered(a: InetAddress): Boolean =
+            a.isSiteLocalAddress || a.isLoopbackAddress || a.isLinkLocalAddress || a.isAnyLocalAddress ||
+                (a is java.net.Inet6Address && (a.address[0].toInt() and 0xFE) == 0xFC)
+
+        /** What a failed connection means for the owner. */
+        fun classify(e: Exception, addr: InetAddress?, proxy: Boolean): Why = when {
+            e is Failure -> e.why
+            addr != null && filtered(addr) -> Why.BLOCKED
+            e is UnknownHostException -> Why.DNS
+            e is javax.net.ssl.SSLException -> Why.BLOCKED
+            proxy && e.message?.startsWith("the proxy") == true -> Why.PROXY
+            // cut off as soon as it began (a filter resets the connection when it sees the name)
+            e is java.net.SocketException && (e.message?.contains("reset", true) == true || e.message?.contains("closed", true) == true) -> Why.BLOCKED
+            e is java.io.EOFException -> Why.BLOCKED
+            e is SocketTimeoutException -> Why.UNREACHABLE
+            proxy -> Why.PROXY
+            else -> Why.UNREACHABLE
+        }
     }
 
     private val target = parse(url, key)
+    /** The server is given by name (an address typed by the owner, like a home server's 192.168…, is meant). */
+    private val byName = !(target.host.matches(Regex("\\d{1,3}(\\.\\d{1,3}){3}")) || target.host.contains(':'))
     private var socket: Socket? = null
     private lateinit var out: OutputStream
     private var reader: Thread? = null
@@ -74,41 +123,15 @@ class RtmpPublisher(
     private var ackedAt = 0L
     /** Bytes put on the wire so far (for the stream's bit-rate display). */
     @Volatile var bytesSent = 0L; private set
+    /** How the connection went: «proxy 127.0.0.1:10809» or «direct 142.250.…» (for the report). */
+    @Volatile var route = ""; private set
 
     // ------------------------------------------------------------ connect
 
-    /** Handshake, connect, createStream, publish. Throws IOException with the server's reason. */
+    /** Handshake, connect, createStream, publish. Throws IOException ([Failure]) with the reason. */
     fun connect() {
-        val raw = Socket()
-        raw.tcpNoDelay = true
-        raw.sendBufferSize = 1 shl 20
-        raw.connect(InetSocketAddress(target.host, target.port), connectTimeoutMs)
-        val s: Socket = if (target.tls) {
-            // RTMPS: TLS over the connection, with the platform's name checked against its certificate
-            // (SSLSocket itself does not check it) — the stream key never goes to anyone else.
-            val f = tlsFactory ?: (SSLSocketFactory.getDefault() as SSLSocketFactory)
-            val ssl = f.createSocket(raw, target.host, target.port, true) as javax.net.ssl.SSLSocket
-            ssl.soTimeout = connectTimeoutMs
-            ssl.startHandshake()
-            if (verifyHost && !javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier().verify(target.host, ssl.session)) {
-                ssl.close()
-                throw IOException("the server's certificate is not for ${target.host}")
-            }
-            ssl
-        } else raw
-        s.soTimeout = 0
-        socket = s
-        out = BufferedOutputStream(s.getOutputStream(), 64 * 1024)
-        val inp = DataInputStream(BufferedInputStream(s.getInputStream(), 64 * 1024))
-        handshake(inp)
-        reader = Thread({ readLoop(inp) }, "rawrec-rtmp-read").apply { isDaemon = true; start() }
-
-        setChunkSize()
-        command(3, 0, "connect", txn++, linkedMapOf(
-            "app" to target.app, "type" to "nonprivate", "flashVer" to "FMLE/3.0 (compatible; RawRec)",
-            "tcUrl" to target.tcUrl, "swfUrl" to target.tcUrl,
-        ))
-        awaitResult("connect")
+        open()
+        connectApp()
         command(3, 0, "releaseStream", txn++, null, target.streamName)
         command(3, 0, "FCPublish", txn++, null, target.streamName)
         val create = txn++
@@ -119,13 +142,147 @@ class RtmpPublisher(
         awaitStatus("NetStream.Publish.Start")
     }
 
+    /**
+     * The «آزمایشِ اتصال» of the live page: the way to the server, the secure handshake and the
+     * RTMP «connect» — everything but publishing (nothing goes out on the channel). The time it took.
+     */
+    fun probe(): Long {
+        val t0 = System.nanoTime()
+        try { open(); connectApp() } finally { closed = true; try { socket?.close() } catch (_: Exception) {}; reader?.interrupt() }
+        return (System.nanoTime() - t0) / 1_000_000
+    }
+
+    private fun connectApp() {
+        setChunkSize()
+        command(3, 0, "connect", txn++, linkedMapOf(
+            "app" to target.app, "type" to "nonprivate", "flashVer" to "FMLE/3.0 (compatible; RawRec)",
+            "tcUrl" to target.tcUrl, "swfUrl" to target.tcUrl,
+        ))
+        try { awaitResult("connect") } catch (e: Failure) { throw e } catch (e: IOException) { throw Failure(Why.NOT_RTMP, e.message ?: "connect") }
+    }
+
+    /**
+     * The connection up to the RTMP handshake. The way the app's other requests go first: through
+     * the phone's proxy when one is set (a VPN in proxy mode gives one), since a plain connection
+     * does not take it by itself; then straight to each of the server's addresses in turn (IPv4
+     * first — a VPN that carries only IPv4 must not be passed by). Each failure is kept for the report.
+     */
+    private fun open() {
+        val tried = ArrayList<String>()
+        var worst: Why? = null
+        // the reason said is the most telling one: the server answering (and saying no) first
+        fun rank(w: Why) = when (w) { Why.REJECTED, Why.KEY, Why.NOT_RTMP -> 0; Why.BLOCKED -> 1; Why.PROXY -> 2; Why.DNS -> 3; Why.UNREACHABLE -> 4 }
+        fun keep(where: String, e: Exception, why: Why) {
+            tried += where + ": " + (e.message ?: e.javaClass.simpleName)
+            val w = worst
+            if (w == null || rank(why) < rank(w)) worst = why
+        }
+        for (p in proxies()) {
+            val where = "proxy " + (p.address() as InetSocketAddress).let { it.hostString + ":" + it.port }
+            try { return ready(viaProxy(p), where) } catch (e: Exception) { keep(where, e, classify(e, null, proxy = true)) }
+        }
+        val addrs = try { InetAddress.getAllByName(target.host).sortedBy { if (it is Inet4Address) 0 else 1 } }
+            catch (e: UnknownHostException) {
+                keep("dns " + target.host, e, Why.DNS)
+                throw Failure(worst ?: Why.DNS, tried.joinToString("; "))
+            }
+        val until = System.currentTimeMillis() + connectTimeoutMs * 5 / 2
+        for ((i, a) in addrs.take(4).withIndex()) {
+            if (i > 0 && System.currentTimeMillis() > until) break
+            val where = "direct " + a.hostAddress
+            val raw = Socket()
+            try {
+                raw.tcpNoDelay = true
+                raw.sendBufferSize = 1 shl 20
+                raw.connect(InetSocketAddress(a, target.port), connectTimeoutMs)
+                return ready(raw, where)
+            } catch (e: Exception) {
+                try { raw.close() } catch (_: Exception) {}
+                val f = byName && filtered(a)
+                keep(where + (if (f) " (not the platform's address)" else ""), e, classify(e, a.takeIf { f }, proxy = false))
+            }
+        }
+        throw Failure(worst ?: Why.UNREACHABLE, tried.joinToString("; ").ifEmpty { "no address for ${target.host}" })
+    }
+
+    /** TLS (for rtmps) and the RTMP handshake over a connection that is open; it stays the stream's connection. */
+    private fun ready(raw: Socket, where: String) {
+        try {
+            val s: Socket = if (target.tls) {
+                // RTMPS: TLS over the connection, with the platform's name checked against its certificate
+                // (SSLSocket itself does not check it) — the stream key never goes to anyone else.
+                val f = tlsFactory ?: (SSLSocketFactory.getDefault() as SSLSocketFactory)
+                val ssl = f.createSocket(raw, target.host, target.port, true) as javax.net.ssl.SSLSocket
+                ssl.soTimeout = connectTimeoutMs
+                ssl.startHandshake()
+                if (verifyHost && !javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier().verify(target.host, ssl.session)) {
+                    ssl.close()
+                    throw javax.net.ssl.SSLPeerUnverifiedException("the server's certificate is not for ${target.host}")
+                }
+                ssl
+            } else raw
+            s.soTimeout = connectTimeoutMs
+            out = BufferedOutputStream(s.getOutputStream(), 64 * 1024)
+            val inp = DataInputStream(BufferedInputStream(s.getInputStream(), 64 * 1024))
+            handshake(inp)
+            s.soTimeout = 0
+            socket = s
+            route = where
+            reader = Thread({ readLoop(inp) }, "rawrec-rtmp-read").apply { isDaemon = true; start() }
+        } catch (e: Exception) {
+            try { raw.close() } catch (_: Exception) {}
+            throw e
+        }
+    }
+
+    /** The phone's proxy for this server, if one is set (HTTP or SOCKS). */
+    private fun proxies(): List<Proxy> = try {
+        (ProxySelector.getDefault()?.select(URI("https", null, target.host, target.port, null, null, null)) ?: emptyList())
+            .filter { it.type() != Proxy.Type.DIRECT && it.address() is InetSocketAddress }.distinct().take(2)
+    } catch (_: Exception) { emptyList() }
+
+    /** A tunnel to the server through [p]: SOCKS as Java does it, HTTP with «CONNECT». */
+    private fun viaProxy(p: Proxy): Socket {
+        val pa = p.address() as InetSocketAddress
+        if (p.type() == Proxy.Type.SOCKS) {
+            val s = Socket(p)
+            s.tcpNoDelay = true
+            s.connect(InetSocketAddress.createUnresolved(target.host, target.port), connectTimeoutMs)
+            return s
+        }
+        val s = Socket()
+        try {
+            s.tcpNoDelay = true
+            s.sendBufferSize = 1 shl 20
+            s.connect(if (pa.isUnresolved) InetSocketAddress(pa.hostString, pa.port) else pa, connectTimeoutMs)
+            s.soTimeout = connectTimeoutMs
+            val hp = target.host + ":" + target.port
+            s.getOutputStream().apply { write("CONNECT $hp HTTP/1.1\r\nHost: $hp\r\nUser-Agent: RawRec\r\n\r\n".toByteArray(Charsets.US_ASCII)); flush() }
+            // the answer's head, a byte at a time: nothing of what comes after it is taken
+            val inp = s.getInputStream()
+            val head = StringBuilder()
+            while (!head.endsWith("\r\n\r\n")) {
+                val c = inp.read()
+                if (c < 0) throw IOException("the proxy closed the connection")
+                head.append(c.toChar())
+                if (head.length > 8192) throw IOException("the proxy's answer is too long")
+            }
+            val first = head.lineSequence().first()
+            if (first.split(' ').getOrNull(1) != "200") throw IOException("the proxy said: $first")
+            return s
+        } catch (e: Exception) {
+            try { s.close() } catch (_: Exception) {}
+            throw e
+        }
+    }
+
     private fun handshake(inp: DataInputStream) {
         val c1 = ByteArray(1536)
         Random().nextBytes(c1)
         for (i in 0 until 8) c1[i] = 0
         out.write(3); out.write(c1); out.flush()   // before the reader thread exists
         val s0 = inp.readUnsignedByte()
-        if (s0 != 3) throw IOException("server did not answer as RTMP")
+        if (s0 != 3) throw Failure(Why.NOT_RTMP, "server did not answer as RTMP")
         val s1 = ByteArray(1536); inp.readFully(s1)
         val s2 = ByteArray(1536); inp.readFully(s2)
         out.write(s1); out.flush()   // C2 = S1
@@ -322,7 +479,7 @@ class RtmpPublisher(
                 }
                 if (i >= 0) {
                     val r = responses.removeAt(i)
-                    if (r[0] == "_error") throw IOException("$what refused: " + describe(r))
+                    if (r[0] == "_error") throw Failure(Why.REJECTED, "$what refused: " + describe(r))
                     return r
                 }
                 val left = end - System.currentTimeMillis()
@@ -344,11 +501,11 @@ class RtmpPublisher(
                     val info = r.getOrNull(3) as? Map<*, *>
                     val c = info?.get("code") as? String
                     if (c == code) return
-                    if (info?.get("level") == "error") throw IOException("publish refused: ${c ?: ""} ${info["description"] ?: ""}".trim())
+                    if (info?.get("level") == "error") throw Failure(Why.REJECTED, "publish refused: ${c ?: ""} ${info["description"] ?: ""}".trim())
                     continue
                 }
                 val left = end - System.currentTimeMillis()
-                if (left <= 0) throw IOException("publish: no answer from the server (wrong stream key?)")
+                if (left <= 0) throw Failure(Why.KEY, "publish: no answer from the server (wrong stream key?)")
                 lock.wait(left)
             }
         }

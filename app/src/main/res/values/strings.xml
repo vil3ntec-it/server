@@ -1029,4 +1029,24 @@
     <string name="yt_created">در یوتیوب یک پخشِ زنده ساختم و به کلیدِ پخشت وصل کردم؛ با رسیدنِ تصویر زنده می‌شود.</string>
     <string name="yt_create_failed_fmt">ساختنِ پخش در یوتیوب نشد: %1$s</string>
     <string name="chat_yt_no_key">یوتیوب: کلیدِ پخشی که در برنامه گذاشتی در این کانال پیدا نشد. کلید را از YouTube Studio → Go live → Stream دوباره کپی کن.</string>
+    <!-- 3.9: why the stream does not reach the platform -->
+    <string name="live_why_dns">نامِ سرورِ پخش پیدا نشد — اینترنت را ببین.</string>
+    <string name="live_why_blocked">سرورِ پخش روی این اینترنت بسته است (فیلتر). VPN را روشن کن و اگر VPN فهرستِ برنامه دارد، RawRec هم در آن باشد.</string>
+    <string name="live_why_unreachable">به سرورِ پخش نمی‌رسد — اینترنت یا VPN را ببین.</string>
+    <string name="live_why_proxy">پراکسیِ گوشی (VPN) راهِ سرورِ پخش را باز نکرد — VPN را عوض کن یا حالتِ کاملش را بزن.</string>
+    <string name="live_why_not_rtmp">نشانیِ سرور درست نیست (چیزی جز سرورِ پخش جواب داد).</string>
+    <string name="live_why_rejected">سرور پخش را نپذیرفت — کلیدِ پخش را دوباره از استودیوی پلتفرم کپی کن.</string>
+    <string name="live_why_key">سرور به کلیدِ پخش جواب نداد — کلید درست نیست؟</string>
+    <string name="live_why_no_picture">هنوز تصویری از ضبطِ صفحه نیامده.</string>
+    <string name="live_send_fmt">⚠ پخش به %1$s نمی‌رسد: %2$s</string>
+    <string name="live_s_connecting_why_fmt">وصل نمی‌شود (تلاشِ دوباره…)\n%1$s\n%2$s</string>
+    <string name="live_route_proxy">از راهِ پراکسیِ گوشی</string>
+    <string name="live_route_direct">مستقیم</string>
+    <string name="live_test">آزمایشِ اتصال</string>
+    <string name="live_test_running">در حالِ آزمایشِ اتصال به %1$s…</string>
+    <string name="live_test_ok_fmt">✓ به سرورِ %1$s وصل شد (%2$s میلی‌ثانیه، %3$s). راه باز است.</string>
+    <string name="live_test_fail_fmt">✗ به سرورِ %1$s وصل نشد: %2$s\n%3$s</string>
+    <string name="live_test_key_ok">✓ این کلیدِ پخش مالِ همین کانالِ یوتیوب است.</string>
+    <string name="live_test_key_bad">✗ این کلیدِ پخش در کانالِ یوتیوبی که وصل کرده‌ای نیست؛ آن را از YouTube Studio → Go live → Stream دوباره کپی کن.</string>
+    <string name="yt_private_note">این پخش «خصوصی» است: فقط خودت (با همین حساب) آن را می‌بینی و در کانال دیده نمی‌شود. برای دیده شدن، «چه کسی ببیند» را «عمومی» کن.</string>
 </resources>

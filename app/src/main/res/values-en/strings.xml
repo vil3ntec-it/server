@@ -1008,4 +1008,24 @@ Your internet needs about %2$s Mbps upload.</string>
     <string name="yt_created">A live was made on YouTube and tied to your stream key; it goes live as the picture arrives.</string>
     <string name="yt_create_failed_fmt">Could not make the live on YouTube: %1$s</string>
     <string name="chat_yt_no_key">YouTube: the stream key in the app is not one of this channel\'s. Copy it again from YouTube Studio → Go live → Stream.</string>
+    <!-- 3.9: why the stream does not reach the platform -->
+    <string name="live_why_dns">The streaming server\'s name was not found — check the internet.</string>
+    <string name="live_why_blocked">The streaming server is blocked on this internet (a filter). Turn the VPN on, and if it has a list of apps, put RawRec in it.</string>
+    <string name="live_why_unreachable">The streaming server cannot be reached — check the internet or the VPN.</string>
+    <string name="live_why_proxy">The phone\'s proxy (VPN) did not open the way to the streaming server — try another VPN or its full mode.</string>
+    <string name="live_why_not_rtmp">The server address is not right (something other than a streaming server answered).</string>
+    <string name="live_why_rejected">The server refused the stream — copy the stream key again from the platform\'s studio.</string>
+    <string name="live_why_key">The server did not answer the stream key — is the key right?</string>
+    <string name="live_why_no_picture">No picture from the screen capture yet.</string>
+    <string name="live_send_fmt">⚠ The stream does not reach %1$s: %2$s</string>
+    <string name="live_s_connecting_why_fmt">Not connecting (trying again…)\n%1$s\n%2$s</string>
+    <string name="live_route_proxy">through the phone\'s proxy</string>
+    <string name="live_route_direct">direct</string>
+    <string name="live_test">Test the connection</string>
+    <string name="live_test_running">Testing the connection to %1$s…</string>
+    <string name="live_test_ok_fmt">✓ Connected to %1$s\'s server (%2$s ms, %3$s). The way is open.</string>
+    <string name="live_test_fail_fmt">✗ Could not connect to %1$s\'s server: %2$s\n%3$s</string>
+    <string name="live_test_key_ok">✓ This stream key belongs to this YouTube channel.</string>
+    <string name="live_test_key_bad">✗ This stream key is not in the YouTube channel you connected; copy it again from YouTube Studio → Go live → Stream.</string>
+    <string name="yt_private_note">This live is «Private»: only you (signed in) can see it, and it does not show on the channel. To be seen, set «Who can watch» to «Public».</string>
 </resources>

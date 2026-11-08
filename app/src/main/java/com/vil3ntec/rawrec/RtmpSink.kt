@@ -28,7 +28,14 @@ class RtmpSink(
 
     enum class State { CONNECTING, LIVE, RECONNECTING, FAILED, ENDED }
 
-    class Status(val state: State, val kbps: Int, val targetKbps: Int, val dropped: Int, val reconnects: Int, val error: String?)
+    /**
+     * [why] what the last failed connection means for the owner, [route] how the stream goes
+     * (through the phone's proxy or straight), [noPicture] the encoder gave no picture yet.
+     */
+    class Status(
+        val state: State, val kbps: Int, val targetKbps: Int, val dropped: Int, val reconnects: Int, val error: String?,
+        val why: RtmpPublisher.Why? = null, val route: String? = null, val noPicture: Boolean = false,
+    )
 
     interface Listener {
         fun onStatus(s: Status)
@@ -62,6 +69,16 @@ class RtmpSink(
     /** The longest the stream ran without a break, and how long it was live in total. */
     @Volatile var totalLiveMs = 0L; private set
     @Volatile var lastError: String? = null; private set
+    @Volatile private var lastWhy: RtmpPublisher.Why? = null
+    @Volatile private var route: String? = null
+    @Volatile private var noPicture = false
+    private val bornMs = System.currentTimeMillis()
+
+    /** An error as it may be shown and kept: never with the stream key in it. */
+    private fun scrub(m: String?): String? {
+        val k = key.trim().substringBefore('?')
+        return if (m == null || k.length < 4) m else m.replace(k, "•••")
+    }
 
     // ------------------------------------------------------------ MediaSink (encoder threads)
 
@@ -138,7 +155,7 @@ class RtmpSink(
     private var state = State.CONNECTING
     private var kbps = 0
 
-    private fun status() = listener.onStatus(Status(state, kbps, target / 1000, dropped, reconnects, lastError))
+    private fun status() = listener.onStatus(Status(state, kbps, target / 1000, dropped, reconnects, lastError, lastWhy, route, noPicture))
 
     private fun run() {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
@@ -152,7 +169,14 @@ class RtmpSink(
             while (!stopped) {
                 if (pub == null) {
                     // Wait for the encoder's configuration before talking to the server.
-                    if (avcConfig == null) { Thread.sleep(50); continue }
+                    if (avcConfig == null) {
+                        // no picture from the encoder after a few seconds: said, not waited for in silence
+                        if (!noPicture && System.currentTimeMillis() - bornMs > 6_000L) {
+                            noPicture = true; lastError = "no picture from the encoder yet"; status()
+                        }
+                        Thread.sleep(50); continue
+                    }
+                    if (noPicture) { noPicture = false; lastError = null }
                     if (asc == null && !noAudio && queue.none { !it.video }) { Thread.sleep(50); if (queue.size < 200) continue }
                     status()
                     try {
@@ -170,11 +194,15 @@ class RtmpSink(
                         failingSince = 0L
                         backoffMs = 1_000L
                         lastError = null
+                        lastWhy = null
+                        route = p.route
                         status()
                     } catch (e: Exception) {
-                        lastError = e.message ?: e.javaClass.simpleName
+                        lastError = scrub(e.message ?: e.javaClass.simpleName)
+                        lastWhy = (e as? RtmpPublisher.Failure)?.why ?: RtmpPublisher.classify(e, null, proxy = false)
                         if (failingSince == 0L) failingSince = System.currentTimeMillis()
-                        if (System.currentTimeMillis() - failingSince > 180_000L || (reconnects == 0 && sent == 0L && e.message?.contains("refused") == true)) {
+                        // the server itself said no (application or key) on the very first try: no use trying for minutes
+                        if (System.currentTimeMillis() - failingSince > 180_000L || (reconnects == 0 && sent == 0L && lastWhy == RtmpPublisher.Why.REJECTED)) {
                             // given up: nothing more is taken in (with other platforms still streaming, frames keep coming)
                             stopped = true; queue.clear()
                             state = State.FAILED; status(); return
@@ -250,7 +278,8 @@ class RtmpSink(
     }
 
     private fun lost(e: IOException) {
-        lastError = e.message ?: "connection lost"
+        lastError = scrub(e.message ?: "connection lost")
+        lastWhy = null
         if (liveSinceMs > 0) totalLiveMs += System.currentTimeMillis() - liveSinceMs
         try { pub?.close() } catch (_: Exception) {}
         sentBefore += pub?.bytesSent ?: 0L

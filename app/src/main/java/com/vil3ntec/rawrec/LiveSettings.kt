@@ -69,6 +69,33 @@ object LiveSettings {
         return on.map { Dest(it, ctx.getString(PLATFORMS[it].name), url(ctx, it), key(ctx, it)) }
     }
 
+    /** What a failed connection means, in words the owner can act on. */
+    fun whyText(ctx: Context, why: RtmpPublisher.Why?): String? = when (why) {
+        RtmpPublisher.Why.DNS -> ctx.getString(R.string.live_why_dns)
+        RtmpPublisher.Why.BLOCKED -> ctx.getString(R.string.live_why_blocked)
+        RtmpPublisher.Why.UNREACHABLE -> ctx.getString(R.string.live_why_unreachable)
+        RtmpPublisher.Why.PROXY -> ctx.getString(R.string.live_why_proxy)
+        RtmpPublisher.Why.NOT_RTMP -> ctx.getString(R.string.live_why_not_rtmp)
+        RtmpPublisher.Why.REJECTED -> ctx.getString(R.string.live_why_rejected)
+        RtmpPublisher.Why.KEY -> ctx.getString(R.string.live_why_key)
+        null -> null
+    }
+
+    /**
+     * Why the stream is not reaching [name] now, or null while it is (or while it is still simply
+     * connecting, the first [graceMs] after the start).
+     */
+    fun sendProblem(ctx: Context, s: RtmpSink.Status?, name: String, sinceStartMs: Long, graceMs: Long = 12_000L): String? {
+        if (s?.state == RtmpSink.State.LIVE || s?.state == RtmpSink.State.ENDED) return null
+        val why = whyText(ctx, s?.why) ?: if (s?.noPicture == true) ctx.getString(R.string.live_why_no_picture) else null
+        if (why == null && sinceStartMs < graceMs) return null
+        return ctx.getString(R.string.live_send_fmt, name, why ?: (s?.error ?: ctx.getString(R.string.live_s_connecting)))
+    }
+
+    /** How the stream goes, in words («از راهِ پراکسیِ گوشی» / «مستقیم»). */
+    fun routeText(ctx: Context, route: String?): String =
+        ctx.getString(if (route?.startsWith("proxy") == true) R.string.live_route_proxy else R.string.live_route_direct)
+
     /** The video bit rate every chosen platform takes (Mbps): the chosen quality, or less for Twitch / Kick… */
     fun mbps(ctx: Context): Int {
         val q = QUALITIES[quality(ctx)].mbps

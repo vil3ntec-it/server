@@ -206,10 +206,21 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         setPadding(dp(10), dp(4), dp(10), dp(4))
         visibility = View.GONE
     }
+    /** The stream is not reaching the platform (and why): said over the game, never left to silence. */
+    internal val sendLine = TextView(ctx).apply {
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, textSp - 0.5f)
+        setTextColor(Color.WHITE)
+        typeface = Typeface.DEFAULT_BOLD
+        maxLines = 3
+        background = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setColor(Color.argb(225, 170, 20, 30)) }
+        setPadding(dp(10), dp(4), dp(10), dp(4))
+        visibility = View.GONE
+    }
     internal val feed = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
     internal val feedRoot = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL
         alpha = feedOpacity
+        addView(sendLine, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(4) })
         addView(sceneLine, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(4) })
         addView(statsLine, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         addView(feed, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
@@ -475,6 +486,17 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         updateFeed()
     }
 
+    /**
+     * [text] = why the stream does not reach the platform now (null once it does). Shown while
+     * nothing goes out, so no viewer sees it even with the whole screen in the picture.
+     */
+    fun setSendState(text: String?) {
+        if (sendLine.text.toString() == (text ?: "") && (sendLine.visibility == View.VISIBLE) == (text != null)) return
+        sendLine.text = text ?: ""
+        sendLine.visibility = if (text != null) View.VISIBLE else View.GONE
+        updateFeed()
+    }
+
     /** [name] = the scene on the stream when it hides the game; null when the game is on the stream. */
     fun setLiveScene(name: String?) {
         sceneLine.text = name?.let { ctx.getString(R.string.hud_scene_live_fmt, it) } ?: ""
@@ -563,7 +585,8 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
 
     private fun updateFeed() {
         if (!shown) return
-        val want = feedAllowed && !open && ((feed.childCount > 0 && !mirrorChat) || statsLine.visibility == View.VISIBLE || sceneLine.visibility == View.VISIBLE)
+        val sending = sendLine.visibility == View.VISIBLE
+        val want = !open && ((feedAllowed && ((feed.childCount > 0 && !mirrorChat) || statsLine.visibility == View.VISIBLE || sceneLine.visibility == View.VISIBLE)) || sending)
         if (want) {
             placeNearBubble(lpFeed, feedW, feedHeight())
             if (feedRoot.isAttachedToWindow) OverlayWindows.update(wm, feedRoot, lpFeed)

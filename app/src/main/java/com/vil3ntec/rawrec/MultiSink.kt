@@ -77,10 +77,11 @@ class MultiSink(dests: List<LiveSettings.Dest>, maxBitrate: Int, private val lis
                 else -> RtmpSink.State.CONNECTING
             }
             val live = all.filterNotNull()
-            val err = all.indices.firstOrNull { all[it]?.error != null && all[it]?.state != RtmpSink.State.LIVE }
-                ?.let { names[it] + ": " + all[it]?.error }
+            val bad = all.indices.firstOrNull { all[it]?.error != null && all[it]?.state != RtmpSink.State.LIVE }
+            val err = bad?.let { names[it] + ": " + all[it]?.error }
             return RtmpSink.Status(state, live.sumOf { it.kbps }, live.filter { it.state == RtmpSink.State.LIVE }.minOfOrNull { it.targetKbps }
-                ?: live.minOfOrNull { it.targetKbps } ?: 0, live.sumOf { it.dropped }, live.sumOf { it.reconnects }, err)
+                ?: live.minOfOrNull { it.targetKbps } ?: 0, live.sumOf { it.dropped }, live.sumOf { it.reconnects }, err,
+                bad?.let { all[it]?.why }, live.firstOrNull { it.state == RtmpSink.State.LIVE }?.route, live.any { it.noPicture })
         }
     }
 }

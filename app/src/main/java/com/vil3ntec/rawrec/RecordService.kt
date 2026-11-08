@@ -441,6 +441,8 @@ class RecordService : Service(), Recorder.Events {
             val lv = live
             val r = if (lv != null) Recorder(this, p, c, plan, this, null, keepDisplay = false,
                 sinkFactory = {
+                    liveBorn = System.currentTimeMillis(); lastRtmpLog = ""; lastSendProblem = null; toldPrivate = false
+                    main.removeCallbacks(sendCheck); main.postDelayed(sendCheck, 13_000)
                     (if (liveTargets.size > 1) MultiSink(liveTargets, plan.bitrate, liveListener) else RtmpSink(lv.url, lv.key, plan.bitrate, liveListener))
                         .also { liveSink = it }
                 }, forceLook = true)
@@ -676,10 +678,38 @@ class RecordService : Service(), Recorder.Events {
 
     // ------------------------------------------------------------ live
 
+    /** When the stream's connection began (the first seconds of «connecting» are not a problem yet). */
+    private var liveBorn = 0L
+    private var lastRtmpLog = ""
+    private var lastSendProblem: String? = null
+    private var toldPrivate = false
+
+    /** Why nothing reaches the platform now — on the panel over the game, in the notification and the log. */
+    private fun checkSending() {
+        if (stopping || live == null) return
+        val s = liveStatus
+        val multi = liveSink as? MultiSink
+        val name = multi?.dests?.firstOrNull { it.status?.state != RtmpSink.State.LIVE && it.status?.error != null }?.name ?: live?.name ?: ""
+        val problem = if (liveBorn == 0L) null else LiveSettings.sendProblem(this, s, name, System.currentTimeMillis() - liveBorn)
+        hud?.setSendState(problem)
+        if (problem == lastSendProblem) return
+        lastSendProblem = problem
+        if (problem != null) {
+            addNotice("live_send", problem)
+            hud?.note(problem)
+        } else removeNotice("live_send")
+    }
+
+    private val sendCheck = Runnable { checkSending() }
+
     private val liveListener = object : RtmpSink.Listener {
         override fun onStatus(s: RtmpSink.Status) {
             main.post {
                 liveStatus = s
+                // each change of the connection in the log (state, reason, way): what «کپی» of the report gives
+                val line = "rtmp: ${s.state}" + (s.why?.let { " why=$it" } ?: "") + (s.route?.let { " via=$it" } ?: "") +
+                    (if (s.noPicture) " no-picture" else "") + (s.error?.let { " err=$it" } ?: "")
+                if (line != lastRtmpLog) { lastRtmpLog = line; RecLog.add(this@RecordService, line) }
                 val multi = liveSink as? MultiSink
                 liveDests = multi?.dests?.map { it.name to it.status } ?: emptyList()
                 // one platform gave up while the others go on: said once
@@ -687,8 +717,10 @@ class RecordService : Service(), Recorder.Events {
                     addNotice("live_" + it.name, getString(R.string.live_n_dest_failed_fmt, it.name, it.status?.error ?: ""))
                 }
                 if (stopping || live == null) return@post
+                checkSending()
                 when (s.state) {
-                    RtmpSink.State.FAILED -> finishRecording(StopReason.LIVE_FAILED, s.error)
+                    RtmpSink.State.FAILED -> finishRecording(StopReason.LIVE_FAILED,
+                        listOfNotNull(LiveSettings.whyText(this@RecordService, s.why), s.error).joinToString(" — ").ifEmpty { null })
                     RtmpSink.State.RECONNECTING -> addNotice("live", getString(R.string.live_n_reconnecting_fmt, s.reconnects))
                     else -> removeNotice("live")
                 }
@@ -771,6 +803,11 @@ class RecordService : Service(), Recorder.Events {
                 Fmt.num(st?.dropped ?: 0), Fmt.num(st?.reconnects ?: 0)))
             for ((name, ds) in liveDests) sb.append('\n').append(getString(R.string.live_rep_dest_fmt, name, destWord(ds)))
         }
+        // how the connection went this time (the way, each failure and its reason; never the key)
+        val log = RecLog.text(this).lines()
+        val from = log.indexOfLast { it.contains("  start: ") }.coerceAtLeast(0)
+        val net = log.drop(from).filter { it.contains("  rtmp: ") }.takeLast(8)
+        if (net.isNotEmpty()) sb.append("\n\n").append(net.joinToString("\n"))
         extrasReport?.let { sb.append('\n').append(it) }
         return sb.toString().trimEnd()
     }
@@ -962,7 +999,11 @@ class RecordService : Service(), Recorder.Events {
         override fun onActionFailed(text: String) { main.post { hud?.note(text) } }
         override fun onBroadcast(info: LiveChat.YtInfo) {
             ytInfo = info
-            main.post { hud?.setLink(liveLink(info)) }
+            main.post {
+                hud?.setLink(liveLink(info))
+                // a private live is seen by no one but the owner (and not on the channel): said once
+                if (info.privacy == "private" && !toldPrivate) { toldPrivate = true; hud?.note(getString(R.string.yt_private_note)) }
+            }
         }
         override fun onNote(text: String) { liveNote = text; main.post { hud?.note(text) } }
     }
