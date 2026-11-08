@@ -40,7 +40,7 @@ class LaunchTest {
         RuntimeEnvironment.setQualifiers("w411dp-h914dp-560dpi")
         ShadowDisplayManager.setSupportedModes(
             Display.DEFAULT_DISPLAY,
-            Display.Mode(0, 1440, 3200, 165f), Display.Mode(2, 1440, 3200, 60f), Display.Mode(3, 1080, 2400, 120f),
+            displayMode(0, 1440, 3200, 165f), displayMode(2, 1440, 3200, 60f), displayMode(3, 1080, 2400, 120f),
         )
         ShadowMediaCodecList.reset()
         Encoders.clearCache()   // app singletons survive between tests in one Robolectric sandbox

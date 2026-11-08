@@ -56,7 +56,7 @@ class VoiceLiveUiTest {
     @Before
     fun device() {
         RuntimeEnvironment.setQualifiers("w411dp-h914dp-560dpi")
-        ShadowDisplayManager.setSupportedModes(Display.DEFAULT_DISPLAY, Display.Mode(0, 1504, 2400, 165f), Display.Mode(2, 1504, 2400, 60f))
+        ShadowDisplayManager.setSupportedModes(Display.DEFAULT_DISPLAY, displayMode(0, 1504, 2400, 165f), displayMode(2, 1504, 2400, 60f))
         ShadowMediaCodecList.reset()
         Encoders.clearCache()
         for (dir in listOf(app.getExternalFilesDir(null), app.filesDir)) if (dir != null) ShadowStatFs.registerStats(dir, 16_000_000, 16_000_000, 16_000_000)

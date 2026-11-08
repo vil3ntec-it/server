@@ -58,7 +58,7 @@ class PreviewRender {
         org.robolectric.shadows.ShadowMediaCodecList.addCodec(org.robolectric.shadows.MediaCodecInfoBuilder.newBuilder()
             .setName("c2.qti.hevc.encoder").setIsEncoder(true).setIsHardwareAccelerated(true).setIsVendor(true).setCapabilities(caps).build())
         org.robolectric.shadows.ShadowDisplayManager.setSupportedModes(android.view.Display.DEFAULT_DISPLAY,
-            android.view.Display.Mode(0, 1504, 2400, 120f), android.view.Display.Mode(2, 1504, 2400, 60f))
+            displayMode(0, 1504, 2400, 120f), displayMode(2, 1504, 2400, 60f))
     }
 
     private fun render(qualifiers: String, tag: String) {
