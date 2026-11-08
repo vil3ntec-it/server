@@ -1,4 +1,4 @@
-tests 222, failed 7, skipped 0
+tests 222, failed 3, skipped 0
 FAIL com.vil3ntec.rawrec.InteractionTest.everyToggleResponds[33]: java.lang.NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress
     java.lang.NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress
     	at java.base/java.lang.Class.getDeclaredMethods0(Native Method)
@@ -8,33 +8,13 @@ FAIL com.vil3ntec.rawrec.InteractionTest.everyToggleResponds[33]: java.lang.NoCl
     Caused by: java.lang.ClassNotFoundException: android.bluetooth.BluetoothDevice$BluetoothAddress
     	at com.vil3ntec.rawrec.InteractionTest.launch(InteractionTest.kt:116)
     	at com.vil3ntec.rawrec.InteractionTest.everyToggleResponds(InteractionTest.kt:277)
-FAIL com.vil3ntec.rawrec.PillTest.dragSnapsToTheNearestEdge[29]: java.lang.AssertionError: expected:<0> but was:<146>
-    java.lang.AssertionError: expected:<0> but was:<146>
-    	at org.junit.Assert.fail(Assert.java:89)
-    	at org.junit.Assert.failNotEquals(Assert.java:835)
-    	at com.vil3ntec.rawrec.PillTest.dragSnapsToTheNearestEdge(PillTest.kt:140)
-FAIL com.vil3ntec.rawrec.PillTest.dragSnapsToTheNearestEdge[33]: java.lang.AssertionError: expected:<0> but was:<146>
-    java.lang.AssertionError: expected:<0> but was:<146>
-    	at org.junit.Assert.fail(Assert.java:89)
-    	at org.junit.Assert.failNotEquals(Assert.java:835)
-    	at com.vil3ntec.rawrec.PillTest.dragSnapsToTheNearestEdge(PillTest.kt:140)
-FAIL com.vil3ntec.rawrec.PillTest.dragSnapsToTheNearestEdge[34]: java.lang.AssertionError: expected:<0> but was:<146>
-    java.lang.AssertionError: expected:<0> but was:<146>
-    	at org.junit.Assert.fail(Assert.java:89)
-    	at org.junit.Assert.failNotEquals(Assert.java:835)
-    	at com.vil3ntec.rawrec.PillTest.dragSnapsToTheNearestEdge(PillTest.kt:140)
-FAIL com.vil3ntec.rawrec.PillTest.dragSnapsToTheNearestEdge: java.lang.AssertionError: expected:<0> but was:<146>
-    java.lang.AssertionError: expected:<0> but was:<146>
-    	at org.junit.Assert.fail(Assert.java:89)
-    	at org.junit.Assert.failNotEquals(Assert.java:835)
-    	at com.vil3ntec.rawrec.PillTest.dragSnapsToTheNearestEdge(PillTest.kt:140)
-FAIL com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar[34]: java.lang.AssertionError: playing the media part (note: «», playingKind 0, toast «این کار انجام نشد: NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress — جزئیات در «گزارشِ خطا» ذخیره شد.», error «RawRec 4.2 error (app kept running) 2026-11-08 22:38:39 • tap: listen 2 Android 14
+FAIL com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar[34]: java.lang.AssertionError: playing the media part (note: «», playingKind 0, toast «این کار انجام نشد: NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress — جزئیات در «گزارشِ خطا» ذخیره شد.», error «RawRec 4.2 error (app kept running) 2026-11-08 22:46:39 • tap: listen 2 Android 14
     java.lang.AssertionError: playing the media part (note: «», playingKind 0, toast «این کار انجام نشد: NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress — جزئیات در «گزارشِ خطا» ذخیره شد.», error «RawRec 4.2 error (app kept running)
-    2026-11-08 22:38:39 • tap: listen 2
+    2026-11-08 22:46:39 • tap: listen 2
     Android 14 (API 34) • robolectric robolectric • fa
     	at com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar(VoiceLiveUiTest.kt:219)
-FAIL com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar: java.lang.AssertionError: playing the media part (note: «», playingKind 0, toast «این کار انجام نشد: NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress — جزئیات در «گزارشِ خطا» ذخیره شد.», error «RawRec 4.2 error (app kept running) 2026-11-08 22:38:43 • tap: listen 2 Android 15
+FAIL com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar: java.lang.AssertionError: playing the media part (note: «», playingKind 0, toast «این کار انجام نشد: NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress — جزئیات در «گزارشِ خطا» ذخیره شد.», error «RawRec 4.2 error (app kept running) 2026-11-08 22:46:42 • tap: listen 2 Android 15
     java.lang.AssertionError: playing the media part (note: «», playingKind 0, toast «این کار انجام نشد: NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress — جزئیات در «گزارشِ خطا» ذخیره شد.», error «RawRec 4.2 error (app kept running)
-    2026-11-08 22:38:43 • tap: listen 2
+    2026-11-08 22:46:42 • tap: listen 2
     Android 15 (API 35) • robolectric robolectric • fa
     	at com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar(VoiceLiveUiTest.kt:219)
