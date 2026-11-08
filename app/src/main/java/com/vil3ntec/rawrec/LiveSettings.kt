@@ -52,26 +52,31 @@ object LiveSettings {
     fun mic(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_mic", true)
     fun setMic(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("live_mic", on).apply()
 
-    fun key(ctx: Context, p: Int): String = try {
-        val s = SafePrefs.str(prefs(ctx), "live_key_$p")
-        if (s.isBlank()) "" else {
-            val all = Base64.decode(s, Base64.NO_WRAP)
+    fun key(ctx: Context, p: Int): String = open(SafePrefs.str(prefs(ctx), "live_key_$p"))
+
+    fun setKey(ctx: Context, p: Int, key: String) {
+        val e = prefs(ctx).edit()
+        if (key.isBlank()) { e.remove("live_key_$p").apply(); return }
+        seal(key.trim())?.let { e.putString("live_key_$p", it).apply() }
+    }
+
+    /** [plain] encrypted with the phone's Keystore key (AES-GCM), as text; null when the Keystore fails. */
+    fun seal(plain: String): String? = try {
+        val c = Cipher.getInstance("AES/GCM/NoPadding")
+        c.init(Cipher.ENCRYPT_MODE, secret())
+        val ct = c.doFinal(plain.toByteArray(Charsets.UTF_8))
+        Base64.encodeToString(c.iv + ct, Base64.NO_WRAP)
+    } catch (_: Exception) { null }
+
+    /** The text [seal] made; "" when empty or not readable. */
+    fun open(sealed: String): String = try {
+        if (sealed.isBlank()) "" else {
+            val all = Base64.decode(sealed, Base64.NO_WRAP)
             val c = Cipher.getInstance("AES/GCM/NoPadding")
             c.init(Cipher.DECRYPT_MODE, secret(), GCMParameterSpec(128, all, 0, 12))
             String(c.doFinal(all, 12, all.size - 12), Charsets.UTF_8)
         }
     } catch (_: Exception) { "" }
-
-    fun setKey(ctx: Context, p: Int, key: String) {
-        val e = prefs(ctx).edit()
-        if (key.isBlank()) { e.remove("live_key_$p").apply(); return }
-        try {
-            val c = Cipher.getInstance("AES/GCM/NoPadding")
-            c.init(Cipher.ENCRYPT_MODE, secret())
-            val ct = c.doFinal(key.trim().toByteArray(Charsets.UTF_8))
-            e.putString("live_key_$p", Base64.encodeToString(c.iv + ct, Base64.NO_WRAP)).apply()
-        } catch (_: Exception) {}
-    }
 
     private fun secret(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

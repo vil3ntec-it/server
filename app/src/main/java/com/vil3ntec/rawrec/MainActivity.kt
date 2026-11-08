@@ -142,6 +142,12 @@ class MainActivity : Activity() {
     private var liveUrl: android.widget.EditText? = null
     private var liveKey: android.widget.EditText? = null
     private var liveHelp: TextView? = null
+    private var ytStatus: TextView? = null
+    private var ytButton: Button? = null
+    private var ytQuota: TextView? = null
+    private var ytClient: android.widget.EditText? = null
+    private var ytSecretField: android.widget.EditText? = null
+    @Volatile private var ytSigning = false
     private var teamDesc: TextView? = null
     private var lookCaption: TextView? = null
     private var lookSummary: TextView? = null
@@ -1365,6 +1371,8 @@ class MainActivity : Activity() {
             LiveSettings.setMic(this, on)
         }
 
+        buildLiveExtras(root)
+
         val pc = card(root, R.string.live_privacy_title, R.drawable.ic_shield)
         pc.addView(text(str(R.string.live_privacy_desc), R.style.Text_Body), lp(4))
         rows["live_p"]?.select(p0)
@@ -1373,6 +1381,223 @@ class MainActivity : Activity() {
         toggles["live_mic"]?.set(LiveSettings.mic(this))
         fillLiveFields()
         return pg.scroll
+    }
+
+    /** A text box of several lines (bot commands, timers); direction follows what is written. */
+    private fun multiField(hint: String, onDone: (String) -> Unit): android.widget.EditText =
+        android.widget.EditText(this).apply {
+            this.hint = hint
+            setTextColor(col(R.color.text_primary))
+            setHintTextColor(col(R.color.text_tertiary))
+            textSize = 14f
+            minLines = 3
+            maxLines = 10
+            gravity = Gravity.TOP or Gravity.START
+            textDirection = View.TEXT_DIRECTION_FIRST_STRONG
+            setBackgroundResource(R.drawable.bg_inset)
+            setPaddingRelative(dp(14), dp(12), dp(14), dp(12))
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            setOnFocusChangeListener { _, has -> if (!has) onDone(text.toString()) }
+        }
+
+    /** A one-line text box for names and words (not a URL): direction follows what is written. */
+    private fun textField(hint: String, value: String, number: Boolean = false, onDone: (String) -> Unit): android.widget.EditText =
+        field(hint, false, onDone).apply {
+            textDirection = View.TEXT_DIRECTION_FIRST_STRONG
+            inputType = if (number) android.text.InputType.TYPE_CLASS_NUMBER else android.text.InputType.TYPE_CLASS_TEXT
+            setText(value)
+        }
+
+    private fun positions() = listOf(R.string.pos_tl, R.string.pos_tc, R.string.pos_tr, R.string.pos_bl, R.string.pos_bc, R.string.pos_br).map { str(it) }
+
+    /** 3.3: YouTube account, Twitch chat, the chat on the phone, what viewers see, the bot. */
+    private fun buildLiveExtras(root: LinearLayout) {
+        val ctx = this
+        // ---- YouTube
+        val yc = card(root, R.string.live_yt_title, R.drawable.ic_chat)
+        yc.addView(text(str(R.string.live_yt_desc), R.style.Text_Caption), lp(4))
+        ytStatus = text("", R.style.Text_Body).apply {
+            setBackgroundResource(R.drawable.bg_inset)
+            setPaddingRelative(dp(14), dp(12), dp(14), dp(12))
+        }
+        yc.addView(ytStatus, lp(10))
+        ytButton = button(str(R.string.live_yt_signin), R.style.Button_Tonal, R.drawable.ic_key).apply { onTap("youtube sign-in") { onYtClicked() } }
+        yc.addView(ytButton)
+        yc.addView(text(str(R.string.live_yt_client), R.style.Text_Label), lp(12))
+        ytClient = field("…apps.googleusercontent.com", false) { LiveExtras.setYtClientId(ctx, it) }.apply { setText(LiveExtras.ytClientId(ctx)) }
+        yc.addView(ytClient, lp(4))
+        yc.addView(text(str(R.string.live_yt_secret), R.style.Text_Label), lp(12))
+        ytSecretField = field("GOCSPX-…", true) { LiveExtras.setYtSecret(ctx, it) }.apply { setText(LiveExtras.ytSecret(ctx)) }
+        yc.addView(ytSecretField, lp(4))
+        ytQuota = text("", R.style.Text_Caption)
+        yc.addView(ytQuota, lp(8))
+        yc.addView(text(str(R.string.live_yt_setup_title), R.style.Text_Label).apply { startIcon(R.drawable.ic_info, 16, tint(R.color.text_secondary), 6) }, lp(14))
+        yc.addView(text(str(R.string.live_yt_setup), R.style.Text_Caption).apply { setTextIsSelectable(true) }, lp(4))
+        refreshYt()
+
+        // ---- Twitch
+        val tc = card(root, R.string.live_tw_title, R.drawable.ic_chat)
+        tc.addView(text(str(R.string.live_tw_desc), R.style.Text_Caption), lp(4))
+        tc.addView(field(str(R.string.live_tw_hint), false) { LiveExtras.setTwChannel(ctx, it) }.apply { setText(SafePrefs.str(getSharedPreferences(RecordService.PREFS, MODE_PRIVATE), "tw_channel")) }, lp(10))
+
+        // ---- the chat on the phone
+        val hc = card(root, R.string.live_hud_title, R.drawable.ic_overlay)
+        toggles["hud_on"] = Toggle(hc, "tog:hud_on", R.drawable.ic_chat, str(R.string.live_hud_on_title), str(R.string.live_hud_on_desc), top = 0) { on ->
+            LiveExtras.put(ctx, "hud_on", on); toggles["hud_on"]?.set(on)
+        }.apply { set(LiveExtras.hud(ctx)) }
+        rows["hud_size"] = Row(hc, str(R.string.live_hud_size), "", listOf(str(R.string.live_hud_s), str(R.string.live_hud_m), str(R.string.live_hud_l)), top = 12) { i ->
+            LiveExtras.put(ctx, "hud_size", i)
+        }.apply { select(LiveExtras.hudSize(ctx)) }
+        rows["hud_alpha"] = Row(hc, str(R.string.live_hud_alpha), "", listOf(str(R.string.live_alpha_1), str(R.string.live_alpha_2), str(R.string.live_alpha_3)), top = 12) { i ->
+            LiveExtras.put(ctx, "hud_alpha", i)
+        }.apply { select(LiveExtras.hudAlpha(ctx)) }
+
+        // ---- on the stream
+        val oc = card(root, R.string.live_ov_title, R.drawable.ic_layers)
+        oc.addView(text(str(R.string.live_ov_desc), R.style.Text_Caption), lp(4))
+        fun tog(key: String, ic: Int, title: Int, desc: Int, value: Boolean, top: Int = 4) {
+            toggles[key] = Toggle(oc, "tog:$key", ic, str(title), str(desc), top) { on -> LiveExtras.put(ctx, key, on); toggles[key]?.set(on) }.apply { set(value) }
+        }
+        tog("ov_alerts", R.drawable.ic_bell, R.string.live_ov_alerts_title, R.string.live_ov_alerts_desc, LiveExtras.alerts(ctx), top = 10)
+        tog("ov_subs", R.drawable.ic_people, R.string.live_ov_subs_title, R.string.live_ov_subs_desc, LiveExtras.subsBadge(ctx))
+        tog("ov_viewers", R.drawable.ic_eye, R.string.live_ov_viewers_title, R.string.live_ov_viewers_desc, LiveExtras.viewersBadge(ctx))
+        rows["ov_alert_pos"] = Row(oc, str(R.string.live_ov_alert_pos), "", positions(), top = 14) { i -> LiveExtras.put(ctx, "ov_alert_pos", i) }
+            .apply { select(LiveExtras.alertPos(ctx)) }
+        rows["ov_badge_pos"] = Row(oc, str(R.string.live_ov_badge_pos), "", positions(), top = 12) { i -> LiveExtras.put(ctx, "ov_badge_pos", i) }
+            .apply { select(LiveExtras.badgePos(ctx)) }
+        oc.addView(divider(top = 16))
+        tog("ov_goal", R.drawable.ic_flag, R.string.live_goal_title, R.string.live_goal_desc, LiveExtras.goal(ctx), top = 12)
+        rows["ov_goal_type"] = Row(oc, str(R.string.live_goal_type), "", listOf(str(R.string.live_goal_t_subs), str(R.string.live_goal_t_likes),
+            str(R.string.live_goal_t_members), str(R.string.live_goal_t_manual)), top = 12) { i -> LiveExtras.put(ctx, "ov_goal_type", i) }
+            .apply { select(LiveExtras.goalType(ctx)) }
+        oc.addView(text(str(R.string.live_goal_target), R.style.Text_Label), lp(12))
+        oc.addView(textField("1000", LiveExtras.goalTarget(ctx).toString(), number = true) {
+            ChatBot.toAsciiDigits(it.trim()).toIntOrNull()?.takeIf { v -> v > 0 }?.let { v -> LiveExtras.put(ctx, "ov_goal_target", v) }
+        }, lp(4))
+        oc.addView(text(str(R.string.live_goal_name), R.style.Text_Label), lp(12))
+        oc.addView(textField(str(R.string.live_goal_name), LiveExtras.goalTitle(ctx)) { LiveExtras.put(ctx, "ov_goal_title", it.trim()) }, lp(4))
+        rows["ov_goal_pos"] = Row(oc, str(R.string.live_goal_pos), "", positions(), top = 12) { i -> LiveExtras.put(ctx, "ov_goal_pos", i) }
+            .apply { select(LiveExtras.goalPos(ctx)) }
+
+        // ---- the bot
+        val bc = card(root, R.string.live_bot_title, R.drawable.ic_bot)
+        fun btog(key: String, ic: Int, title: Int, desc: Int, value: Boolean, top: Int = 4) {
+            toggles[key] = Toggle(bc, "tog:$key", ic, str(title), str(desc), top) { on -> LiveExtras.put(ctx, key, on); toggles[key]?.set(on) }.apply { set(value) }
+        }
+        btog("bot_on", R.drawable.ic_bot, R.string.live_bot_on_title, R.string.live_bot_on_desc, LiveExtras.botOn(ctx), top = 0)
+        bc.addView(text(str(R.string.live_bot_cmds_title), R.style.Text_Label), lp(14))
+        bc.addView(text(str(R.string.live_bot_cmds_desc), R.style.Text_Caption), lp(2))
+        bc.addView(multiField(str(R.string.live_bot_cmds_hint)) { LiveExtras.put(ctx, "bot_cmds", it) }.apply { setText(LiveExtras.botCommands(ctx)) }, lp(6))
+        bc.addView(text(str(R.string.live_bot_timers_title), R.style.Text_Label), lp(14))
+        bc.addView(text(str(R.string.live_bot_timers_desc), R.style.Text_Caption), lp(2))
+        bc.addView(multiField(str(R.string.live_bot_timers_hint)) { LiveExtras.put(ctx, "bot_timers", it) }.apply { setText(LiveExtras.botTimers(ctx)) }, lp(6))
+        btog("bot_welcome", R.drawable.ic_sparkle, R.string.live_bot_welcome_title, R.string.live_bot_welcome_desc, LiveExtras.botWelcome(ctx), top = 12)
+        bc.addView(textField(str(R.string.live_bot_welcome_hint), LiveExtras.botWelcomeText(ctx)) { LiveExtras.put(ctx, "bot_welcome_text", it.trim()) }, lp(6))
+        bc.addView(divider(top = 16))
+        bc.addView(text(str(R.string.live_mod_desc), R.style.Text_Caption), lp(12))
+        btog("mod_links", R.drawable.ic_link, R.string.live_mod_links_title, R.string.live_mod_links_desc, LiveExtras.modLinks(ctx), top = 8)
+        btog("mod_caps", R.drawable.ic_alert, R.string.live_mod_caps_title, R.string.live_mod_caps_desc, LiveExtras.modCaps(ctx))
+        btog("mod_spam", R.drawable.ic_shield, R.string.live_mod_spam_title, R.string.live_mod_spam_desc, LiveExtras.modSpam(ctx))
+        bc.addView(text(str(R.string.live_mod_words_title), R.style.Text_Label), lp(12))
+        bc.addView(textField(str(R.string.live_mod_words_hint), LiveExtras.modWords(ctx)) { LiveExtras.put(ctx, "mod_words", it.trim()) }, lp(4))
+        bc.addView(divider(top = 16))
+        bc.addView(text(str(R.string.live_give_title), R.style.Text_Label).apply { startIcon(R.drawable.ic_gift, 16, tint(R.color.text_secondary), 6) }, lp(14))
+        bc.addView(text(str(R.string.live_give_desc), R.style.Text_Caption), lp(2))
+        bc.addView(textField("!join", SafePrefs.str(getSharedPreferences(RecordService.PREFS, MODE_PRIVATE), "give_word")) { LiveExtras.put(ctx, "give_word", it.trim()) }, lp(6))
+    }
+
+    private fun refreshYt() {
+        val st = ytStatus ?: return
+        if (ytSigning) return
+        val signed = LiveExtras.ytSignedIn(this)
+        st.text = if (signed) str(R.string.live_yt_signed_fmt, LiveExtras.ytChannel(this).ifBlank { "YouTube" }) else str(R.string.live_yt_not)
+        ytButton?.text = str(if (signed) R.string.live_yt_signout else R.string.live_yt_signin)
+        ytQuota?.text = str(R.string.live_yt_quota_fmt, Fmt.num(LiveExtras.Quota.used(this)))
+        ytQuota?.visibility = if (signed) View.VISIBLE else View.GONE
+    }
+
+    /** Google's «device» sign-in: a short code entered at google.com/device; RawRec waits for the answer. */
+    private fun onYtClicked() {
+        if (ytSigning) return
+        if (LiveExtras.ytSignedIn(this)) {
+            LiveExtras.setYtToken(this, null)
+            refreshYt()
+            return
+        }
+        ytClient?.text?.toString()?.let { LiveExtras.setYtClientId(this, it) }
+        ytSecretField?.text?.toString()?.let { LiveExtras.setYtSecret(this, it) }
+        val id = LiveExtras.ytClientId(this)
+        val secret = LiveExtras.ytSecret(this)
+        if (id.isBlank() || secret.isBlank()) { toast(R.string.live_yt_need_client); return }
+        ytSigning = true
+        ytStatus?.text = str(R.string.live_yt_waiting)
+        val app = applicationContext
+        Thread {
+            try {
+                val dc = YouTubeApi.startDevice(id)
+                ui.post { if (!isDestroyed) showYtCode(dc) }
+                val until = System.currentTimeMillis() + dc.expiresS * 1000L
+                var token: String? = null
+                while (token == null && System.currentTimeMillis() < until && ytSigning) {
+                    Thread.sleep(dc.intervalS.coerceAtLeast(5) * 1000L)
+                    token = YouTubeApi.pollDevice(id, secret, dc.deviceCode)
+                }
+                if (token == null) throw java.io.IOException("expired_token")
+                LiveExtras.setYtToken(app, token)
+                val title = try { YouTubeApi(id, secret, token) { LiveExtras.Quota.spend(app, it) }.channelTitle() } catch (_: Exception) { "" }
+                LiveExtras.setYtChannel(app, title)
+                ui.post {
+                    ytSigning = false
+                    ytDialog?.dismiss(); ytDialog = null
+                    if (!isDestroyed) { refreshYt(); Toast.makeText(this, str(R.string.live_yt_ok_fmt, title.ifBlank { "YouTube" }), Toast.LENGTH_LONG).show() }
+                }
+            } catch (e: Exception) {
+                ui.post {
+                    ytSigning = false
+                    ytDialog?.dismiss(); ytDialog = null
+                    if (!isDestroyed) { refreshYt(); ytStatus?.text = str(R.string.live_yt_fail_fmt, ytError(e)) }
+                }
+            }
+        }.start()
+    }
+
+    private var ytDialog: AlertDialog? = null
+
+    /** Google's answer in words: a wrong client, a refusal, an expired code, or what it said. */
+    private fun ytError(e: Exception): String {
+        val raw = (e as? YouTubeApi.Companion.HttpError)?.body?.let {
+            try { org.json.JSONObject(it).optString("error") } catch (_: Exception) { "" }
+        }?.ifBlank { null } ?: e.message ?: e.javaClass.simpleName
+        return when {
+            raw.contains("invalid_client") || raw.contains("unauthorized_client") -> str(R.string.live_yt_e_client)
+            raw.contains("access_denied") -> str(R.string.live_yt_e_denied)
+            raw.contains("expired_token") -> str(R.string.live_yt_e_expired)
+            e is java.io.IOException && e !is YouTubeApi.Companion.HttpError && raw == (e.message ?: "") && !raw.contains('_') -> str(R.string.chat_net)
+            else -> raw
+        }
+    }
+
+    private fun showYtCode(dc: YouTubeApi.DeviceCode) {
+        ytStatus?.text = str(R.string.live_yt_waiting) + "\n" + dc.userCode
+        ytDialog = AlertDialog.Builder(this)
+            .setIcon(icon(R.drawable.ic_key, 24, tint(R.color.sel)))
+            .setTitle(R.string.live_yt_code_title)
+            .setMessage(str(R.string.live_yt_code_msg_fmt, dc.url, dc.userCode))
+            .setPositiveButton(R.string.live_yt_open) { _, _ ->
+                act("open google device") {
+                    copyCode(dc.userCode)
+                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(dc.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
+            }
+            .setNeutralButton(R.string.live_yt_copy) { _, _ -> act("copy code") { copyCode(dc.userCode) } }
+            .setNegativeButton(R.string.cancel) { _, _ -> ytSigning = false; refreshYt() }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun copyCode(code: String) {
+        getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(android.content.ClipData.newPlainText("code", code))
+        if (Build.VERSION.SDK_INT < 33) toast(R.string.live_yt_copied)
     }
 
     private fun fillLiveFields() {
@@ -1427,6 +1652,7 @@ class MainActivity : Activity() {
             return
         }
         liveButton?.text = str(R.string.live_end)
+        if (ytQuota?.visibility == View.VISIBLE) ytQuota?.text = str(R.string.live_yt_quota_fmt, Fmt.num(LiveExtras.Quota.used(this)))
         val secs = if (RecordService.startedAt > 0) (System.currentTimeMillis() - RecordService.startedAt) / 1000 else 0
         val time = String.format(java.util.Locale.US, "%d:%02d:%02d", secs / 3600, secs / 60 % 60, secs % 60)
         v.text = when {

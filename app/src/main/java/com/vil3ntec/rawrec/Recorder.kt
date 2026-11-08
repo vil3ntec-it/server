@@ -276,6 +276,9 @@ class Recorder(
     /** Live «برمی‌گردم»: this picture instead of the screen (null = the screen again). */
     fun setCover(b: android.graphics.Bitmap?) { look?.setCover(b) }
 
+    /** Live: the GPU stage, for what is drawn over the stream (alerts, counts, goal) and the privacy check. */
+    val filter: LookFilter? get() = look
+
     /** The virtual display, for the next recording of «ضبطِ فوری». */
     val virtualDisplay: VirtualDisplay? get() = display
 

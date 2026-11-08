@@ -84,6 +84,130 @@ class LookFilter(private val look: Look, private val fps: Int) {
         }
     }
 
+    // ---- live overlays: small pictures drawn over the screen (alerts, subscriber count, goal bar),
+    // each uploaded once and then only moved / faded. [x],[y],[w],[h] are fractions of the frame
+    // from its top-left corner. Bitmaps handed over here are never drawn into again by the caller.
+    class Layer(val id: Int, val bitmap: android.graphics.Bitmap, val gen: Int, val x: Float, val y: Float, val w: Float, val h: Float, val alpha: Float)
+
+    @Volatile private var layers: List<Layer> = emptyList()
+    private val layerTex = HashMap<Int, IntArray>()   // id → [texture, gen]
+    private var layerProg = 0
+    private var lastPts = 0L
+    private var lastDrawNs = 0L
+
+    /** Replaces what is drawn over the screen (empty = nothing). Cheap when only positions or alpha change. */
+    fun setLayers(list: List<Layer>) {
+        layers = list
+        h.post {
+            if (dpy == EGL14.EGL_NO_DISPLAY) return@post
+            try {
+                EGL14.eglMakeCurrent(dpy, pbuffer, pbuffer, ctx)
+                uploadLayers(list)
+                refresh()
+            } catch (_: Throwable) {}
+        }
+    }
+
+    private fun uploadLayers(list: List<Layer>) {
+        val ids = list.map { it.id }.toHashSet()
+        for (id in layerTex.keys.filter { it !in ids }) {
+            GLES20.glDeleteTextures(1, intArrayOf(layerTex.remove(id)!![0]), 0)
+        }
+        for (l in list) {
+            val t = layerTex.getOrPut(l.id) {
+                val a = IntArray(1)
+                GLES20.glGenTextures(1, a, 0)
+                intArrayOf(a[0], -1)
+            }
+            if (t[1] == l.gen || l.bitmap.isRecycled) continue
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, t[0])
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+            GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+            android.opengl.GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, l.bitmap, 0)
+            t[1] = l.gen
+        }
+    }
+
+    /** The layers over what was just drawn; Android bitmaps are premultiplied, so ONE / 1−α. */
+    private fun drawLayers() {
+        val list = layers
+        if (list.isEmpty()) return
+        if (layerProg == 0) layerProg = program(VS_LAYER, FS_COVER_A)
+        GLES20.glViewport(0, 0, outW, outH)
+        GLES20.glUseProgram(layerProg)
+        GLES20.glEnable(GLES20.GL_BLEND)
+        GLES20.glBlendFunc(GLES20.GL_ONE, GLES20.GL_ONE_MINUS_SRC_ALPHA)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(layerProg, "tex"), 0)
+        val rect = GLES20.glGetUniformLocation(layerProg, "rect")
+        val alpha = GLES20.glGetUniformLocation(layerProg, "alpha")
+        val pos = GLES20.glGetAttribLocation(layerProg, "pos")
+        GLES20.glEnableVertexAttribArray(pos)
+        GLES20.glVertexAttribPointer(pos, 2, GLES20.GL_FLOAT, false, 0, QUAD)
+        for (l in list) {
+            val t = layerTex[l.id] ?: continue
+            if (t[1] != l.gen || l.alpha <= 0f) continue
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, t[0])
+            GLES20.glUniform4f(rect, l.x, l.y, l.x + l.w, l.y + l.h)
+            GLES20.glUniform1f(alpha, l.alpha.coerceIn(0f, 1f))
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        }
+        GLES20.glDisableVertexAttribArray(pos)
+        GLES20.glDisable(GLES20.GL_BLEND)
+    }
+
+    /** Frame times only ever go forward (the screen's and the cover's / refresh's clocks meet here). */
+    private fun present(ts: Long) {
+        val t = if (ts <= lastPts) lastPts + 1_000 else ts
+        lastPts = t
+        lastDrawNs = System.nanoTime()
+        EGLExt.eglPresentationTimeANDROID(dpy, out, t)
+        EGL14.eglSwapBuffers(dpy, out)
+    }
+
+    /**
+     * A still screen sends no new frames, so a changed overlay would wait for the next one: the last
+     * screen picture is drawn again with the overlay (only when nothing came for a while).
+     */
+    private fun refresh() {
+        if (out == EGL14.EGL_NO_SURFACE || coverOn || drawn == 0L) return
+        if (System.nanoTime() - lastDrawNs < 120_000_000L) return
+        try {
+            EGL14.eglMakeCurrent(dpy, out, out, ctx)
+            draw()
+            drawLayers()
+            present(System.nanoTime())
+        } catch (_: Throwable) {}
+    }
+
+    // ---- privacy check of the chat on the phone: the colour of one point of the captured screen
+    @Volatile private var probeAt: FloatArray? = null
+    /** Last colour read at the probe point (0xRRGGBB), and how many screen frames were read. */
+    @Volatile var probeRgb = 0; private set
+    @Volatile var probeFrames = 0; private set
+    private val px = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
+
+    /** Reads the screen's colour at ([fx],[fy]) (fractions of the frame) on every frame; null stops. */
+    fun probe(fx: Float?, fy: Float?) {
+        probeAt = if (fx == null || fy == null) null else floatArrayOf(fx, fy)
+        probeFrames = 0
+    }
+
+    private fun readProbe() {
+        val p = probeAt ?: return
+        val x = (p[0] * outW).toInt().coerceIn(0, outW - 1)
+        val y = (outH - 1 - (p[1] * outH).toInt()).coerceIn(0, outH - 1)
+        px.clear()
+        GLES20.glReadPixels(x, y, 1, 1, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, px)
+        val r = px.get(0).toInt() and 255
+        val g = px.get(1).toInt() and 255
+        val b = px.get(2).toInt() and 255
+        probeRgb = (r shl 16) or (g shl 8) or b
+        probeFrames++
+    }
+
     /** Shows [b] instead of the screen; null = the screen again. */
     fun setCover(b: android.graphics.Bitmap?) {
         h.post {
@@ -129,8 +253,8 @@ class LookFilter(private val look: Look, private val fps: Int) {
             GLES20.glVertexAttribPointer(pos, 2, GLES20.GL_FLOAT, false, 0, QUAD)
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
             GLES20.glDisableVertexAttribArray(pos)
-            EGLExt.eglPresentationTimeANDROID(dpy, out, System.nanoTime())
-            EGL14.eglSwapBuffers(dpy, out)
+            drawLayers()
+            present(System.nanoTime())
         } catch (_: Throwable) {}
     }
 
@@ -246,8 +370,9 @@ class LookFilter(private val look: Look, private val fps: Int) {
             lastNs = ts
             st.getTransformMatrix(stMatrix)
             draw()
-            EGLExt.eglPresentationTimeANDROID(dpy, out, ts)
-            EGL14.eglSwapBuffers(dpy, out)
+            if (probeAt != null) readProbe()
+            drawLayers()
+            present(ts)
             drawn++
         } catch (_: Throwable) {}
     }
@@ -314,6 +439,27 @@ precision mediump float;
 uniform sampler2D tex;
 varying vec2 uv;
 void main() { gl_FragColor = texture2D(tex, uv); }
+"""
+
+        private const val VS_LAYER = """
+attribute vec2 pos;
+uniform vec4 rect;
+varying vec2 uv;
+void main() {
+    vec2 p = pos * 0.5 + 0.5;
+    uv = vec2(p.x, 1.0 - p.y);
+    float x = mix(rect.x, rect.z, p.x);
+    float y = mix(rect.w, rect.y, p.y);
+    gl_Position = vec4(x * 2.0 - 1.0, 1.0 - y * 2.0, 0.0, 1.0);
+}
+"""
+
+        private const val FS_COVER_A = """
+precision mediump float;
+uniform sampler2D tex;
+uniform float alpha;
+varying vec2 uv;
+void main() { gl_FragColor = texture2D(tex, uv) * alpha; }
 """
 
         private const val VS = """
