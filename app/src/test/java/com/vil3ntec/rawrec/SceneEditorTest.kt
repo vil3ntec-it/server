@@ -183,16 +183,26 @@ class SceneEditorTest {
     @Test fun scenesAreAddedAndSwitched() {
         val ed = open()
         val n = ed.project.scenes.size
+        val start = ed.project.start
+        assertTrue("streams start with the game", ed.project.startScene.game)
         tag(ed, "sc:scene:add").performClick(); idle()
         assertEquals(n + 1, ed.project.scenes.size)
-        val s = ed.project.current
-        assertTrue("a new scene starts empty", s.layers.isEmpty())
-        // the game scene again
-        val game = ed.project.scenes.first()
-        tag(ed, "sc:scene:${game.name}").performClick(); idle()
-        assertEquals(game.id, ed.project.active)
+        assertTrue("a new scene starts empty", ed.scene().layers.isEmpty())
+        assertEquals("…and does not go on the stream", start, ed.project.start)
+        // looking at another scene does not put it on the stream either
+        val soon = ed.project.scenes[1]
+        tag(ed, "sc:scene:${soon.name}").performClick(); idle()
+        assertEquals(soon.id, ed.editing)
+        assertEquals(start, ed.project.start)
+        // its menu does: «شروعِ پخش با این صحنه»
+        tag(ed, "sc:scene:${soon.name}").performClick(); idle()   // (the open one: its menu)
+        shadowOf(ShadowDialog.getLatestDialog() as AlertDialog).clickOnItem(4); idle()
+        assertEquals(soon.id, ed.project.start)
+        assertTrue("marked ▶", (tag(ed, "sc:scene:${soon.name}") as TextView).text.startsWith("▶"))
         later(400)
-        assertEquals("saved", n + 1, Scenes.reload(app).scenes.size)
+        val saved = Scenes.reload(app)
+        assertEquals("saved", n + 1, saved.scenes.size)
+        assertEquals(soon.id, saved.start)
     }
 
     @Test fun colourPickerGivesExactlyWhatWasTyped() {

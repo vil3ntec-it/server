@@ -30,6 +30,8 @@ class YouTubeApi(
         val videoId: String, val chatId: String, val title: String,
         /** The stream's picture on YouTube (its thumbnail), the stream it is bound to, and what an update must carry. */
         val thumb: String? = null, val streamId: String? = null, val scheduled: String? = null, val description: String = "",
+        /** Who can watch it (public / unlisted / private) and whether it is marked as made for kids. */
+        val privacy: String = "", val kids: Boolean? = null,
     )
     class ChatItem(
         val id: String, val type: String, val authorId: String, val author: String, val text: String,
@@ -43,6 +45,18 @@ class YouTubeApi(
     class Sub(val channelId: String, val name: String)
 
     companion object {
+        /** YouTube takes tags up to 500 characters in all (a tag with a space counts its quotes). */
+        fun fitTags(tags: List<String>): List<String> {
+            val out = ArrayList<String>()
+            var n = 0
+            for (t in tags.map { it.trim().replace(Regex("[<>]"), "") }.filter { it.isNotEmpty() }.distinct()) {
+                val cost = t.length + (if (t.contains(' ')) 2 else 0) + (if (out.isEmpty()) 0 else 1)
+                if (n + cost > 500) break
+                out += t; n += cost
+            }
+            return out
+        }
+
         const val SCOPE = "https://www.googleapis.com/auth/youtube"
         private const val API = "https://www.googleapis.com/youtube/v3/"
 
@@ -102,7 +116,11 @@ class YouTubeApi(
             return text
         }
 
+        /** Tests: answers in place of Google (method, url, body → response). */
+        @Volatile internal var transport: ((String, String, String?) -> String)? = null
+
         fun http(method: String, url: String, body: String?, type: String?, token: String?): String {
+            transport?.let { return it(method, url, body) }
             val c = URL(url).openConnection() as HttpURLConnection
             c.requestMethod = method
             c.connectTimeout = 15_000
@@ -162,10 +180,12 @@ class YouTubeApi(
                 if (chat.isBlank()) continue
                 val th = sn.optJSONObject("thumbnails")
                 val thumb = listOf("maxres", "standard", "high", "medium", "default").firstNotNullOfOrNull { th?.optJSONObject(it)?.optString("url")?.ifBlank { null } }
+                val st = b.optJSONObject("status")
                 return Broadcast(b.getString("id"), chat, sn.optString("title"), thumb,
                     b.optJSONObject("contentDetails")?.optString("boundStreamId")?.ifBlank { null },
                     sn.optString("scheduledStartTime").ifBlank { sn.optString("actualStartTime").ifBlank { null } },
-                    sn.optString("description"))
+                    sn.optString("description"), st?.optString("privacyStatus") ?: "",
+                    if (st?.has("selfDeclaredMadeForKids") == true) st.optBoolean("selfDeclaredMadeForKids") else null)
             }
         }
         return null
@@ -201,12 +221,68 @@ class YouTubeApi(
         get("liveStreams?part=status&id=${enc(streamId)}").optJSONArray("items")?.optJSONObject(0)
             ?.optJSONObject("status")?.optJSONObject("healthStatus")?.optString("status")?.ifBlank { null }
 
-    /** The stream's title on YouTube (50 units). */
-    fun setTitle(b: Broadcast, title: String) {
-        val sn = JSONObject().put("title", title.take(100)).put("description", b.description)
-        sn.put("scheduledStartTime", b.scheduled ?: java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
-            .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date()))
-        call("PUT", "liveBroadcasts?part=snippet", JSONObject().put("id", b.videoId).put("snippet", sn), 50)
+    /**
+     * The stream's title, description, who can watch it (public / unlisted / private) and «made for
+     * kids», in one update (50 units); null = as it is. Everything an update would otherwise wipe is
+     * sent back as it was. Returns the broadcast as it is now.
+     */
+    fun updateBroadcast(b: Broadcast, title: String?, description: String?, privacy: String?, kids: Boolean?): Broadcast {
+        val parts = ArrayList<String>()
+        val body = JSONObject().put("id", b.videoId)
+        val newTitle = (title ?: b.title).take(100)
+        val newDesc = (description ?: b.description).take(5000)
+        if (title != null || description != null) {
+            parts += "snippet"
+            body.put("snippet", JSONObject().put("title", newTitle).put("description", newDesc)
+                .put("scheduledStartTime", b.scheduled ?: java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US)
+                    .apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date())))
+        }
+        val newPrivacy = privacy ?: b.privacy.ifBlank { "public" }
+        val newKids = kids ?: b.kids
+        if (privacy != null || kids != null) {
+            parts += "status"
+            val st = JSONObject().put("privacyStatus", newPrivacy)
+            if (newKids != null) st.put("selfDeclaredMadeForKids", newKids)
+            body.put("status", st)
+        }
+        if (parts.isEmpty()) return b
+        call("PUT", "liveBroadcasts?part=" + parts.joinToString(","), body, 50)
+        return Broadcast(b.videoId, b.chatId, newTitle, b.thumb, b.streamId, b.scheduled, newDesc, newPrivacy, newKids)
+    }
+
+    /**
+     * The video's category, tags and whether other sites may show it (embedding); null = as it is.
+     * Reads the video first (1 unit) so nothing else changes, then one update (50 units).
+     */
+    fun updateVideo(videoId: String, category: String?, tags: List<String>?, embeddable: Boolean?) {
+        if (category == null && tags == null && embeddable == null) return
+        val v = get("videos?part=snippet,status&id=${enc(videoId)}").optJSONArray("items")?.optJSONObject(0)
+            ?: throw IllegalStateException("video not found")
+        val sn = v.optJSONObject("snippet") ?: JSONObject()
+        val st = v.optJSONObject("status") ?: JSONObject()
+        val parts = ArrayList<String>()
+        val body = JSONObject().put("id", videoId)
+        if (category != null || tags != null) {
+            parts += "snippet"
+            val s2 = JSONObject().put("title", sn.optString("title")).put("description", sn.optString("description"))
+                .put("categoryId", category ?: sn.optString("categoryId").ifBlank { "20" })
+            val keepTags = sn.optJSONArray("tags")
+            when {
+                tags != null -> s2.put("tags", JSONArray(fitTags(tags)))
+                keepTags != null -> s2.put("tags", keepTags)
+            }
+            for (k in listOf("defaultLanguage", "defaultAudioLanguage")) sn.optString(k).ifBlank { null }?.let { s2.put(k, it) }
+            body.put("snippet", s2)
+        }
+        if (embeddable != null) {
+            parts += "status"
+            val s3 = JSONObject().put("privacyStatus", st.optString("privacyStatus").ifBlank { "public" }).put("embeddable", embeddable)
+            st.optString("license").ifBlank { null }?.let { s3.put("license", it) }
+            if (st.has("publicStatsViewable")) s3.put("publicStatsViewable", st.optBoolean("publicStatsViewable"))
+            if (st.has("selfDeclaredMadeForKids")) s3.put("selfDeclaredMadeForKids", st.optBoolean("selfDeclaredMadeForKids"))
+            body.put("status", s3)
+        }
+        call("PUT", "videos?part=" + parts.joinToString(","), body, 50)
     }
 
     /** The stream's thumbnail (a JPEG up to 2 MB; 50 units). YouTube allows it on verified channels only. */

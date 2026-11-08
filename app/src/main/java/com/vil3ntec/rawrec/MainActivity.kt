@@ -1578,6 +1578,23 @@ class MainActivity : Activity() {
         // the stream's title and thumbnail, set on YouTube when the stream starts
         yc.addView(text(str(R.string.yt_title_label), R.style.Text_Label), lp(16))
         yc.addView(textField(str(R.string.yt_title_hint), LiveExtras.ytTitle(ctx)) { LiveExtras.put(ctx, "yt_title", it.trim()) }, lp(4))
+        // who can watch the video and the like: set on YouTube when the stream starts, and at once while live
+        yc.addView(text(str(R.string.yt_vid_desc), R.style.Text_Caption), lp(6))
+        fun ytRow(key: String, title: Int, desc: Int?, opts: List<Pair<String, Int>>) {
+            rows[key] = Row(yc, str(title), desc?.let { str(it) } ?: "", opts.map { str(it.second) }, top = 14) { i -> LiveExtras.put(ctx, key, opts[i].first) }
+                .apply { select(opts.indexOfFirst { it.first == SafePrefs.str(prefs, key) }.coerceAtLeast(0)) }
+        }
+        ytRow("yt_privacy", R.string.yt_privacy_title, R.string.yt_privacy_desc, listOf("" to R.string.yt_keep,
+            "public" to R.string.yt_p_public, "unlisted" to R.string.yt_p_unlisted, "private" to R.string.yt_p_private))
+        ytRow("yt_kids", R.string.yt_kids_title, R.string.yt_kids_desc, listOf("" to R.string.yt_keep, "no" to R.string.yt_kids_no, "yes" to R.string.yt_kids_yes))
+        ytRow("yt_embed", R.string.yt_embed_title, R.string.yt_embed_desc, listOf("" to R.string.yt_keep, "yes" to R.string.yt_embed_yes, "no" to R.string.yt_embed_no))
+        ytRow("yt_category", R.string.yt_cat_title, null, listOf("" to R.string.yt_keep, "20" to R.string.yt_cat_gaming, "24" to R.string.yt_cat_ent,
+            "22" to R.string.yt_cat_people, "27" to R.string.yt_cat_edu, "10" to R.string.yt_cat_music, "17" to R.string.yt_cat_sports,
+            "23" to R.string.yt_cat_comedy, "28" to R.string.yt_cat_tech, "26" to R.string.yt_cat_howto, "25" to R.string.yt_cat_news))
+        yc.addView(text(str(R.string.yt_desc_label), R.style.Text_Label), lp(14))
+        yc.addView(multiField(str(R.string.yt_desc_hint)) { LiveExtras.put(ctx, "yt_desc", it.trim()) }.apply { setText(LiveExtras.ytDesc(ctx)); tag = "yt:desc" }, lp(4))
+        yc.addView(text(str(R.string.yt_tags_label), R.style.Text_Label), lp(14))
+        yc.addView(textField(str(R.string.yt_tags_hint), SafePrefs.str(prefs, "yt_tags")) { LiveExtras.put(ctx, "yt_tags", it.trim()) }.apply { tag = "yt:tags" }, lp(4))
         yc.addView(text(str(R.string.yt_thumb_label), R.style.Text_Label), lp(14))
         yc.addView(text(str(R.string.yt_thumb_desc), R.style.Text_Caption), lp(2))
         thumbView = android.widget.ImageView(this).apply {

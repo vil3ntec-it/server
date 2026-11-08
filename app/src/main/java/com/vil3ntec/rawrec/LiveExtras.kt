@@ -44,6 +44,20 @@ object LiveExtras {
     /** The stream's title and thumbnail, set on YouTube when the stream starts (empty = YouTube's own). */
     fun ytTitle(ctx: Context) = s(ctx, "yt_title").trim()
     fun ytThumbFile(ctx: Context): java.io.File? = java.io.File(ctx.filesDir, "yt_thumb.jpg").takeIf { it.isFile && it.length() > 0 }
+    // ---- the live video on YouTube ("" = leave it as YouTube has it)
+    /** public / unlisted / private */
+    fun ytPrivacy(ctx: Context) = s(ctx, "yt_privacy")
+    /** yes / no: made for kids */
+    fun ytKids(ctx: Context) = s(ctx, "yt_kids")
+    /** yes / no: other sites may show the video */
+    fun ytEmbed(ctx: Context) = s(ctx, "yt_embed")
+    /** YouTube's category number (20 = Gaming) */
+    fun ytCategory(ctx: Context) = s(ctx, "yt_category")
+    fun ytDesc(ctx: Context) = s(ctx, "yt_desc").trim()
+    fun ytTags(ctx: Context): List<String> = s(ctx, "yt_tags").split(',', '،', '\n', '#').map { it.trim() }.filter { it.isNotEmpty() }
+    /** Everything above in one string: when it changes while live, it is applied again at once. */
+    fun ytChoicesStamp(ctx: Context) = listOf(ytTitle(ctx), ytPrivacy(ctx), ytKids(ctx), ytEmbed(ctx), ytCategory(ctx), ytDesc(ctx),
+        ytTags(ctx).joinToString(","), ytThumbFile(ctx)?.lastModified()?.toString() ?: "").joinToString("\u0001")
 
     // ---- Twitch chat (read only, no sign-in)
     fun twChannel(ctx: Context) = s(ctx, "tw_channel").trim().removePrefix("#").removePrefix("@").lowercase()

@@ -124,6 +124,7 @@ class OverlayRender {
         hud.setScenes(listOf("g" to "بازی", "s" to "به‌زودی", "b" to "برمی‌گردم", "e" to "پایان"), "g",
             listOf(Triple("c", "چت", true), Triple("a", "تشکر", true), Triple("n", "شمارِ مشترک", true), Triple("w", "صفحهٔ وب", false), Triple("q", "هدف", true)))
         hud.setChatOnStream(true)
+        hud.setLiveScene("به‌زودی")   // a scene of its own on the stream: said over the game
         hud.setCanSend(true)
         hud.setStats(1234, 380, 12_345)
         hud.setGiveaway(true, 17)

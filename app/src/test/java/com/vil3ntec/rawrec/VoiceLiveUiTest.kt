@@ -376,6 +376,10 @@ class VoiceLiveUiTest {
         // a few concrete values
         touch(a, chip(a, a.getString(R.string.tr_lang_tr)))
         assertEquals("tr", LiveExtras.trTarget(app))
+        touch(a, chip(a, a.getString(R.string.yt_p_private)))
+        assertEquals("private", LiveExtras.ytPrivacy(app))
+        touch(a, chip(a, a.getString(R.string.yt_cat_gaming)))
+        assertEquals("20", LiveExtras.ytCategory(app))
         touch(a, chip(a, a.getString(R.string.live_hud_l)))
         assertEquals(2, LiveExtras.hudSize(app))
         assertNull(CrashLog.pending(app))

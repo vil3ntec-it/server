@@ -109,6 +109,8 @@ class SceneRenderer(
 
     fun start(w: Int, h: Int) {
         fw = w; fh = h
+        // every stream starts with the scene chosen for it (not the one switched to in the last stream)
+        project.active = project.startScene.id
         data.startedAt = System.currentTimeMillis()
         apply()
         main.postDelayed(tick, 1000)
@@ -370,7 +372,8 @@ class SceneRenderer(
             val hF = natH * (c[3] - c[1]) * l.scale * unit / fh
             val x = l.x - wF / 2f
             val y = l.y - hF / 2f + dy * unit / fh
-            if (mine && bmp != null && !away)
+            // on the phone only over the game: a scene of its own (the game hidden) is told in one line instead
+            if (mine && bmp != null && !away && showing.game)
                 mirror += OwnerMirror.Item(l.kind, ownerPic(l, bmp), l.x, l.y, dy, l.scale, l.rot, c.copyOf(), alpha, corner, Scenes.hasNumbers(l))
             if (inPicture) continue
             out += LookFilter.Layer(numId(l.id), bmp, g, x, y, wF, hF, alpha, l.rot, c.copyOf(), ext, corner * l.scale,

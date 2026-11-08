@@ -261,7 +261,9 @@ class SceneEditorActivity : Activity() {
 
     // ------------------------------------------------------------ saving, undo
 
-    internal fun scene() = project.current
+    /** The scene open here (looking at a scene does not put it on the stream: «▶» marks the one a stream starts with). */
+    internal var editing = ""
+    internal fun scene() = project.scene(editing) ?: project.startScene.also { editing = it.id }
     internal fun layer() = scene().layers.firstOrNull { it.id == sel }
 
     /** Before a change: remembered for «↶». */
@@ -299,16 +301,16 @@ class SceneEditorActivity : Activity() {
     private fun renderScenes() {
         sceneRow.removeAllViews()
         for (s in project.scenes) {
-            val on = s.id == project.active
-            val name = (if (s.id == project.away) "⏸ " else "") + s.name
+            val on = s.id == scene().id
+            val name = (if (s.id == project.start) "▶ " else "") + (if (s.id == project.away) "⏸ " else "") + s.name
             sceneRow.addView(pill(name, if (on) col(R.color.accent_fill) else col(R.color.surface_3), "sc:scene:${s.name}") {
-                if (on) sceneMenu(s) else { project.active = s.id; sel = null; changed(structure = true) }
+                if (on) sceneMenu(s) else { editing = s.id; sel = null; cropOff(); renderScenes(); renderPanel(); stage.invalidate() }
             }.apply { setOnLongClickListener { sceneMenu(s); true } })
         }
         sceneRow.addView(pill("+", tag = "sc:scene:add") {
             snapshot()
             val s = Scenes.Scene(Scenes.newId(), getString(R.string.sc_scene_new_fmt, project.scenes.size + 1))
-            project.scenes += s; project.active = s.id; sel = null
+            project.scenes += s; editing = s.id; sel = null
             changed(structure = true)
         })
         // what is behind the layers of this scene
@@ -325,14 +327,15 @@ class SceneEditorActivity : Activity() {
     }
 
     private fun sceneMenu(s: Scenes.Scene) {
-        val items = arrayOf(getString(R.string.sc_rename), getString(R.string.sc_duplicate), getString(R.string.sc_set_away), getString(R.string.sc_delete))
+        val items = arrayOf(getString(R.string.sc_rename), getString(R.string.sc_duplicate), getString(R.string.sc_set_away), getString(R.string.sc_delete),
+            getString(R.string.sc_set_start))
         AlertDialog.Builder(this).setTitle(s.name).setItems(items) { _, i ->
             when (i) {
                 0 -> ask(getString(R.string.sc_rename), s.name) { n -> snapshot(); s.name = n.ifBlank { s.name }; changed(structure = true) }
                 1 -> {
                     snapshot()
                     val c = Scenes.Scene(Scenes.newId(), s.name + " ۲", s.game, s.bg, s.bgImage, s.layers.map { it.copy() }.toMutableList())
-                    project.scenes.add(project.scenes.indexOf(s) + 1, c); project.active = c.id; sel = null
+                    project.scenes.add(project.scenes.indexOf(s) + 1, c); editing = c.id; sel = null
                     changed(structure = true)
                 }
                 2 -> { snapshot(); project.away = s.id; changed(structure = true) }
@@ -340,10 +343,13 @@ class SceneEditorActivity : Activity() {
                     snapshot()
                     project.scenes.remove(s)
                     if (project.active == s.id) project.active = project.scenes.first().id
+                    if (project.start == s.id) project.start = (project.scenes.firstOrNull { it.game } ?: project.scenes.first()).id
                     if (project.away == s.id) project.away = project.scenes.firstOrNull { !it.game }?.id ?: project.scenes.first().id
+                    if (editing == s.id) editing = project.start
                     sel = null
                     changed(structure = true)
                 }
+                4 -> { snapshot(); project.start = s.id; changed(structure = true) }
             }
         }.show()
     }
@@ -356,6 +362,8 @@ class SceneEditorActivity : Activity() {
     }
 
     // ------------------------------------------------------------ the side panel
+
+    private fun cropOff() { if (::stage.isInitialized) stage.cropping = false }
 
     internal fun select(id: String?, toProps: Boolean = true) {
         sel = id
@@ -950,7 +958,7 @@ class SceneEditorActivity : Activity() {
             val c = Canvas(out)
             val p = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
             val all = RectF(0f, 0f, w.toFloat(), h.toFloat())
-            val s = scene ?: Scenes.load(ctx).current
+            val s = scene ?: Scenes.load(ctx).startScene
             if (!s.game) { c.drawColor(s.bg); LayerPainter.image(ctx, s.bgImage)?.let { c.drawBitmap(it, null, cover(it, all), p) } }
             else if (lastFrame != null) c.drawBitmap(lastFrame, null, cover(lastFrame, all), p)
             else { p.shader = LinearGradient(0f, 0f, w.toFloat(), h.toFloat(), Color.rgb(52, 74, 60), Color.rgb(120, 104, 74), Shader.TileMode.CLAMP); c.drawRect(all, p); p.shader = null }

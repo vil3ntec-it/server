@@ -66,14 +66,18 @@ object Scenes {
 
     class Project(
         val scenes: MutableList<Scene>,
+        /** The scene on the stream now (switched from the chat panel while live). */
         var active: String,
         /** The scene shown when the game leaves the screen (and for the «برمی‌گردم» button). */
         var away: String,
+        /** The scene every stream starts with (chosen in the editor; looking at another scene there does not change it). */
+        var start: String = active,
     ) {
         fun scene(id: String) = scenes.firstOrNull { it.id == id }
         val current: Scene get() = scene(active) ?: scenes.first()
+        val startScene: Scene get() = scene(start) ?: scenes.firstOrNull { it.game } ?: scenes.first()
 
-        fun toJson(): JSONObject = JSONObject().put("v", 1).put("active", active).put("away", away)
+        fun toJson(): JSONObject = JSONObject().put("v", 1).put("active", active).put("away", away).put("start", start)
             .put("scenes", JSONArray().apply { scenes.forEach { put(it.toJson()) } })
     }
 
@@ -171,7 +175,9 @@ object Scenes {
         if (scenes.isEmpty()) scenes += Scene(newId(), "Scene")
         val active = o.optString("active").takeIf { id -> scenes.any { it.id == id } } ?: scenes.first().id
         val away = o.optString("away").takeIf { id -> scenes.any { it.id == id } } ?: scenes.firstOrNull { !it.game }?.id ?: active
-        return Project(scenes, active, away)
+        // (before 3.6 the scene last open in the editor started the stream: the game scene does now)
+        val start = o.optString("start").takeIf { id -> scenes.any { it.id == id } } ?: scenes.firstOrNull { it.game }?.id ?: active
+        return Project(scenes, active, away, start)
     }
 
     fun layerFromJson(o: JSONObject): Layer {

@@ -836,6 +836,8 @@ class RecordService : Service(), Recorder.Events {
         val sc = sr.showing
         h.setScenes(sr.project.scenes.map { it.id to it.name }, sc.id, sc.layers.map { Triple(it.id, it.name, it.visible) })
         h.setChatOnStream(sr.chatShown)
+        // a scene of its own on the stream while the owner plays: viewers do not see the game, said plainly
+        h.setLiveScene(if (!sc.game && !sr.isAway) sc.name else null)
     }
 
     private val startProbe = Runnable { if (!stopping) probe?.start() }
