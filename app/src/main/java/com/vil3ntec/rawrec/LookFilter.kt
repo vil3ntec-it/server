@@ -458,6 +458,14 @@ class LookFilter(private val look: Look, private val fps: Int) {
     private var lastRecNs = 0L
     @Volatile var recError: String? = null; private set
 
+    /** 7.3: the screen's own size when it is bigger than the stream's picture (a recording beside the stream); 0 = the output's size. */
+    private var inW = 0
+    private var inH = 0
+    fun setInputSize(w: Int, h0: Int) = runSync {
+        inW = w.coerceAtLeast(0); inH = h0.coerceAtLeast(0)
+        st.setDefaultBufferSize(if (inW > 0) inW else outW, if (inH > 0) inH else outH)
+    }
+
     /** The recording encoder's input (null = none), its size and frame rate. */
     fun setRecordOutput(s: Surface?, w: Int, h0: Int, fpsWanted: Int) = runSync {
         if (out3 != EGL14.EGL_NO_SURFACE) {
@@ -478,7 +486,7 @@ class LookFilter(private val look: Look, private val fps: Int) {
             GLES20.glViewport(0, 0, w3, h3)
             GLES20.glClearColor(0f, 0f, 0f, 1f)
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-            if (holding) drawHeld(0, 0, w3, h3) else draw(0, 0, w3, h3)
+            if (holding) drawHeld(0, 0, w3, h3) else draw(0, 0, w3, h3, w3, h3)
             EGLExt.eglPresentationTimeANDROID(dpy, out3, t)
             EGL14.eglSwapBuffers(dpy, out3)
         } catch (e: Throwable) { recError = "draw: " + (e.message ?: e.javaClass.simpleName) }
@@ -694,7 +702,7 @@ class LookFilter(private val look: Look, private val fps: Int) {
             EGL14.eglDestroySurface(dpy, out)
             out = EGL14.EGL_NO_SURFACE
         }
-        st.setDefaultBufferSize(w, h0)
+        st.setDefaultBufferSize(if (inW > 0) inW else w, if (inH > 0) inH else h0)
         outW = w; outH = h0
         if (s != null && s.isValid) {
             out = EGL14.eglCreateWindowSurface(dpy, cfg, s, intArrayOf(EGL14.EGL_NONE), 0)
@@ -806,14 +814,15 @@ class LookFilter(private val look: Look, private val fps: Int) {
         } catch (t: Throwable) { drawError = "frame: " + (t.message ?: t.javaClass.simpleName) }
     }
 
-    private fun draw(vx: Int = 0, vy: Int = 0, vw: Int = outW, vh: Int = outH) {
+    /** [tw]×[th]: the pixel the look's sharpening works on (the stream's, or the recording's own). */
+    private fun draw(vx: Int = 0, vy: Int = 0, vw: Int = outW, vh: Int = outH, tw: Int = outW, th: Int = outH) {
         GLES20.glViewport(vx, vy, vw, vh)
         GLES20.glUseProgram(prog)
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
         GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, tex)
         GLES20.glUniform1i(GLES20.glGetUniformLocation(prog, "tex"), 0)
         GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(prog, "stm"), 1, false, stMatrix, 0)
-        GLES20.glUniform2f(GLES20.glGetUniformLocation(prog, "texel"), 1f / outW.coerceAtLeast(1), 1f / outH.coerceAtLeast(1))
+        GLES20.glUniform2f(GLES20.glGetUniformLocation(prog, "texel"), 1f / tw.coerceAtLeast(1), 1f / th.coerceAtLeast(1))
         GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "sharp"), look.sharp)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "contrast"), look.contrast)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "bright"), look.brightness)
