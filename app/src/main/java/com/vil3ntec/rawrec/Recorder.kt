@@ -376,6 +376,40 @@ class Recorder(
         try { enc?.codec?.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, bps) }) } catch (_: Exception) {}
     }
 
+    /** The plan before the picture was made smaller for the link (null = not smaller now). */
+    @Volatile private var fullPlan: CapturePlan? = null
+    /** The short side the link asked for (0 = full size). */
+    @Volatile var liveShort = 0; private set
+
+    /**
+     * 6.4, live on a narrow link: the picture at [shortSide] pixels on its short side (720, 480, 360),
+     * as YouTube's and Twitch's own quality ladders — few bits on a big picture are blocks and, on a
+     * weak encoder, a rate it cannot keep; on a smaller one they are a clean picture. 0 = full size
+     * again. Done as a rotation is (a new encoder, the stream goes on from its first key frame); the
+     * smaller picture is also less work for the GPU and encoder (less heat).
+     */
+    fun liveSize(shortSide: Int): Boolean {
+        if (!running || sinkFactory == null || shortSide == liveShort) return false
+        val full = fullPlan ?: plan
+        val fullShort = minOf(full.width, full.height)
+        val bps = wantBps.takeIf { it > 0 } ?: plan.bitrate
+        val next = if (shortSide <= 0 || shortSide >= fullShort * 0.95) {
+            if (fullPlan == null) { liveShort = 0; return false }
+            full.copy(bitrate = bps)
+        } else {
+            val k = shortSide.toFloat() / fullShort
+            fun al(v: Int) = ((v * k).toInt() / 16 * 16).coerceAtLeast(16)
+            fun ev(v: Int) = ((v * k).toInt() / 2 * 2).coerceAtLeast(2)
+            full.copy(width = al(full.width), height = al(full.height), contentWidth = ev(full.contentWidth), contentHeight = ev(full.contentHeight),
+                dpi = (full.dpi * k).toInt().coerceAtLeast(120), scaled = true, bitrate = bps)
+        }
+        fullPlan = if (shortSide <= 0 || shortSide >= fullShort * 0.95) null else full
+        liveShort = if (fullPlan == null) 0 else shortSide
+        lastRemakeMs = System.currentTimeMillis()
+        switchRequest.set(Switch(next, false))
+        return true
+    }
+
     /** What the automatic quality asked of the encoder, and since when; what the encoder really put out. */
     @Volatile private var wantBps = 0
     private var wantSinceMs = 0L
@@ -450,6 +484,7 @@ class Recorder(
     fun switchOrientation(d: DisplayInfo, restart: Boolean): Boolean {
         if (!running) return false
         val next = Planner.replan(cfg, d, plan) ?: return false
+        fullPlan = null; liveShort = 0   // a new full-size plan; the link's size is applied again by the service
         switchRequest.set(Switch(next, restart))
         return true
     }

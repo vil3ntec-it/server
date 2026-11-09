@@ -525,7 +525,7 @@ class RecordService : Service(), Recorder.Events {
             val lv = live
             val r = if (lv != null) Recorder(this, p, c, plan, this, null, keepDisplay = false,
                 sinkFactory = {
-                    liveBorn = System.currentTimeMillis(); lastRtmpLog = ""; lastSendProblem = null; toldPrivate = false; toldAway = false; hotFps = 0; netLevel = 0; toldNet = false
+                    liveBorn = System.currentTimeMillis(); lastRtmpLog = ""; lastSendProblem = null; toldPrivate = false; toldAway = false; hotFps = 0; netLevel = 0; toldNet = false; sizeWant = 0; sizeSince = 0L; sizeChanged = 0L
                     main.removeCallbacks(sendCheck); main.postDelayed(sendCheck, 13_000)
                     screenChecks = 0; main.removeCallbacks(screenCheck); main.postDelayed(screenCheck, 8_000)
                     val auto = LiveSettings.autoQuality(this)
@@ -1845,10 +1845,41 @@ class RecordService : Service(), Recorder.Events {
             narrow || (netLevel >= 1 && !wide) -> 1
             else -> 0
         }
+        followSize(s.targetKbps)
         if (level == netLevel) return
         netLevel = level; applyFpsCap()
         RecLog.add(this, "link: ${s.targetKbps} of $full kbps, " + when (level) { 2 -> "20 fps"; 1 -> "30 fps"; else -> "full fps" })
         if (level > 0 && !toldNet) { toldNet = true; hud?.note(getString(R.string.live_net_narrow_fmt, String.format(java.util.Locale.US, "%.1f", s.targetKbps / 1000.0))) }
+    }
+
+    /** The picture's short side for the link (YouTube's own ladder): 0 full, 720, 480, 360. */
+    private var sizeWant = 0
+    private var sizeSince = 0L
+    private var sizeChanged = 0L
+
+    /**
+     * 6.4: the picture follows the link as the platforms' quality ladders do — under 3 Mbps 720p,
+     * under 1.3 Mbps 480p, under 700 kbps 360p — so the bits there are give a clean, smooth picture
+     * instead of blocks and stalls. Down after 6 s, up after 30 s, at most once in 20 s.
+     */
+    private fun followSize(kbps: Int) {
+        val r = recorder ?: return
+        val want = when {
+            kbps < 700 -> 360
+            kbps < 1300 -> 480
+            kbps < 3000 -> 720
+            else -> 0
+        }
+        val now = System.currentTimeMillis()
+        if (want != sizeWant) { sizeWant = want; sizeSince = now; return }
+        val cur = r.liveShort
+        if (want == cur) return
+        val down = want != 0 && (cur == 0 || want < cur)
+        if (now - sizeSince < (if (down) 6_000L else 30_000L) || now - sizeChanged < 20_000L) return
+        if (r.liveSize(want)) {
+            sizeChanged = now
+            RecLog.add(this, "link: ${kbps} kbps, picture " + if (want == 0) "full size" else "${want}p")
+        }
     }
 
     private fun stopThermalWatch() {

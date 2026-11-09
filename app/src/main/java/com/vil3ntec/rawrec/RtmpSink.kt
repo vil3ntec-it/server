@@ -17,10 +17,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  *   video bit rate goes down at once — as far as 250 kbps — and when it keeps up again for a while
  *   it goes back up to the chosen quality. Nothing is dropped for a slow patch: the picture arrives
  *   later, whole (5.2; before, frames 6 s late were thrown away and the viewers saw the stream jump).
- * - **Reconnect:** a dropped connection is tried again (1, 2, 4 … 15 s) for up to 3 minutes; the
- *   frames made meanwhile are kept and go out from the first key frame among them, so the viewers
- *   see a pause, not a jump. Only after [RateControl.HARD_US] behind (a real long break), or with
- *   [MAX_QUEUE_BYTES] waiting, is the oldest let go, back to about [RateControl.BACK_US].
+ * - **Real time first (6.4, as OBS):** the stream never falls more than [RateControl.HARD_US] behind:
+ *   YouTube's player stalls («a second, then ten seconds nothing») whenever it is fed slower than
+ *   real time. The rate goes down long before that; beyond it what waits is let go and a key frame
+ *   follows at once. A reconnect starts fresh at a key frame.
  */
 class RtmpSink(
     private val url: String,
@@ -216,8 +216,10 @@ class RtmpSink(
                         }
                         state = if (sent == 0L) State.CONNECTING else State.RECONNECTING
                         status()
-                        // what was made while away is kept (it goes out from a key frame), within reason
-                        trimToKey(); bound()
+                        // 6.4: real time first (as OBS): what was made while away is let go, the stream resumes at a fresh
+                        // key frame. Sending a backlog would feed YouTube slower than real time — the viewers' player
+                        // then plays a second and waits ten (what the owner saw with 5.2's kept backlog).
+                        dropped += queue.count { it.video }; queue.clear()
                         Thread.sleep(backoffMs)
                         backoffMs = (backoffMs * 2).coerceAtMost(15_000L)
                         continue
@@ -242,9 +244,11 @@ class RtmpSink(
                 val lagUs = lastEnqueuedPts - k.pts
                 when (if (adaptive) rate.step(now, lagUs, k.video) else manual(lagUs, k.video)) {
                     RateControl.Act.DROP -> {
-                        // a real long break: the oldest goes, back to a key frame a while behind the newest
+                        // too far behind real time (the link fell away): what waits is let go, a key frame at once —
+                        // a short freeze for the viewers instead of minutes of «one second, then ten seconds nothing»
                         if (k.video) dropped++
-                        cutBackTo(RateControl.BACK_US)
+                        dropped += queue.count { it.video }
+                        queue.removeIf { it.video }
                         needKey = true; keyWanted.set(true)
                         if (adaptive) apply(rate.target)
                         continue
@@ -301,18 +305,6 @@ class RtmpSink(
         status()
     }
 
-    /**
-     * After a break: the frames made meanwhile stay and go out from the first key frame among them
-     * (at most one key-frame interval is lost, never the backlog).
-     */
-    private fun trimToKey() {
-        while (true) {
-            val h = queue.peekFirst() ?: return
-            if (h.video && h.key) return
-            queue.pollFirst(); if (h.video) dropped++
-        }
-    }
-
     /** Far too much waiting (a long break): the oldest goes, back to a key frame about [keepUs] behind the newest. */
     private fun cutBackTo(keepUs: Long) {
         while (true) {
@@ -366,10 +358,11 @@ class RtmpSink(
  *  - **up slowly and never straight back into the wall:** after 10 s without delay, +10 % at most
  *    every 8 s, and for a minute after the connection could not keep up, not above 90 % of the rate
  *    it could not carry;
- *  - 5.2: **nothing is dropped for a slow patch, however slow** — the rate goes as far down as
- *    250 kbps, and when more than 5 s behind to half of what the link carries, so what waits drains;
- *    the oldest frames are let go only 45 s behind (a real long break). The owner: «every second
- *    must be shown; a delay is fine, a jump is not».
+ *  - the rate goes as far down as 250 kbps; more than [FAR_US] behind, to half of what the link
+ *    carries, so what waits drains quickly (and the service makes the picture smaller, as the
+ *    platforms' own quality ladders do, so few bits still look clean);
+ *  - 6.4: never more than [HARD_US] behind real time: 5.2 kept up to 45 s of backlog, and YouTube,
+ *    fed slower than real time, made its viewers wait («a second, then ten seconds nothing»).
  *  - the start is where the link was last time ([startBps]), so a narrow link is not hit at 6 Mbps.
  */
 class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLOOR_BPS, maxBps), startBps: Int = 0) {
@@ -416,7 +409,7 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLO
             // once lowered (to what the link carried), the frames made before still have to go out and the
             // delay grows a little longer: lowered again only after 4 s, or sooner when 3 s behind
             val starting = nowNs - firstNs < 15_000_000_000L
-            val far = lagUs > 5_000_000L
+            val far = lagUs > FAR_US
             val wait = when {
                 lagAtAdjust == 0L -> 0L
                 far || blind || starting -> 1_000_000_000L    // far behind, or lowered before the link was known: look again soon
@@ -458,10 +451,12 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLO
     companion object {
         /** Behind this far: the rate is lowered. */
         const val SLOW_US = 1_500_000L
-        /** Behind this far all the same (a real long break): the oldest frames are let go; never for less. */
-        const val HARD_US = 45_000_000L
-        /** …back to a key frame about this far behind the newest. */
-        const val BACK_US = 20_000_000L
+        /** Behind this far: well down at once (half the link), so what waits drains. */
+        const val FAR_US = 2_500_000L
+        /** Behind this far all the same (the link fell away): what waits is let go, a key frame next — real time kept. */
+        const val HARD_US = 4_000_000L
+        /** The memory bound's cut: back to a key frame about this far behind the newest. */
+        const val BACK_US = 2_000_000L
         /** The least the rate goes to: a poor picture, but a whole one. */
         const val FLOOR_BPS = 250_000
         /** Caught up: the rate may go back up. */

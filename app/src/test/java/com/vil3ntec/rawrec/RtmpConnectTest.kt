@@ -219,8 +219,8 @@ class RtmpConnectTest {
      * The owner's stream cut out every 3–4 s: a link that carried less than 4.0's 40 % floor. A link
      * (bits a second, changing over time) against the encoder at the controller's rate, 100 ms steps.
      */
-    private class Sim(maxBps: Int, val link: (Double) -> Double) {
-        val rc = RateControl(maxBps)
+    private class Sim(maxBps: Int, startBps: Int = 0, val link: (Double) -> Double) {
+        val rc = RateControl(maxBps, startBps = startBps)
         var drops = 0; var maxLagMs = 0L
         /** What waits to go out: 100 ms of picture each, with how many bits are still left of it. */
         private val queue = ArrayDeque<DoubleArray>()
@@ -318,17 +318,26 @@ class RtmpConnectTest {
         }
     }
 
-    /** 5.2: the owner's VPN at a megabit — and worse: a poor picture, whole; never a jump (4.x cut every few seconds at the 1 Mbps floor). */
-    @Test fun aLinkUnderAMegabitStillGetsEverySecond() {
+    /**
+     * 6.4: the owner's VPN at a megabit — and worse: real time kept (YouTube's player stalls when fed
+     * slower than real time), the rate under what the link carries, no cut once settled.
+     */
+    @Test fun aLinkUnderAMegabitStaysRealTime() {
         for (kbps in listOf(1000, 600, 350)) {
             val s = Sim(12_000_000) { kbps * 1000.0 }
-            s.run(0.0, 120.0)
-            assertEquals("$kbps kbps: no cut", 0, s.drops)
-            assertTrue("$kbps kbps: under what the link carries (${s.rc.target})", s.rc.target <= kbps * 1000)
-            assertTrue("$kbps kbps: never a long break's worth behind (${s.maxLagMs} ms)", s.maxLagMs < RateControl.HARD_US / 1000)
-            s.maxLagMs = 0; s.run(120.0, 180.0)
-            assertTrue("$kbps kbps: settled, a few seconds at most (${s.maxLagMs} ms)", s.maxLagMs < 6_000)
+            s.run(0.0, 30.0)
+            assertTrue("$kbps kbps: at most one cut while the start finds the link (${s.drops})", s.drops <= 1)
+            val settle = s.drops
+            s.maxLagMs = 0; s.run(30.0, 240.0)
+            assertEquals("$kbps kbps: no cut once settled", settle, s.drops)
+            assertTrue("$kbps kbps: about what the link carries, a probe of 10 % at most (${s.rc.target})", s.rc.target <= kbps * 1150)
+            assertTrue("$kbps kbps: real time, never 4 s behind (${s.maxLagMs} ms)", s.maxLagMs < RateControl.HARD_US / 1000)
         }
+        // remembered from the last stream: not even the one cut at the start
+        val s = Sim(12_000_000, 1_200_000) { 1_000_000.0 }
+        s.run(0.0, 240.0)
+        assertEquals(0, s.drops)
+        assertTrue("never 4 s behind (${s.maxLagMs} ms)", s.maxLagMs < RateControl.HARD_US / 1000)
     }
 
     /** 5.2: a stream that starts where the link was last time does not hit a narrow link at 6 Mbps. */
