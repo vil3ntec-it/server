@@ -541,6 +541,20 @@ class RecordService : Service(), Recorder.Events {
         main.postDelayed(countdownStep, 1000)
     }
 
+    /**
+     * 7.4, live: the size the screen is captured at for the whole stream — the owner's recording size
+     * (never more than the screen's own pixels), in the stream's shape — so «⏺» records the full
+     * picture while the stream stays at its own size. Null: the stream's size is already that big.
+     */
+    private fun liveCanvas(plan: CapturePlan): Pair<Int, Int>? = try {
+        val d = DisplayInfo.read(this)
+        val screenShort = minOf(d.width, d.height)
+        val rp = Planner.plan(RecordConfig.fromPrefs(getSharedPreferences(PREFS, MODE_PRIVATE)), d)
+        val short = minOf(rp?.let { minOf(it.width, it.height) } ?: screenShort, screenShort)
+        val k = short.toFloat() / minOf(plan.width, plan.height)
+        if (k <= 1.05f) null else ((plan.width * k).toInt() / 16 * 16) to ((plan.height * k).toInt() / 16 * 16)
+    } catch (_: Exception) { null }
+
     private fun startRecorder() {
         val p = projection ?: return
         val c = cfg ?: return
@@ -557,7 +571,7 @@ class RecordService : Service(), Recorder.Events {
                     lastRateSave = 0L
                     (if (liveTargets.size > 1) MultiSink(liveTargets, plan.bitrate, liveListener, auto, start) else RtmpSink(lv.url, lv.key, plan.bitrate, liveListener, auto, start))
                         .also { liveSink = it }
-                }, forceLook = true, alsoRecord = LiveSettings.recordToo(this), shorts = shortsOut())
+                }, forceLook = true, alsoRecord = LiveSettings.recordToo(this), shorts = shortsOut(), canvas = liveCanvas(plan))
             else Recorder(this, p, c, plan, this, keptDisplay, keepDisplay = instantEnabled(this))
             if (lv == null || LiveSettings.recordToo(this)) ActiveRec.begin(this)
             try { r.start() } catch (e: Exception) { ActiveRec.end(this); throw e }

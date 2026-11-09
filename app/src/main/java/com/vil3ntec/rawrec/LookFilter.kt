@@ -823,6 +823,10 @@ class LookFilter(private val look: Look, private val fps: Int) {
         GLES20.glUniform1i(GLES20.glGetUniformLocation(prog, "tex"), 0)
         GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(prog, "stm"), 1, false, stMatrix, 0)
         GLES20.glUniform2f(GLES20.glGetUniformLocation(prog, "texel"), 1f / tw.coerceAtLeast(1), 1f / th.coerceAtLeast(1))
+        // 7.4: a screen captured bigger than this picture (the live canvas): four samples inside each
+        // output pixel, so text and thin edges stay clean instead of shimmering (one sample skips pixels)
+        val down = inW > 0 && inW > vw * 1.4f
+        GLES20.glUniform2f(GLES20.glGetUniformLocation(prog, "ss"), if (down) 0.25f / vw.coerceAtLeast(1) else 0f, if (down) 0.25f / vh.coerceAtLeast(1) else 0f)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "sharp"), look.sharp)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "contrast"), look.contrast)
         GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "bright"), look.brightness)
@@ -1026,6 +1030,7 @@ void main() {
 precision highp float;
 uniform samplerExternalOES tex;
 uniform vec2 texel;
+uniform vec2 ss;
 uniform float sharp;
 uniform float clarity;
 uniform float contrast;
@@ -1039,6 +1044,10 @@ const vec3 W = vec3(0.2126, 0.7152, 0.0722);
 float lum(vec2 p) { return dot(texture2D(tex, p).rgb, W); }
 void main() {
     vec3 c = texture2D(tex, uv).rgb;
+    if (ss.x > 0.0) {
+        c = (texture2D(tex, uv + ss).rgb + texture2D(tex, uv - ss).rgb
+           + texture2D(tex, uv + vec2(ss.x, -ss.y)).rgb + texture2D(tex, uv + vec2(-ss.x, ss.y)).rgb) * 0.25;
+    }
     float y = dot(c, W);
     // Fine sharpening, on brightness only (no colour fringes, no bits spent on colour noise):
     // the pixel minus the mean of its four neighbours, cored so grain and compression speckle stay

@@ -110,6 +110,13 @@ class Recorder(
     private val alsoRecord: Boolean = false,
     /** Live: the tall 9:16 picture for YouTube Shorts too («Dual stream»), with its own connection. */
     private val shorts: ShortsOut? = null,
+    /**
+     * 7.4, live: the screen is captured at this size for the whole stream (the owner's recording size,
+     * as OBS's base canvas) and the GPU draws the stream's smaller picture from it, so «⏺» records
+     * the full picture. Never changed during the stream: Android does not re-fit a mirrored screen
+     * whose size changes (7.3 did that, and the game came out small in the middle of black).
+     */
+    private val canvas: Pair<Int, Int>? = null,
 ) : SegMuxer.Events {
 
     /** The Shorts picture: its size, bit rate, and where it goes (an [RtmpSink] with the vertical key). */
@@ -192,7 +199,6 @@ class Recorder(
         val e = newEncoder(p) ?: run { events.onAudioProblem("record: encoder refused ${p.codecLabel} ${p.width}x${p.height}@${p.fps}"); return false }
         t.startFile()
         recEnc = e
-        captureAt(f, p.width, p.height, p.dpi)
         f.setRecordOutput(e.surface, p.width, p.height, p.fps)
         recThread = Thread({ recLoop(e, t) }, "rawrec-rec").apply { start() }
         events.onAudioProblem("record: ${p.codecLabel} ${p.width}x${p.height} ${p.fps} fps ${p.bitrate / 1_000_000} Mbps beside the stream")
@@ -211,8 +217,10 @@ class Recorder(
         val src = plan
         val land = src.width >= src.height
         val same = (rp.width >= rp.height) == land
-        val rShort = minOf(rp.width, rp.height)
-        // the stream screen's shape at the owner's short side
+        // the owner's short side, never more than the screen as captured (no upscaling of the capture)
+        val capShort = if (capW > 0) minOf(capW, capH) else minOf(src.width, src.height)
+        val rShort = minOf(minOf(rp.width, rp.height), capShort)
+        // the stream screen's shape at that short side
         val k = rShort.toFloat() / minOf(src.width, src.height)
         fun al(v: Int) = ((v * k).toInt() / 16 * 16).coerceAtLeast(16)
         val w = al(src.width); val h = al(src.height)
@@ -221,32 +229,15 @@ class Recorder(
             sourceWidth = if (same) rp.sourceWidth else rp.sourceHeight, sourceHeight = if (same) rp.sourceHeight else rp.sourceWidth)
     }
 
-    /** 7.3: the screen captured at this size while recording beside the stream (0 = the stream's own size). */
+    /** Live: the size the screen is captured at, when bigger than the stream's picture ([canvas]; 0 = the stream's own size). */
     @Volatile private var capW = 0
     private var capH = 0
     private var capDpi = 0
-
-    /**
-     * While recording beside the stream the screen is captured at the recording's size, when that is
-     * bigger than the stream's picture; the GPU draws the stream's smaller picture from it (its encoder
-     * and size do not change: no new key frame, nothing for the platform to see). Back to the stream's
-     * size when the recording closes (less work, less heat).
-     */
-    private fun captureAt(f: LookFilter, w: Int, h: Int, dpi: Int) = synchronized(switchLock) {
-        val big = w > 0 && h > 0 && w.toLong() * h > plan.width.toLong() * plan.height
-        capW = if (big) w else 0; capH = if (big) h else 0; capDpi = if (big) dpi else 0
-        try {
-            // the buffers first, then the screen (as setOutput's own order)
-            f.setInputSize(capW, capH)
-            if (big) display?.resize(w, h, dpi) else display?.resize(plan.width, plan.height, plan.dpi)
-        } catch (e: Exception) { events.onAudioProblem("record: capture size ${e.message}") }
-    }
 
     private fun stopClean() {
         val e = recEnc ?: return
         recEnc = null
         try { look?.setRecordOutput(null, 0, 0, 0) } catch (_: Throwable) {}
-        if (running && capW > 0) look?.let { captureAt(it, 0, 0, 0) }
         try { e.codec.signalEndOfInputStream() } catch (_: Exception) {}
         try { recThread?.join(2_000) } catch (_: InterruptedException) {}
         recThread = null
@@ -336,6 +327,13 @@ class Recorder(
                     LookFilter(lk, plan.fps).also { f ->
                         try {
                             f.start(plan.width, plan.height); f.setOutput(first.surface, plan.width, plan.height)
+                            canvas?.let { (cw, ch) ->
+                                if (cw.toLong() * ch > plan.width.toLong() * plan.height) {
+                                    capW = cw; capH = ch
+                                    capDpi = (plan.dpi * minOf(cw, ch).toFloat() / minOf(plan.width, plan.height)).toInt().coerceAtLeast(120)
+                                    f.setInputSize(cw, ch)
+                                }
+                            }
                             // live: the stream flows from the first moment, whatever the screen sends
                             if (sinkFactory != null) f.startFlowing()
                             if (shorts != null) startShorts(f, shorts)
@@ -343,6 +341,7 @@ class Recorder(
                     }
                 } catch (t: Throwable) {
                     events.onAudioProblem("look: " + (t.message ?: t.javaClass.simpleName))
+                    capW = 0; capH = 0   // no GPU stage: the screen straight into the encoder at its size
                     null
                 }
                 lookOn = look != null
@@ -365,7 +364,7 @@ class Recorder(
                 keptDisplay.surface = target
                 keptDisplay
             } else projection.createVirtualDisplay(
-                "RawRec", plan.width, plan.height, plan.dpi,
+                "RawRec", if (capW > 0) capW else plan.width, if (capW > 0) capH else plan.height, if (capW > 0) capDpi else plan.dpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 target, displayCallback, Handler(Looper.getMainLooper()),
             ) ?: throw IllegalStateException("virtual display not created")
@@ -902,7 +901,7 @@ class Recorder(
                 route(vd, null, p.width, p.height)
                 // the stream's smaller picture on a narrow link: the screen keeps its size (the GPU scales it
                 // down — finer — and a recording beside the stream keeps the full picture)
-                // 7.3: while recording beside the stream the screen stays at the recording's size
+                // live: the screen stays at the canvas size
                 if (look != null && capW > 0) vd?.resize(capW, capH, capDpi)
                 else if (!(sw.keepDisplay && look != null)) vd?.resize(p.width, p.height, p.dpi)
                 route(vd, next.surface, p.width, p.height)
