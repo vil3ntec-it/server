@@ -210,6 +210,14 @@ fun LoginScreen(
         val token = reply.optString("token")
         if (token.isBlank()) {
           error = "نامِ کاربری یا رمز درست نیست"
+        } else if (reply.optBoolean("mustChangePassword")) {
+          /*
+           *  ⛔ رمزِ یک‌بارمصرفِ `vill3n owner-reset` (پنل ۱.۵۰.۶۲): پنل با آن هیچ
+           *  درِ دیگری را باز نمی‌کند تا رمزِ تازه گذاشته شود، و این برنامه
+           *  صفحهٔ «رمزِ تازه» ندارد — پس به‌جای ورودِ نیمه‌کاره، راه را می‌گوید.
+           */
+          error = "این رمزِ یک‌بارمصرفِ بازیابی است. اول در پنلِ وب (روی شبکهٔ خانه) با همین رمز وارد شوید " +
+            "و رمزِ تازه بگذارید؛ بعد این‌جا با رمزِ تازه وارد شوید."
         } else {
           val fresh = Session(
             serverUrl = address,

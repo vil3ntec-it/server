@@ -15,6 +15,7 @@ import { useApp } from '../app-context';
 import { Tabs } from '../control/ui';
 import Logs from './Logs';
 import Audit from './control/Audit';
+import UnifiedAudit from './control/UnifiedAudit';
 import Monitoring from './Monitoring';
 import MonitoringPage from './control/MonitoringPage';
 import NetworkPage from './NetworkPage';
@@ -42,10 +43,22 @@ function Hub({ tabs }: { tabs: Tab[] }) {
   );
 }
 
-/** لاگِ سرور + دفترِ رخدادها (چه کسی چه کاری کرد) */
+/**
+ * لاگِ سرور + دفترِ رخدادها (چه کسی چه کاری کرد).
+ *
+ * ⛔ (۶-۷) مدیر دفترِ **یکپارچه** را می‌بیند — هر سه دفتر، صفحه‌بندیِ سمتِ سرور،
+ * فقط‌خواندنی (`/api/audit`، فقط admin). بقیه مثلِ پیش فقط دفترِ مدیریتِ پنل.
+ */
 export function LogsHub() {
-  const { t } = useApp();
-  return <Hub tabs={[{ id: 'events', label: t('logs'), body: <Logs /> }, { id: 'audit', label: t('ccAudit'), body: <Audit /> }]} />;
+  const { t, can } = useApp();
+  return (
+    <Hub
+      tabs={[
+        { id: 'events', label: t('logs'), body: <Logs /> },
+        { id: 'audit', label: can('admin') ? t('auditUnified') : t('ccAudit'), body: can('admin') ? <UnifiedAudit /> : <Audit /> },
+      ]}
+    />
+  );
 }
 
 /** نمودارهای زنده + پایش و هشدارها */

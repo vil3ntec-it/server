@@ -29,6 +29,7 @@ import siteServerRoutes from './site-server.js';
 import messengerRoutes from './messenger.js';
 import notifyRoutes, { adminRouter as notifyAdminRoutes } from './notify.js';
 import agentRoutes from './agent.js';
+import auditRoutes from './audit.js';
 import backupsRoutes from './backups.js';
 import systemRoutes from './system.js';
 import { healthPayload, readyPayload } from '../platform/health.js';
@@ -62,6 +63,8 @@ export function createApiV1() {
   router.use('/notify', notifyRoutes);
   router.use('/notify-admin', notifyAdminRoutes);
   router.use('/agent', agentRoutes);
+  //  دفترِ رخدادِ یکپارچه — فقط‌خواندنی، فقط admin، نگهبان داخلِ خودِ روتر
+  router.use('/audit', auditRoutes);
 
   router.use((req, res) => res.status(404).json({ error: 'not_found' }));
   return router;

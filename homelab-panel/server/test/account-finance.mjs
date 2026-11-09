@@ -19,6 +19,13 @@ import path from 'node:path';
 const PANEL = Number(process.env.TEST_PORT || 4956);
 const PUBLIC = PANEL + 1;
 const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'acct-finance-'));
+/*  ⛔ فاز ۱ (۶-۵): نشستِ تازه (ورود یا رمزِ درخواستِ قبلی، ده دقیقه) بی رمز هم از `requireRecentAuth` می‌گذرد؛
+    «بی رمز ⇒ reauth_required» فقط روی نشستِ کهنه معنا دارد — همان روشِ `roles-logs` / `totp` / `security`. */
+const staleAll = async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const d = new DatabaseSync(path.join(tmp, 'data', 'panel.db'));
+  try { d.exec('PRAGMA busy_timeout = 5000'); d.exec('UPDATE sessions SET auth_at = 0'); } finally { d.close(); }
+};
 
 let pass = 0, fail = 0;
 const check = (name, ok, extra = '') => {
@@ -222,6 +229,7 @@ try {
     await bad({ reason: ' a ' }, 'reason_required') && await bad({ confirm: 'yes' }, 'confirm_required')
       && await bad({ idempotencyKey: '' }, 'idempotency_key_required') && await bad({ kind: 'delete' }, 'bad_kind')
       && await bad({ amount: 1.5 }, 'bad_amount'));
+  await staleAll();
   check('⛔ بی رمز ⇒ ‎403 reauth_required‎؛ رمزِ نادرست ⇒ ‎403 reauth_failed‎',
     await bad({ password: undefined }, 'reauth_required', 403) && await bad({ password: 'wrong-pass' }, 'reauth_failed', 403));
   check('⛔ هیچ‌کدام از این‌ها به درِ مالیِ سرورِ حساب نرسید', !seen.slice(mark).some((x) => x.path.startsWith('/api/admin/finance')));

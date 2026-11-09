@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 const PORT = Number(process.env.TEST_PORT || 4801);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -120,10 +121,16 @@ try {
   console.log('\n── آخرین مدیر نباید برود ──');
   const users = (await api('GET', '/api/auth/users')).json.users;
   const adminId = users.find((u) => u.username === 'admin').id;
+  /*
+   *  ⚠️ (۱.۵۰.۶۲، ۶-۲) دو درِ کاربران یک قاعده شدند و «خودت» پیش از «آخرین
+   *  مدیر» سنجیده می‌شود — همان ترتیبی که `/api/panel/v1/users` از اول داشت
+   *  (platform.mjs: `cannot_demote_self`). آخرین مدیر فقط خودش است، پس همان در
+   *  این‌جا بسته می‌شود؛ رفتار عوض نشد، فقط کدِ خطا یکی شد.
+   */
   r = await api('PATCH', `/api/auth/users/${adminId}`, { role: 'viewer' });
-  check('نقشِ آخرین مدیر پایین نمی‌آید', r.status === 400 && r.json.error === 'last_admin', r.text);
+  check('نقشِ آخرین مدیر پایین نمی‌آید', r.status === 400 && r.json.error === 'cannot_demote_self', r.text);
   r = await api('PATCH', `/api/auth/users/${adminId}`, { disabled: true });
-  check('آخرین مدیر از کار نمی‌افتد', r.status === 400 && r.json.error === 'last_admin', r.text);
+  check('آخرین مدیر از کار نمی‌افتد', r.status === 400 && r.json.error === 'cannot_disable_self', r.text);
   r = await api('DELETE', `/api/auth/users/${adminId}`);
   check('مدیر خودش را حذف نمی‌کند', r.status === 400, r.text);
 
@@ -176,6 +183,66 @@ try {
   check('مالک مدیرِ دوم را تنزل می‌دهد', r.status === 200, r.text);
   r = await api('DELETE', `/api/auth/users/${admin2Id}`);
   check('و حذف می‌کند', r.status === 200, r.text);
+
+  /* ═══════════ فاز ۱ ِ ممیزی: یک قاعده برای دو در (۶-۲) و احرازِ دوباره (۶-۵) ═══════════ */
+  const staleAll = () => {
+    const d = new DatabaseSync(path.join(tmp, 'data', 'panel.db'));
+    try { d.exec('PRAGMA busy_timeout = 5000'); d.exec('UPDATE sessions SET auth_at = 0'); } finally { d.close(); }
+  };
+  console.log('\n── «حسابِ من»: مالک بودن از سرور ──');
+  r = await api('GET', '/api/auth/me');
+  check('/me می‌گوید این حساب مالکِ اصلی است', r.json?.owner === true && r.json?.mustChangePassword === false
+    && r.json?.freshUntil > Date.now(), r.text.slice(0, 200));
+  r = await api('GET', '/api/auth/me', undefined, 'operator');
+  check('و برای کارگزار نه', r.json?.owner === false, r.text.slice(0, 200));
+
+  console.log('\n── دو درِ کاربران، یک قاعده ──');
+  r = await api('PUT', `/api/auth/users/${adminId}/password`, { password: 'NoOldPass!2026' });
+  check('رمزِ خودت از درِ وب هم بی رمزِ فعلی عوض نمی‌شود', r.status === 400 && r.json?.error === 'use_change_password', r.text);
+  const badName = [await api('POST', '/api/auth/users', { username: 'bad name!', password: 'GoodPass!123', role: 'viewer' }),
+    await api('POST', '/api/panel/v1/users', { username: 'bad name!', password: 'GoodPass!123', role: 'viewer' })];
+  check('نامِ نامعتبر از هر دو در رد می‌شود', badName.every((x) => x.status === 400), badName.map((x) => x.text).join(' | '));
+  const faName = [await api('POST', '/api/auth/users', { username: 'کارمند.یک', password: 'GoodPass!123', role: 'viewer' }),
+    await api('POST', '/api/panel/v1/users', { username: 'کارمند_دو', password: 'GoodPass!123', role: 'viewer' })];
+  check('نامِ فارسی از هر دو در پذیرفته می‌شود', faName[0].status === 201 && faName[1].status === 200, faName.map((x) => x.text).join(' | '));
+  const dup = [await api('POST', '/api/auth/users', { username: 'operator1', password: 'GoodPass!123', role: 'viewer' }),
+    await api('POST', '/api/panel/v1/users', { username: 'operator1', password: 'GoodPass!123', role: 'viewer' })];
+  check('نامِ تکراری ۴۰۹ از هر دو در', dup.every((x) => x.status === 409), dup.map((x) => x.text).join(' | '));
+  r = await api('GET', '/api/control/audit?q=panel.user.create&limit=50');
+  const created = (r.json?.rows || []).filter((x) => x.action === 'panel.user.create').map((x) => x.entity_id);
+  check('ساختن از هر دو در در دفترِ رخدادها', created.includes('کارمند.یک') && created.includes('کارمند_دو'), JSON.stringify(created));
+  const opId = (await api('GET', '/api/auth/users')).json.users.find((u) => u.username === 'operator1').id;
+  r = await api('PATCH', `/api/auth/users/${opId}`, { role: 'viewer' });
+  r = await api('GET', '/api/control/overview', undefined, 'operator');
+  check('تغییرِ نقش از درِ وب هم نشست‌های او را همان لحظه می‌بندد', r.status === 401, r.text);
+
+  console.log('\n── احرازِ دوباره: نشستِ کهنه کارِ حساس نمی‌کند ──');
+  staleAll();
+  const staleTries = [
+    await api('PATCH', `/api/auth/users/${opId}`, { role: 'operator' }),
+    await api('POST', '/api/auth/users', { username: 'stale-new', password: 'GoodPass!123', role: 'viewer' }),
+    await api('DELETE', `/api/auth/users/${opId}`),
+    await api('PUT', `/api/auth/users/${opId}/password`, { password: 'GoodPass!123' }),
+    await api('PUT', `/api/panel/v1/users/${opId}`, { role: 'operator' }),
+    await api('POST', '/api/panel/v1/users', { username: 'stale-v1', password: 'GoodPass!123', role: 'viewer' }),
+    await api('DELETE', `/api/panel/v1/users/${opId}`),
+    await api('POST', '/api/auth/totp/setup', {}),
+  ];
+  check('⛔ هر هشت درِ حساس با نشستِ کهنه ۴۰۳ reauth_required', staleTries.every((x) => x.status === 403 && x.json?.error === 'reauth_required'),
+    staleTries.map((x) => `${x.status}:${x.json?.error}`).join(' '));
+  r = await api('GET', '/api/auth/users');
+  check('ولی دیدن رمز نمی‌خواهد', r.status === 200, r.text.slice(0, 100));
+  r = await api('POST', '/api/auth/reauth', { password: 'wrong-password-x' });
+  check('رمزِ غلط ۴۰۰ و نشست سرِ جایش', r.status === 400 && r.json?.error === 'wrong_password'
+    && (await api('GET', '/api/auth/me')).status === 200, r.text);
+  r = await api('POST', '/api/auth/reauth', { password: 'ControlCenter!2026' });
+  check('رمزِ درست ⇒ نشست ده دقیقه تازه', r.status === 200 && r.json?.freshUntil > Date.now() + 9 * 60_000, r.text);
+  r = await api('PATCH', `/api/auth/users/${opId}`, { role: 'operator' });
+  check('و همان کار حالا انجام می‌شود', r.status === 200, r.text.slice(0, 120));
+  r = await api('GET', '/api/audit?source=panel&q=panel.reauth&limit=20');
+  const reauthRows = (r.json?.rows || []).filter((x) => x.action === 'panel.reauth');
+  check('هر احرازِ دوباره (موفق و ناموفق) در دفتر', reauthRows.some((x) => x.result === 'ok') && reauthRows.some((x) => x.result === 'failed'),
+    JSON.stringify(reauthRows.map((x) => x.result)));
 
   console.log('\n── حسابِ از کار افتاده ──');
   const viewerId = users.find((u) => u.username === 'viewer1').id;

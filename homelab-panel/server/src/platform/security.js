@@ -148,9 +148,7 @@ export function corsMiddleware(req, res, next) {
 //  هدرهای امن
 //
 //  ارزان، بدونِ ریسک، و جلوگیر از یک خانوادهٔ کاملِ حملاتِ مرورگری.
-//  CSP اینجا نمی‌گذاریم: رابط کاربریِ ساخته‌شده استایلِ درون‌خطی دارد و یک
-//  CSPِ سخت‌گیرانه پنل را سفید می‌کند. CSP جای درستش لبه است، کنارِ همان
-//  جایی که فایل‌های ایستا سرو می‌شوند.
+//  CSPِ پنل جدا در `panelCsp` است و فقط روی پورتِ پنل می‌نشیند (پایین).
 // ---------------------------------------------------------------------------
 export function secureHeaders(req, res, next) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -170,5 +168,47 @@ export function secureHeaders(req, res, next) {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
 
+  next();
+}
+
+// ---------------------------------------------------------------------------
+//  CSP ِ پنل (فاز ۱ ِ ممیزی، ۶-۶ / S8 — ۱۴۰۵/۰۸/۰۹)
+//
+//  ⛔ نشستِ پنل در `localStorage` است؛ پس هر اسکریپتِ تزریق‌شده یعنی توکنِ
+//  مدیر در دستِ دیگری. این سرآیند می‌گوید فقط اسکریپتِ **همین سرور** اجرا شود:
+//  نه `<script>` ِ درون‌خطی، نه `eval`، نه اسکریپت از جای دیگر، و هیچ سایتی
+//  پنل را در قاب نگیرد. باندلِ Vite یک `<script src>` و یک `<link>` دارد و
+//  هیچ اسکریپتِ درون‌خطی‌ای ندارد (سنجهٔ `security.mjs` همین را از
+//  `public/index.html` می‌خواند).
+//
+//  ⚠️ `style-src` عمداً `'unsafe-inline'` دارد: سبکِ درون‌خطی کد اجرا نمی‌کند و
+//  بستنش همان «پنلِ سفید» ِ یادداشتِ قدیمی بود (QR ِ SVG و سبک‌های
+//  محاسبه‌شده). مرزِ امنیتی `script-src` است.
+//  ⚠️ `connect-src` وب‌سوکتِ همان میزبان را صریح می‌گوید — `'self'` در
+//  مرورگرهای کهنه `ws:` را نمی‌پوشاند و Socket.IO خاموش می‌ماند.
+// ---------------------------------------------------------------------------
+const HOST_RE = /^[A-Za-z0-9.\-:[\]]{1,255}$/;
+
+export function panelCspValue(host = '') {
+  const h = HOST_RE.test(String(host)) ? String(host) : '';
+  const ws = h ? ` ws://${h} wss://${h}` : '';
+  return [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "media-src 'self' blob:",
+    "font-src 'self' data:",
+    `connect-src 'self'${ws}`,
+    "worker-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'self'",
+  ].join('; ');
+}
+
+export function panelCsp(req, res, next) {
+  res.setHeader('Content-Security-Policy', panelCspValue(req.headers.host));
   next();
 }

@@ -115,7 +115,10 @@ object Live {
     withContext(Dispatchers.IO) {
       val base = session.serverUrl.trimEnd('/')
       val gate = session.remote?.takeIf { it.usable }
-      val path = "/api/live/stream?token=" + java.net.URLEncoder.encode(session.token ?: "", "UTF-8")
+      //  ⛔ بی `?token=` (پنل ۱.۵۰.۶۲، ۶-۶): پنل توکنِ نشست را دیگر از نشانی
+      //  نمی‌پذیرد — در لاگِ درِ مدیر و پراکسی می‌نشست. سرآیندِ Authorization
+      //  (پایین) از روزِ اول همراهش بود و همان کافی است.
+      val path = "/api/live/stream"
       /*
        *  ⚠️ از بیرونِ خانه همان مسیر از **درِ کلیددار** می‌رود — همان
        *  قاعدهٔ `Api.call`. بی این، جریانِ زنده فقط روی وای‌فایِ خانه کار

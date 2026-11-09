@@ -76,10 +76,11 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
  *  `HttpURLConnection` در کاتلین می‌کند — خواندنِ خطبه‌خطِ خامِ جریان.
  *  اگر شکلِ پیام برای آن قابلِ خواندن نباشد، این‌جا هم نیست.
  */
-function openStream(url) {
+function openStream(url, auth = token) {
   const box = { events: [], closed: false, ctrl: new AbortController() };
   box.ready = (async () => {
-    const res = await fetch(url, { signal: box.ctrl.signal });
+    //  ⛔ نشست فقط از سرآیند (۶-۶) — همان کاری که `Live.kt` می‌کند
+    const res = await fetch(url, { signal: box.ctrl.signal, headers: auth ? { Authorization: `Bearer ${auth}` } : {} });
     if (!res.ok) throw new Error(`stream ${res.status}`);
     box.status = res.status;
     (async () => {
@@ -143,8 +144,13 @@ try {
   check('⛔ روی پورتِ عمومی اصلاً نیست', onPublic.status === 404, String(onPublic.status));
   await onPublic.body?.cancel?.().catch(() => {});
 
+  //  ⛔ توکنِ نشست در نشانی دیگر پذیرفته نیست (۶-۶): در لاگِ پراکسی و درِ مدیر می‌نشست
+  const viaQuery = await fetch(`${BASE}/api/live/stream?token=${token}`);
+  check('⛔ ‎?token=‎ ِ نشانی رد می‌شود (۴۰۱)', viaQuery.status === 401, String(viaQuery.status));
+  await viaQuery.body?.cancel?.().catch(() => {});
+
   console.log('\n── جریانِ زنده باز می‌شود ──');
-  const box = openStream(`${BASE}/api/live/stream?token=${token}`);
+  const box = openStream(`${BASE}/api/live/stream`);
   await box.ready;
   await wait(300);
   check('جریان باز شد و «hello» آمد',

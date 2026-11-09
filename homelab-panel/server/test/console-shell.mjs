@@ -166,6 +166,16 @@ function startPanel(port, pub, extraEnv = {}) {
   return child;
 }
 const server = startPanel(PANEL, PUBLIC);
+/*
+ *  ⛔ فاز ۱ (۶-۵): نشستی که همین حالا رمز زده (ورود، یا رمزِ همراهِ درخواستِ قبلی) ده دقیقه «تازه» است و
+ *  `requireRecentAuth` بی رمز هم راهش می‌دهد. پس «بی رمز ⇒ reauth_required» فقط روی نشستِ **کهنه** معنا دارد —
+ *  همان که ده دقیقه بی رمز بگذرد. همان روشِ `roles-logs` / `totp` / `security`.
+ */
+const { DatabaseSync } = await import('node:sqlite');
+const staleAll = (port = PANEL) => {
+  const d = new DatabaseSync(path.join(tmp, `data-${port}`, 'panel.db'));
+  try { d.exec('PRAGMA busy_timeout = 5000'); d.exec('UPDATE sessions SET auth_at = 0'); } finally { d.close(); }
+};
 const BASE = `http://127.0.0.1:${PANEL}`;
 async function api(method, p, body, token, base = BASE) {
   const res = await fetch(base + p, {
@@ -340,6 +350,7 @@ try {
   n = seen.length;
   const notOwner = await api('POST', '/api/account-admin/console/admins', { ...goodNew, password: 'Shell-admin-1405' }, T.admin2);
   check('⛔ admin ِ غیرِمالک ⇒ ۴۰۳ owner_only و هیچ درخواستی', notOwner.status === 403 && notOwner.json?.error === 'owner_only' && seen.length === n);
+  staleAll();
   const noPw = await api('POST', '/api/account-admin/console/admins', { ...goodNew, password: undefined }, T.admin);
   check('⛔ مالک بی رمزِ پنل ⇒ ۴۰۳ reauth_required', noPw.status === 403 && noPw.json?.error === 'reauth_required');
   const badPw = await api('POST', '/api/account-admin/console/admins', { ...goodNew, password: 'nope-nope' }, T.admin);
@@ -412,10 +423,12 @@ try {
     check(`⛔ ${what} ⇒ ۴۰۰ ${code}`, x.status === 400 && x.json?.error === code, `${x.status} ${JSON.stringify(x.json)}`);
   }
   n = seen.length;
+  staleAll();
   const riskyNoPw = await put({ scope: 'all', key: 'shop.receipt_v2', value: false });
   check('⛔ پرخطر (همهٔ دکان‌ها) بی رمز ⇒ ۴۰۳ reauth_required و بی درخواست', riskyNoPw.status === 403 && riskyNoPw.json?.error === 'reauth_required' && seen.length === n);
   const riskyNoKey = await put({ scope: 'all', key: 'shop.receipt_v2', value: false, password: PW });
   check('⛔ پرخطر بی نوشتنِ نامِ کلید ⇒ ۴۰۰ confirm_key_required', riskyNoKey.status === 400 && riskyNoKey.json?.error === 'confirm_key_required');
+  staleAll();
   const spaced = await put({ scope: ' all ', key: 'image_bank.central', value: true, confirmKey: 'image_bank.central' });
   check('⛔ scope با فاصله پرخطر بودن را دور نمی‌زند ⇒ ۴۰۳ reauth_required', spaced.status === 403 && spaced.json?.error === 'reauth_required', JSON.stringify(spaced));
   check('⛔ و هیچ PUT به سرورِ حساب نرفت', !seen.slice(n).some((c) => c.method === 'PUT'));
@@ -425,6 +438,7 @@ try {
     && JSON.stringify(putUp?.body) === JSON.stringify({ scope: 'all', key: 'shop.receipt_v2', value: false, reason: 'آزمونِ پرچم' }), JSON.stringify(putUp?.body));
   const okShop = await put({ scope: 's1', key: 'shop.receipt_v2', value: true }, T.admin2);
   check('یک دکان، پرچمِ کم‌خطر ⇒ admin ِ دوم بی رمز هم', okShop.status === 200, JSON.stringify(okShop.json));
+  staleAll();
   const riskyKeyShop = await put({ scope: 's1', key: 'shop.orders', value: true }, T.admin2);
   check('⛔ پرچمِ پولی/سفارش حتی برای یک دکان ⇒ رمز', riskyKeyShop.status === 403 && riskyKeyShop.json?.error === 'reauth_required');
   const sec = await put({ scope: 'security', key: 'hashchain.audit', value: true, password: PW, confirmKey: 'hashchain.audit' });

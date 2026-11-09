@@ -22,6 +22,13 @@ import path from 'node:path';
 const PANEL = Number(process.env.TEST_PORT || 4941);
 const PUBLIC = PANEL + 1;
 const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'console-ops-'));
+/*  ⛔ فاز ۱ (۶-۵): نشستِ تازه (ورود یا رمزِ درخواستِ قبلی، ده دقیقه) بی رمز هم از `requireRecentAuth` می‌گذرد؛
+    «بی رمز ⇒ reauth_required» فقط روی نشستِ کهنه معنا دارد — همان روشِ `roles-logs` / `totp` / `security`. */
+const staleAll = async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const d = new DatabaseSync(path.join(tmp, 'data', 'panel.db'));
+  try { d.exec('PRAGMA busy_timeout = 5000'); d.exec('UPDATE sessions SET auth_at = 0'); } finally { d.close(); }
+};
 
 let pass = 0, fail = 0;
 const check = (name, ok, extra = '') => {
@@ -211,9 +218,10 @@ try {
   const sOp = await api('PUT', '/api/account-admin/console/release/stage', good, H(T.op));
   const sAdmin2 = await api('PUT', '/api/account-admin/console/release/stage', { ...good, password: 'Ops-admin-1405' }, H(T.admin2));
   check('viewer/operator ۴۰۳؛ admin ِ غیرِمالک ۴۰۳ owner_only', sView.status === 403 && sOp.status === 403 && sAdmin2.status === 403 && sAdmin2.json?.error === 'owner_only', `${sView.status} ${sOp.status} ${sAdmin2.text}`);
+  await staleAll();
   const sNoPw = await api('PUT', '/api/account-admin/console/release/stage', { ...good, password: undefined }, H(T.owner));
   const sBadPw = await api('PUT', '/api/account-admin/console/release/stage', { ...good, password: 'wrong-pass-1' }, H(T.owner));
-  check('مالک بی رمز ⇒ reauth_required (یا نشستِ تازه)، رمزِ غلط ⇒ reauth_failed', (sNoPw.json?.error === 'reauth_required' || sNoPw.status === 403) && sBadPw.json?.error === 'reauth_failed', `${sNoPw.text} ${sBadPw.text}`);
+  check('مالکِ نشستِ کهنه بی رمز ⇒ ۴۰۳ reauth_required، رمزِ غلط ⇒ reauth_failed', sNoPw.status === 403 && sNoPw.json?.error === 'reauth_required' && sBadPw.json?.error === 'reauth_failed', `${sNoPw.text} ${sBadPw.text}`);
   const sNoR = await api('PUT', '/api/account-admin/console/release/stage', { ...good, reason: '' }, H(T.owner));
   const sNoC = await api('PUT', '/api/account-admin/console/release/stage', { ...good, confirm: false }, H(T.owner));
   const sBadP = await api('PUT', '/api/account-admin/console/release/stage', { ...good, percent: 150 }, H(T.owner));

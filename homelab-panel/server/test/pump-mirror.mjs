@@ -249,9 +249,18 @@ try {
   const adm1 = await call('GET', '/api/pump-updates-admin');
   check('پنل می‌گوید نسخهٔ تازه منتظرِ انتشار است', adm1.body.waiting === true && adm1.body.version === '3.1.243'
     && adm1.body.versions.some((v) => v.version === '3.1.243'), JSON.stringify(adm1.body).slice(0, 300));
-  const test = await fetch(`${BASE}/api/pump-updates-admin/files/3.1.243/PumpYaqobi-Setup.exe?token=${token}`);
+  //  ⛔ پیوندِ دانلودِ رابط دیگر توکنِ نشست در نشانی ندارد (۶-۶): بلیتِ یک‌بارمصرفِ همین مسیر
+  const setupPath = '/api/pump-updates-admin/files/3.1.243/PumpYaqobi-Setup.exe';
+  const viaToken = await fetch(`${BASE}${setupPath}?token=${token}`);
+  check('⛔ ‎?token=‎ ِ نشانی رد می‌شود (۴۰۱)', viaToken.status === 401, viaToken.status);
+  await viaToken.body?.cancel?.().catch(() => {});
+  const tk = await call('POST', '/api/auth/ticket', { path: setupPath });
+  const test = await fetch(`${BASE}${setupPath}?ticket=${encodeURIComponent(tk.body.ticket || '')}`);
   const testBuf = Buffer.from(await test.arrayBuffer());
-  check('مدیر نسخهٔ نگه‌داشته را برای آزمودن دانلود می‌کند', test.status === 200 && testBuf.equals(v3['PumpYaqobi-Setup.exe']), test.status);
+  check('مدیر نسخهٔ نگه‌داشته را با بلیت برای آزمودن دانلود می‌کند', test.status === 200 && testBuf.equals(v3['PumpYaqobi-Setup.exe']), test.status);
+  const reused = await fetch(`${BASE}${setupPath}?ticket=${encodeURIComponent(tk.body.ticket || '')}`);
+  check('⛔ و همان بلیت بارِ دوم کار نمی‌کند', reused.status === 401, reused.status);
+  await reused.body?.cancel?.().catch(() => {});
   const anon = await fetch(`${BASE}/api/pump-updates-admin/files/3.1.243/PumpYaqobi-Setup.exe`);
   check('بی ورود، درِ آزمایشی بسته است', anon.status === 401, anon.status);
   const pubAdm = await fetch(`${PUB}/api/pump-updates-admin`);

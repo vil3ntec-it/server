@@ -1292,6 +1292,9 @@ const fa = {
   searchGoto: 'کجا بروم؟ نامِ بخش را بنویسید…',
   searchNothing: 'چیزی پیدا نشد',
   searchHint: 'Ctrl+K برای باز کردن · ↑↓ برای انتخاب · Enter برای رفتن · Esc برای بستن',
+  /* ------------------------- فاز ۱ ِ پنلِ مرکزی ------------------------- */
+  myAccount: 'حسابِ من',
+  auditUnified: 'دفترِ رخدادِ یکپارچه',
 };
 
 export type Dict = typeof fa;
@@ -2566,6 +2569,8 @@ const en: Dict = {
   searchGoto: 'Where to? Type a section name…',
   searchNothing: 'Nothing found',
   searchHint: 'Ctrl+K to open · ↑↓ to pick · Enter to go · Esc to close',
+  myAccount: 'My account',
+  auditUnified: 'Unified audit log',
 };
 
 const ar: Dict = {
@@ -2823,6 +2828,8 @@ const ar: Dict = {
   autoSource: 'المصدر',
   autoPayload: 'الحمولة',
   autoAt: 'الوقت',
+  myAccount: 'حسابي',
+  auditUnified: 'سجل التدقيق الموحّد',
 };
 
 const ps: Dict = {
@@ -3257,6 +3264,8 @@ const ps: Dict = {
   scPanelPassword: 'ستاسو د پینل پټنوم (بیا تایید)',
   scPrevRevoked: 'پخوانۍ کلي باطله شوه',
   scPrevNotRevoked: 'پخوانۍ کلي باطله نه شوه — د حساب سرور د کليو له لړلیک یې باطله کړئ',
+  myAccount: 'زما حساب',
+  auditUnified: 'د پېښو یوځای کتاب',
 };
 
 export const dictionaries: Record<Lang, Dict> = { fa, en, ar, ps };

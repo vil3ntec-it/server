@@ -9,6 +9,7 @@ import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import express from 'express';
 
 import { config, ensureDirs, SERVER_ROOT } from './config.js';
@@ -35,7 +36,7 @@ import {
   syncTunnelRoutes,
 } from './tunnel.js';
 import { versionInfo, versionLine } from './version.js';
-import { corsMiddleware, isAllowedOrigin, secureHeaders } from './platform/security.js';
+import { corsMiddleware, isAllowedOrigin, secureHeaders, panelCsp, panelCspValue } from './platform/security.js';
 import { createApiV1 } from './routes/v1.js';
 import { createPublicApi, apiIndex, publicHealth } from './api/public.js';
 import { rateLimit as rateLimitCfg } from './platform/rate-limit.js';
@@ -43,6 +44,7 @@ import { handleValidation } from './platform/validate.js';
 import { siteTunnelEvents, stopAllSiteTunnels } from './site-tunnels.js';
 
 import authRoutes from './routes/auth.js';
+import auditRoutes from './routes/audit.js';
 import dashboardRoutes from './routes/dashboard.js';
 import sitesRoutes from './routes/sites.js';
 import domainsRoutes from './routes/domains.js';
@@ -109,9 +111,27 @@ const PUBLIC_DIR = path.join(SERVER_ROOT, 'public');
 const PID_FILE = path.join(config.dataDir, 'panel.pid');
 const CONNECT_PAGE = path.join(SERVER_ROOT, 'src', 'appauth', 'connect.html');
 
+/*
+ *  ⚠️ صفحهٔ اتصال یک `<script>` ِ درون‌خطی دارد؛ CSP ِ پنل آن را با هشِ
+ *  همان اسکریپت اجازه می‌دهد، نه با `'unsafe-inline'` (۶-۶).
+ */
+const CONNECT_SCRIPT_HASHES = (() => {
+  try {
+    const html = fs.readFileSync(CONNECT_PAGE, 'utf8');
+    return [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+      .map((m) => `'sha256-${crypto.createHash('sha256').update(m[1], 'utf8').digest('base64')}'`);
+  } catch {
+    return [];
+  }
+})();
+
 /** صفحهٔ راهنمای اتصال — روی هر دو پورت (پنل و پورتِ عمومی) سرو می‌شود */
 function serveConnectPage(req, res) {
   res.setHeader('Cache-Control', 'no-cache');
+  if (res.getHeader('Content-Security-Policy')) {
+    res.setHeader('Content-Security-Policy',
+      panelCspValue(req.headers.host).replace("script-src 'self'", `script-src 'self' ${CONNECT_SCRIPT_HASHES.join(' ')}`));
+  }
   res.sendFile(CONNECT_PAGE);
 }
 
@@ -177,6 +197,9 @@ app.disable('x-powered-by');
 if (config.trustProxy) app.set('trust proxy', true);
 
 app.use(secureHeaders);
+//  ⛔ CSP فقط روی پورتِ پنل (۶-۶): پورتِ عمومی صفحه‌های سرورِ حساب و سایت‌ها را
+//  هم سرو می‌کند و قاعدهٔ خودشان را دارند.
+app.use(panelCsp);
 
 /* ── CORS ────────────────────────────────────────────────────────────────────
    پیش از این هر سایتی در دنیا می‌توانست با کوکی و توکنِ کاربر به این سرور
@@ -332,7 +355,21 @@ app.get('/health', (req, res) => {
 app.use('/site-updates', siteUpdatesRoutes);
 
 // -------------------------------- API --------------------------------------
+/*
+ *  ⛔ احرازِ دوباره (۶-۵) همان «حدسِ رمز» است، پس سقفِ خودش را **پیش از**
+ *  روترِ `/api/auth` دارد — `authLimiter` ِ پایین پس از روتر سوار است و روی
+ *  مسیرهایی که خودِ روتر جواب می‌دهد نمی‌دود (S13 ِ ممیزی). فقط ناموفق‌ها.
+ */
+const reauthLimiter = rateLimitCfg({
+  name: 'reauth',
+  max: Number(process.env.HLP_REAUTH_RATE_LIMIT ?? 10),
+  windowMs: 15 * 60 * 1000,
+  skipSuccess: true,
+});
+app.use(['/api/auth/reauth', '/api/panel/v1/auth/reauth'], reauthLimiter);
 app.use('/api/auth', authRoutes);
+//  دفترِ رخدادِ یکپارچه (۶-۷) — فقط‌خواندنی، فقط admin؛ نگهبان داخلِ خودِ روتر
+app.use('/api/audit', auditRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/sites', sitesRoutes);
 app.use('/api/domains', domainsRoutes);

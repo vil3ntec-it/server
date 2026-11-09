@@ -8,6 +8,7 @@
 //      vill3n agent on|off    دستیارِ هوشمند
 //      vill3n repair          بررسی و تعمیرِ هر چیزی که خراب یا حذف شده
 //      vill3n logs [n]        لاگِ پنل
+//      vill3n owner-reset     بازیابیِ مالکِ اصلی — فقط روی همین کامپیوتر (پایین)
 //
 //  با پنل از راهِ **کلیدِ محلی** حرف می‌زند (src/local-key.js): فایلی که فقط
 //  روی همین کامپیوتر خوانده می‌شود، پس نه رمزی لازم است نه ورودی. تنظیمات از
@@ -17,8 +18,11 @@
 //  که پنل افتاده یا node_modules خراب است کار کند — دقیقاً وقتی لازم است.
 // ---------------------------------------------------------------------------
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const args = process.argv.slice(2);
 const flag = (name) => {
@@ -29,6 +33,7 @@ const flag = (name) => {
   return v;
 };
 const ROOT = path.resolve(flag('--root') || process.env.VILL3N_ROOT || '/srv/vill3n');
+const DATA_DIR_FLAG = flag('--data-dir');
 const JSON_OUT = args.includes('--json');
 if (JSON_OUT) args.splice(args.indexOf('--json'), 1);
 const cmd = args[0] || 'help';
@@ -300,6 +305,206 @@ function logs() {
   return 0;
 }
 
+/* ------------------------- بازیابیِ مالکِ اصلی -------------------------
+ *
+ *  ⛔ (فاز ۱ ِ ممیزی، ۶-۳ / S6 — ۱۴۰۵/۰۸/۰۹) «راهِ بازیابیِ امنِ مالک» تا
+ *  امروز نبود: رمزِ فراموش‌شده + گم شدنِ اپِ دوعاملی و کدهای بازیابی یعنی
+ *  دست‌کاریِ دستیِ دیتابیس. این دستور همان را امن می‌کند:
+ *
+ *    • ⛔ **هرگز از HTTP نیست** — هیچ مسیری در پنل این کار را نمی‌کند. فقط
+ *      کسی که روی همین کامپیوتر پوسته دارد و `panel.db` را می‌تواند بنویسد.
+ *      (کلیدِ محلی هم نه: آن پنلِ بالا می‌خواهد، و این دستور دقیقاً برای
+ *      وقتی است که هیچ راهی به پنل نمانده.)
+ *    • پیش از هر تغییر یک پشتیبان از دیتابیس (`VACUUM INTO` در `backups/`).
+ *    • رمزِ **یک‌بارمصرف**، یک بار روی همین ترمینال چاپ می‌شود و هیچ‌جا نوشته
+ *      نمی‌شود؛ ورود با آن فقط «رمزِ تازه بگذار» را باز می‌کند
+ *      (`must_change_password` — سرور اجبار می‌کند، نه رابط).
+ *    • دوعاملی خاموش (مگر `--keep-2fa`)، نقشِ مدیر و حسابِ باز برمی‌گردد.
+ *    • **همهٔ** نشست‌های پنل باطل — نشستِ دزدیده‌شده هم با بقیه می‌میرد.
+ *    • یک ردیف در دفترِ رخدادها (`panel.owner.reset`) با کاربرِ سیستم‌عامل.
+ *
+ *  ⚠️ بی هیچ import از کدِ پنل (قاعدهٔ همین فایل): فقط `node:sqlite` و
+ *  `node:crypto`، با همان قالبِ هشِ `src/auth.js` (scrypt N=16384 r=8 p=1).
+ */
+const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16);
+  const key = crypto.scryptSync(String(password), salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p });
+  return `scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$${salt.toString('hex')}$${key.toString('hex')}`;
+}
+
+/** رمزی که آدم بتواند درست تایپ کند: بی ۰/O و ۱/l/I */
+function oneTimePassword() {
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  const bytes = crypto.randomBytes(20);
+  let out = '';
+  for (const b of bytes) out += abc[b % abc.length];
+  return `${out.slice(0, 5)}-${out.slice(5, 10)}-${out.slice(10, 15)}-${out.slice(15, 20)}`;
+}
+
+/** پوشهٔ دادهٔ پنل: --data-dir ← HLP_DATA_DIR / core.env ← پوشهٔ data کنارِ همین کد (نصبِ ویندوز) */
+function panelDbPath() {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  //  ⛔ --data-dir ِ صریح تنها جاست — نه این‌که اگر آن‌جا نبود، دیتابیسِ دیگری بی‌صدا عوض شود
+  const dirs = (DATA_DIR_FLAG ? [DATA_DIR_FLAG] : [process.env.HLP_DATA_DIR, env.HLP_DATA_DIR, DATA_DIR, path.resolve(here, '..', 'data')])
+    .filter(Boolean)
+    .map((d) => path.resolve(d));
+  for (const d of [...new Set(dirs)]) {
+    const f = path.join(d, 'panel.db');
+    if (fs.existsSync(f)) return f;
+  }
+  return null;
+}
+
+async function confirmTty(question) {
+  if (!process.stdin.isTTY) return false;
+  const rl = (await import('node:readline')).createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await new Promise((resolve) => rl.question(question, resolve));
+  rl.close();
+  return String(answer).trim().toLowerCase() === 'yes';
+}
+
+async function ownerReset() {
+  const userFlag = flag('--user');
+  const keep2fa = args.includes('--keep-2fa');
+  const yes = args.includes('--yes');
+  const dbFile = panelDbPath();
+  if (!dbFile) {
+    bad(`panel.db پیدا نشد — پوشهٔ داده را با --data-dir بدهید (پیش‌فرض: ${DATA_DIR})`);
+    return 1;
+  }
+  try {
+    fs.accessSync(dbFile, fs.constants.R_OK | fs.constants.W_OK);
+  } catch {
+    bad(`دسترسیِ نوشتن به ${dbFile} نیست — با کاربرِ سرویس یا «sudo vill3n owner-reset» بزنید`);
+    return 1;
+  }
+  let DatabaseSync;
+  try {
+    ({ DatabaseSync } = await import('node:sqlite'));
+  } catch {
+    bad('این Node ‏node:sqlite ندارد — Node 22.5 یا تازه‌تر لازم است (همان که پنل می‌خواهد)');
+    return 1;
+  }
+
+  if (!JSON_OUT) {
+    console.log('\n  🔑 بازیابیِ مالکِ اصلیِ پنل');
+    info(`دیتابیس: ${dbFile}`);
+    info(`رمز عوض می‌شود${keep2fa ? '' : '، دوعاملی خاموش می‌شود'} و همهٔ نشست‌های پنل (همهٔ کاربران) باطل می‌شوند.`);
+  }
+  if (!yes && !(await confirmTty('  برای ادامه «yes» بنویسید: '))) {
+    warn('کاری نشد (بی --yes و بی تأیید)');
+    return 2;
+  }
+
+  const db = new DatabaseSync(dbFile);
+  const st = fs.statSync(dbFile);
+  const touched = [dbFile];
+  try {
+    db.exec('PRAGMA busy_timeout = 5000');
+    const hasTable = (n) => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(n));
+    if (!hasTable('users')) {
+      bad('جدولِ users نیست — این دیتابیسِ پنل نیست؟');
+      return 1;
+    }
+
+    //  ۱) پشتیبان — پیش از هر تغییری
+    const backups = path.join(path.dirname(dbFile), 'backups');
+    fs.mkdirSync(backups, { recursive: true });
+    const p2 = (n) => String(n).padStart(2, '0');
+    const now = new Date();
+    const stamp = `${now.getFullYear()}${p2(now.getMonth() + 1)}${p2(now.getDate())}-${p2(now.getHours())}${p2(now.getMinutes())}${p2(now.getSeconds())}`;
+    //  دو بازیابی در یک ثانیه نباید روی پشتیبانِ اولی بیفتد (VACUUM INTO روی فایلِ موجود خطا می‌دهد)
+    let backup = path.join(backups, `panel-${stamp}-owner-reset.db`);
+    for (let n = 2; fs.existsSync(backup); n++) backup = path.join(backups, `panel-${stamp}-owner-reset-${n}.db`);
+    db.exec(`VACUUM INTO '${backup.replace(/'/g, "''")}'`);
+    try { fs.chmodSync(backup, 0o600); } catch { /* ویندوز */ }
+    touched.push(backup);
+
+    //  ۲) ستونِ «رمزِ یک‌بارمصرف» — اگر پنلِ تازه هنوز رویش بالا نیامده (همان مهاجرتِ ۰۰۷)
+    const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+    if (!cols.includes('must_change_password')) db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
+    const hasTotp = cols.includes('totp_enabled');
+
+    //  ۳) چه کسی؟ — همان قاعدهٔ `ownerId()`: قدیمی‌ترین مدیرِ فعال
+    let target = null;
+    if (userFlag) {
+      target = db.prepare('SELECT * FROM users WHERE username = ?').get(String(userFlag).trim());
+      if (!target) {
+        bad(`کاربرِ «${userFlag}» نیست`);
+        return 1;
+      }
+    } else {
+      target = db.prepare("SELECT * FROM users WHERE role = 'admin' AND disabled = 0 ORDER BY id LIMIT 1").get()
+        || db.prepare("SELECT * FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").get();
+      if (!target) {
+        bad('هیچ حسابِ مدیری در این پنل نیست — نامِ حساب را با --user بدهید');
+        return 1;
+      }
+    }
+
+    //  ۴) رمزِ یک‌بارمصرف، دوعاملی، نقش و باز بودن؛ همهٔ نشست‌ها؛ ردیفِ دفتر — یک تراکنش
+    const otp = oneTimePassword();
+    const osUser = (() => { try { return os.userInfo().username; } catch { return 'unknown'; } })();
+    const totpWasOn = hasTotp && Boolean(target.totp_enabled);
+    let revoked = 0;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.prepare("UPDATE users SET password_hash = ?, must_change_password = 1, role = 'admin', disabled = 0 WHERE id = ?")
+        .run(hashPassword(otp), target.id);
+      if (hasTotp && !keep2fa) {
+        db.prepare('UPDATE users SET totp_secret = NULL, totp_pending = NULL, totp_enabled = 0, totp_recovery = NULL WHERE id = ?').run(target.id);
+      }
+      revoked = hasTable('sessions') ? Number(db.prepare('DELETE FROM sessions').run().changes) : 0;
+      db.exec(`CREATE TABLE IF NOT EXISTS cc_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, action TEXT NOT NULL, entity TEXT, entity_id TEXT,
+        project_id INTEGER, detail TEXT, result TEXT NOT NULL DEFAULT 'ok', ip TEXT, at INTEGER NOT NULL)`);
+      const detail = {
+        via: 'vill3n owner-reset',
+        host: os.hostname(),
+        totpReset: totpWasOn && !keep2fa,
+        roleRestored: target.role !== 'admin',
+        reenabled: Boolean(target.disabled),
+        sessionsRevoked: revoked,
+        backup: path.basename(backup),
+      };
+      db.prepare('INSERT INTO cc_audit(actor, action, entity, entity_id, detail, result, ip, at) VALUES(?,?,?,?,?,?,?,?)')
+        .run(`cli:${osUser}`, 'panel.owner.reset', 'user', target.username, JSON.stringify(detail), 'ok', 'local-cli', Date.now());
+      if (hasTable('events')) {
+        db.prepare('INSERT INTO events(site_id, level, source, message, created_at) VALUES(NULL, ?, ?, ?, ?)')
+          .run('warn', 'panel', `بازیابیِ مالک از خطِ فرمانِ همین کامپیوتر (${osUser}): رمزِ «${target.username}» یک‌بارمصرف شد${totpWasOn && !keep2fa ? '، دوعاملی خاموش شد' : ''} و ${revoked} نشست باطل شد`, Date.now());
+      }
+      db.exec('COMMIT');
+    } catch (e) {
+      try { db.exec('ROLLBACK'); } catch { /* */ }
+      throw e;
+    }
+
+    if (JSON_OUT) {
+      console.log(JSON.stringify({ ok: true, username: target.username, oneTimePassword: otp, sessionsRevoked: revoked,
+        totpReset: totpWasOn && !keep2fa, backup }, null, 2));
+    } else {
+      ok(`پشتیبان: ${backup}`);
+      ok(`حساب: ${target.username}${target.role !== 'admin' ? ' (نقشِ مدیر برگشت)' : ''}${target.disabled ? ' (دوباره باز شد)' : ''}`);
+      ok(`${revoked} نشست باطل شد${totpWasOn ? (keep2fa ? ' · دوعاملی ماند' : ' · دوعاملی خاموش شد') : ''}`);
+      console.log(`\n  رمزِ یک‌بارمصرف (فقط همین یک بار نشان داده می‌شود):\n\n      ${otp}\n`);
+      info('با همین رمز وارد پنل شوید؛ پنل پیش از هر کاری رمزِ تازه می‌خواهد. بعد دوعاملی را از «حسابِ من» دوباره روشن کنید.');
+      info('اگر «درخواست‌ها زیاد شد» دیدید: ۱۵ دقیقه صبر کنید یا پنل را ری‌استارت کنید (سقفِ حدسِ رمز در حافظهٔ پنل است).');
+      console.log('');
+    }
+    return 0;
+  } finally {
+    try { db.close(); } catch { /* */ }
+    //  ⚠️ اجرا با root نباید فایلی بسازد که سرویسِ پنل نتواند بنویسد
+    if (isRoot()) {
+      for (const f of [...touched, `${dbFile}-wal`, `${dbFile}-shm`]) {
+        try { if (fs.existsSync(f)) fs.chownSync(f, st.uid, st.gid); } catch { /* */ }
+      }
+    }
+  }
+}
+
 function help() {
   console.log(`
   vill3n — سرورِ خانگی
@@ -310,8 +515,11 @@ function help() {
     vill3n agent on|off      دستیارِ هوشمند
     vill3n repair            بررسی و تعمیرِ پوشه‌ها، دسترسی‌ها، ابزارها و سرویس‌ها (sudo برای ابزارها)
     vill3n logs [n]          آخرین n سطرِ لاگِ پنل
+    vill3n owner-reset       بازیابیِ مالکِ اصلی، فقط روی همین کامپیوتر: پشتیبان ← رمزِ یک‌بارمصرف
+                             ← دوعاملی خاموش ← همهٔ نشست‌ها باطل ← ردیفِ دفتر
+                             [--user <نام>] [--keep-2fa] [--yes] [--data-dir <پوشهٔ دادهٔ پنل>]
 
-  گزینه‌ها: --root <مسیر> (پیش‌فرض ${ROOT}) · --json (خروجیِ ماشینی برای status)
+  گزینه‌ها: --root <مسیر> (پیش‌فرض ${ROOT}) · --json (خروجیِ ماشینی برای status و owner-reset)
 `);
   return 0;
 }
@@ -324,6 +532,7 @@ try {
     case 'update': code = await update(); break;
     case 'repair': code = await repair(); break;
     case 'logs': code = logs(); break;
+    case 'owner-reset': code = await ownerReset(); break;
     case 'agent':
       if (!['on', 'off'].includes(args[1])) { help(); code = 2; break; }
       code = await agent(args[1] === 'on');
