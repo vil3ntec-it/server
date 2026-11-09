@@ -94,4 +94,7 @@ class PreviewRender {
 
     @Test fun phone() { assumeTrue(dir != null); render("w411dp-h914dp-xxhdpi", "phone") }
     @Test fun tablet() { assumeTrue(dir != null); render("sw800dp-w1280dp-h800dp-land-mdpi", "tablet") }
+    /** 6.0: the dark look too (the default render is the light one by day). */
+    @Test fun phoneDark() { assumeTrue(dir != null); render("w411dp-h914dp-xxhdpi-night", "phone-dark") }
+    @Test fun tabletDark() { assumeTrue(dir != null); render("sw800dp-w1280dp-h800dp-land-mdpi-night", "tablet-dark") }
 }

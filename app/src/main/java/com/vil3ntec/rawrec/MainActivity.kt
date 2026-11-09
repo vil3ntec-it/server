@@ -871,9 +871,9 @@ class MainActivity : Activity() {
             content.removeAllViews()
             (v.parent as? ViewGroup)?.removeView(v)
             content.addView(v, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-            // 6.0: a short fade-and-rise into place (light on the GPU: one view, 220 ms)
-            v.alpha = 0f; v.translationY = dpf(14f)
-            v.animate().alpha(1f).translationY(0f).setDuration(220).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
+            // 6.0: a short rise into place (light on the GPU: one view, 200 ms; never transparent, so a frame drawn early is whole)
+            v.translationY = dpf(16f)
+            v.animate().translationY(0f).setDuration(200).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
         }
     }
 

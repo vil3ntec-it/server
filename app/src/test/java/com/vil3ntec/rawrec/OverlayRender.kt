@@ -230,7 +230,7 @@ class OverlayRender {
         val scroll = allViews(a.window.decorView).filterIsInstance<android.widget.ScrollView>().first { it.isShown && it.getChildAt(0)?.height ?: 0 > 0 }
         val content = scroll.getChildAt(0)
         val lb = Bitmap.createBitmap(content.width, content.height, Bitmap.Config.ARGB_8888)
-        Canvas(lb).apply { drawColor(Color.rgb(14, 15, 18)); content.draw(this) }
+        Canvas(lb).apply { drawColor(app.getColor(R.color.bg)); content.draw(this) }
         File(dir, "live-page-$tag.png").outputStream().use { lb.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
