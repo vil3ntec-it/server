@@ -1,0 +1,31 @@
+--------- beginning of main
+11-09 23:01:10.358  3413  3413 I RAWREC_E2E: projection result -1
+11-09 23:05:30.945  3413  3413 I RAWREC_E2E: 2026-11-09 23:01:12  start: c2.android.avc.encoder 1152x720@60 7 Mbps level 3.2 • Android 34
+11-09 23:05:30.945  3413  3413 I RAWREC_E2E: 2026-11-09 23:01:13  screen sources: metrics 2560x1600, rotation 0, display context 2560x1600, config 2
+11-09 23:05:30.945  3413  3413 I RAWREC_E2E: 2026-11-09 23:01:13  captured app on screen
+11-09 23:05:30.945  3413  3413 I RAWREC_E2E: 2026-11-09 23:01:15  rtmp: CONNECTING
+11-09 23:05:30.945  3413  3413 I RAWREC_E2E: 2026-11-09 23:01:15  rtmp: LIVE via=direct 10.0.2.2
+11-09 23:05:30.945  3413  3413 I RAWREC_E2E: 2026-11-09 23:01:15  rate: sent 0 kbps, target 6000, behind 0 ms, lost 0 frames, picture 1152×720 at 60
+11-09 23:05:30.950  3413  3413 I RAWREC_E2E: 2026-11-09 23:01:17  chat panel: whole screen captured
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:01:17  mirror: on the screen, 1 pictures
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:01:19  screen: 23 pictures, 23 drawn
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:01:19  mirror: on the screen, 1 pictures
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:01:32  screen: 45 pictures, 44 drawn
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:01:32  mirror: on the screen, 1 pictures
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:01:32  link: 1000 of 7000 kbps, 30 fps
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:01:44  screen: 65 pictures, 64 drawn
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:01:44  mirror: on the screen, 1 pictures
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:01:46  rate: sent 387 kbps, target 1000, behind 58 ms, lost 0 frames, picture 1152×720 at 60
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:02:16  rate: sent 181 kbps, target 1000, behind 0 ms, lost 0 frames, picture 1152×720 at 60
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:02:46  rate: sent 318 kbps, target 1000, behind 0 ms, lost 0 frames, picture 1152×720 at 60
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:03:17  rate: sent 398 kbps, target 1000, behind 0 ms, lost 0 frames, picture 1152×720 at 60
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:03:47  rate: sent 293 kbps, target 1000, behind 0 ms, lost 0 frames, picture 1152×720 at 60
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:04:18  rate: sent 313 kbps, target 1000, behind 0 ms, lost 0 frames, picture 1152×720 at 60
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:04:48  rate: sent 592 kbps, target 1000, behind 4 ms, lost 0 frames, picture 1152×720 at 60
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:05:00  record: started beside the stream
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:05:01  notice: record: H.264 1712x1072 33 fps 12 Mbps beside the stream
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:05:19  rate: sent 404 kbps, target 1000, behind 0 ms, lost 0 frames, picture 1152×720 at 60
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:05:21  record: closed and kept
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:05:24  stop: APP
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 2026-11-09 23:05:27  rtmp: ENDED via=direct 10.0.2.2
+11-09 23:05:30.951  3413  3413 I RAWREC_E2E: 
