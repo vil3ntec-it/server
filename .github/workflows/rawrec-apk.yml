@@ -70,10 +70,6 @@ jobs:
           git add -f out/previews-7.3 out/tests-7.3.txt out/shaders-7.3.txt || true
           git commit -m "APK (unsigned) — temporary"
           git push
-  probe:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo probe job runs
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -107,6 +103,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Emulator (Android 14, x86_64) from the runner's own SDK
+        timeout-minutes: 20
         run: |
           SDK=$ANDROID_HOME; SM=$SDK/cmdline-tools/latest/bin/sdkmanager; AM=$SDK/cmdline-tools/latest/bin/avdmanager
           yes | $SM --licenses > /dev/null 2>&1 || true
@@ -114,9 +111,9 @@ jobs:
           echo no | $AM create avd -n e2e -k "system-images;android-34;google_apis;x86_64" -d pixel_6 --force
           nohup $SDK/emulator/emulator -avd e2e -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -accel on > /tmp/emu.log 2>&1 &
           echo "$SDK/platform-tools" >> "$GITHUB_PATH"
-          $SDK/platform-tools/adb wait-for-device
+          timeout 600 $SDK/platform-tools/adb wait-for-device || { echo "emulator never came up"; tail -60 /tmp/emu.log; ls -la /dev/kvm; exit 1; }
           for i in $(seq 1 120); do [ "$($SDK/platform-tools/adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] && break; sleep 5; done
-          $SDK/platform-tools/adb shell getprop sys.boot_completed
+          [ "$($SDK/platform-tools/adb shell getprop sys.boot_completed | tr -d '\r')" = "1" ] || { echo "boot not completed"; tail -60 /tmp/emu.log; exit 1; }
           for k in window_animation_scale transition_animation_scale animator_duration_scale; do $SDK/platform-tools/adb shell settings put global $k 0; done
           $SDK/platform-tools/adb shell input keyevent 82
       - name: The real app streams, a viewer decodes it
