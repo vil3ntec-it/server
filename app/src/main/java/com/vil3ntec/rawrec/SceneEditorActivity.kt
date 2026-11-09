@@ -84,6 +84,19 @@ class SceneEditorActivity : Activity() {
     private lateinit var sceneRow: LinearLayout
     private lateinit var bgRow: LinearLayout
     private lateinit var body: LinearLayout
+    private lateinit var panel: LinearLayout
+    private lateinit var fullExit: View
+    /** The stage over the whole screen (no panel, no margin): exactly this screen, as on the stream. */
+    internal var full = false; private set
+
+    private fun setFull(on: Boolean) {
+        full = on
+        panel.visibility = if (on) View.GONE else View.VISIBLE
+        fullExit.visibility = if (on) View.VISIBLE else View.GONE
+        fullExit.bringToFront()
+        stage.requestLayout()
+        stage.post { stage.invalidate() }
+    }
     private lateinit var tabLayers: TextView
     private lateinit var tabProps: TextView
     private var tab = 0
@@ -97,7 +110,7 @@ class SceneEditorActivity : Activity() {
         root = FrameLayout(this).apply { setBackgroundColor(col(R.color.bg)) }
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         stage = Stage(this)
-        val panel = LinearLayout(this).apply {
+        panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(col(R.color.surface))
             setPadding(dp(12), dp(8), dp(12), 0)
@@ -111,7 +124,11 @@ class SceneEditorActivity : Activity() {
         head.addView(pill(getString(R.string.lay_done), col(R.color.accent_fill), tag = "sc:done") { finish() })
         head.addView(label(getString(R.string.sc_title), 16f, bold = true), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(8) })
         head.addView(pill("↶", tag = "sc:undo") { undoLast() })
+        // the stage over the whole screen: this very screen's size, what is placed is where it is on the stream
+        head.addView(pill("⛶", tag = "sc:full") { setFull(true) })
         panel.addView(head)
+        fullExit = pill(getString(R.string.sc_full_exit), col(R.color.accent_fill), tag = "sc:full:exit") { setFull(false) }.apply { visibility = View.GONE }
+        root.addView(fullExit, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply { setMargins(dp(12), dp(12), dp(12), dp(12)) })
 
         sceneRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         panel.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(sceneRow) }, lpw(top = 10))
@@ -659,7 +676,7 @@ class SceneEditorActivity : Activity() {
         private val aspect = Scenes.aspect(ctx)
 
         override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
-            val pad = 12 * d
+            val pad = if (full) 0f else 12 * d
             var fw = w - 2 * pad
             var fh = fw / aspect
             if (fh > h - 2 * pad) { fh = h - 2 * pad; fw = fh * aspect }

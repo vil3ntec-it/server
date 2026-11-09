@@ -54,6 +54,13 @@ object LiveExtras {
      * unlisted instead: only those with the link) and never «for kids».
      */
     fun chatOpen(ctx: Context) = SafePrefs.bool(prefs(ctx), "yt_chat_open", true)
+
+    /**
+     * When the live goes live on YouTube: true (default) the moment the picture arrives — the app
+     * puts it live itself, without waiting for YouTube; false: the owner presses «Go live» in Studio.
+     */
+    fun goLiveNow(ctx: Context) = SafePrefs.bool(prefs(ctx), "yt_go_live_now", true)
+    fun setGoLiveNow(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("yt_go_live_now", on).apply()
     fun setChatOpen(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("yt_chat_open", on).apply()
     /** What is asked of YouTube: the owner's choice, or "" = left as it is. */
     fun ytPrivacyToSet(ctx: Context): String {

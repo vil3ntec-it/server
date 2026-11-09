@@ -235,14 +235,14 @@ class YouTubeApi(
      * A new live on the channel, bound to stream [streamId] (the one our key goes to): it goes live by
      * itself as soon as the picture arrives (100 units). Returns its id.
      */
-    fun createBroadcast(streamId: String, title: String, description: String, privacy: String, kids: Boolean?): String {
+    fun createBroadcast(streamId: String, title: String, description: String, privacy: String, kids: Boolean?, autoStart: Boolean = true): String {
         val now = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(java.util.Date())
         val st = JSONObject().put("privacyStatus", privacy)
         if (kids != null) st.put("selfDeclaredMadeForKids", kids)
         val body = JSONObject()
             .put("snippet", JSONObject().put("title", title.replace("<", "").replace(">", "").take(100)).put("description", description.take(5000)).put("scheduledStartTime", now))
             .put("status", st)
-            .put("contentDetails", JSONObject().put("enableAutoStart", true).put("enableAutoStop", true).put("enableDvr", true)
+            .put("contentDetails", JSONObject().put("enableAutoStart", autoStart).put("enableAutoStop", true).put("enableDvr", true)
                 // normal latency: the viewers' players keep a few seconds in hand, so a slow patch is never a stall
                 .put("latencyPreference", "normal")
                 .put("monitorStream", JSONObject().put("enableMonitorStream", false)))
@@ -269,6 +269,18 @@ class YouTubeApi(
     }
 
     fun delete(messageId: String) { call("DELETE", "liveChat/messages?id=${enc(messageId)}", null, 20) }
+
+    /**
+     * A live that never went out: taken off the channel (50 units) — only while YouTube still has it
+     * waiting (created / ready / testing); one that went live, even for a moment, is never touched.
+     */
+    fun deleteIfNeverLive(id: String): Boolean {
+        val st = get("liveBroadcasts?part=status&id=${enc(id)}").optJSONArray("items")?.optJSONObject(0)
+            ?.optJSONObject("status")?.optString("lifeCycleStatus") ?: return false
+        if (st !in listOf("created", "ready", "testStarting", "testing")) return false
+        call("DELETE", "liveBroadcasts?id=${enc(id)}", null, 50)
+        return true
+    }
 
     /** [seconds] 0 = permanent ban. */
     fun ban(chatId: String, channelId: String, seconds: Int) {

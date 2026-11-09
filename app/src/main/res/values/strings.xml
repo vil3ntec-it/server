@@ -1111,4 +1111,10 @@
     <string name="live_auto_desc">خودکار: کیفیت همیشه به اندازهٔ اینترنت (یا VPN) می‌ماند، پس پخش هرگز گیر نمی‌کند و قطع نمی‌شود؛ تا ۵ ثانیه تأخیر. دستی: دقیقاً همان بیت‌ریتِ پایین و هیچ تغییری؛ فقط وقتی روان است که آپلودِ تو آن را بکشد.</string>
     <string name="live_auto_on">خودکار (پیشنهادی)</string>
     <string name="live_auto_off">دستی</string>
+    <string name="yt_go_live_title">زنده شدن در یوتیوب</string>
+    <string name="yt_go_live_desc">«همان لحظه»: با رسیدنِ تصویر، برنامه خودش پخش را زنده می‌کند (نه «Upcoming»)؛ پخشی که برنامه ساخته و زنده نشده در پایان از کانال برداشته می‌شود. «خودم در استودیو»: پخش آماده می‌ماند تا در YouTube Studio دکمهٔ Go live را بزنی.</string>
+    <string name="yt_go_live_now">همان لحظه</string>
+    <string name="yt_go_live_mine">خودم در استودیو</string>
+    <string name="yt_go_live_studio">پخش در یوتیوب آماده است؛ در YouTube Studio دکمهٔ Go live را بزن (یا در برنامه «زنده شدن در یوتیوب» را «همان لحظه» کن).</string>
+    <string name="sc_full_exit">✕ خروج از تمام‌صفحه</string>
 </resources>

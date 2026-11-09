@@ -1737,6 +1737,10 @@ class MainActivity : Activity() {
         ytRow("yt_privacy", R.string.yt_privacy_title, R.string.yt_privacy_desc, listOf("" to R.string.yt_keep,
             "public" to R.string.yt_p_public, "unlisted" to R.string.yt_p_unlisted, "private" to R.string.yt_p_private)) { renderPrivNote() }
         yc.addView(privNote, lp(4))
+        // going live: at once (the app puts it live) or by the owner in Studio
+        rows["yt_go_live"] = Row(yc, str(R.string.yt_go_live_title), str(R.string.yt_go_live_desc),
+            listOf(str(R.string.yt_go_live_now), str(R.string.yt_go_live_mine)), top = 14) { i -> LiveExtras.setGoLiveNow(ctx, i == 0) }
+            .apply { select(if (LiveExtras.goLiveNow(ctx)) 0 else 1) }
         // the live chat: YouTube closes it for a private live and one «for kids»; this keeps it open
         toggles["yt_chat_open"] = Toggle(yc, "tog:yt_chat_open", R.drawable.ic_chat, str(R.string.yt_chat_open_title), str(R.string.yt_chat_open_desc), top = 12) { on ->
             LiveExtras.setChatOpen(ctx, on); toggles["yt_chat_open"]?.set(on); renderPrivNote()

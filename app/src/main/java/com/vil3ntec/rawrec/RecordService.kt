@@ -778,6 +778,7 @@ class RecordService : Service(), Recorder.Events {
             if (stopping || live == null) return
             val f = recorder?.filter ?: return
             RecLog.add(this@RecordService, "screen: ${f.screenFrames} pictures, ${f.drawn} drawn" + (f.drawError?.let { ", error: $it" } ?: ""))
+            mirror?.let { mm -> RecLog.add(this@RecordService, "mirror: " + if (mm.shown) "on the screen, ${mm.count} pictures" else "not on the screen: ${mm.problem}") }
             if (f.screenFrames == 0L && !liveCovered) {
                 val t = getString(R.string.live_no_screen)
                 addNotice("screen", t)
@@ -893,7 +894,7 @@ class RecordService : Service(), Recorder.Events {
         // how the connection went this time (the way, each failure and its reason; never the key)
         val log = RecLog.text(this).lines()
         val from = log.indexOfLast { it.contains("  start: ") }.coerceAtLeast(0)
-        val net = log.drop(from).filter { it.contains("  rtmp: ") }.takeLast(8)
+        val net = log.drop(from).filter { it.contains("  rtmp: ") || it.contains("  mirror: ") || it.contains("  chat panel: ") }.takeLast(10)
         if (net.isNotEmpty()) sb.append("\n\n").append(net.joinToString("\n"))
         extrasReport?.let { sb.append('\n').append(it) }
         return sb.toString().trimEnd()
@@ -974,6 +975,7 @@ class RecordService : Service(), Recorder.Events {
                 hud?.show()
                 hud?.setPrivate(!captured)
                 mirror?.show()
+                RecLog.add(this, "mirror: " + (mirror?.let { mm -> if (mm.shown) "on the screen, ${mm.count} pictures" else "not on the screen: ${mm.problem}" } ?: "none"))
                 // the whole screen in the picture: what the phone shows is not drawn a second time
                 scenes?.let { sr ->
                     sr.mirrorOn = mirror?.shown == true

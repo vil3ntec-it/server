@@ -95,9 +95,30 @@ class OwnerMirror(private val ctx: Context) {
         title = "RawRec mirror"
     }
 
+    /** Why the view could not go on the screen (for the report); null = it is there. */
+    @Volatile var problem: String? = null; private set
+
+    /**
+     * On the screen. Some phones refuse a full-screen window with these flags (4.3: the owner saw
+     * nothing of the layout on a tablet, and the refusal was swallowed): then plainer flags are tried,
+     * and what was refused is kept for the report.
+     */
     fun show() {
         if (shown) return
-        try { OverlayWindows.add(wm, view, lp); shown = true } catch (_: Exception) { shown = false }
+        try { OverlayWindows.add(wm, view, lp); shown = true; problem = null } catch (e: Exception) {
+            problem = (e.javaClass.simpleName + ": " + (e.message ?: "")).take(160)
+            val plain = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                PixelFormat.TRANSLUCENT,
+            ).apply { gravity = Gravity.TOP or Gravity.LEFT; alpha = lp.alpha; title = lp.title }
+            try { OverlayWindows.add(wm, view, plain); shown = true } catch (e2: Exception) {
+                shown = false
+                problem += " / " + (e2.javaClass.simpleName + ": " + (e2.message ?: "")).take(160)
+            }
+        }
+        if (shown) view.post { view.invalidate() }
     }
 
     fun hide() {
@@ -106,10 +127,14 @@ class OwnerMirror(private val ctx: Context) {
         shown = false
     }
 
+    /** What is drawn now (any thread: drawn on the main one). */
     fun set(list: List<Item>) {
         items = list
-        if (shown) view.invalidate()
+        if (shown) view.postInvalidate()
     }
+
+    /** How many pictures it holds now (the report). */
+    val count: Int get() = items.size
 
     internal val viewForTests: View get() = view
 

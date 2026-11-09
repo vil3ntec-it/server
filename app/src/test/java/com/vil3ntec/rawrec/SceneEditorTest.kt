@@ -232,6 +232,17 @@ class SceneEditorTest {
         assertEquals("the picture is as wide as the stream", 1000f / a, p.height.toFloat(), 1.5f)
     }
 
+    /** 4.3 (the owner, a big tablet): the stage over the whole screen to place things exactly as on the stream. */
+    @Test fun theStageGoesFullScreen() {
+        val ed = open()
+        assertFalse(ed.full)
+        tag(ed, "sc:full").performClick(); idle()
+        assertTrue("the stage over the whole screen", ed.full)
+        assertTrue("a way back", tag(ed, "sc:full:exit").visibility == View.VISIBLE)
+        tag(ed, "sc:full:exit").performClick(); idle()
+        assertFalse(ed.full)
+    }
+
     @Test fun onMyScreenTooIsTheOwnersChoice() {
         val ed = open()
         val l = add(ed, R.string.sc_k_text)
