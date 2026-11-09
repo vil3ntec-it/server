@@ -14,10 +14,13 @@ import java.util.concurrent.atomic.AtomicBoolean
  * platform over RTMP/RTMPS ([RtmpPublisher]).
  *
  * - **Automatic quality:** when the internet can't keep up (frames waiting more than a second) the
- *   video bit rate goes down at once; when it keeps up again for a while it goes back up to the
- *   chosen quality. Frames that are too late are dropped (a live stream must stay live, not lag).
+ *   video bit rate goes down at once — as far as 250 kbps — and when it keeps up again for a while
+ *   it goes back up to the chosen quality. Nothing is dropped for a slow patch: the picture arrives
+ *   later, whole (5.2; before, frames 6 s late were thrown away and the viewers saw the stream jump).
  * - **Reconnect:** a dropped connection is tried again (1, 2, 4 … 15 s) for up to 3 minutes; the
- *   stream continues from the next key frame.
+ *   frames made meanwhile are kept and go out from the first key frame among them, so the viewers
+ *   see a pause, not a jump. Only after [RateControl.HARD_US] behind (a real long break), or with
+ *   [MAX_QUEUE_BYTES] waiting, is the oldest let go, back to about [RateControl.BACK_US].
  */
 class RtmpSink(
     private val url: String,
@@ -26,6 +29,8 @@ class RtmpSink(
     private val listener: Listener,
     /** Automatic quality ([RateControl]); false = the owner's rate exactly, never changed. */
     private val adaptive: Boolean = true,
+    /** Where the automatic rate starts (bits a second; 0 = the controller's own start): what the link carried last time. */
+    private val startBps: Int = 0,
 ) : MediaSink {
 
     enum class State { CONNECTING, LIVE, RECONNECTING, FAILED, ENDED }
@@ -211,8 +216,8 @@ class RtmpSink(
                         }
                         state = if (sent == 0L) State.CONNECTING else State.RECONNECTING
                         status()
-                        // Nothing piles up while away: the stream resumes at a fresh key frame.
-                        dropped += queue.count { it.video }; queue.clear()
+                        // what was made while away is kept (it goes out from a key frame), within reason
+                        trimToKey(); bound()
                         Thread.sleep(backoffMs)
                         backoffMs = (backoffMs * 2).coerceAtMost(15_000L)
                         continue
@@ -227,6 +232,7 @@ class RtmpSink(
                     lastSent = p.bytesSent
                     lastStat = now
                     sent = sentBefore + p.bytesSent
+                    if (bound()) { needKey = true; keyWanted.set(true) }
                     status()
                 }
                 if (k == null) { try { p.flush() } catch (e: IOException) { lost(e) }; continue }
@@ -236,9 +242,9 @@ class RtmpSink(
                 val lagUs = lastEnqueuedPts - k.pts
                 when (if (adaptive) rate.step(now, lagUs, k.video) else manual(lagUs, k.video)) {
                     RateControl.Act.DROP -> {
-                        // far behind all the same: drop what is waiting, a key frame next (the stream stays live)
-                        dropped += 1 + queue.count { it.video }
-                        queue.removeIf { it.video }
+                        // a real long break: the oldest goes, back to a key frame a while behind the newest
+                        if (k.video) dropped++
+                        cutBackTo(RateControl.BACK_US)
                         needKey = true; keyWanted.set(true)
                         if (adaptive) apply(rate.target)
                         continue
@@ -290,18 +296,56 @@ class RtmpSink(
         state = State.RECONNECTING
         needKey = true
         keyWanted.set(true)
+        // when it is back, the frames made meanwhile go out first: at half the rate, so they drain
+        if (adaptive) { rate.lost(System.nanoTime()); apply(rate.target) }
         status()
     }
 
-    private val rate = RateControl(maxBitrate)
+    /**
+     * After a break: the frames made meanwhile stay and go out from the first key frame among them
+     * (at most one key-frame interval is lost, never the backlog).
+     */
+    private fun trimToKey() {
+        while (true) {
+            val h = queue.peekFirst() ?: return
+            if (h.video && h.key) return
+            queue.pollFirst(); if (h.video) dropped++
+        }
+    }
+
+    /** Far too much waiting (a long break): the oldest goes, back to a key frame about [keepUs] behind the newest. */
+    private fun cutBackTo(keepUs: Long) {
+        while (true) {
+            val h = queue.peekFirst() ?: return
+            if (h.video && h.key && lastEnqueuedPts - h.pts <= keepUs) return
+            queue.pollFirst(); if (h.video) dropped++
+        }
+    }
+
+    /** The waiting frames never take more than [MAX_QUEUE_BYTES] of memory; true when some had to go. */
+    private fun bound(): Boolean {
+        if (queue.size < 800) return false
+        var bytes = 0L
+        for (p in queue) bytes += p.data.size
+        if (bytes <= MAX_QUEUE_BYTES) return false
+        cutBackTo(RateControl.BACK_US)
+        return true
+    }
+
+    private val rate = RateControl(maxBitrate, startBps = startBps)
     private var started = false
 
     /**
-     * Manual quality: the owner's rate, never lowered. What waits is dropped only when 10 s behind
-     * (the internet carries far less than the rate chosen) — the stream never runs out of memory.
+     * Manual quality: the owner's rate, never lowered. What waits is let go only after a real long
+     * break ([RateControl.HARD_US] behind) — the stream never runs out of memory, and never jumps for less.
      */
     private fun manual(lagUs: Long, video: Boolean): RateControl.Act =
-        if (video && lagUs > 10_000_000L) RateControl.Act.DROP else RateControl.Act.NONE
+        if (video && lagUs > RateControl.HARD_US) RateControl.Act.DROP else RateControl.Act.NONE
+
+    companion object {
+        /** The most the waiting frames may hold (64 MB: a minute at 8 Mbps). */
+        const val MAX_QUEUE_BYTES = 64L * 1024 * 1024
+    }
 
     private fun apply(bps: Int) {
         if (bps == target) return
@@ -322,9 +366,13 @@ class RtmpSink(
  *  - **up slowly and never straight back into the wall:** after 10 s without delay, +10 % at most
  *    every 8 s, and for a minute after the connection could not keep up, not above 90 % of the rate
  *    it could not carry;
- *  - frames are dropped only when 6 s behind all the same (a real break in the internet).
+ *  - 5.2: **nothing is dropped for a slow patch, however slow** — the rate goes as far down as
+ *    250 kbps, and when more than 5 s behind to half of what the link carries, so what waits drains;
+ *    the oldest frames are let go only 45 s behind (a real long break). The owner: «every second
+ *    must be shown; a delay is fine, a jump is not».
+ *  - the start is where the link was last time ([startBps]), so a narrow link is not hit at 6 Mbps.
  */
-class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(1_000_000, maxBps)) {
+class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLOOR_BPS, maxBps), startBps: Int = 0) {
     enum class Act { NONE, SET, DROP }
 
     /**
@@ -332,7 +380,7 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(1_0
      * (+20 % every 3 s) — a weak link is found before a pile of frames made at the full rate cuts the
      * stream; a good one reaches the chosen rate within about 15 s.
      */
-    var target = minOf(maxBps, maxOf(floorBps, START_BPS)); private set
+    var target = minOf(maxBps, maxOf(floorBps, if (startBps > 0) startBps else START_BPS)); private set
     private var lastAdjust = 0L
     private var calmSince = 0L
     /** How far behind it was when last lowered (0 = caught up since). */
@@ -357,7 +405,7 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(1_0
         // the first 15 s: the chosen rate may be far above what the link carries — found out sooner,
         // before the frames made meanwhile pile up into a cut
         val slowUs = if (nowNs - firstNs < 15_000_000_000L) 700_000L else SLOW_US
-        if (video && lagUs > DROP_US) {
+        if (video && lagUs > HARD_US) {
             behind(nowNs)
             set(minOf((target * 0.6).toInt(), link.takeIf { it > 0 }?.let { (it * 0.8).toInt() } ?: Int.MAX_VALUE))
             lastAdjust = nowNs; calmSince = 0L
@@ -368,9 +416,10 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(1_0
             // once lowered (to what the link carried), the frames made before still have to go out and the
             // delay grows a little longer: lowered again only after 4 s, or sooner when 3 s behind
             val starting = nowNs - firstNs < 15_000_000_000L
+            val far = lagUs > 5_000_000L
             val wait = when {
                 lagAtAdjust == 0L -> 0L
-                blind || starting -> 1_000_000_000L    // lowered before the link was known: look again soon
+                far || blind || starting -> 1_000_000_000L    // far behind, or lowered before the link was known: look again soon
                 lagUs > 3_000_000L -> 1_500_000_000L
                 else -> 4_000_000_000L
             }
@@ -379,9 +428,15 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(1_0
             // already below what the link carries: the delay is only frames made before going out —
             // lowered further only when 3 s behind, and never below 70 % of the link (no needless blocks)
             if (l > 0 && target <= l * 0.85 && lagUs <= 3_000_000L) return Act.NONE
+            // far behind and already at half the link: what waits is draining; nothing more to do
+            if (far && l > 0 && target <= l * 0.5) return Act.NONE
             behind(nowNs)
             lastAdjust = nowNs; lagAtAdjust = lagUs; blind = l <= 0
-            val want = if (l > 0) maxOf(minOf((target * 0.75).toInt(), (l * 0.85).toInt()), (l * 0.7).toInt()) else (target * 0.75).toInt()
+            val want = when {
+                l <= 0 -> target / 2                                    // the link not known yet: well down, found out next second
+                far -> minOf((target * 0.75).toInt(), l / 2)            // far behind: half the link, so the backlog drains
+                else -> maxOf(minOf((target * 0.75).toInt(), (l * 0.85).toInt()), (l * 0.7).toInt())
+            }
             return if (set(minOf(want, target))) Act.SET else Act.NONE
         }
         lagAtAdjust = 0L
@@ -403,13 +458,20 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(1_0
     companion object {
         /** Behind this far: the rate is lowered. */
         const val SLOW_US = 1_500_000L
-        /** Behind this far all the same: what waits is dropped (the internet broke); never for less. */
-        const val DROP_US = 6_000_000L
+        /** Behind this far all the same (a real long break): the oldest frames are let go; never for less. */
+        const val HARD_US = 45_000_000L
+        /** …back to a key frame about this far behind the newest. */
+        const val BACK_US = 20_000_000L
+        /** The least the rate goes to: a poor picture, but a whole one. */
+        const val FLOOR_BPS = 250_000
         /** Caught up: the rate may go back up. */
         const val CALM_US = 400_000L
         /** Where a stream starts (see [target]). */
         const val START_BPS = 6_000_000
     }
+
+    /** The connection broke: when it is back, the frames made meanwhile go out first — at half the rate, so they drain. */
+    fun lost(nowNs: Long) { behind(nowNs); lastAdjust = nowNs; set(maxOf(floorBps, target / 2)) }
 
     /** The connection did not keep up at [target]: no going back above 90 % of it for a minute. */
     private fun behind(nowNs: Long) {

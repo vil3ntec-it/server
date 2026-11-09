@@ -525,11 +525,13 @@ class RecordService : Service(), Recorder.Events {
             val lv = live
             val r = if (lv != null) Recorder(this, p, c, plan, this, null, keepDisplay = false,
                 sinkFactory = {
-                    liveBorn = System.currentTimeMillis(); lastRtmpLog = ""; lastSendProblem = null; toldPrivate = false; toldAway = false; capHot = false; capNet = false; toldNet = false
+                    liveBorn = System.currentTimeMillis(); lastRtmpLog = ""; lastSendProblem = null; toldPrivate = false; toldAway = false; capHot = false; netLevel = 0; toldNet = false
                     main.removeCallbacks(sendCheck); main.postDelayed(sendCheck, 13_000)
                     screenChecks = 0; main.removeCallbacks(screenCheck); main.postDelayed(screenCheck, 8_000)
                     val auto = LiveSettings.autoQuality(this)
-                    (if (liveTargets.size > 1) MultiSink(liveTargets, plan.bitrate, liveListener, auto) else RtmpSink(lv.url, lv.key, plan.bitrate, liveListener, auto))
+                    val start = LiveSettings.startBps(this)
+                    lastRateSave = 0L
+                    (if (liveTargets.size > 1) MultiSink(liveTargets, plan.bitrate, liveListener, auto, start) else RtmpSink(lv.url, lv.key, plan.bitrate, liveListener, auto, start))
                         .also { liveSink = it }
                 }, forceLook = true, alsoRecord = LiveSettings.recordToo(this), shorts = shortsOut())
             else Recorder(this, p, c, plan, this, keptDisplay, keepDisplay = instantEnabled(this))
@@ -880,6 +882,11 @@ class RecordService : Service(), Recorder.Events {
                 if (stopping || live == null) return@post
                 checkSending()
                 followLink(s)
+                // what the link settled at: where the next stream starts (after the first minute, every half minute)
+                val nowMs = System.currentTimeMillis()
+                if (s.state == RtmpSink.State.LIVE && nowMs - liveBorn > 60_000L && nowMs - lastRateSave > 30_000L && s.targetKbps > 0) {
+                    lastRateSave = nowMs; LiveSettings.setLastRateKbps(this@RecordService, s.targetKbps)
+                }
                 when (s.state) {
                     RtmpSink.State.FAILED -> finishRecording(StopReason.LIVE_FAILED,
                         listOfNotNull(LiveSettings.whyText(this@RecordService, s.why), s.error).joinToString(" — ").ifEmpty { null })
@@ -1790,14 +1797,18 @@ class RecordService : Service(), Recorder.Events {
         applyFpsCap()
     }
 
-    /** 30 pictures a second while the phone is hot or the connection is narrow (each picture then gets twice the bits). */
+    /** 30 pictures a second while the phone is hot; on a narrow connection 30, and 20 when it carries under a megabit (each picture then gets more bits). */
     private var capHot = false
-    private var capNet = false
+    /** The connection's narrowness: 0 wide, 1 narrow (30 fps), 2 under a megabit (20 fps). */
+    private var netLevel = 0
     private var toldNet = false
+    private var lastRateSave = 0L
 
     private fun applyFpsCap() {
         val f = recorder?.filter ?: return
-        f.fpsCap = if ((capHot || capNet) && (recorder?.plan?.fps ?: 0) > 30) 30 else 0
+        val full = recorder?.plan?.fps ?: 0
+        val caps = listOfNotNull(if (capHot) 30 else null, when (netLevel) { 2 -> 20; 1 -> 30; else -> null })
+        f.fpsCap = caps.filter { it in 1 until full }.minOrNull() ?: 0
     }
 
     /**
@@ -1811,14 +1822,15 @@ class RecordService : Service(), Recorder.Events {
         if (System.currentTimeMillis() - liveBorn < 20_000L) return
         val narrow = s.targetKbps < full * 55 / 100
         val wide = s.targetKbps >= full * 75 / 100
-        if (narrow && !capNet) {
-            capNet = true; applyFpsCap()
-            RecLog.add(this, "link: ${s.targetKbps} of $full kbps, 30 fps")
-            if (!toldNet) { toldNet = true; hud?.note(getString(R.string.live_net_narrow_fmt, String.format(java.util.Locale.US, "%.1f", s.targetKbps / 1000.0))) }
-        } else if (wide && capNet) {
-            capNet = false; applyFpsCap()
-            RecLog.add(this, "link: ${s.targetKbps} of $full kbps, full fps")
+        val level = when {
+            s.targetKbps < 900 || (netLevel == 2 && s.targetKbps < 1300) -> 2
+            narrow || (netLevel >= 1 && !wide) -> 1
+            else -> 0
         }
+        if (level == netLevel) return
+        netLevel = level; applyFpsCap()
+        RecLog.add(this, "link: ${s.targetKbps} of $full kbps, " + when (level) { 2 -> "20 fps"; 1 -> "30 fps"; else -> "full fps" })
+        if (level > 0 && !toldNet) { toldNet = true; hud?.note(getString(R.string.live_net_narrow_fmt, String.format(java.util.Locale.US, "%.1f", s.targetKbps / 1000.0))) }
     }
 
     private fun stopThermalWatch() {

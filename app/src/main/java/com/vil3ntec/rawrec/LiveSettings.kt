@@ -48,6 +48,12 @@ object LiveSettings {
     fun liveRate(ctx: Context) = SafePrefs.int(prefs(ctx), "live_mbps", 0).takeIf { it in LIVE_RATES } ?: 0
     fun setLiveRate(ctx: Context, m: Int) = prefs(ctx).edit().putInt("live_mbps", m).apply()
 
+    /** What the automatic rate settled at last time (kbps; 0 = not known): the next stream starts there, not at 6 Mbps. */
+    fun lastRateKbps(ctx: Context) = SafePrefs.int(prefs(ctx), "live_last_kbps", 0)
+    fun setLastRateKbps(ctx: Context, kbps: Int) = prefs(ctx).edit().putInt("live_last_kbps", kbps).apply()
+    /** Where the automatic rate starts (bits a second): a fifth above last time's, between 800 kbps and 6 Mbps; 0 = unknown. */
+    fun startBps(ctx: Context): Int = lastRateKbps(ctx).takeIf { it > 0 }?.let { (it * 1200L).coerceIn(800_000L, 6_000_000L).toInt() } ?: 0
+
     /**
      * The game left the screen («one app» shared, and another app in front): «برمی‌گردم» on the stream
      * (true) or the game's last picture stays (false, 4.1: the banner looked like the stream was broken).

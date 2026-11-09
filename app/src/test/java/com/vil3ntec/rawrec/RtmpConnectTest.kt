@@ -305,4 +305,30 @@ class RtmpConnectTest {
             assertTrue("$mbps Mbps: never 5 s behind (${s.maxLagMs} ms)", s.maxLagMs < 5_000)
         }
     }
+
+    /** 5.2: the owner's VPN at a megabit — and worse: a poor picture, whole; never a jump (4.x cut every few seconds at the 1 Mbps floor). */
+    @Test fun aLinkUnderAMegabitStillGetsEverySecond() {
+        for (kbps in listOf(1000, 600, 350)) {
+            val s = Sim(12_000_000) { kbps * 1000.0 }
+            s.run(0.0, 120.0)
+            assertEquals("$kbps kbps: no cut", 0, s.drops)
+            assertTrue("$kbps kbps: under what the link carries (${s.rc.target})", s.rc.target <= kbps * 1000)
+            assertTrue("$kbps kbps: never a long break's worth behind (${s.maxLagMs} ms)", s.maxLagMs < RateControl.HARD_US / 1000)
+            s.maxLagMs = 0; s.run(120.0, 180.0)
+            assertTrue("$kbps kbps: settled, a few seconds at most (${s.maxLagMs} ms)", s.maxLagMs < 6_000)
+        }
+    }
+
+    /** 5.2: a stream that starts where the link was last time does not hit a narrow link at 6 Mbps. */
+    @Test fun theStartIsWhereTheLinkWasLastTime() {
+        val remembered = RateControl(12_000_000, startBps = 1_200_000)
+        assertEquals(1_200_000, remembered.target)
+        assertEquals("nothing remembered: the gentle start", RateControl.START_BPS, RateControl(12_000_000).target)
+        // a break: when the connection is back the rate is halved so what waited drains, never under the floor
+        val rc = RateControl(12_000_000)
+        rc.lost(1L)
+        assertEquals(RateControl.START_BPS / 2, rc.target)
+        repeat(8) { rc.lost(1L) }
+        assertEquals(RateControl.FLOOR_BPS, rc.target)
+    }
 }
