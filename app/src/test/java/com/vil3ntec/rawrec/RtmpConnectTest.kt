@@ -259,7 +259,8 @@ class RtmpConnectTest {
         while (t < 210.0) { s.run(t, t + 1.0); lowest = minOf(lowest, rc.target); highest = maxOf(highest, rc.target); t += 1.0 }
         assertEquals("no frames dropped once settled (4.0 dropped every few seconds)", drops30, s.drops)
         // once a minute it tries 10 % more (the link may have grown) and comes back before any delay shows
-        assertTrue("never far above what the link carries: highest ${highest}", highest <= 4_600_000)
+        // 6.8: it probes faster (+15 %), so a probe may touch 1.2× the link for a moment before it comes back
+        assertTrue("never far above what the link carries: highest ${highest}", highest <= 4_800_000)
         assertTrue("and not starved: lowest ${lowest}", lowest >= 2_000_000)
         assertEquals("not a single cut, not even at the start (a gentle start at 6 Mbps)", 0, s.drops)
         assertTrue("never more than the 5 s the owner accepts once settled: ${s.maxLagMs} ms", s.maxLagMs < 5_000)
@@ -353,6 +354,22 @@ class RtmpConnectTest {
         assertEquals("no cut once settled", settle, s.drops)
         assertTrue("under what the link carries (${s.rc.target})", s.rc.target <= 3_450_000)
         assertTrue("real time, never 4 s behind (${s.maxLagMs} ms)", s.maxLagMs < RateControl.HARD_US / 1000)
+    }
+
+    /** 6.8: a 10-second VPN hiccup on a 6 Mbps link — back to about the old rate within half a minute, not minutes. */
+    @Test fun aShortDipComesBackQuickly() {
+        val s = Sim(12_000_000) { t -> if (t in 60.0..70.0) 1_000_000.0 else 6_000_000.0 }
+        s.run(0.0, 60.0)
+        val before = s.rc.target
+        assertTrue("settled near the link first ($before)", before in 4_500_000..6_000_000)
+        s.run(60.0, 70.0)
+        assertTrue("down in the dip (${s.rc.target})", s.rc.target < 2_000_000)
+        s.run(70.0, 100.0)
+        assertTrue("back near the old rate 30 s after (${s.rc.target} of $before)", s.rc.target >= before * 0.8)
+        // the link falling to a sixth at once may cost one short freeze (the 4 s guard), never more
+        assertTrue("at most one cut for the whole dip (${s.drops})", s.drops <= 1)
+        s.maxLagMs = 0; s.run(100.0, 160.0)
+        assertTrue("real time again after (${s.maxLagMs} ms)", s.maxLagMs < 2_000)
     }
 
     /** 5.2: a stream that starts where the link was last time does not hit a narrow link at 6 Mbps. */

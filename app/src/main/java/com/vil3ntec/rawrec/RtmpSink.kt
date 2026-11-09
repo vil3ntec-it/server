@@ -379,6 +379,10 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLO
     /** How far behind it was when last lowered (0 = caught up since). */
     private var lagAtAdjust = 0L
     private var capBps = maxBps
+    /** The highest rate the link carried for 10 s with no more than a short delay (0 = none yet): a dip comes back to it quickly. */
+    private var goodBps = 0
+    private var okSince = 0L
+    private var lastReturnNs = 0L
     private var capUntil = 0L
     private val seen = IntArray(3)
     private var seenN = 0
@@ -395,6 +399,8 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLO
 
     fun step(nowNs: Long, lagUs: Long, video: Boolean): Act {
         if (firstNs == 0L) firstNs = nowNs
+        if (lagUs < SLOW_US) { if (okSince == 0L) okSince = nowNs; if (nowNs - okSince > 10_000_000_000L && target > goodBps) goodBps = target }
+        else okSince = 0L
         // the first 15 s: the chosen rate may be far above what the link carries — found out sooner,
         // before the frames made meanwhile pile up into a cut
         val slowUs = if (nowNs - firstNs < 15_000_000_000L) 700_000L else SLOW_US
@@ -435,14 +441,21 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLO
         lagAtAdjust = 0L
         if (lagUs < CALM_US) {
             if (calmSince == 0L) calmSince = nowNs
+            // 6.8: back quickly to a rate the link carried before a dip (a VPN hiccup): +30 % every 2 s
+            if (goodBps > 0 && target < goodBps * 0.85 && nowNs - calmSince > 3_000_000_000L && nowNs - lastAdjust > 2_000_000_000L) {
+                lastAdjust = nowNs; lastReturnNs = nowNs
+                return if (set(minOf((target * 1.3).toInt(), (goodBps * 0.9).toInt()))) Act.SET else Act.NONE
+            }
             val cap = if (nowNs < capUntil) capBps else maxBps
             // never held back yet (the start): quicker steps; afterwards slow and careful
             val fresh = capUntil == 0L
-            val calmFor = if (fresh) 3_000_000_000L else 10_000_000_000L
-            val since = if (fresh) 3_000_000_000L else 8_000_000_000L
+            // 6.8: the link's room is only found by sending more (what went out is all that is measured):
+            // after 5 s caught up, +15 % every 4 s (was +10 % every 8 s after 10 s — minutes at 1 Mbps on a 7 Mbps line)
+            val calmFor = if (fresh) 3_000_000_000L else 5_000_000_000L
+            val since = if (fresh) 3_000_000_000L else 4_000_000_000L
             if (target < cap && nowNs - calmSince > calmFor && nowNs - lastAdjust > since) {
                 lastAdjust = nowNs; calmSince = nowNs
-                return if (set(minOf((target * (if (fresh) 1.2 else 1.1)).toInt(), cap))) Act.SET else Act.NONE
+                return if (set(minOf((target * (if (fresh) 1.2 else 1.15)).toInt(), cap))) Act.SET else Act.NONE
             }
         } else calmSince = 0L
         return Act.NONE
@@ -470,8 +483,11 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLO
 
     /** The connection did not keep up at [target]: no going back above 90 % of it for a minute. */
     private fun behind(nowNs: Long) {
+        // falling behind soon after going back up to the «good» rate: the link has really narrowed, not dipped
+        if (goodBps > 0 && nowNs - lastReturnNs < 10_000_000_000L) goodBps = (target * 0.9).toInt()
+        okSince = 0L
         capBps = maxOf(floorBps, (target * 0.9).toInt())
-        capUntil = nowNs + 60_000_000_000L
+        capUntil = nowNs + 30_000_000_000L
     }
 
     private fun set(bps: Int): Boolean {
