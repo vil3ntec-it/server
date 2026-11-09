@@ -372,7 +372,40 @@ class Recorder(
 
     /** Live: the encoder's bit rate, set by the automatic quality of [RtmpSink]. */
     fun setVideoBitrate(bps: Int) {
+        wantBps = bps; wantSinceMs = System.currentTimeMillis()
         try { enc?.codec?.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, bps) }) } catch (_: Exception) {}
+    }
+
+    /** What the automatic quality asked of the encoder, and since when; what the encoder really put out. */
+    @Volatile private var wantBps = 0
+    private var wantSinceMs = 0L
+    private var outBytes = 0L
+    private var outSinceMs = 0L
+    private var lastRemakeMs = 0L
+    /** How many times the encoder was re-made because it ignored the rate asked (for the report). */
+    @Volatile var rateRemakes = 0; private set
+
+    /**
+     * 6.3: some encoders ignore a bit rate set while running (the picture stayed at the chosen rate,
+     * the frames piled up on a narrow link and the stream jumped). The encoder's real output is
+     * measured; when it stays far from what was asked for 5 s, the encoder is re-made at that rate
+     * (as for a rotation: same size, the stream goes on from its first key frame).
+     */
+    private fun watchRate(nowMs: Long, bytes: Int) {
+        outBytes += bytes
+        if (outSinceMs == 0L) { outSinceMs = nowMs; return }
+        val dt = nowMs - outSinceMs
+        if (dt < 2_000) return
+        val outBps = outBytes * 8_000 / dt
+        outBytes = 0; outSinceMs = nowMs
+        val want = wantBps
+        if (want <= 0 || sinkFactory == null || nowMs - wantSinceMs < 5_000 || nowMs - lastRemakeMs < 15_000) return
+        val ignoredDown = want < plan.bitrate * 0.85 && outBps > want * 1.5
+        val ignoredUp = want > plan.bitrate * 1.25 && outBps < want * 0.6 && outBps < plan.bitrate * 1.2
+        if (!ignoredDown && !ignoredUp) return
+        lastRemakeMs = nowMs; wantSinceMs = nowMs; rateRemakes++
+        events.onAudioProblem("encoder: ignored ${want / 1000} kbps (put out ${outBps / 1000}), re-made at it")
+        switchRequest.set(Switch(plan.copy(bitrate = want), false))
     }
 
     /** Live «برمی‌گردم»: this picture instead of the screen (null = the screen again). */
@@ -688,6 +721,7 @@ class Recorder(
         }
         val adj = pts - pausedTotalUs              // only shifts by the paused time; never wall-clock
         stats.onFrame(adj, key, 1_000_000L / plan.fps)
+        watchRate(System.currentTimeMillis(), info.size)
         if (muxer.submitVideo(buf, info.offset, info.size, adj, info.flags)) requestKeyFrame()
         // A key frame every second of video BY TIME (4.0). The encoder counts its interval in frames
         // of the set rate: set to the screen's 120–165 fps while a game draws 40–60, «every second»
