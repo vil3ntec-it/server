@@ -66,6 +66,8 @@ for f in $(cat $OUT/files.txt); do
     echo "== $f" >> $OUT/recordings.txt
     ffprobe -v error -show_entries format=duration,size:stream=codec_name,width,height,avg_frame_rate,bit_rate -of compact /tmp/rec.mp4 >> $OUT/recordings.txt 2>&1
     echo "decode errors: $(ffmpeg -v error -i /tmp/rec.mp4 -f null - 2>&1 | wc -l)" >> $OUT/recordings.txt
+    # how much of the frame the picture fills (black borders = the «small in the middle» fault)
+    echo "picture area (cropdetect, last): $(ffmpeg -v info -ss 3 -i /tmp/rec.mp4 -t 6 -vf cropdetect=limit=24:round=2 -f null - 2>&1 | grep -o 'crop=[0-9:]*' | tail -1)" >> $OUT/recordings.txt
     ffmpeg -v error -ss 5 -i /tmp/rec.mp4 -frames:v 1 -y "$OUT/recording-$(basename "$f" .mp4 | tr ' ' '_').png"
   }
 done
