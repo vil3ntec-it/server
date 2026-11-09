@@ -217,6 +217,9 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
                             }
                             // our key is not one of this channel's streams: said plainly
                             sid == null && streamTried > 0 && waited > 15_000 -> setYt(ctx.getString(R.string.chat_yt_no_key))
+                            // a stream, nothing bound: said whether the picture is there yet, and that a live is coming
+                            sid != null && !created && !LiveSettings.shortsReady(ctx) ->
+                                setYt(ctx.getString(if (activeSince != 0L) R.string.chat_yt_making_soon else R.string.chat_yt_no_picture))
                             else -> setYt(ctx.getString(R.string.chat_yt_looking))
                         }
                         sleep(if (waited < 120_000) 10_000 else 30_000); continue
@@ -326,9 +329,12 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
             val list = api.boundTo(sid)
             if (list.any { it.isLive }) return
             val waiting = list.filter { it.lifeCycle in setOf("created", "ready", "testStarting", "testing") }
-            if (waiting.size < 2 && waiting.none { it.videoId in LiveExtras.madeLives(ctx) }) return
-            val made = LiveExtras.madeLives(ctx)
-            val keep = GoLive.nearest(waiting.filter { it.videoId !in made }, { it.scheduled }, System.currentTimeMillis())
+            // the live made for this very stream (the app's own) is the one kept, always; never taken off here
+            val ours = createdId
+            if (waiting.size < 2 && waiting.none { it.videoId in LiveExtras.madeLives(ctx) && it.videoId != ours }) return
+            val made = LiveExtras.madeLives(ctx) - setOfNotNull(ours)
+            val keep = waiting.firstOrNull { it.videoId == ours }
+                ?: GoLive.nearest(waiting.filter { it.videoId !in made }, { it.scheduled }, System.currentTimeMillis())
             var gone = 0; var loose = 0
             for (o in waiting) if (o.videoId != keep?.videoId) {
                 if (o.videoId in made) { if (api.deleteIfNeverLive(o.videoId)) gone++; LiveExtras.setMadeLive(ctx, o.videoId, false) }
