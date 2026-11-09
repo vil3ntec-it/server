@@ -1007,7 +1007,10 @@
     <string name="live_ds_reconnecting">قطع شد، دوباره وصل می‌شود…</string>
     <string name="live_ds_failed">قطع</string>
     <string name="yt_went_live">یوتیوب پخش را منتظر نگه داشته بود؛ زنده شد.</string>
-    <string name="yt_waiting_fmt">یوتیوب پخش را منتظر نگه داشته (یک پخشِ زمان‌بندی‌شده). در YouTube Studio «Go live» را بزن یا آن پخشِ قدیمی را پاک کن. (%1$s)</string>
+    <string name="yt_waiting_fmt">یوتیوب هنوز پخش را زنده نمی‌کند (%1$s). برنامه تلاشش را ادامه می‌دهد؛ اگر در YouTube Studio دکمهٔ «Go live» را می‌بینی، آن را بزن.</string>
+    <string name="chat_yt_no_picture">تصویر هنوز به یوتیوب نرسیده؛ تا برسد، پخش را زنده می‌کنم.</string>
+    <string name="chat_yt_going_live">تصویر به یوتیوب رسید؛ دارم پخش را زنده می‌کنم…</string>
+    <string name="chat_yt_held_fmt">یوتیوب زنده کردن را رد کرد (%1$s)؛ دوباره تلاش می‌کنم.</string>
     <string name="tr_preview_wait">ترجمه…</string>
     <string name="tr_preview_failed">ترجمه نشد؛ همان‌طور که نوشتی نمی‌رود تا دوباره امتحان شود.</string>
     <string name="yt_st_live">✓ روی یوتیوب زنده است.</string>

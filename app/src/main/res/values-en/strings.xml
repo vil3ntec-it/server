@@ -986,7 +986,10 @@ Your internet needs about %2$s Mbps upload.</string>
     <string name="live_ds_reconnecting">dropped, reconnecting…</string>
     <string name="live_ds_failed">dropped out</string>
     <string name="yt_went_live">YouTube was holding the stream back; it is live now.</string>
-    <string name="yt_waiting_fmt">YouTube is holding the stream back (a scheduled event). Press «Go live» in YouTube Studio or delete that old event. (%1$s)</string>
+    <string name="yt_waiting_fmt">YouTube still will not put the live live (%1$s). The app keeps trying; if you see «Go live» in YouTube Studio, press it.</string>
+    <string name="chat_yt_no_picture">The picture has not reached YouTube yet; the live goes live as it does.</string>
+    <string name="chat_yt_going_live">The picture is on YouTube; putting the live live…</string>
+    <string name="chat_yt_held_fmt">YouTube refused to go live (%1$s); trying again.</string>
     <string name="tr_preview_wait">Translating…</string>
     <string name="tr_preview_failed">Not translated; it is not sent until it works.</string>
     <string name="yt_st_live">✓ Live on YouTube.</string>

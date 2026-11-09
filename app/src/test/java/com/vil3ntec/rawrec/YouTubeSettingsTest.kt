@@ -39,6 +39,14 @@ class YouTubeSettingsTest {
                 u.contains("broadcastStatus=upcoming") -> upcoming
                 m == "GET" && u.contains("videos?part=snippet,status") -> video
                 m == "POST" && u.contains("liveBroadcasts?part=snippet,status,contentDetails") -> """{"id":"new1"}"""
+                // Studio's live for the key, as YouTube gives it: a monitor (its preview), auto-start off, the bound stream told
+                u.contains("liveBroadcasts?part=contentDetails&id=studio") -> """{"items":[{"id":"studio","contentDetails":{"boundStreamId":"s-ours",
+                    "boundStreamLastUpdateTimeMs":"1762655000000","monitorStream":{"enableMonitorStream":true,"broadcastStreamDelayMs":0,"embedHtml":"<iframe/>"},
+                    "enableEmbed":true,"enableDvr":true,"recordFromStart":true,"enableClosedCaptions":false,"closedCaptionsType":"closedCaptionsDisabled",
+                    "enableContentEncryption":false,"startWithSlate":false,"enableAutoStart":false,"enableAutoStop":true,"enableLowLatency":false,
+                    "latencyPreference":"normal","projection":"rectangular"}}]}"""
+                u.contains("liveBroadcasts?part=snippet,status,contentDetails&id=ours") -> """{"items":[{"id":"ours","snippet":{"title":"Ours","liveChatId":"c-ours"},
+                    "status":{"lifeCycleStatus":"testing"},"contentDetails":{"boundStreamId":"s-ours","monitorStream":{"enableMonitorStream":true}}}]}"""
                 else -> "{}"
             }
         }
@@ -120,5 +128,54 @@ class YouTubeSettingsTest {
         val u = calls.last()
         assertEquals("POST", u.first)
         assertTrue("let go of the stream, not deleted", u.second.contains("liveBroadcasts/bind?id=old") && !u.second.contains("streamId"))
+    }
+
+    /** 4.6: the live YouTube holds back is started by itself from now on: its settings go back as they were, only auto-start changes. */
+    @Test fun autoStartIsTurnedOnWithoutTouchingTheRest() {
+        fake()
+        val api = YouTubeApi("c", "s", "r")
+        assertTrue(api.setAutoStart("studio"))
+        val put = lastPut()
+        assertTrue(put.second.endsWith("liveBroadcasts?part=contentDetails"))
+        val j = JSONObject(put.third!!)
+        assertEquals("studio", j.getString("id"))
+        val cd = j.getJSONObject("contentDetails")
+        assertEquals(true, cd.getBoolean("enableAutoStart"))
+        assertEquals("the preview stays", true, cd.getJSONObject("monitorStream").getBoolean("enableMonitorStream"))
+        assertEquals("normal", cd.getString("latencyPreference")); assertEquals(true, cd.getBoolean("enableDvr")); assertEquals(true, cd.getBoolean("enableAutoStop"))
+        for (k in listOf("boundStreamId", "boundStreamLastUpdateTimeMs", "enableContentEncryption", "enableLowLatency", "enableClosedCaptions"))
+            assertTrue("$k is YouTube's to tell, not ours to send", !cd.has(k))
+        assertTrue(!cd.getJSONObject("monitorStream").has("embedHtml"))
+        // the live read afresh for each step
+        val b = api.broadcast("ours")!!
+        assertEquals("testing", b.lifeCycle); assertTrue(b.monitor)
+    }
+
+    /** 4.6: step by step to live — never given up on, never a wrong step. */
+    @Test fun theStepsToLive() {
+        assertEquals("loose: bound first", GoLive.BIND, GoLive.step("created", false))
+        assertEquals("a monitor (Studio's preview): testing first", GoLive.TESTING, GoLive.step("ready", true))
+        assertEquals("no monitor: straight to live", GoLive.LIVE, GoLive.step("ready", false))
+        assertEquals(GoLive.LIVE, GoLive.step("testing", true))
+        assertNull("YouTube between stages: wait", GoLive.step("testStarting", true))
+        assertNull(GoLive.step("liveStarting", false))
+        assertNull(GoLive.step("live", false)); assertNull(GoLive.step("complete", false))
+        // YouTube said «invalidTransition»: the other way round
+        assertEquals(GoLive.LIVE, GoLive.step("ready", true, flip = true))
+        assertEquals(GoLive.TESTING, GoLive.step("ready", false, flip = true))
+        // tried again at 5 s, 10, 20, 40, a minute; five minutes after ten refusals or with no right to do it
+        assertEquals(listOf(5_000L, 10_000L, 20_000L, 40_000L, 60_000L, 60_000L), (1..6).map { GoLive.retryMs(it) })
+        assertEquals(300_000L, GoLive.retryMs(10)); assertEquals(300_000L, GoLive.retryMs(1, "forbidden"))
+        assertEquals(300_000L, GoLive.retryMs(2, "insufficientPermissions"))
+    }
+
+    /** 4.6: of several lives waiting on the key, the one meant for now stays — not next week's event. */
+    @Test fun theLiveMeantForNowIsKept() {
+        val now = GoLive.parse("2026-11-09T02:12:30Z")!!
+        val lives = listOf("week" to "2026-11-16T18:00:00Z", "studio" to "2026-11-09T02:12:05.000Z", "old" to "2026-05-10T19:55:00Z", "none" to null)
+        assertEquals("studio", GoLive.nearest(lives, { it.second }, now)!!.first)
+        assertEquals("the stamp parsed", 1794190350000L, now)
+        assertNull(GoLive.parse("soon"))
+        assertNull(GoLive.nearest(emptyList<Pair<String, String?>>(), { it.second }, now))
     }
 }

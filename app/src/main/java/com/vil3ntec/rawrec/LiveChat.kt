@@ -173,7 +173,8 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
             try {
                 if (LiveExtras.Quota.left(ctx) < RESERVE) {
                     setYt(ctx.getString(R.string.chat_quota_out))
-                    sleep(60_000); continue
+                    // the chat waits for tomorrow's allowance; going live does not (a few units, once)
+                    rest(api, 60_000); continue
                 }
                 // which of the channel's streams takes our key (once; the broadcast is the one bound to it)
                 if (streamId == null && System.currentTimeMillis() - streamTried > 60_000) {
@@ -184,18 +185,22 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
                 // once a stream: only one live waits on our key (several = YouTube may start one and show another)
                 streamId?.let { sid -> if (!tidied) { tidied = true; tidy(api, sid) } }
                 val waiting = bc?.let { !it.isLive } ?: false
-                // waiting to go live: looked at every 5 s when it is to go live at once (else 15 s)
-                val lookEvery = if (waiting && LiveExtras.goLiveNow(ctx)) 5_000 else 15_000
-                if (chatId == null || (waiting && System.currentTimeMillis() - lastLook > lookEvery)) {
+                // waiting to go live: the channel is looked at again every 15 s (the live itself is driven below, more often)
+                if (chatId == null || (waiting && System.currentTimeMillis() - lastLook > 15_000)) {
                     lastLook = System.currentTimeMillis()
                     val b = api.currentBroadcast(streamId)
                     if (b == null) {
                         val sid = streamId
                         val waited = System.currentTimeMillis() - startedAt
+                        // YouTube itself sets up the Studio live for the key a moment after the picture arrives: 20 s of
+                        // picture with nothing bound before one is made here (as streaming apps do)
+                        // with Shorts the live is the one set up in Studio («Dual stream»): never another one made
+                        val active = sid != null && !created && !LiveSettings.shortsReady(ctx) &&
+                            (try { api.streamStatus(sid).first } catch (_: Exception) { "" }) == "active"
+                        if (!active) activeSince = 0L
+                        else if (activeSince == 0L) { activeSince = System.currentTimeMillis(); RecLog.add(ctx, "yt: stream active, nothing bound to it") }
                         when {
-                            // nothing on the channel for our key: a live is made for it (as streaming apps do)
-                            // with Shorts the live is the one set up in Studio («Dual stream»): never another one made
-                            sid != null && !created && waited > 5_000 && !LiveSettings.shortsReady(ctx) -> {
+                            sid != null && !created && activeSince != 0L && System.currentTimeMillis() - activeSince >= 20_000 -> {
                                 created = true
                                 try {
                                     createdId = api.createBroadcast(sid, LiveExtras.ytTitle(ctx).ifBlank { ctx.getString(R.string.yt_default_title_fmt, LiveExtras.ytChannel(ctx).ifBlank { "Live" }) },
@@ -222,16 +227,15 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
                         appliedStamp = ""
                     }
                     bc = b
-                    setYt(null)
+                    if (b.isLive) setYt(null)
                     publish()
                     if (b.videoId != usingLogged) { usingLogged = b.videoId; RecLog.add(ctx, "yt: using ${b.videoId} (${b.lifeCycle})") }
-                    if (b.isLive) {
-                        waitingSince = 0L
-                        if (!wentLive) { wentLive = true; LiveExtras.setMadeLive(ctx, b.videoId, false); RecLog.add(ctx, "yt: ${b.videoId} live") }
-                    } else goLiveIfWaiting(api, b)
+                    if (b.isLive && !wentLive) { wentLive = true; LiveExtras.setMadeLive(ctx, b.videoId, false); RecLog.add(ctx, "yt: ${b.videoId} live") }
                     if (LiveExtras.ytChoicesStamp(ctx) != appliedStamp) applyOwnerChoices(api, b)
                 }
-                if (chatId == null) { sleep(10_000); continue }   // (a broadcast without its chat yet)
+                // held back by YouTube: put live step by step, and kept at until it is (at its own pace)
+                bc?.let { b -> if (!b.isLive) goLiveIfWaiting(api, b) }
+                if (chatId == null) { rest(api, 10_000); continue }   // (a broadcast without its chat yet)
                 // the owner changed the video's settings in the app while live: applied at once
                 bc?.let { b -> if (LiveExtras.ytChoicesStamp(ctx) != appliedStamp) applyOwnerChoices(api, b) }
                 val now = System.currentTimeMillis()
@@ -266,7 +270,7 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
                 page = p.next
                 for (it in p.items) dispatch(it, first)
                 first = false
-                sleep(pace(p.pollMs))
+                rest(api, pace(p.pollMs))
             } catch (e: YouTubeApi.Companion.HttpError) {
                 when {
                     quotaGone(e) -> { LiveExtras.Quota.exhaust(ctx); setYt(ctx.getString(R.string.chat_quota_out)) }
@@ -299,8 +303,13 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
     @Volatile private var receiving: Boolean? = null
     private var streamTried = 0L
     private var lastLook = 0L
-    private var waitingSince = 0L
-    private var goLiveTries = 0
+    /** Since when the stream has been active with nothing bound to it (0 = not so). */
+    private var activeSince = 0L
+    private var nextGoLive = 0L
+    private var goLiveFails = 0
+    /** After «invalidTransition»: the other way round (ready → live when a monitor was assumed, or testing when none). */
+    private var flip = false
+    private var autoStartTried = ""
     private var toldStudio = false
     private var tidied = false
     private var usingLogged = ""
@@ -308,8 +317,9 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
 
     /**
      * Several lives waiting on our key: the ones this app made and that never went live are taken off
-     * the channel; of the owner's own, the newest stays bound and the others are only unbound (kept on
-     * the channel, untouched). Then the stream feeds exactly one live, the one shown and put live.
+     * the channel; of the owner's own, the one meant for now (nearest by its time) stays bound and the
+     * others are only unbound (kept on the channel, untouched). Then the stream feeds exactly one
+     * live, the one shown and put live.
      */
     private fun tidy(api: YouTubeApi, sid: String) {
         try {
@@ -318,7 +328,7 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
             val waiting = list.filter { it.lifeCycle in setOf("created", "ready", "testStarting", "testing") }
             if (waiting.size < 2 && waiting.none { it.videoId in LiveExtras.madeLives(ctx) }) return
             val made = LiveExtras.madeLives(ctx)
-            val keep = waiting.filter { it.videoId !in made }.maxByOrNull { it.scheduled ?: "" }
+            val keep = GoLive.nearest(waiting.filter { it.videoId !in made }, { it.scheduled }, System.currentTimeMillis())
             var gone = 0; var loose = 0
             for (o in waiting) if (o.videoId != keep?.videoId) {
                 if (o.videoId in made) { if (api.deleteIfNeverLive(o.videoId)) gone++; LiveExtras.setMadeLive(ctx, o.videoId, false) }
@@ -338,31 +348,73 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
         LiveSettings.destinations(ctx).firstOrNull { it.url.contains("youtube", ignoreCase = true) }?.key ?: LiveSettings.key(ctx, 0)
 
     /**
-     * YouTube holds the broadcast back (a scheduled event that waits for «Go live» in Studio) while
-     * the picture arrives: it is put live, as the owner asked by starting the stream. At most three
-     * tries; when YouTube refuses, the owner is told what to press.
+     * YouTube holds the live back while the picture arrives (Studio's preview, «Go live» not pressed, a
+     * live made a moment ago): it is put live step by step — bound if loose, testing first when it has
+     * a monitor, then live — and kept at until YouTube says live, for as long as the stream runs. Each
+     * step reads the live afresh; a refusal is tried again later (5 s … 5 min), never given up on.
+     * First, once, YouTube is asked to start it by itself when the picture arrives (Studio keeps that
+     * setting for the next lives on the key too).
      */
     private fun goLiveIfWaiting(api: YouTubeApi, b: YouTubeApi.Broadcast) {
         // the owner goes live in Studio: nothing done here but saying so once
         if (!LiveExtras.goLiveNow(ctx)) { if (!toldStudio) { toldStudio = true; l.onNote(ctx.getString(R.string.yt_go_live_studio)) }; return }
-        val sid = b.streamId ?: return
+        val sid = b.streamId ?: streamId ?: return
         val now = System.currentTimeMillis()
-        if (waitingSince == 0L) waitingSince = now
-        // at once: as soon as YouTube gets the picture (a few seconds), up to 10 tries
-        if (now - waitingSince < 4_000 || goLiveTries >= 10) return
+        if (now < nextGoLive) return
+        nextGoLive = now + 5_000
+        if (!b.autoStart && autoStartTried != b.videoId) {
+            autoStartTried = b.videoId
+            try { if (api.setAutoStart(b.videoId)) RecLog.add(ctx, "yt: ${b.videoId} auto-start on") }
+            catch (e: Exception) { RecLog.add(ctx, "yt: auto-start refused: " + why(e)) }
+        }
         val (status, _) = try { api.streamStatus(sid) } catch (_: Exception) { "" to null }
         if (status != lastStreamStatus) { lastStreamStatus = status; RecLog.add(ctx, "yt: stream ${status.ifEmpty { "?" }}, live ${b.videoId} ${b.lifeCycle}") }
-        if (status != "active") return   // the picture is not there yet
-        goLiveTries++
+        if (status != "active") { setYt(ctx.getString(R.string.chat_yt_no_picture)); return }   // the picture is not there yet
+        // the live as it is now, not as read a while ago
+        val cur = (try { api.broadcast(b.videoId) } catch (_: Exception) { null }) ?: b
+        if (cur.lifeCycle != b.lifeCycle) { bc = cur; RecLog.add(ctx, "yt: ${cur.videoId} ${cur.lifeCycle}") }
+        if (cur.isLive) { nowLive(cur, false); return }
+        setYt(ctx.getString(R.string.chat_yt_going_live))
+        val step = GoLive.step(cur.lifeCycle, cur.monitor, flip)
+        if (step == null) { nextGoLive = now + 3_000; return }   // between stages (testStarting / liveStarting): a moment
         try {
-            if (b.lifeCycle == "ready" && b.monitor) api.transition(b.videoId, "testing") else {
-                api.transition(b.videoId, "live"); wentLive = true; LiveExtras.setMadeLive(ctx, b.videoId, false)
-            }
-            RecLog.add(ctx, "yt: ${b.videoId} put live")
-            l.onNote(ctx.getString(R.string.yt_went_live))
+            if (step == GoLive.BIND) api.bind(cur.videoId, sid) else api.transition(cur.videoId, step)
+            RecLog.add(ctx, "yt: ${cur.videoId} ${cur.lifeCycle} → $step")
+            goLiveFails = 0; nextGoLive = now + 3_000
+            if (step == GoLive.LIVE) nowLive(cur, true)
         } catch (e: Exception) {
-            RecLog.add(ctx, "yt: go live refused: " + ((e as? YouTubeApi.Companion.HttpError)?.let { friendly(it) } ?: e.message ?: ""))
-            if (goLiveTries >= 10) l.onNote(ctx.getString(R.string.yt_waiting_fmt, (e as? YouTubeApi.Companion.HttpError)?.let { friendly(it) } ?: e.message ?: ""))
+            val reason = (e as? YouTubeApi.Companion.HttpError)?.reason ?: ""
+            RecLog.add(ctx, "yt: $step refused: " + why(e))
+            if (reason == "redundantTransition") { nextGoLive = now + 3_000; return }   // already there
+            if (reason == "invalidTransition") flip = !flip
+            goLiveFails++
+            nextGoLive = now + GoLive.retryMs(goLiveFails, reason)
+            setYt(ctx.getString(R.string.chat_yt_held_fmt, why(e)))
+            if (goLiveFails == 5) l.onNote(ctx.getString(R.string.yt_waiting_fmt, why(e)))
+        }
+    }
+
+    /** YouTube says live (or took our word for it): shown so; [byUs] = the app put it live. */
+    private fun nowLive(b: YouTubeApi.Broadcast, byUs: Boolean) {
+        setYt(null)
+        if (wentLive) return
+        wentLive = true; LiveExtras.setMadeLive(ctx, b.videoId, false)
+        RecLog.add(ctx, "yt: ${b.videoId} live" + if (byUs) " (put live here)" else "")
+        if (byUs) l.onNote(ctx.getString(R.string.yt_went_live))
+    }
+
+    private fun why(e: Exception) = (e as? YouTubeApi.Companion.HttpError)?.let { friendly(it) } ?: e.message ?: e.javaClass.simpleName
+
+    /** Sleeps [ms]; while a live waits to go live, it is looked after every 5 s meanwhile. */
+    private fun rest(api: YouTubeApi, ms: Long) {
+        var left = ms
+        while (left > 0 && running) {
+            val b = bc
+            if (b == null || b.isLive) { sleep(left); return }
+            val s = minOf(left, 5_000L)
+            if (!sleep(s)) return
+            left -= s
+            bc?.let { if (!it.isLive) goLiveIfWaiting(api, it) }
         }
     }
 
@@ -515,5 +567,41 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
         const val RESERVE = 600
         /** The allowance is spread over this many more seconds of streaming. */
         const val HORIZON_S = 3 * 3600L
+    }
+}
+
+/** The steps that take a live YouTube holds back to live, and how soon to try again when one is refused. */
+internal object GoLive {
+    const val BIND = "bind"; const val TESTING = "testing"; const val LIVE = "live"
+
+    /**
+     * What to ask next for a live at [lifeCycle]: bound when loose (created), testing first when it has
+     * a monitor (Studio's preview; [flip] = the other way, after YouTube said «invalidTransition»), live
+     * from testing; nothing while YouTube is between stages (testStarting, liveStarting) or it is over.
+     */
+    fun step(lifeCycle: String, monitor: Boolean, flip: Boolean = false): String? = when (lifeCycle) {
+        "created" -> BIND
+        "ready" -> if (monitor != flip) TESTING else LIVE
+        "testing" -> LIVE
+        else -> null
+    }
+
+    /** After [fails] refusals in a row: 5 s, 10, 20, 40, then a minute; after ten, or with no right to do it, five minutes. */
+    fun retryMs(fails: Int, reason: String = ""): Long = when {
+        reason == "forbidden" || reason == "insufficientPermissions" || fails >= 10 -> 300_000L
+        else -> (5_000L shl (fails - 1).coerceIn(0, 4)).coerceAtMost(60_000L)
+    }
+
+    /** Of the owner's waiting lives, the one meant for now: nearest to [nowMs] by its time (an event for next week stays as it is). */
+    fun <T> nearest(list: List<T>, scheduled: (T) -> String?, nowMs: Long): T? =
+        list.minByOrNull { t -> scheduled(t)?.let { parse(it) }?.let { kotlin.math.abs(it - nowMs) } ?: Long.MAX_VALUE }
+
+    /** YouTube's «2026-11-09T02:12:00Z» (or with fractions) to ms; null for anything else. */
+    fun parse(iso: String): Long? {
+        val m = Regex("""(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)""").find(iso) ?: return null
+        val (y, mo, d, h, mi, sec) = m.destructured
+        return java.util.GregorianCalendar(java.util.TimeZone.getTimeZone("UTC")).apply {
+            clear(); set(y.toInt(), mo.toInt() - 1, d.toInt(), h.toInt(), mi.toInt(), sec.toInt())
+        }.timeInMillis
     }
 }

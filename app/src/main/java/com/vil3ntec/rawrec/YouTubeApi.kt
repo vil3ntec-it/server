@@ -54,6 +54,19 @@ class YouTubeApi(
 
     companion object {
         /** YouTube takes tags up to 500 characters in all (a tag with a space counts its quotes). */
+        /**
+         * The live's contentDetails as YouTube gave them, with auto-start on: what an update must carry
+         * (it overwrites every setting of the part), less what YouTube only tells (the bound stream, the
+         * monitor's embed) and the old names of settings that have a newer one (low latency, captions).
+         */
+        fun autoStartDetails(cd: JSONObject): JSONObject {
+            val out = JSONObject(cd.toString())
+            for (k in listOf("boundStreamId", "boundStreamLastUpdateTimeMs", "enableContentEncryption", "enableLowLatency", "enableClosedCaptions")) out.remove(k)
+            out.optJSONObject("monitorStream")?.remove("embedHtml")
+            out.put("enableAutoStart", true)
+            return out
+        }
+
         fun fitTags(tags: List<String>): List<String> {
             val out = ArrayList<String>()
             var n = 0
@@ -237,6 +250,29 @@ class YouTubeApi(
         return all
     }
 
+    /** One live as YouTube has it right now (its stage, stream, auto-start, monitor); null when gone (1 unit). */
+    fun broadcast(id: String): Broadcast? =
+        get("liveBroadcasts?part=snippet,status,contentDetails&id=${enc(id)}").optJSONArray("items")?.optJSONObject(0)?.let { parse(it) }
+
+    /** The live takes stream [streamId] from now on (a «created» live becomes «ready»; 50 units). */
+    fun bind(id: String, streamId: String) {
+        call("POST", "liveBroadcasts/bind?id=${enc(id)}&streamId=${enc(streamId)}&part=id,contentDetails", null, 50)
+    }
+
+    /**
+     * The live goes live by itself when the picture arrives (Studio's «Enable Auto-start»), as the owner
+     * chose in the app: its other settings are sent back exactly as YouTube has them (51 units). False
+     * when it was already so (nothing sent).
+     */
+    fun setAutoStart(id: String): Boolean {
+        val cd = get("liveBroadcasts?part=contentDetails&id=${enc(id)}").optJSONArray("items")?.optJSONObject(0)
+            ?.optJSONObject("contentDetails") ?: return false
+        if (cd.optBoolean("enableAutoStart", false)) return false
+        val body = JSONObject().put("id", id).put("contentDetails", autoStartDetails(cd))
+        call("PUT", "liveBroadcasts?part=contentDetails", body, 50)
+        return true
+    }
+
     /** Every live bound to stream [streamId] that is not over (several = the stream may feed the wrong one). */
     fun boundTo(streamId: String): List<Broadcast> =
         notOver().filter { it.streamId == streamId && it.lifeCycle != "complete" && it.lifeCycle != "revoked" }
@@ -260,7 +296,7 @@ class YouTubeApi(
                 .put("latencyPreference", "normal")
                 .put("monitorStream", JSONObject().put("enableMonitorStream", false)))
         val id = JSONObject(call("POST", "liveBroadcasts?part=snippet,status,contentDetails", body, 50)).getString("id")
-        call("POST", "liveBroadcasts/bind?id=${enc(id)}&streamId=${enc(streamId)}&part=id,contentDetails", null, 50)
+        bind(id, streamId)
         return id
     }
 
