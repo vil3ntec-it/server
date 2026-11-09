@@ -108,7 +108,9 @@ jobs:
           SDK=$ANDROID_HOME; SM=$SDK/cmdline-tools/latest/bin/sdkmanager; AM=$SDK/cmdline-tools/latest/bin/avdmanager
           yes | $SM --licenses > /dev/null 2>&1 || true
           $SM --install "emulator" "platform-tools" "system-images;android-34;google_apis;x86_64" > /tmp/sdk.log 2>&1 || (tail -20 /tmp/sdk.log; exit 1)
-          echo no | $AM create avd -n e2e -k "system-images;android-34;google_apis;x86_64" -d pixel_6 --force
+          export ANDROID_AVD_HOME=$HOME/.android/avd; mkdir -p $ANDROID_AVD_HOME
+          echo no | $AM create avd -n e2e -k "system-images;android-34;google_apis;x86_64" -d pixel_6 -p $ANDROID_AVD_HOME/e2e.avd --force
+          ls $ANDROID_AVD_HOME; $SDK/emulator/emulator -list-avds
           nohup $SDK/emulator/emulator -avd e2e -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -accel on > /tmp/emu.log 2>&1 &
           echo "$SDK/platform-tools" >> "$GITHUB_PATH"
           timeout 600 $SDK/platform-tools/adb wait-for-device || { echo "emulator never came up"; tail -60 /tmp/emu.log; ls -la /dev/kvm; exit 1; }
