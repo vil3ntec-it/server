@@ -1405,7 +1405,8 @@ class MainActivity : Activity() {
         subValues[Sub.LIVE_DEST]?.text = LiveSettings.destinations(this).joinToString(" + ") { it.name }
         subValues[Sub.LIVE_YT]?.text = if (LiveExtras.ytSignedIn(this)) LiveExtras.ytChannel(this).ifBlank { "YouTube" } else str(R.string.yt_sum_not)
         val rate = LiveSettings.liveRate(this)
-        subValues[Sub.LIVE_QUALITY]?.text = str(LiveSettings.QUALITIES[LiveSettings.quality(this)].label) + " · " +
+        // the quality's name only (the tile has room for a word or two): «1080p · خودکار»
+        subValues[Sub.LIVE_QUALITY]?.text = str(LiveSettings.QUALITIES[LiveSettings.quality(this)].label).substringBefore('(').substringBefore(',').substringBefore('،').trim() + " · " +
             (if (LiveSettings.autoQuality(this)) str(R.string.live_sum_auto) else if (rate == 0) str(R.string.live_rate_auto) else "$rate Mbps")
         subValues[Sub.LIVE_SHORTS]?.text = str(if (LiveSettings.shortsOn(this)) R.string.on else R.string.off)
         subValues[Sub.LIVE_LAYOUT]?.text = str(if (LiveSettings.awayBanner(this)) R.string.live_sum_banner else R.string.live_sum_hold)
