@@ -52,6 +52,11 @@
   مرورگر فقط «net::ERR_FAILED» می‌گوید، نه ۴۰۰ و نه ۴۰۳، و کسی نمی‌فهمد چرا.
   سنجه‌اش در `account-gateway.mjs` هر سرآیند را **جدا** و به‌شکلِ توکنِ کامل
   می‌سنجد (پس `X-App-Id` جای `X-App` را پر نمی‌کند).
+- ⛔ **وب‌هوکِ حساب‌پی** (`/api/payments/webhook/hesabpay/:token`، shop PAY-21) فقط با HMACِ
+  بدنهٔ خام و سرآیندِ امضا پذیرفته می‌شود. پس `payments` در `ACCOUNT_PREFIXES` و
+  `x-hesab-signature` · `x-signature` · `x-hesabpay-signature` در `PASS_HEADERS` (همان
+  `SIG_HEADERS`ِ shop `lib/payment-hesabpay.js`؛ نامِ قطعی هنوز TODO ِ سندباکس است ⇒ هر دو با هم عوض شوند).
+  `calendar` (جدولِ تعطیلاتِ LOC-04) هم پیشوندِ تازه است. سنجه: «وب‌هوکِ حساب‌پی» در `account-gateway.mjs`.
 - ⚠️ سرورِ حساب باید `TRUST_PROXY=true` داشته باشد، وگرنه همه را یک IP می‌بیند.
 - ⛔ **`gateLimiter` فقط ترافیکِ خودِ درِ مدیر را می‌شمارد** (میزبانِ `admin.` و
   `GATE_PREFIX`) — خواستهٔ صریحِ صاحب ریپو. پیش از این روی همهٔ پورتِ عمومی بود و
