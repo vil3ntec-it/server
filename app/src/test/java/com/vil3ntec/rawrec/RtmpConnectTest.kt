@@ -340,6 +340,21 @@ class RtmpConnectTest {
         assertTrue("never 4 s behind (${s.maxLagMs} ms)", s.maxLagMs < RateControl.HARD_US / 1000)
     }
 
+    /**
+     * 6.5, the owner's own report: «51 Mbps» chosen by hand, the link carried 3 — 6.2 never lowered a
+     * manual rate, lost 7283 frames (27 %) and stalled the viewers. Now the chosen rate is a ceiling.
+     */
+    @Test fun aManual51MbpsOnA3MbpsLinkStaysRealTime() {
+        val s = Sim(51_000_000, 51_000_000) { 3_000_000.0 }
+        s.run(0.0, 30.0)
+        assertTrue("found within the first seconds (${s.drops} cuts)", s.drops <= 2)
+        val settle = s.drops
+        s.maxLagMs = 0; s.run(30.0, 454.0)   // the rest of the owner's 7:34
+        assertEquals("no cut once settled", settle, s.drops)
+        assertTrue("under what the link carries (${s.rc.target})", s.rc.target <= 3_450_000)
+        assertTrue("real time, never 4 s behind (${s.maxLagMs} ms)", s.maxLagMs < RateControl.HARD_US / 1000)
+    }
+
     /** 5.2: a stream that starts where the link was last time does not hit a narrow link at 6 Mbps. */
     @Test fun theStartIsWhereTheLinkWasLastTime() {
         val remembered = RateControl(12_000_000, startBps = 1_200_000)

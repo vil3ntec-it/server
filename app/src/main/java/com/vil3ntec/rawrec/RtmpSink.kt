@@ -42,6 +42,8 @@ class RtmpSink(
     class Status(
         val state: State, val kbps: Int, val targetKbps: Int, val dropped: Int, val reconnects: Int, val error: String?,
         val why: RtmpPublisher.Why? = null, val route: String? = null, val noPicture: Boolean = false,
+        /** How far behind real time the oldest waiting frame is (ms): the report's measure of a stall. */
+        val lagMs: Int = 0,
     )
 
     interface Listener {
@@ -162,7 +164,8 @@ class RtmpSink(
     private var state = State.CONNECTING
     private var kbps = 0
 
-    private fun status() = listener.onStatus(Status(state, kbps, target / 1000, dropped, reconnects, lastError, lastWhy, route, noPicture))
+    private fun status() = listener.onStatus(Status(state, kbps, target / 1000, dropped, reconnects, lastError, lastWhy, route, noPicture, lastLagMs))
+    @Volatile private var lastLagMs = 0
 
     private fun run() {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
@@ -196,7 +199,7 @@ class RtmpSink(
                         keyWanted.set(true)
                         state = State.LIVE
                         // the encoder starts at the controller's gentle starting rate (it runs by now)
-                        if (!started) { started = true; if (adaptive) apply(rate.target) }
+                        if (!started) { started = true; apply(rate.target) }
                         if (liveSinceMs == 0L || failingSince != 0L) liveSinceMs = System.currentTimeMillis()
                         failingSince = 0L
                         backoffMs = 1_000L
@@ -242,7 +245,11 @@ class RtmpSink(
                 // Automatic quality ([RateControl]): how long the oldest waiting frame has waited, and
                 // what the connection really carried, decide the encoder's bit rate.
                 val lagUs = lastEnqueuedPts - k.pts
-                when (if (adaptive) rate.step(now, lagUs, k.video) else manual(lagUs, k.video)) {
+                lastLagMs = (lagUs / 1000).toInt().coerceAtLeast(0)
+                // 6.5: the chosen rate is a ceiling, never more than the link carries — a manual 51 Mbps on a
+                // 3 Mbps link lost 27 % of the frames and stalled the viewers (the owner's report). The
+                // same controller for both; manual starts at, and returns to, the chosen rate
+                when (rate.step(now, lagUs, k.video)) {
                     RateControl.Act.DROP -> {
                         // too far behind real time (the link fell away): what waits is let go, a key frame at once —
                         // a short freeze for the viewers instead of minutes of «one second, then ten seconds nothing»
@@ -250,7 +257,7 @@ class RtmpSink(
                         dropped += queue.count { it.video }
                         queue.removeIf { it.video }
                         needKey = true; keyWanted.set(true)
-                        if (adaptive) apply(rate.target)
+                        apply(rate.target)
                         continue
                     }
                     RateControl.Act.SET -> apply(rate.target)
@@ -301,7 +308,7 @@ class RtmpSink(
         needKey = true
         keyWanted.set(true)
         // when it is back, the frames made meanwhile go out first: at half the rate, so they drain
-        if (adaptive) { rate.lost(System.nanoTime()); apply(rate.target) }
+        rate.lost(System.nanoTime()); apply(rate.target)
         status()
     }
 
@@ -324,18 +331,11 @@ class RtmpSink(
         return true
     }
 
-    private val rate = RateControl(maxBitrate, startBps = startBps)
+    private val rate = RateControl(maxBitrate, startBps = if (adaptive) startBps else maxBitrate)
     private var started = false
 
-    /**
-     * Manual quality: the owner's rate, never lowered. What waits is let go only after a real long
-     * break ([RateControl.HARD_US] behind) — the stream never runs out of memory, and never jumps for less.
-     */
-    private fun manual(lagUs: Long, video: Boolean): RateControl.Act =
-        if (video && lagUs > RateControl.HARD_US) RateControl.Act.DROP else RateControl.Act.NONE
-
     companion object {
-        /** The most the waiting frames may hold (64 MB: a minute at 8 Mbps). */
+        /** The most the waiting frames may hold (64 MB). */
         const val MAX_QUEUE_BYTES = 64L * 1024 * 1024
     }
 

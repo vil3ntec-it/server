@@ -81,7 +81,8 @@ class MultiSink(dests: List<LiveSettings.Dest>, maxBitrate: Int, private val lis
             val err = bad?.let { names[it] + ": " + all[it]?.error }
             return RtmpSink.Status(state, live.sumOf { it.kbps }, live.filter { it.state == RtmpSink.State.LIVE }.minOfOrNull { it.targetKbps }
                 ?: live.minOfOrNull { it.targetKbps } ?: 0, live.sumOf { it.dropped }, live.sumOf { it.reconnects }, err,
-                bad?.let { all[it]?.why }, live.firstOrNull { it.state == RtmpSink.State.LIVE }?.route, live.any { it.noPicture })
+                bad?.let { all[it]?.why }, live.firstOrNull { it.state == RtmpSink.State.LIVE }?.route, live.any { it.noPicture },
+                live.maxOfOrNull { it.lagMs } ?: 0)
         }
     }
 }

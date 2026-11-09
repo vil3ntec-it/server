@@ -884,6 +884,11 @@ class RecordService : Service(), Recorder.Events {
                 followLink(s)
                 // what the link settled at: where the next stream starts (after the first minute, every half minute)
                 val nowMs = System.currentTimeMillis()
+                if (s.state == RtmpSink.State.LIVE && nowMs - lastRateLog >= 30_000L) {
+                    lastRateLog = nowMs
+                    RecLog.add(this@RecordService, "rate: sent ${s.kbps} kbps, target ${s.targetKbps}, behind ${s.lagMs} ms, lost ${s.dropped} frames" +
+                        (recorder?.let { r -> ", picture ${r.plan.width}×${r.plan.height} at ${r.plan.fps}" + (if (r.rateRemakes > 0) ", encoder re-made ${r.rateRemakes}×" else "") } ?: ""))
+                }
                 if (s.state == RtmpSink.State.LIVE && nowMs - liveBorn > 60_000L && nowMs - lastRateSave > 30_000L && s.targetKbps > 0) {
                     lastRateSave = nowMs; LiveSettings.setLastRateKbps(this@RecordService, s.targetKbps)
                 }
@@ -1821,6 +1826,7 @@ class RecordService : Service(), Recorder.Events {
     private var netLevel = 0
     private var toldNet = false
     private var lastRateSave = 0L
+    private var lastRateLog = 0L
 
     private fun applyFpsCap() {
         val f = recorder?.filter ?: return
