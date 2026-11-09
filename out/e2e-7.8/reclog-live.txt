@@ -1,0 +1,27 @@
+2026-11-09 23:09:58  start: c2.android.avc.encoder 1152x720@60 7 Mbps level 3.2 • Android 34
+2026-11-09 23:09:59  screen sources: metrics 2560x1600, rotation 0, display context 2560x1600, config 2
+2026-11-09 23:09:59  captured app on screen
+2026-11-09 23:10:01  rtmp: CONNECTING
+2026-11-09 23:10:01  rtmp: LIVE via=direct 10.0.2.2
+2026-11-09 23:10:01  rate: sent 0 kbps, target 6000, behind 0 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 23:10:04  chat panel: whole screen captured
+2026-11-09 23:10:04  mirror: on the screen, 1 pictures
+2026-11-09 23:10:06  screen: 17 pictures, 16 drawn
+2026-11-09 23:10:06  mirror: on the screen, 1 pictures
+2026-11-09 23:10:19  link: 3000 of 7000 kbps, 30 fps
+2026-11-09 23:10:19  screen: 31 pictures, 31 drawn
+2026-11-09 23:10:19  mirror: on the screen, 1 pictures
+2026-11-09 23:10:31  screen: 49 pictures, 49 drawn
+2026-11-09 23:10:31  mirror: on the screen, 1 pictures
+2026-11-09 23:10:31  rate: sent 307 kbps, target 3000, behind 0 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 23:11:01  rate: sent 774 kbps, target 3000, behind 0 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 23:11:32  rate: sent 475 kbps, target 3000, behind 9 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 23:12:02  rate: sent 516 kbps, target 3000, behind 0 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 23:12:33  rate: sent 479 kbps, target 3000, behind 13 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 23:13:03  rate: sent 396 kbps, target 3000, behind 0 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 23:13:27  record: started beside the stream
+2026-11-09 23:13:27  notice: record: H.264 1712x1072 33 fps 12 Mbps beside the stream
+2026-11-09 23:13:34  rate: sent 267 kbps, target 3000, behind 0 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 23:13:49  record: closed and kept
+2026-11-09 23:13:51  stop: APP
+2026-11-09 23:13:55  rtmp: ENDED via=direct 10.0.2.2
