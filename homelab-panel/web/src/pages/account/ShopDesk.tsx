@@ -20,15 +20,16 @@
 //  می‌گوید و برنامه «تمام شده».
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Clock, CreditCard, KeyRound, MessagesSquare, Store, Users, Wifi } from 'lucide-react';
+import { Navigate } from 'react-router-dom';
+import { Clock, KeyRound, MessagesSquare, Store, Users, Wifi } from 'lucide-react';
 
 import { api } from '../../api';
 import { Card, CopyButton, Loading, toast } from '../../components/ui';
 import { useApp } from '../../app-context';
-import { ActionButton, Cell, Notice, Row, Stat, Table, Tabs } from '../../control/ui';
+import { ActionButton, Cell, Notice, Row, Stat, Table } from '../../control/ui';
 import { CloudProblem, fa, useLoad } from './shared';
-import GoTo from './GoTo';
+import AppSubscriptions from './AppSubscriptions';
+import { HealthCard, SourceLine } from './ShopConsole';
 
 type Overview = {
   serverTime: number;
@@ -59,7 +60,7 @@ const when = (ms?: number | null) => (ms ? new Date(Number(ms)).toLocaleDateStri
 
 /* ───────────────────────────── تبِ ۱: داشبورد ───────────────────────────── */
 
-function Dash() {
+export function Dash() {
   const { t } = useApp();
   const load = useLoad<Overview>('/api/account-admin/shop-desk/overview?days=7', [], ['customers', 'sales', 'support']);
   if (load.error) return <CloudProblem code={load.code} message={load.error} onRetry={load.reload} />;
@@ -91,6 +92,7 @@ function Dash() {
 
   return (
     <div className="space-y-4">
+      <div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Stat label={t('shopDeskShops')} value={fa(counts.shops)} icon={<Store size={16} />} />
         <Stat label={t('shopDeskCustomers')} value={fa(counts.customers)} icon={<Users size={16} />} />
@@ -103,6 +105,12 @@ function Dash() {
               icon={<MessagesSquare size={16} />}
               sub={t('shopDeskSupportOpen').replace('{n}', fa(counts.supportOpen))} />
       </div>
+      {/* ⛔ هر عدد منبع و زمان دارد — `serverTime` ِ خودِ سرورِ حساب */}
+      <SourceLine source="/api/admin/shop-desk/overview" data={d} at={load.at} />
+      </div>
+
+      {/* فاز ۲: کارتِ سلامت و نسخه‌ها، از ‎/api/admin/system/*‎ */}
+      <HealthCard />
 
       <Card title={t('shopDeskExpiring').replace('{n}', fa(d.days))} icon={<Clock size={16} />}>
         {expiring.length === 0 ? <Notice tone="good">{t('shopDeskExpiringNone')}</Notice> : (
@@ -163,7 +171,7 @@ function GroupTable({ rows, empty }: { rows: GroupRow[]; empty: string }) {
   );
 }
 
-function SubGroups() {
+export function SubGroups() {
   const { t } = useApp();
   const [q, setQ] = useState('');
   const load = useLoad<Groups>(`/api/account-admin/shop-desk/groups?q=${encodeURIComponent(q)}`, [q], 'customers');
@@ -275,7 +283,7 @@ function StaffCodeCard({ shopId, onClose }: { shopId: string; onClose: () => voi
   );
 }
 
-function Codes() {
+export function Codes() {
   const { t } = useApp();
   const [q, setQ] = useState('');
   const [open, setOpen] = useState('');
@@ -308,37 +316,23 @@ function Codes() {
   );
 }
 
-/* ─────────────────────────────── خودِ صفحه ─────────────────────────────── */
+/* ───────────────────────── اشتراک‌ها (ماژولِ ۴.۴) ───────────────────────── */
 
-export default function ShopDesk() {
-  const { t } = useApp();
-  const [params, setParams] = useSearchParams();
-  const tabs = [
-    { id: 'dash', label: t('shopDeskDash') },
-    { id: 'subs', label: t('shopDeskGroups') },
-    { id: 'codes', label: t('shopDeskCodes') },
-  ];
-  const wanted = params.get('tab') || 'dash';
-  const active = tabs.some((x) => x.id === wanted) ? wanted : 'dash';
-
-  return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-3">
-      <h1 className="text-lg font-semibold">{t('navShops')}</h1>
-      <Tabs tabs={tabs} active={active} onChange={(id) => setParams(id === 'dash' ? {} : { tab: id })} />
-      {active === 'dash' && <Dash />}
-      {/* ⛔ کارهای اشتراک (دادن، تمدید، لغو، قیمت) فقط در بخشِ مرکزیِ «اشتراک‌ها»
-          (۱۴۰۵/۰۷/۱۳)؛ این‌جا درِ همان‌جا با بخشِ دکان، و زیرش سه گروهِ خواندنی */}
-      {active === 'subs' && (
-        <GoTo
-          icon={<CreditCard size={18} />}
-          title="اشتراک‌های فروشگاه‌ها"
-          hint="دیدن، دادن با مدتِ دلخواه، تمدید، لغو و قیمتِ پلن‌ها — همه در بخشِ «اشتراک‌ها»، با فیلترِ دکان"
-          to="/subscriptions?app=shop"
-          cta="رفتن به اشتراک‌ها"
-        />
-      )}
-      {active === 'subs' && <SubGroups />}
-      {active === 'codes' && <Codes />}
-    </div>
-  );
+/**
+ *  ⛔ اشتراکِ فروشگاه فقط همین‌جاست — بخشِ جدای «اشتراک‌ها» برداشته شد (دستورِ صاحب محصول ۱۴۰۵/۰۸/۰۹): همهٔ کارها
+ *  با بخشِ ثابتِ دکان، و سه گروهِ خواندنیِ میز یک زبانهٔ همان‌جا (‎?view=groups‎).
+ *  ⛔ «یک موضوع، یک در»: «فروش و درآمد»ِ دکان زبانهٔ «مالی» است؛ ‎?tab=subs&view=sales‎ (و ‎/sales?app=shop‎ از راهِ
+ *  `subsPath`) به همان‌جا می‌رسد، نه به رونوشتِ دوم.
+ */
+export function ShopSubs({ params }: { params: URLSearchParams }) {
+  if (params.get('view') === 'sales') return <Navigate to="/shop?tab=finance" replace />;
+  return <AppSubscriptions app="shop" groups={<SubGroups />} omit={['sales']} />;
 }
+
+/*
+ *  ══ بخشِ «فروشگاه» — پنلِ مرکزیِ مالک، یک برنامهٔ کامل داخلِ پنل (۱۴۰۵/۰۸/۱۰) ══
+ *  خودِ صفحه دیگر این‌جا نیست: پوسته، منوی گروه‌بندی‌شده، ردِ نان، جست‌وجو و نگهبانِ هر ماژول در
+ *  ‎./console/Shell.tsx‎ (مسیرِ ‎/shop‎ در `App.tsx`). این فایل تکه‌های داشبورد، سه گروه، کدِ شاگرد و اشتراک‌ها را
+ *  دارد که ماژول‌های ‎./console/modules/‎ به کار می‌برند. زبانه‌های پیشین (‎?tab=dash|shops|subs|finance|versions|
+ *  health|settings|integrations|audit|codes‎) همان نشانی‌اند، پس هیچ لینکی نمی‌شکند.
+ */

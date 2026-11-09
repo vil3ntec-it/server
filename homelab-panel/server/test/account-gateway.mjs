@@ -45,6 +45,10 @@ for (const [p, want] of [
   ['/api/v1/auth/login', true],
   ['/api/v1/admin/login', true],
   ['/api/v1/shop/sync/push', true],
+  //  وب‌هوکِ حساب‌پی (shop PAY-21) و جدولِ تعطیلات (shop LOC-04)
+  ['/api/payments/webhook/hesabpay/t0k', true],
+  ['/api/v1/payments/webhook/hesabpay', true],
+  ['/api/calendar/holidays?year=1405', true],
   ['/admin/', true],
   ['/admin', true],
   ['/admin/app.js', true],
@@ -84,7 +88,8 @@ const fake = http.createServer((req, res) => {
   req.on('data', (c) => chunks.push(c));
   req.on('end', () => {
     const body = Buffer.concat(chunks);
-    seen.push({ method: req.method, url: req.url, headers: req.headers, size: body.length });
+    seen.push({ method: req.method, url: req.url, headers: req.headers, size: body.length,
+      sha: crypto.createHash('sha256').update(body).digest('hex') });
     //  همان شکلِ پاسخ‌های shop/server
     res.setHeader('content-type', 'application/json; charset=utf-8');
     //  ⚠️ عمداً CORS می‌دهد — باید دور ریخته شود، وگرنه دو Allow-Origin روی هم می‌نشیند
@@ -270,6 +275,33 @@ try {
       if (h === 'content-type') continue;
       check(`${h} به سرورِ حساب می‌رسد`, got[h] === sent[h], `${h}=${got[h] === undefined ? 'نرسید' : got[h]}`);
     }
+  }
+
+  /*
+   *  ⛔ وب‌هوکِ حساب‌پی از تونل به سرورِ حساب می‌رسد — امضا و بدنهٔ خام دست‌نخورده.
+   *
+   *  سرورِ حساب (shop `routes/payments-webhook.js`) اعتبار را **فقط** از HMACِ
+   *  بدنهٔ خام با سرآیندِ امضا می‌گیرد. درگاهی که سرآیند را دور بریزد یا بدنه را
+   *  دوباره بسازد، هر پرداختِ واقعی را ۴۰۱ می‌کند و هیچ خطایی هیچ‌جا دیده نمی‌شود.
+   */
+  console.log('\n── وب‌هوکِ حساب‌پی: امضا و بدنهٔ خام می‌رسند ──');
+  {
+    const raw = '{"session_id":"s-1","status":"paid","amount":"150.50"}  \n';
+    const sha = crypto.createHash('sha256').update(raw).digest('hex');
+    for (const h of ['x-hesab-signature', 'x-signature', 'x-hesabpay-signature']) {
+      seen.length = 0;
+      await hit(PUBLIC, '/api/payments/webhook/hesabpay/t0k', {
+        method: 'POST', body: raw, headers: { 'content-type': 'application/json', [h]: 'sha256=ab12' },
+      });
+      const got = seen.at(-1) || {};
+      check(`${h}: وب‌هوک به سرورِ حساب رسید`, got.url === '/api/payments/webhook/hesabpay/t0k', got.url || 'نرسید');
+      check(`${h}: سرآیندِ امضا رسید`, (got.headers || {})[h] === 'sha256=ab12', (got.headers || {})[h] || 'نرسید');
+      check(`${h}: بدنهٔ خام بایت‌به‌بایت همان است`, got.sha === sha, `${got.size} بایت`);
+    }
+    seen.length = 0;
+    await hit(PUBLIC, '/api/calendar/holidays?year=1405');
+    check('جدولِ تعطیلات (/api/calendar) هم به سرورِ حساب می‌رسد',
+      (seen.at(-1) || {}).url === '/api/calendar/holidays?year=1405', (seen.at(-1) || {}).url || 'نرسید');
   }
 
   /*

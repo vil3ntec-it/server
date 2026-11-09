@@ -69,6 +69,10 @@ export const ACCOUNT_PREFIXES = Object.freeze([
   'market',
   //  رسیدِ عمومیِ هر فاکتور (shop #369، QRِ فاکتور): ‎/api/receipt‎
   'receipt',
+  //  وب‌هوکِ حساب‌پیِ هر دکان (shop PAY-21): ‎/api/payments/webhook/…‎ — امضا در PASS_HEADERS
+  'payments',
+  //  جدولِ تعطیلاتِ رسمی (shop LOC-04)، خواندنِ همگانی: ‎/api/calendar‎
+  'calendar',
 ]);
 
 /** زیرِ ‎/api/v1‎ این‌ها مالِ خودِ این سرورند و هرگز رد نمی‌شوند. */
@@ -116,6 +120,8 @@ const PASS_HEADERS = [
   'x-app-platform', 'x-requested-with', 'if-none-match', 'if-modified-since',
   'cache-control', 'range',
   'x-app', 'x-device', 'x-request-id', 'idempotency-key',
+  //  امضای وب‌هوکِ حساب‌پی — همان SIG_HEADERSِ shop `lib/payment-hesabpay.js`؛ بی این، هر پرداخت ۴۰۱
+  'x-hesab-signature', 'x-signature', 'x-hesabpay-signature',
 ];
 
 /** سرآیندهای اتصال — مالِ همین یک پرش‌اند و رد نمی‌شوند. */

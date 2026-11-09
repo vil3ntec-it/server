@@ -32,12 +32,31 @@
 //     می‌کند، پس «هر طرف روی دستگاهِ خودش نگه می‌دارد» یعنی همین‌جا.
 // ---------------------------------------------------------------------------
 import express from 'express';
-import { cloudRaw, cloudRawText, cloudRawBytes } from '../stations/cloud.js';
+import {
+  cloudRaw, cloudRawText, cloudRawBytes, cloudProbeServiceKey, serviceKeyReset, serviceKeyStatus, legacyAvailable,
+} from '../stations/cloud.js';
 import { fetchOnce, writeCached } from '../support-media-cache.js';
-import { requireRole } from '../control/roles.js';
+import * as panelRoles from '../control/roles.js';
 import { audit } from '../control/audit.js';
+import * as panelAuth from '../auth.js';
+import { db } from '../db.js';
+import { rateLimit } from '../platform/rate-limit.js';
+import { mountConsoleOps } from './console-ops.js';
+import financeRoutes from './account-finance.js';
+import {
+  withPanelActor, readServiceKey, storeServiceKey, forgetServiceKey, publicServiceKey, SERVICE_KEY_RE,
+} from '../account/service-key.js';
+import { mountConsoleShell } from './console-shell.js';
+import { mountConsoleMarket, MARKET_CAPABILITIES } from './console-market.js';
 
+const { requireRole } = panelRoles;
 const router = express.Router();
+/*
+ *  ⛔ «انجام‌دهنده» ِ هر درخواستِ این پل = کاربرِ همین نشستِ پنل (چسبِ فاز ۲ و ۳). وقتی سرورِ حساب کلیدِ
+ *  سرویس را می‌پذیرد، با ‎X-Actor-*‎ به آن‌جا می‌رود و مرزِ نقش را **خودِ سرورِ حساب** هم می‌سنجد؛ بی کلید
+ *  همان راهِ پیشین (‎account/service-key.js‎، ‎stations/cloud.js‎ ⇒ ‎sendAuthed‎).
+ */
+router.use(withPanelActor);
 const DAY = 24 * 3600 * 1000;
 
 /** خطای پل را با همان کدِ خودش برگردان، نه ۵۰۰ی گنگ. */
@@ -864,8 +883,13 @@ router.patch('/account-config', requireRole('admin'), guard(async (req, res) => 
   if (!Object.keys(body).length) {
     return res.status(400).json({ error: 'nothing', message: 'چیزی برای نوشتن نبود' });
   }
-  const out = await cloudRaw('PATCH', '/api/admin/config', { body });
-  audit({ actor: actorOf(req), action: 'account.trial.update', detail: body });
+  //  پوستهٔ کنسول (۴.۱۲): «پیشین ⇒ تازه» و دلیل (اختیاری؛ کنسول همیشه می‌فرستد) در دفترِ پنل — همان ردیف‌ها
+  //  «تاریخچهٔ تنظیمات» ِ ماژولِ تنظیمات‌اند. خواندنِ پیشین شکست بخورد ⇒ `from` نیست، نه حدس.
+  const reason = String(req.body?.reason ?? '').trim().slice(0, 200);
+  const before = await cloudRaw('GET', '/api/admin/plans').catch(() => null);
+  const out = await cloudRaw('PATCH', '/api/admin/config', { body: { ...body, ...(reason ? { reason } : {}) } });
+  const from = before?.config ? Object.fromEntries(Object.keys(body).map((k) => [k, before.config[k] ?? null])) : undefined;
+  audit({ actor: actorOf(req), action: 'account.trial.update', detail: { ...body, ...(from ? { from } : {}), ...(reason ? { reason } : {}) } });
   res.json({ config: Object.fromEntries(CONFIG_KEYS.map((k) => [k, out.config?.[k] ?? ''])) });
 }));
 
@@ -1183,7 +1207,18 @@ router.post('/discount-codes/quote', guard(async (req, res) => {
 /* ------------------------------- کمپین -------------------------------- */
 
 router.get('/campaigns', guard(async (req, res) => {
-  res.json(await cloudRaw('GET', '/api/admin/campaigns'));
+  const out = await cloudRaw('GET', '/api/admin/campaigns');
+  /*
+   *  ⛔ ۱۴۰۵/۰۸/۰۹ — اشتراکِ هر برنامه در بخشِ خودش: «تخفیف‌ها و کمپین»ِ پمپ
+   *  کمپینِ دکان را نشان نمی‌دهد. سرورِ حساب برای این فهرست `?app=` ندارد، پس
+   *  پالایش همین‌جا در سرور است، نه در رابط. کمپینِ «هر دو» مالِ هر دو بخش است.
+   *  بی `?app=` (یا «هر دو») همان فهرستِ کامل، مثلِ پیش.
+   */
+  const scope = scopeOf(req.query.app);
+  if ((scope === 'shop' || scope === 'pump') && Array.isArray(out?.campaigns)) {
+    return res.json({ ...out, campaigns: out.campaigns.filter((c) => c && (c.app === scope || c.app === 'both')) });
+  }
+  res.json(out);
 }));
 
 /** فیلتر ⇒ کدِ تخفیف ⇒ اعلان، در یک تماس (سناریوی ۱۱ پرامپت). */
@@ -1294,7 +1329,7 @@ router.post('/notices/:id/preview', guard(async (req, res) => {
 }));
 
 /** ارسالِ آزمایشی به نشانیِ خودِ مدیر — باز هم بی هیچ ردیفی در گزارش. */
-router.post('/notices/:id/test', guard(async (req, res) => {
+router.post('/notices/:id/test', requireRole('operator'), guard(async (req, res) => {
   res.json(await cloudRaw('POST', `/api/admin/notices/${idOf(req.params.id)}/test`, {
     body: { to: String(req.body?.to || '').slice(0, 160) },
   }));
@@ -1460,11 +1495,18 @@ router.get('/sync/conflicts', guard(async (req, res) => {
   }));
 }));
 
-/** بازگرداندنِ نسخهٔ بازنده — یک opِ تازه از طرفِ سرور، نه پاک کردنِ چیزی. */
-router.post('/sync/conflicts/:id/restore', guard(async (req, res) => {
+/**
+ * بازگرداندنِ نسخهٔ بازنده — یک opِ تازه از طرفِ سرور، نه پاک کردنِ چیزی.
+ *
+ * ⛔ (۱۴۰۵/۰۸/۰۹) دادهٔ یک حساب را عوض می‌کند و سرورِ حساب آن را فقط به مدیرِ
+ * **ارشد** و فقط **با دلیل** می‌دهد (`admin-sync.js`، ADMIN-CONTROL-PLANE). پل با
+ * حسابِ ارشد حرف می‌زند، پس مرزِ نقش همین‌جاست: فقط admin، و دلیل همراه می‌رود.
+ */
+router.post('/sync/conflicts/:id/restore', requireRole('admin'), guard(async (req, res) => {
   const id = idOf(req.params.id);
-  const out = await cloudRaw('POST', `/api/admin/sync/conflicts/${id}/restore`);
-  audit({ actor: actorOf(req), action: 'account.sync.restore', entity: 'sync_conflict', entityId: id });
+  const reason = String(req.body?.reason ?? '').trim().slice(0, 500);
+  const out = await cloudRaw('POST', `/api/admin/sync/conflicts/${id}/restore`, { body: { reason } });
+  audit({ actor: actorOf(req), action: 'account.sync.restore', entity: 'sync_conflict', entityId: id, detail: { reason } });
   res.json(out);
 }));
 
@@ -1841,7 +1883,13 @@ router.put('/email', requireRole('admin'), guard(async (req, res) => {
   res.json(out);
 }));
 
-router.post('/email/test', guard(async (req, res) => {
+/*
+ *  ⛔ «آزمون»های این روتر **می‌فرستند** (ایمیل، پیامک، اعلان) — نگاه کردن نیستند.
+ *  `writeNeedsOperator` هر POSTِ ‎…/test‎ را «فقط نگاه» می‌شمارد و برای viewer باز
+ *  می‌گذارد (درست برای آزمونِ اتصالِ مرکز فرمان)؛ پس این‌جا نقش صریح است. پیامک
+ *  پول است و سرورِ حساب آن را فقط به ارشد می‌دهد ⇒ admin.
+ */
+router.post('/email/test', requireRole('operator'), guard(async (req, res) => {
   res.json(await cloudRaw('POST', '/api/admin/email/test', { body: req.body || {} }));
 }));
 
@@ -1865,7 +1913,7 @@ router.put('/sms', requireRole('admin'), guard(async (req, res) => {
   res.json(out);
 }));
 
-router.post('/sms/test', guard(async (req, res) => {
+router.post('/sms/test', requireRole('admin'), guard(async (req, res) => {
   res.json(await cloudRaw('POST', '/api/admin/sms/test', { body: req.body || {} }));
 }));
 
@@ -1877,10 +1925,444 @@ router.post('/sms/test', guard(async (req, res) => {
  *     از `api.<دامنه>/admin/` انجام شده‌اند و پنل اصلاً ندیدشان.
  */
 router.get('/account-audit', guard(async (req, res) => {
+  //  ⚠️ (فاز ۲) پالایشِ «یک دکان» **سمتِ سرورِ حساب** است (`shopId`ِ ‎admin.js /audit‎)، نه فیلترِ
+  //  محلی روی صد ردیفِ آخر — وگرنه کارهای قدیمی‌ترِ همان دکان هیچ‌وقت دیده نمی‌شدند. سقف همان ۵۰۰ِ آن‌جا.
+  const shopId = req.query.shopId ? idOf(req.query.shopId) : '';
   res.json(await cloudRaw('GET', '/api/admin/audit', {
-    query: { limit: Math.min(200, Math.max(1, Number(req.query.limit) || 50)) },
+    query: { limit: Math.min(500, Math.max(1, Number(req.query.limit) || 50)), shopId },
   }));
 }));
+
+/* ═══════════════════════════════════════════════════════════════════════
+   🏪 کنسولِ فروشگاه — فاز ۲ ِ پنلِ مرکزیِ مالک (OWNER-CONSOLE-AUDIT §۴ و §۸)
+
+   زبانه‌های «فروشگاه» (‎/shop‎): داشبورد · فروشگاه‌ها · اشتراک‌ها · مالی · نسخه‌ها · سلامت و خطاها ·
+   تنظیمات و پرچم‌ها · یکپارچه‌سازی · دفترِ رخداد. هر چه پیش از این فقط در کنسولِ وبِ خودِ سرورِ حساب
+   (‎api.<دامنه>/admin/‎) بود، با **یک خطِ فهرستِ سفید برای هر مقصد**:
+
+     پنل ‎/api/account-admin/console/…‎      ⇐ سرورِ حساب                         نقشِ پنل   نقشِ آن‌جا
+     system/health · providers · versions  ⇐ ‎/api/admin/system/*‎               viewer     admin
+     system/chain-verify (POST)            ⇐ ‎/api/admin/system/chain-verify‎   admin      superadmin
+     release/beta                          ⇐ ‎/api/admin/release/beta‎          admin      superadmin
+     version-health                        ⇐ ‎/api/admin/sync/version-health‎   viewer     admin
+     live-config                           ⇐ ‎/api/admin/pump/live-config‎      viewer     admin
+     capabilities                          ⇐ ‎/api/admin/me‎ (فقط ‎capabilities‎) viewer     admin
+     shops/:id/health · flags · flags/history ⇐ فاز ۳ (shop) — پشتِ سنجشِ «توانایی»     viewer     admin
+     shops/:id/holds (GET)                 ⇐ ‎/api/admin/shops/:id/holds‎        viewer     admin
+     shops/:id/holds · …/:holdId/lift (POST) ⇐ همان، با دلیل + تأیید + کلیدِ یکتایی admin      به نوعِ حالت
+     service-key (GET · POST · …/revoke)   ⇐ ‎/api/admin/service-keys‎ (راهِ پیشین) admin/مالک ارشدِ انسانی
+
+   ⛔ **همه خواندنی‌اند** جز `chain-verify` که فقط می‌سنجد (چیزی عوض نمی‌کند) ولی هزینه دارد و یک ردیفِ
+      سابقه در سرورِ حساب می‌نویسد ⇒ فقط admin، و یک ردیفِ دفترِ پنل؛ و (چسبِ فاز ۳) گذاشتن/برداشتنِ
+      حالتِ دکان و کلیدِ سرویس — پایین‌تر، هر کدام با قاعدهٔ خودش.
+   ⛔ **هیچ عددی این‌جا ساخته یا حساب نمی‌شود.** پاسخِ بالادست همان‌طور می‌رود؛ فقط `fetchedAt` (زمانِ
+      رسیدنِ پاسخ به پنل) کنارش می‌نشیند تا صفحه «آخرین به‌روزرسانی» را از جایی واقعی بگوید، نه از
+      ساعتِ مرورگر.
+   ⛔ **مرزِ نقش = مرزِ سرورِ حساب یا تنگ‌تر.** پل با حسابِ ارشد حرف می‌زند، پس هر مقصدِ «فقط ارشد»
+      این‌جا دستِ‌کم admin است — و `test/bridge-roles.mjs` همین را برای **همهٔ** مسیرهای پل از روی
+      خودِ کدِ سرورِ حساب می‌سنجد، نه از این جدول.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const stamped = (out) => ({ ...(out && typeof out === 'object' ? out : {}), fetchedAt: Date.now() });
+
+router.get('/console/system/health', guard(async (req, res) => {
+  res.json(stamped(await cloudRaw('GET', '/api/admin/system/health')));
+}));
+
+router.get('/console/system/providers', guard(async (req, res) => {
+  res.json(stamped(await cloudRaw('GET', '/api/admin/system/providers')));
+}));
+
+router.get('/console/system/versions', guard(async (req, res) => {
+  res.json(stamped(await cloudRaw('GET', '/api/admin/system/versions')));
+}));
+
+/*
+ *  ⛔ وارسیِ زنجیرهٔ هشِ سابقه (SEC-02) — فقط‌خواندنی ولی پرهزینه، و نامِ زنجیره‌ها شناسهٔ دکان و
+ *  کاربر را دارد؛ سرورِ حساب آن را فقط به ارشد می‌دهد ⇒ این‌جا فقط admin. بدنهٔ کاربر نمی‌رود:
+ *  همیشه «همهٔ زنجیره‌ها، با ردیف‌ها» — همان پیش‌فرضِ آن‌جا.
+ */
+router.post('/console/system/chain-verify', requireRole('admin'), guard(async (req, res) => {
+  const out = await cloudRaw('POST', '/api/admin/system/chain-verify', { body: {} });
+  audit({
+    actor: actorOf(req), action: 'account.chain_verified', entity: 'account_server',
+    detail: { ok: out?.ok === true, total: Number(out?.total) || 0, broken: Number(out?.brokenCount) || 0 },
+  });
+  res.json(stamped(out));
+}));
+
+/** کانالِ آزمایشیِ برنامهٔ دکان (F0-27) — خواندن فقط؛ سرورِ حساب حتی خواندنش را فقط به ارشد می‌دهد. */
+router.get('/console/release/beta', requireRole('admin'), guard(async (req, res) => {
+  res.json(stamped(await cloudRaw('GET', '/api/admin/release/beta')));
+}));
+
+/** «یک نسخه: چند دستگاه، چند خطا» — شمرده در سرورِ حساب، نه این‌جا. */
+router.get('/console/version-health', guard(async (req, res) => {
+  const app = sectionOf(req.query.app || 'shop');
+  const version = String(req.query.version || '').trim().replace(/^v/i, '').slice(0, 32);
+  if (!/^\d+(\.\d+){1,3}$/.test(version)) {
+    return res.status(400).json({ error: 'bad_version', message: 'نسخه درست نیست' });
+  }
+  res.json(stamped(await cloudRaw('GET', '/api/admin/sync/version-health', { query: { app, version } })));
+}));
+
+/*
+ *  «تنظیماتِ زنده» (`live_config`) — `all` یا شناسهٔ یک دکان/پمپ.
+ *  ⛔ `release` این‌جا نه: همان فهرستِ کانالِ آزمایشی است که درِ خودش (`release/beta`) فقط admin است؛
+ *     درِ دوم با نقشِ پایین‌تر همان مرز را دور می‌زد.
+ */
+router.get('/console/live-config', guard(async (req, res) => {
+  const raw = String(req.query.scope || 'all').trim();
+  if (raw === 'release') {
+    return res.status(400).json({ error: 'use_release_beta', message: 'کانالِ آزمایشی را از زبانهٔ «نسخه‌ها» ببینید' });
+  }
+  const scope = raw === 'all' ? 'all' : idOf(raw);
+  res.json(stamped(await cloudRaw('GET', '/api/admin/pump/live-config', { query: { scope } })));
+}));
+
+/*
+ *  ── فاز ۳ (ریپوی shop): پشتِ سنجشِ «توانایی» ───────────────────────────
+ *
+ *  ⛔ مسیری که سرورِ حساب نگفته دارد هرگز صدا زده نمی‌شود. اول ‎GET /api/admin/me‎ — قرارداد: فیلدِ
+ *  افزودنیِ `capabilities: string[]` (‎routes/admin.js‎ ِ shop، بندِ ۱۲.۶ ِ ADMIN-CONTROL-PLANE؛ نسخهٔ
+ *  کهنه آن را ندارد ⇒ هیچ توانایی). نبودِ توانایی ⇒ خواندن: پاسخِ ۲۰۰ ِ صریح
+ *  `{ available: false, reason, capability, needs }`؛ نوشتن: ‎501 capability_missing‎ — نه عددِ ساختگی،
+ *  نه «انجام شد» ِ دروغ.
+ *  ⚠️ نام‌ها **همان** نام‌های سرورِ حساب‌اند (یکی برای هر دو سو): `shop-holds.v1` جای `shop-suspension.v1` ِ
+ *     پیش‌نویسِ فاز ۲ — درِ ‎/suspension‎ هرگز ساخته نشد؛ چهار حالت + بایگانی همان ‎/holds‎ است.
+ */
+export const PHASE3 = Object.freeze({
+  'shop-health.v1': 'GET /api/admin/shops/:id/health',
+  'shop-holds.v1': 'GET|POST /api/admin/shops/:id/holds · POST /api/admin/shops/:id/holds/:holdId/lift',
+  'flags.v1': 'GET /api/admin/flags · GET /api/admin/flags/history',
+  'actor.v1': 'سرآیندهای X-Actor-Id/Role/Name ⇒ «انجام‌دهنده» در سابقهٔ سرورِ حساب',
+  'service-key.v1': 'Bearer vsk_… · /api/admin/service-keys',
+  //  ماژول‌های عملیات (‎routes/console-ops.js‎) و انتشارِ مرحله‌ایِ OPS-01 (shop #559)
+  'ops.v1': 'GET /api/admin/ops/releases|health|integrations · /api/admin/ops/incidents* · /api/admin/ops/alerts*',
+  'release-stage.v1': 'GET|PUT|DELETE /api/admin/release/stage (OPS-01، shop #559)',
+  'finance.v1': 'GET /api/admin/finance/* · POST /api/admin/finance/adjustments (ماژولِ ۴.۵ ِ مالیِ مرکزی، ‎routes/account-finance.js‎)',
+  //  کنسولِ یکپارچه: پوسته (‎routes/console-shell.js‎) و ۴.۶/۴.۷ (‎routes/console-market.js‎) هم در همین فهرست — تا
+  //  ‎GET /console/capabilities‎ (یکپارچه‌سازی) «هست/نیست» ِ همهٔ ماژول‌های بخشِ «فروشگاه» را یک‌جا بگوید
+  'admin-sessions.v1': 'GET /api/admin/admins/:id/sessions · POST …/sessions/revoke (ماژولِ ۴.۳)',
+  'search.v1': 'GET /api/admin/search (جست‌وجوی سراسریِ پوسته)',
+  ...MARKET_CAPABILITIES,
+});
+const CAP_RE = /^[a-z][a-z0-9-]{0,40}\.v\d{1,3}$/;
+
+/*
+ *  ⚠️ کَش نمی‌شود، عمداً: یک ‎GET /api/admin/me‎ِ سبک برای هر درِ فاز ۳ (که فقط با باز کردنِ همان کارت
+ *  صدا زده می‌شود)، و روزی که سرورِ حساب به‌روز شد همان لحظه دیده می‌شود — نه یک دقیقه بعد.
+ */
+async function capabilities(opts = {}) {
+  const me = await cloudRaw('GET', '/api/admin/me', opts);
+  const list = Array.isArray(me?.capabilities) ? me.capabilities.map(String).filter((c) => CAP_RE.test(c)) : [];
+  return { at: Date.now(), list, me };
+}
+
+function unavailable(capability) {
+  return {
+    available: false,
+    reason: 'capability_missing',
+    capability,
+    needs: PHASE3[capability] || capability,
+    message: 'داده در دسترس نیست — سرورِ حساب هنوز این API را ندارد (فاز ۳ ِ پنلِ مرکزی، ریپوی shop)',
+    fetchedAt: Date.now(),
+  };
+}
+
+/** نوشتن روی سرورِ حسابِ بی توانایی ⇒ ۵۰۱، نه «انجام شد». */
+function missingErr(capability) {
+  const err = new Error(`این کار روی نسخهٔ فعلیِ سرورِ حساب نیست (${capability}) — سرورِ حساب را به‌روز کنید`);
+  err.code = 'capability_missing';
+  err.status = 501;
+  return err;
+}
+
+function badInput(code, message) {
+  const err = new Error(message);
+  err.code = code;
+  err.status = 400;
+  return err;
+}
+
+router.get('/console/capabilities', guard(async (req, res) => {
+  const caps = await capabilities();
+  res.json({
+    capabilities: caps.list,
+    known: Object.entries(PHASE3).map(([id, needs]) => ({ id, needs, available: caps.list.includes(id) })),
+    checkedAt: caps.at,
+  });
+}));
+
+router.get('/console/shops/:id/health', guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  if (!(await capabilities()).list.includes('shop-health.v1')) return res.json(unavailable('shop-health.v1'));
+  res.json({ available: true, ...stamped(await cloudRaw('GET', `/api/admin/shops/${id}/health`)) });
+}));
+
+/* ─── حالت‌های مدیریتیِ دکان: چهار حالتِ جدا + بایگانی (‎lib/shop-holds.js‎ ِ shop، بندِ ۱۲.۱) ───
+ *
+ *   access_suspended · service_disabled (+ service) · subscription_ended · deletion_requested · archived
+ *
+ *  ⛔ هیچ‌کدام چیزی پاک نمی‌کند و همه برگشت‌پذیرند (برداشتن). خودِ قاعده‌ها (نقشِ هر حالت، دلیلِ ۳ تا ۲۰۰،
+ *     سابقه در همان تراکنش، ‎Idempotency-Key‎ ِ اجباری برای «پایانِ اشتراک») در **سرورِ حساب** است؛ پل
+ *     فقط پیش از فرستادن همان را تنگ‌تر می‌سنجد تا درخواستِ بی‌دلیل یا بی‌تأیید اصلاً نرود:
+ *       • نوشتن فقط admin ِ پنل (سرورِ حساب: ارشد/مدیر/مالی بسته به حالت) — تنگ‌تر، مجاز؛
+ *       • `confirm: true` (پنجرهٔ تأییدِ رابط) و `reason` اجباری؛
+ *       • کلیدِ یکتایی از **رابط** (یکی برای هر پنجره ⇒ دوبار زدن یک کار است)، نه ساختهٔ پل — کلیدی که پل
+ *         برای هر تلاش بسازد همان تکرار را دوباره می‌کند.
+ *  ⛔ پاسخِ بالادست همان‌طور می‌رود (‎hold‎، ‎state‎، ‎replayed‎) + یک ردیف در دفترِ پنل.
+ */
+const HOLD_KINDS = Object.freeze(['access_suspended', 'service_disabled', 'subscription_ended', 'deletion_requested', 'archived']);
+const HOLD_SERVICES = Object.freeze(['shop.storefront', 'shop.orders', 'shop.delivery', 'shop.chat', 'market.directory']);
+const IDEM_RE = /^[A-Za-z0-9_.:-]{8,128}$/;
+
+function holdReasonOf(req) {
+  const reason = String(req.body?.reason ?? '').trim();
+  if (reason.length < 3 || reason.length > 200) {
+    throw badInput('reason_required', 'دلیل را بنویسید (۳ تا ۲۰۰ نویسه) — در سابقهٔ سرورِ حساب می‌ماند');
+  }
+  return reason;
+}
+function requireConfirm(req) {
+  if (req.body?.confirm !== true) throw badInput('confirm_required', 'این کار پیش از فرستادن تأیید می‌خواهد');
+}
+function idemOf(req) {
+  const k = String(req.body?.idempotencyKey ?? '').trim();
+  if (k && !IDEM_RE.test(k)) throw badInput('bad_idempotency_key', 'کلیدِ یکتایی نامعتبر است');
+  return k;
+}
+
+router.get('/console/shops/:id/holds', guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  if (!(await capabilities()).list.includes('shop-holds.v1')) return res.json(unavailable('shop-holds.v1'));
+  const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 100));
+  res.json({ available: true, ...stamped(await cloudRaw('GET', `/api/admin/shops/${id}/holds`, { query: { limit } })) });
+}));
+
+router.post('/console/shops/:id/holds', requireRole('admin'), guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const kind = String(req.body?.kind || '').trim();
+  if (!HOLD_KINDS.includes(kind)) throw badInput('bad_hold_kind', 'نوعِ حالت درست نیست');
+  const service = kind === 'service_disabled' ? String(req.body?.service || '').trim() : '';
+  if (kind === 'service_disabled' && !HOLD_SERVICES.includes(service)) throw badInput('bad_service', 'کدام سرویس؟');
+  const reason = holdReasonOf(req);
+  requireConfirm(req);
+  const key = idemOf(req);
+  if (kind === 'subscription_ended' && !key) {
+    throw badInput('idempotency_key_required', '«پایانِ اشتراک» کلیدِ یکتایی می‌خواهد (رابطِ پنل خودش می‌فرستد)');
+  }
+  if (!(await capabilities()).list.includes('shop-holds.v1')) throw missingErr('shop-holds.v1');
+  //  ⚠️ بدنهٔ بالادست همیشه همین سه فیلد و به همین ترتیب: سرورِ حساب کلیدِ یکتایی را به هشِ بدنه می‌بندد
+  const out = await cloudRaw('POST', `/api/admin/shops/${id}/holds`, {
+    body: { kind, ...(service ? { service } : {}), reason },
+    headers: key ? { 'idempotency-key': key } : {},
+  });
+  audit({
+    actor: actorOf(req), action: 'account.shop_hold.placed', entity: 'shop', entityId: id,
+    detail: { kind, ...(service ? { service } : {}), reason, holdId: out?.hold?.id || null, replayed: out?.replayed === true },
+  });
+  res.status(out?.replayed ? 200 : 201).json(stamped(out));
+}));
+
+router.post('/console/shops/:id/holds/:holdId/lift', requireRole('admin'), guard(async (req, res) => {
+  const id = idOf(req.params.id);
+  const holdId = idOf(req.params.holdId);
+  const reason = holdReasonOf(req);
+  requireConfirm(req);
+  const key = idemOf(req);
+  if (!(await capabilities()).list.includes('shop-holds.v1')) throw missingErr('shop-holds.v1');
+  const out = await cloudRaw('POST', `/api/admin/shops/${id}/holds/${holdId}/lift`, {
+    body: { reason },
+    headers: key ? { 'idempotency-key': key } : {},
+  });
+  audit({
+    actor: actorOf(req), action: 'account.shop_hold.lifted', entity: 'shop', entityId: id,
+    detail: { holdId, kind: out?.hold?.kind || null, reason, replayed: out?.replayed === true },
+  });
+  res.json(stamped(out));
+}));
+
+/* ─── پرچم‌ها و تاریخچه (‎routes/admin-flags.js‎ ِ shop، بندِ ۱۲.۳) — فقط خواندن ─── */
+
+router.get('/console/flags', guard(async (req, res) => {
+  if (!(await capabilities()).list.includes('flags.v1')) return res.json(unavailable('flags.v1'));
+  const raw = String(req.query.scope || 'all').trim();
+  const scope = raw === 'all' ? 'all' : idOf(raw);
+  res.json({ available: true, ...stamped(await cloudRaw('GET', '/api/admin/flags', { query: { scope } })) });
+}));
+
+router.get('/console/flags/history', guard(async (req, res) => {
+  if (!(await capabilities()).list.includes('flags.v1')) return res.json(unavailable('flags.v1'));
+  const key = String(req.query.key || '').trim();
+  if (key && !/^[a-z][a-z0-9_.-]{0,63}$/.test(key)) return res.status(400).json({ error: 'bad_key', message: 'کلید درست نیست' });
+  const rawScope = String(req.query.scope || '').trim();
+  const scope = !rawScope ? '' : rawScope === 'all' ? 'all' : idOf(rawScope);
+  res.json({
+    available: true,
+    ...stamped(await cloudRaw('GET', '/api/admin/flags/history', {
+      query: {
+        scope,
+        key,
+        limit: Math.min(200, Math.max(1, Number(req.query.limit) || 50)),
+        before: Number(req.query.before) > 0 ? String(Math.floor(Number(req.query.before))) : '',
+      },
+    })),
+  });
+}));
+
+/* ═══════════════════════════════════════════════════════════════════════
+   🔑 کلیدِ سرویسِ پل — ساختن، چرخش، ابطال (فقط مالکِ پنل، با احرازِ دوباره)
+
+     GET  /console/service-key          حالِ پل: کدام راه (کلید / رمزِ ارشد / هیچ)، فراداده‌ی کلید، دلیل
+     POST /console/service-key          {reason, confirm, password} ⇒ کلیدِ تازه (و اگر بود، کهنه باطل)
+     POST /console/service-key/revoke   {reason, confirm, password} ⇒ باطل در سرورِ حساب و پاک از پنل
+
+   ⛔ کلید هرگز برنمی‌گردد — نه در پاسخ، نه در خطا، نه در دفترِ پنل؛ فقط در گاوصندوقِ پنل می‌نشیند.
+   ⛔ ساختن و ابطال از **راهِ پیشین** (ورودِ ارشد): سرورِ حساب کلیدِ سرویس را به درِ کلیدها راه نمی‌دهد
+      (‎SERVICE_DENY‎) — پس کلیدِ دزدیده خودش کلیدِ تازه نمی‌سازد. راهِ پیشین نیست ⇒ ‎409 not_linked‎.
+   ⛔ فقط **مالکِ پنل** (قدیمی‌ترین admin ِ فعال؛ همان قاعدهٔ ‎ownerId‎ ِ فاز ۱ — اگر آن در پایه باشد از
+      خودش) و با **احرازِ دوباره**: رمزِ خودش همراهِ همین درخواست، یا — اگر فاز ۱ در پایه است — نشستِ
+      تازه (‎requireRecentAuth‎). حدسِ رمز سقف دارد (۵ در ربع ساعت برای هر کاربر).
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function ownerIdOfPanel() {
+  if (typeof panelRoles.ownerId === 'function') return panelRoles.ownerId();
+  return db.prepare("SELECT MIN(id) AS id FROM users WHERE role = 'admin' AND disabled = 0").get()?.id ?? null;
+}
+const isPanelOwner = (req) => {
+  const owner = ownerIdOfPanel();
+  return owner != null && req.user?.id != null && Number(req.user.id) === Number(owner);
+};
+
+function ownerOnly(req, res, next) {
+  if (isPanelOwner(req)) return next();
+  audit({ actor: actorOf(req), action: 'account.service_key.denied', entity: 'service_key', result: 'forbidden', detail: { why: 'not_owner' } });
+  return res.status(403).json({ error: 'owner_only', message: 'کلیدِ سرویسِ پل را فقط مالکِ پنل می‌سازد، می‌چرخاند یا باطل می‌کند' });
+}
+
+const reauthLimit = rateLimit({
+  name: 'service-key-reauth', max: 5, windowMs: 15 * 60_000,
+  key: (req) => `u${req.user?.id ?? 'x'}`,
+  skipSuccess: true, countIf: (_req, res) => res.locals?.reauthFailed === true,
+});
+
+function reauth(req, res, next) {
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (password) {
+    const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(Number(req.user.id));
+    if (!row || !panelAuth.verifyPassword(password, row.password_hash)) {
+      res.locals.reauthFailed = true;
+      //  همان احرازِ دوباره برای انتشارِ مرحله‌ای (‎console-ops.js‎) — ردیفِ دفتر نامِ همان کار را می‌گیرد
+      const what = String(req.path || '').includes('/release/stage') ? 'release_stage' : 'service_key';
+      audit({ actor: actorOf(req), action: `account.${what}.reauth_failed`, entity: what, result: 'forbidden' });
+      return res.status(403).json({ error: 'reauth_failed', message: 'رمزِ پنل درست نیست' });
+    }
+    if (typeof panelAuth.markFresh === 'function' && req.user?.sessionId) panelAuth.markFresh(req.user.sessionId);
+    return next();
+  }
+  //  فاز ۱ در پایه ⇒ نشستِ تازه (ده دقیقه) هم بس است؛ وگرنه رمز همراهِ همین درخواست
+  if (typeof panelAuth.requireRecentAuth === 'function') return panelAuth.requireRecentAuth(req, res, next);
+  return res.status(403).json({ error: 'reauth_required', message: 'برای این کار رمزِ پنلِ خودتان را دوباره بزنید' });
+}
+
+function keyReasonOf(req) {
+  const reason = String(req.body?.reason ?? '').trim();
+  if (reason.length < 3 || reason.length > 200) throw badInput('reason_required', 'دلیل را بنویسید (۳ تا ۲۰۰ نویسه)');
+  return reason;
+}
+
+router.get('/console/service-key', requireRole('admin'), guard(async (req, res) => {
+  const st = await serviceKeyStatus();
+  res.json({ ...st, serviceKey: publicServiceKey(readServiceKey()), owner: isPanelOwner(req), checkedAt: Date.now() });
+}));
+
+router.post('/console/service-key', requireRole('admin'), ownerOnly, reauthLimit, reauth, guard(async (req, res) => {
+  const reason = keyReasonOf(req);
+  requireConfirm(req);
+  if (!legacyAvailable()) {
+    const err = new Error('برای ساختنِ کلید یک بار با حسابِ ارشدِ سرورِ حساب وارد شوید (پمپ‌ها ← تنظیمات و داده‌ها) — کلیدِ سرویس به درِ کلیدها راه ندارد');
+    err.code = 'not_linked';
+    err.status = 409;
+    throw err;
+  }
+  //  ۱) سرورِ حساب کلیدِ سرویس و «انجام‌دهنده» را می‌شناسد؟ (از راهِ پیشین)
+  const caps = await capabilities({ legacyOnly: true });
+  if (!caps.list.includes('service-key.v1')) throw missingErr('service-key.v1');
+  if (!caps.list.includes('actor.v1')) throw missingErr('actor.v1');
+  const prev = readServiceKey();
+  //  ۲) ساختن — کلید همین یک بار از سرورِ حساب می‌آید
+  const made = await cloudRaw('POST', '/api/admin/service-keys', {
+    legacyOnly: true, body: { name: 'پلِ پنلِ خانه', roleCap: 'superadmin', reason },
+  });
+  const key = String(made?.key || '');
+  const row = made?.serviceKey || {};
+  if (!SERVICE_KEY_RE.test(key) || !/^[A-Za-z0-9_-]{1,80}$/.test(String(row.id || ''))) {
+    const err = new Error('سرورِ حساب کلید را درست برنگرداند — چیزی ذخیره نشد');
+    err.code = 'bad_upstream';
+    err.status = 502;
+    throw err;
+  }
+  //  ۳) پیش از ذخیره: کلیدِ تازه همین حالا پذیرفته می‌شود؟ نه ⇒ باطلش کن و ذخیره نکن
+  const probe = await cloudProbeServiceKey(key);
+  if (!probe.ok) {
+    await cloudRaw('POST', `/api/admin/service-keys/${row.id}/revoke`, {
+      legacyOnly: true, body: { reason: 'کلیدِ تازه در سنجشِ پنل پذیرفته نشد' },
+    }).catch(() => null);
+    const err = new Error(`کلیدِ تازه را سرورِ حساب نپذیرفت (${probe.code || 'unknown'}) — ذخیره نشد و باطل شد`);
+    err.code = 'service_key_unverified';
+    err.status = 502;
+    throw err;
+  }
+  //  ۴) فقط در گاوصندوقِ پنل
+  storeServiceKey({
+    key, id: row.id, name: row.name, roleCap: row.roleCap, createdAt: row.createdAt,
+    createdBy: actorOf(req), rotatedFrom: prev?.id || null,
+  });
+  serviceKeyReset();
+  //  ۵) چرخش ⇒ کلیدِ کهنه همان دم باطل (نشد ⇒ گفته می‌شود، نه پنهان)
+  let previous = null;
+  if (prev) {
+    previous = { id: prev.id, revoked: false, error: null };
+    try {
+      await cloudRaw('POST', `/api/admin/service-keys/${idOf(prev.id)}/revoke`, {
+        legacyOnly: true, body: { reason: `چرخش: ${reason}`.slice(0, 200) },
+      });
+      previous.revoked = true;
+    } catch (e) {
+      previous.revoked = e.code === 'service_key_revoked' || e.status === 404;
+      previous.error = previous.revoked ? null : (e.code || 'cloud_error');
+    }
+  }
+  audit({
+    actor: actorOf(req), action: prev ? 'account.service_key.rotated' : 'account.service_key.created',
+    entity: 'service_key', entityId: row.id,
+    detail: { reason, roleCap: row.roleCap || null, previous: prev?.id || null, previousRevoked: previous ? previous.revoked : null },
+  });
+  res.status(201).json({ ok: true, rotated: Boolean(prev), serviceKey: publicServiceKey(readServiceKey()), previous, ...(await serviceKeyStatus()) });
+}));
+
+router.post('/console/service-key/revoke', requireRole('admin'), ownerOnly, reauthLimit, reauth, guard(async (req, res) => {
+  const reason = keyReasonOf(req);
+  requireConfirm(req);
+  const prev = readServiceKey();
+  if (!prev) return res.status(404).json({ error: 'no_service_key', message: 'کلیدِ سرویسی در پنل نیست' });
+  try {
+    await cloudRaw('POST', `/api/admin/service-keys/${idOf(prev.id)}/revoke`, { legacyOnly: true, body: { reason } });
+  } catch (e) {
+    //  پیش‌تر باطل شده یا آن‌جا نیست ⇒ پاک کردن از پنل درست است؛ هر خطای دیگر ⇒ کلید می‌ماند و گفته می‌شود
+    if (!(e.code === 'service_key_revoked' || e.status === 404)) throw e;
+  }
+  forgetServiceKey();
+  serviceKeyReset();
+  audit({ actor: actorOf(req), action: 'account.service_key.revoked', entity: 'service_key', entityId: prev.id, detail: { reason } });
+  res.json({ ok: true, revoked: prev.id, ...(await serviceKeyStatus()) });
+}));
+
+/* ═══ 🛠 ماژول‌های عملیات (۴.۸ · ۴.۹ · ۴.۱۰ · ۴.۱۱ · ۴.۱۳) — ‎routes/console-ops.js‎، روی همین روتر ═══ */
+mountConsoleOps(router, {
+  guard, capabilities, unavailable, missingErr, badInput, stamped, actorOf, isPanelOwner, reauthLimit, reauth,
+});
 
 /* --------------------------- خواندنی‌های دیگر -------------------------- */
 
@@ -1897,6 +2379,21 @@ for (const [local, remote] of [
     res.json(await cloudRaw('GET', remote, { query: req.query }));
   }));
 }
+
+/*
+ *  🏪 پوستهٔ کنسولِ «فروشگاه» (ماژول‌ها، داشبورد، جست‌وجو، کاربران و نقش‌ها، پرچم‌ها) — درهایش در
+ *  ‎routes/console-shell.js‎، ولی روی **همین** روتر تا فهرستِ سفید و ‎bridge-roles.mjs‎ یکی بمانند.
+ */
+mountConsoleShell(router);
+
+/*
+ *  🏪 ۴.۶ مدیریتِ بازار و ۴.۷ نظارت بر پیک — درهایش در ‎routes/console-market.js‎، ولی روی **همین** روتر تا
+ *  فهرستِ سفید، «انجام‌دهنده» و ‎bridge-roles.mjs‎ یکی بمانند.
+ */
+mountConsoleMarket(router);
+
+/* ماژولِ ۴.۵ ِ پنلِ مرکزی — مالیِ مرکزی (‎routes/account-finance.js‎؛ همین نشست، همین «انجام‌دهنده») */
+router.use('/console/finance', financeRoutes);
 
 /** هر چیزِ دیگری زیرِ این پیشوند «نیست» — نه «رد شد»، تا نقشهٔ آن‌طرف لو نرود. */
 router.use((req, res) => res.status(404).json({ error: 'not_found', message: 'این مسیر وجود ندارد' }));

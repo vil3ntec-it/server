@@ -4,7 +4,6 @@ import { PageBoundary } from './PageBoundary';
 import {
   Activity,
   Bot,
-  CreditCard,
   Archive,
   ChevronDown,
   Workflow,
@@ -44,6 +43,7 @@ import { LANGUAGES, type Dict } from '../i18n';
 import { featureOn, type FeatureKey } from '../features';
 import { logoUrl } from '../api';
 import CommandPalette, { usePaletteKey, type PaletteItem } from './CommandPalette';
+import { subsPath } from '../pages/account/subsPath';
 
 type NavItem = {
   to: string;
@@ -109,20 +109,21 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   /*
-   *  مشتری، پول و پیام — هر شش‌تا از **سرورِ حساب** می‌آیند و هیچ دفترِ
-   *  دومی در این پنل ندارند. باز است چون کارِ هر روزِ صاحبِ سامانه است:
-   *  اشتراک دادن، رسید بریدن، جوابِ پشتیبانی.
+   *  مشتری، پول و پیام — از **سرورِ حساب** می‌آیند و هیچ دفترِ دومی در این
+   *  پنل ندارند. باز است چون کارِ هر روزِ صاحبِ سامانه است: رسید بریدن،
+   *  جوابِ پشتیبانی. (اشتراک دادن در بخشِ خودِ هر برنامه است — پایین.)
    */
   {
     id: 'money',
     key: 'navMoney',
     items: [
       /*
-       *  ⛔ «مشتری‌ها و اشتراک‌ها» و «پلن‌ها و تخفیف‌ها» یک در شدند
-       *     (۱۴۰۵/۰۷/۱۳، خواستهٔ صاحب سامانه: «همهٔ اشتراک‌ها داخلِ یک بخش»).
-       *     نشانی‌های قدیمی در App.tsx به تبِ خودشان می‌روند.
+       *  ⛔ **«اشتراک‌ها» دیگر درِ منو ندارد** (دستورِ صاحب محصول ۱۴۰۵/۰۸/۰۹:
+       *     «بخشِ جدای اشتراک‌ها حذف شود»). اشتراکِ پمپ در «پمپ‌بنزین‌ها» و
+       *     اشتراکِ فروشگاه در «فروشگاه‌ها»ی بالا؛ `/subscriptions` و نشانی‌های
+       *     کهنه‌اش در App.tsx به همان‌جا می‌روند. جست‌وجوی Ctrl+K هر دو را با
+       *     `PALETTE_EXTRA` پیدا می‌کند.
        */
-      { to: '/subscriptions', key: 'acSubscriptions', icon: CreditCard },
       { to: '/sales', key: 'acSales', icon: Wallet },
       { to: '/notices', key: 'acNotices', icon: Megaphone },
       { to: '/support', key: 'acSupport', icon: MessagesSquare },
@@ -189,6 +190,15 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+/**
+ *  دری که در منو نیست ولی جست‌وجو باید پیدایش کند: «اشتراک» زدن باید به
+ *  اشتراکِ هر برنامه، در بخشِ خودش، برسد (۱۴۰۵/۰۸/۰۹). نشانی از `subsPath`.
+ */
+const PALETTE_EXTRA: { to: string; key: keyof Dict; group: keyof Dict }[] = [
+  { to: subsPath('pump'), key: 'subsPump', group: 'navEveryday' },
+  { to: subsPath('shop'), key: 'subsShop', group: 'navEveryday' },
+];
+
 /** گروه‌هایی که بارِ اول بسته‌اند — تا همه‌چیز یک‌جا در قاب جا شود */
 const DEFAULT_COLLAPSED = NAV_GROUPS.filter((g) => g.collapsed).map((g) => g.id);
 
@@ -219,7 +229,8 @@ export default function Layout() {
     () => NAV_GROUPS.flatMap((group) =>
       group.items
         .filter((item) => (!item.feature || featureOn(item.feature)) && (!item.needs || can(item.needs)))
-        .map((item) => ({ to: item.to, label: t(item.key), group: t(group.key) }))),
+        .map((item) => ({ to: item.to, label: t(item.key), group: t(group.key) })))
+      .concat(PALETTE_EXTRA.map((x) => ({ to: x.to, label: t(x.key), group: t(x.group) }))),
     [t, can]
   );
   usePaletteKey(useCallback(() => setPaletteOpen(true), []));

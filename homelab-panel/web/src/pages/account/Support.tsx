@@ -30,6 +30,7 @@ import { api, getToken } from '../../api';
 import { Badge, ConfirmDialog, Modal, Skeleton, toast } from '../../components/ui';
 import { ActionButton, Notice as InlineNotice, Select } from '../../control/ui';
 import { APP_LABEL, AppPicker, CloudProblem, day, fa, moment, useLoad, type Scope } from './shared';
+import { subsPath } from './subsPath';
 import type { Message, Thread } from './types';
 import { SupportTelegramButton } from './SupportTelegram';
 import { SiteChatsButton } from './SiteChats';
@@ -495,7 +496,8 @@ function PartyCard({ thread: th }: { thread: Thread }) {
   const file = app === 'pump'
     ? { to: `/stations?q=${encodeURIComponent(th.stationName || th.who || '')}`, label: 'پروندهٔ پمپ' }
     : { to: `/shop?q=${encodeURIComponent(th.shopName || th.who || '')}`, label: 'میزِ فروشگاه' };
-  const subs = `/subscriptions?app=${app}&q=${encodeURIComponent(th.accountEmail || th.who || '')}`;
+  //  ⛔ اشتراکِ همین حساب، در بخشِ خودِ همان برنامه (۱۴۰۵/۰۸/۰۹)
+  const subs = subsPath(app, 'subs', th.accountEmail || th.who || '');
 
   return (
     <div className="flex flex-col gap-4 p-4" dir="rtl">

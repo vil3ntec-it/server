@@ -17,6 +17,7 @@ import { listSitesRaw } from '../sites/registry.js';
 import { isRunning } from '../sites/process.js';
 import { btn, fa, statusText, search, daysLeft, APP } from './telegram-admin.js';
 import { waiting } from './telegram-inbox.js';
+import { deliverConsoleAlerts, consoleAlertPrefs } from './telegram-console-alerts.js';
 
 const SETTINGS = 'support_tg_prefs';
 const STATE = 'support_tg_watch';
@@ -35,7 +36,7 @@ export function setPrefs(patch) { setSetting(SETTINGS, { ...prefs(), ...patch })
 export function settingsMessage() {
   const p = prefs();
   return {
-    text: ['⚙️ تنظیماتِ ربات', '', `🚨 هشدارها (دیسک، سرورِ حساب، سایت‌ها): ${p.alerts ? '✅ روشن' : '⛔ خاموش'}`, `📊 گزارشِ روزانه: ${p.report ? `✅ ساعتِ ${fa(p.hour)}` : '⛔ خاموش'}`, `🔐 کدهای شش‌رقمی در صندوق: ${p.codes ? '✅ روشن' : '⛔ خاموش'}`, `↩️ جواب در تاپیکِ صندوق: ${p.replyOnly ? 'فقط با Reply (بقیه یادداشتِ خودتان است)' : 'هر پیام، یا با Reply'}`, '', '📥 صندوقِ جدا برای پیام‌ها و کدها: یک گروهِ تلگرام بسازید، Topics را روشن کنید، ربات را ادمین با «Manage Topics» کنید و در همان گروه ‎/link‎ بزنید.'].join('\n'),
+    text: ['⚙️ تنظیماتِ ربات', '', `🚨 هشدارها (دیسک، سرورِ حساب، سایت‌ها): ${p.alerts ? '✅ روشن' : '⛔ خاموش'}`, `📊 گزارشِ روزانه: ${p.report ? `✅ ساعتِ ${fa(p.hour)}` : '⛔ خاموش'}`, `🔐 کدهای شش‌رقمی در صندوق: ${p.codes ? '✅ روشن' : '⛔ خاموش'}`, `🛎 هشدارهای فروشگاه: ${consoleAlertPrefs().types.length ? `✅ ${fa(consoleAlertPrefs().types.length)} نوع` : '⛔ هیچ'} (انتخاب در پنل ⇒ فروشگاه ⇒ هشدارها)`, `↩️ جواب در تاپیکِ صندوق: ${p.replyOnly ? 'فقط با Reply (بقیه یادداشتِ خودتان است)' : 'هر پیام، یا با Reply'}`, '', '📥 صندوقِ جدا برای پیام‌ها و کدها: یک گروهِ تلگرام بسازید، Topics را روشن کنید، ربات را ادمین با «Manage Topics» کنید و در همان گروه ‎/link‎ بزنید.'].join('\n'),
     reply_markup: {
       inline_keyboard: [
         [btn(p.alerts ? '🔕 خاموش کردنِ هشدارها' : '🔔 روشن کردنِ هشدارها', { k: 'pref', patch: { alerts: !p.alerts } })],
@@ -124,6 +125,10 @@ export async function watch(tg, tok, chatId, log = () => {}) {
       s.sites[site.slug] = st;
     }
   }
+
+  // 🛎 هشدارهای کنسولِ فروشگاه (پنلِ مرکزی ۴.۱۱) — فقط نوع‌هایی که مالک در پنل برگزیده؛ سقف و یکی شدن در خودش
+  //  ⚠️ ارسالِ خودش خطا را بالا می‌دهد (نه `send` ِ بالا که می‌بلعد) تا پیامِ نرفته «رفته» ثبت نشود
+  await deliverConsoleAlerts((text) => tg(tok, 'sendMessage', { chat_id: chatId, text, disable_web_page_preview: true }), log).catch((e) => log(`هشدارهای کنسول: ${e.message}`));
 
   // 📊 گزارشِ روزانه — یک بار در روز، از ساعتِ برگزیده به بعد
   if (p.report) {

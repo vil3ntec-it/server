@@ -27,7 +27,7 @@
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { CreditCard, Fuel, KeyRound, Smartphone } from 'lucide-react';
+import { Fuel, KeyRound, Smartphone } from 'lucide-react';
 
 import { api } from '../api';
 import { useApp } from '../app-context';
@@ -35,6 +35,7 @@ import { Card, ConfirmDialog, CopyButton, Empty, Field, Loading, Modal, StatusDo
 import { ActionButton, Cell, Notice, Row, Stat, Table, Tabs } from '../control/ui';
 import StationsCloud from './StationsCloud';
 import GoTo from './account/GoTo';
+import AppSubscriptions from './account/AppSubscriptions';
 import PumpHealth from './PumpHealth';
 import { useLive } from '../useLive';
 import { stationOnline } from '../stationLive';
@@ -204,13 +205,21 @@ export default function StationsPage() {
 
   if (loading && !data) return <Loading label="پمپ‌بنزین‌ها" />;
   if (data && !data.enabled) {
+    /*
+     *  ⛔ اشتراکِ پمپ روی **سرورِ حساب** است، نه پوشه‌های این سرور؛ پس خاموش
+     *  بودنِ پمپ‌های خانگی (`HLP_STATIONS`) آن را از دسترس نمی‌اندازد — تا
+     *  ۱۴۰۵/۰۸/۰۹ از بخشِ جدای «اشتراک‌ها» می‌رسید و حالا فقط از همین‌جا.
+     */
     return (
-      <Card title="پمپ‌بنزین‌ها" icon={<Fuel size={18} />}>
-        <Notice tone="warn">
-          این بخش خاموش است. برای روشن کردنش در فایل <code>.env</code> مقدار <code>HLP_STATIONS=1</code> بگذارید و سرور
-          را دوباره راه بیندازید.
-        </Notice>
-      </Card>
+      <div className="space-y-4">
+        <Card title="پمپ‌بنزین‌ها" icon={<Fuel size={18} />}>
+          <Notice tone="warn">
+            این بخش خاموش است. برای روشن کردنش در فایل <code>.env</code> مقدار <code>HLP_STATIONS=1</code> بگذارید و سرور
+            را دوباره راه بیندازید.
+          </Notice>
+        </Card>
+        <AppSubscriptions app="pump" />
+      </div>
     );
   }
 
@@ -237,8 +246,8 @@ export default function StationsPage() {
         onChange={goTab}
         tabs={[
           { id: 'accounts', label: 'حساب‌ها و کاربرها' },
-          //  ⛔ اشتراک‌های پمپ همین‌جا، نه فقط در «مشتری‌ها و اشتراک‌ها»
-          //  (خواستهٔ صاحبِ سامانه ۱۴۰۵/۰۷/۱۳). همان صفحه، با بخشِ ثابت.
+          //  ⛔ اشتراک‌های پمپ فقط همین‌جاست — بخشِ جدای «اشتراک‌ها» برداشته
+          //  شد (دستورِ صاحب محصول ۱۴۰۵/۰۸/۰۹). همهٔ کارها، با بخشِ ثابتِ پمپ.
           { id: 'subs', label: '💳 اشتراک‌ها' },
           { id: 'online', label: 'وصل بودن', badge: liveCount },
           { id: 'plans', label: 'نرخ‌ها' },
@@ -250,16 +259,8 @@ export default function StationsPage() {
       {/* ── ۱ — حساب‌ها و کاربرها: روی سرورِ حساب ─────────────────────────────── */}
       {tab === 'accounts' && <StationsCloud section="accounts" />}
 
-      {/* ── اشتراک‌ها: همه در بخشِ مرکزی؛ این‌جا فقط درِ همان‌جا با بخشِ پمپ ── */}
-      {tab === 'subs' && (
-        <GoTo
-          icon={<CreditCard size={18} />}
-          title="اشتراک‌های پمپ‌بنزین‌ها"
-          hint="دیدن، دادن با مدتِ دلخواه، تمدید، لغو و قیمتِ پلن‌ها — همه در بخشِ «اشتراک‌ها»، با فیلترِ پمپ"
-          to="/subscriptions?app=pump"
-          cta="رفتن به اشتراک‌ها"
-        />
-      )}
+      {/* ── اشتراک‌ها: همه همین‌جا، فقط پمپ (‎?view=‎ زبانهٔ درونی) ─────────── */}
+      {tab === 'subs' && <AppSubscriptions app="pump" />}
 
       {/* ── ۳ — نرخ‌ها ─────────────────────────────────────────────────── */}
       {tab === 'plans' && <StationsCloud section="plans" />}

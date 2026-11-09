@@ -51,6 +51,27 @@ const seen = [];                 // { method, path, query, body, bearer }
 let otpOff = false;
 //  «رباتِ ارسالِ سرورِ حساب تنظیم نیست» — فقط برای یک بند
 let otpSendBroken = false;
+/*
+ *  ══ کنسولِ فروشگاه (فاز ۲) ══
+ *  `caps`: تواناییِ اعلام‌شده در ‎GET /api/admin/me‎ (قراردادِ فاز ۳)؛ خالی = سرورِ حسابِ امروز.
+ *  `oldServer`: سرورِ حسابِ کهنه که ‎system/*‎ را ندارد — و مثلِ سرورِ **واقعی** برای مسیرِ ناشناختهٔ
+ *  مدیر ‎401 invalid_token‎ می‌دهد، نه ۴۰۴ (روی shop@2.14.4 سنجیده شد).
+ *  `logins`: شمارِ ورودهای پل، تا «۴۰۱ِ مسیرِ نبوده ورودِ تازه نمی‌سازد» سنجیده شود.
+ */
+let caps = [];
+let oldServer = false;
+/*
+ *  ══ چسبِ فاز ۳ ══ کلیدهای سرویسِ سرورِ حسابِ ساختگی (همان قاعدهٔ ‎lib/admin-service.js‎ ِ shop): فقط با
+ *  `service-key.v1`، «انجام‌دهنده» اجباری، و به درهای مدیران/کلیدها/نشست نمی‌رسد. و حالت‌های دکان.
+ */
+const svcKeys = new Map();       // key ⇒ { id, status }
+let svcSeq = 0;
+const holdsOf = new Map();       // shopId ⇒ Hold[]
+const holdIdem = new Map();      // idempotency-key ⇒ پاسخ
+let holdSeq = 0;
+const ALL_CAPS = ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1'];
+let versionsDown = false;
+let logins = 0;
 const users = {
   u1: { id: 'u1', name: 'کریم', email: 'karim@x.com', phone: '0700', status: 'active', created_at: NOW - 40 * DAY, last_login_at: NOW - DAY },
   u2: { id: 'u2', name: 'زهرا', email: 'z@x.com', phone: '0711', status: 'active', created_at: NOW - 3 * DAY, last_login_at: null },
@@ -143,12 +164,26 @@ const fake = http.createServer((req, res) => {
     const j = (code, obj) => { res.statusCode = code; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(obj)); };
     if (p === '/api/health') return j(200, { ok: true, server: 'online', version: '9.9.9' });
     if (p === '/api/admin/login') {
+      logins++;
       if (body?.username !== 'boss' || body?.password !== 'top-secret') return j(401, { error: { code: 'bad_credentials', message: 'رمز غلط' } });
       return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
     }
     const bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-    seen.push({ method: req.method, path: p, query: Object.fromEntries(u.searchParams), body, bearer });
-    if (bearer !== 'tok-1') return j(401, { error: { code: 'unauthorized', message: 'احراز هویت لازم است' } });
+    seen.push({ method: req.method, path: p, query: Object.fromEntries(u.searchParams), body, bearer,
+                actor: { id: req.headers['x-actor-id'], role: req.headers['x-actor-role'], name: req.headers['x-actor-name'] },
+                idem: req.headers['idempotency-key'] });
+    const svc = bearer.startsWith('vsk_') && caps.includes('service-key.v1') ? svcKeys.get(bearer) : null;
+    if (bearer !== 'tok-1' && !(svc && svc.status === 'active')) {
+      return j(401, { error: { code: svc || bearer.startsWith('vsk_') ? 'invalid_service_key' : 'unauthorized', message: 'احراز هویت لازم است' } });
+    }
+    if (svc) {
+      if (!req.headers['x-actor-id'] || !['superadmin', 'admin', 'finance', 'viewer'].includes(req.headers['x-actor-role'])) {
+        return j(400, { error: { code: 'actor_required', message: 'انجام‌دهنده' } });
+      }
+      if (/^\/api\/admin\/(admins|service-keys|2fa|reauth|logout)(\/|$)/.test(p)) {
+        return j(403, { error: { code: 'service_forbidden', message: 'کلیدِ سرویس' } });
+      }
+    }
     let m;
     if (p === '/api/admin/shops' && req.method === 'GET') {
       const q = (u.searchParams.get('q') || '').toLowerCase();
@@ -590,6 +625,10 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/pump/short-codes' && req.method === 'GET') return j(200, { codes: [{ id: 'psc1', code: '0471-8293', days: 30, note: '', createdAt: NOW }] });
     if (p === '/api/admin/pump/short-codes' && req.method === 'POST') return j(201, { short: { id: 'psc2', code: '9409-6184', days: body?.days, note: body?.note } });
     if (/^\/api\/admin\/pump\/offline-codes\/[^/]+\/revoke$/.test(p)) return j(200, { offline: { id: 'of1', status: 'revoked' } });
+    //  کدِ آفلاینِ «فروشگاه من» (shop/server/src/lib/shop-offline-codes.js) — بی فایل
+    if (p === '/api/admin/shop-offline-codes' && req.method === 'GET') return j(200, { codes: [{ id: 'sfc1', serial: 'f1e2d3c4b5a6', plan: 'sub', planTitle: 'زمان‌دار', computer: 'K7QW-2MZD-9XRT-B4NA', status: 'issued', createdAt: NOW }] });
+    if (p === '/api/admin/shop-offline-codes' && req.method === 'POST') return j(201, { code: 'SHOPX-12345', offline: { id: 'sfc2', plan: body?.plan, computer: body?.computer } });
+    if (/^\/api\/admin\/shop-offline-codes\/[^/]+\/revoke$/.test(p)) return j(200, { offline: { id: 'sfc1', status: 'revoked' } });
 
     if (p === '/api/admin/purchase-requests') return j(200, { requests: [{ id: 'pr1', shop_id: 's1', user_id: 'u1', plan_code: 'm1', note: '', status: 'pending', created_at: NOW - 3600e3, shop_name: 'دکانِ یک', user_name: 'کریم', phone: '' }] });
     if (/^\/api\/admin\/purchase-requests\/[^/]+\/approve$/.test(p)) return j(200, { subscription: { id: 'sub9' } });
@@ -606,6 +645,130 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/push') return j(200, { push: { enabled: false, project: '', tokens: 0 } });
     if (p === '/api/admin/sms') return j(200, { sms: { provider: 'none', ready: false, keySet: false } });
     if (p === '/api/admin/audit') return j(200, { entries: [{ id: 1, action: 'admin.vip_code_created', target_id: 'v1', created_at: NOW }] });
+
+    /* ─── کنسولِ فروشگاه (فاز ۲) — همان شکلِ ‎lib/system-health.js‎ و ‎admin-release/sync/pump‎ ─── */
+    const unknownRoute = () => j(401, { error: { code: 'invalid_token', message: 'نشست شما منقضی شده است، دوباره وارد شوید' } });
+    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, serverTime: NOW, ...(caps.length ? { capabilities: caps } : {}) });
+    if (p.startsWith('/api/admin/system/') && oldServer) return unknownRoute();
+    if (p === '/api/admin/system/health') {
+      return j(200, { status: 'warn', checkedAt: NOW - 5000, api: { status: 'ok', version: '2.14.4', uptimeSeconds: 99 },
+        database: { status: 'ok', latencyMs: 3, driver: 'pglite' },
+        queues: { email: { status: 'warn', worker: 'down', queued: 2, sending: 0, failed24h: 1, oldestAgeMs: 400000 },
+                  telegram: { status: 'ok', pending: 0, failed24h: 0, oldestAgeMs: null } },
+        sync: { status: 'ok', clientErrors24h: 4, conflicts24h: 0 },
+        storage: { status: 'ok', freeBytes: 5e10, totalBytes: 1e11, freePct: 50 },
+        backups: { status: 'warn', enabled: false, encryption: false, count: 0, last: null, ageMs: null } });
+    }
+    if (p === '/api/admin/system/providers') {
+      return j(200, { checkedAt: NOW - 4000, production: true, counts: { live: 1, mock: 1, incomplete: 1, off: 0, none: 2, unknown: 0 },
+        providers: [{ id: 'sms', mode: 'log', state: 'mock', missing: [] }, { id: 'email', mode: 'smtp', state: 'incomplete', missing: ['email_pass'] },
+                    { id: 'push', mode: 'fcm', state: 'live', missing: [] }, { id: 'payment', mode: 'cod', state: 'none', missing: [], decision: 'D-08' },
+                    { id: 'image_ai', mode: '', state: 'none', missing: [], steps: [] }] });
+    }
+    if (p === '/api/admin/system/versions') {
+      if (versionsDown) return j(503, { error: { code: 'db_unavailable', message: 'دیتابیس در دسترس نیست' } });
+      return j(200, { checkedAt: NOW - 3000, activeDays: 30, truncated: false, status: 'warn',
+        apps: [{ app: 'shop', latest: '2.14.5', minVersion: '2.10.0', devices: 7, unknown: 1, belowMin: 0, outdated: 2, status: 'warn',
+                 versions: [{ version: '2.14.5', devices: 4, lastSeenAt: NOW - 60e3, state: 'current' },
+                            { version: '2.14.4', devices: 2, lastSeenAt: NOW - 3600e3, state: 'outdated' },
+                            { version: '', devices: 1, lastSeenAt: null, state: 'unknown' }], versionsTruncated: false },
+               { app: 'pump', latest: '', minVersion: '', devices: 0, unknown: 0, belowMin: 0, outdated: null, status: 'ok', versions: [], versionsTruncated: false }] });
+    }
+    if (p === '/api/admin/system/chain-verify' && req.method === 'POST') {
+      return j(200, { ok: true, checkedAt: NOW, enabled: true, rows: true, total: 3, okCount: 3, brokenCount: 0, broken: [], healthy: [], truncated: false });
+    }
+    if (p === '/api/admin/release/beta' && req.method === 'GET') {
+      return j(200, { shops: { ids: ['s1'], updatedAt: NOW - DAY, updatedBy: 'boss' }, devices: { ids: [], updatedAt: 0, updatedBy: '' }, version: 3 });
+    }
+    if (p === '/api/admin/sync/version-health') {
+      return j(200, { app: u.searchParams.get('app'), version: u.searchParams.get('version'), installs: 2, crashes: 0 });
+    }
+    if (p === '/api/admin/pump/live-config' && req.method === 'GET') {
+      return j(200, { scope: u.searchParams.get('scope'), version: 2, items: [{ key: 'shop.orders', value: false, updatedAt: NOW - DAY, updatedBy: 'boss' }] });
+    }
+    //  مسیرهای فاز ۳ — فقط وقتی «هستند» که توانایی‌شان اعلام شده؛ وگرنه مثلِ سرورِ واقعیِ کهنه ۴۰۱.
+    //  شکلِ پاسخ‌ها همان ‎lib/shop-health.js‎، ‎lib/shop-holds.js‎ و ‎routes/admin-flags.js‎ ِ PR #597.
+    if ((m = /^\/api\/admin\/shops\/([^/]+)\/health$/.exec(p))) {
+      if (!caps.includes('shop-health.v1')) return unknownRoute();
+      return j(200, { shop: { id: m[1], name: 'دکان', status: 'active', createdAt: NOW - 40 * DAY }, at: NOW - 1000,
+        state: { access: 'open', blockedBy: [], servicesDisabled: [], subscriptionEnded: false, deletionRequested: false, archived: false },
+        subscription: { source: 'subscription', status: 'active', phase: 'active', plan: 'm1', endsAt: NOW + 20 * DAY, graceEndsAt: null, daysLeft: 20, endedByAdmin: false, trial: null },
+        sync: { lastSyncAt: NOW - 120e3, v1: { devices: 1, lastPushAt: NOW - 120e3, lastPullAt: NOW - 60e3, queued: 0, behindMax: 0, openConflicts: 0 },
+                v3: { devices: 0, lastPushAt: null, lastPullAt: null, lastErrorAt: null }, legacy: { lastPushAt: null, devices: 0, lastSyncAt: null } },
+        devices: [{ engine: 'v1', deviceId: 'd1', appVersion: '2.14.5', schemaVersion: 3, lastPushAt: NOW - 120e3, lastPullAt: NOW - 60e3, lastSeenAt: NOW - 60e3, queued: 0, behind: 0 }],
+        versions: [{ appVersion: '2.14.5', devices: 1 }], errors: { last24h: 0, last7d: 2, lastAt: NOW - 3 * DAY, lastAppVersion: '2.14.4' } });
+    }
+    const holdState = (sid) => {
+      const open = (holdsOf.get(sid) || []).filter((h) => h.active);
+      const kinds = new Set(open.map((h) => h.kind));
+      const blockedBy = ['deletion_requested', 'access_suspended', 'archived'].filter((k) => kinds.has(k));
+      return { access: blockedBy.length ? 'blocked' : 'open', blockedBy, servicesDisabled: open.filter((h) => h.kind === 'service_disabled').map((h) => h.service),
+               subscriptionEnded: kinds.has('subscription_ended'), deletionRequested: kinds.has('deletion_requested'), archived: kinds.has('archived') };
+    };
+    if ((m = /^\/api\/admin\/shops\/([^/]+)\/holds$/.exec(p))) {
+      if (!caps.includes('shop-holds.v1')) return unknownRoute();
+      const sid = m[1];
+      if (req.method === 'GET') {
+        const all = holdsOf.get(sid) || [];
+        return j(200, { shopId: sid, state: holdState(sid), open: all.filter((h) => h.active), history: [...all].reverse(),
+          kinds: ['access_suspended', 'service_disabled', 'subscription_ended', 'deletion_requested', 'archived'],
+          services: { 'shop.storefront': 'ویترین' }, roles: { access_suspended: ['superadmin', 'admin'] } });
+      }
+      if (req.method === 'POST') {
+        const idem = req.headers['idempotency-key'];
+        if (idem && holdIdem.has(idem)) return j(200, { ...holdIdem.get(idem), replayed: true });
+        if (String(body?.reason || '').trim().length < 3) return j(400, { error: { code: 'reason_required', message: 'دلیل' } });
+        if (body?.kind === 'subscription_ended' && !idem) return j(400, { error: { code: 'idempotency_key_required', message: 'کلید' } });
+        const list = holdsOf.get(sid) || [];
+        if (list.some((h) => h.active && h.kind === body.kind && (h.service || '') === (body.service || ''))) {
+          return j(409, { error: { code: 'hold_exists', message: 'هست' } });
+        }
+        const hold = { id: `shh${++holdSeq}`, shopId: sid, kind: body.kind, service: body.service || null, reason: body.reason,
+          placedBy: svc ? svc.id : 'a1', placedActor: svc ? { kind: 'panel', id: req.headers['x-actor-id'], name: decodeURIComponent(req.headers['x-actor-name'] || '') } : { kind: 'admin', id: 'a1', name: 'boss' },
+          placedAt: Date.now(), liftedAt: null, liftedBy: null, liftedActor: null, liftReason: null, active: true };
+        list.push(hold);
+        holdsOf.set(sid, list);
+        const resp = { hold, state: holdState(sid) };
+        if (idem) holdIdem.set(idem, resp);
+        return j(201, { ...resp, replayed: false });
+      }
+    }
+    if ((m = /^\/api\/admin\/shops\/([^/]+)\/holds\/([^/]+)\/lift$/.exec(p)) && req.method === 'POST') {
+      if (!caps.includes('shop-holds.v1')) return unknownRoute();
+      const hold = (holdsOf.get(m[1]) || []).find((h) => h.id === m[2]);
+      if (!hold) return j(404, { error: { code: 'hold_not_found', message: 'نیست' } });
+      if (!hold.active) return j(409, { error: { code: 'hold_already_lifted', message: 'برداشته شده' } });
+      Object.assign(hold, { active: false, liftedAt: Date.now(), liftedBy: 'a1', liftReason: body?.reason || '' });
+      return j(200, { hold, state: holdState(m[1]), replayed: false });
+    }
+    if (p === '/api/admin/flags') {
+      if (!caps.includes('flags.v1')) return unknownRoute();
+      return j(200, { scope: u.searchParams.get('scope') || 'all', version: 4,
+        items: [{ key: 'shop.orders', value: false, updatedAt: NOW - DAY, updatedBy: 'boss' }],
+        known: [{ key: 'shop.orders', scope: 'shop', default: false, what: 'سفارشِ آنلاین' }, { key: 'shop.chat', scope: 'shop', default: false, what: 'گفت‌وگو' }],
+        reserved: ['shop.orders.handover_floor'] });
+    }
+    if (p === '/api/admin/flags/history') {
+      if (!caps.includes('flags.v1')) return unknownRoute();
+      return j(200, { entries: [{ id: 'lch1', scope: 'all', key: 'shop.orders', action: 'set', oldValue: null, newValue: false,
+        changedBy: 'boss', actor: { kind: 'admin', id: 'a1', name: 'boss' }, reason: 'هنوز نه', at: NOW - DAY }] });
+    }
+    //  کلیدهای سرویس — فقط ارشدِ انسانی (tok-1)؛ کلیدِ سرویس بالاتر ۴۰۳ گرفت
+    if (p === '/api/admin/service-keys' && req.method === 'POST') {
+      if (!caps.includes('service-key.v1')) return unknownRoute();
+      if (String(body?.reason || '').trim().length < 3) return j(400, { error: { code: 'reason_required', message: 'دلیل' } });
+      const key = `vsk_${'k'.repeat(10)}${++svcSeq}${'Z'.repeat(33)}`;
+      const row = { id: `svk${svcSeq}`, name: body?.name || '', prefix: key.slice(0, 10), roleCap: body?.roleCap || 'admin', status: 'active', createdBy: 'a1', createdAt: Date.now() };
+      svcKeys.set(key, { id: row.id, status: 'active' });
+      return j(201, { key, serviceKey: row, shownOnce: true });
+    }
+    if ((m = /^\/api\/admin\/service-keys\/([^/]+)\/revoke$/.exec(p)) && req.method === 'POST') {
+      const hit = [...svcKeys.values()].find((x) => x.id === m[1]);
+      if (!hit) return j(404, { error: { code: 'not_found', message: 'کلید پیدا نشد' } });
+      if (hit.status !== 'active') return j(409, { error: { code: 'service_key_revoked', message: 'پیش‌تر باطل شده' } });
+      hit.status = 'revoked';
+      return j(200, { serviceKey: { id: m[1], status: 'revoked' } });
+    }
 
     if (p === '/api/admin/admins') return j(200, { admins: ['NEVER'] });
     if (p === '/api/admin/backups') return j(200, { backups: ['NEVER'] });
@@ -1005,6 +1168,22 @@ try {
   check('کمپینِ تازه: فیلتر و تخفیف و اعلان با هم می‌روند',
     campNew.status === 200 && last()?.body?.name === 'تخفیفِ عید' && last()?.body?.filter?.expiring_days === 30
       && last()?.body?.discount?.value === 20, JSON.stringify(last()?.body));
+  /*
+   *  ⛔ ۱۴۰۵/۰۸/۰۹ — اشتراکِ هر برنامه در بخشِ خودش: «تخفیف‌ها و کمپین»ِ پمپ
+   *  کمپینِ دکان را نشان نمی‌دهد. سرورِ حساب برای این فهرست `?app=` ندارد،
+   *  پس پالایش در **سرورِ پنل** است، نه در رابط؛ کمپینِ «هر دو» در هر دو بخش.
+   */
+  const campPump = await api('GET', '/api/account-admin/campaigns?app=pump', undefined, auth);
+  const pumpIds = (campPump.json?.campaigns || []).map((c) => c.id);
+  check('⛔ کمپین‌های بخشِ پمپ: فقط پمپ و «هر دو»، نه دکان',
+    campPump.status === 200 && pumpIds.includes(campNew.json?.campaign?.id) && !pumpIds.includes('cmp1'), JSON.stringify(pumpIds));
+  const campShop = await api('GET', '/api/account-admin/campaigns?app=shop', undefined, auth);
+  const shopIds = (campShop.json?.campaigns || []).map((c) => c.id);
+  check('⛔ کمپین‌های بخشِ دکان: دکان و «هر دو»',
+    campShop.status === 200 && shopIds.includes('cmp1') && shopIds.includes(campNew.json?.campaign?.id), JSON.stringify(shopIds));
+  const campAll = await api('GET', '/api/account-admin/campaigns', undefined, auth);
+  check('⚠️ بی ‎?app=‎ همه، مثلِ پیش', campAll.status === 200 && campAll.json?.campaigns?.length === campaigns.length,
+    `${campAll.json?.campaigns?.length} / ${campaigns.length}`);
   const campStats = await api('GET', `/api/account-admin/campaigns/${campNew.json?.campaign?.id}/stats`, undefined, auth);
   check('گزارشِ کمپین عدد می‌دهد، نه حدس', campStats.status === 200 && campStats.json?.codeUses === 1 && campStats.json?.renewed === 1);
 
@@ -1107,8 +1286,10 @@ try {
   check('تعارض بی شناسهٔ حساب، همان ۴۰۰ی خودِ سرورِ حساب', syncNoAcc.status === 400 && syncNoAcc.json?.error === 'account_required', `${syncNoAcc.status}`);
   const syncCf = await api('GET', '/api/account-admin/sync/conflicts?app=shop&account=s1', undefined, auth);
   check('تعارض‌ها با جدول، ردیف و خانه', syncCf.status === 200 && syncCf.json?.conflicts?.[0]?.field === 'price');
-  const syncRestore = await api('POST', '/api/account-admin/sync/conflicts/5/restore', {}, auth);
+  const syncRestore = await api('POST', '/api/account-admin/sync/conflicts/5/restore', { reason: 'دلیلِ آزمون' }, auth);
   check('بازگرداندنِ تعارض', syncRestore.status === 200 && last()?.path === '/api/admin/sync/conflicts/5/restore');
+  //  ⛔ سرورِ حساب بی دلیل ۴۰۰ می‌دهد (reason_required) — پل دلیل را می‌برد
+  check('⛔ دلیلِ بازگرداندن به سرورِ حساب می‌رسد', last()?.body?.reason === 'دلیلِ آزمون', JSON.stringify(last()?.body));
   const syncErr = await api('GET', '/api/account-admin/sync/errors?app=shop', undefined, auth);
   check('خطاهای گزارش‌شدهٔ برنامه', syncErr.status === 200 && syncErr.json?.errors?.[0]?.message === 'خطای آزمایشی');
 
@@ -1318,6 +1499,31 @@ try {
     //  ⛔ نمایشِ کد هم فقط admin — operator با همان نشستِ سالم رد می‌شود
     const oReveal = await api('POST', '/api/account-admin/logins/req1/reveal', {}, oAuth);
     check('⛔ نمایشِ کد فقط برای admin است', oReveal.status === 403, String(oReveal.status));
+    /*
+     *  ⛔ «آزمون»هایی که می‌فرستند، نگاه کردن نیستند (۱۴۰۵/۰۸/۰۹): `writeNeedsOperator`
+     *  هر POSTِ ‎…/test‎ را برای viewer باز می‌گذاشت ⇒ viewer با حسابِ ارشدِ پل پیامک
+     *  (پول، و در سرورِ حساب فقط ارشد) و ایمیل و اعلانِ آزمایشی به هر نشانی می‌فرستاد.
+     *  و بازگرداندنِ تعارض (تغییرِ دادهٔ یک حساب؛ در سرورِ حساب فقط ارشد) برای operator باز بود.
+     */
+    const vSends = [
+      await api('POST', '/api/account-admin/sms/test', { to: '+93700000000' }, vAuth),
+      await api('POST', '/api/account-admin/email/test', { to: 'x@y.af' }, vAuth),
+      await api('POST', '/api/account-admin/notices/n1/test', { to: 'x@y.af' }, vAuth),
+    ];
+    check('⛔ viewer نه پیامک، نه ایمیل، نه اعلانِ آزمایشی می‌فرستد', vSends.every((r) => r.status === 403), vSends.map((r) => r.status).join(' '));
+    const beforeOp = seen.length;
+    const oSms = await api('POST', '/api/account-admin/sms/test', { to: '+93700000000' }, oAuth);
+    const oRestore = await api('POST', '/api/account-admin/sync/conflicts/5/restore', { reason: 'آزمون' }, oAuth);
+    check('⛔ پیامکِ آزمایشی و بازگرداندنِ تعارض فقط admin', oSms.status === 403 && oRestore.status === 403
+      && !seen.slice(beforeOp).some((x) => /sms\/test|conflicts\/5\/restore/.test(x.path)), `${oSms.status} ${oRestore.status}`);
+    //  ⛔ و درِ دومِ پمپ (`/api/stations-admin/cloud/*`) همان مرزِ پول را دارد
+    const beforePump = seen.length;
+    const oPumpCode = await api('POST', '/api/stations-admin/cloud/vip-codes', { plan: 'm1', email: 'x@y.af' }, oAuth);
+    const oPumpGrant = await api('POST', '/api/stations-admin/cloud/grant', { stationId: 'st1', plan: 'm1' }, oAuth);
+    check('⛔ کدِ اشتراک و اشتراکِ پمپ از درِ پمپ هم فقط admin', oPumpCode.status === 403 && oPumpGrant.status === 403
+      && !seen.slice(beforePump).some((x) => /pump\/(vip-codes|subscriptions)$/.test(x.path)), `${oPumpCode.status} ${oPumpGrant.status}`);
+    const oMail = await api('POST', '/api/account-admin/email/test', { to: 'k@x.com' }, oAuth);
+    check('operator ایمیلِ آزمایشی می‌فرستد', oMail.status === 200, String(oMail.status));
     //  شورا چ۳: نماینده و درصدِ کمیسیون پول است — فقط admin
     const oRep = await api('POST', '/api/account-admin/reps', { app: 'shop', email: 'x@y.af', commissionPct: 5 }, oAuth);
     check('⛔ ساختنِ نماینده و درصدِ کمیسیون فقط admin', oRep.status === 403, String(oRep.status));
@@ -1407,10 +1613,33 @@ try {
     check('برنامهٔ اندروید کد، ردیف و فایلِ ‎.pumpkey‎ را از همان کلیدها برمی‌دارد',
       kt.includes('optString("code")') && kt.includes('optJSONObject("offline")') && kt.includes('optJSONObject("file")') && kt.includes('items("codes")'));
     check('برنامهٔ اندروید همان سه درِ پنلِ وب را می‌زند',
-      api2.includes('"/api/account-admin/offline-codes?limit=200"') && api2.includes('"/api/account-admin/offline-codes", "POST"') &&
-        api2.includes('/revoke"'));
+      api2.includes('"/api/account-admin/offline-codes?limit=200" + shopOnly(app, "&")')
+        && api2.includes('"/api/account-admin/offline-codes" + shopOnly(app), "POST"')
+        && api2.includes('"/revoke" + shopOnly(app)')
+        && /fun shopOnly\(app: String, sep: String = "\?"\): String = if \(app == "shop"\) "\$\{sep\}app=shop" else ""/.test(api2));
     const viaApp = await api('GET', '/api/account-admin/offline-codes?limit=200', undefined, auth);
     check('درِ فهرستِ برنامهٔ اندروید (با ‎limit‎) هم جواب می‌دهد', viaApp.status === 200 && Array.isArray(viaApp.json?.codes), String(viaApp.status));
+    /*
+     *  ⛔ ۱۴۰۵/۰۸/۰۹ — اشتراکِ هر برنامه در بخشِ خودش: «🔑 کدِ آفلاینِ فروشگاه»
+     *  در «حساب‌ها» کنارِ اشتراکِ فروشگاه‌ها، همان سه در با ‎?app=shop‎ —
+     *  و پمپ دست‌نخورده در بخشِ پمپ. هر سه درِ برنامه این‌جا واقعاً زده می‌شوند.
+     */
+    const accountsKt = await fsp.readFile(new URL('../../admin-android/app/src/main/java/ir/vil3ntec/admin/ui/AccountsScreen.kt', import.meta.url), 'utf8');
+    const stationsKt = await fsp.readFile(new URL('../../admin-android/app/src/main/java/ir/vil3ntec/admin/ui/StationsScreen.kt', import.meta.url), 'utf8');
+    check('برنامهٔ اندروید: کدِ آفلاینِ فروشگاه در «حساب‌ها»، پمپ در «پمپ»',
+      /OfflineCodesTab\(session, "shop"\)/.test(accountsKt) && /OfflineCodesTab\(session\)/.test(stationsKt)
+        && /if \(app == "shop"\) listOf\(\s*Triple\("sub"/.test(kt) && /Api\.offlineCodes\(session, app\)/.test(kt)
+        && /Api\.revokeOfflineCode\(session, target\.id, app\)/.test(kt) && /account\.trim\(\), app\)/.test(kt));
+    const shopList = await api('GET', '/api/account-admin/offline-codes?limit=200&app=shop', undefined, auth);
+    check('درِ فهرستِ فروشگاهِ برنامهٔ اندروید به ‎shop-offline-codes‎ می‌رسد',
+      shopList.status === 200 && shopList.json?.codes?.[0]?.id === 'sfc1' && last()?.path === '/api/admin/shop-offline-codes', `${shopList.status} ${last()?.path}`);
+    const shopMake = await api('POST', '/api/account-admin/offline-codes?app=shop', { plan: 'sub', computer: 'K7QW-2MZD-9XRT-B4NA', days: 365, note: '', account: '' }, auth);
+    check('ساختنِ کدِ فروشگاه ⇒ ‎shop-offline-codes‎، بی فایل',
+      shopMake.status === 200 && shopMake.json?.code === 'SHOPX-12345' && !shopMake.json?.file
+        && last()?.path === '/api/admin/shop-offline-codes' && last()?.body?.plan === 'sub', `${shopMake.status} ${last()?.path}`);
+    const shopRevoke = await api('POST', '/api/account-admin/offline-codes/sfc1/revoke?app=shop', {}, auth);
+    check('باطل کردنِ کدِ فروشگاه ⇒ ‎shop-offline-codes/…/revoke‎',
+      shopRevoke.status === 200 && last()?.path === '/api/admin/shop-offline-codes/sfc1/revoke', `${shopRevoke.status} ${last()?.path}`);
   }
   const offBad = await api('POST', '/api/account-admin/offline-codes/..%2Fx/revoke', {}, auth);
   check('⛔ شناسهٔ ناجور به سرورِ حساب نمی‌رسد', offBad.status === 400 || offBad.status === 404, String(offBad.status));
@@ -1505,6 +1734,384 @@ try {
   const bogus = await api('GET', '/api/account-admin/shop-desk/anything', undefined, auth);
   check('⛔ مسیرِ نانوشته ۴۰۴ می‌گیرد و به سرورِ حساب هم نمی‌رسد',
     bogus.status === 404 && seen.length === before, `${bogus.status} ${seen.length - before}`);
+
+  /* ===================================================================
+     🏪 کنسولِ فروشگاه — فاز ۲ ِ پنلِ مرکزیِ مالک (OWNER-CONSOLE-AUDIT §۸)
+     هر پلِ تازه: شکلِ پاسخ، نقش، پورتِ عمومی؛ و خطای بالادست با کدِ خودش.
+     =================================================================== */
+  console.log('\n── کنسولِ فروشگاه (فاز ۲) ──');
+  await api('POST', '/api/auth/users', { username: 'view-con', password: 'Viewer-1405-con', role: 'viewer' }, auth);
+  await api('POST', '/api/auth/users', { username: 'op-con', password: 'Operator-1405-con', role: 'operator' }, auth);
+  const c_vCon = { Authorization: `Bearer ${(await api('POST', '/api/auth/login', { username: 'view-con', password: 'Viewer-1405-con' })).json?.token}` };
+  const c_oCon = { Authorization: `Bearer ${(await api('POST', '/api/auth/login', { username: 'op-con', password: 'Operator-1405-con' })).json?.token}` };
+
+  const c_hl = await api('GET', '/api/account-admin/console/system/health', undefined, c_vCon);
+  check('سلامتِ سرورِ حساب برای viewer هم خواندنی است، همان شکلِ بالادست',
+    c_hl.status === 200 && c_hl.json?.status === 'warn' && c_hl.json?.queues?.email?.queued === 2 && c_hl.json?.api?.version === '2.14.4',
+    `${c_hl.status} ${JSON.stringify(c_hl.json).slice(0, 200)}`);
+  check('⛔ زمانِ سنجش همانِ سرورِ حساب است (checkedAt) و زمانِ رسیدن کنارش (fetchedAt)',
+    c_hl.json?.checkedAt === NOW - 5000 && Number(c_hl.json?.fetchedAt) >= NOW, `${c_hl.json?.checkedAt} ${c_hl.json?.fetchedAt}`);
+  check('⚠️ «نیامده» نیامده می‌ماند: پشتیبانِ بی ردیف ‎last: null‎ است، نه صفر یا تاریخِ ساختگی',
+    c_hl.json?.backups?.last === null && c_hl.json?.backups?.ageMs === null, JSON.stringify(c_hl.json?.backups));
+  const c_pv = await api('GET', '/api/account-admin/console/system/providers', undefined, auth);
+  check('سرویس‌های بیرونی با حالتِ واقعی (mock ≠ live) و نامِ فیلدِ کم، بی هیچ راز',
+    c_pv.status === 200 && c_pv.json?.providers?.find((x) => x.id === 'sms')?.state === 'mock'
+      && c_pv.json?.providers?.find((x) => x.id === 'email')?.missing?.[0] === 'email_pass', `${c_pv.status} ${JSON.stringify(c_pv.json).slice(0, 200)}`);
+  const c_vs = await api('GET', '/api/account-admin/console/system/versions', undefined, auth);
+  check('نسخهٔ دستگاه‌ها: شمار و حالت از سرورِ حساب',
+    c_vs.status === 200 && c_vs.json?.apps?.[0]?.outdated === 2 && c_vs.json?.apps?.[1]?.outdated === null, `${c_vs.status} ${JSON.stringify(c_vs.json).slice(0, 160)}`);
+
+  //  ⛔ کانالِ آزمایشی: سرورِ حساب حتی خواندنش را فقط به ارشد می‌دهد ⇒ فقط admin ِ پنل
+  const c_rbA = await api('GET', '/api/account-admin/console/release/beta', undefined, auth);
+  check('کانالِ آزمایشیِ دکان برای admin', c_rbA.status === 200 && c_rbA.json?.shops?.ids?.[0] === 's1' && last()?.path === '/api/admin/release/beta',
+    `${c_rbA.status} ${JSON.stringify(c_rbA.json).slice(0, 120)}`);
+  let c_mark = seen.length;
+  const c_rbO = await api('GET', '/api/account-admin/console/release/beta', undefined, c_oCon);
+  const c_rbV = await api('GET', '/api/account-admin/console/release/beta', undefined, c_vCon);
+  check('⛔ و operator/viewer ۴۰۳، بی هیچ درخواستی به سرورِ حساب', c_rbO.status === 403 && c_rbV.status === 403 && seen.length === c_mark,
+    `${c_rbO.status} ${c_rbV.status} ${seen.length - c_mark}`);
+
+  const c_vh = await api('GET', '/api/account-admin/console/version-health?app=shop&version=v2.14.4', undefined, c_vCon);
+  check('سلامتِ یک نسخه: برنامه و نسخه به بالادست می‌رسد (بی «v»)',
+    c_vh.status === 200 && last()?.query?.app === 'shop' && last()?.query?.version === '2.14.4' && c_vh.json?.installs === 2, JSON.stringify(last()?.query));
+  c_mark = seen.length;
+  const c_vhBad = await api('GET', '/api/account-admin/console/version-health?app=shop&version=latest', undefined, auth);
+  const c_vhApp = await api('GET', '/api/account-admin/console/version-health?app=evil&version=2.1', undefined, auth);
+  check('⛔ نسخه/برنامهٔ ناجور همین‌جا ۴۰۰ می‌شود و به سرورِ حساب نمی‌رود',
+    c_vhBad.status === 400 && c_vhApp.status === 400 && seen.length === c_mark, `${c_vhBad.status} ${c_vhApp.status}`);
+
+  const c_lc = await api('GET', '/api/account-admin/console/live-config?scope=s1', undefined, c_vCon);
+  check('تنظیماتِ زندهٔ یک دکان (scope) از سرورِ حساب، با زمان و نویسنده',
+    c_lc.status === 200 && last()?.query?.scope === 's1' && c_lc.json?.items?.[0]?.updatedBy === 'boss', `${c_lc.status} ${JSON.stringify(last()?.query)}`);
+  c_mark = seen.length;
+  const c_lcRel = await api('GET', '/api/account-admin/console/live-config?scope=release', undefined, auth);
+  const c_lcBad = await api('GET', '/api/account-admin/console/live-config?scope=../x', undefined, auth);
+  check('⛔ ‎scope=release‎ از این در نه (کانالِ آزمایشی درِ admin ِ خودش را دارد)، و scope ِ ناجور ۴۰۰',
+    c_lcRel.status === 400 && c_lcRel.json?.error === 'use_release_beta' && c_lcBad.status === 400 && seen.length === c_mark,
+    `${c_lcRel.status} ${c_lcBad.status} ${seen.length - c_mark}`);
+
+  c_mark = seen.length;
+  const c_cvO = await api('POST', '/api/account-admin/console/system/chain-verify', {}, c_oCon);
+  check('⛔ وارسیِ زنجیرهٔ سابقه فقط admin (سرورِ حساب: فقط ارشد)', c_cvO.status === 403 && seen.length === c_mark, `${c_cvO.status}`);
+  const c_cv = await api('POST', '/api/account-admin/console/system/chain-verify', { chain: 'shop:s1', rows: false }, auth);
+  check('admin می‌سنجد؛ ⛔ بدنهٔ کاربر نمی‌رود (همیشه «همه، با ردیف‌ها»)',
+    c_cv.status === 200 && c_cv.json?.ok === true && JSON.stringify(last()?.body) === '{}', `${c_cv.status} ${JSON.stringify(last()?.body)}`);
+  const c_cvLog = await api('GET', '/api/control/audit?limit=20&q=account.chain_verified', undefined, auth);
+  check('⛔ و یک ردیف در دفترِ پنل', JSON.stringify(c_cvLog.json || {}).includes('account.chain_verified'), String(c_cvLog.status));
+
+  const c_au = await api('GET', '/api/account-admin/account-audit?shopId=s1&limit=300', undefined, c_vCon);
+  check('دفترِ سرورِ حساب برای یک دکان: پالایش سمتِ سرورِ حساب (shopId) و سقفِ ۵۰۰',
+    c_au.status === 200 && last()?.query?.shopId === 's1' && last()?.query?.limit === '300', JSON.stringify(last()?.query));
+  c_mark = seen.length;
+  const c_auBad = await api('GET', '/api/account-admin/account-audit?shopId=a%20b', undefined, auth);
+  check('⛔ شناسهٔ ناجورِ دکان ۴۰۰، به سرورِ حساب نمی‌رود', c_auBad.status === 400 && seen.length === c_mark, String(c_auBad.status));
+
+  //  ⛔ فاز ۳: بی تواناییِ اعلام‌شده، مسیرِ نبوده **هرگز** صدا زده نمی‌شود
+  caps = [];
+  c_mark = seen.length;
+  const c_sh0 = await api('GET', '/api/account-admin/console/shops/s1/health', undefined, c_vCon);
+  const c_fl0 = await api('GET', '/api/account-admin/console/flags', undefined, c_vCon);
+  const c_asked = seen.slice(c_mark).map((x) => x.path);
+  check('فاز ۳ نیامده ⇒ «داده در دسترس نیست» با دلیل و نامِ توانایی، نه عددِ ساختگی',
+    c_sh0.status === 200 && c_sh0.json?.available === false && c_sh0.json?.reason === 'capability_missing' && c_sh0.json?.capability === 'shop-health.v1'
+      && c_fl0.json?.available === false && c_fl0.json?.capability === 'flags.v1' && !('devices' in (c_sh0.json || {})),
+    `${c_sh0.status} ${JSON.stringify(c_sh0.json).slice(0, 200)}`);
+  check('⛔ و فقط ‎/api/admin/me‎ پرسیده شد — نه مسیرِ نبوده', c_asked.length === 2 && c_asked.every((x) => x === '/api/admin/me'), c_asked.join(' '));
+  caps = ['shop-health.v1', 'flags.v1'];
+  const c_sh1 = await api('GET', '/api/account-admin/console/shops/s1/health', undefined, c_vCon);
+  check('فاز ۳ آمد ⇒ همان در دادهٔ واقعی را می‌آورد (بی به‌روزرسانیِ پنل)',
+    c_sh1.status === 200 && c_sh1.json?.available === true && c_sh1.json?.devices?.[0]?.appVersion === '2.14.5' && last()?.path === '/api/admin/shops/s1/health',
+    `${c_sh1.status} ${JSON.stringify(c_sh1.json).slice(0, 160)}`);
+  const c_cp = await api('GET', '/api/account-admin/console/capabilities', undefined, c_vCon);
+  check('فهرستِ توانایی‌ها: هر درِ فاز ۳ با «هست/نیست»',
+    c_cp.status === 200 && c_cp.json?.known?.find((k) => k.id === 'shop-health.v1')?.available === true
+      && c_cp.json?.known?.find((k) => k.id === 'shop-holds.v1')?.available === false
+      && !c_cp.json?.known?.some((k) => k.id === 'shop-suspension.v1'), JSON.stringify(c_cp.json).slice(0, 200));
+  caps = [];
+
+  //  ⛔ خطای بالادست با کدِ خودش، نه ۵۰۰ی گنگ
+  versionsDown = true;
+  const c_vd = await api('GET', '/api/account-admin/console/system/versions', undefined, auth);
+  versionsDown = false;
+  check('⛔ خطای بالادست با کد و وضعیتِ خودش می‌رسد', c_vd.status === 503 && c_vd.json?.error === 'db_unavailable', `${c_vd.status} ${JSON.stringify(c_vd.json)}`);
+
+  /*
+   *  ⛔ سرورِ حسابِ کهنه: مسیرِ نبودهٔ مدیر ‎401 invalid_token‎ می‌دهد (سرورِ واقعی، نه ۴۰۴).
+   *  پیش از اصلاحِ `cloud.js` پل آن را «نشست تمام شد» می‌خواند: یک ورودِ تازه برای **هر** درخواست، و
+   *  ۴۰۱ به مرورگر ⇒ `api.ts` صاحب سامانه را از **پنل** بیرون می‌انداخت.
+   */
+  oldServer = true;
+  const c_loginsBefore = logins;
+  const c_od = await api('GET', '/api/account-admin/console/system/providers', undefined, auth);
+  const c_od2 = await api('GET', '/api/account-admin/console/system/health', undefined, auth);
+  oldServer = false;
+  check('⛔ مسیرِ نبوده روی سرورِ حسابِ کهنه ⇒ ‎501 account_server_outdated‎، نه ۴۰۱',
+    c_od.status === 501 && c_od.json?.error === 'account_server_outdated' && c_od2.status === 501, `${c_od.status} ${JSON.stringify(c_od.json)} ${c_od2.status}`);
+  check('⛔ و هیچ ورودِ تازه‌ای به سرورِ حساب نساخت (سقفِ نرخِ ورود)', logins === c_loginsBefore, `${logins - c_loginsBefore} ورود`);
+  const c_still = await api('GET', '/api/auth/me', undefined, auth);
+  const c_after = await api('GET', '/api/account-admin/console/system/health', undefined, auth);
+  check('⛔ نشستِ پنل سالم ماند و پل با همان توکن کار می‌کند', c_still.status === 200 && c_after.status === 200, `${c_still.status} ${c_after.status}`);
+
+  //  ⛔ هر درِ کنسول، یکی‌یکی — نه نمونه
+  const c_pubSeen = seen.length;
+  const c_pubBad = [];
+  for (const [method, p] of [
+    ['GET', 'system/health'], ['GET', 'system/providers'], ['GET', 'system/versions'], ['POST', 'system/chain-verify'],
+    ['GET', 'release/beta'], ['GET', 'version-health?app=shop&version=2.14.4'], ['GET', 'live-config?scope=all'],
+    ['GET', 'capabilities'], ['GET', 'shops/s1/health'], ['GET', 'shops/s1/holds'], ['POST', 'shops/s1/holds'],
+    ['POST', 'shops/s1/holds/h1/lift'], ['GET', 'flags'], ['GET', 'flags/history'], ['GET', 'service-key'],
+    ['POST', 'service-key'], ['POST', 'service-key/revoke'],
+  ]) {
+    const r = await api(method, `/api/account-admin/console/${p}`, method === 'POST' ? {} : undefined, auth, `http://127.0.0.1:${PUBLIC}`);
+    if (r.status !== 404) c_pubBad.push(`${method} ${p} ⇒ ${r.status}`);
+  }
+  const c_pubAudit = await api('GET', '/api/account-admin/account-audit?shopId=s1', undefined, auth, `http://127.0.0.1:${PUBLIC}`);
+  if (c_pubAudit.status !== 404) c_pubBad.push(`account-audit ⇒ ${c_pubAudit.status}`);
+  check('⛔ هیچ درِ کنسول (۱۷ در + دفتر) روی پورتِ عمومی «نبوده» است و به سرورِ حساب نمی‌رسد',
+    c_pubBad.length === 0 && seen.length === c_pubSeen, c_pubBad.join(' · '));
+  const c_noAuthCon = await api('GET', '/api/account-admin/console/system/health');
+  check('و بی نشستِ پنل ۴۰۱', c_noAuthCon.status === 401, String(c_noAuthCon.status));
+  c_mark = seen.length;
+  const c_bogusCon = await api('GET', '/api/account-admin/console/system/anything', undefined, auth);
+  check('⛔ مسیرِ نانوشتهٔ کنسول ۴۰۴ و به سرورِ حساب نمی‌رسد', c_bogusCon.status === 404 && seen.length === c_mark, `${c_bogusCon.status}`);
+
+  /* ===================================================================
+     🔗 چسبِ فاز ۲ ⇄ فاز ۳ — درهای واقعیِ #597 (حالت‌ها، سلامت، پرچم‌ها) و کلیدِ سرویس + «انجام‌دهنده»
+     =================================================================== */
+  console.log('\n── چسبِ فاز ۳: حالت‌های دکان، پرچم‌ها ──');
+  caps = [...ALL_CAPS];
+  const g_cp = await api('GET', '/api/account-admin/console/capabilities', undefined, c_vCon);
+  check('توانایی‌ها همان نام‌های سرورِ حساب‌اند: shop-holds.v1 و service-key.v1، نه shop-suspension.v1',
+    ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1'].every((id) => g_cp.json?.known?.find((k) => k.id === id)?.available === true)
+      && !g_cp.json?.known?.some((k) => k.id === 'shop-suspension.v1'), JSON.stringify(g_cp.json?.known));
+  let g_mark = seen.length;
+  const g_susp = await api('GET', '/api/account-admin/console/shops/s1/suspension', undefined, auth);
+  check('⛔ درِ ‎/suspension‎ ِ پیش‌نویس دیگر نیست (۴۰۴) و به سرورِ حساب نمی‌رسد', g_susp.status === 404 && seen.length === g_mark, String(g_susp.status));
+
+  const g_h0 = await api('GET', '/api/account-admin/console/shops/s1/holds', undefined, c_vCon);
+  check('حالت‌ها (viewer هم): همان شکلِ ‎lib/shop-holds.js‎ با state/open/history و زمانِ رسیدن',
+    g_h0.status === 200 && g_h0.json?.available === true && g_h0.json?.state?.access === 'open' && Array.isArray(g_h0.json?.open)
+      && last()?.path === '/api/admin/shops/s1/holds' && last()?.query?.limit === '100' && Number(g_h0.json?.fetchedAt) >= NOW,
+    `${g_h0.status} ${JSON.stringify(g_h0.json).slice(0, 200)}`);
+
+  const g_body = { kind: 'access_suspended', reason: 'بدهیِ معوق', confirm: true, idempotencyKey: 'pnl-test-0001-aaaa' };
+  g_mark = seen.length;
+  const g_op = await api('POST', '/api/account-admin/console/shops/s1/holds', g_body, c_oCon);
+  const g_vw = await api('POST', '/api/account-admin/console/shops/s1/holds', g_body, c_vCon);
+  const g_noReason = await api('POST', '/api/account-admin/console/shops/s1/holds', { ...g_body, reason: ' a ' }, auth);
+  const g_noConfirm = await api('POST', '/api/account-admin/console/shops/s1/holds', { ...g_body, confirm: 'yes' }, auth);
+  const g_badKind = await api('POST', '/api/account-admin/console/shops/s1/holds', { ...g_body, kind: 'delete_now' }, auth);
+  const g_badSvc = await api('POST', '/api/account-admin/console/shops/s1/holds', { ...g_body, kind: 'service_disabled', service: 'shop.everything' }, auth);
+  const g_noIdem = await api('POST', '/api/account-admin/console/shops/s1/holds', { kind: 'subscription_ended', reason: 'پایانِ قرارداد', confirm: true }, auth);
+  const g_badIdem = await api('POST', '/api/account-admin/console/shops/s1/holds', { ...g_body, idempotencyKey: 'a b' }, auth);
+  check('⛔ گذاشتنِ حالت: operator/viewer ۴۰۳؛ بی دلیل، بی تأیید، نوع/سرویسِ ناجور، «پایانِ اشتراک» بی کلیدِ یکتایی و کلیدِ ناجور ۴۰۰ — هیچ‌کدام به سرورِ حساب نمی‌رسد',
+    g_op.status === 403 && g_vw.status === 403 && g_noReason.json?.error === 'reason_required' && g_noConfirm.json?.error === 'confirm_required'
+      && g_badKind.json?.error === 'bad_hold_kind' && g_badSvc.json?.error === 'bad_service' && g_noIdem.json?.error === 'idempotency_key_required'
+      && g_badIdem.json?.error === 'bad_idempotency_key' && [g_noReason, g_noConfirm, g_badKind, g_badSvc, g_noIdem, g_badIdem].every((r) => r.status === 400)
+      && seen.length === g_mark,
+    `${g_op.status} ${g_vw.status} ${g_noReason.json?.error} ${g_noConfirm.json?.error} ${g_badKind.json?.error} ${g_badSvc.json?.error} ${g_noIdem.json?.error} ${g_badIdem.json?.error} up=${seen.length - g_mark}`);
+
+  const g_put = await api('POST', '/api/account-admin/console/shops/s1/holds', g_body, auth);
+  const g_up = seen.filter((x) => x.path === '/api/admin/shops/s1/holds' && x.method === 'POST').at(-1);
+  check('گذاشتن (admin): ۲۰۱ از سرورِ حساب، با hold و state ِ همان‌جا',
+    g_put.status === 201 && g_put.json?.hold?.kind === 'access_suspended' && g_put.json?.state?.access === 'blocked' && g_put.json?.replayed === false,
+    `${g_put.status} ${JSON.stringify(g_put.json).slice(0, 200)}`);
+  check('⛔ بدنهٔ بالادست فقط {kind, reason} — نه confirm، نه کلیدِ یکتایی، نه رمز؛ کلیدِ یکتایی در سرآیندِ خودش',
+    JSON.stringify(g_up?.body) === JSON.stringify({ kind: 'access_suspended', reason: 'بدهیِ معوق' }) && g_up?.idem === 'pnl-test-0001-aaaa',
+    `${JSON.stringify(g_up?.body)} ${g_up?.idem}`);
+  const g_again = await api('POST', '/api/account-admin/console/shops/s1/holds', g_body, auth);
+  check('⛔ همان پنجره دوبار ⇒ همان کار (replayed، ۲۰۰)، نه حالتِ دوم',
+    g_again.status === 200 && g_again.json?.replayed === true && g_again.json?.hold?.id === g_put.json?.hold?.id && (holdsOf.get('s1') || []).length === 1,
+    `${g_again.status} ${JSON.stringify(g_again.json).slice(0, 160)}`);
+  const g_dup = await api('POST', '/api/account-admin/console/shops/s1/holds', { ...g_body, idempotencyKey: 'pnl-test-0002-bbbb' }, auth);
+  check('خطای سرورِ حساب با کدِ خودش (۴۰۹ hold_exists)', g_dup.status === 409 && g_dup.json?.error === 'hold_exists', `${g_dup.status} ${JSON.stringify(g_dup.json)}`);
+  const g_svc = await api('POST', '/api/account-admin/console/shops/s1/holds',
+    { kind: 'service_disabled', service: 'shop.chat', reason: 'شکایتِ مشتری', confirm: true, idempotencyKey: 'pnl-test-0003-cccc' }, auth);
+  check('غیرفعال کردنِ یک سرویس: سرویس هم به بالادست می‌رود',
+    g_svc.status === 201 && last()?.body?.service === 'shop.chat' && g_svc.json?.state?.servicesDisabled?.includes('shop.chat'), `${g_svc.status} ${JSON.stringify(last()?.body)}`);
+  const g_holdLog = await api('GET', '/api/control/audit?limit=40&q=account.shop_hold', undefined, auth);
+  check('⛔ و هر گذاشتن یک ردیف در دفترِ پنل (با دلیل)', JSON.stringify(g_holdLog.json || {}).includes('account.shop_hold.placed')
+    && JSON.stringify(g_holdLog.json || {}).includes('بدهیِ معوق'), String(g_holdLog.status));
+
+  g_mark = seen.length;
+  const g_liftNo = await api('POST', `/api/account-admin/console/shops/s1/holds/${g_put.json?.hold?.id}/lift`, { reason: 'پرداخت شد' }, auth);
+  const g_liftOp = await api('POST', `/api/account-admin/console/shops/s1/holds/${g_put.json?.hold?.id}/lift`, { reason: 'پرداخت شد', confirm: true }, c_oCon);
+  check('⛔ برداشتن بی تأیید ۴۰۰ و برای operator ۴۰۳ — هیچ‌کدام به سرورِ حساب نمی‌رسد',
+    g_liftNo.json?.error === 'confirm_required' && g_liftOp.status === 403 && seen.length === g_mark, `${g_liftNo.status} ${g_liftOp.status}`);
+  const g_lift = await api('POST', `/api/account-admin/console/shops/s1/holds/${g_put.json?.hold?.id}/lift`,
+    { reason: 'پرداخت شد', confirm: true, idempotencyKey: 'pnl-test-0004-dddd' }, auth);
+  check('برداشتن (admin): همان حالت، از همان دکان، با دلیل و کلیدِ یکتایی',
+    g_lift.status === 200 && g_lift.json?.hold?.active === false && last()?.path === `/api/admin/shops/s1/holds/${g_put.json?.hold?.id}/lift`
+      && JSON.stringify(last()?.body) === JSON.stringify({ reason: 'پرداخت شد' }) && last()?.idem === 'pnl-test-0004-dddd',
+    `${g_lift.status} ${JSON.stringify(last())}`.slice(0, 260));
+  const g_lift404 = await api('POST', '/api/account-admin/console/shops/s1/holds/nope/lift', { reason: 'پرداخت شد', confirm: true }, auth);
+  check('حالتِ ناشناخته ⇒ ۴۰۴ ِ خودِ سرورِ حساب (hold_not_found)', g_lift404.status === 404 && g_lift404.json?.error === 'hold_not_found', `${g_lift404.status} ${JSON.stringify(g_lift404.json)}`);
+
+  const g_fl = await api('GET', '/api/account-admin/console/flags', undefined, c_vCon);
+  check('پرچم‌ها: مقدار از `items` و کاتالوگ از `known` (همان شکلِ ‎admin-flags.js‎)',
+    g_fl.status === 200 && g_fl.json?.available === true && g_fl.json?.items?.[0]?.key === 'shop.orders' && g_fl.json?.known?.length === 2
+      && last()?.query?.scope === 'all', `${g_fl.status} ${JSON.stringify(g_fl.json).slice(0, 160)}`);
+  const g_fh = await api('GET', '/api/account-admin/console/flags/history?key=shop.orders&scope=all&limit=20&before=12345', undefined, c_vCon);
+  check('تاریخچهٔ پرچم: scope · key · limit · before به سرورِ حساب می‌رسد و ردیف‌ها همان‌طور برمی‌گردند',
+    g_fh.status === 200 && g_fh.json?.entries?.[0]?.changedBy === 'boss' && last()?.query?.key === 'shop.orders' && last()?.query?.scope === 'all'
+      && last()?.query?.limit === '20' && last()?.query?.before === '12345', JSON.stringify(last()?.query));
+
+  caps = ['shop-health.v1', 'flags.v1', 'actor.v1', 'service-key.v1'];
+  g_mark = seen.length;
+  const g_hNo = await api('GET', '/api/account-admin/console/shops/s1/holds', undefined, auth);
+  const g_pNo = await api('POST', '/api/account-admin/console/shops/s1/holds', { ...g_body, idempotencyKey: 'pnl-test-0005-eeee' }, auth);
+  const g_asked = seen.slice(g_mark).map((x) => x.path);
+  check('⛔ بی `shop-holds.v1`: خواندن «داده در دسترس نیست»، نوشتن ‎501 capability_missing‎ (نه «انجام شد») — و فقط ‎/me‎ پرسیده شد',
+    g_hNo.json?.available === false && g_hNo.json?.capability === 'shop-holds.v1' && g_pNo.status === 501 && g_pNo.json?.error === 'capability_missing'
+      && g_asked.every((x) => x === '/api/admin/me'), `${JSON.stringify(g_hNo.json).slice(0, 120)} ${g_pNo.status} ${g_asked.join(' ')}`);
+  caps = [...ALL_CAPS];
+
+  console.log('\n── چسبِ فاز ۳: کلیدِ سرویس + «انجام‌دهنده» ──');
+  await api('POST', '/api/auth/users', { username: 'admin-two', password: 'Admin2-1405-key', role: 'admin' }, auth);
+  const k_a2 = { Authorization: `Bearer ${(await api('POST', '/api/auth/login', { username: 'admin-two', password: 'Admin2-1405-key' })).json?.token}` };
+  const k_st0 = await api('GET', '/api/account-admin/console/service-key', undefined, auth);
+  check('حالِ پل بی کلید: راهِ پیشین، دلیل no_key، مالک = نخستین admin',
+    k_st0.status === 200 && k_st0.json?.stored === false && k_st0.json?.mode === 'legacy' && k_st0.json?.reason === 'no_key' && k_st0.json?.owner === true
+      && k_st0.json?.serviceKey === null, JSON.stringify(k_st0.json));
+  const k_stO = await api('GET', '/api/account-admin/console/service-key', undefined, c_oCon);
+  const k_stV = await api('GET', '/api/account-admin/console/service-key', undefined, c_vCon);
+  const k_st2 = await api('GET', '/api/account-admin/console/service-key', undefined, k_a2);
+  check('⛔ حالِ پل فقط admin؛ admin ِ دوم می‌بیند ولی «مالک» نیست', k_stO.status === 403 && k_stV.status === 403 && k_st2.status === 200 && k_st2.json?.owner === false,
+    `${k_stO.status} ${k_stV.status} ${k_st2.json?.owner}`);
+
+  const k_body = { reason: 'جای رمزِ ارشدِ مشترک', confirm: true, password: 'Acct-1405-test' };
+  let k_mark = seen.length;
+  const k_not = await api('POST', '/api/account-admin/console/service-key', { ...k_body, password: 'Admin2-1405-key' }, k_a2);
+  const k_op = await api('POST', '/api/account-admin/console/service-key', k_body, c_oCon);
+  const k_noPw = await api('POST', '/api/account-admin/console/service-key', { reason: k_body.reason, confirm: true }, auth);
+  const k_badPw = await api('POST', '/api/account-admin/console/service-key', { ...k_body, password: 'wrong-pass' }, auth);
+  const k_noReason = await api('POST', '/api/account-admin/console/service-key', { ...k_body, reason: '' }, auth);
+  const k_noConfirm = await api('POST', '/api/account-admin/console/service-key', { ...k_body, confirm: false }, auth);
+  check('⛔ ساختنِ کلید: فقط مالک (admin ِ دوم ۴۰۳ owner_only، operator ۴۰۳)، احرازِ دوباره (بی رمز reauth_required، رمزِ غلط reauth_failed)، دلیل و تأیید — هیچ‌کدام به سرورِ حساب نمی‌رسد',
+    k_not.status === 403 && k_not.json?.error === 'owner_only' && k_op.status === 403 && k_noPw.status === 403 && k_noPw.json?.error === 'reauth_required'
+      && k_badPw.status === 403 && k_badPw.json?.error === 'reauth_failed' && k_noReason.json?.error === 'reason_required'
+      && k_noConfirm.json?.error === 'confirm_required' && seen.length === k_mark,
+    `${k_not.status}/${k_not.json?.error} ${k_op.status} ${k_noPw.json?.error} ${k_badPw.json?.error} ${k_noReason.json?.error} ${k_noConfirm.json?.error} up=${seen.length - k_mark}`);
+
+  caps = ['shop-health.v1', 'shop-holds.v1', 'flags.v1'];
+  k_mark = seen.length;
+  const k_old = await api('POST', '/api/account-admin/console/service-key', k_body, auth);
+  check('⛔ سرورِ حسابِ بی `service-key.v1` ⇒ ‎501 capability_missing‎ و هیچ کلیدی ساخته نمی‌شود',
+    k_old.status === 501 && k_old.json?.error === 'capability_missing' && !seen.slice(k_mark).some((x) => x.path === '/api/admin/service-keys'),
+    `${k_old.status} ${JSON.stringify(k_old.json)}`);
+  caps = [...ALL_CAPS];
+
+  k_mark = seen.length;
+  const k_make = await api('POST', '/api/account-admin/console/service-key', k_body, auth);
+  const k_made = seen.slice(k_mark).find((x) => x.path === '/api/admin/service-keys');
+  const k1 = [...svcKeys.keys()].at(-1);
+  check('ساختنِ کلید (مالک + رمز): ۲۰۱، از راهِ پیشین (ارشدِ انسانی، tok-1)، سقف superadmin و دلیل',
+    k_make.status === 201 && k_make.json?.ok === true && k_make.json?.rotated === false && k_made?.bearer === 'tok-1'
+      && k_made?.body?.roleCap === 'superadmin' && k_made?.body?.reason === k_body.reason && k_make.json?.serviceKey?.id === 'svk1'
+      && k_make.json?.mode === 'service', `${k_make.status} ${JSON.stringify(k_make.json).slice(0, 220)}`);
+  check('⛔ خودِ کلید در پاسخ نیست (نه کلید، نه پیشوندش)', !JSON.stringify(k_make.json).includes('vsk_') && !JSON.stringify(k_make.json).includes(k1.slice(4, 14)),
+    JSON.stringify(k_make.json).slice(0, 200));
+  check('⛔ و پیش از ذخیره سنجیده شد: ‎/me‎ با همان کلید و «انجام‌دهنده»ِ پنل',
+    seen.slice(k_mark).some((x) => x.path === '/api/admin/me' && x.bearer === k1 && x.actor.id === 'panel:system'), '');
+
+  //  ⛔ کلید فقط رمزشده روی دیسک
+  const { DatabaseSync } = await import('node:sqlite');
+  const k_db = new DatabaseSync(path.join(tmp, 'data', 'panel.db'), { readOnly: true });
+  const k_row = k_db.prepare("SELECT value FROM settings WHERE key = 'account_service_key'").get();
+  const k_allSettings = JSON.stringify(k_db.prepare('SELECT * FROM settings').all());
+  const k_audit = JSON.stringify(k_db.prepare('SELECT * FROM cc_audit').all());
+  k_db.close();
+  check('⛔ روی دیسک فقط رمزشده (enc1:) — کلید در هیچ ردیفِ settings و دفترِ پنل خوانا نیست',
+    /^"enc1:/.test(k_row?.value || '') && !k_allSettings.includes(k1) && !k_allSettings.includes('vsk_') && !k_audit.includes('vsk_')
+      && k_audit.includes('account.service_key.created'), String(k_row?.value).slice(0, 40));
+
+  //  از این‌جا هر درِ پل با کلید و «انجام‌دهنده»ِ همان کاربرِ پنل
+  const k_users = await api('GET', '/api/auth/users', undefined, auth);
+  const uid = (name) => (k_users.json?.users || k_users.json || []).find?.((u) => u.username === name)?.id;
+  const k_hA = await api('GET', '/api/account-admin/console/system/health', undefined, auth);
+  const k_upA = last();
+  check('بعد از کلید: ‎Bearer vsk_…‎ + ‎X-Actor-Id/Role/Name‎ ِ همان کاربر (admin ⇒ superadmin)',
+    k_hA.status === 200 && k_upA.bearer === k1 && k_upA.actor.id === `panel:${uid('admin')}` && k_upA.actor.role === 'superadmin'
+      && decodeURIComponent(k_upA.actor.name || '') === 'admin', JSON.stringify(k_upA.actor));
+  await api('GET', '/api/account-admin/console/system/health', undefined, c_oCon);
+  const k_upO = last();
+  await api('GET', '/api/account-admin/console/system/health', undefined, c_vCon);
+  const k_upV = last();
+  check('⛔ نقشِ «انجام‌دهنده» از نقشِ امروزِ پنل: operator ⇒ admin · viewer ⇒ viewer (مرزش را سرورِ حساب هم می‌سنجد)',
+    k_upO.bearer === k1 && k_upO.actor.role === 'admin' && k_upO.actor.id === `panel:${uid('op-con')}`
+      && k_upV.bearer === k1 && k_upV.actor.role === 'viewer' && k_upV.actor.id === `panel:${uid('view-con')}`,
+    `${JSON.stringify(k_upO.actor)} ${JSON.stringify(k_upV.actor)}`);
+  const k_pump = await api('GET', '/api/stations-admin/cloud/stations', undefined, c_oCon);
+  check('پلِ پمپ (‎/cloud/*‎) هم با کلید و همان «انجام‌دهنده»', k_pump.status === 200 && last()?.bearer === k1 && last()?.actor?.role === 'admin',
+    `${k_pump.status} ${JSON.stringify(last()?.actor)}`);
+  const k_hp = await api('POST', '/api/account-admin/console/shops/s2/holds',
+    { kind: 'archived', reason: 'دکانِ بسته', confirm: true, idempotencyKey: 'pnl-test-0006-ffff' }, auth);
+  check('حالتِ دکان با کلید: «انجام‌دهنده» همان آدمِ پنل در سابقهٔ سرورِ حساب',
+    k_hp.status === 201 && k_hp.json?.hold?.placedActor?.id === `panel:${uid('admin')}` && k_hp.json?.hold?.placedActor?.name === 'admin',
+    JSON.stringify(k_hp.json?.hold?.placedActor));
+  const k_st1 = await api('GET', '/api/account-admin/console/service-key', undefined, auth);
+  check('حالِ پل: service، کلید با شناسه و سقف — و باز هم بی خودِ کلید',
+    k_st1.json?.mode === 'service' && k_st1.json?.serviceKey?.id === 'svk1' && k_st1.json?.serviceKey?.roleCap === 'superadmin'
+      && k_st1.json?.legacy === true && !JSON.stringify(k_st1.json).includes('vsk_'), JSON.stringify(k_st1.json).slice(0, 220));
+  check('⛔ و کلید در لاگِ پنل هم نیامد', !out.includes(k1) && !out.includes('vsk_'), '');
+
+  //  چرخش: کلیدِ تازه، کهنه همان دم باطل
+  k_mark = seen.length;
+  const k_rot = await api('POST', '/api/account-admin/console/service-key', { ...k_body, reason: 'چرخشِ ماهانه' }, auth);
+  const k2 = [...svcKeys.keys()].at(-1);
+  check('چرخش: کلیدِ تازه (svk2)، کهنه در سرورِ حساب باطل شد، هر دو از راهِ پیشین',
+    k_rot.status === 201 && k_rot.json?.rotated === true && k_rot.json?.serviceKey?.id === 'svk2' && k_rot.json?.previous?.revoked === true
+      && svcKeys.get(k1)?.status === 'revoked' && seen.slice(k_mark).filter((x) => x.path.startsWith('/api/admin/service-keys')).every((x) => x.bearer === 'tok-1'),
+    `${k_rot.status} ${JSON.stringify(k_rot.json).slice(0, 200)}`);
+  await api('GET', '/api/account-admin/console/system/health', undefined, auth);
+  check('و از همان دم کلیدِ تازه به کار می‌رود', last()?.bearer === k2, String(last()?.bearer).slice(0, 8));
+
+  //  کلید پشتِ سرِ پنل در سرورِ حساب باطل شد ⇒ همان درخواست با راهِ پیشین، نه خطا و نه بیرون افتادن
+  svcKeys.get(k2).status = 'revoked';
+  k_mark = seen.length;
+  const k_fb = await api('GET', '/api/account-admin/console/system/health', undefined, auth);
+  const k_tries = seen.slice(k_mark).filter((x) => x.path === '/api/admin/system/health').map((x) => (x.bearer === 'tok-1' ? 'tok' : x.bearer.slice(0, 4)));
+  check('⛔ کلیدِ باطل ⇒ همان درخواست یک بار با راهِ پیشین (۲۰۰)، نه ۴۰۱ به مرورگر',
+    k_fb.status === 200 && JSON.stringify(k_tries) === JSON.stringify(['vsk_', 'tok']), `${k_fb.status} ${k_tries.join(',')}`);
+  const k_st2b = await api('GET', '/api/account-admin/console/service-key', undefined, auth);
+  check('و حالِ پل راستش را می‌گوید: legacy با دلیلِ invalid_service_key',
+    k_st2b.json?.mode === 'legacy' && k_st2b.json?.reason === 'invalid_service_key' && k_st2b.json?.stored === true, JSON.stringify(k_st2b.json).slice(0, 200));
+  const k_still = await api('GET', '/api/auth/me', undefined, auth);
+  check('⛔ نشستِ پنل سالم ماند', k_still.status === 200, String(k_still.status));
+
+  //  ابطال از پنل: کلیدی که آن‌جا پیش‌تر باطل شده هم از پنل پاک می‌شود
+  const k_rvO = await api('POST', '/api/account-admin/console/service-key/revoke', { reason: 'پایان', confirm: true, password: 'Admin2-1405-key' }, k_a2);
+  check('⛔ ابطال هم فقط مالک', k_rvO.status === 403 && k_rvO.json?.error === 'owner_only', `${k_rvO.status}`);
+  k_mark = seen.length;
+  const k_rv = await api('POST', '/api/account-admin/console/service-key/revoke', { reason: 'برگشت به راهِ پیشین', confirm: true, password: 'Acct-1405-test' }, auth);
+  check('ابطال (مالک): درِ ابطالِ سرورِ حساب از راهِ پیشین، و کلید از پنل پاک شد',
+    k_rv.status === 200 && k_rv.json?.revoked === 'svk2' && k_rv.json?.stored === false && k_rv.json?.mode === 'legacy'
+      && seen.slice(k_mark).some((x) => x.path === '/api/admin/service-keys/svk2/revoke' && x.bearer === 'tok-1'), `${k_rv.status} ${JSON.stringify(k_rv.json).slice(0, 160)}`);
+  await api('GET', '/api/account-admin/console/system/health', undefined, auth);
+  check('و پل به راهِ پیشین برگشت', last()?.bearer === 'tok-1', String(last()?.bearer).slice(0, 8));
+  const k_rv404 = await api('POST', '/api/account-admin/console/service-key/revoke', { reason: 'دوباره', confirm: true, password: 'Acct-1405-test' }, auth);
+  check('ابطالِ دوباره ⇒ ۴۰۴ no_service_key', k_rv404.status === 404 && k_rv404.json?.error === 'no_service_key', `${k_rv404.status}`);
+
+  //  ⛔ سرورِ حسابی که کلید را می‌پذیرد ولی `actor.v1` را نمی‌گوید ⇒ کلید به کار نمی‌رود (بی «انجام‌دهنده» نه)
+  const k_make3 = await api('POST', '/api/account-admin/console/service-key', { ...k_body, reason: 'آزمونِ سرورِ میانه' }, auth);
+  caps = ['shop-health.v1', 'service-key.v1'];
+  //  ⚠️ صفحهٔ حالِ پل همیشه تازه می‌سنجد (نه کَشِ یک‌دقیقه‌ایِ درخواست‌ها)
+  const k_st3 = await api('GET', '/api/account-admin/console/service-key', undefined, auth);
+  await api('GET', '/api/account-admin/console/system/health', undefined, auth);
+  const k_mid = last();
+  check('⛔ کلید بی `actor.v1` به کار نمی‌رود: راهِ پیشین، با دلیلِ capability_missing',
+    k_make3.status === 201 && k_mid?.bearer === 'tok-1' && k_st3.json?.mode === 'legacy' && k_st3.json?.reason === 'capability_missing',
+    `${k_make3.status} ${String(k_mid?.bearer).slice(0, 8)} ${JSON.stringify(k_st3.json).slice(0, 160)}`);
+  caps = [...ALL_CAPS];
+  const k_rv3 = await api('POST', '/api/account-admin/console/service-key/revoke', { reason: 'پاکسازیِ آزمون', confirm: true, password: 'Acct-1405-test' }, auth);
+  check('و ابطالش', k_rv3.status === 200 && k_rv3.json?.stored === false, `${k_rv3.status}`);
+
+  const k_lim = [];
+  for (let i = 0; i < 6; i++) k_lim.push((await api('POST', '/api/account-admin/console/service-key', { ...k_body, password: `bad-${i}` }, auth)).status);
+  const k_limOk = await api('POST', '/api/account-admin/console/service-key', k_body, auth);
+  //  ⚠️ رمزِ غلطِ بالاتر (k_badPw) هم در همان پنجره شمرده شده ⇒ پنجمین شکست، نه ششمین
+  check('⛔ حدسِ رمزِ احرازِ دوباره سقف دارد: پس از پنج رمزِ غلط ۴۲۹ — حتی برای رمزِ درست، تا پنجره خالی شود',
+    k_lim[0] === 403 && k_lim.at(-1) === 429 && k_lim.filter((x) => x === 403).length === 4 && k_limOk.status === 429, `${k_lim.join(',')} ⇒ ${k_limOk.status}`);
 
   console.log('\n── سرورِ حساب خاموش ──');
   fake.close();
