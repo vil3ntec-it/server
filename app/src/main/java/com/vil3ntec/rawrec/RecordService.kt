@@ -114,6 +114,8 @@ class RecordService : Service(), Recorder.Events {
         const val ACTION_STOP = "rawrec.STOP"
         const val ACTION_PAUSE = "rawrec.PAUSE"
         const val ACTION_SHOW_CONTROL = "rawrec.SHOW_CONTROL"
+        /** 7.2: the «⏺» of the floating circle (the service is not exported: only the app sends it). */
+        const val ACTION_REC_TOGGLE = "rawrec.REC_TOGGLE"
         const val EXTRA_CODE = "code"
         const val EXTRA_DATA = "data"
         /** «پخشِ زنده»: server address, stream key (in memory only) and the chosen video bit rate. */
@@ -279,6 +281,7 @@ class RecordService : Service(), Recorder.Events {
             ACTION_PAUSE -> togglePause()
             ACTION_RELEASE -> if (state == State.IDLE) releaseInstant()
             ACTION_SHOW_CONTROL -> showControlAgain()
+            ACTION_REC_TOGGLE -> if (live != null) toggleCleanRecording()
         }
         return START_NOT_STICKY
     }
