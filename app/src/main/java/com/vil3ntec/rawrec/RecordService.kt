@@ -634,9 +634,8 @@ class RecordService : Service(), Recorder.Events {
     /** The screen's current size in pixels, packed (width, height): rotation and resolution only. */
     private fun geometry(): Long {
         val d = getSystemService(DisplayManager::class.java)?.getDisplay(Display.DEFAULT_DISPLAY) ?: return 0L
-        val m = android.util.DisplayMetrics()
-        @Suppress("DEPRECATION") d.getRealMetrics(m)
-        return (m.widthPixels.toLong() shl 32) or m.heightPixels.toLong()
+        val (w, h) = DisplayInfo.currentSize(this, d)
+        return (w.toLong() shl 32) or h.toLong()
     }
 
     private fun onGeometryMaybeChanged() {
@@ -657,9 +656,11 @@ class RecordService : Service(), Recorder.Events {
      * vendor skin) must not leave the recording in the wrong orientation; the size is checked again
      * every [GEOMETRY_WATCH_MS] while recording. Reading the size is cheap.
      */
+    private var lastSources = ""
     private val geometryWatch = object : Runnable {
         override fun run() {
             if (stopping || state == State.IDLE) return
+            DisplayInfo.sources(this@RecordService).let { if (it != lastSources) { lastSources = it; RecLog.add(this@RecordService, "screen sources: $it") } }
             onGeometryMaybeChanged()
             main.postDelayed(this, GEOMETRY_WATCH_MS)
         }

@@ -39,11 +39,44 @@ data class DisplayInfo(
     companion object {
         fun read(ctx: Context): DisplayInfo = try { readOrThrow(ctx) } catch (_: Throwable) { DisplayInfo(1080, 2400, 420, 60) }
 
+        /**
+         * The screen's size now, turned as it is now. 7.6: getRealMetrics, asked from the recording
+         * service, kept the size it had when the service started (the emulator: the tablet turned from
+         * 1600×2560 to 2560×1600, it still said 1600×2560) — the recording never turned, and the
+         * landscape game was squeezed or shrunk into the upright picture. A display context made now
+         * carries the display as it is; the display's own rotation is the second witness.
+         */
+        fun currentSize(ctx: Context, d: Display): Pair<Int, Int> {
+            val m = DisplayMetrics()
+            @Suppress("DEPRECATION") d.getRealMetrics(m)
+            val long = maxOf(m.widthPixels, m.heightPixels); val short = minOf(m.widthPixels, m.heightPixels)
+            if (android.os.Build.VERSION.SDK_INT >= 30) try {
+                val b = ctx.createDisplayContext(d).getSystemService(android.view.WindowManager::class.java)!!.maximumWindowMetrics.bounds
+                if (b.width() > 0 && b.height() > 0) return if (b.width() >= b.height()) long to short else short to long
+            } catch (_: Throwable) {}
+            val mode = d.mode
+            val natLand = mode.physicalWidth >= mode.physicalHeight
+            val r = d.rotation
+            val land = if (r == android.view.Surface.ROTATION_90 || r == android.view.Surface.ROTATION_270) !natLand else natLand
+            return if (land) long to short else short to long
+        }
+
+        /** Every source of the screen's size, for the report: which one follows a turn. */
+        fun sources(ctx: Context): String = try {
+            val d = ctx.getSystemService(DisplayManager::class.java)!!.getDisplay(Display.DEFAULT_DISPLAY)
+            val m = DisplayMetrics(); @Suppress("DEPRECATION") d.getRealMetrics(m)
+            val wm = if (android.os.Build.VERSION.SDK_INT >= 30) try {
+                ctx.createDisplayContext(d).getSystemService(android.view.WindowManager::class.java)!!.maximumWindowMetrics.bounds.let { "${it.width()}x${it.height()}" }
+            } catch (t: Throwable) { "err" } else "-"
+            "metrics ${m.widthPixels}x${m.heightPixels}, rotation ${d.rotation}, display context $wm, config ${ctx.resources.configuration.orientation}"
+        } catch (t: Throwable) { "sources: ${t.message}" }
+
         private fun readOrThrow(ctx: Context): DisplayInfo {
             val d = ctx.getSystemService(DisplayManager::class.java)?.getDisplay(Display.DEFAULT_DISPLAY)
                 ?: return DisplayInfo(1080, 2400, 420, 60)
             val m = DisplayMetrics()
             @Suppress("DEPRECATION") d.getRealMetrics(m)
+            currentSize(ctx, d).let { (w, h) -> m.widthPixels = w; m.heightPixels = h }
             val cur = d.mode
             val all = d.supportedModes.toList()
             // Highest refresh rate available at the current resolution (adaptive-refresh screens
