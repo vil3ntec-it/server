@@ -1,0 +1,2 @@
+--------- beginning of main
+11-09 20:19:24.350  2629  2629 I RAWREC_E2E: projection result -1

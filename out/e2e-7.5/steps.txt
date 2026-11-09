@@ -1,0 +1,12 @@
+Success
+Physical size: 1080x2400
+14
+== start live (720p quality) to rtmp://10.0.2.2:1935/live
+== viewer 1: free link, 40 s
+== viewer 2: upload limited to 3 Mbps, 60 s
+OK
+== viewer 3: upload limited to 1 Mbps, 60 s
+OK
+OK
+== clean recording beside the stream: 20 s
+== stop
