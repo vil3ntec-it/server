@@ -894,7 +894,7 @@ class RecordService : Service(), Recorder.Events {
         // how the connection went this time (the way, each failure and its reason; never the key)
         val log = RecLog.text(this).lines()
         val from = log.indexOfLast { it.contains("  start: ") }.coerceAtLeast(0)
-        val net = log.drop(from).filter { it.contains("  rtmp: ") || it.contains("  mirror: ") || it.contains("  chat panel: ") }.takeLast(10)
+        val net = log.drop(from).filter { it.contains("  rtmp: ") || it.contains("  mirror: ") || it.contains("  chat panel: ") || it.contains("  yt: ") }.takeLast(16)
         if (net.isNotEmpty()) sb.append("\n\n").append(net.joinToString("\n"))
         extrasReport?.let { sb.append('\n').append(it) }
         return sb.toString().trimEnd()

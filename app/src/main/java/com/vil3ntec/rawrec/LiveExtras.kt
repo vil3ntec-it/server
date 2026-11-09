@@ -60,6 +60,14 @@ object LiveExtras {
      * puts it live itself, without waiting for YouTube; false: the owner presses «Go live» in Studio.
      */
     fun goLiveNow(ctx: Context) = SafePrefs.bool(prefs(ctx), "yt_go_live_now", true)
+
+    /** Lives this app made that have not gone live (taken off the channel when found waiting). */
+    fun madeLives(ctx: Context): Set<String> = SafePrefs.str(prefs(ctx), "yt_made").split(',').filter { it.isNotBlank() }.toSet()
+    fun setMadeLive(ctx: Context, id: String, on: Boolean) {
+        val s = madeLives(ctx).toMutableSet()
+        if (on) s += id else s -= id
+        prefs(ctx).edit().putString("yt_made", s.joinToString(",")).apply()
+    }
     fun setGoLiveNow(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("yt_go_live_now", on).apply()
     fun setChatOpen(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("yt_chat_open", on).apply()
     /** What is asked of YouTube: the owner's choice, or "" = left as it is. */

@@ -110,4 +110,15 @@ class YouTubeSettingsTest {
         assertTrue(f.sumOf { it.length + 2 } + f.size <= 501)
         assertTrue(f.isNotEmpty() && f.none { it.contains('<') })
     }
+
+    /** 4.4: lives waiting on our key are found (the stream must feed only one), unbinding keeps them on the channel. */
+    @Test fun livesWaitingOnOurKeyAreFoundAndCanBeLetGo() {
+        fake()
+        val api = YouTubeApi("c", "s", "r")
+        assertEquals(listOf("ours"), api.boundTo("s-ours").map { it.videoId })
+        api.unbind("old")
+        val u = calls.last()
+        assertEquals("POST", u.first)
+        assertTrue("let go of the stream, not deleted", u.second.contains("liveBroadcasts/bind?id=old") && !u.second.contains("streamId"))
+    }
 }

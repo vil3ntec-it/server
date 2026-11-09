@@ -218,11 +218,7 @@ class YouTubeApi(
      * scheduled event that merely happens to be «upcoming» on the channel.
      */
     fun currentBroadcast(streamId: String? = null): Broadcast? {
-        val all = ArrayList<Broadcast>()
-        for (status in listOf("active", "upcoming")) {
-            val items = get("liveBroadcasts?part=snippet,status,contentDetails&broadcastType=all&broadcastStatus=$status&maxResults=25").optJSONArray("items") ?: continue
-            for (i in 0 until items.length()) parse(items.getJSONObject(i))?.let { all += it }
-        }
+        val all = notOver()
         if (streamId != null) {
             val mine = all.filter { it.streamId == streamId && it.lifeCycle != "complete" && it.lifeCycle != "revoked" }
             (mine.firstOrNull { it.isLive } ?: mine.firstOrNull { it.lifeCycle == "testing" || it.lifeCycle == "testStarting" }
@@ -230,6 +226,23 @@ class YouTubeApi(
         }
         return all.firstOrNull { it.isLive && it.chatId.isNotBlank() }
     }
+
+    /** The channel's lives that are live now or still to come. */
+    private fun notOver(): List<Broadcast> {
+        val all = ArrayList<Broadcast>()
+        for (status in listOf("active", "upcoming")) {
+            val items = get("liveBroadcasts?part=snippet,status,contentDetails&broadcastType=all&broadcastStatus=$status&maxResults=25").optJSONArray("items") ?: continue
+            for (i in 0 until items.length()) parse(items.getJSONObject(i))?.let { all += it }
+        }
+        return all
+    }
+
+    /** Every live bound to stream [streamId] that is not over (several = the stream may feed the wrong one). */
+    fun boundTo(streamId: String): List<Broadcast> =
+        notOver().filter { it.streamId == streamId && it.lifeCycle != "complete" && it.lifeCycle != "revoked" }
+
+    /** The live no longer takes the stream (it stays on the channel as it is; 50 units). */
+    fun unbind(id: String) { call("POST", "liveBroadcasts/bind?id=${enc(id)}&part=id,contentDetails", null, 50) }
 
     /**
      * A new live on the channel, bound to stream [streamId] (the one our key goes to): it goes live by
