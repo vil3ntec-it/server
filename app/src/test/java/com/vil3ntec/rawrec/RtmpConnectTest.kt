@@ -224,7 +224,12 @@ class RtmpConnectTest {
      * The owner's stream cut out every 3–4 s: a link that carried less than 4.0's 40 % floor. A link
      * (bits a second, changing over time) against the encoder at the controller's rate, 100 ms steps.
      */
-    private class Sim(maxBps: Int, startBps: Int = 0, val link: (Double) -> Double) {
+    /**
+     * [made]: what the encoder really makes of the rate it is given (a quiet scene makes far less);
+     * [real]: the link is measured as the app does — known only in a second in which frames waited.
+     */
+    private class Sim(maxBps: Int, startBps: Int = 0, val real: Boolean = false, val made: (Double, Int) -> Double = { _, t -> t.toDouble() }, val link: (Double) -> Double) {
+        private var minLag = Long.MAX_VALUE
         val rc = RateControl(maxBps, startBps = startBps)
         var drops = 0; var maxLagMs = 0L
         /** What waits to go out: 100 ms of picture each, with how many bits are still left of it. */
@@ -233,16 +238,21 @@ class RtmpConnectTest {
         fun run(fromS: Double, toS: Double) {
             var t = fromS
             while (t < toS) {
-                queue.addLast(doubleArrayOf(rc.target * 0.1, rc.target * 0.1))
+                val bits = made(t, rc.target) * 0.1
+                queue.addLast(doubleArrayOf(bits, bits))
                 var room = link(t) * 0.1
                 while (room > 0 && queue.isNotEmpty()) {
                     val c = queue.first(); val n = minOf(room, c[1])
                     c[1] -= n; room -= n; sentThisSecond += n
                     if (c[1] <= 0.0) queue.removeFirst()
                 }
-                if (((t * 10 + 0.5).toLong() % 10L) == 9L) { rc.measured(sentThisSecond.toInt()); sentThisSecond = 0.0 }
                 // how long the oldest waiting picture has waited (in picture time, as RtmpSink measures it)
                 val lagUs = (queue.sumOf { it[1] / it[0] } * 100_000).toLong()
+                minLag = minOf(minLag, lagUs)
+                if (((t * 10 + 0.5).toLong() % 10L) == 9L) {
+                    if (real) rc.measured(sentThisSecond.toInt(), backlogged = minLag > 250_000L) else rc.measured(sentThisSecond.toInt())
+                    sentThisSecond = 0.0; minLag = Long.MAX_VALUE
+                }
                 maxLagMs = maxOf(maxLagMs, lagUs / 1000)
                 if (rc.step((t * 1e9).toLong(), lagUs, true) == RateControl.Act.DROP) { drops++; queue.clear() }
                 t += 0.1
@@ -376,6 +386,48 @@ class RtmpConnectTest {
         assertTrue("at most one cut for the whole dip (${s.drops})", s.drops <= 1)
         s.maxLagMs = 0; s.run(100.0, 160.0)
         assertTrue("real time again after (${s.maxLagMs} ms)", s.maxLagMs < 2_000)
+    }
+
+    /**
+     * 7.8, found on the emulator: a quiet scene sends 300 kbps on a free link; that was taken for the
+     * link's width, and one hiccup threw the rate to the floor («link: 1000 of 7000 kbps») — blocks
+     * when the action came back. Now only a second in which frames waited measures the link.
+     */
+    @Test fun aQuietSceneIsNotTakenForASlowLink() = quietScene(real = true)
+
+    /** 7 Mbps chosen on a 20 Mbps link; a lobby for 40 s (300 kbps made), the link stalls for 2.5 s, then the fight. */
+    private fun quietScene(real: Boolean) {
+        for (stallAt in listOf(5.0, 30.0)) {   // in the first seconds (nothing learnt yet) and later
+            val s = Sim(7_000_000, real = real, made = { t, target -> if (t < 40) minOf(300_000.0, target.toDouble()) else target.toDouble() }) { t ->
+                if (t >= stallAt && t < stallAt + 2.5) 0.0 else 20_000_000.0
+            }
+            s.run(0.0, 40.0)
+            assertTrue("stall at $stallAt s: the hiccup in a quiet scene costs a step at most, not the floor (${s.rc.target})", s.rc.target >= 2_900_000)
+            s.run(40.0, 75.0)
+            assertTrue("stall at $stallAt s: the fight gets the chosen rate within half a minute (${s.rc.target})", s.rc.target >= 6_000_000)
+            assertEquals("nothing lost", 0, s.drops)
+        }
+    }
+
+    /** The same scene measured the old way (every second taken for the link): thrown to the floor — the fault 7.8 mends. */
+    @Test fun theOldMeasureThrewAQuietSceneToTheFloor() {
+        val failed = try { quietScene(real = false); false } catch (_: AssertionError) { true }
+        assertTrue("the old measure fails this scene", failed)
+    }
+
+    /** 7.8: the same narrow links as above, the link measured as the app really measures it. */
+    @Test fun narrowLinksSettleWithTheLinkMeasuredOnlyUnderBacklog() {
+        for (mbps in listOf(1.5, 3.0, 4.0)) {
+            val s = Sim(12_000_000, real = true) { mbps * 1_000_000 }
+            s.run(0.0, 30.0)
+            val settle = s.drops
+            assertTrue("$mbps Mbps: at most one cut while the start finds the link (${s.drops})", settle <= 1)
+            s.maxLagMs = 0; s.run(30.0, 240.0)
+            assertEquals("$mbps Mbps: no cut once settled", settle, s.drops)
+            assertTrue("$mbps Mbps: real time, never 4 s behind (${s.maxLagMs} ms)", s.maxLagMs < RateControl.HARD_US / 1000)
+            assertTrue("$mbps Mbps: not starved (${s.rc.target})", s.rc.target >= mbps * 1_000_000 * 0.5)
+            assertTrue("$mbps Mbps: not far above the link (${s.rc.target})", s.rc.target <= mbps * 1_000_000 * 1.25)
+        }
     }
 
     /** 6.9: HEVC over Enhanced RTMP (as OBS sends YouTube); H.264 as before. */

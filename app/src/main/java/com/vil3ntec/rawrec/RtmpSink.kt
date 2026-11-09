@@ -76,6 +76,8 @@ class RtmpSink(
     @Volatile private var sent = 0L
     private var sentBefore = 0L
     @Volatile private var lastEnqueuedPts = 0L
+    /** The shortest wait of any packet sent in the current second (see [RateControl.measured]). */
+    private var minLagUs = Long.MAX_VALUE
     @Volatile private var target = maxBitrate
     @Volatile var liveSinceMs = 0L; private set
     /** The longest the stream ran without a break, and how long it was live in total. */
@@ -239,7 +241,9 @@ class RtmpSink(
                 val now = System.nanoTime()
                 if (now - lastStat >= 1_000_000_000L) {
                     kbps = ((p.bytesSent - lastSent) * 8 / 1000).toInt()
-                    rate.measured(kbps * 1000)
+                    // every packet of this second had waited: the link was the limit, not the encoder
+                    rate.measured(kbps * 1000, backlogged = minLagUs != Long.MAX_VALUE && minLagUs > 250_000L)
+                    minLagUs = Long.MAX_VALUE
                     lastSent = p.bytesSent
                     lastStat = now
                     sent = sentBefore + p.bytesSent
@@ -255,6 +259,7 @@ class RtmpSink(
                 // read as «the internet is behind», so the rate fell to the floor on a free link (the emulator:
                 // «behind 117 s, lost 0», «1000 of 7000 kbps»; the owner: blocks)
                 val lagUs = (now - k.atNs) / 1000
+                if (lagUs < minLagUs) minLagUs = lagUs
                 lastLagMs = (lagUs / 1000).toInt().coerceAtLeast(0)
                 // 6.5: the chosen rate is a ceiling, never more than the link carries — a manual 51 Mbps on a
                 // 3 Mbps link lost 27 % of the frames and stalled the viewers (the owner's report). The
@@ -397,11 +402,28 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLO
     private val seen = IntArray(3)
     private var seenN = 0
 
-    /** What the connection carried in the last second (bits). */
-    fun measured(bps: Int) { seen[seenN % seen.size] = bps; seenN++ }
+    private val full = IntArray(3)
+    private var fullN = 0
 
-    /** The connection's recent rate (the mean of the last seconds; 0 = not known yet). */
-    val link: Int get() = if (seenN == 0) 0 else (0 until minOf(seenN, seen.size)).sumOf { seen[it].toLong() }.div(minOf(seenN, seen.size)).toInt()
+    /**
+     * What went out in the last second (bits). [backlogged]: frames were waiting the whole second, so
+     * this is what the connection can carry. 7.8: without a backlog it is only what the encoder made —
+     * a quiet scene (a lobby, a menu) sends a few hundred kbps on any link. That was read as «the link
+     * carries 300 kbps»: one short hiccup then threw the rate to the floor on a free link (the emulator:
+     * «link: 1000 of 7000 kbps» with nothing in the way), and the next fight came out in blocks.
+     */
+    fun measured(bps: Int, backlogged: Boolean = true) {
+        seen[seenN % seen.size] = bps; seenN++
+        if (backlogged) { full[fullN % full.size] = bps; fullN++ } else fullN = 0
+    }
+
+    private fun mean(a: IntArray, n: Int) = if (n == 0) 0 else (0 until minOf(n, a.size)).sumOf { a[it].toLong() }.div(minOf(n, a.size)).toInt()
+
+    /** What went out lately (the mean of the last seconds): whether the encoder fills the rate it was given. */
+    val sent: Int get() = mean(seen, seenN)
+
+    /** What the connection carries: known only while frames wait (0 = not known now). */
+    val link: Int get() = mean(full, fullN)
 
     private var firstNs = 0L
     /** The last lowering was made before the link's rate was known. */
@@ -439,6 +461,9 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLO
             if (l > 0 && target <= l * 0.85 && lagUs <= 3_000_000L) return Act.NONE
             // far behind and already at half the link: what waits is draining; nothing more to do
             if (far && l > 0 && target <= l * 0.5) return Act.NONE
+            // lowered once without knowing the link: not again until a second with a backlog has measured it
+            // (or it is 3 s behind) — a hiccup costs one step, not a fall to the floor
+            if (l <= 0 && blind && lagAtAdjust != 0L && lagUs <= 3_000_000L) return Act.NONE
             behind(nowNs)
             lastAdjust = nowNs; lagAtAdjust = lagUs; blind = l <= 0
             val want = when {
@@ -466,7 +491,7 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLO
             // 7.1 (found streaming for real through a 3 Mbps link): only up when the link really carries the
             // current rate — the encoder sent 3 Mbps of a 5 Mbps target, the target climbed to 6 untested, the
             // encoder followed, the stream fell 4 s behind, frames were lost and the viewer froze for 10 s
-            val filled = link >= target * 0.85
+            val filled = sent >= target * 0.85
             if (filled && target < cap && nowNs - calmSince > calmFor && nowNs - lastAdjust > since) {
                 lastAdjust = nowNs; calmSince = nowNs
                 return if (set(minOf((target * (if (fresh) 1.2 else 1.15)).toInt(), cap))) Act.SET else Act.NONE
