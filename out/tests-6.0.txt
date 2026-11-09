@@ -1,4 +1,4 @@
-tests 235, failed 3, skipped 0
+tests 237, failed 5, skipped 0
 FAIL com.vil3ntec.rawrec.InteractionTest.everyToggleResponds[33]: java.lang.NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress
     java.lang.NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress
     	at java.base/java.lang.Class.getDeclaredMethods0(Native Method)
@@ -8,13 +8,25 @@ FAIL com.vil3ntec.rawrec.InteractionTest.everyToggleResponds[33]: java.lang.NoCl
     Caused by: java.lang.ClassNotFoundException: android.bluetooth.BluetoothDevice$BluetoothAddress
     	at com.vil3ntec.rawrec.InteractionTest.launch(InteractionTest.kt:116)
     	at com.vil3ntec.rawrec.InteractionTest.everyToggleResponds(InteractionTest.kt:280)
-FAIL com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar[34]: java.lang.AssertionError: playing the media part (note: «», playingKind 0, toast «این کار انجام نشد: NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress — جزئیات در «گزارشِ خطا» ذخیره شد.», error «RawRec 6.0 error (app kept running) 2026-11-09 08:36:07 • tap: listen 2 Android 14
+FAIL com.vil3ntec.rawrec.PreviewRender.tabletDark: java.lang.IllegalArgumentException: Failed to parse qualifier string 'sw800dp-w1280dp-h800dp-land-mdpi-night'. Found unrecognized trailing qualifier segments night, . See https://developer.android.com/guide/topics/resources/providing-resources.html#QualifierRules for expected format.
+    java.lang.IllegalArgumentException: Failed to parse qualifier string 'sw800dp-w1280dp-h800dp-land-mdpi-night'. Found unrecognized trailing qualifier segments night, . See https://developer.android.com/guide/topics/resources/providing-resources.html#QualifierRules for expected format.
+    	at org.robolectric.android.QualifierParser.throwParseError(QualifierParser.java:316)
+    	at org.robolectric.android.QualifierParser.parse(QualifierParser.java:308)
+    	at com.vil3ntec.rawrec.PreviewRender.render(PreviewRender.kt:65)
+    	at com.vil3ntec.rawrec.PreviewRender.tabletDark(PreviewRender.kt:99)
+FAIL com.vil3ntec.rawrec.PreviewRender.phoneDark: java.lang.IllegalArgumentException: Failed to parse qualifier string 'w411dp-h914dp-xxhdpi-night'. Found unrecognized trailing qualifier segments night, . See https://developer.android.com/guide/topics/resources/providing-resources.html#QualifierRules for expected format.
+    java.lang.IllegalArgumentException: Failed to parse qualifier string 'w411dp-h914dp-xxhdpi-night'. Found unrecognized trailing qualifier segments night, . See https://developer.android.com/guide/topics/resources/providing-resources.html#QualifierRules for expected format.
+    	at org.robolectric.android.QualifierParser.throwParseError(QualifierParser.java:316)
+    	at org.robolectric.android.QualifierParser.parse(QualifierParser.java:308)
+    	at com.vil3ntec.rawrec.PreviewRender.render(PreviewRender.kt:65)
+    	at com.vil3ntec.rawrec.PreviewRender.phoneDark(PreviewRender.kt:98)
+FAIL com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar[34]: java.lang.AssertionError: playing the media part (note: «», playingKind 0, toast «این کار انجام نشد: NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress — جزئیات در «گزارشِ خطا» ذخیره شد.», error «RawRec 6.0 error (app kept running) 2026-11-09 08:47:24 • tap: listen 2 Android 14
     java.lang.AssertionError: playing the media part (note: «», playingKind 0, toast «این کار انجام نشد: NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress — جزئیات در «گزارشِ خطا» ذخیره شد.», error «RawRec 6.0 error (app kept running)
-    2026-11-09 08:36:07 • tap: listen 2
+    2026-11-09 08:47:24 • tap: listen 2
     Android 14 (API 34) • robolectric robolectric • fa
     	at com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar(VoiceLiveUiTest.kt:212)
-FAIL com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar: java.lang.AssertionError: playing the media part (note: «», playingKind 0, toast «این کار انجام نشد: NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress — جزئیات در «گزارشِ خطا» ذخیره شد.», error «RawRec 6.0 error (app kept running) 2026-11-09 08:36:10 • tap: listen 2 Android 15
+FAIL com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar: java.lang.AssertionError: playing the media part (note: «», playingKind 0, toast «این کار انجام نشد: NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress — جزئیات در «گزارشِ خطا» ذخیره شد.», error «RawRec 6.0 error (app kept running) 2026-11-09 08:47:27 • tap: listen 2 Android 15
     java.lang.AssertionError: playing the media part (note: «», playingKind 0, toast «این کار انجام نشد: NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress — جزئیات در «گزارشِ خطا» ذخیره شد.», error «RawRec 6.0 error (app kept running)
-    2026-11-09 08:36:10 • tap: listen 2
+    2026-11-09 08:47:27 • tap: listen 2
     Android 15 (API 35) • robolectric robolectric • fa
     	at com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar(VoiceLiveUiTest.kt:212)
