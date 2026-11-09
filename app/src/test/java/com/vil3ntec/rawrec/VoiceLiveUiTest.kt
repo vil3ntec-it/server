@@ -122,15 +122,8 @@ class VoiceLiveUiTest {
     private fun tab(a: Activity, t: MainActivity.Tab) = touch(a, byTag(a, "nav:${t.name}"))
     private fun openAudio(a: Activity) { tab(a, MainActivity.Tab.SETTINGS); touch(a, byTag(a, "sub:${MainActivity.Sub.AUDIO.name}")) }
     private fun kinds() = prefs().getInt("c_kinds", VoiceSources.ALL)
-    /** The «زنده» page with every closed section opened. */
-    private fun liveOpen(a: Activity) {
-        tab(a, MainActivity.Tab.LIVE)
-        for (k in listOf("live_q", "live_audio", "live_tw", "live_tr", "live_bot", "live_privacy")) {
-            val body = all(a.window.decorView).first { it.tag == "section:$k:body" }
-            if (body.visibility != View.VISIBLE) touch(a, byTag(a, "section:$k"))
-            assertTrue("section $k opens", shown(body))
-        }
-    }
+    /** One part of the «زنده» hub, on its own page (5.0: no more one long scroll). */
+    private fun liveSub(a: Activity, s: MainActivity.Sub) { tab(a, MainActivity.Tab.LIVE); touch(a, byTag(a, "sub:${s.name}")) }
     private fun chip(a: Activity, text: String): RadioButton =
         all(a.window.decorView).filterIsInstance<RadioButton>().firstOrNull { shown(it) && it.text.toString() == text }
             ?: throw AssertionError("no chip «$text» among " + all(a.window.decorView).filterIsInstance<RadioButton>().filter { shown(it) }.map { it.text })
@@ -346,59 +339,69 @@ class VoiceLiveUiTest {
 
     @Test fun everyLiveSwitchFlipsAndIsSaved() {
         val a = launch()
-        liveOpen(a)
-        val keys = mapOf(
-            "tog:live_team" to "live_team", "tog:live_mic" to "live_mic", "tog:hud_on" to "hud_on",
-            "tog:tr_in" to "tr_in", "tog:tr_out" to "tr_out",
-            "tog:bot_on" to "bot_on", "tog:bot_welcome" to "bot_welcome",
-            "tog:mod_links" to "mod_links", "tog:mod_caps" to "mod_caps", "tog:mod_spam" to "mod_spam",
+        val pages = mapOf(
+            MainActivity.Sub.LIVE_AUDIO to mapOf("tog:live_team" to "live_team", "tog:live_mic" to "live_mic"),
+            MainActivity.Sub.LIVE_CHAT to mapOf("tog:hud_on" to "hud_on", "tog:tr_in" to "tr_in", "tog:tr_out" to "tr_out",
+                "tog:bot_on" to "bot_on", "tog:bot_welcome" to "bot_welcome",
+                "tog:mod_links" to "mod_links", "tog:mod_caps" to "mod_caps", "tog:mod_spam" to "mod_spam"),
         )
-        for ((tag, key) in keys) {
-            assertTrue("«$tag» on the live page", has(a, tag))
-            val before = sw(a, tag)
-            touch(a, byTag(a, tag))
-            assertEquals("«$tag» flips", !before, sw(a, tag))
-            assertEquals("«$key» saved", !before, prefs().getBoolean(key, before))
-            touch(a, byTag(a, tag))
-            assertEquals("«$tag» flips back", before, sw(a, tag))
-            assertEquals(before, prefs().getBoolean(key, !before))
+        for ((page, keys) in pages) {
+            liveSub(a, page)
+            for ((tag, key) in keys) {
+                assertTrue("«$tag» on the ${page.name} page", has(a, tag))
+                val before = sw(a, tag)
+                touch(a, byTag(a, tag))
+                assertEquals("«$tag» flips", !before, sw(a, tag))
+                assertEquals("«$key» saved", !before, prefs().getBoolean(key, before))
+                touch(a, byTag(a, tag))
+                assertEquals("«$tag» flips back", before, sw(a, tag))
+                assertEquals(before, prefs().getBoolean(key, !before))
+            }
         }
         assertNull(CrashLog.pending(app))
     }
 
     @Test fun everyLiveChoiceIsSelectedAndSaved() {
         val a = launch()
-        liveOpen(a)
-        val chips = all(a.window.decorView).filterIsInstance<RadioButton>().filter { shown(it) }
-        assertTrue("chips on the live page: ${chips.size}", chips.size >= 20)
-        for (c in chips) {
-            if (!shown(c)) continue
-            touch(a, c)
-            assertTrue("chip «${c.text}» selected after a tap", c.isChecked)
+        var total = 0
+        for (page in listOf(MainActivity.Sub.LIVE_DEST, MainActivity.Sub.LIVE_YT, MainActivity.Sub.LIVE_QUALITY, MainActivity.Sub.LIVE_CHAT, MainActivity.Sub.LIVE_SHORTS)) {
+            liveSub(a, page)
+            val chips = all(a.window.decorView).filterIsInstance<RadioButton>().filter { shown(it) }
+            assertTrue("chips on the ${page.name} page", chips.isNotEmpty())
+            for (c in chips) {
+                if (!shown(c)) continue
+                touch(a, c)
+                assertTrue("chip «${c.text}» selected after a tap", c.isChecked)
+                total++
+            }
         }
+        assertTrue("chips over the live pages: $total", total >= 20)
         // a few concrete values
+        liveSub(a, MainActivity.Sub.LIVE_CHAT)
         touch(a, chip(a, a.getString(R.string.tr_lang_tr)))
         assertEquals("tr", LiveExtras.trTarget(app))
+        touch(a, chip(a, a.getString(R.string.live_hud_l)))
+        assertEquals(2, LiveExtras.hudSize(app))
+        liveSub(a, MainActivity.Sub.LIVE_YT)
         touch(a, chip(a, a.getString(R.string.yt_p_private)))
         assertEquals("private", LiveExtras.ytPrivacy(app))
         touch(a, chip(a, a.getString(R.string.yt_cat_gaming)))
         assertEquals("20", LiveExtras.ytCategory(app))
-        touch(a, chip(a, a.getString(R.string.live_hud_l)))
-        assertEquals(2, LiveExtras.hudSize(app))
         assertNull(CrashLog.pending(app))
     }
 
     @Test fun liveTextFieldsAreSavedAndSecretsSealed() {
         val a = launch()
-        liveOpen(a)
         fun field(hint: String) = all(a.window.decorView).filterIsInstance<android.widget.EditText>().first { shown(it) && it.hint?.toString() == hint }
         fun type(e: android.widget.EditText, s: String) { e.requestFocus(); e.setText(s); a.window.decorView.findFocus(); e.clearFocus(); idle() }
+        liveSub(a, MainActivity.Sub.LIVE_CHAT)
         type(field(a.getString(R.string.live_tw_hint)), "https://www.twitch.tv/SomeOne")
         assertEquals("someone", LiveExtras.twChannel(app))
         type(field(a.getString(R.string.live_bot_cmds_hint)), "!discord = d.gg/x\n!phone: RawRec")
         assertEquals(setOf("!discord", "!phone"), LiveExtras.botConfig(app).commands.keys)
         type(field(a.getString(R.string.live_bot_timers_hint)), "۱۰ = hello")
         assertEquals(listOf(10 to "hello"), LiveExtras.botConfig(app).timers)
+        liveSub(a, MainActivity.Sub.LIVE_YT)
         type(field(a.getString(R.string.yt_title_hint)), "Ranked grind 🔥")
         assertEquals("Ranked grind 🔥", LiveExtras.ytTitle(app))
         type(field("…apps.googleusercontent.com"), "123-abc.apps.googleusercontent.com")

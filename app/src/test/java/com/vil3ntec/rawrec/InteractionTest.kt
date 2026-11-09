@@ -169,7 +169,10 @@ class InteractionTest {
         touch(a, byTag(a, "nav:${t.name}"))
         assertTrue("${t.name} is the selected destination", byTag(a, "nav:${t.name}").isSelected)
     }
-    private fun openSub(a: Activity, s: MainActivity.Sub) { tab(a, MainActivity.Tab.SETTINGS); touch(a, byTag(a, "sub:${s.name}")) }
+    /** A sub-page: the live parts hang under «زنده», the rest under «تنظیمات». */
+    private fun openSub(a: Activity, s: MainActivity.Sub) {
+        tab(a, if (s.name.startsWith("LIVE_")) MainActivity.Tab.LIVE else MainActivity.Tab.SETTINGS); touch(a, byTag(a, "sub:${s.name}"))
+    }
     private fun expand(a: Activity, key: String) {
         val h = byTag(a, "section:$key")
         if (!shown(byTagAny(a, "section:$key:body"))) touch(a, h)
@@ -201,7 +204,7 @@ class InteractionTest {
         for (s in MainActivity.Sub.values().filter { it != MainActivity.Sub.NONE }) {
             openSub(a, s)
             touch(a, byTag(a, "back"))
-            assertTrue("back to the settings list from ${s.name}", has(a, "sub:${s.name}"))
+            assertTrue("back to the list from ${s.name}", has(a, "sub:${s.name}"))
             touch(a, byTag(a, "sub:${s.name}"))
             @Suppress("DEPRECATION") a.onBackPressed(); idle()
             assertTrue(has(a, "sub:${s.name}"))
@@ -321,7 +324,9 @@ class InteractionTest {
             { openSub(a, MainActivity.Sub.VIDEO) },
             { openSub(a, MainActivity.Sub.AUDIO) },
             { openSub(a, MainActivity.Sub.CONTROLS) },
-            { tab(a, MainActivity.Tab.LIVE) },
+            { openSub(a, MainActivity.Sub.LIVE_DEST) },
+            { openSub(a, MainActivity.Sub.LIVE_YT) },
+            { openSub(a, MainActivity.Sub.LIVE_QUALITY) },
         )
         for (go in pages) {
             go()

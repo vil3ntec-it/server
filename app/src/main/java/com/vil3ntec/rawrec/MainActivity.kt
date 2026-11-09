@@ -66,7 +66,9 @@ import java.util.concurrent.Executors
 class MainActivity : Activity() {
 
     enum class Tab { HOME, LIVE, QUALITY, VIDEOS, SETTINGS, ABOUT }
-    enum class Sub { NONE, VIDEO, AUDIO, CONTROLS, STORAGE, PERMS, LANG }
+    enum class Sub { NONE, VIDEO, AUDIO, CONTROLS, STORAGE, PERMS, LANG, LIVE_DEST, LIVE_YT, LIVE_QUALITY, LIVE_SHORTS, LIVE_LAYOUT, LIVE_CHAT, LIVE_AUDIO }
+    /** The destination a sub-page belongs to (the live parts under «زنده», the rest under «تنظیمات»). */
+    private fun tabOf(s: Sub) = if (s.name.startsWith("LIVE_")) Tab.LIVE else Tab.SETTINGS
 
     override fun attachBaseContext(newBase: Context) = super.attachBaseContext(AppLang.wrap(newBase))
 
@@ -266,7 +268,7 @@ class MainActivity : Activity() {
     override fun onBackPressed() {
         when {
             !built -> @Suppress("DEPRECATION") super.onBackPressed()
-            sub != Sub.NONE -> show(Tab.SETTINGS, Sub.NONE)
+            sub != Sub.NONE -> show(tabOf(sub), Sub.NONE)
             tab != Tab.HOME -> show(Tab.HOME)
             else -> @Suppress("DEPRECATION") super.onBackPressed()
         }
@@ -687,7 +689,7 @@ class MainActivity : Activity() {
     private class Page(val scroll: ScrollView, val col: LinearLayout, val sub: TextView)
 
     /** A scrolling page with a large title (and a back button on the settings sub-pages). */
-    private fun page(title: Int, subtitle: Int = 0, back: Boolean = false): Page {
+    private fun page(title: Int, subtitle: Int = 0, back: Boolean = false, backTo: Tab = Tab.SETTINGS): Page {
         val side = if (contentWidthDp > 760) (contentWidthDp - 720) / 2 else 16
         val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -700,7 +702,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = dp(64)
-            if (back) addView(iconButton(R.drawable.ic_back, str(R.string.back), "back") { show(Tab.SETTINGS, Sub.NONE) },
+            if (back) addView(iconButton(R.drawable.ic_back, str(R.string.back), "back") { show(backTo, Sub.NONE) },
                 LinearLayout.LayoutParams(dp(48), dp(48)).apply { marginEnd = dp(8); marginStart = -dp(8) })
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
@@ -733,6 +735,14 @@ class MainActivity : Activity() {
         subPages[Sub.STORAGE] = buildSubStorage()
         subPages[Sub.PERMS] = buildSubPerms()
         subPages[Sub.LANG] = buildSubLang()
+        subPages[Sub.LIVE_DEST] = buildLiveDest()
+        subPages[Sub.LIVE_YT] = buildLiveYt()
+        subPages[Sub.LIVE_QUALITY] = buildLiveQuality()
+        subPages[Sub.LIVE_SHORTS] = buildLiveShorts()
+        subPages[Sub.LIVE_LAYOUT] = buildLiveLayout()
+        subPages[Sub.LIVE_CHAT] = buildLiveChat()
+        subPages[Sub.LIVE_AUDIO] = buildLiveAudio()
+        refreshLiveTiles()
         content = FrameLayout(this).apply { setBackgroundColor(col(R.color.bg)) }
         val root = LinearLayout(this).apply {
             setBackgroundColor(col(R.color.bg))
@@ -820,14 +830,15 @@ class MainActivity : Activity() {
     /** Switch to a destination (or a settings sub-page). */
     private fun show(t: Tab, s: Sub = Sub.NONE) {
         tab = t
-        sub = if (t == Tab.SETTINGS) s else Sub.NONE
+        sub = if (t == Tab.SETTINGS || t == Tab.LIVE) s else Sub.NONE
         val v = (if (sub != Sub.NONE) subPages[sub] else screens[t]) ?: return
         attach(v)
         (v as? ScrollView)?.scrollTo(0, 0)
         for ((k, item) in navItems) item.isSelected = k == t
-        when (t) {
-            Tab.VIDEOS -> refreshVideos()
-            Tab.ABOUT -> refreshAbout()
+        when {
+            t == Tab.VIDEOS -> refreshVideos()
+            t == Tab.ABOUT -> refreshAbout()
+            t == Tab.LIVE && sub == Sub.NONE -> refreshLiveTiles()
             else -> {}
         }
     }
@@ -1339,10 +1350,13 @@ class MainActivity : Activity() {
             setOnFocusChangeListener { _, has -> if (!has) onDone(text.toString()) }
         }
 
+    // ------------------------------------------------------------ «زنده»: a short hub, each part on its own page
+
+    /** The live hub: start / end and what YouTube shows, the connection test, then one tile per part. */
     private fun buildLive(): View {
         val pg = page(R.string.tab_live, R.string.page_live_sub)
         val root = pg.col
-        // ---- 1. status: start / end, and while live what YouTube shows
+        // ---- status: start / end, and while live what YouTube shows
         val sc = card(root, R.string.live_status_title, R.drawable.ic_live, top = 8)
         liveStatusView = text("", R.style.Text_Body).apply {
             setBackgroundResource(R.drawable.bg_inset)
@@ -1354,10 +1368,57 @@ class MainActivity : Activity() {
             onTap("live start/stop") { onLiveClicked() }
         }
         sc.addView(liveButton)
+        // the way to each platform's server, tried without going live (VPN / filter / key): right here, before the stream
+        liveTestBtn = button(str(R.string.live_test), R.style.Button_Tonal, R.drawable.ic_link, top = 10).apply {
+            tag = "live:test"
+            onTap("live test") { testConnection() }
+        }
+        sc.addView(liveTestBtn)
+        liveTest = text("", R.style.Text_Body).apply {
+            setBackgroundResource(R.drawable.bg_inset)
+            setPaddingRelative(dp(14), dp(10), dp(14), dp(10))
+            tag = "live:test_result"
+            visibility = View.GONE
+        }
+        sc.addView(liveTest, lp(8))
         sc.addView(text(str(R.string.live_one_app), R.style.Text_Caption), lp(8))
 
-        // ---- 2. where to
-        val dc = card(root, R.string.live_dest_title, R.drawable.ic_link)
+        // ---- each part on its own page, with what is set at a glance
+        group(root, R.string.live_group_stream, listOf(
+            Triple(Sub.LIVE_DEST, R.string.live_dest_title to R.string.sub_live_dest_desc, R.drawable.ic_link),
+            Triple(Sub.LIVE_YT, R.string.live_yt_title to R.string.sub_live_yt_desc, R.drawable.ic_key),
+            Triple(Sub.LIVE_QUALITY, R.string.live_q_title to R.string.sub_live_q_desc, R.drawable.ic_quality),
+            Triple(Sub.LIVE_SHORTS, R.string.shorts_title to R.string.sub_live_shorts_desc, R.drawable.ic_portrait),
+        ))
+        group(root, R.string.live_group_show, listOf(
+            Triple(Sub.LIVE_LAYOUT, R.string.lay_title to R.string.sub_live_layout_desc, R.drawable.ic_layers),
+            Triple(Sub.LIVE_CHAT, R.string.sub_live_chat_title to R.string.sub_live_chat_desc, R.drawable.ic_chat),
+            Triple(Sub.LIVE_AUDIO, R.string.live_audio_title to R.string.sub_live_audio_desc, R.drawable.ic_volume),
+        ))
+        root.addView(infoLine(R.drawable.ic_shield, str(R.string.live_privacy_desc), R.style.Text_Caption), lp(16))
+        return pg.scroll
+    }
+
+    /** The one-line state on each tile of the live hub. */
+    private fun refreshLiveTiles() {
+        if (subValues[Sub.LIVE_DEST] == null) return
+        subValues[Sub.LIVE_DEST]?.text = LiveSettings.destinations(this).joinToString(" + ") { it.name }
+        subValues[Sub.LIVE_YT]?.text = if (LiveExtras.ytSignedIn(this)) LiveExtras.ytChannel(this).ifBlank { "YouTube" } else str(R.string.yt_sum_not)
+        val rate = LiveSettings.liveRate(this)
+        subValues[Sub.LIVE_QUALITY]?.text = str(LiveSettings.QUALITIES[LiveSettings.quality(this)].label) + " · " +
+            (if (LiveSettings.autoQuality(this)) str(R.string.live_sum_auto) else if (rate == 0) str(R.string.live_rate_auto) else "$rate Mbps")
+        subValues[Sub.LIVE_SHORTS]?.text = str(if (LiveSettings.shortsOn(this)) R.string.on else R.string.off)
+        subValues[Sub.LIVE_LAYOUT]?.text = str(if (LiveSettings.awayBanner(this)) R.string.live_sum_banner else R.string.live_sum_hold)
+        subValues[Sub.LIVE_CHAT]?.text = str(if (LiveExtras.hud(this)) R.string.on else R.string.off)
+        subValues[Sub.LIVE_AUDIO]?.text = str(if (LiveSettings.mic(this)) R.string.live_sum_mic else R.string.live_sum_no_mic)
+    }
+
+    private fun livePage(title: Int, subtitle: Int) = page(title, subtitle, back = true, backTo = Tab.LIVE)
+
+    /** «مقصدها»: the platform, its address and key, several at once, and how safe the key is. */
+    private fun buildLiveDest(): View {
+        val pg = livePage(R.string.live_dest_title, R.string.sub_live_dest_desc)
+        val dc = card(pg.col, null, top = 8)
         val p0 = LiveSettings.platform(this)
         rows["live_p"] = Row(dc, "", "", LiveSettings.PLATFORMS.map { str(it.name) }, top = 4) { i ->
             saveLiveFields()
@@ -1382,49 +1443,16 @@ class MainActivity : Activity() {
             tag = "live:multi"
         }
         dc.addView(liveMulti, lp(8))
-        // the way to each platform's server, tried without going live (VPN / filter / key)
-        liveTestBtn = button(str(R.string.live_test), R.style.Button_Tonal, R.drawable.ic_link, top = 10).apply {
-            tag = "live:test"
-            onTap("live test") { testConnection() }
-        }
-        dc.addView(liveTestBtn)
-        liveTest = text("", R.style.Text_Body).apply {
-            setBackgroundResource(R.drawable.bg_inset)
-            setPaddingRelative(dp(14), dp(10), dp(14), dp(10))
-            tag = "live:test_result"
-            visibility = View.GONE
-        }
-        dc.addView(liveTest, lp(8))
         dc.addView(infoLine(R.drawable.ic_shield, str(R.string.live_key_safe), R.style.Text_Caption), lp(8))
+        rows["live_p"]?.select(p0)
+        fillLiveFields()
+        return pg.scroll
+    }
 
-        // ---- 3. what viewers see: a picture of the arrangement, edited by dragging
-        val lc = card(root, R.string.lay_title, R.drawable.ic_layers)
-        lc.addView(text(str(R.string.lay_desc), R.style.Text_Caption), lp(4))
-        layoutPreview = android.widget.ImageView(this).apply {
-            adjustViewBounds = true
-            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
-            clipToOutline = true
-            background = roundBg(col(R.color.surface_2), 12)
-            contentDescription = str(R.string.lay_title)
-            onTap("layout preview") { openLayoutEditor() }
-        }
-        lc.addView(layoutPreview, lp(10))
-        // the game off the screen (another app in front): its last picture, or «برمی‌گردم»
-        toggles["live_away"] = Toggle(lc, "tog:live_away", R.drawable.ic_layers, str(R.string.live_away_title), str(R.string.live_away_desc), top = 12) { on ->
-            LiveSettings.setAwayBanner(this, on); toggles["live_away"]?.set(on)
-        }
-        toggles["live_away"]?.set(LiveSettings.awayBanner(this))
-        lc.addView(button(str(R.string.lay_edit), R.style.Button_Tonal, R.drawable.ic_layers).apply {
-            tag = "lay:edit"
-            onTap("layout editor") { openLayoutEditor() }
-        })
-        refreshLayoutPreview()
-
-        // ---- 4. YouTube account, title and thumbnail · 5. the chat on the phone
-        buildLiveExtras(root)
-
-        // ---- less often: closed until opened
-        val qc = Section(root, "live_q", R.string.live_q_title, R.string.sec_live_q_desc, R.drawable.ic_quality).body
+    /** «کیفیتِ پخش»: the quality, automatic or a set rate, and recording alongside. */
+    private fun buildLiveQuality(): View {
+        val pg = livePage(R.string.live_q_title, R.string.sub_live_q_desc)
+        val qc = card(pg.col, null, top = 8)
         qc.addView(text(str(R.string.live_q_desc), R.style.Text_Caption), lp(4))
         rows["live_q"] = Row(qc, "", "", LiveSettings.QUALITIES.map { str(it.label) }, vertical = true, top = 8) { i -> LiveSettings.setQuality(this, i); renderDests() }
         // automatic or manual: the rate follows the internet (never a cut), or the chosen one exactly
@@ -1438,9 +1466,44 @@ class MainActivity : Activity() {
         toggles["live_record"] = Toggle(qc, "tog:live_record", R.drawable.ic_quality, str(R.string.live_record_title), str(R.string.live_record_desc), top = 14) { on ->
             LiveSettings.setRecordToo(this, on); toggles["live_record"]?.set(on)
         }
+        rows["live_q"]?.select(LiveSettings.quality(this))
+        rows["live_rate"]?.select(LiveSettings.LIVE_RATES.indexOf(LiveSettings.liveRate(this)))
+        rows["live_auto"]?.select(if (LiveSettings.autoQuality(this)) 0 else 1)
+        toggles["live_record"]?.set(LiveSettings.recordToo(this))
+        return pg.scroll
+    }
 
-        // ---- Shorts: the same live upright too (YouTube «Dual stream», a second key); the picture shown as it goes out
-        val sh = Section(root, "live_shorts", R.string.shorts_title, R.string.shorts_sec_desc, R.drawable.ic_live).body
+    /** «چیدمانِ صفحه»: what viewers see as a picture, edited by dragging; the game off the screen. */
+    private fun buildLiveLayout(): View {
+        val pg = livePage(R.string.lay_title, R.string.sub_live_layout_desc)
+        val lc = card(pg.col, null, top = 8)
+        lc.addView(text(str(R.string.lay_desc), R.style.Text_Caption), lp(4))
+        layoutPreview = android.widget.ImageView(this).apply {
+            adjustViewBounds = true
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            clipToOutline = true
+            background = roundBg(col(R.color.surface_2), 12)
+            contentDescription = str(R.string.lay_title)
+            onTap("layout preview") { openLayoutEditor() }
+        }
+        lc.addView(layoutPreview, lp(10))
+        lc.addView(button(str(R.string.lay_edit), R.style.Button_Tonal, R.drawable.ic_layers).apply {
+            tag = "lay:edit"
+            onTap("layout editor") { openLayoutEditor() }
+        })
+        // the game off the screen (another app in front): its last picture, or «برمی‌گردم»
+        toggles["live_away"] = Toggle(lc, "tog:live_away", R.drawable.ic_layers, str(R.string.live_away_title), str(R.string.live_away_desc), top = 12) { on ->
+            LiveSettings.setAwayBanner(this, on); toggles["live_away"]?.set(on)
+        }
+        toggles["live_away"]?.set(LiveSettings.awayBanner(this))
+        refreshLayoutPreview()
+        return pg.scroll
+    }
+
+    /** «شورت»: the same live upright too (YouTube «Dual stream», a second key); the picture shown as it goes out. */
+    private fun buildLiveShorts(): View {
+        val pg = livePage(R.string.shorts_title, R.string.sub_live_shorts_desc)
+        val sh = card(pg.col, null, top = 8)
         toggles["shorts_on"] = Toggle(sh, "tog:shorts_on", R.drawable.ic_live, str(R.string.shorts_on_title), str(R.string.shorts_on_desc), top = 0) { on ->
             LiveSettings.setShortsOn(this, on); toggles["shorts_on"]?.set(on)
             if (on && LiveSettings.destinations(this).none { it.platform == 0 }) Toast.makeText(this, str(R.string.shorts_no_youtube), Toast.LENGTH_LONG).show()
@@ -1475,8 +1538,13 @@ class MainActivity : Activity() {
         toggles["shorts_on"]?.set(LiveSettings.shortsOn(this))
         toggles["shorts_chat"]?.set(LiveSettings.shortsChat(this))
         refreshShortsPreview()
+        return pg.scroll
+    }
 
-        val ac = Section(root, "live_audio", R.string.live_audio_title, R.string.sec_live_audio_desc, R.drawable.ic_volume).body
+    /** «صدا در پخش»: the teammates' voices and the microphone. */
+    private fun buildLiveAudio(): View {
+        val pg = livePage(R.string.live_audio_title, R.string.sub_live_audio_desc)
+        val ac = card(pg.col, null, top = 8)
         // Before 3.3 these saved the choice but left the switch as it was: they looked dead.
         toggles["live_team"] = Toggle(ac, "tog:live_team", R.drawable.ic_mic, str(R.string.live_team_title), str(R.string.live_team_desc), top = 0) { on ->
             LiveSettings.setTeamVoice(this, on)
@@ -1487,20 +1555,9 @@ class MainActivity : Activity() {
             LiveSettings.setMic(this, on)
             toggles["live_mic"]?.set(on)
         }
-
-        buildLiveMore(root)
-
-        val pc = Section(root, "live_privacy", R.string.live_privacy_title, R.string.sec_live_privacy_desc, R.drawable.ic_shield).body
-        pc.addView(text(str(R.string.live_privacy_desc), R.style.Text_Body), lp(4))
-        rows["live_p"]?.select(p0)
-        rows["live_q"]?.select(LiveSettings.quality(this))
-        rows["live_rate"]?.select(LiveSettings.LIVE_RATES.indexOf(LiveSettings.liveRate(this)))
-        rows["live_auto"]?.select(if (LiveSettings.autoQuality(this)) 0 else 1)
-        toggles["live_record"]?.set(LiveSettings.recordToo(this))
         toggles["live_team"]?.set(LiveSettings.teamVoice(this))
         toggles["live_mic"]?.set(LiveSettings.mic(this))
         refreshLiveVoice()
-        fillLiveFields()
         return pg.scroll
     }
 
@@ -1705,11 +1762,11 @@ class MainActivity : Activity() {
 
     private fun positions() = listOf(R.string.pos_tl, R.string.pos_tc, R.string.pos_tr, R.string.pos_bl, R.string.pos_bc, R.string.pos_br).map { str(it) }
 
-    /** 3.3: YouTube account, Twitch chat, the chat on the phone, what viewers see, the bot. */
-    private fun buildLiveExtras(root: LinearLayout) {
+    /** «یوتیوب»: the account, the live as the app makes it, the video's title, who can watch, thumbnail and the rest. */
+    private fun buildLiveYt(): View {
         val ctx = this
-        // ---- YouTube
-        val yc = card(root, R.string.live_yt_title, R.drawable.ic_chat)
+        val pg = livePage(R.string.live_yt_title, R.string.sub_live_yt_desc)
+        val yc = card(pg.col, null, top = 8)
         yc.addView(text(str(R.string.live_yt_desc), R.style.Text_Caption), lp(4))
         ytStatus = text("", R.style.Text_Body).apply {
             setBackgroundResource(R.drawable.bg_inset)
@@ -1788,9 +1845,15 @@ class MainActivity : Activity() {
         yc.addView(text(str(R.string.live_yt_setup_title), R.style.Text_Label).apply { startIcon(R.drawable.ic_info, 16, tint(R.color.text_secondary), 6) }, lp(14))
         yc.addView(text(str(R.string.live_yt_setup), R.style.Text_Caption).apply { setTextIsSelectable(true) }, lp(4))
         refreshYt()
+        return pg.scroll
+    }
 
-        // ---- the chat on the phone
-        val hc = card(root, R.string.live_hud_title, R.drawable.ic_overlay)
+    /** «چت، ربات و هشدارها»: the chat on the phone, Twitch, the translator, the bot and moderation. */
+    private fun buildLiveChat(): View {
+        val ctx = this
+        val pg = livePage(R.string.sub_live_chat_title, R.string.sub_live_chat_desc)
+        val root = pg.col
+        val hc = card(root, R.string.live_hud_title, R.drawable.ic_overlay, top = 8)
         toggles["hud_on"] = Toggle(hc, "tog:hud_on", R.drawable.ic_chat, str(R.string.live_hud_on_title), str(R.string.live_hud_on_desc), top = 0) { on ->
             LiveExtras.put(ctx, "hud_on", on); toggles["hud_on"]?.set(on)
         }.apply { set(LiveExtras.hud(ctx)) }
@@ -1805,18 +1868,13 @@ class MainActivity : Activity() {
             LiveExtras.put(ctx, "hud_alpha", i)
         }.apply { select(LiveExtras.hudAlpha(ctx)) }
 
-    }
-
-    /** The translator, the bot and Twitch: closed sections under the main cards. */
-    private fun buildLiveMore(root: LinearLayout) {
-        val ctx = this
         // ---- Twitch
-        val tc = Section(root, "live_tw", R.string.live_tw_title, R.string.sec_live_tw_desc, R.drawable.ic_chat).body
+        val tc = card(root, R.string.live_tw_title, R.drawable.ic_chat)
         tc.addView(text(str(R.string.live_tw_desc), R.style.Text_Caption), lp(4))
         tc.addView(field(str(R.string.live_tw_hint), false) { LiveExtras.setTwChannel(ctx, it) }.apply { setText(SafePrefs.str(getSharedPreferences(RecordService.PREFS, MODE_PRIVATE), "tw_channel")) }, lp(10))
 
         // ---- the translator
-        val trc = Section(root, "live_tr", R.string.tr_title, R.string.sec_live_tr_desc, R.drawable.ic_translate).body
+        val trc = card(root, R.string.tr_title, R.drawable.ic_translate)
         trc.addView(text(str(R.string.tr_desc), R.style.Text_Caption), lp(4))
         toggles["tr_in"] = Toggle(trc, "tog:tr_in", R.drawable.ic_translate, str(R.string.tr_in_title), str(R.string.tr_in_desc), top = 10) { on ->
             LiveExtras.put(ctx, "tr_in", on); toggles["tr_in"]?.set(on)
@@ -1857,11 +1915,12 @@ class MainActivity : Activity() {
         refreshTr()
 
         // ---- the bot
-        val bc = Section(root, "live_bot", R.string.live_bot_title, R.string.sec_live_bot_desc, R.drawable.ic_bot).body
+        val bc = card(root, R.string.live_bot_title, R.drawable.ic_bot)
+        bc.addView(text(str(R.string.sec_live_bot_desc), R.style.Text_Caption), lp(4))
         fun btog(key: String, ic: Int, title: Int, desc: Int, value: Boolean, top: Int = 4) {
             toggles[key] = Toggle(bc, "tog:$key", ic, str(title), str(desc), top) { on -> LiveExtras.put(ctx, key, on); toggles[key]?.set(on) }.apply { set(value) }
         }
-        btog("bot_on", R.drawable.ic_bot, R.string.live_bot_on_title, R.string.live_bot_on_desc, LiveExtras.botOn(ctx), top = 0)
+        btog("bot_on", R.drawable.ic_bot, R.string.live_bot_on_title, R.string.live_bot_on_desc, LiveExtras.botOn(ctx), top = 10)
         bc.addView(text(str(R.string.live_bot_cmds_title), R.style.Text_Label), lp(14))
         bc.addView(text(str(R.string.live_bot_cmds_desc), R.style.Text_Caption), lp(2))
         bc.addView(multiField(str(R.string.live_bot_cmds_hint)) { LiveExtras.put(ctx, "bot_cmds", it) }.apply { setText(LiveExtras.botCommands(ctx)) }, lp(6))
@@ -1881,6 +1940,7 @@ class MainActivity : Activity() {
         bc.addView(text(str(R.string.live_give_title), R.style.Text_Label).apply { startIcon(R.drawable.ic_gift, 16, tint(R.color.text_secondary), 6) }, lp(14))
         bc.addView(text(str(R.string.live_give_desc), R.style.Text_Caption), lp(2))
         bc.addView(textField("!join", SafePrefs.str(getSharedPreferences(RecordService.PREFS, MODE_PRIVATE), "give_word")) { LiveExtras.put(ctx, "give_word", it.trim()) }, lp(6))
+        return pg.scroll
     }
 
     /** Under «حرفِ یارها در پخش»: what is known about where the teammates come in (same as «صدا»). */
@@ -2253,7 +2313,7 @@ class MainActivity : Activity() {
     }
 
     private fun group(parent: LinearLayout, title: Int, items: List<Triple<Sub, Pair<Int, Int>, Int>>) {
-        parent.addView(text(str(title), R.style.Text_Overline), lp(16).apply { marginStart = dp(4) })
+        if (title != 0) parent.addView(text(str(title), R.style.Text_Overline), lp(16).apply { marginStart = dp(4) })
         val c = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundResource(R.drawable.bg_card)
@@ -2285,7 +2345,7 @@ class MainActivity : Activity() {
                 subValues[s] = value
                 addView(value, wrap().apply { marginEnd = dp(6) })
                 addView(iconView(R.drawable.ic_chevron, R.color.text_tertiary), square(20))
-                onTap("settings ${s.name}") { show(Tab.SETTINGS, s) }
+                onTap("settings ${s.name}") { show(tabOf(s), s) }
             }, lp(0))
         }
         parent.addView(c, lp(8))
