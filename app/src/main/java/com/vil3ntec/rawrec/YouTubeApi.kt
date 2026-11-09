@@ -303,6 +303,26 @@ class YouTubeApi(
         return true
     }
 
+    /**
+     * 6.7: the lives left on the app's own stream by earlier streams are ended (live / testing →
+     * complete) or taken off (never went live). A live YouTube still had «live» took the next
+     * stream's picture as its own: «started streaming 4 hours ago» on a stream started a minute
+     * before. Only for the app's own stream (every live on it is the app's). Returns how many.
+     */
+    fun endLeftovers(streamId: String, keep: String? = null): Int {
+        var n = 0
+        for (b in boundTo(streamId)) {
+            if (b.videoId == keep) continue
+            try {
+                when {
+                    b.isLive || b.lifeCycle == "testing" || b.lifeCycle == "testStarting" -> { transition(b.videoId, "complete"); n++ }
+                    deleteIfNeverLive(b.videoId) -> n++
+                }
+            } catch (_: Exception) {}
+        }
+        return n
+    }
+
     /** Every live bound to stream [streamId] that is not over (several = the stream may feed the wrong one). */
     fun boundTo(streamId: String): List<Broadcast> =
         notOver().filter { it.streamId == streamId && it.lifeCycle != "complete" && it.lifeCycle != "revoked" }

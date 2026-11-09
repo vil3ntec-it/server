@@ -480,6 +480,10 @@ class RecordService : Service(), Recorder.Events {
         ytPrep = Thread({
             try {
                 val st = api.ownStream()
+                // lives left on the app's own stream by earlier streams: ended first, so this stream's picture
+                // goes to the new live (and YouTube does not say «started 4 hours ago» of a fresh stream)
+                val ended = try { api.endLeftovers(st.id) } catch (_: Exception) { 0 }
+                if (ended > 0) RecLog.add(this, "yt: $ended earlier lives on the app's stream ended")
                 val id = api.createBroadcast(st.id, LiveExtras.ytTitle(this).ifBlank { getString(R.string.yt_default_title_fmt, LiveExtras.ytChannel(this).ifBlank { "Live" }) },
                     LiveExtras.ytDesc(this), LiveExtras.ytPrivacyToSet(this).ifEmpty { "public" }, LiveExtras.ytKidsToSet(this) ?: false, autoStart = true)
                 LiveExtras.setMadeLive(this, id, true)

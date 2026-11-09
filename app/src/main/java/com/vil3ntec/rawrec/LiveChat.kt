@@ -97,11 +97,16 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
 
     fun stop() {
         running = false
-        // a live made here that never went out stays no «Upcoming» on the channel
+        // a live made here: ended on YouTube with the stream (as «End stream» in OBS / Studio) — else YouTube
+        // keeps it «live» a while and the next stream's picture lands in it («started 4 hours ago»);
+        // one that never went out is taken off (no «Upcoming» left on the channel)
         val made = createdId
         val api = yt
-        if (made != null && !wentLive && api != null) Thread({
-            try { if (api.deleteIfNeverLive(made)) LiveExtras.setMadeLive(ctx, made, false) } catch (_: Exception) {}
+        if (made != null && api != null) Thread({
+            try {
+                if (wentLive) { api.transition(made, "complete"); RecLog.add(ctx, "yt: $made ended") }
+                else if (api.deleteIfNeverLive(made)) LiveExtras.setMadeLive(ctx, made, false)
+            } catch (e: Exception) { RecLog.add(ctx, "yt: end refused: " + (e.message ?: "")) }
         }, "rawrec-yt-tidy").start()
         try { twSocket?.close() } catch (_: Exception) {}
         for (t in threads) t.interrupt()
@@ -188,7 +193,8 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
                 // waiting to go live: the channel is looked at again every 15 s (the live itself is driven below, more often)
                 if (chatId == null || (waiting && System.currentTimeMillis() - lastLook > 15_000)) {
                     lastLook = System.currentTimeMillis()
-                    val b = api.currentBroadcast(streamId)
+                    val b = (if (ownKey != null) createdId?.let { id -> try { api.broadcast(id) } catch (_: Exception) { null } } else null)
+                        ?: api.currentBroadcast(streamId)
                     if (b == null) {
                         val sid = streamId
                         val waited = System.currentTimeMillis() - startedAt

@@ -203,4 +203,14 @@ class YouTubeSettingsTest {
         assertNull(GoLive.parse("soon"))
         assertNull(GoLive.nearest(emptyList<Pair<String, String?>>(), { it.second }, now))
     }
+
+    /** 6.7: a live left on the app's stream is ended before the next one — never «started 4 hours ago» on a fresh stream. */
+    @Test fun leftoverLivesOnTheAppsStreamAreEnded() {
+        fake()
+        val api = YouTubeApi("c", "s", "r")
+        assertEquals(0, api.endLeftovers("s-ours", keep = "ours"))
+        assertTrue("the kept one is not touched", calls.none { it.second.contains("transition") })
+        assertEquals(1, api.endLeftovers("s-ours"))
+        assertTrue(calls.last().second.contains("liveBroadcasts/transition?broadcastStatus=complete&id=ours"))
+    }
 }
