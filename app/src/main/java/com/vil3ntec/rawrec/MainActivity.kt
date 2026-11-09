@@ -627,7 +627,7 @@ class MainActivity : Activity() {
         isClickable = true; isFocusable = true
         contentDescription = str(R.string.expand)
         setBackgroundResource(R.drawable.bg_icon_btn)
-        setPadding(dp(4), dp(4), dp(4), dp(4))
+        setPadding(dp(12), dp(12), dp(12), dp(12))   // a 48 dp touch target around a 24 dp glyph
         onTap("info") { AlertDialog.Builder(this@MainActivity).setTitle(title).setMessage(full).setPositiveButton(android.R.string.ok, null).show() }
     }
 
@@ -649,7 +649,7 @@ class MainActivity : Activity() {
                     if (ic != 0) startIcon(ic, 18, tint(R.color.text_secondary), 8)
                     gravity = Gravity.CENTER_VERTICAL
                 }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-                if (brief(desc) != desc) addView(infoButton(title, desc), square(28))
+                if (brief(desc) != desc) addView(infoButton(title, desc), square(48))
             }, lp(top))
             if (desc.isNotEmpty()) root.addView(descView, lp(4))
             for ((i, l) in labels.withIndex()) {
@@ -705,7 +705,7 @@ class MainActivity : Activity() {
                 addView(text(title, R.style.Text_Label))
                 addView(descView, lp(2))
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginStart = dp(14); marginEnd = dp(12) })
-            if (brief(desc) != desc) addView(infoButton(title, desc), square(28).apply { marginEnd = dp(8) })
+            if (brief(desc) != desc) addView(infoButton(title, desc), square(48).apply { marginEnd = dp(4) })
             addView(sw, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
             onTap(tag) { onChange(!sw.isChecked) }
         }
@@ -1860,7 +1860,7 @@ class MainActivity : Activity() {
         vc.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
             addView(text(str(R.string.yt_thumb_label), R.style.Text_Label), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-            addView(infoButton(str(R.string.yt_thumb_label), str(R.string.yt_thumb_desc)), square(28))
+            addView(infoButton(str(R.string.yt_thumb_label), str(R.string.yt_thumb_desc)), square(48))
         }, lp(14))
         thumbView = android.widget.ImageView(this).apply {
             adjustViewBounds = true
