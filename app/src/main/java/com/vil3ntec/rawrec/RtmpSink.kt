@@ -44,6 +44,8 @@ class RtmpSink(
         val why: RtmpPublisher.Why? = null, val route: String? = null, val noPicture: Boolean = false,
         /** How far behind real time the oldest waiting frame is (ms): the report's measure of a stall. */
         val lagMs: Int = 0,
+        /** 7.9: pictures really sent in the last second, and how much of its rate the encoder filled (%). */
+        val fps: Int = 0, val fillPct: Int = 100,
     )
 
     interface Listener {
@@ -171,7 +173,10 @@ class RtmpSink(
     private var state = State.CONNECTING
     private var kbps = 0
 
-    private fun status() = listener.onStatus(Status(state, kbps, target / 1000, dropped, reconnects, lastError, lastWhy, route, noPicture, lastLagMs))
+    private fun status() = listener.onStatus(Status(state, kbps, target / 1000, dropped, reconnects, lastError, lastWhy, route, noPicture, lastLagMs,
+        lastFps, if (target > 0) (kbps * 100_000L / target).toInt() else 100))
+    private var framesThisSecond = 0
+    @Volatile private var lastFps = 0
     @Volatile private var lastLagMs = 0
 
     private fun run() {
@@ -244,6 +249,7 @@ class RtmpSink(
                     // every packet of this second had waited: the link was the limit, not the encoder
                     rate.measured(kbps * 1000, backlogged = minLagUs != Long.MAX_VALUE && minLagUs > 250_000L)
                     minLagUs = Long.MAX_VALUE
+                    lastFps = framesThisSecond; framesThisSecond = 0
                     lastSent = p.bytesSent
                     lastStat = now
                     sent = sentBefore + p.bytesSent
@@ -289,6 +295,7 @@ class RtmpSink(
                         if (ms <= lastV) ms = lastV + 1
                         lastV = ms
                         p.sendVideo(ms, k.key, k.data, 0, k.data.size)
+                        framesThisSecond++
                     } else {
                         if (baseUs < 0 || k.pts < baseUs) continue
                         var ms = (k.pts - baseUs) / 1000

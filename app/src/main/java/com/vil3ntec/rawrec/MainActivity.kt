@@ -1504,6 +1504,7 @@ class MainActivity : Activity() {
         qc.addView(text(str(R.string.live_q_desc), R.style.Text_Caption), lp(4))
         // 7.4: what the internet carried last time and which quality stays clean on it
         qc.addView(text(adviceText(), R.style.Text_Body).apply { tag = "live:advice" }, lp(10))
+        qc.addView(text(str(R.string.live_fps_note), R.style.Text_Caption), lp(6))
         rows["live_q"] = Row(qc, "", "", LiveSettings.QUALITIES.map { str(it.label) }, vertical = true, top = 8) { i -> LiveSettings.setQuality(this, i); renderDests() }
         // automatic or manual: the rate follows the internet (never a cut), or the chosen one exactly
         rows["live_auto"] = Row(qc, str(R.string.live_auto_title), str(R.string.live_auto_desc),

@@ -930,7 +930,7 @@ class RecordService : Service(), Recorder.Events {
                 val nowMs = System.currentTimeMillis()
                 if (s.state == RtmpSink.State.LIVE && nowMs - lastRateLog >= 30_000L) {
                     lastRateLog = nowMs
-                    RecLog.add(this@RecordService, "rate: sent ${s.kbps} kbps, target ${s.targetKbps}, behind ${s.lagMs} ms, lost ${s.dropped} frames" +
+                    RecLog.add(this@RecordService, "rate: sent ${s.kbps} kbps, target ${s.targetKbps}, behind ${s.lagMs} ms, lost ${s.dropped} frames, ${s.fps} pictures a second sent" +
                         (recorder?.let { r -> ", picture ${r.plan.width}×${r.plan.height} at ${r.plan.fps}" + (if (r.rateRemakes > 0) ", encoder re-made ${r.rateRemakes}×" else "") } ?: ""))
                 }
                 if (s.state == RtmpSink.State.LIVE && nowMs - liveBorn > 60_000L && nowMs - lastRateSave > 30_000L && s.targetKbps > 0) {
@@ -1869,6 +1869,7 @@ class RecordService : Service(), Recorder.Events {
     private var hotFps = 0
     /** The connection's narrowness: 0 wide, 1 narrow (30 fps), 2 under a megabit (20 fps). */
     private var netLevel = 0
+    private var fpsLevelAt = 0L
     private var toldNet = false
     private var lastRateSave = 0L
     private var lastRateLog = 0L
@@ -1889,22 +1890,20 @@ class RecordService : Service(), Recorder.Events {
         if (full <= 0 || s.state != RtmpSink.State.LIVE) return
         // the first 20 s the rate is still climbing from its gentle start: not a narrow link
         if (System.currentTimeMillis() - liveBorn < 20_000L) return
-        val narrow = s.targetKbps < full * 55 / 100
-        val wide = s.targetKbps >= full * 75 / 100
         val eq = if (recorder?.plan?.hevc == true) s.targetKbps * 3 / 2 else s.targetKbps
-        val level = when {
-            // 6.6: never under 30 pictures a second (20 looked choppy); fewer pictures before a smaller picture
-            eq < 4500 || (netLevel >= 1 && eq < 5500) -> 1
-            narrow || (netLevel >= 1 && !wide) -> 1
-            else -> 0
-        }
+        val p = recorder?.plan ?: return
+        // 7.9: by what the picture's size needs for 60 (see LiveSettings.fpsLevel); never under 30 (6.6)
+        val level = LiveSettings.fpsLevel(netLevel, eq, minOf(p.width, p.height), s.fillPct)
+        // one change in ten seconds at most (a scene going quiet and loud again does not flip it every second)
+        val nowMs = System.currentTimeMillis()
+        if (level != netLevel && nowMs - fpsLevelAt < 10_000L) return
         // 7.1: the picture's size never changes during a stream. 6.4–7.0 made it smaller on a narrow link
         // (a new encoder, a new SPS mid-stream): YouTube kept the first size and showed a corner of the
         // picture, zoomed, over green (the owner's screen). OBS and YouTube's own advice: one size for a
         // whole stream — set at the start from what the link carried last time (LiveSettings.config);
         // during the stream only the rate and the frames a second follow the link.
         if (level == netLevel) return
-        netLevel = level; applyFpsCap()
+        netLevel = level; fpsLevelAt = nowMs; applyFpsCap()
         RecLog.add(this, "link: ${s.targetKbps} of $full kbps, " + when (level) { 2 -> "20 fps"; 1 -> "30 fps"; else -> "full fps" })
         if (level > 0 && !toldNet) { toldNet = true; hud?.note(getString(R.string.live_net_narrow_fmt, String.format(java.util.Locale.US, "%.1f", s.targetKbps / 1000.0))) }
     }

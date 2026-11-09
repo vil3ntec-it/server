@@ -350,6 +350,7 @@
     <string name="live_q_1440">1440p, 60 fps (24 Mbps upload)</string>
     <string name="live_q_720_30">720p, 30 fps (4 Mbps upload) — average internet</string>
     <string name="live_q_480_30">480p, 30 fps (3 Mbps upload) — weak internet</string>
+    <string name="live_fps_note">YouTube shows «60» beside the quality only when the stream really goes at 60 fps. The app sends 60 when your internet carries this much to YouTube: 1080p from 6 Mbps, 720p from 4 Mbps. Under that it sends 30 so the picture does not break into blocks, and goes back to 60 by itself when there is room.</string>
     <string name="live_advice_none">What each quality needs so not a single frame breaks into blocks (measured on a game in motion): 1080p60 → 12, 1080p30 → 8, 720p60 → 7, 720p30 → 4, 480p30 → 3 Mbps upload to YouTube (not the speed-test number). After your first stream this shows what your internet really carried and which to pick.</string>
     <string name="live_advice_capped">Last stream: your internet carried all %1$s Mbps of the chosen quality to YouTube; this quality stays clean.</string>
     <string name="live_advice_ok">Last stream: your internet carried about %1$s Mbps to YouTube; «%2$s» fits and stays clean.</string>

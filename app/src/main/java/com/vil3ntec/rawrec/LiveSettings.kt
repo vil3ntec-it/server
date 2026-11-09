@@ -48,6 +48,26 @@ object LiveSettings {
         Quality(R.string.live_q_480_30, 480, 30, 3),
     )
 
+    /**
+     * 7.9: what a picture [shortSide] lines high needs (kbps, H.264) to go out at 60 pictures a second
+     * without blocks — measured on a game picture in motion (the worst 2 % of frames at SSIM ≥ 0.955):
+     * 1080p 6 Mbps, 720p 4, 480p 2.5. Under it the stream goes at 30 (each picture gets twice the bits).
+     */
+    fun need60Kbps(shortSide: Int) = when { shortSide >= 1400 -> 10_000; shortSide >= 1000 -> 6_000; shortSide >= 700 -> 4_000; else -> 2_500 }
+
+    /**
+     * Pictures a second for the rate the stream goes at now: 0 = all of them (60), 1 = 30.
+     * Until 7.8 the rule was a share of the chosen rate: «1080p60, 12 Mbps» went at 30 under 6.6 Mbps and
+     * came back to 60 only at 9 — on the owner's internet never, so YouTube offered «1080p», not
+     * «1080p60». Now it is what the picture's size needs. And a quiet scene (the encoder fills well under
+     * its rate: [fillPct]) keeps every picture — nothing is gained by leaving half of them out.
+     */
+    fun fpsLevel(prev: Int, eqKbps: Int, shortSide: Int, fillPct: Int): Int {
+        if (fillPct < (if (prev >= 1) 50 else 60)) return 0
+        val need = need60Kbps(shortSide)
+        return if (prev >= 1) { if (eqKbps >= need) 0 else 1 } else { if (eqKbps < need * 85 / 100) 1 else 0 }
+    }
+
     /** Whether the last stream's rate was all the chosen quality asked (the link carried more, not less). */
     fun lastRateCapped(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_last_capped", false)
     fun setLastRate(ctx: Context, kbps: Int, capped: Boolean) =
