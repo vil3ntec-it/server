@@ -642,6 +642,7 @@ class RecordService : Service(), Recorder.Events {
     private fun onGeometryMaybeChanged() {
         val g = geometry()
         if (g == lastGeometry || g == 0L) return
+        RecLog.add(this, "screen: ${g shr 32}x${g and 0xFFFFFFFFL}")
         lastGeometry = g
         facecam?.onDisplayChanged()
         control?.onDisplayChanged()
@@ -691,6 +692,8 @@ class RecordService : Service(), Recorder.Events {
         // Not a rotation (same pixels, other way round) but a new size: a foldable, a resolution change.
         val resized = sw > 0 && !(tw == sw && th == sh) && !(tw == sh && th == sw)
         val action = policy?.onDisplay(d.landscape, System.currentTimeMillis() - recordStartWall, resized)
+        // 7.6: in the report — whether a turn of the screen was seen, and what was decided
+        RecLog.add(this, "rotation: screen ${d.width}x${d.height} ${if (d.landscape) "landscape" else "upright"}, recording ${requestedSource.first}x${requestedSource.second}, ${action ?: "no policy"}")
         if (action == RotationPolicy.Action.RESTART || action == RotationPolicy.Action.NEW_PART) {
             requestedSource = tw to th
             if (!r.switchOrientation(d, restart = action == RotationPolicy.Action.RESTART)) r.releaseHold()
@@ -1780,6 +1783,7 @@ class RecordService : Service(), Recorder.Events {
         }
     }
     override fun onRotated(plan: CapturePlan, restarted: Boolean) {
+        RecLog.add(this, "rotated: ${plan.width}x${plan.height}" + if (restarted) ", started over" else ", new part")
         main.post {
             val c = cfg ?: return@post
             val r = recorder ?: return@post
