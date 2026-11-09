@@ -173,6 +173,16 @@ class Recorder(
     private var audioThread: Thread? = null
     private var aac: MediaCodec? = null
     private lateinit var muxer: MediaSink
+    /** While live: the file beside the stream, started and stopped from the panel. */
+    @Volatile var tee: TeeSink? = null; private set
+    /** Whether a file is being written beside the stream. */
+    val recordingFile: Boolean get() = tee?.recording == true
+    /** ⏺ on the panel: a file from here on, or the open one closed and kept. Returns the new state. */
+    fun toggleFile(): Boolean {
+        val t = tee ?: return false
+        if (t.recording) t.stopFile() else t.startFile()
+        return t.recording
+    }
     val stats = RecStats()
 
     // pause / resume
@@ -215,10 +225,12 @@ class Recorder(
         val stamp = SimpleDateFormat("yyyy-MM-dd HH-mm", Locale.US).format(Date())
         val prefix = if (cfg.testSeconds > 0) "RawRec test " else "RawRec "
         val liveSink = sinkFactory?.invoke()
-        muxer = when {
-            liveSink == null -> SegMuxer(ctx, cfg.hasAudio, cfg.segmentBytes, prefix + stamp, this)
-            alsoRecord -> TeeSink(liveSink, SegMuxer(ctx, cfg.hasAudio, cfg.segmentBytes, "RawRec live " + stamp, this))
-            else -> liveSink
+        muxer = when (liveSink) {
+            null -> SegMuxer(ctx, cfg.hasAudio, cfg.segmentBytes, prefix + stamp, this)
+            // live: a file beside the stream, from the start when chosen, else when the owner presses ⏺ on the panel
+            else -> TeeSink(liveSink, {
+                SegMuxer(ctx, cfg.hasAudio, cfg.segmentBytes, "RawRec live " + SimpleDateFormat("yyyy-MM-dd HH-mm", Locale.US).format(Date()), this)
+            }, startOn = alsoRecord).also { tee = it }
         }
         // Shorts: the sound goes to the tall picture's connection too (its pictures come from its own encoder)
         if (liveSink != null && shorts != null) muxer = SoundToo(muxer, shorts.sink)
@@ -1052,7 +1064,7 @@ class Recorder(
     override fun onPartOpened(index: Int, reason: Int) = events.onPartOpened(index, reason)
     override fun onWriteError(message: String) {
         // live with a recording: only the recording stops, the stream goes on
-        (muxer as? TeeSink)?.let { it.stopFile(); events.onAudioProblem("record: $message"); return }
+        tee?.let { if (it.recording) { it.stopFile(); events.onAudioProblem("record: $message"); return } }
         if (running) { running = false; events.onFatal(StopReason.WRITE_ERROR, message) }
     }
     override fun onWriteRecovered(message: String) = events.onWriteRecovered(message)

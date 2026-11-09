@@ -591,6 +591,10 @@
 
     <string name="hud_title">چتِ زنده</string>
     <string name="hud_open">باز کردنِ چت</string>
+    <string name="hud_record">ضبطِ همین پخش در گالری</string>
+    <string name="hud_record_stop">پایانِ ضبط (فایل ذخیره می‌شود)</string>
+    <string name="hud_record_started">ضبط شروع شد؛ پخش ادامه دارد.</string>
+    <string name="hud_record_saved">ضبط تمام شد و در گالری ذخیره شد.</string>
     <string name="hud_tools">قرعه‌کشی و هدف</string>
     <string name="hud_close">کوچک کردن</string>
     <string name="hud_whole_screen">⚠ «کلِ صفحه» پخش می‌شود: بیننده‌ها این چت را هم می‌بینند. برای پنهان ماندن، دفعهٔ بعد «یک برنامه» (بازی) را انتخاب کن.</string>

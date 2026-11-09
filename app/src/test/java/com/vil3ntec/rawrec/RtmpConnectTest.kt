@@ -127,19 +127,31 @@ class RtmpConnectTest {
             override val videoBytes = 7L
             override val waitNs = 0L
         }
-        val live = Fake(false); val file = Fake(true)
-        val t = TeeSink(live, file)
+        val live = Fake(false); val files = ArrayList<Fake>()
+        val t = TeeSink(live, { Fake(true).also { files += it } }, startOn = true)
+        val file = files.single()
         val b = java.nio.ByteBuffer.allocate(16)
-        assertTrue("a key frame asked by either is asked", t.submitVideo(b, 0, 16, 0, 0))
+        val key = android.media.MediaCodec.BUFFER_FLAG_KEY_FRAME
+        assertTrue("a key frame asked by either is asked", t.submitVideo(b, 0, 16, 0, key))
         t.submitAudio(b, 0, 16, 0, 0)
         assertEquals(1, live.video); assertEquals(1, file.video); assertEquals(1, file.audio)
         assertEquals("the recording's own size", 7L, t.totalBytes)
-        // the file fails (storage full): the stream goes on alone
-        t.stopFile()
+        // the file fails (storage full), or the owner presses ⏺: the stream goes on alone
+        assertTrue(t.stopFile())
         t.submitVideo(b, 0, 16, 1, 0)
         assertEquals(2, live.video); assertEquals(1, file.video)
+        assertFalse(t.recording)
+        // 6.2: ⏺ again mid-stream — a new file, from the next key frame only (a key frame asked for at once)
+        assertTrue(t.startFile())
+        assertTrue("a key frame is asked for the new file", t.submitVideo(b, 0, 16, 2, 0))
+        t.submitAudio(b, 0, 16, 2, 0)
+        val second = files[1]
+        assertEquals("nothing before the key frame", 0, second.video); assertEquals(0, second.audio)
+        t.submitVideo(b, 0, 16, 3, key); t.submitAudio(b, 0, 16, 3, 0)
+        assertEquals(1, second.video); assertEquals(1, second.audio)
+        assertEquals("both files' sizes", 14L, t.totalBytes)
         t.finish()
-        assertTrue(live.finished)
+        assertTrue(live.finished); assertTrue(second.finished)
     }
 
     @Test fun theGameFillsTheStreamWhenTheTabletIsUpright() {

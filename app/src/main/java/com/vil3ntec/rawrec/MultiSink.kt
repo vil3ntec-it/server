@@ -91,45 +91,86 @@ class MultiSink(dests: List<LiveSettings.Dest>, maxBitrate: Int, private val lis
  * file (no second encoding, so the phone works no harder and gets no hotter). Should the file fail
  * (storage full), only the recording stops; the stream goes on.
  */
-class TeeSink(private val live: MediaSink, private val file: MediaSink) : MediaSink {
-    @Volatile private var fileOn = true
+/**
+ * The stream, and beside it a file that can be started and stopped while live (6.2: the ⏺ on the
+ * panel). A file begun mid-stream starts at the next key frame (asked for at once), with the
+ * encoder's formats replayed; a stopped one is closed and kept. Every file's parts are reported.
+ */
+class TeeSink(private val live: MediaSink, private val newFile: () -> MediaSink, startOn: Boolean) : MediaSink {
+    @Volatile private var file: MediaSink? = null
+    @Volatile private var awaitKey = false
+    private val wantKey = java.util.concurrent.atomic.AtomicBoolean(false)
+    private var vfmt: MediaFormat? = null
+    private var afmt: MediaFormat? = null
+    @Volatile private var noAudio = false
+    private val done = java.util.concurrent.CopyOnWriteArrayList<MediaSink>()
 
-    /** The recording gave up: it is closed (what was written is kept), the stream goes on. */
-    fun stopFile() {
-        if (!fileOn) return
-        fileOn = false
-        Thread({ try { file.finish() } catch (_: Exception) {} }, "rawrec-tee-close").start()
+    init { if (startOn) startFile() }
+
+    /** Whether a file is being written right now. */
+    val recording: Boolean get() = file != null
+
+    /** A file from here on (the next key frame): true when one was started. */
+    @Synchronized fun startFile(): Boolean {
+        if (file != null) return false
+        val f = newFile()
+        if (noAudio) f.dropAudio()
+        vfmt?.let { f.videoFormat(it) }
+        afmt?.let { f.audioFormat(it) }
+        awaitKey = true
+        file = f
+        wantKey.set(true)
+        return true
+    }
+
+    /** The file is closed and kept; the stream goes on. True when one was open. */
+    @Synchronized fun stopFile(): Boolean {
+        val f = file ?: return false
+        file = null
+        done += f
+        Thread({ try { f.finish() } catch (_: Exception) {} }, "rawrec-tee-close").start()
+        return true
     }
 
     // the stream first: it only copies; the file may move the buffer's position
     override fun submitVideo(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int): Boolean {
         val a = live.submitVideo(src, offset, size, ptsUs, flags)
-        val b = fileOn && file.submitVideo(src, offset, size, ptsUs, flags)
-        return a || b
+        var b = false
+        val f = file
+        if (f != null) {
+            val key = flags and android.media.MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
+            if (awaitKey && key) awaitKey = false
+            if (!awaitKey) b = f.submitVideo(src, offset, size, ptsUs, flags)
+        }
+        return a || b || wantKey.getAndSet(false)
     }
     override fun submitAudio(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int) {
         live.submitAudio(src, offset, size, ptsUs, flags)
-        if (fileOn) file.submitAudio(src, offset, size, ptsUs, flags)
+        val f = file
+        if (f != null && !awaitKey) f.submitAudio(src, offset, size, ptsUs, flags)
     }
-    override fun videoFormat(f: MediaFormat) { live.videoFormat(f); if (fileOn) file.videoFormat(f) }
-    override fun audioFormat(f: MediaFormat) { live.audioFormat(f); if (fileOn) file.audioFormat(f) }
-    override fun newPart(discardCurrent: Boolean) { live.newPart(discardCurrent); if (fileOn) file.newPart(discardCurrent) }
-    override fun encoderReplaced() { live.encoderReplaced(); if (fileOn) file.encoderReplaced() }
-    override fun dropAudio() { live.dropAudio(); file.dropAudio() }
+    override fun videoFormat(f: MediaFormat) { vfmt = f; live.videoFormat(f); file?.videoFormat(f) }
+    override fun audioFormat(f: MediaFormat) { afmt = f; live.audioFormat(f); file?.audioFormat(f) }
+    override fun newPart(discardCurrent: Boolean) { live.newPart(discardCurrent); file?.newPart(discardCurrent) }
+    override fun encoderReplaced() { live.encoderReplaced(); file?.encoderReplaced() }
+    override fun dropAudio() { noAudio = true; live.dropAudio(); file?.dropAudio() }
     override fun finish() {
         val t = Thread({ try { live.finish() } catch (_: Exception) {} }, "rawrec-tee-live").apply { start() }
-        if (fileOn) file.finish()
+        val f = file; file = null
+        if (f != null) { done += f; f.finish() }
         try { t.join(5_000) } catch (_: InterruptedException) {}
     }
     override fun emergencyFinish(timeoutMs: Long) {
         live.emergencyFinish(timeoutMs / 3)
-        if (fileOn) file.emergencyFinish(timeoutMs * 2 / 3)
+        val f = file; file = null
+        if (f != null) { done += f; f.emergencyFinish(timeoutMs * 2 / 3) }
     }
-    override fun parts(): List<SegMuxer.Part> = file.parts()
-    override val allClosed: Boolean get() = file.allClosed
-    override val totalBytes: Long get() = file.totalBytes
-    override val videoBytes: Long get() = file.videoBytes
-    override val waitNs: Long get() = file.waitNs
+    private val all: List<MediaSink> get() = done + listOfNotNull(file)
+    override fun parts(): List<SegMuxer.Part> = all.flatMap { it.parts() }
+    override val allClosed: Boolean get() = all.all { it.allClosed }
+    override val totalBytes: Long get() = all.sumOf { it.totalBytes }
+    override val videoBytes: Long get() = all.sumOf { it.videoBytes }
+    override val waitNs: Long get() = file?.waitNs ?: 0L
 }
 
 /**

@@ -1028,6 +1028,7 @@ class RecordService : Service(), Recorder.Events {
         val overlays = Settings.canDrawOverlays(this)
         if (hasChat && LiveExtras.hud(this) && overlays) {
             val h = ChatHud(this, hudActions)
+            h.setRecording(recorder?.recordingFile == true)
             hud = h
             linkCircle()
             h.setStats(-1, -1, -1)
@@ -1281,6 +1282,15 @@ class RecordService : Service(), Recorder.Events {
 
     private val hudActions = object : ChatHud.Actions {
         override fun send(text: String) = sendOut(text, mine = true)
+        /** ⏺ on the panel: a file beside the stream from here on, or the open one closed and kept in the gallery. */
+        override fun recordToggle(): Boolean {
+            val r = recorder ?: return false
+            val on = r.toggleFile()
+            if (on) ActiveRec.begin(this@RecordService)
+            RecLog.add(this@RecordService, if (on) "record: file started from the panel" else "record: file closed from the panel")
+            hud?.note(getString(if (on) R.string.hud_record_started else R.string.hud_record_saved))
+            return on
+        }
         override fun delete(m: LiveChat.Msg) { chat?.delete(m); hud?.remove(m.id); scenes?.unchat(m.id) }
         override fun onScene(id: String) { scenes?.select(id) }
         override fun onLayer(id: String, on: Boolean) { scenes?.setLayerVisible(id, on) }
