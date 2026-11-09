@@ -1,7 +1,6 @@
 Success
 Physical size: 2560x1600
 14
-== plain recording: started upright, then the app turns landscape (as a game does)
 == start live (720p quality) to rtmp://10.0.2.2:1935/live
 == viewer 1: free link, 40 s
 == viewer 2: upload limited to 3 Mbps, 60 s
@@ -11,3 +10,4 @@ OK
 OK
 == clean recording beside the stream: 20 s
 == stop
+== plain recording: started upright, then the app turns landscape (as a game does)

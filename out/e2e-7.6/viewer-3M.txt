@@ -1,6 +1,3 @@
-viewer: gaps over 0.5 s at (s from first frame, length): []
-Traceback (most recent call last):
-  File "/home/runner/work/server/server/tools/stream-e2e/recv.py", line 23, in <module>
-    print(f"viewer: {len(arr)} frames in {dur:.1f}s = {len(arr)/max(dur,0.1):.1f} fps; longest gap {max(gaps)*1000:.0f} ms; gaps >0.5s: {sum(g>0.5 for g in gaps)}; >2s: {sum(g>2 for g in gaps)}")
-                                                                                                    ~~~^^^^^^
-ValueError: max() iterable argument is empty
+viewer: gaps over 0.5 s at (s from first frame, length): [(0.0, 0.7), (0.7, 0.6), (1.8, 0.8), (2.6, 0.5), (3.5, 1.2), (5.2, 0.8), (6.4, 1.0), (9.3, 1.8), (12.0, 0.5), (12.5, 0.6), (13.1, 1.2), (14.6, 1.1), (17.0, 0.5), (17.9, 0.5), (20.2, 0.6), (20.7, 1.0), (21.8, 1.2), (23.1, 0.6), (26.0, 0.7), (27.4, 0.7), (29.6, 0.6), (30.3, 0.5), (31.4, 0.7), (32.3, 0.8), (33.2, 1.3), (34.5, 0.6), (35.0, 0.6), (36.2, 0.6), (36.8, 0.9), (37.7, 0.7), (38.3, 1.2), (41.3, 0.5), (42.2, 0.6), (44.7, 0.9), (45.8, 1.4), (48.1, 0.7), (49.3, 0.7), (51.8, 0.6), (52.6, 1.1), (55.5, 0.5), (57.7, 0.8)]
+viewer: 167 frames in 58.5s = 2.9 fps; longest gap 1822 ms; gaps >0.5s: 41; >2s: 0
+viewer: decode errors: 0
