@@ -18,6 +18,8 @@ import android.view.WindowManager
  *  rec   : the «⏺» of the floating circle (the clean recording beside the stream)
  *  stop  : the stream ended as from the app
  *  log   : the app's report log to logcat (tag RAWREC_E2E)
+ *  record: a plain recording with the owner's recording settings (no stream)
+ *  land / port: this screen turned landscape / upright (as a game turns the phone)
  * The screen shows a moving picture with a frame counter, so the stream has real motion to carry.
  */
 class E2EActivity : Activity() {
@@ -25,14 +27,26 @@ class E2EActivity : Activity() {
         super.onCreate(b)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(Moving(this))
-        handle(intent)
+        // turned (land/port): the activity is made again — the command was already done
+        if (b == null) handle(intent)
     }
 
     override fun onNewIntent(i: Intent) { super.onNewIntent(i); handle(i) }
 
+    private var plain = false
+
     private fun handle(i: Intent) {
         when (i.getStringExtra("do")) {
+            "record" -> {
+                plain = true
+                RecLog.clear(this)
+                @Suppress("DEPRECATION")
+                startActivityForResult(getSystemService(MediaProjectionManager::class.java)!!.createScreenCaptureIntent(), 1)
+            }
+            "land" -> requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            "port" -> requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             "live" -> {
+                plain = false
                 val p = 5   // «other server»
                 for (k in LiveSettings.PLATFORMS.indices) LiveSettings.setOn(this, k, false)
                 LiveSettings.setPlatform(this, p)
@@ -58,6 +72,13 @@ class E2EActivity : Activity() {
         if (code != RESULT_OK || data == null) return
         val prefs = getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE)
         val svc = Intent(this, RecordService::class.java).setAction(RecordService.ACTION_START)
+        if (plain) {
+            RecordConfig.fromPrefs(prefs).putInto(svc)
+            svc.putExtra(RecordService.EXTRA_CODE, code)
+            svc.putExtra(RecordService.EXTRA_DATA, data)
+            startForegroundService(svc)
+            return
+        }
         LiveSettings.config(this, RecordConfig.fromPrefs(prefs), false).putInto(svc)
         svc.putExtra(RecordService.EXTRA_CODE, code)
         svc.putExtra(RecordService.EXTRA_DATA, data)

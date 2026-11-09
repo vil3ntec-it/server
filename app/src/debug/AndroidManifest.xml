@@ -5,7 +5,7 @@
         <activity
             android:name=".E2EActivity"
             android:exported="true"
-            android:screenOrientation="landscape"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.RawRec" />
     </application>
 </manifest>
