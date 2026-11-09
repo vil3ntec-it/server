@@ -1,3 +1,2 @@
-2026-11-09 22:14:06  start: c2.android.avc.encoder 1080x1728@33 12 Mbps level 4 • Android 34
-2026-11-09 22:14:09  notice: timeout
-2026-11-09 22:14:55  stop: APP
+2026-11-09 22:27:04  start: c2.android.avc.encoder 1080x1728@33 12 Mbps level 4 • Android 34
+2026-11-09 22:27:50  stop: APP
