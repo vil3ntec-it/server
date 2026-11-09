@@ -21,6 +21,7 @@ import { Card, CopyButton, Field, Loading, Modal, toast } from '../components/ui
 import { useApp } from '../app-context';
 import { ActionButton, Cell, KV, Notice, Row, Select, Stat, Table, Tabs } from '../control/ui';
 import DeleteAccount from './account/DeleteAccount';
+import { subsPath } from './account/subsPath';
 
 type Status = { base: string; target?: string; local?: boolean; linked: boolean; auto?: boolean; vault: boolean; updatedAt: number | null };
 
@@ -60,17 +61,16 @@ const daysLeftOf = (status: string | null | undefined, ends: number | null | und
 };
 
 /**
- * درِ کارهای اشتراک (دادن، تمدید، تعلیق، حذف) — **یک** جا دارد:
- * «مشتری‌ها و اشتراک‌ها». این صفحه نسخهٔ دومش را نمی‌سازد، فقط با همان
+ * درِ کارهای اشتراک (دادن، تمدید، تعلیق، حذف) — **یک** جا دارد: زبانهٔ
+ * «💳 اشتراک‌ها»ی همین بخش. این صفحه نسخهٔ دومش را نمی‌سازد، فقط با همان
  * ایمیل آن‌جا می‌برد.
  *
  * ⚠️ چرا لازم شد: صاحبِ سامانه از این صفحه دنبالِ «حذفِ اشتراک» و «روزِ
  * مانده» می‌گشت و این دو جدول هیچ دکمه‌ای نداشتند.
  */
-//  ⚠️ همان بخشِ پمپ، زبانهٔ «اشتراک‌ها» — نه بیرون رفتن به صفحهٔ دیگر
-//  ⛔ کارهای اشتراک فقط در بخشِ مرکزیِ «اشتراک‌ها» است (۱۴۰۵/۰۷/۱۳)؛ این
-//  لینک مستقیم همان‌جا را با بخشِ پمپ و جست‌وجوی همین حساب باز می‌کند.
-const manageLink = (q: string) => `/subscriptions?app=pump&q=${encodeURIComponent(q)}`;
+//  ⛔ همان بخشِ پمپ، زبانهٔ «💳 اشتراک‌ها» — بخشِ جدای «اشتراک‌ها» برداشته شد
+//  (۱۴۰۵/۰۸/۰۹)؛ این لینک همان زبانه را با جست‌وجوی همین حساب باز می‌کند.
+const manageLink = (q: string) => subsPath('pump', 'subs', q);
 const fmtDate = (ms?: number | null) =>
   ms ? new Date(Number(ms)).toLocaleDateString('fa-AF', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '—';
 

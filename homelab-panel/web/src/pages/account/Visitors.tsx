@@ -38,11 +38,12 @@ type Visitor = {
   visits?: number;
 };
 
-export default function Visitors() {
-  //  ⚠️ بخشِ آغازین از نشانی (`?app=`)، مثلِ بقیهٔ تب‌های «اشتراک‌ها»
+/** ⛔ `fixedApp`: داخلِ بخشِ خودِ همان برنامه — فهرست با `?app=` از سرور، نه پالایش در رابط. */
+export default function Visitors({ fixedApp }: { fixedApp?: AppId } = {}) {
+  //  ⚠️ بی `fixedApp`، بخشِ آغازین از نشانی (`?app=`)
   const [params] = useSearchParams();
   const fromUrl = params.get('app');
-  const [app, setApp] = useState<Scope>(fromUrl === 'pump' || fromUrl === 'shop' ? fromUrl : 'both');
+  const [app, setApp] = useState<Scope>(fixedApp || (fromUrl === 'pump' || fromUrl === 'shop' ? fromUrl : 'both'));
   const [guests, setGuests] = useState(false);
   const [q, setQ] = useState('');
 
@@ -70,7 +71,7 @@ export default function Visitors() {
               <input type="checkbox" checked={guests} onChange={(e) => setGuests(e.target.checked)} />
               فقط مهمان‌ها
             </label>
-            <AppPicker value={app} onChange={setApp} withBoth />
+            {!fixedApp && <AppPicker value={app} onChange={setApp} withBoth />}
           </>
         }
       />

@@ -122,7 +122,8 @@ const upSetting = db.prepare(
 //  رمزنگاری با همان کلیدِ ‎data/vault.key‎ (‎lib/secret-box.js‎). بقیهٔ کد هیچ
 //  فرقی نمی‌بیند: ‎getSetting‎ همان مقدارِ خام را پس می‌دهد.
 export const SECRET_SETTINGS = Object.freeze({
-  whole: ['tunnel_token', 'jwt_secret', 'messenger_secret', 'notify_read_key'],
+  //  `account_service_key`: کلیدِ سرویسِ پلِ سرورِ حساب (‎account/service-key.js‎) — کلِ ردیف، با فراداده‌اش
+  whole: ['tunnel_token', 'jwt_secret', 'messenger_secret', 'notify_read_key', 'account_service_key'],
   fields: {
     codes_settings: [['email', 'password']],
     otp_settings: [['email', 'password'], ['sms', 'password'], ['sms', 'apiKey']],

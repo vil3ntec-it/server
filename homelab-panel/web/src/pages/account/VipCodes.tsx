@@ -60,11 +60,11 @@ const STATUS: Record<string, { tone: 'good' | 'warn' | 'bad' | 'neutral'; label:
   expired: { tone: 'warn', label: 'منقضی' },
 };
 
-export default function VipCodes() {
-  //  ⚠️ بخشِ آغازین از نشانی (`?app=`) — کسی که از «پمپ‌بنزین‌ها» به بخشِ
-  //  اشتراک‌ها آمده، پلن و کدِ پمپ می‌خواهد، نه دکان. بعدش کادر آزاد است.
+/** ⛔ `fixedApp`: داخلِ بخشِ خودِ همان برنامه — کدهای VIP و آفلاینِ همان برنامه، بی انتخابگر. */
+export default function VipCodes({ fixedApp }: { fixedApp?: AppId } = {}) {
+  //  ⚠️ بی `fixedApp`، بخشِ آغازین از نشانی (`?app=`) و کادر آزاد است.
   const [params] = useSearchParams();
-  const [app, setApp] = useState<AppId>(params.get('app') === 'pump' ? 'pump' : 'shop');
+  const [app, setApp] = useState<AppId>(fixedApp || (params.get('app') === 'pump' ? 'pump' : 'shop'));
   const [making, setMaking] = useState(false);
   const [made, setMade] = useState<Made | null>(null);
   const [revoke, setRevoke] = useState<VipCode | null>(null);
@@ -78,7 +78,7 @@ export default function VipCodes() {
         sub="کدِ شش‌رقمی که مشتری در برنامه می‌زند و اشتراکش همان لحظه فعال می‌شود"
         actions={
           <>
-            <AppPicker value={app} onChange={(v) => setApp(v as AppId)} />
+            <AppPicker only={fixedApp} value={app} onChange={(v) => setApp(v as AppId)} />
             <button className="btn btn-sm btn-primary" onClick={() => setMaking(true)}>کدِ تازه</button>
           </>
         }

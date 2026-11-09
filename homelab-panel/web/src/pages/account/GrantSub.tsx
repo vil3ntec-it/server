@@ -61,11 +61,13 @@ function spanOf(p: Plan): string {
   return `${fa(p.amount)} ${UNIT_LABEL[p.unit] || p.unit}`;
 }
 
-export default function GrantSub({ open, onClose, onDone, startApp, startQuery }: {
+export default function GrantSub({ open, onClose, onDone, startApp, startQuery, fixedApp }: {
   open: boolean;
   onClose: () => void;
   onDone: () => Promise<void> | void;
   startApp?: AppId;
+  /** ⛔ داخلِ بخشِ خودِ یک برنامه: بخشِ دیگر انتخاب‌شدنی نیست (`AppPicker` با `only`) */
+  fixedApp?: AppId;
   /**
    *  جست‌وجوی آماده — وقتی از ردیفِ یک حسابِ بی‌اشتراک باز می‌شود، همان
    *  ایمیل این‌جا می‌نشیند تا مدیر دوباره دنبالش نگردد.
@@ -76,7 +78,7 @@ export default function GrantSub({ open, onClose, onDone, startApp, startQuery }
    */
   startQuery?: string;
 }) {
-  const [app, setApp] = useState<AppId>(startApp === 'pump' ? 'pump' : 'shop');
+  const [app, setApp] = useState<AppId>(fixedApp || (startApp === 'pump' ? 'pump' : 'shop'));
   const [q, setQ] = useState(startQuery || '');
   const [picked, setPicked] = useState<Target | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -186,7 +188,7 @@ export default function GrantSub({ open, onClose, onDone, startApp, startQuery }
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-ink">۱) حساب</span>
             <span className="grow" />
-            <AppPicker value={app} onChange={(v) => { setApp(v as AppId); reset(); }} />
+            <AppPicker only={fixedApp} value={app} onChange={(v) => { setApp(v as AppId); reset(); }} />
           </div>
 
           <label className="relative mb-2 block">

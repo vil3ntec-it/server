@@ -34,10 +34,11 @@ type RepReport = {
   sales: RepSale[];
 };
 
-export default function SalesReps() {
+/** ⛔ `fixedApp`: داخلِ بخشِ خودِ همان برنامه — فهرست با `?app=` از سرور، نه پالایش در رابط. */
+export default function SalesReps({ fixedApp }: { fixedApp?: AppId } = {}) {
   const [params] = useSearchParams();
   const fromUrl = params.get('app');
-  const [app, setApp] = useState<Scope>(fromUrl === 'pump' || fromUrl === 'shop' ? fromUrl : 'both');
+  const [app, setApp] = useState<Scope>(fixedApp || (fromUrl === 'pump' || fromUrl === 'shop' ? fromUrl : 'both'));
   const reps = useLoad<{ reps: Rep[] }>(`/api/account-admin/reps${app === 'both' ? '' : `?app=${app}`}`, [app], 'sales');
   const [adding, setAdding] = useState(false);
   const [report, setReport] = useState<Rep | null>(null);
@@ -58,7 +59,7 @@ export default function SalesReps() {
         sub="هر نماینده کدِ تخفیفِ خودش را دارد؛ هر اشتراکی که با کدِ او داده شود فروشِ اوست. درصدِ کمیسیون فقط از همین‌جا."
         actions={
           <>
-            <AppPicker value={app} onChange={setApp} withBoth />
+            {!fixedApp && <AppPicker value={app} onChange={setApp} withBoth />}
             <button className="btn btn-sm btn-primary" onClick={() => setAdding(true)} data-testid="rep-add">نمایندهٔ تازه</button>
           </>
         }
@@ -92,7 +93,7 @@ export default function SalesReps() {
             </Table>
           )}
       </Card>
-      {adding && <AddRep onClose={() => setAdding(false)} onDone={() => { setAdding(false); reps.reload(); }} />}
+      {adding && <AddRep fixedApp={fixedApp} onClose={() => setAdding(false)} onDone={() => { setAdding(false); reps.reload(); }} />}
       {report && <ReportModal rep={report} onClose={() => setReport(null)} />}
       {codeFor && <RepCode rep={codeFor} onClose={() => setCodeFor(null)} />}
       {editPct && <EditPct rep={editPct} onClose={() => setEditPct(null)} onDone={() => { setEditPct(null); reps.reload(); }} />}
@@ -100,8 +101,8 @@ export default function SalesReps() {
   );
 }
 
-function AddRep({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
-  const [app, setApp] = useState<AppId>('shop');
+function AddRep({ onClose, onDone, fixedApp }: { onClose: () => void; onDone: () => void; fixedApp?: AppId }) {
+  const [app, setApp] = useState<AppId>(fixedApp || 'shop');
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
   const [pct, setPct] = useState('');
@@ -118,7 +119,7 @@ function AddRep({ onClose, onDone }: { onClose: () => void; onDone: () => void }
     <Modal open onClose={onClose} title="نمایندهٔ تازه"
       footer={<button className="btn btn-primary" disabled={busy || !email.trim() || !pct.trim()} onClick={save}>ساختن</button>}>
       <div className="flex flex-col gap-2">
-        <AppPicker value={app} onChange={(v) => setApp(v as AppId)} />
+        <AppPicker only={fixedApp} value={app} onChange={(v) => setApp(v as AppId)} />
         <input className="input" dir="ltr" placeholder="ایمیلِ حسابِ نماینده" value={email} onChange={(e) => setEmail(e.target.value)} data-testid="rep-email" />
         <input className="input" placeholder="نام (اختیاری)" value={name} onChange={(e) => setName(e.target.value)} />
         <input className="input" inputMode="decimal" placeholder="درصدِ کمیسیون — مثلاً 10" value={pct} onChange={(e) => setPct(e.target.value)} data-testid="rep-pct" />

@@ -76,9 +76,10 @@ export function DomainsHub() {
 }
 
 /*
- *  ⛔ `PlansHub` و `CustomersHub` در ۱.۵۰.۱۶ به `account/SubscriptionsHub.tsx`
- *     رفتند — «همهٔ اشتراک‌ها داخلِ یک بخش» (خواستهٔ صاحب سامانه). نشانی‌های
- *     `/customers` و `/plans` در App.tsx به تبِ خودشان در `/subscriptions` می‌روند.
+ *  ⛔ `PlansHub` و `CustomersHub` در ۱.۵۰.۱۶ به `SubscriptionsHub` رفتند، و آن
+ *     هم در ۱۴۰۵/۰۸/۰۹ برداشته شد: اشتراکِ هر برنامه در بخشِ خودش
+ *     (`account/AppSubscriptions.tsx`). نشانی‌های `/customers`، `/plans` و
+ *     `/subscriptions` در App.tsx به همان بخش می‌روند.
  */
 
 /**

@@ -41,6 +41,7 @@ import { putSecret, listSecrets, readSecret, deleteSecret, vaultReady } from '..
 import { config } from '../config.js';
 import { accountApiUrl, downPayload } from '../api/account-proxy.js';
 import { managedAdminCreds } from '../account/supervisor.js';
+import { readServiceKey, actorHeaders, SYSTEM_ACTOR, SERVICE_KEY_RE } from '../account/service-key.js';
 
 /** نشانیِ عمومیِ سرورِ حساب — قفل، نه از تنظیمات. همان که برنامه‌ها می‌زنند. */
 export const CLOUD_BASE = 'https://api.vill3n.top';
@@ -300,8 +301,10 @@ export function cloudStatus() {
     base: CLOUD_BASE,
     target: cloudTarget(),
     local: !!accountApiUrl(),
-    linked: !!row || !!creds,
+    linked: !!row || !!creds || !!readServiceKey(),
     auto: !!creds,
+    //  کلیدِ سرویس (فقط بودنش، هرگز خودش) — «کدام راه» را ‎GET /api/account-admin/console/service-key‎ می‌گوید
+    serviceKey: !!readServiceKey(),
     vault: vaultReady(),
     updatedAt: row?.updated_at || null,
   };
@@ -379,19 +382,9 @@ export async function cloudCall(name, { query = {}, body = null, params = {} } =
     }
     entry = [entry[0], entry[1].replace(':id', encodeURIComponent(id))];
   }
-  //  ورودِ خودکار (اگر تنظیم است) همیشه جلوتر از توکنِ گاوصندوق: آن یکی
-  //  دوازده ساعته می‌میرد و کسی نیست دوباره وارد شود؛ این یکی خودش تازه می‌شود.
-  const creds = autoCreds();
-  let t = creds ? await autoToken() : token();
-  if (!t) {
-    const err = new Error('هنوز با حسابِ مدیر به سرورِ حساب وارد نشده‌اید — از پنل ← پمپ‌ها ← تنظیمات و داده‌ها، یا از همین اپ');
-    err.code = 'not_linked';
-    err.status = 409;
-    throw err;
-  }
-
+  //  کلیدِ سرویس (اگر هست و پذیرفته است) جلوتر؛ وگرنه ورودِ خودکار، وگرنه توکنِ گاوصندوق (`sendAuthed`)
   const [method, path] = entry;
-  return authedSend(method, path, { query, body, creds, token: t });
+  return authedSend(method, path, { query, body });
 }
 
 /**
@@ -407,7 +400,7 @@ export async function cloudCall(name, { query = {}, body = null, params = {} } =
  * @param {string} path   مثلاً ‎/api/admin/shops‎
  * @param {object} opts   { query, body }
  */
-export async function cloudRaw(method, path, { query = {}, body = null } = {}) {
+export async function cloudRaw(method, path, { query = {}, body = null, headers = {}, legacyOnly = false } = {}) {
   const m = String(method || 'GET').toUpperCase();
   const p = String(path || '');
   if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(m)
@@ -417,49 +410,238 @@ export async function cloudRaw(method, path, { query = {}, body = null } = {}) {
     err.status = 400;
     throw err;
   }
+  return authedSend(m, p, { query, body, headers: extraHeaders(headers), legacyOnly });
+}
+
+/*
+ *  ⛔ سرآیندِ اضافه فقط «کلیدِ یکتایی» (‎Idempotency-Key‎ ِ سرورِ حساب، همان الگو) و «زمانِ احرازِ دوبارهٔ
+ *  پنل» (‎X-Actor-Reauth-At‎، فقط عدد؛ سندِ اصلاحیِ مالی — ‎routes/account-finance.js‎) — نه هر سرآیندی:
+ *  وگرنه صداکننده می‌توانست ‎X-Actor-Id/Role‎ یا ‎Authorization‎ را خودش بنویسد.
+ */
+const IDEM_RE = /^[A-Za-z0-9_.:-]{8,128}$/;
+function extraHeaders(h) {
+  const out = {};
+  for (const [k, v] of Object.entries(h || {})) {
+    if (String(k).toLowerCase() === 'x-actor-reauth-at' && /^\d{12,14}$/.test(String(v ?? ''))) {
+      out['x-actor-reauth-at'] = String(v);
+      continue;
+    }
+    if (String(k).toLowerCase() !== 'idempotency-key' || v === undefined || v === null || v === '') continue;
+    if (!IDEM_RE.test(String(v))) {
+      const err = new Error('کلیدِ یکتایی نامعتبر است');
+      err.code = 'bad_idempotency_key';
+      err.status = 400;
+      throw err;
+    }
+    out['idempotency-key'] = String(v);
+  }
+  return out;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   🔑 کلیدِ سرویس + «انجام‌دهنده» (چسبِ فاز ۲ و ۳ ِ پنلِ مرکزی؛ ‎account/service-key.js‎)
+
+   هر درخواستِ پل:
+     ۱) کلیدِ سرویس در گاوصندوق هست، سرورِ حساب آن را پذیرفته (‎GET /api/admin/me‎ ⇒ ۲۰۰) **و**
+        `service-key.v1` و `actor.v1` را اعلام کرده ⇒ ‎Bearer vsk_…‎ + ‎X-Actor-Id/Role/Name‎.
+     ۲) وگرنه همان راهِ پیشین، دست‌نخورده: ورودِ خودکار با رمزِ ارشد، یا توکنِ گاوصندوق.
+   ⛔ سنجشِ «پذیرفته است» یک دقیقه نگه داشته می‌شود (یک ‎/me‎ در دقیقه، نه یکی برای هر درخواست)؛ و
+      ۴۰۱ روی خودِ درخواست ⇒ همان دم کنار، و همان درخواست یک بار با راهِ پیشین (۴۰۱ یعنی سرورِ حساب
+      اصلاً به کارش نرسیده، پس تکرار امن است). راهِ پیشین هم نبود ⇒ ‎409 service_key_rejected‎.
+   ⛔ کلید هرگز در پیام، خطا یا لاگ نمی‌آید.
+   ═══════════════════════════════════════════════════════════════════════ */
+const PROBE_TTL = 60_000;
+let svcProbe = null;      // { keyId, at, ok, caps, code }
+let svcInFlight = null;
+
+async function probeKey(key, keyId) {
+  const res = await dial(`${cloudTarget()}/api/admin/me`, {
+    headers: { authorization: `Bearer ${key}`, ...actorHeaders(SYSTEM_ACTOR) },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (res.status !== 200) {
+    return { keyId, at: Date.now(), ok: false, caps: [], code: String(body?.error?.code || `http_${res.status}`).slice(0, 60) };
+  }
+  const caps = Array.isArray(body?.capabilities) ? body.capabilities.map(String) : [];
+  return { keyId, at: Date.now(), ok: true, caps, code: '' };
+}
+
+const keyUsable = (p) => Boolean(p?.ok && p.caps.includes('service-key.v1') && p.caps.includes('actor.v1'));
+
+/** کلیدِ ذخیره‌شده اگر همین حالا به کار می‌رود؛ وگرنه null (⇒ راهِ پیشین). خطای شبکه بالا می‌رود. */
+async function serviceKeyInUse() {
+  const stored = readServiceKey();
+  if (!stored) return null;
+  const fresh = svcProbe && svcProbe.keyId === stored.id && Date.now() - svcProbe.at < PROBE_TTL;
+  if (!fresh) {
+    if (!svcInFlight) {
+      svcInFlight = probeKey(stored.key, stored.id)
+        .then((r) => { svcProbe = r; return r; })
+        .finally(() => { svcInFlight = null; });
+    }
+    await svcInFlight;
+  }
+  return keyUsable(svcProbe) && svcProbe.keyId === stored.id ? stored : null;
+}
+
+/** پس از ساختن/چرخش/ابطالِ کلید — سنجشِ تازه، نه یک دقیقه بعد. */
+export function serviceKeyReset() { svcProbe = null; svcInFlight = null; }
+
+/** کلیدِ تازه پیش از ذخیره: پذیرفته است و هر دو توانایی را دارد؟ ⇒ { ok, caps, code } */
+export async function cloudProbeServiceKey(key) {
+  if (!SERVICE_KEY_RE.test(String(key || ''))) return { ok: false, caps: [], code: 'bad_service_key' };
+  const p = await probeKey(String(key), 'new');
+  return { ok: keyUsable(p), caps: p.caps, code: p.ok && !keyUsable(p) ? 'capability_missing' : p.code };
+}
+
+/** راهِ پیشین (رمزِ ارشد یا توکنِ گاوصندوق) در دسترس است؟ */
+export function legacyAvailable() {
+  return Boolean(autoCreds()) || Boolean(tokenRow());
+}
+
+/**
+ * حالِ پل برای صفحهٔ «یکپارچه‌سازی» — ⛔ بی کلید: فقط بودن، فراداده، راهِ امروز و دلیل.
+ *   mode    'service' | 'legacy' | 'none'
+ *   reason  null | 'no_key' | 'capability_missing' | کدِ ردِ سرورِ حساب (مثلاً 'invalid_service_key') | کدِ شبکه
+ */
+export async function serviceKeyStatus() {
+  //  ⛔ این صفحه حقیقتِ همین لحظه را می‌خواهد، نه سنجشِ یک دقیقه پیش — و سنجشِ تازه همان کَشِ درخواست‌ها را هم تازه می‌کند
+  serviceKeyReset();
+  const stored = readServiceKey();
+  let reason = null;
+  let usable = false;
+  if (!stored) reason = 'no_key';
+  else {
+    try {
+      usable = Boolean(await serviceKeyInUse());
+      if (!usable) reason = svcProbe?.ok ? 'capability_missing' : (svcProbe?.code || 'key_rejected');
+    } catch (e) { reason = e.code || 'account_server_unreachable'; }
+  }
+  const legacy = legacyAvailable();
+  return {
+    stored: Boolean(stored),
+    mode: usable ? 'service' : legacy ? 'legacy' : 'none',
+    reason,
+    legacy,
+    probe: stored && svcProbe && svcProbe.keyId === stored.id
+      ? { ok: svcProbe.ok, code: svcProbe.code || null, at: svcProbe.at, capabilities: svcProbe.caps }
+      : null,
+  };
+}
+
+function notLinkedErr() {
+  const err = new Error('هنوز با حسابِ مدیر به سرورِ حساب وارد نشده‌اید — از پنل ← پمپ‌ها ← تنظیمات و داده‌ها، یا از همین اپ');
+  err.code = 'not_linked';
+  err.status = 409;
+  return err;
+}
+
+function rejectedErr() {
+  const err = new Error('کلیدِ سرویسِ پل را سرورِ حساب نپذیرفت (باطل یا ناشناخته) و راهِ پیشین هم تنظیم نیست — '
+    + 'یک بار با حسابِ ارشد وارد شوید و از «فروشگاه ← یکپارچه‌سازی» کلیدِ تازه بسازید');
+  err.code = 'service_key_rejected';
+  err.status = 409;
+  return err;
+}
+
+/**
+ * تنها جای «با کدام هویت بفرستم». `send(authHeaders)` خودِ fetch را می‌سازد.
+ * @param {{ legacyOnly?: boolean }} opts ‎legacyOnly‎: فقط راهِ پیشین — برای درهای کلیدهای سرویس، که
+ *        کلیدِ سرویس به آن‌ها نمی‌رسد (‎SERVICE_DENY‎ ِ سرورِ حساب).
+ */
+async function sendAuthed(send, path, { legacyOnly = false } = {}) {
+  if (!legacyOnly) {
+    const svc = await serviceKeyInUse();
+    if (svc) {
+      const res = await send({ authorization: `Bearer ${svc.key}`, ...actorHeaders() });
+      if (res.status !== 401) return res;
+      await res.arrayBuffer().catch(() => null);
+      svcProbe = { keyId: svc.id, at: Date.now(), ok: false, caps: [], code: 'invalid_service_key' };
+      if (!legacyAvailable()) throw rejectedErr();
+    }
+  }
+  //  ورودِ خودکار (اگر تنظیم است) همیشه جلوتر از توکنِ گاوصندوق: آن یکی
+  //  دوازده ساعته می‌میرد و کسی نیست دوباره وارد شود؛ این یکی خودش تازه می‌شود.
   const creds = autoCreds();
   const t = creds ? await autoToken() : token();
-  if (!t) {
-    const err = new Error('هنوز با حسابِ مدیر به سرورِ حساب وارد نشده‌اید — از پنل ← پمپ‌ها ← تنظیمات و داده‌ها، یا از همین اپ');
-    err.code = 'not_linked';
-    err.status = 409;
-    throw err;
-  }
-  return authedSend(m, p, { query, body, creds, token: t });
+  if (!t) throw notLinkedErr();
+  return send401((bearer) => send({ authorization: `Bearer ${bearer}` }), t, creds, path);
+}
+
+/*
+ *  ⛔ **۴۰۱ِ سرورِ حساب دو معنا دارد** (۱۴۰۵/۰۸/۰۹، فاز ۲ ِ پنلِ مرکزی — با سرورِ حسابِ واقعی سنجیده شد):
+ *
+ *    ۱) توکنِ مدیر مرده است؛
+ *    ۲) **این مسیر روی این نسخهٔ سرورِ حساب نیست.** مسیرِ ناشناختهٔ ‎/api/admin/*‎ از روترهای مدیر رد
+ *       می‌شود و به ‎routes/data‎ (روی ‎/‎ ِ همان ‎apiRouter‎) می‌رسد، که توکنِ **کاربر** می‌خواهد ⇒
+ *       ‎401 invalid_token‎ — نه ۴۰۴. (‎GET /api/admin/shops/x/health‎ روی ‎shop@2.14.4‎: همین.)
+ *
+ *  تا امروز هر دو «نشست تمام شد» خوانده می‌شد و دو زخم داشت:
+ *    • پل برای **هر** درخواست به مسیرِ نبوده یک ورودِ تازه می‌زد (`autoToken(true)`) — و `useLoad`
+ *      روی `cloud_session_expired` دوباره تلاش می‌کند ⇒ همان سقفِ نرخِ ورود که «ازدحامِ سرد» بست؛
+ *    • ۴۰۱ تا مرورگر می‌رسید و `web/src/api.ts` آن را «نشستِ **پنل** تمام شد» می‌خواند و صاحب سامانه
+ *      را از پنل بیرون می‌انداخت — با این‌که نشستِ پنلش سالم بود.
+ *
+ *  حالا: ۴۰۱ ⇒ یک پرسشِ ‎GET /api/admin/me‎ با **همان** توکن (این مسیر در همهٔ نسخه‌ها هست).
+ *    زنده ⇒ ‎501 account_server_outdated‎ — بی ورود، بی تکرار؛ صفحه می‌گوید «سرورِ حساب را به‌روز کنید».
+ *    مرده ⇒ همان راهِ قبلی: یک ورودِ تک‌پرواز (`stale`) و یک بارِ دیگر.
+ *  ⛔ و `cloud_session_expired` دیگر ۴۰۱ نیست بلکه ۴۰۹ — همان قاعدهٔ `doLogin` (۴۰۱ِ ورود ⇒ ۴۰۹).
+ */
+async function tokenAlive(bearer) {
+  try {
+    const r = await fetch(`${cloudTarget()}/api/admin/me`, { headers: { authorization: `Bearer ${bearer}` } });
+    return r.status === 200;
+  } catch { return false; }
+}
+
+function outdatedErr(path) {
+  const err = new Error('این بخش روی نسخهٔ فعلیِ سرورِ حساب نیست — سرورِ حساب را به‌روز کنید');
+  err.code = 'account_server_outdated';
+  err.status = 501;
+  err.path = String(path || '');
+  return err;
+}
+
+function expiredErr() {
+  const err = new Error('نشستِ مدیر روی سرورِ حساب تمام شده — دوباره وارد شوید');
+  err.code = 'cloud_session_expired';
+  err.status = 409;
+  return err;
+}
+
+/** فرستادن با قاعدهٔ بالا؛ پاسخِ غیرِ ۴۰۱ همان‌طور که آمد برمی‌گردد. */
+async function send401(send, t, creds, path) {
+  let res = await send(t);
+  if (res.status !== 401) return res;
+  if (await tokenAlive(t)) throw outdatedErr(path);
+  if (!creds) throw expiredErr();
+  const next = await autoToken(true, t);
+  res = await send(next);
+  if (res.status !== 401) return res;
+  if (await tokenAlive(next)) throw outdatedErr(path);
+  throw expiredErr();
 }
 
 /** خودِ فرستادن — یک بار، و روی ۴۰۱ِ توکنِ خودکار فقط یک بار دیگر. */
-async function authedSend(method, path, { query = {}, body = null, creds, token: t }) {
+async function authedSend(method, path, { query = {}, body = null, headers = {}, legacyOnly = false } = {}) {
   const qs = new URLSearchParams(
     Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== '')
   ).toString();
   const url = `${cloudTarget()}${path}${qs ? `?${qs}` : ''}`;
-  const send = (bearer) => dial(url, {
+  const send = (auth) => dial(url, {
     method,
     headers: {
-      authorization: `Bearer ${bearer}`,
+      ...headers,
+      ...auth,
       ...(body ? { 'content-type': 'application/json' } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  let res = await send(t);
-  if (res.status === 401 && creds) {
-    //  توکنِ خودکار مرده — یک بار، و فقط یک بار، دوباره وارد شو
-    t = await autoToken(true, t);
-    res = await send(t);
-  }
-
+  //  کلیدِ سرویس، یا توکنِ خودکار (مرده ⇒ یک بار، و فقط یک بار، دوباره وارد شو؛ ولی ۴۰۱ِ «مسیر نیست» نه)
+  const res = await sendAuthed(send, path, { legacyOnly });
   const out = await res.json().catch(() => ({}));
 
-  if (res.status === 401) {
-    //  توکنِ مدیر عمرِ کوتاهی دارد؛ «دوباره وارد شوید» بهتر از یک
-    //  خطای گنگ است.
-    const err = new Error('نشستِ مدیر روی سرورِ حساب تمام شده — دوباره وارد شوید');
-    err.code = 'cloud_session_expired';
-    err.status = 401;
-    throw err;
-  }
   if (!res.ok) {
     const err = new Error(out?.error?.message || 'سرورِ حساب جواب نداد');
     err.code = out?.error?.code || 'cloud_error';
@@ -492,35 +674,17 @@ export async function cloudRawBytes(method, path, { body = null, contentType = '
     err.status = 400;
     throw err;
   }
-  const creds = autoCreds();
-  let t = creds ? await autoToken() : token();
-  if (!t) {
-    const err = new Error('هنوز با حسابِ مدیر به سرورِ حساب وارد نشده‌اید — از پنل ← پمپ‌ها ← تنظیمات و داده‌ها، یا از همین اپ');
-    err.code = 'not_linked';
-    err.status = 409;
-    throw err;
-  }
   const url = `${cloudTarget()}${p}`;
-  const send = (bearer) => dial(url, {
+  const send = (auth) => dial(url, {
     method: m,
     headers: {
-      authorization: `Bearer ${bearer}`,
+      ...auth,
       ...(m === 'POST' ? { 'content-type': String(contentType || 'application/octet-stream') } : {}),
     },
     body: m === 'POST' ? body : undefined,
   });
 
-  let res = await send(t);
-  if (res.status === 401 && creds) {
-    t = await autoToken(true, t);
-    res = await send(t);
-  }
-  if (res.status === 401) {
-    const err = new Error('نشستِ مدیر روی سرورِ حساب تمام شده — دوباره وارد شوید');
-    err.code = 'cloud_session_expired';
-    err.status = 401;
-    throw err;
-  }
+  const res = await sendAuthed(send, p);
   if (!res.ok || m === 'POST') {
     const out = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -556,32 +720,14 @@ export async function cloudRawText(method, path, { query = {} } = {}) {
     err.status = 400;
     throw err;
   }
-  const creds = autoCreds();
-  let t = creds ? await autoToken() : token();
-  if (!t) {
-    const err = new Error('هنوز با حسابِ مدیر به سرورِ حساب وارد نشده‌اید — از پنل ← پمپ‌ها ← تنظیمات و داده‌ها، یا از همین اپ');
-    err.code = 'not_linked';
-    err.status = 409;
-    throw err;
-  }
   const qs = new URLSearchParams(
     Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== '')
   ).toString();
   const url = `${cloudTarget()}${p}${qs ? `?${qs}` : ''}`;
-  const send = (bearer) => dial(url, { method: m, headers: { authorization: `Bearer ${bearer}` } });
+  const send = (auth) => dial(url, { method: m, headers: { ...auth } });
 
-  let res = await send(t);
-  if (res.status === 401 && creds) {
-    t = await autoToken(true, t);
-    res = await send(t);
-  }
+  const res = await sendAuthed(send, p);
   const text = await res.text().catch(() => '');
-  if (res.status === 401) {
-    const err = new Error('نشستِ مدیر روی سرورِ حساب تمام شده — دوباره وارد شوید');
-    err.code = 'cloud_session_expired';
-    err.status = 401;
-    throw err;
-  }
   if (!res.ok) {
     let payload = null;
     try { payload = JSON.parse(text); } catch { /* متنِ ساده */ }

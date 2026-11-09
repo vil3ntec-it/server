@@ -12,6 +12,7 @@
 //  ⛔ هیچ مبلغی این‌جا حساب نمی‌شود؛ جمع‌ها و بدهی‌ها از سرورِ حساب می‌آیند.
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AlertCircle, CalendarClock, Receipt, Wallet } from 'lucide-react';
 
 import { api, getToken } from '../../api';
@@ -30,9 +31,24 @@ const PERIOD: { id: 'today' | 'month' | 'year'; label: string }[] = [
   { id: 'year', label: 'امسال' },
 ];
 
-export default function Sales() {
-  const [tab, setTab] = useState('overview');
-  const [app, setApp] = useState<Scope>('both');
+const TAB_IDS = ['overview', 'expiring', 'debts', 'payments'];
+
+/**
+ *  ⛔ `fixedApp`: همین صفحه داخلِ بخشِ خودِ هر برنامه هم می‌نشیند («فروش و
+ *  درآمد» در `AppSubscriptions.tsx`) — رو به پایان، بدهی و پرداخت با `?app=`
+ *  از سرور می‌آیند؛ جمعِ درآمد از سرور به تفکیکِ برنامه می‌آید و فقط ستونِ
+ *  همان برنامه کشیده می‌شود. صفحهٔ «فروش» (`/sales`) همان هر دو را دارد.
+ */
+export default function Sales({ fixedApp }: { fixedApp?: AppId } = {}) {
+  //  ⚠️ `?tab=` فقط برای صفحهٔ خودش (`/sales?tab=expiring` از داشبورد)؛ داخلِ
+  //  بخشِ یک برنامه `tab` مالِ همان بخش است، نه این صفحه.
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState(() => {
+    const want = params.get('tab') || '';
+    return !fixedApp && TAB_IDS.includes(want) ? want : 'overview';
+  });
+  const [app, setApp] = useState<Scope>(fixedApp || 'both');
+  const shown: AppId[] = fixedApp ? [fixedApp] : ['shop', 'pump'];
 
   const summary = useLoad<SalesSummary>('/api/account-admin/sales/summary', [], 'sales');
   const expiring = useLoad<{ expiring: Expiring[]; days: number }>(
@@ -47,7 +63,7 @@ export default function Sales() {
 
   /** ارزهایی که واقعاً در دوازده ماهِ اخیر دیده شده‌اند. */
   const currencies = Array.from(new Set(
-    (summary.data?.series || []).flatMap((b) => [...Object.keys(b.shop || {}), ...Object.keys(b.pump || {})])
+    (summary.data?.series || []).flatMap((b) => shown.flatMap((a) => Object.keys(b[a] || {})))
   ));
 
   return (
@@ -55,7 +71,7 @@ export default function Sales() {
       <PageHead
         title="فروش"
         sub="درآمد، رو به پایان‌ها، بدهی‌ها و رسیدها — همه از سرورِ حساب"
-        actions={<AppPicker value={app} onChange={setApp} withBoth />}
+        actions={fixedApp ? undefined : <AppPicker value={app} onChange={setApp} withBoth />}
       />
 
       {summary.error && <CloudProblem code={summary.code} message={summary.error} onRetry={summary.reload} />}
@@ -77,7 +93,7 @@ export default function Sales() {
             {PERIOD.map((p) => (
               <Card key={p.id} title={`درآمدِ ${p.label}`} icon={<Wallet className="h-4 w-4" />}>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {(['shop', 'pump'] as AppId[]).flatMap((a) => {
+                  {shown.flatMap((a) => {
                     const box = summary.data?.revenue?.[p.id]?.[a] || {};
                     const keys = Object.keys(box);
                     if (keys.length === 0) return [<Stat key={`${a}-none`} label={APP_LABEL[a]} value="—" />];
@@ -92,12 +108,12 @@ export default function Sales() {
             {currencies.length === 0 ? (
               <Card><Empty title="هنوز پرداختی ثبت نشده" hint="با ثبتِ اولین پرداخت، نمودارِ دوازده ماه این‌جا می‌آید." /></Card>
             ) : currencies.map((cur) => (
-              <Card key={cur}><Revenue series={summary.data?.series || []} currency={cur} /></Card>
+              <Card key={cur}><Revenue series={summary.data?.series || []} currency={cur} only={fixedApp} /></Card>
             ))}
 
             <Card title="شمارِ اشتراک‌ها">
               <Table head={['بخش', 'فعال', 'منقضی', 'تعلیق', 'حساب‌ها']}>
-                {(['shop', 'pump'] as AppId[]).map((a) => (
+                {shown.map((a) => (
                   <Row key={a}>
                     <Cell>{APP_LABEL[a]}</Cell>
                     <Cell className="tnum">{fa(summary.data?.counts?.[a]?.active ?? 0)}</Cell>
@@ -220,7 +236,7 @@ export default function Sales() {
         }}
       />
 
-      {newPay && <NewPayment onClose={() => setNewPay(false)} onDone={payments.reload} />}
+      {newPay && <NewPayment fixedApp={fixedApp} onClose={() => setNewPay(false)} onDone={payments.reload} />}
     </div>
   );
 }
@@ -254,8 +270,8 @@ function ReceiptButton({ id }: { id: string }) {
   );
 }
 
-function NewPayment({ onClose, onDone }: { onClose: () => void; onDone: () => Promise<void> }) {
-  const [app, setApp] = useState<AppId>('shop');
+function NewPayment({ onClose, onDone, fixedApp }: { onClose: () => void; onDone: () => Promise<void>; fixedApp?: AppId }) {
+  const [app, setApp] = useState<AppId>(fixedApp || 'shop');
   const [tenantId, setTenantId] = useState('');
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState('AFN');
@@ -295,8 +311,12 @@ function NewPayment({ onClose, onDone }: { onClose: () => void; onDone: () => Pr
       <p className="mb-3 text-xs text-ink-soft">
         پرداخت به آخرین اشتراکِ همان حساب بسته می‌شود. شمارهٔ رسیدِ خالی را خودِ سرور می‌سازد.
       </p>
-      <label className="label">بخش</label>
-      <div className="mb-3"><AppPicker value={app} onChange={(v) => setApp(v as AppId)} /></div>
+      {!fixedApp && (
+        <>
+          <label className="label">بخش</label>
+          <div className="mb-3"><AppPicker value={app} onChange={(v) => setApp(v as AppId)} /></div>
+        </>
+      )}
       <label className="label">شناسهٔ دکان/پمپ</label>
       <input className="input mb-3 w-full" dir="ltr" value={tenantId} onChange={(e) => setTenantId(e.target.value)} />
       <div className="mb-3 grid grid-cols-2 gap-3">
