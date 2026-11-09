@@ -40,16 +40,22 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Emulator — the real app streams, a viewer decodes it
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 34
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: bash .github/e2e.sh
+      - name: Emulator (Android 14, x86_64) from the runner's own SDK
+        run: |
+          SDK=$ANDROID_HOME; SM=$SDK/cmdline-tools/latest/bin/sdkmanager; AM=$SDK/cmdline-tools/latest/bin/avdmanager
+          yes | $SM --licenses > /dev/null 2>&1 || true
+          $SM --install "emulator" "platform-tools" "system-images;android-34;google_apis;x86_64" > /tmp/sdk.log 2>&1 || (tail -20 /tmp/sdk.log; exit 1)
+          echo no | $AM create avd -n e2e -k "system-images;android-34;google_apis;x86_64" -d pixel_6 --force
+          nohup $SDK/emulator/emulator -avd e2e -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -accel on > /tmp/emu.log 2>&1 &
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          $SDK/platform-tools/adb wait-for-device
+          for i in $(seq 1 120); do [ "$($SDK/platform-tools/adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] && break; sleep 5; done
+          $SDK/platform-tools/adb shell getprop sys.boot_completed
+          for k in window_animation_scale transition_animation_scale animator_duration_scale; do $SDK/platform-tools/adb shell settings put global $k 0; done
+          $SDK/platform-tools/adb shell input keyevent 82
+      - name: The real app streams, a viewer decodes it
+        timeout-minutes: 20
+        run: bash .github/e2e.sh
       - name: Commit the evidence
         if: always()
         run: |
