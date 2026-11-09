@@ -60,8 +60,6 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         fun onScene(id: String)
         /** A layer of the scene on the stream shown to viewers or not. */
         fun onLayer(id: String, on: Boolean)
-        /** ⏺ on the panel: a recording beside the stream, started or stopped; returns whether one runs now (6.2). */
-        fun recordToggle(): Boolean = false
     }
 
     private val wm = ctx.getSystemService(WindowManager::class.java)
@@ -140,15 +138,6 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
     fun setLink(url: String?) {
         link = url
         linkBtn.alpha = if (url != null) 1f else 0.45f
-    }
-
-    /** ⏺: a recording beside the stream (red while one runs). */
-    private val recBtn: ImageView by lazy {
-        iconBtn(R.drawable.ic_rec, ctx.getString(R.string.hud_record)) { setRecording(actions.recordToggle()) }.apply { tag = "hud:rec" }
-    }
-    fun setRecording(on: Boolean) {
-        recBtn.imageTintList = ColorStateList.valueOf(if (on) Color.rgb(255, 69, 58) else Color.WHITE)
-        recBtn.contentDescription = ctx.getString(if (on) R.string.hud_record_stop else R.string.hud_record)
     }
 
     private fun iconBtn(res: Int, desc: String, click: () -> Unit) = ImageView(ctx).apply {
@@ -245,7 +234,6 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         setPadding(dp(10), dp(6), dp(6), dp(6))
         addView(stats, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         addView(linkBtn)
-        addView(recBtn)
         addView(iconBtn(R.drawable.ic_eye, ctx.getString(R.string.hud_on_stream)) { toggle(streamRow) })
         addView(iconBtn(R.drawable.ic_gift, ctx.getString(R.string.hud_tools)) { toggle(tools) })
         addView(iconBtn(R.drawable.ic_close, ctx.getString(R.string.hud_close)) { setOpen(false) })

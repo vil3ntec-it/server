@@ -469,6 +469,8 @@ Recording ends cleanly before the storage is full.</string>
     <string name="pill_cam_on">Face cam on; tap to turn off</string>
     <string name="pill_cam_off">Face cam off; tap to turn on</string>
     <string name="pill_delete">Delete this recording</string>
+    <string name="pill_rec_start">Record the screen at your recording settings (beside the stream)</string>
+    <string name="pill_rec_stop">Stop recording; it stays in the gallery</string>
     <string name="pill_delete_confirm">Tap again to delete the recording</string>
     <string name="pill_expand">Show recording controls</string>
     <string name="notice_deleted">Recording deleted; nothing was saved.</string>
@@ -572,7 +574,7 @@ Recording ends cleanly before the storage is full.</string>
     <string name="hud_open">Open the chat</string>
     <string name="hud_record">Record this stream to the gallery</string>
     <string name="hud_record_stop">Stop recording (the file is kept)</string>
-    <string name="hud_record_started">Recording started; the stream goes on.</string>
+    <string name="hud_record_started">Recording the screen at your recording settings; the stream goes on.</string>
     <string name="hud_record_saved">Recording finished and saved to the gallery.</string>
     <string name="hud_tools">Giveaway and goal</string>
     <string name="hud_close">Minimize</string>

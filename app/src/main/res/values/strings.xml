@@ -490,6 +490,8 @@
     <string name="pill_cam_on">فیس‌کم روشن است؛ برای خاموش کردن بزن</string>
     <string name="pill_cam_off">فیس‌کم خاموش است؛ برای روشن کردن بزن</string>
     <string name="pill_delete">حذفِ این ضبط</string>
+    <string name="pill_rec_start">ضبطِ صفحه با تنظیماتِ ضبطِ خودت (کنارِ پخش)</string>
+    <string name="pill_rec_stop">پایانِ ضبط؛ در گالری می‌ماند</string>
     <string name="pill_delete_confirm">برای حذفِ ضبط دوباره بزن</string>
     <string name="pill_expand">نمایشِ دکمه‌های ضبط</string>
     <string name="notice_deleted">ضبط حذف شد؛ چیزی ذخیره نشد.</string>
@@ -593,7 +595,7 @@
     <string name="hud_open">باز کردنِ چت</string>
     <string name="hud_record">ضبطِ همین پخش در گالری</string>
     <string name="hud_record_stop">پایانِ ضبط (فایل ذخیره می‌شود)</string>
-    <string name="hud_record_started">ضبط شروع شد؛ پخش ادامه دارد.</string>
+    <string name="hud_record_started">ضبطِ صفحه با تنظیماتِ ضبطِ خودت شروع شد؛ پخش ادامه دارد.</string>
     <string name="hud_record_saved">ضبط تمام شد و در گالری ذخیره شد.</string>
     <string name="hud_tools">قرعه‌کشی و هدف</string>
     <string name="hud_close">کوچک کردن</string>

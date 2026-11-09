@@ -449,6 +449,42 @@ class LookFilter(private val look: Look, private val fps: Int) {
         drawShorts(t)
     }
 
+    // ---- 7.0: the recording beside the stream — the screen itself, clean (no stream layers, no
+    // «be right back»), at the recording's own size and frame rate, into its own encoder.
+    private var out3: EGLSurface = EGL14.EGL_NO_SURFACE
+    private var w3 = 0
+    private var h3 = 0
+    @Volatile private var fps3 = 0
+    private var lastRecNs = 0L
+    @Volatile var recError: String? = null; private set
+
+    /** The recording encoder's input (null = none), its size and frame rate. */
+    fun setRecordOutput(s: Surface?, w: Int, h0: Int, fpsWanted: Int) = runSync {
+        if (out3 != EGL14.EGL_NO_SURFACE) {
+            EGL14.eglMakeCurrent(dpy, pbuffer, pbuffer, ctx)
+            EGL14.eglDestroySurface(dpy, out3)
+            out3 = EGL14.EGL_NO_SURFACE
+        }
+        lastRecNs = 0L
+        if (s != null && s.isValid) {
+            out3 = EGL14.eglCreateWindowSurface(dpy, cfg, s, intArrayOf(EGL14.EGL_NONE), 0)
+            w3 = w; h3 = h0; fps3 = fpsWanted
+        }
+    }
+
+    private fun drawRec(t: Long) {
+        try {
+            EGL14.eglMakeCurrent(dpy, out3, out3, ctx)
+            GLES20.glViewport(0, 0, w3, h3)
+            GLES20.glClearColor(0f, 0f, 0f, 1f)
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+            if (holding) drawHeld(0, 0, w3, h3) else draw(0, 0, w3, h3)
+            EGLExt.eglPresentationTimeANDROID(dpy, out3, t)
+            EGL14.eglSwapBuffers(dpy, out3)
+        } catch (e: Throwable) { recError = "draw: " + (e.message ?: e.javaClass.simpleName) }
+        finally { try { EGL14.eglMakeCurrent(dpy, out, out, ctx) } catch (_: Throwable) {} }
+    }
+
     // ---- Shorts (YouTube «Dual stream»): the same picture in a tall 9:16 frame for a second encoder,
     // drawn right after each frame of the stream with the same time. The game in its rectangle (the
     // black bars cut as above), the title or picture above it and the chat below.
@@ -676,6 +712,7 @@ class LookFilter(private val look: Look, private val fps: Int) {
                 EGL14.eglMakeCurrent(dpy, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
                 if (out != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(dpy, out)
                 if (out2 != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(dpy, out2)
+                if (out3 != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(dpy, out3)
                 if (pbuffer != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(dpy, pbuffer)
                 if (ctx != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(dpy, ctx)
                 EGL14.eglTerminate(dpy)
@@ -748,9 +785,14 @@ class LookFilter(private val look: Look, private val fps: Int) {
             if (holding) return   // the game is off the screen (black comes): the kept picture is drawn instead
             val ts = st.timestamp
             val f = fpsCap.takeIf { it in 1 until fps } ?: fps
-            if (f > 0 && lastNs > 0 && ts - lastNs < 1_000_000_000L / f * 9 / 10) return
-            lastNs = ts
+            val streamDue = !(f > 0 && lastNs > 0 && ts - lastNs < 1_000_000_000L / f * 9 / 10)
+            // 7.0: the recording beside the stream keeps its own frame rate (the stream may be at 30 on a narrow link)
+            val recDue = out3 != EGL14.EGL_NO_SURFACE && !(fps3 > 0 && lastRecNs > 0 && ts - lastRecNs < 1_000_000_000L / fps3 * 9 / 10)
+            if (!streamDue && !recDue) return
             st.getTransformMatrix(stMatrix)
+            if (recDue) { lastRecNs = ts; drawRec(ts) }
+            if (!streamDue) return
+            lastNs = ts
             draw()
             if (probeAt != null) readProbe()
             latchExternals()

@@ -129,7 +129,7 @@ class Recorder(
         fun onPartFinished(uri: Uri) {}
     }
 
-    private class Switch(val plan: CapturePlan, val restart: Boolean)
+    private class Switch(val plan: CapturePlan, val restart: Boolean, val keepDisplay: Boolean = false)
 
     /** One configured video encoder. Rotation (or a failed encoder) replaces it with a new one. */
     private inner class VideoEnc(val plan: CapturePlan) {
@@ -177,11 +177,69 @@ class Recorder(
     @Volatile var tee: TeeSink? = null; private set
     /** Whether a file is being written beside the stream. */
     val recordingFile: Boolean get() = tee?.recording == true
-    /** ⏺ on the panel: a file from here on, or the open one closed and kept. Returns the new state. */
-    fun toggleFile(): Boolean {
+    /**
+     * 7.0, «⏺» on the floating circle while live: a recording of the screen itself at the owner's
+     * recording settings ([recPlan]: codec, bit rate, mode, frame rate up to 60) — its own encoder, fed
+     * the clean screen by the GPU stage (no stream layers, never the stream's smaller picture); the
+     * stream's sound. Pressed again: closed and kept in the gallery. Returns the new state.
+     */
+    fun toggleFile(recPlan: () -> CapturePlan?): Boolean {
         val t = tee ?: return false
-        if (t.recording) t.stopFile() else t.startFile()
-        return t.recording
+        if (t.recording) { stopClean(); t.stopFile(); return false }
+        val f = look ?: run { events.onAudioProblem("record: no GPU stage"); return false }
+        val rp = recPlan() ?: run { events.onAudioProblem("record: no plan"); return false }
+        val p = fitToScreen(rp)
+        val e = newEncoder(p) ?: run { events.onAudioProblem("record: encoder refused ${p.codecLabel} ${p.width}x${p.height}@${p.fps}"); return false }
+        t.startFile()
+        recEnc = e
+        f.setRecordOutput(e.surface, p.width, p.height, p.fps)
+        recThread = Thread({ recLoop(e, t) }, "rawrec-rec").apply { start() }
+        events.onAudioProblem("record: ${p.codecLabel} ${p.width}x${p.height} ${p.fps} fps ${p.bitrate / 1_000_000} Mbps beside the stream")
+        return true
+    }
+
+    @Volatile private var recEnc: VideoEnc? = null
+    private var recThread: Thread? = null
+
+    /** The owner's recording plan at the screen's real size as captured (the stream's full size; never bigger: no upscaling), at most 60 fps. */
+    private fun fitToScreen(rp: CapturePlan): CapturePlan {
+        val src = fullPlan ?: plan
+        val k = minOf(1f, minOf(rp.width, rp.height).toFloat() / minOf(src.width, src.height))
+        fun al(v: Int) = ((v * k).toInt() / 16 * 16).coerceAtLeast(16)
+        val w = al(src.width); val h = al(src.height)
+        return rp.copy(width = w, height = h, contentWidth = w, contentHeight = h, padded = false, scaled = k < 1f,
+            fps = minOf(rp.fps, 60).coerceAtLeast(24), dpi = src.dpi)
+    }
+
+    private fun stopClean() {
+        val e = recEnc ?: return
+        recEnc = null
+        try { look?.setRecordOutput(null, 0, 0, 0) } catch (_: Throwable) {}
+        try { e.codec.signalEndOfInputStream() } catch (_: Exception) {}
+        try { recThread?.join(2_000) } catch (_: InterruptedException) {}
+        recThread = null
+        e.release()
+    }
+
+    private fun recLoop(e: VideoEnc, t: TeeSink) {
+        val info = MediaCodec.BufferInfo()
+        val c = e.codec
+        var endBy = 0L
+        while (true) {
+            if (recEnc !== e || !running) { if (endBy == 0L) endBy = System.nanoTime() + 2_000_000_000L else if (System.nanoTime() > endBy) return }
+            val idx = try { c.dequeueOutputBuffer(info, 10_000) } catch (_: Exception) { return }
+            if (idx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) t.fileVideoFormat(c.outputFormat)
+            else if (idx >= 0) {
+                val eos = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
+                if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0 && info.size > 0) {
+                    val b = try { c.getOutputBuffer(idx) } catch (_: Exception) { null }
+                    if (b != null && t.fileVideo(b, info.offset, info.size, info.presentationTimeUs, info.flags))
+                        try { c.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0) }) } catch (_: Exception) {}
+                }
+                try { c.releaseOutputBuffer(idx, false) } catch (_: Exception) { return }
+                if (eos) return
+            }
+        }
     }
     val stats = RecStats()
 
@@ -228,9 +286,9 @@ class Recorder(
         muxer = when (liveSink) {
             null -> SegMuxer(ctx, cfg.hasAudio, cfg.segmentBytes, prefix + stamp, this)
             // live: a file beside the stream, from the start when chosen, else when the owner presses ⏺ on the panel
-            else -> TeeSink(liveSink, {
-                SegMuxer(ctx, cfg.hasAudio, cfg.segmentBytes, "RawRec live " + SimpleDateFormat("yyyy-MM-dd HH-mm", Locale.US).format(Date()), this)
-            }, startOn = alsoRecord).also { tee = it }
+            else -> TeeSink(liveSink) {
+                SegMuxer(ctx, cfg.hasAudio, cfg.segmentBytes, "RawRec " + SimpleDateFormat("yyyy-MM-dd HH-mm", Locale.US).format(Date()), this)
+            }.also { tee = it }
         }
         // Shorts: the sound goes to the tall picture's connection too (its pictures come from its own encoder)
         if (liveSink != null && shorts != null) muxer = SoundToo(muxer, shorts.sink)
@@ -406,7 +464,7 @@ class Recorder(
         fullPlan = if (shortSide <= 0 || shortSide >= fullShort * 0.95) null else full
         liveShort = if (fullPlan == null) 0 else shortSide
         lastRemakeMs = System.currentTimeMillis()
-        switchRequest.set(Switch(next, false))
+        switchRequest.set(Switch(next, false, keepDisplay = true))
         return true
     }
 
@@ -439,7 +497,7 @@ class Recorder(
         if (!ignoredDown && !ignoredUp) return
         lastRemakeMs = nowMs; wantSinceMs = nowMs; rateRemakes++
         events.onAudioProblem("encoder: ignored ${want / 1000} kbps (put out ${outBps / 1000}), re-made at it")
-        switchRequest.set(Switch(plan.copy(bitrate = want), false))
+        switchRequest.set(Switch(plan.copy(bitrate = want), false, keepDisplay = true))
     }
 
     /** Live «برمی‌گردم»: this picture instead of the screen (null = the screen again). */
@@ -515,6 +573,7 @@ class Recorder(
         }
         videoThread?.join(5000)
         shortsThread?.join(3000)
+        stopClean()
         try { look?.setShortsOutput(null, 0, 0) } catch (_: Throwable) {}
         shortsCodec?.let { c -> try { c.stop() } catch (_: Exception) {}; try { c.release() } catch (_: Exception) {} }
         shortsCodec = null
@@ -809,7 +868,9 @@ class Recorder(
             try {
                 // With the look this also sets the new drawing size, before the screen is resized.
                 route(vd, null, p.width, p.height)
-                vd?.resize(p.width, p.height, p.dpi)
+                // the stream's smaller picture on a narrow link: the screen keeps its size (the GPU scales it
+                // down — finer — and a recording beside the stream keeps the full picture)
+                if (!(sw.keepDisplay && look != null)) vd?.resize(p.width, p.height, p.dpi)
                 route(vd, next.surface, p.width, p.height)
             } catch (_: Exception) {}
             if (old != null && !oldDone) drainAndRelease(old, info)
@@ -1133,7 +1194,7 @@ class Recorder(
     override fun onPartOpened(index: Int, reason: Int) = events.onPartOpened(index, reason)
     override fun onWriteError(message: String) {
         // live with a recording: only the recording stops, the stream goes on
-        tee?.let { if (it.recording) { it.stopFile(); events.onAudioProblem("record: $message"); return } }
+        tee?.let { if (it.recording) { stopClean(); it.stopFile(); events.onAudioProblem("record: $message"); return } }
         if (running) { running = false; events.onFatal(StopReason.WRITE_ERROR, message) }
     }
     override fun onWriteRecovered(message: String) = events.onWriteRecovered(message)

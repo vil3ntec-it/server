@@ -127,28 +127,33 @@ class RtmpConnectTest {
             override val videoBytes = 7L
             override val waitNs = 0L
         }
+        // 7.0: the file's pictures come from its own encoder (the screen at the recording settings), never the stream's
         val live = Fake(false); val files = ArrayList<Fake>()
-        val t = TeeSink(live, { Fake(true).also { files += it } }, startOn = true)
-        val file = files.single()
+        val t = TeeSink(live) { Fake(false).also { files += it } }
         val b = java.nio.ByteBuffer.allocate(16)
         val key = android.media.MediaCodec.BUFFER_FLAG_KEY_FRAME
-        assertTrue("a key frame asked by either is asked", t.submitVideo(b, 0, 16, 0, key))
-        t.submitAudio(b, 0, 16, 0, 0)
-        assertEquals(1, live.video); assertEquals(1, file.video); assertEquals(1, file.audio)
-        assertEquals("the recording's own size", 7L, t.totalBytes)
-        // the file fails (storage full), or the owner presses ⏺: the stream goes on alone
-        assertTrue(t.stopFile())
-        t.submitVideo(b, 0, 16, 1, 0)
-        assertEquals(2, live.video); assertEquals(1, file.video)
-        assertFalse(t.recording)
-        // 6.2: ⏺ again mid-stream — a new file, from the next key frame only (a key frame asked for at once)
+        t.submitVideo(b, 0, 16, 0, key); t.submitAudio(b, 0, 16, 0, 0)
+        assertEquals("nothing recorded before ⏺", 0, files.size)
         assertTrue(t.startFile())
-        assertTrue("a key frame is asked for the new file", t.submitVideo(b, 0, 16, 2, 0))
-        t.submitAudio(b, 0, 16, 2, 0)
+        val file = files.single()
+        t.submitVideo(b, 0, 16, 1, key)
+        assertEquals("the stream's picture never goes to the file", 0, file.video)
+        assertTrue("the recording encoder is asked for a key frame first", t.fileVideo(b, 0, 16, 1, 0))
+        t.submitAudio(b, 0, 16, 1, 0)
+        assertEquals("no sound before the file's first key frame", 0, file.audio)
+        t.fileVideo(b, 0, 16, 2, key); t.submitAudio(b, 0, 16, 2, 0)
+        assertEquals(1, file.video); assertEquals(1, file.audio)
+        assertEquals("the stream still gets everything", 2, live.video); assertEquals(3, live.audio)
+        assertEquals("the recording's own size", 7L, t.totalBytes)
+        // ⏺ again: closed and kept; the stream goes on alone
+        assertTrue(t.stopFile()); assertFalse(t.recording)
+        t.fileVideo(b, 0, 16, 3, key)
+        assertEquals(1, file.video)
+        // and a second one in the same stream
+        assertTrue(t.startFile())
         val second = files[1]
-        assertEquals("nothing before the key frame", 0, second.video); assertEquals(0, second.audio)
-        t.submitVideo(b, 0, 16, 3, key); t.submitAudio(b, 0, 16, 3, 0)
-        assertEquals(1, second.video); assertEquals(1, second.audio)
+        t.fileVideo(b, 0, 16, 4, key)
+        assertEquals(1, second.video)
         assertEquals("both files' sizes", 14L, t.totalBytes)
         t.finish()
         assertTrue(live.finished); assertTrue(second.finished)

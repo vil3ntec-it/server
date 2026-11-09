@@ -93,34 +93,29 @@ class MultiSink(dests: List<LiveSettings.Dest>, maxBitrate: Int, private val lis
  * (storage full), only the recording stops; the stream goes on.
  */
 /**
- * The stream, and beside it a file that can be started and stopped while live (6.2: the ⏺ on the
- * panel). A file begun mid-stream starts at the next key frame (asked for at once), with the
- * encoder's formats replayed; a stopped one is closed and kept. Every file's parts are reported.
+ * The stream, and beside it a file (7.0: «⏺» on the floating circle). The file's pictures come from its
+ * own encoder — the screen itself at the owner's recording settings, not the stream's picture — via
+ * [fileVideo] / [fileVideoFormat]; its sound is the stream's. The sound waits for the file's first key
+ * frame; a stopped file is closed and kept. Every file's parts are reported.
  */
-class TeeSink(private val live: MediaSink, private val newFile: () -> MediaSink, startOn: Boolean) : MediaSink {
+class TeeSink(private val live: MediaSink, private val newFile: () -> MediaSink) : MediaSink {
     @Volatile private var file: MediaSink? = null
     @Volatile private var awaitKey = false
-    private val wantKey = java.util.concurrent.atomic.AtomicBoolean(false)
-    private var vfmt: MediaFormat? = null
     private var afmt: MediaFormat? = null
     @Volatile private var noAudio = false
     private val done = java.util.concurrent.CopyOnWriteArrayList<MediaSink>()
 
-    init { if (startOn) startFile() }
-
     /** Whether a file is being written right now. */
     val recording: Boolean get() = file != null
 
-    /** A file from here on (the next key frame): true when one was started. */
+    /** A file from here on; its pictures from [fileVideo]. True when one was started. */
     @Synchronized fun startFile(): Boolean {
         if (file != null) return false
         val f = newFile()
         if (noAudio) f.dropAudio()
-        vfmt?.let { f.videoFormat(it) }
         afmt?.let { f.audioFormat(it) }
         awaitKey = true
         file = f
-        wantKey.set(true)
         return true
     }
 
@@ -133,27 +128,28 @@ class TeeSink(private val live: MediaSink, private val newFile: () -> MediaSink,
         return true
     }
 
-    // the stream first: it only copies; the file may move the buffer's position
-    override fun submitVideo(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int): Boolean {
-        val a = live.submitVideo(src, offset, size, ptsUs, flags)
-        var b = false
-        val f = file
-        if (f != null) {
-            val key = flags and android.media.MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
-            if (awaitKey && key) awaitKey = false
-            if (!awaitKey) b = f.submitVideo(src, offset, size, ptsUs, flags)
-        }
-        return a || b || wantKey.getAndSet(false)
+    /** The recording encoder's format. */
+    fun fileVideoFormat(f: MediaFormat) { file?.videoFormat(f) }
+
+    /** One frame of the recording encoder; true = it asks for a key frame. */
+    fun fileVideo(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int): Boolean {
+        val f = file ?: return false
+        if (awaitKey) { if (flags and android.media.MediaCodec.BUFFER_FLAG_KEY_FRAME == 0) return true; awaitKey = false }
+        return f.submitVideo(src, offset, size, ptsUs, flags)
     }
+
+    override fun submitVideo(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int): Boolean =
+        live.submitVideo(src, offset, size, ptsUs, flags)
     override fun submitAudio(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int) {
-        live.submitAudio(src, offset, size, ptsUs, flags)
         val f = file
-        if (f != null && !awaitKey) f.submitAudio(src, offset, size, ptsUs, flags)
+        if (f != null && !awaitKey) f.submitAudio(src.duplicate(), offset, size, ptsUs, flags)
+        live.submitAudio(src, offset, size, ptsUs, flags)
     }
-    override fun videoFormat(f: MediaFormat) { vfmt = f; live.videoFormat(f); file?.videoFormat(f) }
+    override fun videoFormat(f: MediaFormat) = live.videoFormat(f)
     override fun audioFormat(f: MediaFormat) { afmt = f; live.audioFormat(f); file?.audioFormat(f) }
-    override fun newPart(discardCurrent: Boolean) { live.newPart(discardCurrent); file?.newPart(discardCurrent) }
-    override fun encoderReplaced() { live.encoderReplaced(); file?.encoderReplaced() }
+    // the stream's own encoder changes (a smaller picture on a narrow link) are the stream's, not the file's
+    override fun newPart(discardCurrent: Boolean) = live.newPart(discardCurrent)
+    override fun encoderReplaced() = live.encoderReplaced()
     override fun dropAudio() { noAudio = true; live.dropAudio(); file?.dropAudio() }
     override fun finish() {
         val t = Thread({ try { live.finish() } catch (_: Exception) {} }, "rawrec-tee-live").apply { start() }
@@ -174,11 +170,6 @@ class TeeSink(private val live: MediaSink, private val newFile: () -> MediaSink,
     override val waitNs: Long get() = file?.waitNs ?: 0L
 }
 
-/**
- * The stream ([main]) with the Shorts connection ([extra]) beside it: the sound goes to both, the
- * pictures only to [main] (the tall picture has its own encoder, see Recorder.startShorts). The
- * end of either is not the end of the other.
- */
 class SoundToo(private val main: MediaSink, private val extra: MediaSink) : MediaSink {
     override fun submitVideo(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int) = main.submitVideo(src, offset, size, ptsUs, flags)
     override fun submitAudio(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int) {

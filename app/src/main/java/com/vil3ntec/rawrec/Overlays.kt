@@ -166,6 +166,8 @@ class FloatingControl(
         fun delete()
         /** «پنهان کردن»: take the control off the screen; the notification can bring it back. */
         fun hideControl() {}
+        /** 7.0, while live: a recording of the screen beside the stream, started or stopped. */
+        fun recToggle() {}
     }
 
     private val wm = ctx.getSystemService(WindowManager::class.java)
@@ -318,6 +320,7 @@ class FloatingControl(
         cam.setOnClickListener { touched(); actions.camToggle() }
         delete.setOnClickListener {
             touched()
+            if (liveRec) { actions.recToggle(); return@setOnClickListener }
             if (deleteArmed) { disarm(); actions.delete() } else arm()
         }
         hideButton.setOnClickListener { actions.hideControl() }
@@ -360,6 +363,26 @@ class FloatingControl(
         if (shown) OverlayWindows.update(wm, root, lp)
         main.removeCallbacksAndMessages(null)
         main.postDelayed({ hide() }, 60)
+    }
+
+    private var liveRec = false
+
+    /**
+     * 7.0, live: the delete button (it does nothing while live) becomes «⏺ record» — the screen at the
+     * owner's recording settings into the gallery, beside the stream. [on]: a recording runs (red).
+     */
+    fun setLiveRec(live: Boolean, on: Boolean) {
+        liveRec = live
+        val icon = delete.findViewWithTag<ImageView>("pill:delete:icon") ?: return
+        if (!live) {
+            icon.setImageResource(R.drawable.eng_ic_delete)
+            icon.imageTintList = android.content.res.ColorStateList.valueOf(ctx.getColor(R.color.eng_icon))
+            delete.contentDescription = ctx.getString(R.string.pill_delete)
+            return
+        }
+        icon.setImageResource(R.drawable.eng_ic_rec)
+        icon.imageTintList = android.content.res.ColorStateList.valueOf(if (on) red else ctx.getColor(R.color.eng_icon))
+        delete.contentDescription = ctx.getString(if (on) R.string.pill_rec_stop else R.string.pill_rec_start)
     }
 
     fun setRecording(rec: Boolean) {

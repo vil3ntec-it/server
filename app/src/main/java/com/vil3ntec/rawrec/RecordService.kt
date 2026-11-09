@@ -419,11 +419,28 @@ class RecordService : Service(), Recorder.Events {
     }
 
     /** «حالتِ بازی» (single-app capture): the control is not in the video, so it never needs to shrink at once. */
+    /**
+     * 7.0, «⏺» on the floating circle while live: the screen at the owner's recording settings (codec, bit
+     * rate, mode, up to 60 fps) into the gallery, beside the stream — not the stream's picture.
+     */
+    private fun toggleCleanRecording() {
+        val r = recorder ?: return
+        val on = r.toggleFile {
+            try { Planner.plan(RecordConfig.fromPrefs(getSharedPreferences(PREFS, MODE_PRIVATE)), DisplayInfo.read(this)) } catch (_: Exception) { null }
+        }
+        if (on) ActiveRec.begin(this)
+        control?.setLiveRec(true, on)
+        RecLog.add(this, if (on) "record: started beside the stream" else "record: closed and kept")
+        val msg = getString(if (on) R.string.hud_record_started else R.string.hud_record_saved)
+        if (hud != null) hud?.note(msg) else Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
+
     private fun makeControl(c: RecordConfig): FloatingControl? = try {
         FloatingControl(this, c.invisibleControl && !c.gameMode && !ghostOf(c), pillActions, ghost = ghostOf(c)).also {
             it.setMic(on = c.usesMic && recorder?.micMuted != true, available = c.usesMic)
             it.setCam(on = facecam != null, available = camAllowed)
             it.setPaused(state == State.PAUSED)
+            if (live != null) it.setLiveRec(true, recorder?.recordingFile == true)
             it.show()
             if (state == State.RECORDING || state == State.PAUSED) it.setRecording(true)
         }
@@ -541,6 +558,8 @@ class RecordService : Service(), Recorder.Events {
             else Recorder(this, p, c, plan, this, keptDisplay, keepDisplay = instantEnabled(this))
             if (lv == null || LiveSettings.recordToo(this)) ActiveRec.begin(this)
             try { r.start() } catch (e: Exception) { ActiveRec.end(this); throw e }
+            // «record while live» in the settings: the clean recording from the start
+            if (lv != null && LiveSettings.recordToo(this)) main.postDelayed({ if (recorder === r && r.recordingFile.not()) toggleCleanRecording() }, 1_500)
             recorder = r
             if (lv == null && instantEnabled(this)) keptDisplay = r.virtualDisplay
             startedAt = System.currentTimeMillis()
@@ -1037,7 +1056,7 @@ class RecordService : Service(), Recorder.Events {
         val overlays = Settings.canDrawOverlays(this)
         if (hasChat && LiveExtras.hud(this) && overlays) {
             val h = ChatHud(this, hudActions)
-            h.setRecording(recorder?.recordingFile == true)
+
             hud = h
             linkCircle()
             h.setStats(-1, -1, -1)
@@ -1292,15 +1311,6 @@ class RecordService : Service(), Recorder.Events {
 
     private val hudActions = object : ChatHud.Actions {
         override fun send(text: String) = sendOut(text, mine = true)
-        /** ⏺ on the panel: a file beside the stream from here on, or the open one closed and kept in the gallery. */
-        override fun recordToggle(): Boolean {
-            val r = recorder ?: return false
-            val on = r.toggleFile()
-            if (on) ActiveRec.begin(this@RecordService)
-            RecLog.add(this@RecordService, if (on) "record: file started from the panel" else "record: file closed from the panel")
-            hud?.note(getString(if (on) R.string.hud_record_started else R.string.hud_record_saved))
-            return on
-        }
         override fun delete(m: LiveChat.Msg) { chat?.delete(m); hud?.remove(m.id); scenes?.unchat(m.id) }
         override fun onScene(id: String) { scenes?.select(id) }
         override fun onLayer(id: String, on: Boolean) { scenes?.setLayerVisible(id, on) }
@@ -1352,6 +1362,7 @@ class RecordService : Service(), Recorder.Events {
             control?.setCam(on = facecam != null, available = true)
         }
         override fun delete() { if (live == null) finishRecording(StopReason.DELETED) }
+        override fun recToggle() { toggleCleanRecording() }
         override fun hideControl() {
             if (ghost) { ghostClose(); return }
             control?.hide()
