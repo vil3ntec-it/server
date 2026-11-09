@@ -208,6 +208,19 @@ try {
   const dup = [await api('POST', '/api/auth/users', { username: 'operator1', password: 'GoodPass!123', role: 'viewer' }),
     await api('POST', '/api/panel/v1/users', { username: 'operator1', password: 'GoodPass!123', role: 'viewer' })];
   check('نامِ تکراری ۴۰۹ از هر دو در', dup.every((x) => x.status === 409), dup.map((x) => x.text).join(' | '));
+  //  ⛔ (۱.۵۰.۷۱) نامِ هم‌شکل: مدیرِ دوم با «аdmin» (а ِ سیریلیک) یا «كارمند.يك» (ك و ي ِ عربی) در دفترِ رخداد
+  //  جای مالک یا همکار را نمی‌گیرد — دفتر نامِ کاربری را می‌نویسد و چشم این دو را یکی می‌بیند
+  const look = [
+    await api('POST', '/api/auth/users', { username: '\u0430dmin', password: 'GoodPass!123', role: 'admin' }),
+    await api('POST', '/api/panel/v1/users', { username: 'ADMIN', password: 'GoodPass!123', role: 'viewer' }),
+    await api('POST', '/api/auth/users', { username: 'operator\u06F1', password: 'GoodPass!123', role: 'viewer' }),
+    await api('POST', '/api/panel/v1/users', { username: '\u0643\u0627\u0631\u0645\u0646\u062F.\u064A\u0643', password: 'GoodPass!123', role: 'viewer' }),
+    await api('POST', '/api/auth/users', { username: '\uFF41dmin', password: 'GoodPass!123', role: 'viewer' }),
+  ];
+  check('⛔ نامِ هم‌شکلِ حسابِ موجود (سیریلیک، بزرگی، رقمِ فارسی، ك/ي ِ عربی، تمام‌عرض) از هر دو در ۴۰۹',
+    look.every((x) => x.status === 409), look.map((x) => `${x.status}:${x.json?.error}`).join(' '));
+  r = await api('POST', '/api/auth/users', { username: 'admin.two', password: 'GoodPass!123', role: 'viewer' });
+  check('و نامِ واقعاً تازه پذیرفته می‌شود', r.status === 201, r.text);
   r = await api('GET', '/api/control/audit?q=panel.user.create&limit=50');
   const created = (r.json?.rows || []).filter((x) => x.action === 'panel.user.create').map((x) => x.entity_id);
   check('ساختن از هر دو در در دفترِ رخدادها', created.includes('کارمند.یک') && created.includes('کارمند_دو'), JSON.stringify(created));

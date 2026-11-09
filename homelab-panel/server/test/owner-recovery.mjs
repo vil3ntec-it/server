@@ -176,6 +176,37 @@ try {
   const kl = await call('POST', '/api/auth/login', { username: 'owner', password: k.json?.oneTimePassword });
   check('دوعاملی ماند: ورود با رمزِ یک‌بارمصرف هنوز کد می‌خواهد', kl.json?.totpRequired === true && !kl.json?.token, kl.text);
 
+  console.log('\n── ⛔ رمزِ یک‌بارمصرف مهلت دارد (۱.۵۰.۷۱) — رمزِ چاپ‌شده‌ای که در تاریخچهٔ ترمینال ماند، تا ابد در نیست ──');
+  const DAY = 24 * 3600e3;
+  const e1 = reset('--yes', '--json');
+  check('دستور مهلت را می‌گوید (پیش‌فرض ۲۴ ساعت)', e1.code === 0 && Math.abs(Number(e1.json?.expiresAt) - (Date.now() + DAY)) < 120e3, e1.out);
+  const inTime = await call('POST', '/api/auth/login', { username: 'owner', password: e1.json?.oneTimePassword });
+  check('در مهلت: ورود، و فقط «رمزِ تازه بگذار»', inTime.status === 200 && inTime.json?.mustChangePassword === true && inTime.json?.token, inTime.text);
+  {
+    const d = new DatabaseSync(path.join(dataDir, 'panel.db'));
+    try { d.exec('PRAGMA busy_timeout = 5000'); d.prepare("UPDATE users SET must_change_by = ? WHERE username = 'owner'").run(Date.now() - 1000); } finally { d.close(); }
+  }
+  const late = await call('POST', '/api/auth/login', { username: 'owner', password: e1.json?.oneTimePassword });
+  check('⛔ پس از مهلت: ۴۰۱ recovery_expired و بی نشست', late.status === 401 && late.json?.error === 'recovery_expired' && !late.json?.token, late.text);
+  const lateMe = await call('GET', '/api/auth/me', undefined, inTime.json?.token);
+  check('⛔ و نشستی هم که در مهلت ساخته شد دیگر کار نمی‌کند', lateMe.status === 401, String(lateMe.status));
+  const e2 = reset('--yes', '--json', '--ttl-hours', '2');
+  check('--ttl-hours ۲ ⇒ مهلتِ دو ساعته', e2.code === 0 && Math.abs(Number(e2.json?.expiresAt) - (Date.now() + 2 * 3600e3)) < 120e3, e2.out);
+  const noTtl = reset('--yes', '--json', '--ttl-hours', '0');
+  const longTtl = reset('--yes', '--json', '--ttl-hours', '9999');
+  check('⛔ مهلتِ صفر یا بیش از یک هفته پذیرفته نیست (و چیزی عوض نشد)', noTtl.code !== 0 && longTtl.code !== 0 && !noTtl.json?.oneTimePassword && !longTtl.json?.oneTimePassword,
+    `${noTtl.code} ${longTtl.code}`);
+  const fin = await call('POST', '/api/auth/login', { username: 'owner', password: e2.json?.oneTimePassword });
+  const ch = await call('POST', '/api/auth/change-password', { oldPassword: e2.json?.oneTimePassword, newPassword: 'Owner-After-Expiry-2026' }, fin.json?.token);
+  {
+    const d = new DatabaseSync(path.join(dataDir, 'panel.db'), { readOnly: true });
+    const row = d.prepare("SELECT must_change_password AS m, must_change_by AS by FROM users WHERE username = 'owner'").get();
+    d.close();
+    check('رمزِ تازه در مهلت ⇒ هر دو نشانه پاک شد', ch.status === 200 && row.m === 0 && row.by == null, `${ch.status} ${JSON.stringify(row)}`);
+  }
+  const relog = await call('POST', '/api/auth/login', { username: 'owner', password: 'Owner-After-Expiry-2026' });
+  check('و مالک با رمزِ تازه، بی مهلت، وارد است', relog.status === 200 && relog.json?.token && !relog.json?.mustChangePassword, relog.text);
+
   console.log('\n── ⛔ هیچ درِ HTTPی برای بازیابیِ مالک نیست ──');
   const local = fs.readFileSync(path.join(dataDir, 'local-admin.key'), 'utf8').trim();
   const http = await Promise.all(['/api/platform/owner-reset', '/api/auth/owner-reset', '/api/panel/v1/auth/owner-reset']

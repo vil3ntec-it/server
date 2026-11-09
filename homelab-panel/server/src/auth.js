@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import { q, db, getSetting, setSetting, logEvent } from './db.js';
 import { config } from './config.js';
 import { issueTicket, useTicket } from './lib/ws-ticket.js';
+import { verifyTotp } from './lib/totp.js';
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 
@@ -187,14 +188,35 @@ export function verifyToken(token) {
   }
 }
 
+/**
+ * نشستِ یک اتصالِ **باز** (وب‌سوکت) هنوز زنده است؟ — همان قاعدهٔ `verifyToken`، بی توکن.
+ *
+ * ⛔ (۱.۵۰.۷۱) Socket.IO توکن را فقط هنگامِ دست‌دادن می‌سنجید: پس از `vill3n owner-reset`،
+ * «خروج از همه»، بستنِ حساب یا تغییرِ نقش، وب‌سوکتِ بازِ نشستِ باطل‌شده همچنان ترمینال
+ * داشت. `realtime.js` با همین تابع هر کارِ ترمینال و هر چند ثانیه همهٔ اتصال‌ها را می‌سنجد.
+ */
+export function liveSessionUser(user) {
+  if (!user?.id || !user?.sessionId) return null;
+  //  فقط خواندن: بازبینیِ دوره‌ای نباید «آخرین دیده‌شدن» ِ نشستِ بی‌کار را تازه نگه دارد
+  const u = sessionUser(user.id, user.sessionId, user.username, { touch: false });
+  return u && !u.mustChangePassword ? u : null;
+}
+
+/** رمزِ یک‌بارمصرفِ `vill3n owner-reset` از مهلتش گذشته؟ (`users.must_change_by`، مهاجرتِ ۰۰۸) */
+export function recoveryExpired(user, now = Date.now()) {
+  return Boolean(user?.must_change_password) && user?.must_change_by != null && Number(user.must_change_by) < now;
+}
+
 /** نشست هنوز هست، منقضی نشده و حساب باز است؟ — هم برای توکن، هم برای بلیت. */
-function sessionUser(uid, sid, username) {
+function sessionUser(uid, sid, username, { touch = true } = {}) {
   const session = q('SELECT * FROM sessions WHERE id = ? AND user_id = ?').get(sid, uid);
   if (!session || session.expires_at < Date.now()) return null;
   // حسابِ بسته‌شده باید همان لحظه بی‌اثر شود، نه وقتی توکنش منقضی شد
-  const user = q('SELECT username, role, disabled, must_change_password FROM users WHERE id = ?').get(uid);
+  const user = q('SELECT username, role, disabled, must_change_password, must_change_by FROM users WHERE id = ?').get(uid);
   if (!user || user.disabled) return null;
-  touchSession(session);
+  //  ⛔ نشستی که با رمزِ یک‌بارمصرفِ بازیابی ساخته شد، پس از مهلتش می‌میرد (مهاجرتِ ۰۰۸)
+  if (recoveryExpired(user)) return null;
+  if (touch) touchSession(session);
   return {
     id: uid,
     username: username || user.username,
@@ -304,6 +326,49 @@ export function requireRecentAuth(req, res, next) {
 }
 
 /**
+ * رمز (و اگر دوعاملی روشن است، کد) — **تنها** قاعدهٔ احرازِ دوباره در پنل.
+ * `POST /api/auth/reauth` و «رمز همراهِ درخواست» ِ درهای کنسول هر دو همین را صدا می‌زنند.
+ *
+ * ⛔ (۱.۵۰.۷۱) درهای کنسولِ فروشگاه (کلیدِ سرویس، مدیرانِ سرورِ حساب، پرچم‌ها، بازار، مالی،
+ * انتشارِ مرحله‌ای) هر کدام رمز را جدا می‌سنجیدند و **بی کدِ دوعاملی** `markFresh` می‌کردند؛
+ * با آمدنِ فاز ۱ همان نشستِ «تازه» درهای فاز ۱ را هم باز می‌کرد (نمایشِ رمزِ ارشد، کاربرانِ
+ * پنل، روشن کردنِ دوعاملی). یعنی دوعاملی برای احرازِ دوباره دور زده می‌شد.
+ */
+export function verifyReauth(userId, password, code) {
+  const u = q('SELECT password_hash, totp_enabled, totp_secret FROM users WHERE id = ?').get(Number(userId));
+  if (!u || typeof password !== 'string' || !password || !verifyPassword(password, u.password_hash)) {
+    return { ok: false, error: 'wrong_password', totpRequired: Boolean(u?.totp_enabled) };
+  }
+  if (u.totp_enabled) {
+    if (code === undefined || code === null || code === '') return { ok: false, error: 'totp_required', totpRequired: true };
+    if (!verifyTotp(u.totp_secret, code)) return { ok: false, error: 'totp_invalid', totpRequired: true };
+  }
+  return { ok: true, totpRequired: Boolean(u.totp_enabled) };
+}
+
+/**
+ * احرازِ دوبارهٔ «رمز همراهِ همین درخواست» (`body.password`، و `body.code` اگر دوعاملی روشن است).
+ *
+ *   • رمز یا کدِ غلط ⇒ `{ pass: false, failed: true }` — همیشه، حتی اگر نشست تازه باشد
+ *   • رمزِ درست + (کدِ درست یا بی دوعاملی) ⇒ نشست تازه می‌شود و `{ pass: true }`
+ *   • رمزِ درست بی کد روی حسابِ دوعاملی‌دار ⇒ نشست **تازه نمی‌شود**؛ فقط اگر از پیش تازه بود رد می‌شود،
+ *     وگرنه `{ pass: false, totpRequired: true }` تا رابط پنجرهٔ رمز و کد را باز کند (`ReauthHost`)
+ *   • بی رمز ⇒ فقط نشستِ تازه (`requireRecentAuth`)
+ */
+export function bodyStepUp(req) {
+  const fresh = () => Boolean(req.user?.sessionId) && freshUntil(req.user.sessionId) > Date.now();
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (!password) return fresh() ? { pass: true } : { pass: false, failed: false };
+  const r = verifyReauth(req.user?.id, password, req.body?.code);
+  if (r.ok) {
+    if (req.user?.sessionId) markFresh(req.user.sessionId);
+    return { pass: true };
+  }
+  if (r.error === 'totp_required') return fresh() ? { pass: true } : { pass: false, failed: false, totpRequired: true };
+  return { pass: false, failed: true, error: r.error };
+}
+
+/**
  * کارِ پولیِ پلِ سرورِ حساب هم احرازِ دوباره بخواهد؟ — پیش‌فرض **خاموش**.
  * ⚠️ «ویلن ادمین» (اندروید) هنوز پنجرهٔ «رمز را دوباره بزنید» ندارد و همان
  * درها را برای دادنِ اشتراک و کدِ VIP می‌زند؛ روشن کردنش پیش از آن، کارِ
@@ -348,7 +413,7 @@ export function changePassword(userId, oldPassword, newPassword) {
   //  رمزِ یک‌بارمصرف نباید همان رمزِ «تازه» بماند
   if (String(newPassword) === String(oldPassword)) return { ok: false, error: 'same_password' };
   //  رمزِ یک‌بارمصرفِ بازیابی همین‌جا تمام می‌شود
-  q('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(hashPassword(newPassword), userId);
+  q('UPDATE users SET password_hash = ?, must_change_password = 0, must_change_by = NULL WHERE id = ?').run(hashPassword(newPassword), userId);
   // همهٔ نشست‌های دیگر باطل می‌شوند
   q('DELETE FROM sessions WHERE user_id = ?').run(userId);
   logEvent('info', 'panel', `رمز عبور کاربر ${user.username} تغییر کرد`);

@@ -158,7 +158,8 @@ try {
     ['/control/storage', 'انبار'],
     ['/control/vault', 'گاوصندوق'],
     ['/control/monitoring', 'پایش'],
-    ['/control/audit', 'دفتر رخدادها'],
+    //  ⛔ مدیر (همین آزمون) دفترِ **یکپارچه** را می‌بیند — فاز ۱ (۶-۷)، `pages/hubs.tsx`؛ بقیه همان «دفتر رخدادها»
+    ['/control/audit', 'دفترِ رخدادِ یکپارچه'],
     ['/monitoring', 'مانیتورینگ'],
     ['/logs', 'لاگ'],
     ['/control/updates', 'به‌روزرسانی'],

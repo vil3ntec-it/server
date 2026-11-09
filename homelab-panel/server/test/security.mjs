@@ -11,6 +11,7 @@ import { WebSocket } from 'ws';
 import dgram from 'node:dgram';
 import { DatabaseSync } from 'node:sqlite';
 import { io as ioClient } from 'socket.io-client';
+import { totp } from '../src/lib/totp.js';
 
 const PORT = Number(process.env.TEST_PORT || 4786);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -53,6 +54,8 @@ const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 
     HLP_WS_PING_MS: '400',
     HLP_DISCOVERY_PORT: String(PORT + 2),
     HLP_WS_TICKET_TTL: '1500',
+    //  بازبینیِ نشستِ وب‌سوکت‌های باز (۱.۵۰.۷۱) — کوتاه تا آزمون منتظر نماند
+    HLP_WS_REVALIDATE_MS: '300',
     //  رمزِ ارشدِ سرورِ حساب از محیط — تا «پنهان در وضعیت، نمایشِ یک‌باره فقط مالک» سنجیده شود (۶-۴)
     HLP_ACCOUNT_ADMIN_USER: 'bridge-root',
     HLP_ACCOUNT_ADMIN_PASSWORD: 'Br1dge-Secret-Never-In-Status',
@@ -249,6 +252,87 @@ try {
   const objRows = dbRaw.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE detail = '[object Object]'").get().n;
   dbRaw.close();
   check('⛔ هیچ ردیفی در audit_log «[object Object]» ندارد', objRows === 0, String(objRows));
+
+  /* ═══════════ گذرِ رخنه‌یابیِ ۱.۵۰.۷۱ — آن‌چه با آمدنِ فاز ۱ روی main باید بسته بماند ═══════════ */
+  const sock = (token) => new Promise((resolve) => {
+    const so = ioClient(BASE, { auth: { token }, transports: ['websocket'], reconnection: false });
+    so.on('connect', () => resolve(so));
+    so.on('connect_error', () => { so.close(); resolve(null); });
+    setTimeout(() => resolve(so.connected ? so : null), 4000);
+  });
+  //  وب‌سوکتِ بسته‌شده ack نمی‌دهد ⇒ «no_ack»، یعنی همان «نشد»
+  const ack = (so, ev, payload = {}) => new Promise((resolve) => {
+    const t = setTimeout(() => resolve({ ok: false, error: 'no_ack' }), 3000);
+    so.emit(ev, payload, (r) => { clearTimeout(t); resolve(r); });
+  });
+
+  console.log('\n▶ رخنه‌یابی: ترمینال = اجرای هر فرمان ⇒ احرازِ دوباره (۶-۵)');
+  staleAll();
+  const soO = await sock(setup.token);
+  check('وب‌سوکتِ مالک وصل شد', Boolean(soO));
+  let tOpen = soO ? await ack(soO, 'term:open') : null;
+  check('⛔ نشستِ کهنه ترمینال باز نمی‌کند (reauth_required)', tOpen?.ok === false && tOpen?.error === 'reauth_required', JSON.stringify(tOpen));
+  await post('/api/auth/reauth', { password: 'a-very-long-password' });
+  tOpen = soO ? await ack(soO, 'term:open') : null;
+  check('پس از احرازِ دوباره ترمینال باز می‌شود', tOpen?.ok === true, JSON.stringify(tOpen));
+  soO?.close();
+
+  console.log('\n▶ رخنه‌یابی: نشستِ باطل‌شده وب‌سوکتِ بازش را هم از دست می‌دهد (۶-۳، S2)');
+  const a2Id = (await j(await get('/api/auth/users', auth))).users?.find((u) => u.username === 'admin2')?.id;
+  await post('/api/auth/reauth', { password: 'Second-Admin-2026' }, auth2);
+  const so2 = await sock(a2.token);
+  const t2 = so2 ? await ack(so2, 'term:open') : null;
+  check('مدیرِ دوم با نشستِ تازه ترمینال دارد', t2?.ok === true, JSON.stringify(t2));
+  const dis = await fetch(`${BASE}/api/auth/users/${a2Id}`, { method: 'PATCH', headers: auth, body: JSON.stringify({ disabled: true }) });
+  check('مالک حسابِ مدیرِ دوم را می‌بندد', dis.status === 200, String(dis.status));
+  const run2 = so2 ? await ack(so2, 'term:run', { command: 'echo still-here' }) : null;
+  check('⛔ حسابِ بسته با وب‌سوکتِ بازِ پیشین هم فرمانی اجرا نمی‌کند', run2?.ok !== true, JSON.stringify(run2));
+  await wait(900);
+  check('⛔ و وب‌سوکتش بسته شد', !so2?.connected);
+  so2?.close();
+  const loginB = await j(await post('/api/auth/login', { username: 'mirza', password: 'a-very-long-password' }, { 'Content-Type': 'application/json' }));
+  const soB = await sock(loginB.token);
+  check('نشستِ دومِ مالک وب‌سوکت دارد', Boolean(soB?.connected));
+  await post('/api/auth/logout-all', {});
+  await wait(1200);
+  check('⛔ «خروج از همهٔ دستگاه‌ها» وب‌سوکتِ بازِ نشستِ دیگر را هم می‌بندد — بی هیچ پیامی از خودِ آن', !soB?.connected);
+  soB?.close();
+
+  console.log('\n▶ رخنه‌یابی: حدسِ رمزِ احرازِ دوباره با یک نشستِ دزدیده — سقفِ خودِ نشست، نه فقط IP');
+  const loginC = await j(await post('/api/auth/login', { username: 'mirza', password: 'a-very-long-password' }, { 'Content-Type': 'application/json' }));
+  const authC = { Authorization: `Bearer ${loginC.token}`, 'Content-Type': 'application/json' };
+  const guesses = [];
+  for (let i = 0; i < 6; i++) guesses.push((await post('/api/auth/reauth', { password: `guess-${i}-x` }, authC)).status);
+  check('⛔ ششمین حدسِ غلط از همان نشست ۴۲۹ (سقفِ نشست ۵ در ربع ساعت)', guesses.slice(0, 5).every((x) => x === 400) && guesses[5] === 429, guesses.join(' '));
+  check('و نشستِ دیگرِ همان IP هنوز احرازِ دوباره می‌کند', (await post('/api/auth/reauth', { password: 'a-very-long-password' })).status === 200);
+
+  console.log('\n▶ رخنه‌یابی: دفترِ یکپارچه می‌گوید چه بایگانی شده — بی محتوای بایگانی (S9)');
+  const uaArch = await j(await get('/api/audit?limit=1', auth));
+  check('`archive` فقط نام و اندازه دارد', uaArch.archive && Array.isArray(uaArch.archive.files) && typeof uaArch.archive.bytes === 'number'
+    && uaArch.archive.files.every((f) => Object.keys(f).sort().join() === 'bytes,name'), JSON.stringify(uaArch.archive));
+
+  console.log('\n▶ رخنه‌یابی: «رمز همراهِ درخواست» ِ درهای کنسول دوعاملی را دور نمی‌زند (۶-۵)');
+  const tsu = await j(await post('/api/auth/totp/setup', {}));
+  const en = await post('/api/auth/totp/enable', { code: totp(tsu.secret) });
+  check('مالک دوعاملی را روشن کرد', en.status === 200 && typeof tsu.secret === 'string', String(en.status));
+  staleAll();
+  const svk = (b) => post('/api/account-admin/console/service-key', { confirm: true, ...b });
+  let sk = await svk({ password: 'a-very-long-password' });
+  let skBody = await j(sk);
+  check('⛔ رمزِ درست بی کدِ دوعاملی ⇒ ۴۰۳ reauth_required (پنجرهٔ رمز و کد باز می‌شود)', sk.status === 403 && skBody.error === 'reauth_required',
+    `${sk.status} ${JSON.stringify(skBody)}`);
+  let meNow = await j(await get('/api/auth/me', auth));
+  check('⛔ و نشست «تازه» نشد', !(meNow.freshUntil > Date.now()), String(meNow.freshUntil));
+  const rvAfter = await post('/api/account-server/admin-password/reveal', {});
+  check('⛔ پس نمایشِ رمزِ ارشد (فاز ۱) هم هنوز بسته است', rvAfter.status === 403 && (await j(rvAfter)).error === 'reauth_required', String(rvAfter.status));
+  const wrongCode = totp(tsu.secret) === '000000' ? '111111' : '000000';
+  sk = await svk({ password: 'a-very-long-password', code: wrongCode });
+  check('⛔ رمز + کدِ غلط ⇒ ۴۰۳ reauth_failed', sk.status === 403 && (await j(sk)).error === 'reauth_failed', String(sk.status));
+  sk = await svk({ password: 'a-very-long-password', code: totp(tsu.secret) });
+  skBody = await j(sk);
+  check('رمز + کدِ درست از احرازِ دوباره می‌گذرد (و به «دلیل» می‌رسد)', sk.status === 400 && skBody.error === 'reason_required', `${sk.status} ${JSON.stringify(skBody)}`);
+  meNow = await j(await get('/api/auth/me', auth));
+  check('و حالا نشست تازه است', meNow.freshUntil > Date.now());
 
   console.log('\n▶ محدودیتِ نرخ');
   let limited = 0;

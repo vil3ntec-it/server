@@ -22,6 +22,7 @@ import { requireAuth } from '../auth.js';
 import { requireRole } from '../control/roles.js';
 import { db } from '../db.js';
 import { cloudRaw } from '../stations/cloud.js';
+import { archiveInfo } from '../lib/audit-archive.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('admin'));
@@ -168,7 +169,8 @@ router.get('/', async (req, res) => {
   }
 
   res.setHeader('Cache-Control', 'no-store');
-  res.json({ rows, total, limit, offset, source, sources, generatedAt: Date.now() });
+  //  ⛔ هرس با بایگانی (۱.۵۰.۷۱): فقط نام و اندازهٔ پرونده‌ها؛ محتوا از این در بیرون نمی‌رود
+  res.json({ rows, total, limit, offset, source, sources, archive: archiveInfo(), generatedAt: Date.now() });
 });
 
 /* ⛔ فقط‌خواندنی: هیچ نوشتن، ویرایش یا پاک کردنی از این در نیست */

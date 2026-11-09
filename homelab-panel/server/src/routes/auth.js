@@ -19,6 +19,8 @@ import {
   markFresh,
   freshUntil,
   requireRecentAuth,
+  verifyReauth,
+  recoveryExpired,
 } from '../auth.js';
 import jwt from 'jsonwebtoken';
 import QRCode from 'qrcode';
@@ -75,6 +77,15 @@ router.post('/login', (req, res) => {
     logEvent('warn', 'panel', `ورودِ حسابِ بسته‌شدهٔ «${user.username}» رد شد`);
     return res.status(403).json({ error: 'account_disabled' });
   }
+  //  ⛔ رمزِ یک‌بارمصرفِ بازیابی پس از مهلتش در نیست (۱.۵۰.۷۱، مهاجرتِ ۰۰۸) — دوباره `vill3n owner-reset`
+  if (recoveryExpired(user)) {
+    audit(req, 'panel.login', { target: user.username, ok: false, detail: { step: 'recovery_expired' } });
+    logEvent('warn', 'panel', `رمزِ یک‌بارمصرفِ بازیابیِ «${user.username}» منقضی بود — ورود رد شد`);
+    return res.status(401).json({
+      error: 'recovery_expired',
+      message: 'رمزِ یک‌بارمصرفِ بازیابی منقضی شده است؛ روی خودِ سرور دوباره «vill3n owner-reset» بزنید.',
+    });
+  }
   /*
    *  ورودِ دوعاملی: رمز درست بود ولی نشست هنوز ساخته نمی‌شود. یک بلیتِ
    *  پنج‌دقیقه‌ای برمی‌گردد و کاربر باید کدِ اپِ Authenticator (یا یک کدِ
@@ -120,6 +131,8 @@ router.post('/login/totp', (req, res) => {
   if (payload.typ !== 'totp') return res.status(401).json({ error: 'ticket_invalid' });
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.uid);
   if (!user || user.disabled || !user.totp_enabled) return res.status(401).json({ error: 'ticket_invalid' });
+  //  `owner-reset --keep-2fa`: مهلتِ رمزِ یک‌بارمصرف در گامِ دوم هم (۱.۵۰.۷۱)
+  if (recoveryExpired(user)) return res.status(401).json({ error: 'recovery_expired' });
 
   if (verifyTotp(user.totp_secret, code)) return finishLogin(req, res, user);
 
@@ -160,15 +173,15 @@ router.get('/me', requireAuth, (req, res) => {
  *  برای کارِ حساس تازه می‌شود. سقفِ نرخِ ورود (فقط ناموفق‌ها) رویش هست.
  */
 router.post('/reauth', requireAuth, (req, res) => {
-  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  const okPass = Boolean(u) && verifyPassword(String(req.body?.password || ''), u.password_hash);
-  const okCode = !u?.totp_enabled || verifyTotp(u.totp_secret, req.body?.code);
-  if (!okPass || !okCode) {
+  //  همان یک قاعده‌ای که درهای کنسول هم صدا می‌زنند (`verifyReauth`، auth.js)
+  const r = verifyReauth(req.user.id, String(req.body?.password || ''), req.body?.code);
+  if (!r.ok) {
+    const okPass = r.error !== 'wrong_password';
     audit(req, 'panel.reauth', { target: req.user.username, ok: false, detail: { step: okPass ? 'totp' : 'password' } });
     //  ۴۰۰ نه ۴۰۱: نشست سالم است، فقط رمز غلط بود — رابط نباید بیرونش بیندازد
     return res.status(400).json({
       error: okPass ? 'totp_invalid' : 'wrong_password',
-      totpRequired: Boolean(u?.totp_enabled),
+      totpRequired: Boolean(r.totpRequired),
     });
   }
   markFresh(req.user.sessionId);

@@ -700,6 +700,22 @@ console.log('\n── فاز ۱: «حسابِ من»، کاربرانِ پنل،
     /\/api\/audit\?\$\{qs\}/.test(ua) && /offset: String\(offset\)/.test(ua) && !/method: '(DELETE|POST|PUT|PATCH)'/.test(ua));
 }
 
+/* ═════════════ گذرِ رخنه‌یابیِ ۱.۵۰.۷۱ — سمتِ رابط ═════════════ */
+console.log('\n── ۱.۵۰.۷۱: ترمینال با احرازِ دوباره، مهلتِ رمزِ بازیابی، بایگانیِ دفتر ──\n');
+{
+  const term = read('pages/Terminal.tsx');
+  const apiSrc = read('api.ts');
+  check('ترمینال روی reauth_required پنجرهٔ رمز را باز می‌کند و فقط یک بار دوباره می‌خواهد',
+    /res\?\.error === 'reauth_required' && !retried/.test(term) && /requestReauth\(\)/.test(term) && /if \(ok\) open\(true\)/.test(term));
+  check('همان پنجرهٔ ReauthHost، نه پنجرهٔ دوم', /export function requestReauth\(\)/.test(apiSrc) && /onReauth \? onReauth\(\)/.test(apiSrc)
+    && !/<Modal/.test(term));
+  const login = read('pages/Login.tsx');
+  check('ورود: «رمزِ یک‌بارمصرف منقضی شد» پیامِ خودش را دارد (نه کدِ خام)',
+    (login.match(/recovery_expired/g) || []).length >= 2 && /t\('recoveryExpired'\)/.test(login));
+  const ua = read('pages/control/UnifiedAudit.tsx');
+  check('دفترِ یکپارچه می‌گوید ردیف‌های کهنه بایگانی شده‌اند، نه پاک', /data\?\.archive && data\.archive\.files\.length > 0/.test(ua));
+}
+
 console.log('\n════════════════════════════════════');
 console.log(`  ✅ ${pass} سبز، ${fail} قرمز`);
 console.log('════════════════════════════════════\n');

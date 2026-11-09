@@ -2260,23 +2260,21 @@ const reauthLimit = rateLimit({
   skipSuccess: true, countIf: (_req, res) => res.locals?.reauthFailed === true,
 });
 
+/*
+ *  ⛔ (۱.۵۰.۷۱) قاعده یکی است و در `auth.js` (`bodyStepUp` ⇐ `verifyReauth`): رمز، و اگر دوعاملی روشن است
+ *  کد هم. تا پیش از آمدنِ فاز ۱ این‌جا رمزِ تنها نشست را «تازه» می‌کرد و دوعاملی را دور می‌زد.
+ */
 function reauth(req, res, next) {
-  const password = typeof req.body?.password === 'string' ? req.body.password : '';
-  if (password) {
-    const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(Number(req.user.id));
-    if (!row || !panelAuth.verifyPassword(password, row.password_hash)) {
-      res.locals.reauthFailed = true;
-      //  همان احرازِ دوباره برای انتشارِ مرحله‌ای (‎console-ops.js‎) — ردیفِ دفتر نامِ همان کار را می‌گیرد
-      const what = String(req.path || '').includes('/release/stage') ? 'release_stage' : 'service_key';
-      audit({ actor: actorOf(req), action: `account.${what}.reauth_failed`, entity: what, result: 'forbidden' });
-      return res.status(403).json({ error: 'reauth_failed', message: 'رمزِ پنل درست نیست' });
-    }
-    if (typeof panelAuth.markFresh === 'function' && req.user?.sessionId) panelAuth.markFresh(req.user.sessionId);
-    return next();
+  const r = panelAuth.bodyStepUp(req);
+  if (r.pass) return next();
+  if (r.failed) {
+    res.locals.reauthFailed = true;
+    //  همان احرازِ دوباره برای انتشارِ مرحله‌ای (‎console-ops.js‎) — ردیفِ دفتر نامِ همان کار را می‌گیرد
+    const what = String(req.path || '').includes('/release/stage') ? 'release_stage' : 'service_key';
+    audit({ actor: actorOf(req), action: `account.${what}.reauth_failed`, entity: what, result: 'forbidden', detail: { step: r.error } });
+    return res.status(403).json({ error: 'reauth_failed', message: 'رمزِ پنل یا کدِ دوعاملی درست نیست' });
   }
-  //  فاز ۱ در پایه ⇒ نشستِ تازه (ده دقیقه) هم بس است؛ وگرنه رمز همراهِ همین درخواست
-  if (typeof panelAuth.requireRecentAuth === 'function') return panelAuth.requireRecentAuth(req, res, next);
-  return res.status(403).json({ error: 'reauth_required', message: 'برای این کار رمزِ پنلِ خودتان را دوباره بزنید' });
+  return res.status(403).json({ error: 'reauth_required', totpRequired: r.totpRequired || undefined, message: 'برای این کار رمزِ پنلِ خودتان را دوباره بزنید' });
 }
 
 function keyReasonOf(req) {

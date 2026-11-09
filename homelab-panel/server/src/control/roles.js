@@ -157,6 +157,28 @@ function auditUser(req, action, entityId, extra = {}) {
   audit({ actor: actorName(req), ip: clientIp(req), action, entity: 'user', entityId, ...extra });
 }
 
+/*
+ *  ⛔ (۱.۵۰.۷۱) نامِ هم‌شکل. `USERNAME_RE` حرفِ هر زبان را می‌پذیرد (نامِ فارسی)، پس مدیرِ دوم
+ *  می‌توانست «аdmin» (а ِ سیریلیک)، «ADMIN»، «ａdmin» (تمام‌عرض)، «operator۱» یا «علي» (ي ِ عربی)
+ *  کنارِ حسابِ موجود بسازد و دفترِ رخداد — که نامِ کاربری را می‌نویسد — کارِ او را به نامِ مالک یا
+ *  همکار نشان می‌داد. «اسکلتِ» نام (NFKC، کوچک، رقمِ فارسی/عربی ⇒ لاتین، حرف‌های هم‌شکلِ سیریلیک و
+ *  یونانی ⇒ لاتین، ي/ى ⇒ ی و ك ⇒ ک) نباید با اسکلتِ هیچ حسابِ موجودی یکی باشد. فقط برای ساختن؛ نامِ
+ *  حساب‌های کهنه دست نمی‌خورد.
+ */
+const LOOKALIKE = new Map(Object.entries({
+  а: 'a', в: 'b', е: 'e', ё: 'e', к: 'k', м: 'm', н: 'h', о: 'o', р: 'p', с: 'c', т: 't', у: 'y', х: 'x',
+  і: 'i', ї: 'i', ј: 'j', ѕ: 's', ԁ: 'd', ԛ: 'q', ԝ: 'w', ӏ: 'l', һ: 'h',
+  α: 'a', β: 'b', ε: 'e', η: 'n', ι: 'i', κ: 'k', ν: 'v', ο: 'o', ρ: 'p', τ: 't', υ: 'u', χ: 'x', ω: 'w',
+  ي: 'ی', ى: 'ی', ك: 'ک',
+}));
+
+export function usernameSkeleton(name) {
+  const s = String(name ?? '').normalize('NFKC').toLowerCase()
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+  return [...s].map((c) => LOOKALIKE.get(c) ?? c).join('');
+}
+
 /** نام، رمز و نقشِ کاربرِ تازه — همان قاعده برای هر دو در. */
 export function checkNewUser({ username, password, role }) {
   const name = typeof username === 'string' ? username.trim() : '';
@@ -166,6 +188,8 @@ export function checkNewUser({ username, password, role }) {
   if (password.length > 200) throw panelUserError('password_too_long');
   if (!ROLES.includes(role)) throw panelUserError('invalid_role');
   if (db.prepare('SELECT id FROM users WHERE username = ?').get(name)) throw panelUserError('username_taken', 409);
+  const sk = usernameSkeleton(name);
+  if (db.prepare('SELECT username FROM users').all().some((u) => usernameSkeleton(u.username) === sk)) throw panelUserError('username_taken', 409);
   return { username: name, password, role };
 }
 

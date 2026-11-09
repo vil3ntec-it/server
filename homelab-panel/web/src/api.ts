@@ -45,6 +45,14 @@ export function setReauthHandler(fn: (() => Promise<boolean>) | null) {
   onReauth = fn;
 }
 
+/**
+ * همان پنجرهٔ رمز برای جایی که پاسخ از `api()` نمی‌آید (ack ِ وب‌سوکتِ ترمینال).
+ * درست ⇒ `true`؛ انصراف یا نبودنِ پنجره ⇒ `false`.
+ */
+export function requestReauth(): Promise<boolean> {
+  return onReauth ? onReauth() : Promise.resolve(false);
+}
+
 /* رمزِ یک‌بارمصرفِ بازیابی ⇒ سرور هر درِ دیگری را می‌بندد تا رمزِ تازه گذاشته شود */
 let onMustChange: (() => void) | null = null;
 export function setMustChangeHandler(fn: (() => void) | null) {

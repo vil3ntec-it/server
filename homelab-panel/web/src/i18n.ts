@@ -32,6 +32,7 @@ const fa = {
   createAdmin: 'ساخت حساب مدیر',
   firstRunHint: 'اولین بار است که پنل را باز می‌کنید. یک نام کاربری و رمز عبور بسازید.',
   wrongCredentials: 'نام کاربری یا رمز عبور درست نیست',
+  recoveryExpired: 'رمزِ یک‌بارمصرفِ بازیابی منقضی شده است. روی خودِ سرور دوباره «vill3n owner-reset» بزنید.',
   passwordTooShort: 'رمز عبور باید حداقل ۸ نویسه باشد',
   usernameTooShort: 'نام کاربری باید حداقل ۳ نویسه باشد',
 
@@ -769,6 +770,7 @@ const fa = {
   trmForbidden: 'فقط مدیر می‌تواند ترمینال را باز کند',
   trmForbiddenHint: 'ترمینال هر فرمانی را روی سرور اجرا می‌کند، پس فقط برای نقشِ admin باز است.',
   trmOpenFailed: 'نشستِ ترمینال باز نشد',
+  trmReauth: 'ترمینال باز نشد: برای باز کردنش رمزِ خودتان را دوباره بزنید (صفحه را تازه کنید).',
   trmLimitation: 'این یک اجراکنندهٔ فرمان است، نه پایانهٔ کامل: فرمان‌ها اجرا می‌شوند و خروجی زنده می‌آید و cd هم می‌ماند، ولی ویرایشگرِ تمام‌صفحه (vim، nano) و برنامه‌های تعاملی مثل top کار نمی‌کنند.',
 
   /* ---------------------- کارهای زمان‌بندی‌شده ---------------------- */
@@ -1323,6 +1325,7 @@ const en: Dict = {
   createAdmin: 'Create admin account',
   firstRunHint: 'This is the first run. Create a username and password.',
   wrongCredentials: 'Wrong username or password',
+  recoveryExpired: 'The one-time recovery password has expired. Run “vill3n owner-reset” on the server again.',
   passwordTooShort: 'Password must be at least 8 characters',
   usernameTooShort: 'Username must be at least 3 characters',
 
@@ -2055,6 +2058,7 @@ const en: Dict = {
   trmForbidden: 'Only an admin can open the terminal',
   trmForbiddenHint: 'The terminal runs any command on the server, so it is open to the admin role only.',
   trmOpenFailed: 'Could not open a terminal session',
+  trmReauth: 'Terminal not opened: re-enter your password to open it (reload the page).',
   trmLimitation: 'This is a command runner, not a full terminal: commands run with live output and cd persists, but full-screen editors (vim, nano) and interactive programs like top will not work.',
 
   /* -------------------------- Scheduled jobs -------------------------- */
@@ -2609,6 +2613,7 @@ const ar: Dict = {
   createAdmin: 'إنشاء حساب المدير',
   firstRunHint: 'هذه أول مرة. أنشئ اسم مستخدم وكلمة مرور.',
   wrongCredentials: 'اسم المستخدم أو كلمة المرور غير صحيحة',
+  recoveryExpired: 'انتهت صلاحية كلمة مرور الاستعادة لمرة واحدة. شغّل «vill3n owner-reset» على الخادم مجددًا.',
   passwordTooShort: 'كلمة المرور يجب ألا تقل عن ٨ رموز',
   usernameTooShort: 'اسم المستخدم يجب ألا يقل عن ٣ رموز',
   serverName: 'اسم الخادم',
@@ -2865,6 +2870,7 @@ const ps: Dict = {
   createAdmin: 'د مدیر حساب جوړول',
   firstRunHint: 'دا لومړی ځل دی. یو کارن نوم او پټ نوم جوړ کړئ.',
   wrongCredentials: 'کارن نوم یا پټ نوم سم نه دی',
+  recoveryExpired: 'د بیا رغونې یو ځلي پټنوم پای ته رسېدلی. په سرور باندې بیا «vill3n owner-reset» وچلوئ.',
   passwordTooShort: 'پټ نوم باید لږ تر لږه ۸ توري وي',
   usernameTooShort: 'کارن نوم باید لږ تر لږه ۳ توري وي',
   serverName: 'د سرور نوم',

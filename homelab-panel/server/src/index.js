@@ -366,7 +366,22 @@ const reauthLimiter = rateLimitCfg({
   windowMs: 15 * 60 * 1000,
   skipSuccess: true,
 });
-app.use(['/api/auth/reauth', '/api/panel/v1/auth/reauth'], reauthLimiter);
+/*
+ *  ⛔ (۱.۵۰.۷۱) و سقفِ **خودِ نشست**: کسی که توکنِ یک نشست را دزدیده و رمز را نمی‌داند، با عوض
+ *  کردنِ IP سقفِ بالا را دور می‌زد و رمز را بی‌پایان حدس می‌زد. کلید = هشِ توکنِ همان درخواست
+ *  (پیش از `requireAuth`، پس بی خواندنِ دیتابیس)؛ فقط ناموفق‌ها.
+ */
+const reauthSessionLimiter = rateLimitCfg({
+  name: 'reauth-session',
+  max: Number(process.env.HLP_REAUTH_SESSION_LIMIT ?? 5),
+  windowMs: 15 * 60 * 1000,
+  skipSuccess: true,
+  key: (req) => {
+    const h = String(req.headers.authorization || '');
+    return h ? `t:${crypto.createHash('sha256').update(h).digest('base64url').slice(0, 24)}` : `ip:${req.ip}`;
+  },
+});
+app.use(['/api/auth/reauth', '/api/panel/v1/auth/reauth'], reauthLimiter, reauthSessionLimiter);
 app.use('/api/auth', authRoutes);
 //  دفترِ رخدادِ یکپارچه (۶-۷) — فقط‌خواندنی، فقط admin؛ نگهبان داخلِ خودِ روتر
 app.use('/api/audit', auditRoutes);

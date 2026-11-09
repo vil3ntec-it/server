@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CornerDownLeft, Square, TerminalSquare, Trash2 } from 'lucide-react';
 
+import { requestReauth } from '../api';
 import { useApp } from '../app-context';
 import { Card, Empty } from '../components/ui';
 import { Notice } from '../control/ui';
@@ -56,15 +57,31 @@ export default function TerminalPage() {
   useEffect(() => {
     if (!socket || !isAdmin) return;
 
-    socket.emit('term:open', {}, (res: { ok: boolean; cwd?: string; shell?: string; error?: string }) => {
-      if (res?.ok) {
-        setReady(true);
-        setCwd(res.cwd || '');
-        push('sys', `${res.shell || ''} — ${res.cwd || ''}`);
-      } else {
-        setError(res?.error === 'forbidden' ? t('trmForbidden') : t('trmOpenFailed'));
-      }
-    });
+    let cancelled = false;
+    type OpenRes = { ok: boolean; cwd?: string; shell?: string; error?: string };
+    const open = (retried: boolean) =>
+      socket.emit('term:open', {}, (res: OpenRes) => {
+        if (cancelled) return;
+        if (res?.ok) {
+          setReady(true);
+          setError('');
+          setCwd(res.cwd || '');
+          push('sys', `${res.shell || ''} — ${res.cwd || ''}`);
+          return;
+        }
+        //  ⛔ ترمینال کارِ حساس است (۶-۵): سرور از نشستی که ده دقیقه رمز نزده ردش می‌کند؛ همان پنجرهٔ
+        //  «رمز را دوباره بزنید» یک بار، و یک بار دوباره. انصراف ⇒ همین گفته می‌شود، نه «باز شد».
+        if (res?.error === 'reauth_required' && !retried) {
+          void requestReauth().then((ok) => {
+            if (cancelled) return;
+            if (ok) open(true);
+            else setError(t('trmReauth'));
+          });
+          return;
+        }
+        setError(res?.error === 'forbidden' ? t('trmForbidden') : res?.error === 'reauth_required' ? t('trmReauth') : t('trmOpenFailed'));
+      });
+    open(false);
 
     const onData = (payload: { chunk: string }) => {
       const text = payload?.chunk ?? '';
@@ -85,6 +102,7 @@ export default function TerminalPage() {
 
     socket.on('term:data', onData);
     return () => {
+      cancelled = true;
       socket.off('term:data', onData);
       socket.emit('term:close', {}, () => {});
     };

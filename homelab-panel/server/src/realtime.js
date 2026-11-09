@@ -7,7 +7,7 @@ import { processEvents } from './sites/process.js';
 import { getHistory, setViewers } from './metrics/index.js';
 import { listSites } from './sites/registry.js';
 import { getSiteSync } from './state.js';
-import { userRole } from './auth.js';
+import { userRole, liveSessionUser, freshUntil } from './auth.js';
 import { audit } from './lib/audit.js';
 import * as terminal from './system/terminal.js';
 
@@ -68,9 +68,25 @@ export function attachRealtime(httpServer) {
      *  هم باید فوراً بی‌اثر شود — نه بعد از انقضای توکن.
      */
     const isAdmin = () => userRole(socket.data.user?.id) === 'admin';
+    /*
+     *  ⛔ (۱.۵۰.۷۱) نشستِ همین اتصال هنوز زنده است؟ — نقش از دیتابیس خوانده می‌شد ولی نشست نه:
+     *  پس از «خروج از همه»، بستنِ حساب یا `vill3n owner-reset` وب‌سوکتِ بازِ نشستِ باطل‌شده هنوز
+     *  فرمان اجرا می‌کرد. نشستِ مرده ⇒ ترمینال بسته و اتصال قطع.
+     */
+    const alive = () => {
+      if (liveSessionUser(socket.data.user)) return true;
+      if (socket.data.termId) terminal.close(socket.data.termId);
+      socket.data.termId = null;
+      setImmediate(() => socket.disconnect(true));
+      return false;
+    };
 
     socket.on('term:open', (_payload, ack) => {
+      if (!alive()) return ack?.({ ok: false, error: 'unauthorized' });
       if (!isAdmin()) return ack?.({ ok: false, error: 'forbidden' });
+      //  ⛔ ترمینال = اجرای هر فرمانی روی این کامپیوتر ⇒ همان احرازِ دوبارهٔ کارِ حساس (۶-۵):
+      //  نشستِ دزدیده‌شده یا مرورگرِ بازِ رهاشده بی رمزِ ده دقیقهٔ اخیر پوسته نمی‌گیرد.
+      if (!(freshUntil(socket.data.user?.sessionId) > Date.now())) return ack?.({ ok: false, error: 'reauth_required' });
       const res = terminal.create({
         userId: socket.data.user?.id,
         username: socket.data.user?.username,
@@ -80,6 +96,7 @@ export function attachRealtime(httpServer) {
     });
 
     socket.on('term:run', async (payload, ack) => {
+      if (!alive()) return ack?.({ ok: false, error: 'unauthorized' });
       if (!isAdmin()) return ack?.({ ok: false, error: 'forbidden' });
       const id = socket.data.termId;
       const command = String(payload?.command ?? '');
@@ -99,6 +116,7 @@ export function attachRealtime(httpServer) {
     });
 
     socket.on('term:interrupt', (_payload, ack) => {
+      if (!alive()) return ack?.({ ok: false, error: 'unauthorized' });
       if (!isAdmin()) return ack?.({ ok: false, error: 'forbidden' });
       ack?.(terminal.interrupt(socket.data.termId));
     });
@@ -124,6 +142,27 @@ export function attachRealtime(httpServer) {
   processEvents.on('status', async (entry) => {
     io.emit('site:status', entry);
   });
+
+  /*
+   *  ⛔ (۱.۵۰.۷۱) بازبینیِ دوره‌ایِ همهٔ اتصال‌ها: نشستی که دیگر نیست (خروج از همه، بستن یا تغییرِ
+   *  نقش، `vill3n owner-reset`، انقضا) نه نمودار و لاگِ زنده می‌گیرد، نه ترمینالِ بازش می‌ماند —
+   *  حتی اگر خودش هیچ پیامی نفرستد. هر بار یک SELECT ِ کوچک برای هر اتصال (پنلِ خانگی، چند تب).
+   */
+  const revalidateMs = Math.max(200, Number(process.env.HLP_WS_REVALIDATE_MS) || 15_000);
+  const sweep = setInterval(() => {
+    for (const socket of io.of('/').sockets.values()) {
+      try {
+        if (liveSessionUser(socket.data.user)) continue;
+      } catch {
+        continue; //  دیتابیس لحظه‌ای قفل بود — دورِ بعد
+      }
+      if (socket.data.termId) terminal.close(socket.data.termId);
+      socket.data.termId = null;
+      socket.disconnect(true);
+    }
+  }, revalidateMs);
+  sweep.unref?.();
+  httpServer.on('close', () => clearInterval(sweep));
 
   return io;
 }

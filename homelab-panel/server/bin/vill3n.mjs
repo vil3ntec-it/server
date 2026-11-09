@@ -369,6 +369,13 @@ async function ownerReset() {
   const userFlag = flag('--user');
   const keep2fa = args.includes('--keep-2fa');
   const yes = args.includes('--yes');
+  //  ⛔ مهلتِ رمزِ یک‌بارمصرف (۱.۵۰.۷۱): پیش‌فرض ۲۴ ساعت، ۱ تا ۱۶۸ — «بی‌پایان» گزینه نیست
+  const ttlRaw = flag('--ttl-hours');
+  const ttlHours = ttlRaw == null ? 24 : Number(ttlRaw);
+  if (!Number.isFinite(ttlHours) || ttlHours < 1 || ttlHours > 168) {
+    bad('--ttl-hours باید عددی از ۱ تا ۱۶۸ باشد (پیش‌فرض ۲۴)');
+    return 1;
+  }
   const dbFile = panelDbPath();
   if (!dbFile) {
     bad(`panel.db پیدا نشد — پوشهٔ داده را با --data-dir بدهید (پیش‌فرض: ${DATA_DIR})`);
@@ -425,6 +432,8 @@ async function ownerReset() {
     //  ۲) ستونِ «رمزِ یک‌بارمصرف» — اگر پنلِ تازه هنوز رویش بالا نیامده (همان مهاجرتِ ۰۰۷)
     const cols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
     if (!cols.includes('must_change_password')) db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0');
+    //  همان مهاجرتِ ۰۰۸ — مهلتِ همین رمزِ یک‌بارمصرف
+    if (!cols.includes('must_change_by')) db.exec('ALTER TABLE users ADD COLUMN must_change_by INTEGER');
     const hasTotp = cols.includes('totp_enabled');
 
     //  ۳) چه کسی؟ — همان قاعدهٔ `ownerId()`: قدیمی‌ترین مدیرِ فعال
@@ -446,13 +455,14 @@ async function ownerReset() {
 
     //  ۴) رمزِ یک‌بارمصرف، دوعاملی، نقش و باز بودن؛ همهٔ نشست‌ها؛ ردیفِ دفتر — یک تراکنش
     const otp = oneTimePassword();
+    const expiresAt = Date.now() + Math.round(ttlHours * 3600_000);
     const osUser = (() => { try { return os.userInfo().username; } catch { return 'unknown'; } })();
     const totpWasOn = hasTotp && Boolean(target.totp_enabled);
     let revoked = 0;
     db.exec('BEGIN IMMEDIATE');
     try {
-      db.prepare("UPDATE users SET password_hash = ?, must_change_password = 1, role = 'admin', disabled = 0 WHERE id = ?")
-        .run(hashPassword(otp), target.id);
+      db.prepare("UPDATE users SET password_hash = ?, must_change_password = 1, must_change_by = ?, role = 'admin', disabled = 0 WHERE id = ?")
+        .run(hashPassword(otp), expiresAt, target.id);
       if (hasTotp && !keep2fa) {
         db.prepare('UPDATE users SET totp_secret = NULL, totp_pending = NULL, totp_enabled = 0, totp_recovery = NULL WHERE id = ?').run(target.id);
       }
@@ -468,6 +478,7 @@ async function ownerReset() {
         reenabled: Boolean(target.disabled),
         sessionsRevoked: revoked,
         backup: path.basename(backup),
+        expiresAt,
       };
       db.prepare('INSERT INTO cc_audit(actor, action, entity, entity_id, detail, result, ip, at) VALUES(?,?,?,?,?,?,?,?)')
         .run(`cli:${osUser}`, 'panel.owner.reset', 'user', target.username, JSON.stringify(detail), 'ok', 'local-cli', Date.now());
@@ -482,13 +493,14 @@ async function ownerReset() {
     }
 
     if (JSON_OUT) {
-      console.log(JSON.stringify({ ok: true, username: target.username, oneTimePassword: otp, sessionsRevoked: revoked,
+      console.log(JSON.stringify({ ok: true, username: target.username, oneTimePassword: otp, expiresAt, sessionsRevoked: revoked,
         totpReset: totpWasOn && !keep2fa, backup }, null, 2));
     } else {
       ok(`پشتیبان: ${backup}`);
       ok(`حساب: ${target.username}${target.role !== 'admin' ? ' (نقشِ مدیر برگشت)' : ''}${target.disabled ? ' (دوباره باز شد)' : ''}`);
       ok(`${revoked} نشست باطل شد${totpWasOn ? (keep2fa ? ' · دوعاملی ماند' : ' · دوعاملی خاموش شد') : ''}`);
       console.log(`\n  رمزِ یک‌بارمصرف (فقط همین یک بار نشان داده می‌شود):\n\n      ${otp}\n`);
+      info(`این رمز تا ${new Date(expiresAt).toLocaleString()} (${ttlHours} ساعت) پذیرفته است؛ پس از آن دوباره همین دستور.`);
       info('با همین رمز وارد پنل شوید؛ پنل پیش از هر کاری رمزِ تازه می‌خواهد. بعد دوعاملی را از «حسابِ من» دوباره روشن کنید.');
       info('اگر «درخواست‌ها زیاد شد» دیدید: ۱۵ دقیقه صبر کنید یا پنل را ری‌استارت کنید (سقفِ حدسِ رمز در حافظهٔ پنل است).');
       console.log('');
@@ -518,6 +530,7 @@ function help() {
     vill3n owner-reset       بازیابیِ مالکِ اصلی، فقط روی همین کامپیوتر: پشتیبان ← رمزِ یک‌بارمصرف
                              ← دوعاملی خاموش ← همهٔ نشست‌ها باطل ← ردیفِ دفتر
                              [--user <نام>] [--keep-2fa] [--yes] [--data-dir <پوشهٔ دادهٔ پنل>]
+                             [--ttl-hours <۱ تا ۱۶۸، پیش‌فرض ۲۴>] مهلتِ رمزِ یک‌بارمصرف
 
   گزینه‌ها: --root <مسیر> (پیش‌فرض ${ROOT}) · --json (خروجیِ ماشینی برای status و owner-reset)
 `);

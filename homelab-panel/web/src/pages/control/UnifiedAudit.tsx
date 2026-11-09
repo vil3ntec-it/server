@@ -35,6 +35,8 @@ type Payload = {
     panel?: { ok: boolean; total: number };
     account?: { ok: boolean; total?: number; capped?: boolean; error?: string; message?: string };
   };
+  /** ردیف‌هایی که از دیتابیس هرس شده‌اند — فقط نام و اندازهٔ پرونده‌ها (۱.۵۰.۷۱) */
+  archive?: { dir: string; files: { name: string; bytes: number }[]; bytes: number };
   generatedAt: number;
 };
 
@@ -145,6 +147,14 @@ export default function UnifiedAudit() {
       )}
       {acc?.ok && acc.capped && (
         <Notice tone="warn">از سرورِ حساب فقط ۵۰۰ ردیفِ آخر خوانده می‌شود؛ ردیف‌های کهنه‌ترِ آن‌جا در این فهرست نیستند.</Notice>
+      )}
+      {/* ⛔ هرس هیچ ردیفی را بی ردِ پا پاک نمی‌کند (۱.۵۰.۷۱): کهنه‌ترها روی دیسکِ همین سرورند، نه در این فهرست */}
+      {data?.archive && data.archive.files.length > 0 && (
+        <Notice tone="info">
+          ردیف‌های کهنه‌ترِ دو دفترِ پنل (بیش از ۲۰ هزار ردیفِ آخر) پاک نشده‌اند؛ در پوشهٔ
+          {' '}<code dir="ltr">{data.archive.dir}</code> روی همین سرور بایگانی شده‌اند
+          ({data.archive.files.length.toLocaleString('fa-IR')} پرونده، {(data.archive.bytes / 1048576).toLocaleString('fa-IR', { maximumFractionDigits: 1 })} مگابایت).
+        </Notice>
       )}
       {error && <Notice tone="bad">{error}</Notice>}
 
