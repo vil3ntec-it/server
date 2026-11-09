@@ -1,0 +1,6 @@
+viewer: gaps over 0.5 s at (s from first frame, length): []
+Traceback (most recent call last):
+  File "/home/runner/work/server/server/tools/stream-e2e/recv.py", line 23, in <module>
+    print(f"viewer: {len(arr)} frames in {dur:.1f}s = {len(arr)/max(dur,0.1):.1f} fps; longest gap {max(gaps)*1000:.0f} ms; gaps >0.5s: {sum(g>0.5 for g in gaps)}; >2s: {sum(g>2 for g in gaps)}")
+                                                                                                    ~~~^^^^^^
+ValueError: max() iterable argument is empty

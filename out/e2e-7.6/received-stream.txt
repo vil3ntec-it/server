@@ -1,0 +1,1 @@
+rtmp://127.0.0.1:1935/live/test: Input/output error
