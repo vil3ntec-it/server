@@ -1093,6 +1093,10 @@ Your internet needs about %2$s Mbps upload.</string>
     <string name="live_auto_desc">Automatic: the quality always fits the internet (or VPN), so the stream never stalls or cuts; up to 5 s of delay. Manual: exactly the bit rate below, never changed; smooth only if your upload carries it.</string>
     <string name="live_auto_on">Automatic (recommended)</string>
     <string name="live_auto_off">Manual</string>
+    <string name="yt_own_live_title">Live through the YouTube account</string>
+    <string name="yt_own_live_desc">The app makes a stream of its own («RawRec») and, each time, a fresh live on your channel through your account, and sends the picture to it; it goes live by itself as the picture arrives — no time, no «Waiting». Studio\'s key and its waiting live are left alone. With Shorts (Dual stream is set on Studio\'s live), or if YouTube does not answer, the key you typed is used.</string>
+    <string name="yt_preparing">Making the live on YouTube…</string>
+    <string name="yt_own_failed_fmt">The app\'s own live could not be made on YouTube (%1$s); the key you typed is used.</string>
     <string name="yt_go_live_title">Going live on YouTube</string>
     <string name="yt_go_live_desc">«At once»: as the picture arrives, the app puts the live live itself (no «Upcoming»); a live the app made that never went out is taken off the channel at the end. «Myself in Studio»: the live waits until you press Go live in YouTube Studio.</string>
     <string name="yt_go_live_now">At once</string>

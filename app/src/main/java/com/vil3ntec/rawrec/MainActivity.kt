@@ -1737,6 +1737,11 @@ class MainActivity : Activity() {
         ytRow("yt_privacy", R.string.yt_privacy_title, R.string.yt_privacy_desc, listOf("" to R.string.yt_keep,
             "public" to R.string.yt_p_public, "unlisted" to R.string.yt_p_unlisted, "private" to R.string.yt_p_private)) { renderPrivNote() }
         yc.addView(privNote, lp(4))
+        // the live through the account: the app's own stream and live (Studio's key and its waiting live left alone)
+        toggles["yt_own_live"] = Toggle(yc, "tog:yt_own_live", R.drawable.ic_live, str(R.string.yt_own_live_title), str(R.string.yt_own_live_desc), top = 14) { on ->
+            LiveExtras.setYtOwnLive(ctx, on); toggles["yt_own_live"]?.set(on)
+        }
+        toggles["yt_own_live"]?.set(LiveExtras.ytOwnLive(ctx))
         // going live: at once (the app puts it live) or by the owner in Studio
         rows["yt_go_live"] = Row(yc, str(R.string.yt_go_live_title), str(R.string.yt_go_live_desc),
             listOf(str(R.string.yt_go_live_now), str(R.string.yt_go_live_mine)), top = 14) { i -> LiveExtras.setGoLiveNow(ctx, i == 0) }

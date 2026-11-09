@@ -343,9 +343,15 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
     /** A live was made on the channel for this stream (once). */
     private var created = false
 
-    /** The YouTube stream key this stream is sent with (the platform switched on with a YouTube address). */
-    private fun ourKey(): String =
-        LiveSettings.destinations(ctx).firstOrNull { it.url.contains("youtube", ignoreCase = true) }?.key ?: LiveSettings.key(ctx, 0)
+    private var ownKey: String? = null
+    /** This stream goes to the app's own stream on the channel, with the live made for it just now. */
+    fun ownLive(streamId: String, key: String, broadcastId: String) {
+        this.streamId = streamId; ownKey = key; created = true; createdId = broadcastId
+    }
+
+    /** The YouTube stream key this stream is sent with (the app's own, else the platform switched on with a YouTube address). */
+    private fun ourKey(): String = ownKey ?: LiveExtras.sessionKey
+        ?: LiveSettings.destinations(ctx).firstOrNull { it.url.contains("youtube", ignoreCase = true) }?.key ?: LiveSettings.key(ctx, 0)
 
     /**
      * YouTube holds the live back while the picture arrives (Studio's preview, «Go live» not pressed, a

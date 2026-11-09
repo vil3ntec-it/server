@@ -227,6 +227,15 @@ class RecordService : Service(), Recorder.Events {
     private var liveSink: MediaSink? = null
     /** Where the stream goes (one or several platforms). */
     private var liveTargets: List<LiveSettings.Dest> = emptyList()
+    /** The live made through the account for this stream (the app's own stream and live), when so. */
+    private class OwnLive(val streamId: String, val key: String, val broadcastId: String)
+    @Volatile private var ownLive: OwnLive? = null
+    /** Made in the countdown, applied right before the start (on the main thread: no race with it). */
+    @Volatile private var prepared: OwnLive? = null
+    @Volatile private var preparedUrl = ""
+    private var ytPrep: Thread? = null
+    private var ytPrepSince = 0L
+    private var toldPrep = false
     private val failedDests = HashSet<String>()
     private var coverManual = false
     private var coverAuto = false
@@ -296,6 +305,8 @@ class RecordService : Service(), Recorder.Events {
         live = liveTargets.firstOrNull()?.let { LiveTarget(it.url, it.key, liveTargets.joinToString(" + ") { d -> d.name }) }
         liveDests = emptyList(); failedDests.clear()
         isLive = live != null
+        ownLive = null; prepared = null; ytPrep = null; toldPrep = false; LiveExtras.sessionKey = null
+        if (isLive) prepareOwnLive()
         liveStatus = null
         liveSink = null
         coverManual = false; coverAuto = false; liveCovered = false
@@ -419,7 +430,71 @@ class RecordService : Service(), Recorder.Events {
     } catch (_: Exception) { null }
 
     private val countdownStep = Runnable { countdown(countdownLeft - 1) }
-    private val startAfterCountdown = Runnable { if (!stopping) startRecorder() }
+    private val startAfterCountdown = object : Runnable {
+        override fun run() {
+            if (stopping) return
+            // the live on YouTube is still being made: a little longer (8 s at most), then the start
+            val t = ytPrep
+            if (t != null && t.isAlive && System.currentTimeMillis() - ytPrepSince < 8_000) {
+                if (!toldPrep) { toldPrep = true; Toast.makeText(this@RecordService, getString(R.string.yt_preparing), Toast.LENGTH_SHORT).show() }
+                main.postDelayed(this, 250); return
+            }
+            ytPrep = null
+            applyPrepared()
+            startRecorder()
+        }
+    }
+
+    /** The stream goes to the app's own stream from here on (the YouTube destination's address and key swapped for this stream). */
+    private fun applyPrepared() {
+        val o = prepared ?: return
+        prepared = null
+        liveTargets = liveTargets.map { d -> if (d.url.contains("youtube", ignoreCase = true)) LiveSettings.Dest(d.platform, d.name, preparedUrl, o.key) else d }
+        live = liveTargets.firstOrNull()?.let { LiveTarget(it.url, it.key, liveTargets.joinToString(" + ") { d -> d.name }) }
+        LiveExtras.sessionKey = o.key
+        ownLive = o
+        RecLog.add(this, "yt: sending to the app's own stream")
+    }
+
+    /** A live made for a stream that never started (stopped in the countdown, or made too late): taken off the channel again. */
+    private fun dropPrepared() {
+        val o = prepared ?: return
+        prepared = null
+        val api = LiveExtras.youTube(this) ?: return
+        RecLog.add(this, "yt: own live ${o.broadcastId} not used, taken off")
+        Thread({ try { if (api.deleteIfNeverLive(o.broadcastId)) LiveExtras.setMadeLive(this, o.broadcastId, false) } catch (_: Exception) {} }, "rawrec-yt-own-undo").start()
+    }
+
+    /**
+     * YouTube through the account: the stream goes to the app's own stream on the channel, with a live
+     * made for it right now (auto-start, no monitor) — never to Studio's default key, whose waiting live
+     * YouTube holds back until «Go live» and shows with a time. Made during the countdown; the start
+     * waits for it a little. With Shorts («Dual stream» is set up on Studio's live), when the owner
+     * switched it off, or when it fails, the key as pasted is used, as before.
+     */
+    private fun prepareOwnLive() {
+        if (liveTargets.none { it.url.contains("youtube", ignoreCase = true) }) return
+        if (!LiveExtras.ytSignedIn(this) || !LiveExtras.ytOwnLive(this) || LiveSettings.shortsReady(this)) return
+        val api = LiveExtras.youTube(this) ?: return
+        ytPrepSince = System.currentTimeMillis()
+        ytPrep = Thread({
+            try {
+                val st = api.ownStream()
+                val id = api.createBroadcast(st.id, LiveExtras.ytTitle(this).ifBlank { getString(R.string.yt_default_title_fmt, LiveExtras.ytChannel(this).ifBlank { "Live" }) },
+                    LiveExtras.ytDesc(this), LiveExtras.ytPrivacyToSet(this).ifEmpty { "public" }, LiveExtras.ytKidsToSet(this) ?: false, autoStart = true)
+                LiveExtras.setMadeLive(this, id, true)
+                RecLog.add(this, "yt: own live $id made on stream ${st.id}")
+                preparedUrl = st.url
+                prepared = OwnLive(st.id, st.key, id)
+                // too late (the stream went ahead with the key as pasted, or was stopped): taken off again
+                main.post { if (recorder != null || stopping || !isLive) dropPrepared() }
+            } catch (e: Exception) {
+                val why = (e as? YouTubeApi.Companion.HttpError)?.reason?.ifBlank { null } ?: e.message ?: e.javaClass.simpleName
+                RecLog.add(this, "yt: own live not made ($why): the key as pasted is used")
+                main.post { if (isLive && !stopping) chatListener.onNote(getString(R.string.yt_own_failed_fmt, why)) }
+            }
+        }, "rawrec-yt-own").apply { start() }
+    }
     private val testDone = Runnable { if (state == State.RECORDING || state == State.PAUSED) finishRecording(StopReason.TEST_DONE) }
 
     private fun countdown(left: Int) {
@@ -935,6 +1010,7 @@ class RecordService : Service(), Recorder.Events {
             }
         }
         val lc = LiveChat(this, chatListener)
+        ownLive?.let { lc.ownLive(it.streamId, it.key, it.broadcastId) }
         val hasChat = lc.hasYouTube || lc.hasTwitch
         if (hasChat) {
             chat = lc
@@ -1433,6 +1509,7 @@ class RecordService : Service(), Recorder.Events {
         startedAt = 0L; pausedSince = 0L; countdownLeft = 0
         recorder = null
         isLive = false; live = null; liveSink = null; liveCovered = false
+        dropPrepared(); ownLive = null; ytPrep = null; LiveExtras.sessionKey = null
         shortsSink = null; shortsLayout = null; shortsLines.clear(); shortsColors.clear(); main.removeCallbacks(shortsChatDraw)
         refreshTile()
         if (keepingPermission && projection != null && keptDisplay != null) {

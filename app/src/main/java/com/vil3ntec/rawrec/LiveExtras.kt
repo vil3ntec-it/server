@@ -69,6 +69,12 @@ object LiveExtras {
         prefs(ctx).edit().putString("yt_made", s.joinToString(",")).apply()
     }
     fun setGoLiveNow(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("yt_go_live_now", on).apply()
+
+    /** The live is the app's own, made through the account on its own stream (Studio's key and its waiting live left alone). */
+    fun ytOwnLive(ctx: Context) = SafePrefs.bool(prefs(ctx), "yt_own_live", true)
+    fun setYtOwnLive(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("yt_own_live", on).apply()
+    /** The key this stream is really sent with when it is the app's own stream (null = the key as set). */
+    @Volatile var sessionKey: String? = null
     fun setChatOpen(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("yt_chat_open", on).apply()
     /** What is asked of YouTube: the owner's choice, or "" = left as it is. */
     fun ytPrivacyToSet(ctx: Context): String {

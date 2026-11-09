@@ -53,6 +53,9 @@ class YouTubeApi(
     class Sub(val channelId: String, val name: String)
 
     companion object {
+        /** The name of the app's own stream on the channel. */
+        const val OWN_STREAM = "RawRec"
+
         /** YouTube takes tags up to 500 characters in all (a tag with a space counts its quotes). */
         /**
          * The live's contentDetails as YouTube gave them, with auto-start on: what an update must carry
@@ -200,6 +203,33 @@ class YouTubeApi(
             if (st.optJSONObject("cdn")?.optJSONObject("ingestionInfo")?.optString("streamName") == k) return st.optString("id").ifBlank { null }
         }
         return null
+    }
+
+    /** A stream of this app's own on the channel: its id, the key to send with and the RTMPS address. */
+    class OwnStream(val id: String, val key: String, val url: String)
+
+    /**
+     * The channel's «RawRec» stream (made once, then kept; 1 unit, 50 the first time): this app sends to
+     * it, so the live is the one made here and bound to it — never Studio's live for the default key,
+     * which YouTube holds on «Waiting» until «Go live».
+     */
+    fun ownStream(): OwnStream {
+        val items = get("liveStreams?part=id,snippet,cdn&mine=true&maxResults=50").optJSONArray("items")
+        var st: JSONObject? = null
+        if (items != null) for (i in 0 until items.length()) {
+            val s = items.getJSONObject(i)
+            if (s.optJSONObject("snippet")?.optString("title") == OWN_STREAM) { st = s; break }
+        }
+        if (st == null) {
+            val body = JSONObject().put("snippet", JSONObject().put("title", OWN_STREAM))
+                .put("cdn", JSONObject().put("ingestionType", "rtmp").put("resolution", "variable").put("frameRate", "variable"))
+                .put("contentDetails", JSONObject().put("isReusable", true))
+            st = JSONObject(call("POST", "liveStreams?part=snippet,cdn,contentDetails", body, 50))
+        }
+        val ing = st.optJSONObject("cdn")?.optJSONObject("ingestionInfo")
+        val key = ing?.optString("streamName")?.ifBlank { null } ?: throw IOException("stream without a key")
+        val url = ing.optString("rtmpsIngestionAddress").ifBlank { "rtmps://a.rtmps.youtube.com/live2" }
+        return OwnStream(st.getString("id"), key, url)
     }
 
     /** Whether YouTube receives the picture on stream [id] («active») and how well. */

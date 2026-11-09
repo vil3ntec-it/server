@@ -28,11 +28,17 @@ class YouTubeSettingsTest {
          "status":{"lifeCycleStatus":"testing","privacyStatus":"public"},"contentDetails":{"boundStreamId":"s-ours","enableAutoStart":false,
          "monitorStream":{"enableMonitorStream":true}}}]}"""
 
-    private fun fake(active: String = """{"items":[]}""") {
+    private fun fake(active: String = """{"items":[]}""", ownStream: Boolean = false) {
         YouTubeApi.transport = { m, u, b ->
             calls += Triple(m, u, b)
             when {
                 u.contains("oauth2.googleapis.com/token") -> """{"access_token":"t","expires_in":3600}"""
+                // the channel's streams: Studio's default key, and the app's own stream when it was made before
+                m == "GET" && u.contains("liveStreams?part=id,snippet,cdn&mine=true") -> """{"items":[
+                    {"id":"s-ours","snippet":{"title":"Default stream key"},"cdn":{"ingestionInfo":{"streamName":"kkkk-2222","rtmpsIngestionAddress":"rtmps://a.rtmps.youtube.com/live2"}}}""" +
+                    (if (ownStream) """,{"id":"s-own","snippet":{"title":"RawRec"},"cdn":{"ingestionInfo":{"streamName":"own-1111","rtmpsIngestionAddress":"rtmps://a.rtmps.youtube.com/live2"}}}""" else "") + "]}"
+                m == "POST" && u.contains("liveStreams?part=snippet,cdn,contentDetails") -> """{"id":"s-new","snippet":{"title":"RawRec"},
+                    "cdn":{"ingestionInfo":{"streamName":"new-3333","rtmpsIngestionAddress":"rtmps://a.rtmps.youtube.com/live2"}}}"""
                 u.contains("liveStreams?part=id,cdn") -> """{"items":[{"id":"s-other","cdn":{"ingestionInfo":{"streamName":"aaaa-1111"}}},
                     {"id":"s-ours","cdn":{"ingestionInfo":{"streamName":"kkkk-2222"}}}]}"""
                 u.contains("broadcastStatus=active") -> active
@@ -149,6 +155,25 @@ class YouTubeSettingsTest {
         // the live read afresh for each step
         val b = api.broadcast("ours")!!
         assertEquals("testing", b.lifeCycle); assertTrue(b.monitor)
+    }
+
+    /** 4.7: the stream goes to the app's own stream on the channel (made once, then found again): never Studio's waiting live. */
+    @Test fun theAppsOwnStreamIsMadeOnceAndFoundAgain() {
+        fake()
+        val api = YouTubeApi("c", "s", "r")
+        val made = api.ownStream()
+        val ins = calls.last { it.first == "POST" && it.second.contains("liveStreams?part=snippet,cdn,contentDetails") }
+        val j = JSONObject(ins.third!!)
+        assertEquals("RawRec", j.getJSONObject("snippet").getString("title"))
+        assertEquals("variable", j.getJSONObject("cdn").getString("resolution")); assertEquals("variable", j.getJSONObject("cdn").getString("frameRate"))
+        assertEquals("rtmp", j.getJSONObject("cdn").getString("ingestionType"))
+        assertEquals(true, j.getJSONObject("contentDetails").getBoolean("isReusable"))
+        assertEquals("s-new", made.id); assertEquals("new-3333", made.key); assertEquals("rtmps://a.rtmps.youtube.com/live2", made.url)
+        // made before: found, not made again
+        calls.clear(); fake(ownStream = true)
+        val found = YouTubeApi("c", "s", "r").ownStream()
+        assertEquals("s-own", found.id); assertEquals("own-1111", found.key)
+        assertTrue("nothing made", calls.none { it.first == "POST" && it.second.contains("liveStreams") })
     }
 
     /** 4.6: step by step to live — never given up on, never a wrong step. */
