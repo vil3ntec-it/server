@@ -348,6 +348,13 @@
     <string name="live_q_1080">1080p, 60 fps (12 Mbps upload) — recommended</string>
     <string name="live_q_1080_30">1080p, 30 fps (8 Mbps upload)</string>
     <string name="live_q_1440">1440p, 60 fps (24 Mbps upload)</string>
+    <string name="live_q_720_30">720p, 30 fps (4 Mbps upload) — average internet</string>
+    <string name="live_q_480_30">480p, 30 fps (3 Mbps upload) — weak internet</string>
+    <string name="live_advice_none">What each quality needs so not a single frame breaks into blocks (measured on a game in motion): 1080p60 → 12, 1080p30 → 8, 720p60 → 7, 720p30 → 4, 480p30 → 3 Mbps upload to YouTube (not the speed-test number). After your first stream this shows what your internet really carried and which to pick.</string>
+    <string name="live_advice_capped">Last stream: your internet carried all %1$s Mbps of the chosen quality to YouTube; this quality stays clean.</string>
+    <string name="live_advice_ok">Last stream: your internet carried about %1$s Mbps to YouTube; «%2$s» fits and stays clean.</string>
+    <string name="live_advice_fit">Last stream: your internet carried only about %1$s Mbps to YouTube — the chosen quality needs more and breaks into blocks. So no frame looks broken, pick: «%2$s».</string>
+    <string name="live_advice_low">Last stream: your internet carried only about %1$s Mbps to YouTube; even 480p (3 Mbps) shows some blocks. Change the internet or VPN.</string>
     <string name="live_audio_title">Stream sound</string>
     <string name="live_team_title">Teammates\' voices in the stream</string>
     <string name="live_team_desc">Off: teammates\' talk is not streamed; game and character sounds stay complete. (Separate from recording; detection is the «Teammates\' voices» of Settings.)</string>

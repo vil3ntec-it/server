@@ -41,7 +41,30 @@ object LiveSettings {
         Quality(R.string.live_q_1080, 1080, 60, 12),
         Quality(R.string.live_q_1080_30, 1080, 30, 8),
         Quality(R.string.live_q_1440, 1440, 60, 24),
+        // 7.4, for a narrow link: measured on a game picture in motion (H.264 at a steady rate, SSIM of the
+        // worst 2 % of frames ≥ 0.97 — no blocks): 720p30 needs 3, 480p30 needs 1.5–2.5; a phone's
+        // hardware encoder about a third more
+        Quality(R.string.live_q_720_30, 720, 30, 4),
+        Quality(R.string.live_q_480_30, 480, 30, 3),
     )
+
+    /** Whether the last stream's rate was all the chosen quality asked (the link carried more, not less). */
+    fun lastRateCapped(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_last_capped", false)
+    fun setLastRate(ctx: Context, kbps: Int, capped: Boolean) =
+        prefs(ctx).edit().putInt("live_last_kbps", kbps).putBoolean("live_last_capped", capped).apply()
+
+    /**
+     * 7.4, «how many Mbps does it need»: what the owner's internet carried to the platform last time, and
+     * the best quality whose need fits in it with a fifth to spare. Null = no stream yet.
+     */
+    class Advice(val carriedMbps: Double, val capped: Boolean, val best: Int?)
+    fun advice(ctx: Context): Advice? {
+        val k = lastRateKbps(ctx).takeIf { it > 0 } ?: return null
+        val m = k / 1000.0
+        val best = QUALITIES.indices.filter { QUALITIES[it].mbps <= m * 0.8 }
+            .maxWithOrNull(compareBy({ QUALITIES[it].mbps }, { QUALITIES[it].res }))
+        return Advice(m, lastRateCapped(ctx), best)
+    }
 
     /** The stream's bit rate when the owner picks one (Mbps; 0 = the quality's own). 51 = YouTube's most. */
     val LIVE_RATES = listOf(0, 6, 9, 12, 15, 20, 25, 30, 40, 51)
@@ -51,8 +74,13 @@ object LiveSettings {
     /** What the automatic rate settled at last time (kbps; 0 = not known): the next stream starts there, not at 6 Mbps. */
     fun lastRateKbps(ctx: Context) = SafePrefs.int(prefs(ctx), "live_last_kbps", 0)
     fun setLastRateKbps(ctx: Context, kbps: Int) = prefs(ctx).edit().putInt("live_last_kbps", kbps).apply()
-    /** Where the automatic rate starts (bits a second): a fifth above last time's, between 800 kbps and 6 Mbps; 0 = unknown. */
-    fun startBps(ctx: Context): Int = lastRateKbps(ctx).takeIf { it > 0 }?.let { (it * 1200L).coerceIn(800_000L, 6_000_000L).toInt() } ?: 0
+    /**
+     * Where the automatic rate starts: 0 = [RateControl.START_BPS] (as up to 4.8). 7.4: no longer from
+     * last time's rate — one bad stream saved a low rate, and every stream after it started low and
+     * small (480p) and stayed blocky: a lock the owner saw as «the quality got worse».
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun startBps(ctx: Context): Int = 0
 
     /**
      * The game left the screen («one app» shared, and another app in front): «برمی‌گردم» on the stream
@@ -96,9 +124,8 @@ object LiveSettings {
      */
     fun startRes(ctx: Context, chosen: Int): Int {
         if (!autoQuality(ctx)) return chosen
-        val last = lastRateKbps(ctx)
-        val fit = when { last <= 0 -> chosen; last < 1000 -> 480; last < 3000 -> 720; else -> chosen }
-        return minOf(chosen, fit)
+        // 7.4: the owner's chosen size, as up to 4.8 (see [startBps]: last time's rate locked it at 480p)
+        return chosen
     }
     /** YouTube did not take the HEVC picture once: H.264 from then on (until the owner switches HEVC on again). */
     fun hevcFailed(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_hevc_failed", false)

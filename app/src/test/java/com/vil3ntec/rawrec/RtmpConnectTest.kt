@@ -329,7 +329,8 @@ class RtmpConnectTest {
      * slower than real time), the rate under what the link carries, no cut once settled.
      */
     @Test fun aLinkUnderAMegabitStaysRealTime() {
-        for (kbps in listOf(1000, 600, 350)) {
+        // 7.4: the floor is 1 Mbps again (no blocks); links from there up settle without cuts
+        for (kbps in listOf(1500, 1100)) {
             val s = Sim(12_000_000) { kbps * 1000.0 }
             s.run(0.0, 30.0)
             assertTrue("$kbps kbps: at most one cut while the start finds the link (${s.drops})", s.drops <= 1)
@@ -339,8 +340,8 @@ class RtmpConnectTest {
             assertTrue("$kbps kbps: about what the link carries, a probe of 10 % at most (${s.rc.target})", s.rc.target <= kbps * 1150)
             assertTrue("$kbps kbps: real time, never 4 s behind (${s.maxLagMs} ms)", s.maxLagMs < RateControl.HARD_US / 1000)
         }
-        // remembered from the last stream: not even the one cut at the start
-        val s = Sim(12_000_000, 1_200_000) { 1_000_000.0 }
+        // a start near the link: not even the one cut at the start
+        val s = Sim(12_000_000, 1_300_000) { 1_200_000.0 }
         s.run(0.0, 240.0)
         assertEquals(0, s.drops)
         assertTrue("never 4 s behind (${s.maxLagMs} ms)", s.maxLagMs < RateControl.HARD_US / 1000)

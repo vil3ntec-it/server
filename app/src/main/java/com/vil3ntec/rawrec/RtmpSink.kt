@@ -479,8 +479,12 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLO
         const val HARD_US = 4_000_000L
         /** The memory bound's cut: back to a key frame about this far behind the newest. */
         const val BACK_US = 2_000_000L
-        /** The least the rate goes to: a poor picture, but a whole one. */
-        const val FLOOR_BPS = 250_000
+        /**
+         * The least the rate goes to. 7.4: back to 1 Mbps as up to 4.8 — 250 kbps (5.2) on a 720p or
+         * 1080p picture was the big blocks the owner saw on YouTube; under this the stream keeps real
+         * time by letting waiting video go ([HARD_US]) rather than by turning into blocks.
+         */
+        const val FLOOR_BPS = 1_000_000
         /** Caught up: the rate may go back up. */
         const val CALM_US = 400_000L
         /** Where a stream starts (see [target]). */

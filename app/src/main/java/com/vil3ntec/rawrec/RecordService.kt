@@ -930,7 +930,10 @@ class RecordService : Service(), Recorder.Events {
                         (recorder?.let { r -> ", picture ${r.plan.width}×${r.plan.height} at ${r.plan.fps}" + (if (r.rateRemakes > 0) ", encoder re-made ${r.rateRemakes}×" else "") } ?: ""))
                 }
                 if (s.state == RtmpSink.State.LIVE && nowMs - liveBorn > 60_000L && nowMs - lastRateSave > 30_000L && s.targetKbps > 0) {
-                    lastRateSave = nowMs; LiveSettings.setLastRateKbps(this@RecordService, s.targetKbps)
+                    lastRateSave = nowMs
+                    // capped: the rate is at the chosen quality's own (the link carried all of it)
+                    val full = (recorder?.plan?.bitrate ?: 0) / 1000
+                    LiveSettings.setLastRate(this@RecordService, s.targetKbps, full > 0 && s.targetKbps >= full * 95 / 100)
                 }
                 when (s.state) {
                     RtmpSink.State.FAILED -> finishRecording(StopReason.LIVE_FAILED,
