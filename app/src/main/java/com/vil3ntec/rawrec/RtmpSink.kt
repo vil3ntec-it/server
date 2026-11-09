@@ -61,6 +61,8 @@ class RtmpSink(
     @Volatile private var configChanged = false
     @Volatile private var asc: ByteArray? = null
     @Volatile private var noAudio = false
+    /** The encoder gives HEVC: sent over Enhanced RTMP (YouTube). */
+    @Volatile var hevc = false; private set
     private var width = 0
     private var height = 0
     private var fps = 60
@@ -96,7 +98,8 @@ class RtmpSink(
         val key = flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
         val raw = ByteArray(size)
         src.duplicate().apply { limit(offset + size); position(offset) }.get(raw)
-        val nals = Mp4Writer.nals(raw).filter { (it[0].toInt() and 0x1F) !in 7..9 }
+        // parameter sets and delimiters go in the configuration, not in the frames (H.264 7–9, HEVC 32–35)
+        val nals = Mp4Writer.nals(raw).filter { if (hevc) ((it[0].toInt() shr 1) and 0x3F) !in 32..35 else (it[0].toInt() and 0x1F) !in 7..9 }
         val out = ByteBuffer.allocate(nals.sumOf { it.size + 4 })
         for (n in nals) { out.putInt(n.size); out.put(n) }
         lastEnqueuedPts = ptsUs
@@ -115,7 +118,8 @@ class RtmpSink(
         val csd = (0..1).mapNotNull { k -> if (f.containsKey("csd-$k")) f.getByteBuffer("csd-$k") else null }
             .map { b -> b.duplicate().let { d -> d.rewind(); ByteArray(d.remaining()).also { d.get(it) } } }
         if (csd.isEmpty()) return
-        val box = try { Mp4Writer.avcC(csd) } catch (_: Exception) { return }
+        hevc = f.getString(MediaFormat.KEY_MIME) == MediaFormat.MIMETYPE_VIDEO_HEVC
+        val box = try { if (hevc) Mp4Writer.hvcC(csd) else Mp4Writer.avcC(csd) } catch (_: Exception) { return }
         width = f.getInteger(MediaFormat.KEY_WIDTH)
         height = f.getInteger(MediaFormat.KEY_HEIGHT)
         if (f.containsKey(MediaFormat.KEY_FRAME_RATE)) fps = f.getInteger(MediaFormat.KEY_FRAME_RATE)
@@ -189,6 +193,7 @@ class RtmpSink(
                     status()
                     try {
                         val p = RtmpPublisher(url, key)
+                        p.hevc = hevc
                         p.connect()
                         p.sendHeaders(width, height, fps, target / 1000, avcConfig!!, if (noAudio) null else asc, sampleRate, channels)
                         p.flush()

@@ -372,6 +372,24 @@ class RtmpConnectTest {
         assertTrue("real time again after (${s.maxLagMs} ms)", s.maxLagMs < 2_000)
     }
 
+    /** 6.9: HEVC over Enhanced RTMP (as OBS sends YouTube); H.264 as before. */
+    @Test fun hevcGoesAsEnhancedRtmp() {
+        val d = byteArrayOf(9, 8, 7)
+        val cfg = RtmpPublisher.videoTag(true, true, true, d, 0, 3)
+        assertEquals("ExHeader, key frame, SequenceStart", 0x90, cfg[0].toInt() and 0xFF)
+        assertEquals("hvc1", String(cfg, 1, 4, Charsets.US_ASCII))
+        assertEquals(9, cfg[5].toInt())
+        assertEquals("ExHeader, key frame, CodedFramesX", 0x93, RtmpPublisher.videoTag(true, true, false, d, 0, 3)[0].toInt() and 0xFF)
+        assertEquals("ExHeader, inter frame, CodedFramesX", 0xA3, RtmpPublisher.videoTag(true, false, false, d, 0, 3)[0].toInt() and 0xFF)
+        val avc = RtmpPublisher.videoTag(false, false, false, d, 1, 2)
+        assertEquals(0x27, avc[0].toInt()); assertEquals(1, avc[1].toInt()); assertEquals(8, avc[5].toInt()); assertEquals(7, avc.size)
+        assertEquals("the AVC configuration", 0, RtmpPublisher.videoTag(false, true, true, d, 0, 3)[1].toInt())
+        assertEquals("'hvc1' as a number", 0x68766331.toDouble(), RtmpPublisher.HVC1_ID, 0.0)
+        // the codec list in «connect»: an AMF0 strict array
+        val a = Amf0.write(listOf("hvc1", "avc1"))
+        assertEquals(0x0A, a[0].toInt()); assertEquals(2, a[4].toInt()); assertEquals(2, a[5].toInt())
+    }
+
     /** 5.2: a stream that starts where the link was last time does not hit a narrow link at 6 Mbps. */
     @Test fun theStartIsWhereTheLinkWasLastTime() {
         val remembered = RateControl(12_000_000, startBps = 1_200_000)

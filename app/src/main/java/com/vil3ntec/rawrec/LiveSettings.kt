@@ -85,6 +85,15 @@ object LiveSettings {
     /** The tall picture's bit rate: YouTube's own advice for each size. */
     fun shortsBitrate(ctx: Context) = if (shortsSize(ctx) == 0) 4_500_000 else 8_000_000
     /** Shorts go out: switched on, a key given, and YouTube among the platforms. */
+    /** 6.9: HEVC to YouTube (Enhanced RTMP): the same picture for about a third fewer bits. On unless the owner turned it off. */
+    fun hevc(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_hevc", true)
+    fun setHevc(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("live_hevc", on).putBoolean("live_hevc_failed", false).apply()
+    /** YouTube did not take the HEVC picture once: H.264 from then on (until the owner switches HEVC on again). */
+    fun hevcFailed(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_hevc_failed", false)
+    fun setHevcFailed(ctx: Context) = prefs(ctx).edit().putBoolean("live_hevc_failed", true).apply()
+    /** HEVC only when every destination is YouTube (the others take H.264 only over RTMP). */
+    fun useHevc(ctx: Context) = hevc(ctx) && !hevcFailed(ctx) && destinations(ctx).let { d -> d.isNotEmpty() && d.all { it.platform == 0 } }
+
     fun shortsReady(ctx: Context) = shortsOn(ctx) && shortsKey(ctx).isNotBlank() && destinations(ctx).any { it.platform == 0 }
 
     /**
@@ -212,7 +221,7 @@ object LiveSettings {
             else -> RecordConfig.AUDIO_INTERNAL
         }
         return base.copy(
-            preset = RecordConfig.PRESET_CUSTOM, codec = RecordConfig.CODEC_AVC, mode = RecordConfig.MODE_CBR,
+            preset = RecordConfig.PRESET_CUSTOM, codec = if (useHevc(ctx)) RecordConfig.CODEC_HEVC else RecordConfig.CODEC_AVC, mode = RecordConfig.MODE_CBR,
             bitrate = mbps(ctx), fps = q.fps, resShort = q.res, orient = RecordConfig.ORIENT_LANDSCAPE,
             smartStart = false, rotateNewFile = false, ghostControl = false, invisibleControl = true,
             countdown = 0, testSeconds = 0, teamVoice = teamVoice(ctx), audioMode = audio,

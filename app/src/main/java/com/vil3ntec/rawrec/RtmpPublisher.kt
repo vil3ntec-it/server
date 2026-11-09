@@ -62,7 +62,28 @@ class RtmpPublisher(
     /** A connection that did not come about: [why] for the owner, the message for the report. */
     class Failure(val why: Why, message: String) : IOException(message)
 
-    companion object {
+    companion object Tags {
+        /** 'hvc1' as onMetaData's videocodecid (Enhanced RTMP). */
+        const val HVC1_ID = 1752589105.0
+
+        /**
+         * A video tag body. H.264: classic FLV (0x17 / 0x27, AVC packet type, 3-byte composition time).
+         * HEVC (Enhanced RTMP v1): IsExHeader | FrameType | PacketType, then the FourCC 'hvc1';
+         * SequenceStart for the configuration, CodedFramesX for frames (no B-frames: no composition time).
+         */
+        fun videoTag(hevc: Boolean, key: Boolean, config: Boolean, data: ByteArray, off: Int, len: Int): ByteArray {
+            val b = ByteArray(5 + len)
+            if (hevc) {
+                b[0] = (0x80 or ((if (key || config) 1 else 2) shl 4) or (if (config) 0 else 3)).toByte()
+                b[1] = 'h'.code.toByte(); b[2] = 'v'.code.toByte(); b[3] = 'c'.code.toByte(); b[4] = '1'.code.toByte()
+            } else {
+                b[0] = if (key || config) 0x17 else 0x27
+                b[1] = if (config) 0 else 1
+            }
+            System.arraycopy(data, off, b, 5, len)
+            return b
+        }
+
         private const val CHUNK = 4096
 
         /** «rtmp[s]://host[:port]/app[/more]» + key → where to connect and what to publish. */
@@ -154,10 +175,10 @@ class RtmpPublisher(
 
     private fun connectApp() {
         setChunkSize()
-        command(3, 0, "connect", txn++, linkedMapOf(
+        command(3, 0, "connect", txn++, linkedMapOf<String, Any?>(
             "app" to target.app, "type" to "nonprivate", "flashVer" to "FMLE/3.0 (compatible; RawRec)",
             "tcUrl" to target.tcUrl, "swfUrl" to target.tcUrl,
-        ))
+        ).also { if (hevc) it["fourCcList"] = listOf("hvc1", "avc1") })   // Enhanced RTMP: the codecs we send
         try { awaitResult("connect") } catch (e: Failure) { throw e } catch (e: IOException) { throw Failure(Why.NOT_RTMP, e.message ?: "connect") }
     }
 
@@ -295,7 +316,7 @@ class RtmpPublisher(
     fun sendHeaders(width: Int, height: Int, fps: Int, videoKbps: Int, avcConfig: ByteArray, asc: ByteArray?, sampleRate: Int, channels: Int) {
         val meta = Amf0.write("@setDataFrame", "onMetaData", linkedMapOf<String, Any?>(
             "width" to width.toDouble(), "height" to height.toDouble(), "framerate" to fps.toDouble(),
-            "videocodecid" to 7.0, "videodatarate" to videoKbps.toDouble(),
+            "videocodecid" to (if (hevc) HVC1_ID else 7.0), "videodatarate" to videoKbps.toDouble(),
             "audiocodecid" to (if (asc != null) 10.0 else null), "audiosamplerate" to sampleRate.toDouble(),
             "audiochannels" to channels.toDouble(), "stereo" to (channels > 1), "encoder" to "RawRec",
         ).filterValues { it != null })
@@ -304,12 +325,7 @@ class RtmpPublisher(
         if (asc != null) sendAudioConfig(asc)
     }
 
-    fun sendVideoConfig(avcConfig: ByteArray) {
-        val b = ByteArray(5 + avcConfig.size)
-        b[0] = 0x17; b[1] = 0
-        System.arraycopy(avcConfig, 0, b, 5, avcConfig.size)
-        message(6, 9, streamId, 0, b)
-    }
+    fun sendVideoConfig(avcConfig: ByteArray) = message(6, 9, streamId, 0, videoTag(hevc, true, true, avcConfig, 0, avcConfig.size))
 
     fun sendAudioConfig(asc: ByteArray) {
         val b = ByteArray(2 + asc.size)
@@ -319,13 +335,11 @@ class RtmpPublisher(
     }
 
     /** One access unit, NAL units already length-prefixed (4 bytes). */
-    fun sendVideo(timeMs: Long, key: Boolean, avcc: ByteArray, off: Int, len: Int) {
-        val b = ByteArray(5 + len)
-        b[0] = if (key) 0x17 else 0x27
-        b[1] = 1
-        System.arraycopy(avcc, off, b, 5, len)
-        message(6, 9, streamId, timeMs, b)
-    }
+    fun sendVideo(timeMs: Long, key: Boolean, avcc: ByteArray, off: Int, len: Int) =
+        message(6, 9, streamId, timeMs, videoTag(hevc, key, false, avcc, off, len))
+
+    /** 6.9: HEVC over Enhanced RTMP (as OBS 29.1+ sends YouTube): the same picture for fewer bits. Set before [connect]. */
+    @Volatile var hevc = false
 
     /** One raw AAC frame. */
     fun sendAudio(timeMs: Long, aac: ByteArray, off: Int, len: Int) {
@@ -538,6 +552,12 @@ object Amf0 {
                 o.write(3)
                 for ((k, x) in v) { str(o, k.toString()); value(o, x) }
                 o.write(0); o.write(0); o.write(9)
+            }
+            is List<*> -> {
+                o.write(0x0A)
+                val n = v.size
+                o.write(n ushr 24); o.write(n ushr 16); o.write(n ushr 8); o.write(n)
+                for (x in v) value(o, x)
             }
             else -> { o.write(2); str(o, v.toString()) }
         }

@@ -529,7 +529,7 @@ class RecordService : Service(), Recorder.Events {
             val lv = live
             val r = if (lv != null) Recorder(this, p, c, plan, this, null, keepDisplay = false,
                 sinkFactory = {
-                    liveBorn = System.currentTimeMillis(); lastRtmpLog = ""; lastSendProblem = null; toldPrivate = false; toldAway = false; hotFps = 0; netLevel = 0; toldNet = false; sizeWant = 0; sizeSince = 0L; sizeChanged = 0L
+                    liveBorn = System.currentTimeMillis(); lastRtmpLog = ""; lastSendProblem = null; toldPrivate = false; toldAway = false; hotFps = 0; netLevel = 0; toldNet = false; hevcNoPictureSince = 0L; toldHevc = false; sizeWant = 0; sizeSince = 0L; sizeChanged = 0L
                     main.removeCallbacks(sendCheck); main.postDelayed(sendCheck, 13_000)
                     screenChecks = 0; main.removeCallbacks(screenCheck); main.postDelayed(screenCheck, 8_000)
                     val auto = LiveSettings.autoQuality(this)
@@ -1191,6 +1191,7 @@ class RecordService : Service(), Recorder.Events {
                 hud?.setLink(liveLink(info))
                 // a private live is seen by no one but the owner (and not on the channel): said once
                 if (info.privacy == "private" && !toldPrivate) { toldPrivate = true; hud?.note(getString(R.string.yt_private_note)) }
+                checkHevc(info)
             }
         }
         override fun onNote(text: String) { liveNote = text; main.post { hud?.note(text) } }
@@ -1850,9 +1851,10 @@ class RecordService : Service(), Recorder.Events {
         if (System.currentTimeMillis() - liveBorn < 20_000L) return
         val narrow = s.targetKbps < full * 55 / 100
         val wide = s.targetKbps >= full * 75 / 100
+        val eq = if (recorder?.plan?.hevc == true) s.targetKbps * 3 / 2 else s.targetKbps
         val level = when {
             // 6.6: never under 30 pictures a second (20 looked choppy); fewer pictures before a smaller picture
-            s.targetKbps < 4500 || (netLevel >= 1 && s.targetKbps < 5500) -> 1
+            eq < 4500 || (netLevel >= 1 && eq < 5500) -> 1
             narrow || (netLevel >= 1 && !wide) -> 1
             else -> 0
         }
@@ -1861,6 +1863,27 @@ class RecordService : Service(), Recorder.Events {
         netLevel = level; applyFpsCap()
         RecLog.add(this, "link: ${s.targetKbps} of $full kbps, " + when (level) { 2 -> "20 fps"; 1 -> "30 fps"; else -> "full fps" })
         if (level > 0 && !toldNet) { toldNet = true; hud?.note(getString(R.string.live_net_narrow_fmt, String.format(java.util.Locale.US, "%.1f", s.targetKbps / 1000.0))) }
+    }
+
+    /**
+     * 6.9: HEVC sent and YouTube says it receives nothing for 40 s while our connection is live: YouTube
+     * did not take HEVC here — remembered (H.264 from the next stream) and said plainly, once.
+     */
+    private var hevcNoPictureSince = 0L
+    private var toldHevc = false
+    private fun checkHevc(info: LiveChat.YtInfo) {
+        val r = recorder ?: return
+        if (!r.plan.hevc || toldHevc) return
+        val sending = liveStatus?.state == RtmpSink.State.LIVE
+        if (info.receiving == true) { hevcNoPictureSince = 0L; return }
+        if (!sending || info.receiving != false) return
+        val now = System.currentTimeMillis()
+        if (hevcNoPictureSince == 0L) { hevcNoPictureSince = now; return }
+        if (now - hevcNoPictureSince < 40_000L) return
+        toldHevc = true
+        LiveSettings.setHevcFailed(this)
+        RecLog.add(this, "yt: no picture with HEVC for 40 s — H.264 from the next stream")
+        hud?.note(getString(R.string.live_hevc_failed))
     }
 
     /** The picture's short side for the link (YouTube's own ladder): 0 full, 720, 480, 360. */
@@ -1873,8 +1896,10 @@ class RecordService : Service(), Recorder.Events {
      * under 1.3 Mbps 480p, under 700 kbps 360p — so the bits there are give a clean, smooth picture
      * instead of blocks and stalls. Down after 6 s, up after 30 s, at most once in 20 s.
      */
-    private fun followSize(kbps: Int) {
+    private fun followSize(kbps0: Int) {
         val r = recorder ?: return
+        // HEVC: the same picture for about two thirds of the bits — the ladder in H.264's terms
+        val kbps = if (r.plan.hevc) kbps0 * 3 / 2 else kbps0
         val want = when {
             // 6.6: YouTube's own table for 30 fps — 720p from 1.5 Mbps (kept down to 1), 480p from 0.5, 360p under
             kbps < 450 -> 360

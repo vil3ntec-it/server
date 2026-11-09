@@ -1518,6 +1518,11 @@ class MainActivity : Activity() {
         rows["live_rate"]?.select(LiveSettings.LIVE_RATES.indexOf(LiveSettings.liveRate(this)))
         rows["live_auto"]?.select(if (LiveSettings.autoQuality(this)) 0 else 1)
         toggles["live_record"]?.set(LiveSettings.recordToo(this))
+        // 6.9: HEVC to YouTube — the same picture for fewer bits (what OBS sends YouTube over Enhanced RTMP)
+        toggles["live_hevc"] = Toggle(qc, "tog:live_hevc", R.drawable.ic_quality, str(R.string.live_hevc_title), str(R.string.live_hevc_desc), top = 8) { on ->
+            LiveSettings.setHevc(this, on); toggles["live_hevc"]?.set(on)
+        }
+        toggles["live_hevc"]?.set(LiveSettings.hevc(this) && !LiveSettings.hevcFailed(this))
         return pg.scroll
     }
 
