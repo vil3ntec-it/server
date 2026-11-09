@@ -1,0 +1,20 @@
+tests 247, failed 3, skipped 0
+FAIL com.vil3ntec.rawrec.InteractionTest.everyToggleResponds[33]: java.lang.NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress
+    java.lang.NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress
+    	at java.base/java.lang.Class.getDeclaredMethods0(Native Method)
+    	at java.base/java.lang.Class.privateGetDeclaredMethods(Class.java:3404)
+    	at com.vil3ntec.rawrec.InteractionTest.launch(InteractionTest.kt:116)
+    	at com.vil3ntec.rawrec.InteractionTest.everyToggleResponds(InteractionTest.kt:280)
+    Caused by: java.lang.ClassNotFoundException: android.bluetooth.BluetoothDevice$BluetoothAddress
+    	at com.vil3ntec.rawrec.InteractionTest.launch(InteractionTest.kt:116)
+    	at com.vil3ntec.rawrec.InteractionTest.everyToggleResponds(InteractionTest.kt:280)
+FAIL com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar[34]: java.lang.AssertionError: playing the media part (note: «», playingKind 0, toast «این کار انجام نشد: NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress — جزئیات در «گزارشِ خطا» ذخیره شد.», error «RawRec 7.8 error (app kept running) 2026-11-09 23:36:34 • tap: listen 2 Android 14
+    java.lang.AssertionError: playing the media part (note: «», playingKind 0, toast «این کار انجام نشد: NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress — جزئیات در «گزارشِ خطا» ذخیره شد.», error «RawRec 7.8 error (app kept running)
+    2026-11-09 23:36:34 • tap: listen 2
+    Android 14 (API 34) • robolectric robolectric • fa
+    	at com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar(VoiceLiveUiTest.kt:212)
+FAIL com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar: java.lang.AssertionError: playing the media part (note: «», playingKind 0, toast «این کار انجام نشد: NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress — جزئیات در «گزارشِ خطا» ذخیره شد.», error «RawRec 7.8 error (app kept running) 2026-11-09 23:36:38 • tap: listen 2 Android 15
+    java.lang.AssertionError: playing the media part (note: «», playingKind 0, toast «این کار انجام نشد: NoClassDefFoundError: android/bluetooth/BluetoothDevice$BluetoothAddress — جزئیات در «گزارشِ خطا» ذخیره شد.», error «RawRec 7.8 error (app kept running)
+    2026-11-09 23:36:38 • tap: listen 2
+    Android 15 (API 35) • robolectric robolectric • fa
+    	at com.vil3ntec.rawrec.VoiceLiveUiTest.listenToEachPartAndPickByEar(VoiceLiveUiTest.kt:212)
