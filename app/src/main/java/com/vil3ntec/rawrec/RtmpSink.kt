@@ -52,7 +52,8 @@ class RtmpSink(
         fun onBitrate(bps: Int)
     }
 
-    private class Pkt(val video: Boolean, val pts: Long, val key: Boolean, val data: ByteArray)
+    /** [atNs]: when it was handed over — how long it has waited is the real backlog (7.6). */
+    private class Pkt(val video: Boolean, val pts: Long, val key: Boolean, val data: ByteArray, val atNs: Long = System.nanoTime())
 
     private val queue = LinkedBlockingDeque<Pkt>()
     private val keyWanted = AtomicBoolean(true)
@@ -249,7 +250,11 @@ class RtmpSink(
 
                 // Automatic quality ([RateControl]): how long the oldest waiting frame has waited, and
                 // what the connection really carried, decide the encoder's bit rate.
-                val lagUs = lastEnqueuedPts - k.pts
+                // 7.6: how long this packet waited here — not the newest picture's time minus this packet's: the
+                // sound's clock can run behind the picture's (a game's silence gives fewer samples), and that
+                // read as «the internet is behind», so the rate fell to the floor on a free link (the emulator:
+                // «behind 117 s, lost 0», «1000 of 7000 kbps»; the owner: blocks)
+                val lagUs = (now - k.atNs) / 1000
                 lastLagMs = (lagUs / 1000).toInt().coerceAtLeast(0)
                 // 6.5: the chosen rate is a ceiling, never more than the link carries — a manual 51 Mbps on a
                 // 3 Mbps link lost 27 % of the frames and stalled the viewers (the owner's report). The

@@ -1135,7 +1135,10 @@ class Recorder(
                         val diff = cap - pausedTotalUs - (startUs + totalFrames * 1_000_000L / RATE + offsetUs)
                         // At most 2 ms per second: inaudible, far faster than any clock drift, and
                         // the timestamps keep rising (one chunk is 21 ms).
-                        if (abs(diff) < 1_000_000) offsetUs += diff.coerceIn(-2_000L, 2_000L)
+                        // 7.6: a second or more behind (playback capture gives no samples while the game is
+                        // silent): back in step at once — a short gap of silence, the picture and sound together
+                        if (diff >= 1_000_000) offsetUs += diff
+                        else if (abs(diff) < 1_000_000) offsetUs += diff.coerceIn(-2_000L, 2_000L)
                     }
                 }
 

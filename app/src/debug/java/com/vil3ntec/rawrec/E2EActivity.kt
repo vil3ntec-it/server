@@ -36,6 +36,9 @@ class E2EActivity : Activity() {
     private var plain = false
 
     private fun handle(i: Intent) {
+        // the emulator has software encoders only: H.264 at 1080 lines for the owner's recording settings
+        getSharedPreferences(RecordService.PREFS, Context.MODE_PRIVATE).edit()
+            .putInt("c_codec", RecordConfig.CODEC_AVC).putInt("c_res", 1080).apply()
         when (i.getStringExtra("do")) {
             "record" -> {
                 plain = true
