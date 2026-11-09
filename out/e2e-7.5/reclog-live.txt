@@ -1,0 +1,28 @@
+2026-11-09 21:25:35  start: c2.android.avc.encoder 1152x720@60 7 Mbps level 3.2 • Android 34
+2026-11-09 21:25:37  captured app on screen
+2026-11-09 21:25:39  rtmp: CONNECTING
+2026-11-09 21:25:39  rtmp: LIVE via=direct 10.0.2.2
+2026-11-09 21:25:39  rate: sent 0 kbps, target 6000, behind 0 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 21:25:43  screen: 14 pictures, 13 drawn
+2026-11-09 21:25:43  mirror: not on the screen: null
+2026-11-09 21:25:44  chat panel: whole screen captured
+2026-11-09 21:25:44  mirror: on the screen, 1 pictures
+2026-11-09 21:25:56  screen: 24 pictures, 24 drawn
+2026-11-09 21:25:56  mirror: on the screen, 1 pictures
+2026-11-09 21:26:08  screen: 28 pictures, 28 drawn
+2026-11-09 21:26:08  mirror: on the screen, 1 pictures
+2026-11-09 21:26:09  link: 1000 of 7000 kbps, 30 fps
+2026-11-09 21:26:09  rate: sent 511 kbps, target 1000, behind 0 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 21:26:40  rate: sent 187 kbps, target 1000, behind 21691 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 21:27:11  rate: sent 344 kbps, target 1000, behind 34609 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 21:27:42  rate: sent 339 kbps, target 1000, behind 51608 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 21:28:12  rate: sent 324 kbps, target 1000, behind 64080 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 21:28:42  rate: sent 256 kbps, target 1000, behind 83308 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 21:29:13  rate: sent 159 kbps, target 1000, behind 92745 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 21:29:41  record: closed and kept
+2026-11-09 21:29:41  notice: record: encoder refused HEVC 2560x1600@24
+2026-11-09 21:29:43  rate: sent 251 kbps, target 1000, behind 117389 ms, lost 0 frames, picture 1152×720 at 60
+2026-11-09 21:30:01  record: closed and kept
+2026-11-09 21:30:02  notice: record: encoder refused HEVC 2560x1600@24
+2026-11-09 21:30:04  stop: APP
+2026-11-09 21:30:08  rtmp: ENDED via=direct 10.0.2.2
