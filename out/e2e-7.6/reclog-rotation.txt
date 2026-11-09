@@ -1,2 +1,7 @@
-2026-11-09 22:27:04  start: c2.android.avc.encoder 1080x1728@33 12 Mbps level 4 • Android 34
-2026-11-09 22:27:50  stop: APP
+2026-11-09 22:41:37  screen sources: metrics 1600x2560, rotation 1, display context 1600x2560, config 1
+2026-11-09 22:41:39  start: c2.android.avc.encoder 1080x1728@33 12 Mbps level 4 • Android 34
+2026-11-09 22:42:12  screen: 2560x1600
+2026-11-09 22:42:12  screen sources: metrics 1600x2560, rotation 1, display context 2560x1600, config 1
+2026-11-09 22:42:13  rotation: screen 2560x1600 landscape, recording 1080x1728, NEW_PART
+2026-11-09 22:42:15  rotated: 1728x1080, new part
+2026-11-09 22:42:29  stop: APP
