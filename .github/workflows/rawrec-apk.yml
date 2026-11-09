@@ -69,7 +69,7 @@ jobs:
           git add -f out/RawRec-7.8-unsigned.apk
           git add -f out/previews-7.8 out/tests-7.8.txt out/shaders-7.8.txt || true
           git commit -m "APK (unsigned) — temporary"
-          git push
+          for i in 1 2 3 4 5; do git pull --rebase -q && git push -q && exit 0; sleep 5; done; exit 1
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 60
