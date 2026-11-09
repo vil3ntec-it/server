@@ -372,7 +372,7 @@ class LiveChat(private val ctx: Context, private val l: Listener) {
         if (status != "active") { setYt(ctx.getString(R.string.chat_yt_no_picture)); return }   // the picture is not there yet
         // the live as it is now, not as read a while ago
         val cur = (try { api.broadcast(b.videoId) } catch (_: Exception) { null }) ?: b
-        if (cur.lifeCycle != b.lifeCycle) { bc = cur; RecLog.add(ctx, "yt: ${cur.videoId} ${cur.lifeCycle}") }
+        if (cur.lifeCycle != b.lifeCycle) { bc = cur; publish(); RecLog.add(ctx, "yt: ${cur.videoId} ${cur.lifeCycle}") }
         if (cur.isLive) { nowLive(cur, false); return }
         setYt(ctx.getString(R.string.chat_yt_going_live))
         val step = GoLive.step(cur.lifeCycle, cur.monitor, flip)
