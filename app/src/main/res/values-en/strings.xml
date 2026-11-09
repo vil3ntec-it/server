@@ -728,6 +728,7 @@ Recording ends cleanly before the storage is full.</string>
     <string name="vs_on_now_toast_fmt">«%1$s» is recorded.</string>
     <string name="vs_need_one">At least one part must be recorded. To record no app sound at all, set «Audio» at the top of this page to «Microphone» or «No audio».</string>
     <string name="hud_on_stream">On the stream: what viewers see</string>
+    <string name="hud_edit_layout">Move the chat, goal, viewers and subscribers on the stream</string>
     <string name="hud_s_chat">Chat</string>
     <string name="hud_s_alerts">Thank-yous</string>
     <string name="hud_s_subs">Subscribers</string>

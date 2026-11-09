@@ -749,6 +749,7 @@
     <string name="vs_on_now_toast_fmt">«%1$s» ضبط می‌شود.</string>
     <string name="vs_need_one">دست‌کم یک بخش باید ضبط شود. برای این‌که صدای برنامه‌ها اصلاً ضبط نشود، بالای همین صفحه «صدا» را روی «میکروفون» یا «بی‌صدا» بگذار.</string>
     <string name="hud_on_stream">در پخش: بیننده‌ها چه ببینند</string>
+    <string name="hud_edit_layout">جابه‌جا کردنِ چت، هدف، بیننده و مشترک روی پخش</string>
     <string name="hud_s_chat">چت</string>
     <string name="hud_s_alerts">تشکرها</string>
     <string name="hud_s_subs">شمارِ مشترک</string>

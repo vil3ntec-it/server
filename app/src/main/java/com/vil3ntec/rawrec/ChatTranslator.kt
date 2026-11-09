@@ -178,7 +178,8 @@ object ChatTranslator {
         synchronized(cache) { cache[key] }?.let { done(it); return }
         exec.execute {
             online(text, "auto", "fa")?.let { (out, from) ->
-                val r = out.takeIf { from.substringBefore('-') != "fa" && it != text }
+                // 7.7: read as chat is spoken, not as a letter is written
+                val r = out.takeIf { from.substringBefore('-') != "fa" && it != text }?.let { PersianCasual.casual(it) }
                 if (r != null) synchronized(cache) { cache[key] = r }
                 done(r); return@execute
             }
@@ -186,7 +187,7 @@ object ChatTranslator {
             // The first message in a language waits for that language's one-time download.
             if (src == null || !ensurePair(src, "fa")) { done(null); return@execute }
             val out = try { Tasks.await(client(src, "fa").translate(text), 8, TimeUnit.SECONDS) } catch (_: Throwable) { null }
-            val r = out?.trim()?.takeIf { it.isNotEmpty() && it != text }
+            val r = out?.trim()?.takeIf { it.isNotEmpty() && it != text }?.let { PersianCasual.casual(it) }
             if (r != null) synchronized(cache) { cache[key] = r }
             done(r)
         }
@@ -197,13 +198,15 @@ object ChatTranslator {
         val target = LiveExtras.trTarget(ctx)
         val key = "$target|$text"
         synchronized(cache) { cache[key] }?.let { done(it); return }
+        // 7.7: spoken Persian into the written forms translators know; gamers' words kept in English
+        val src = PersianCasual.normalize(text)
         exec.execute {
-            online(text, "fa", target)?.let { (out, _) ->
+            online(src, "fa", target)?.let { (out, _) ->
                 synchronized(cache) { cache[key] = out }
                 done(out); return@execute
             }
             if (!ensureReady(target)) { done(null); return@execute }
-            val out = try { Tasks.await(client("fa", target).translate(text), 10, TimeUnit.SECONDS) } catch (_: Throwable) { null }
+            val out = try { Tasks.await(client("fa", target).translate(src), 10, TimeUnit.SECONDS) } catch (_: Throwable) { null }
             val r = out?.trim()?.takeIf { it.isNotEmpty() }
             if (r != null) synchronized(cache) { cache[key] = r }
             done(r)

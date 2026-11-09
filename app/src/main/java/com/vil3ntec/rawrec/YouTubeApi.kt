@@ -489,7 +489,7 @@ class YouTubeApi(
         val member = sn.optJSONObject("newSponsorDetails") ?: sn.optJSONObject("memberMilestoneChatDetails")
         ChatItem(
             id = m.optString("id"), type = type, authorId = au.optString("channelId"), author = au.optString("displayName"),
-            text = sn.optString("displayMessage").ifBlank { sc?.optString("userComment") ?: "" },
+            text = YtEmoji.toUnicode(sn.optString("displayMessage").ifBlank { sc?.optString("userComment") ?: "" }),
             isOwner = au.optBoolean("isChatOwner"), isMod = au.optBoolean("isChatModerator"), isMember = au.optBoolean("isChatSponsor"),
             amount = sc?.optString("amountDisplayString")?.ifBlank { null },
             tier = member?.optString("memberLevelName")?.ifBlank { null },

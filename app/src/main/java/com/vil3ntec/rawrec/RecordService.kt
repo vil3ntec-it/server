@@ -1338,6 +1338,10 @@ class RecordService : Service(), Recorder.Events {
         override fun delete(m: LiveChat.Msg) { chat?.delete(m); hud?.remove(m.id); scenes?.unchat(m.id) }
         override fun onScene(id: String) { scenes?.select(id) }
         override fun onLayer(id: String, on: Boolean) { scenes?.setLayerVisible(id, on) }
+        override fun editLayout() {
+            try { startActivity(Intent(this@RecordService, SceneEditorActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            catch (e: Exception) { RecLog.add(this@RecordService, "layout editor: ${e.message}") }
+        }
         override fun timeout(m: LiveChat.Msg, seconds: Int) {
             chat?.timeout(m, seconds)
             hud?.note(if (seconds > 0) getString(R.string.hud_n_timeout_fmt, m.author, Fmt.num(seconds)) else getString(R.string.hud_n_banned_fmt, m.author))

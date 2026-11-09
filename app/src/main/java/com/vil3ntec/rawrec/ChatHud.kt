@@ -60,6 +60,8 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         fun onScene(id: String)
         /** A layer of the scene on the stream shown to viewers or not. */
         fun onLayer(id: String, on: Boolean)
+        /** 7.7: the layout editor over the game, while live — what is moved there moves on the stream at once. */
+        fun editLayout() {}
     }
 
     private val wm = ctx.getSystemService(WindowManager::class.java)
@@ -235,6 +237,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
         addView(stats, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         addView(linkBtn)
         addView(iconBtn(R.drawable.ic_eye, ctx.getString(R.string.hud_on_stream)) { toggle(streamRow) })
+        addView(iconBtn(R.drawable.ic_layers, ctx.getString(R.string.hud_edit_layout)) { setOpen(false); actions.editLayout() })
         addView(iconBtn(R.drawable.ic_gift, ctx.getString(R.string.hud_tools)) { toggle(tools) })
         addView(iconBtn(R.drawable.ic_close, ctx.getString(R.string.hud_close)) { setOpen(false) })
     }
@@ -276,6 +279,23 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
     ).apply { setPadding(dp(8), 0, dp(8), dp(4)) }
     private val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(10), dp(2), dp(10), dp(4)) }
     private val scroll = ScrollView(ctx).apply { isVerticalScrollBarEnabled = false; addView(list) }
+    /**
+     * 7.7: the newest message is always in view — after every new message and every time the panel
+     * opens — unless the owner has scrolled up to read (then it stays where they are until they come
+     * back to the bottom). Before, the scroll was asked before the new line was laid out, so it
+     * stopped one or more messages short and the owner had to scroll down to see the last one.
+     */
+    private var stick = true
+    private var autoScrolling = false
+    private fun toBottom() {
+        autoScrolling = true
+        try { scroll.scrollTo(0, maxOf(0, list.height - scroll.height)) } finally { autoScrolling = false }
+    }
+    init {
+        scroll.setOnScrollChangeListener { _, _, _, _, _ -> if (!autoScrolling && scroll.isLaidOut) stick = !scroll.canScrollVertically(1) }
+        list.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (stick) toBottom() }
+        scroll.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (stick) toBottom() }
+    }
     private val input = EditText(ctx).apply {
         hint = ctx.getString(R.string.hud_hint)
         setHintTextColor(Color.argb(140, 255, 255, 255))
@@ -605,11 +625,10 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
             }
             setOnClickListener { select(if (selected === m) null else m) }
         }
-        val atBottom = !scroll.canScrollVertically(1)
         list.addView(tv, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(2) })
         items += m to tv
         while (items.size > 80) { list.removeView(items.removeAt(0).second) }
-        if (atBottom) scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+        if (stick) scroll.post { toBottom() }
         if (m.history) return
         // the feed over the game: the newest few, each fading after a while
         addFeedLine(m)
@@ -638,7 +657,7 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
     fun note(text: String) {
         val tv = label(textSp - 0.5f, Color.argb(200, 255, 176, 32)).apply { this.text = text; setPadding(0, dp(3), 0, dp(3)) }
         list.addView(tv)
-        scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+        if (stick) scroll.post { toBottom() }
     }
 
     // ---------------------------------------------------------------- feed
@@ -714,7 +733,8 @@ class ChatHud(private val ctx: Context, private val actions: Actions) {
             readScreen()
             placeChat(lpPanel, panelW, panelH)
             try { OverlayWindows.add(wm, panelRoot, lpPanel) } catch (_: Exception) { open = false }
-            scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+            stick = true
+            scroll.post { toBottom() }
         } else {
             setFocusable(false)
             select(null)
