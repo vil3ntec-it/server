@@ -24,36 +24,21 @@ adb shell getprop ro.build.version.release | tee -a $OUT/steps.txt
 
 
 probe() {  # every recording in the gallery: size, length, decode errors, how much of the frame the picture fills
-  adb shell content query --uri content://media/external/video/media --projection _data 2>/dev/null | grep -o '_data=[^,]*' | cut -d= -f2 | tr -d '\r' > $OUT/files-$1.txt
-  for f in $(cat $OUT/files-$1.txt); do
-    grep -qx "$f" $OUT/seen.txt 2>/dev/null && continue; echo "$f" >> $OUT/seen.txt
-    adb pull "$f" /tmp/rec.mp4 >/dev/null 2>&1 || continue
+  adb shell content query --uri content://media/external/video/media --projection _data 2>/dev/null | sed -n 's/.*_data=//p' | tr -d '\r' > $OUT/files-$1.txt
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    grep -qxF "$f" $OUT/seen.txt 2>/dev/null && continue; echo "$f" >> $OUT/seen.txt
+    adb pull "$f" /tmp/rec.mp4 >/dev/null 2>&1 < /dev/null || continue
     b=$(basename "$f" .mp4 | tr ' ' '_')
     { echo "== $1: $f"
-      ffprobe -v error -show_entries format=duration,size:stream=codec_name,width,height,avg_frame_rate -of compact /tmp/rec.mp4
-      echo "decode errors: $(ffmpeg -v error -i /tmp/rec.mp4 -f null - 2>&1 | wc -l)"
-      for t in 1 4 8 14; do echo "at ${t}s picture area: $(ffmpeg -v info -ss $t -i /tmp/rec.mp4 -t 1 -vf cropdetect=limit=24:round=2:reset=1 -f null - 2>&1 | grep -o 'crop=[0-9:]*' | tail -1)"; done
+      ffprobe -v error -show_entries format=duration,size:stream=codec_name,width,height,avg_frame_rate -of compact /tmp/rec.mp4 < /dev/null
+      echo "decode errors: $(ffmpeg -v error -i /tmp/rec.mp4 -f null - 2>&1 < /dev/null | wc -l)"
+      for t in 1 4 8 14 20; do echo "at ${t}s picture area: $(ffmpeg -v info -ss $t -i /tmp/rec.mp4 -t 1 -vf cropdetect=limit=24:round=2:reset=1 -f null - 2>&1 < /dev/null | grep -o 'crop=[0-9:]*' | tail -1)"; done
     } >> $OUT/recordings.txt
-    for t in 2 10; do ffmpeg -v error -ss $t -i /tmp/rec.mp4 -frames:v 1 -y "$OUT/$1-$b-${t}s.png"; done
-  done
+    for t in 3 15; do ffmpeg -v error -ss $t -i /tmp/rec.mp4 -frames:v 1 -y "$OUT/$1-$b-${t}s.png" < /dev/null; done
+  done < $OUT/files-$1.txt
 }
 
-log "plain recording: started upright, then the app turns landscape (as a game does)"
-adb shell $A --es do port
-sleep 3
-adb shell $A --es do record
-sleep 3
-consent
-sleep 6
-adb exec-out screencap -p > $OUT/rot-1-upright.png
-adb shell $A --es do land
-sleep 14
-adb exec-out screencap -p > $OUT/rot-2-landscape.png
-adb shell $A --es do stop
-sleep 6
-adb shell run-as $PKG cat files/rec_log.txt > $OUT/reclog-rotation.txt 2>&1
-probe rotation
-cat $OUT/recordings.txt
 
 adb shell $A --es do land
 sleep 3
@@ -91,5 +76,25 @@ adb logcat -d -s RAWREC_E2E:I > $OUT/report.txt
 adb logcat -d | grep -iE "rawrec|AndroidRuntime|FATAL|MediaCodec.*(error|fail)" | tail -400 > $OUT/logcat.txt
 adb shell run-as $PKG cat files/rec_log.txt > $OUT/reclog-live.txt 2>&1
 probe live
+sleep 3
+log "plain recording: started upright, then the app turns landscape (as a game does)"
+# the tablet held upright (the display turned to portrait), as when RawRec is opened before the game
+adb shell settings put system accelerometer_rotation 0
+adb shell settings put system user_rotation 1
+adb shell $A --es do port
+sleep 4
+adb shell $A --es do record
+sleep 3
+consent
+sleep 6
+adb exec-out screencap -p > $OUT/rot-1-upright.png
+adb shell $A --es do land
+sleep 14
+adb exec-out screencap -p > $OUT/rot-2-landscape.png
+adb shell $A --es do stop
+sleep 6
+adb shell run-as $PKG cat files/rec_log.txt > $OUT/reclog-rotation.txt 2>&1
+probe rotation
+cat $OUT/recordings.txt
 cat $OUT/recordings.txt 2>/dev/null
 exit 0

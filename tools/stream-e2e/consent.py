@@ -14,7 +14,7 @@ if 'A single app' in x and 'Entire screen' not in x:
     tap('A single app'); sys.exit(1)       # open the choice
 if tap('Entire screen'):
     sys.exit(1)
-for label in ['Start now', 'START NOW', 'Share screen', 'Start', 'Next', 'Allow']:
+for label in ['Got it', 'Start now', 'START NOW', 'Share screen', 'Start', 'Next', 'Allow']:
     if tap(label):
         sys.exit(1)
 sys.exit(0)
