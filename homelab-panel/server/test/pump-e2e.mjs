@@ -57,6 +57,17 @@ const PANEL = Number(process.env.TEST_PORT || 4901);
 const PUBLIC = PANEL + 1;
 const ACCOUNT_PORT = PANEL + 2;
 const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'pump-e2e-'));
+/*
+ *  ⛔ کلیدِ امضای مجوز — فقط برای همین آزمون، در حافظه، هر بار تازه.
+ *  سرورِ حساب از shop O-18 در production کلیدِ تازه نمی‌سازد (۵۰۳ ‎license_key_missing‎)؛
+ *  ناظرِ پنل فرزند را با ‎NODE_ENV=production‎ بالا می‌آورد و محیطِ پنل را به آن می‌دهد،
+ *  پس همان کلیدی که نصبِ واقعی باید داشته باشد این‌جا هم از ‎LICENSE_PRIVATE_KEY‎ می‌رسد.
+ */
+const LICENSE_PEM = crypto.generateKeyPairSync('ec', {
+  namedCurve: 'prime256v1',
+  privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+}).privateKey;
 
 let pass = 0, fail = 0;
 const check = (name, ok, extra = '') => {
@@ -189,6 +200,7 @@ const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning',
     HLP_ACCOUNT_API: `http://127.0.0.1:${ACCOUNT_PORT}`,
     HLP_ACCOUNT_DIR: ACCOUNT_DIR, HLP_ACCOUNT_AUTOSTART: '1',
     HLP_ACCOUNT_ADMIN_USER: '', HLP_ACCOUNT_ADMIN_PASSWORD: '',
+    LICENSE_PRIVATE_KEY: LICENSE_PEM, LICENSE_PRIVATE_KEY_FILE: '',
     //  ⚠️ `mailEnvForChild()` وقتی SMTPِ پنل تنظیم نباشد `{}` می‌دهد، و چون
     //  محیطِ خودِ پنل اول spread می‌شود، همین‌ها به فرزند می‌رسند.
     SMTP_HOST: '127.0.0.1', SMTP_PORT: String(SMTP_PORT), SMTP_SECURE: 'none',
