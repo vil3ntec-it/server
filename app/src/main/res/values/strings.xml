@@ -1140,6 +1140,12 @@
     <string name="yt_own_live_desc">برنامه با حسابت یک استریمِ مخصوصِ خودش («RawRec») و هر بار یک پخشِ تازه در کانال می‌سازد و تصویر را به همان می‌فرستد؛ با رسیدنِ تصویر خودش زنده می‌شود — بی‌ساعت و بی‌«Waiting». کلیدِ استودیو و پخشِ منتظرش دست نمی‌خورند. با شورت (Dual stream روی پخشِ استودیو است)، یا اگر یوتیوب جواب ندهد، همان کلیدی که نوشته‌ای به کار می‌رود.</string>
     <string name="yt_preparing">در حالِ ساختنِ پخش در یوتیوب…</string>
     <string name="yt_own_failed_fmt">پخشِ خودِ برنامه در یوتیوب ساخته نشد (%1$s)؛ با کلیدی که نوشته‌ای می‌فرستم.</string>
+    <string name="yt_card_account">حساب</string>
+    <string name="yt_card_video">پخش، آن‌طور که بیننده می‌بیند</string>
+    <string name="yt_card_golive">زنده شدن</string>
+    <string name="yt_card_more">بیشتر</string>
+    <string name="yt_more_sec_desc">کودکان، جاسازی، دسته، توضیح، برچسب‌ها</string>
+    <string name="yt_setup_sec_desc">کلیدِ گوگل، یک بار</string>
     <string name="yt_go_live_title">زنده شدن در یوتیوب</string>
     <string name="yt_go_live_desc">«همان لحظه»: با رسیدنِ تصویر، برنامه خودش پخش را زنده می‌کند (نه «Upcoming»)؛ پخشی که برنامه ساخته و زنده نشده در پایان از کانال برداشته می‌شود. «خودم در استودیو»: پخش آماده می‌ماند تا در YouTube Studio دکمهٔ Go live را بزنی.</string>
     <string name="yt_go_live_now">همان لحظه</string>

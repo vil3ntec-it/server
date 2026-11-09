@@ -383,6 +383,7 @@ class VoiceLiveUiTest {
         touch(a, chip(a, a.getString(R.string.live_hud_l)))
         assertEquals(2, LiveExtras.hudSize(app))
         liveSub(a, MainActivity.Sub.LIVE_YT)
+        touch(a, byTag(a, "section:yt_more"))
         touch(a, chip(a, a.getString(R.string.yt_p_private)))
         assertEquals("private", LiveExtras.ytPrivacy(app))
         touch(a, chip(a, a.getString(R.string.yt_cat_gaming)))

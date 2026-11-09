@@ -614,21 +614,42 @@ class MainActivity : Activity() {
     private val LinearLayout.lineText get() = getChildAt(1) as TextView
 
     /** A titled group of selectable chips with a one-line explanation. Vertical = full-width choice cards. */
+    /** The first sentence of a description (a line or so); the rest goes behind an ⓘ. */
+    private fun brief(desc: String): String {
+        if (desc.length <= 80) return desc
+        val cut = desc.indexOfAny(charArrayOf('؛', '.', '—', '\n', '(')).let { if (it in 24..90) it else -1 }
+        val b = if (cut > 0) desc.substring(0, cut).trimEnd(' ', '،', ':') else desc.take(72).trimEnd() + "…"
+        return if (b.length < desc.length) b else desc
+    }
+
+    /** An ⓘ that opens the whole description, beside a title whose description was shortened. */
+    private fun infoButton(title: String, full: String): View = iconView(R.drawable.ic_info, R.color.text_tertiary).apply {
+        isClickable = true; isFocusable = true
+        contentDescription = str(R.string.expand)
+        setBackgroundResource(R.drawable.bg_icon_btn)
+        setPadding(dp(4), dp(4), dp(4), dp(4))
+        onTap("info") { AlertDialog.Builder(this@MainActivity).setTitle(title).setMessage(full).setPositiveButton(android.R.string.ok, null).show() }
+    }
+
     private inner class Row(
         parent: LinearLayout, title: String, desc: String, labels: List<CharSequence>,
         vertical: Boolean = false, ic: Int = 0, chipIcons: List<Int>? = null, top: Int = 20,
         private val onPick: (Int) -> Unit,
     ) {
-        val descView: TextView = text(desc, R.style.Text_Caption)
+        val descView: TextView = text(brief(desc), R.style.Text_Caption)
         private val group = RadioGroup(this@MainActivity).apply { orientation = if (vertical) RadioGroup.VERTICAL else RadioGroup.HORIZONTAL }
         val buttons = ArrayList<RadioButton>()
         private var silent = false
         val root = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
 
         init {
-            if (title.isNotEmpty()) root.addView(text(title, R.style.Text_Label).apply {
-                if (ic != 0) startIcon(ic, 18, tint(R.color.text_secondary), 8)
-                gravity = Gravity.CENTER_VERTICAL
+            if (title.isNotEmpty()) root.addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                addView(text(title, R.style.Text_Label).apply {
+                    if (ic != 0) startIcon(ic, 18, tint(R.color.text_secondary), 8)
+                    gravity = Gravity.CENTER_VERTICAL
+                }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+                if (brief(desc) != desc) addView(infoButton(title, desc), square(28))
             }, lp(top))
             if (desc.isNotEmpty()) root.addView(descView, lp(4))
             for ((i, l) in labels.withIndex()) {
@@ -668,7 +689,7 @@ class MainActivity : Activity() {
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
         private val tile = iconTile(ic)
-        val descView: TextView = text(desc, R.style.Text_Caption)
+        val descView: TextView = text(brief(desc), R.style.Text_Caption)
         val root: LinearLayout = LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -684,6 +705,7 @@ class MainActivity : Activity() {
                 addView(text(title, R.style.Text_Label))
                 addView(descView, lp(2))
             }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginStart = dp(14); marginEnd = dp(12) })
+            if (brief(desc) != desc) addView(infoButton(title, desc), square(28).apply { marginEnd = dp(8) })
             addView(sw, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
             onTap(tag) { onChange(!sw.isChecked) }
         }
@@ -1788,26 +1810,41 @@ class MainActivity : Activity() {
 
     private fun positions() = listOf(R.string.pos_tl, R.string.pos_tc, R.string.pos_tr, R.string.pos_bl, R.string.pos_bc, R.string.pos_br).map { str(it) }
 
-    /** «یوتیوب»: the account, the live as the app makes it, the video's title, who can watch, thumbnail and the rest. */
+    /** «یوتیوب»: the account; the live (title, who can watch, thumbnail); going live; the rest folded away. */
     private fun buildLiveYt(): View {
         val ctx = this
         val pg = livePage(R.string.live_yt_title, R.string.sub_live_yt_desc)
-        val yc = card(pg.col, null, top = 8)
-        yc.addView(text(str(R.string.live_yt_desc), R.style.Text_Caption), lp(4))
+        val signed = LiveExtras.ytSignedIn(ctx)
+        // ---- the account
+        val ac = card(pg.col, R.string.yt_card_account, R.drawable.ic_key, top = 8)
         ytStatus = text("", R.style.Text_Body).apply {
             setBackgroundResource(R.drawable.bg_inset)
             setPaddingRelative(dp(14), dp(12), dp(14), dp(12))
         }
-        yc.addView(ytStatus, lp(10))
+        ac.addView(ytStatus, lp(6))
         ytButton = button(str(R.string.live_yt_signin), R.style.Button_Tonal, R.drawable.ic_key).apply { onTap("youtube sign-in") { onYtClicked() } }
-        yc.addView(ytButton)
-        // the stream's title and thumbnail, set on YouTube when the stream starts
-        yc.addView(text(str(R.string.yt_title_label), R.style.Text_Label), lp(16))
-        yc.addView(textField(str(R.string.yt_title_hint), LiveExtras.ytTitle(ctx)) { LiveExtras.put(ctx, "yt_title", it.trim()) }, lp(4))
-        // who can watch the video and the like: set on YouTube when the stream starts, and at once while live
-        yc.addView(text(str(R.string.yt_vid_desc), R.style.Text_Caption), lp(6))
-        fun ytRow(key: String, title: Int, desc: Int?, opts: List<Pair<String, Int>>, picked: (String) -> Unit = {}) {
-            rows[key] = Row(yc, str(title), desc?.let { str(it) } ?: "", opts.map { str(it.second) }, top = 14) { i -> LiveExtras.put(ctx, key, opts[i].first); picked(opts[i].first) }
+        ac.addView(ytButton)
+        ytQuota = text("", R.style.Text_Caption)
+        ac.addView(ytQuota, lp(8))
+        // the one-time set-up (Google's client): open until signed in, folded away after
+        val setup = Section(pg.col, "yt_setup", R.string.live_yt_setup_title, R.string.yt_setup_sec_desc, R.drawable.ic_info)
+        val su = setup.body
+        su.addView(text(str(R.string.live_yt_client), R.style.Text_Label), lp(8))
+        ytClient = field("…apps.googleusercontent.com", false) { LiveExtras.setYtClientId(ctx, it) }.apply { setText(LiveExtras.ytClientId(ctx)) }
+        su.addView(ytClient, lp(4))
+        su.addView(text(str(R.string.live_yt_secret), R.style.Text_Label), lp(12))
+        ytSecretField = field("GOCSPX-…", true) { LiveExtras.setYtSecret(ctx, it) }.apply { setText(LiveExtras.ytSecret(ctx)) }
+        su.addView(ytSecretField, lp(4))
+        su.addView(text(str(R.string.live_yt_setup), R.style.Text_Caption).apply { setTextIsSelectable(true) }, lp(12))
+        if (!signed) setup.toggle()
+        refreshYt()
+
+        // ---- the live as viewers find it
+        val vc = card(pg.col, R.string.yt_card_video, R.drawable.ic_live)
+        vc.addView(text(str(R.string.yt_title_label), R.style.Text_Label), lp(4))
+        vc.addView(textField(str(R.string.yt_title_hint), LiveExtras.ytTitle(ctx)) { LiveExtras.put(ctx, "yt_title", it.trim()) }, lp(4))
+        fun ytRow(parent: LinearLayout, key: String, title: Int, desc: Int?, opts: List<Pair<String, Int>>, picked: (String) -> Unit = {}) {
+            rows[key] = Row(parent, str(title), desc?.let { str(it) } ?: "", opts.map { str(it.second) }, top = 14) { i -> LiveExtras.put(ctx, key, opts[i].first); picked(opts[i].first) }
                 .apply { select(opts.indexOfFirst { it.first == SafePrefs.str(prefs, key) }.coerceAtLeast(0)) }
         }
         // «خصوصی» hides the live from everyone but the owner (and from the channel page): said under the choice
@@ -1817,35 +1854,14 @@ class MainActivity : Activity() {
             privNote.text = str(if (LiveExtras.chatOpen(ctx)) R.string.yt_private_chat_open else R.string.yt_private_note)
             privNote.visibility = if (priv) View.VISIBLE else View.GONE
         }
-        ytRow("yt_privacy", R.string.yt_privacy_title, R.string.yt_privacy_desc, listOf("" to R.string.yt_keep,
+        ytRow(vc, "yt_privacy", R.string.yt_privacy_title, R.string.yt_privacy_desc, listOf("" to R.string.yt_keep,
             "public" to R.string.yt_p_public, "unlisted" to R.string.yt_p_unlisted, "private" to R.string.yt_p_private)) { renderPrivNote() }
-        yc.addView(privNote, lp(4))
-        // the live through the account: the app's own stream and live (Studio's key and its waiting live left alone)
-        toggles["yt_own_live"] = Toggle(yc, "tog:yt_own_live", R.drawable.ic_live, str(R.string.yt_own_live_title), str(R.string.yt_own_live_desc), top = 14) { on ->
-            LiveExtras.setYtOwnLive(ctx, on); toggles["yt_own_live"]?.set(on)
-        }
-        toggles["yt_own_live"]?.set(LiveExtras.ytOwnLive(ctx))
-        // going live: at once (the app puts it live) or by the owner in Studio
-        rows["yt_go_live"] = Row(yc, str(R.string.yt_go_live_title), str(R.string.yt_go_live_desc),
-            listOf(str(R.string.yt_go_live_now), str(R.string.yt_go_live_mine)), top = 14) { i -> LiveExtras.setGoLiveNow(ctx, i == 0) }
-            .apply { select(if (LiveExtras.goLiveNow(ctx)) 0 else 1) }
-        // the live chat: YouTube closes it for a private live and one «for kids»; this keeps it open
-        toggles["yt_chat_open"] = Toggle(yc, "tog:yt_chat_open", R.drawable.ic_chat, str(R.string.yt_chat_open_title), str(R.string.yt_chat_open_desc), top = 12) { on ->
-            LiveExtras.setChatOpen(ctx, on); toggles["yt_chat_open"]?.set(on); renderPrivNote()
-        }
-        toggles["yt_chat_open"]?.set(LiveExtras.chatOpen(ctx))
-        renderPrivNote()
-        ytRow("yt_kids", R.string.yt_kids_title, R.string.yt_kids_desc, listOf("" to R.string.yt_keep, "no" to R.string.yt_kids_no, "yes" to R.string.yt_kids_yes))
-        ytRow("yt_embed", R.string.yt_embed_title, R.string.yt_embed_desc, listOf("" to R.string.yt_keep, "yes" to R.string.yt_embed_yes, "no" to R.string.yt_embed_no))
-        ytRow("yt_category", R.string.yt_cat_title, null, listOf("" to R.string.yt_keep, "20" to R.string.yt_cat_gaming, "24" to R.string.yt_cat_ent,
-            "22" to R.string.yt_cat_people, "27" to R.string.yt_cat_edu, "10" to R.string.yt_cat_music, "17" to R.string.yt_cat_sports,
-            "23" to R.string.yt_cat_comedy, "28" to R.string.yt_cat_tech, "26" to R.string.yt_cat_howto, "25" to R.string.yt_cat_news))
-        yc.addView(text(str(R.string.yt_desc_label), R.style.Text_Label), lp(14))
-        yc.addView(multiField(str(R.string.yt_desc_hint)) { LiveExtras.put(ctx, "yt_desc", it.trim()) }.apply { setText(LiveExtras.ytDesc(ctx)); tag = "yt:desc" }, lp(4))
-        yc.addView(text(str(R.string.yt_tags_label), R.style.Text_Label), lp(14))
-        yc.addView(textField(str(R.string.yt_tags_hint), SafePrefs.str(prefs, "yt_tags")) { LiveExtras.put(ctx, "yt_tags", it.trim()) }.apply { tag = "yt:tags" }, lp(4))
-        yc.addView(text(str(R.string.yt_thumb_label), R.style.Text_Label), lp(14))
-        yc.addView(text(str(R.string.yt_thumb_desc), R.style.Text_Caption), lp(2))
+        vc.addView(privNote, lp(4))
+        vc.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            addView(text(str(R.string.yt_thumb_label), R.style.Text_Label), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            addView(infoButton(str(R.string.yt_thumb_label), str(R.string.yt_thumb_desc)), square(28))
+        }, lp(14))
         thumbView = android.widget.ImageView(this).apply {
             adjustViewBounds = true
             scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
@@ -1853,24 +1869,40 @@ class MainActivity : Activity() {
             background = roundBg(col(R.color.surface_2), 12)
             onTap("thumbnail pick") { pickThumb() }
         }
-        yc.addView(thumbView, LinearLayout.LayoutParams(MATCH_PARENT, dp(170)).apply { topMargin = dp(8) })
+        vc.addView(thumbView, LinearLayout.LayoutParams(MATCH_PARENT, dp(150)).apply { topMargin = dp(8) })
         thumbButtons = buttonRow(
             smallButton(R.string.yt_thumb_pick, R.drawable.ic_file) { pickThumb() },
             smallButton(R.string.yt_thumb_remove, R.drawable.ic_delete) { java.io.File(filesDir, "yt_thumb.jpg").delete(); refreshThumb() },
         )
-        yc.addView(thumbButtons, lp(8))
+        vc.addView(thumbButtons, lp(8))
         refreshThumb()
-        yc.addView(text(str(R.string.live_yt_client), R.style.Text_Label), lp(12))
-        ytClient = field("…apps.googleusercontent.com", false) { LiveExtras.setYtClientId(ctx, it) }.apply { setText(LiveExtras.ytClientId(ctx)) }
-        yc.addView(ytClient, lp(4))
-        yc.addView(text(str(R.string.live_yt_secret), R.style.Text_Label), lp(12))
-        ytSecretField = field("GOCSPX-…", true) { LiveExtras.setYtSecret(ctx, it) }.apply { setText(LiveExtras.ytSecret(ctx)) }
-        yc.addView(ytSecretField, lp(4))
-        ytQuota = text("", R.style.Text_Caption)
-        yc.addView(ytQuota, lp(8))
-        yc.addView(text(str(R.string.live_yt_setup_title), R.style.Text_Label).apply { startIcon(R.drawable.ic_info, 16, tint(R.color.text_secondary), 6) }, lp(14))
-        yc.addView(text(str(R.string.live_yt_setup), R.style.Text_Caption).apply { setTextIsSelectable(true) }, lp(4))
-        refreshYt()
+
+        // ---- going live
+        val gc = card(pg.col, R.string.yt_card_golive, R.drawable.ic_bolt)
+        toggles["yt_own_live"] = Toggle(gc, "tog:yt_own_live", R.drawable.ic_live, str(R.string.yt_own_live_title), str(R.string.yt_own_live_desc), top = 0) { on ->
+            LiveExtras.setYtOwnLive(ctx, on); toggles["yt_own_live"]?.set(on)
+        }
+        toggles["yt_own_live"]?.set(LiveExtras.ytOwnLive(ctx))
+        rows["yt_go_live"] = Row(gc, str(R.string.yt_go_live_title), str(R.string.yt_go_live_desc),
+            listOf(str(R.string.yt_go_live_now), str(R.string.yt_go_live_mine)), top = 12) { i -> LiveExtras.setGoLiveNow(ctx, i == 0) }
+            .apply { select(if (LiveExtras.goLiveNow(ctx)) 0 else 1) }
+        toggles["yt_chat_open"] = Toggle(gc, "tog:yt_chat_open", R.drawable.ic_chat, str(R.string.yt_chat_open_title), str(R.string.yt_chat_open_desc), top = 12) { on ->
+            LiveExtras.setChatOpen(ctx, on); toggles["yt_chat_open"]?.set(on); renderPrivNote()
+        }
+        toggles["yt_chat_open"]?.set(LiveExtras.chatOpen(ctx))
+        renderPrivNote()
+
+        // ---- the rest, folded away: kids, embedding, category, description, tags
+        val more = Section(pg.col, "yt_more", R.string.yt_card_more, R.string.yt_more_sec_desc, R.drawable.ic_tune).body
+        ytRow(more, "yt_kids", R.string.yt_kids_title, R.string.yt_kids_desc, listOf("" to R.string.yt_keep, "no" to R.string.yt_kids_no, "yes" to R.string.yt_kids_yes))
+        ytRow(more, "yt_embed", R.string.yt_embed_title, R.string.yt_embed_desc, listOf("" to R.string.yt_keep, "yes" to R.string.yt_embed_yes, "no" to R.string.yt_embed_no))
+        ytRow(more, "yt_category", R.string.yt_cat_title, null, listOf("" to R.string.yt_keep, "20" to R.string.yt_cat_gaming, "24" to R.string.yt_cat_ent,
+            "22" to R.string.yt_cat_people, "27" to R.string.yt_cat_edu, "10" to R.string.yt_cat_music, "17" to R.string.yt_cat_sports,
+            "23" to R.string.yt_cat_comedy, "28" to R.string.yt_cat_tech, "26" to R.string.yt_cat_howto, "25" to R.string.yt_cat_news))
+        more.addView(text(str(R.string.yt_desc_label), R.style.Text_Label), lp(14))
+        more.addView(multiField(str(R.string.yt_desc_hint)) { LiveExtras.put(ctx, "yt_desc", it.trim()) }.apply { setText(LiveExtras.ytDesc(ctx)); tag = "yt:desc" }, lp(4))
+        more.addView(text(str(R.string.yt_tags_label), R.style.Text_Label), lp(14))
+        more.addView(textField(str(R.string.yt_tags_hint), SafePrefs.str(prefs, "yt_tags")) { LiveExtras.put(ctx, "yt_tags", it.trim()) }.apply { tag = "yt:tags" }, lp(4))
         return pg.scroll
     }
 
