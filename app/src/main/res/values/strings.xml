@@ -290,8 +290,13 @@
     <string name="sub_storage_desc">پوشه، فضای خالی و بخش‌بندی</string>
     <string name="sub_perms">اجازه‌ها</string>
     <string name="sub_perms_desc">اعلان، میکروفون، دوربین، نمایش روی برنامه‌ها</string>
-    <string name="sub_lang">زبان</string>
-    <string name="sub_lang_desc">فارسی یا انگلیسی</string>
+    <string name="sub_lang">زبان و ظاهر</string>
+    <string name="sub_lang_desc">فارسی یا انگلیسی؛ تیره یا روشن</string>
+    <string name="theme_title">ظاهر</string>
+    <string name="theme_desc">تیره یا روشن؛ «سیستم» از تنظیمِ گوشی پیروی می‌کند.</string>
+    <string name="theme_system">سیستم</string>
+    <string name="theme_dark">تیره</string>
+    <string name="theme_light">روشن</string>
     <string name="back">بازگشت</string>
     <string name="plan_line_fmt">%1$s\nحدودِ %2$s در دقیقه</string>
     <string name="orient_landscape_game">افقی (بازی)</string>

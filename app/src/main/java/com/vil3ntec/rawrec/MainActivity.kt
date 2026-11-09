@@ -490,6 +490,28 @@ class MainActivity : Activity() {
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
     }
 
+    /** Each part of the app has a colour of its own on its tile (told apart at a glance, like a home screen). */
+    private fun tileColor(s: Sub): Int = when (s) {
+        Sub.VIDEO, Sub.LIVE_DEST -> R.color.tile_blue
+        Sub.AUDIO, Sub.LIVE_AUDIO -> R.color.tile_orange
+        Sub.CONTROLS, Sub.LIVE_QUALITY -> R.color.tile_green
+        Sub.STORAGE, Sub.LIVE_SHORTS -> R.color.tile_purple
+        Sub.PERMS, Sub.LIVE_YT -> R.color.tile_red
+        Sub.LANG, Sub.LIVE_CHAT -> R.color.tile_cyan
+        Sub.LIVE_LAYOUT -> R.color.tile_amber
+        Sub.NONE -> R.color.sel
+    }
+
+    /** A 40 dp tile in the part's own colour: the icon in it, a faint wash of it behind. */
+    private fun iconTile(res: Int, colorRes: Int): ImageView = ImageView(this).apply {
+        setImageResource(res)
+        val c = col(colorRes)
+        background = roundBg((c and 0x00FFFFFF) or 0x2E000000, 14)
+        imageTintList = ColorStateList.valueOf(c)
+        setPadding(dp(10), dp(10), dp(10), dp(10))
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+
     /** 40 dp rounded tile with a 20 dp icon at the start of a row; blue while [View.isActivated]. */
     private fun iconTile(res: Int): ImageView = ImageView(this).apply {
         setImageResource(res)
@@ -849,6 +871,9 @@ class MainActivity : Activity() {
             content.removeAllViews()
             (v.parent as? ViewGroup)?.removeView(v)
             content.addView(v, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            // 6.0: a short fade-and-rise into place (light on the GPU: one view, 220 ms)
+            v.alpha = 0f; v.translationY = dpf(14f)
+            v.animate().alpha(1f).translationY(0f).setDuration(220).setInterpolator(android.view.animation.DecelerateInterpolator()).start()
         }
     }
 
@@ -2331,7 +2356,7 @@ class MainActivity : Activity() {
                 isClickable = true
                 isFocusable = true
                 tag = "sub:${s.name}"
-                addView(iconTile(ic), square(40))
+                addView(iconTile(ic, tileColor(s)), square(40))
                 addView(LinearLayout(this@MainActivity).apply {
                     orientation = LinearLayout.VERTICAL
                     addView(text(str(t.first), R.style.Text_Label))
@@ -2593,6 +2618,12 @@ class MainActivity : Activity() {
             if (want != AppLang.get(this)) AppLang.set(this, want)
         }
         langRow.select(if (AppLang.get(this) == AppLang.EN) 1 else 0)
+        // dark or light (6.0): the whole app, the overlays too; «system» follows the phone
+        val themeRow = Row(c, str(R.string.theme_title), str(R.string.theme_desc),
+            listOf(str(R.string.theme_system), str(R.string.theme_dark), str(R.string.theme_light)), ic = R.drawable.ic_eye, top = 16) { i ->
+            if (i != AppLang.theme(this)) AppLang.setTheme(this, i)
+        }
+        themeRow.select(AppLang.theme(this))
         return pg.scroll
     }
 

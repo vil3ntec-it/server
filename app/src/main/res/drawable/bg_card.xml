@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 6.0: a card with a faint top-light gradient and a hairline. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="@color/surface" />
+    <gradient android:angle="270" android:startColor="@color/card_top" android:endColor="@color/card_bottom" />
     <corners android:radius="@dimen/radius_card" />
     <stroke android:width="@dimen/hairline" android:color="@color/stroke" />
 </shape>

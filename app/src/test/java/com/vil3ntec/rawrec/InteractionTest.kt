@@ -316,7 +316,8 @@ class InteractionTest {
     private fun everyChip(size: String) {
         RuntimeEnvironment.setQualifiers(size)
         val a = launch()
-        val lang = setOf(app.getString(R.string.lang_fa), app.getString(R.string.lang_en))
+        val lang = setOf(app.getString(R.string.lang_fa), app.getString(R.string.lang_en),
+            app.getString(R.string.theme_system), app.getString(R.string.theme_dark), app.getString(R.string.theme_light))
         var tapped = 0
         val pages: List<() -> Unit> = listOf(
             { tab(a, MainActivity.Tab.HOME) },

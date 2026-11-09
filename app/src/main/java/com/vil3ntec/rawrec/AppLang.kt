@@ -41,13 +41,24 @@ object AppLang {
         return if (SafePrefs.str(p, KEY) == EN) EN else FA
     }
 
-    /** A context whose resources use the app language (and its layout direction). */
+    private const val THEME = "app_theme"
+    /** 0 as the system has it, 1 dark, 2 light (6.0). */
+    fun theme(ctx: Context): Int = SafePrefs.int(prefs(ctx), THEME, 0).coerceIn(0, 2)
+    fun setTheme(activity: Activity, t: Int) {
+        prefs(activity).edit().putInt(THEME, t.coerceIn(0, 2)).commit()
+        activity.recreate()
+    }
+
+    /** A context whose resources use the app language (and its layout direction), and the look the owner chose. */
     fun wrap(base: Context): Context = try {
         val locale = Locale.forLanguageTag(get(base))
         Locale.setDefault(locale)
         val cfg = Configuration(base.resources.configuration)
         cfg.setLocale(locale)
         cfg.setLayoutDirection(locale)
+        val t = theme(base)
+        if (t != 0) cfg.uiMode = (cfg.uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
+            (if (t == 1) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO)
         base.createConfigurationContext(cfg)
     } catch (_: Throwable) { base }
 

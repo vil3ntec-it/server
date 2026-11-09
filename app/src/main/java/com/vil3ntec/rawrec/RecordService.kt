@@ -525,7 +525,7 @@ class RecordService : Service(), Recorder.Events {
             val lv = live
             val r = if (lv != null) Recorder(this, p, c, plan, this, null, keepDisplay = false,
                 sinkFactory = {
-                    liveBorn = System.currentTimeMillis(); lastRtmpLog = ""; lastSendProblem = null; toldPrivate = false; toldAway = false; capHot = false; netLevel = 0; toldNet = false
+                    liveBorn = System.currentTimeMillis(); lastRtmpLog = ""; lastSendProblem = null; toldPrivate = false; toldAway = false; hotFps = 0; netLevel = 0; toldNet = false
                     main.removeCallbacks(sendCheck); main.postDelayed(sendCheck, 13_000)
                     screenChecks = 0; main.removeCallbacks(screenCheck); main.postDelayed(screenCheck, 8_000)
                     val auto = LiveSettings.autoQuality(this)
@@ -1790,15 +1790,23 @@ class RecordService : Service(), Recorder.Events {
      */
     private fun coolDown(s: Int) {
         if (live == null || recorder?.filter == null) return
-        val hot = s >= android.os.PowerManager.THERMAL_STATUS_SEVERE
-        val cool = s <= android.os.PowerManager.THERMAL_STATUS_LIGHT
-        if (hot && !capHot) { capHot = true; RecLog.add(this, "thermal: 30 fps"); hud?.note(getString(R.string.hud_hot)) }
-        else if (cool && capHot) { capHot = false; RecLog.add(this, "thermal: full fps"); hud?.note(getString(R.string.hud_cool)) }
+        // 6.0: in steps as it warms (moderate 30, severe 24, critical 20), back to full once light again
+        val want = when {
+            s >= android.os.PowerManager.THERMAL_STATUS_CRITICAL -> 20
+            s >= android.os.PowerManager.THERMAL_STATUS_SEVERE -> 24
+            s >= android.os.PowerManager.THERMAL_STATUS_MODERATE -> 30
+            else -> 0
+        }
+        if (want == hotFps) return
+        if (want > 0 && hotFps == 0) hud?.note(getString(R.string.hud_hot)) else if (want == 0) hud?.note(getString(R.string.hud_cool))
+        hotFps = want
+        RecLog.add(this, "thermal: " + if (want == 0) "full fps" else "$want fps")
         applyFpsCap()
     }
 
     /** 30 pictures a second while the phone is hot; on a narrow connection 30, and 20 when it carries under a megabit (each picture then gets more bits). */
-    private var capHot = false
+    /** Pictures a second while the phone is warm (0 = full). */
+    private var hotFps = 0
     /** The connection's narrowness: 0 wide, 1 narrow (30 fps), 2 under a megabit (20 fps). */
     private var netLevel = 0
     private var toldNet = false
@@ -1807,7 +1815,7 @@ class RecordService : Service(), Recorder.Events {
     private fun applyFpsCap() {
         val f = recorder?.filter ?: return
         val full = recorder?.plan?.fps ?: 0
-        val caps = listOfNotNull(if (capHot) 30 else null, when (netLevel) { 2 -> 20; 1 -> 30; else -> null })
+        val caps = listOfNotNull(hotFps.takeIf { it > 0 }, when (netLevel) { 2 -> 20; 1 -> 30; else -> null })
         f.fpsCap = caps.filter { it in 1 until full }.minOrNull() ?: 0
     }
 

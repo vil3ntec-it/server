@@ -270,8 +270,13 @@
     <string name="sub_storage_desc">Folder, free space and file parts</string>
     <string name="sub_perms">Permissions</string>
     <string name="sub_perms_desc">Notifications, microphone, camera, display over apps</string>
-    <string name="sub_lang">Language</string>
-    <string name="sub_lang_desc">Persian or English</string>
+    <string name="sub_lang">Language and look</string>
+    <string name="sub_lang_desc">Persian or English; dark or light</string>
+    <string name="theme_title">Look</string>
+    <string name="theme_desc">Dark or light; «System» follows the phone\'s setting.</string>
+    <string name="theme_system">System</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_light">Light</string>
     <string name="back">Back</string>
     <string name="plan_line_fmt">%1$s\nabout %2$s per minute</string>
     <string name="orient_landscape_game">Landscape (game)</string>
