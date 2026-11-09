@@ -1108,7 +1108,7 @@ Your internet needs about %2$s Mbps upload.</string>
     <string name="live_away_title">«Be right back» when I leave the game</string>
     <string name="live_away_desc">Off (default): when the game is off the screen (watching your own stream on YouTube, say), viewers see the game\'s last picture, not a banner.</string>
     <string name="live_away_last">The game is off the screen; viewers see its last picture until you are back.</string>
-    <string name="live_hevc_title">HEVC for YouTube (better picture on the same internet)</string>
+    <string name="live_hevc_title">HEVC for YouTube (experimental)</string>
     <string name="live_hevc_desc">The same picture for about a third fewer bits; on a weak connection a bigger, cleaner picture. What OBS sends YouTube (Enhanced RTMP). Only when every destination is YouTube; if YouTube does not take it, the app goes back to H.264 by itself.</string>
     <string name="live_hevc_failed">YouTube did not take the HEVC picture. End the stream and start again once; from now on it goes as H.264.</string>
     <string name="live_net_narrow_fmt">The stream goes at %1$s Mbps and 30 fps now (the way to YouTube, through the VPN, carried no more). It tries more every few seconds and goes up by itself wherever there is room.</string>

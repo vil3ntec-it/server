@@ -86,8 +86,20 @@ object LiveSettings {
     fun shortsBitrate(ctx: Context) = if (shortsSize(ctx) == 0) 4_500_000 else 8_000_000
     /** Shorts go out: switched on, a key given, and YouTube among the platforms. */
     /** 6.9: HEVC to YouTube (Enhanced RTMP): the same picture for about a third fewer bits. On unless the owner turned it off. */
-    fun hevc(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_hevc", true)
-    fun setHevc(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("live_hevc", on).putBoolean("live_hevc_failed", false).apply()
+    // 7.1: off unless the owner turns it on — not yet seen working on the owner's stream (H.264 is what YouTube always takes)
+    fun hevc(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_hevc2", false)
+    fun setHevc(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("live_hevc2", on).putBoolean("live_hevc_failed", false).apply()
+
+    /**
+     * 7.1: the stream's size for the whole stream, chosen at the start from what the link carried last
+     * time (automatic quality): under 1 Mbps 480p, under 3 Mbps 720p, else the chosen quality's size.
+     */
+    fun startRes(ctx: Context, chosen: Int): Int {
+        if (!autoQuality(ctx)) return chosen
+        val last = lastRateKbps(ctx)
+        val fit = when { last <= 0 -> chosen; last < 1000 -> 480; last < 3000 -> 720; else -> chosen }
+        return minOf(chosen, fit)
+    }
     /** YouTube did not take the HEVC picture once: H.264 from then on (until the owner switches HEVC on again). */
     fun hevcFailed(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_hevc_failed", false)
     fun setHevcFailed(ctx: Context) = prefs(ctx).edit().putBoolean("live_hevc_failed", true).apply()
@@ -222,7 +234,7 @@ object LiveSettings {
         }
         return base.copy(
             preset = RecordConfig.PRESET_CUSTOM, codec = if (useHevc(ctx)) RecordConfig.CODEC_HEVC else RecordConfig.CODEC_AVC, mode = RecordConfig.MODE_CBR,
-            bitrate = mbps(ctx), fps = q.fps, resShort = q.res, orient = RecordConfig.ORIENT_LANDSCAPE,
+            bitrate = mbps(ctx), fps = q.fps, resShort = startRes(ctx, q.res), orient = RecordConfig.ORIENT_LANDSCAPE,
             smartStart = false, rotateNewFile = false, ghostControl = false, invisibleControl = true,
             countdown = 0, testSeconds = 0, teamVoice = teamVoice(ctx), audioMode = audio,
         )

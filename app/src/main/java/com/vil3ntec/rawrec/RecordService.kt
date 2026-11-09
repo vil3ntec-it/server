@@ -1869,7 +1869,11 @@ class RecordService : Service(), Recorder.Events {
             narrow || (netLevel >= 1 && !wide) -> 1
             else -> 0
         }
-        followSize(s.targetKbps)
+        // 7.1: the picture's size never changes during a stream. 6.4–7.0 made it smaller on a narrow link
+        // (a new encoder, a new SPS mid-stream): YouTube kept the first size and showed a corner of the
+        // picture, zoomed, over green (the owner's screen). OBS and YouTube's own advice: one size for a
+        // whole stream — set at the start from what the link carried last time (LiveSettings.config);
+        // during the stream only the rate and the frames a second follow the link.
         if (level == netLevel) return
         netLevel = level; applyFpsCap()
         RecLog.add(this, "link: ${s.targetKbps} of $full kbps, " + when (level) { 2 -> "20 fps"; 1 -> "30 fps"; else -> "full fps" })
