@@ -88,6 +88,8 @@ sleep 3
 consent
 sleep 6
 adb exec-out screencap -p > $OUT/rot-1-upright.png
+# the game turns the tablet: the display itself goes landscape (a real rotation, not a letterboxed app)
+adb shell settings put system user_rotation 0
 adb shell $A --es do land
 sleep 14
 adb exec-out screencap -p > $OUT/rot-2-landscape.png
