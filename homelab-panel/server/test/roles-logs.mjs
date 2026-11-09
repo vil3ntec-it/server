@@ -127,6 +127,56 @@ try {
   r = await api('DELETE', `/api/auth/users/${adminId}`);
   check('مدیر خودش را حذف نمی‌کند', r.status === 400, r.text);
 
+  /*
+   *  ⛔ مالکِ اصلی (۱۴۰۵/۰۸/۰۹) — نه فقط «آخرین مدیر». مدیرِ دوم (یا نشستِ
+   *  دزدیده‌شدهٔ او) نباید بتواند صاحبِ سامانه را تنزل دهد، ببندد، پاک کند یا
+   *  رمزش را عوض کند؛ از هیچ‌کدام از دو درِ کاربران (‎/api/auth/users‎ و
+   *  ‎/api/panel/v1/users‎).
+   */
+  console.log('\n── مالکِ اصلی بیرون گذاشته نمی‌شود ──');
+  r = await api('POST', '/api/auth/users', { username: 'admin2', password: 'Admin2!2026x', role: 'admin' });
+  check('مدیرِ دوم ساخته شد', r.status === 201, r.text);
+  tokens.admin2 = (await api('POST', '/api/auth/login', { username: 'admin2', password: 'Admin2!2026x' }, 'none')).json?.token;
+  const listed = (await api('GET', '/api/auth/users')).json?.users || [];
+  const admin2Id = listed.find((u) => u.username === 'admin2')?.id;
+  check('فهرست مالک را نشان می‌دهد (فقط یکی)', listed.find((u) => u.id === adminId)?.owner === true
+    && listed.filter((u) => u.owner).length === 1, JSON.stringify(listed));
+  const denied = [
+    await api('PATCH', `/api/auth/users/${adminId}`, { role: 'viewer' }, 'admin2'),
+    await api('PATCH', `/api/auth/users/${adminId}`, { disabled: true }, 'admin2'),
+    await api('DELETE', `/api/auth/users/${adminId}`, undefined, 'admin2'),
+    await api('PUT', `/api/panel/v1/users/${adminId}`, { role: 'operator' }, 'admin2'),
+    await api('PUT', `/api/panel/v1/users/${adminId}`, { disabled: true }, 'admin2'),
+    await api('PUT', `/api/panel/v1/users/${adminId}/password`, { password: 'Taken!Over2026' }, 'admin2'),
+    await api('DELETE', `/api/panel/v1/users/${adminId}`, undefined, 'admin2'),
+  ];
+  check('مدیرِ دوم نه تنزل، نه بستن، نه حذف، نه رمزِ مالک (۴۰۳ owner_protected)',
+    denied.every((x) => x.status === 403 && x.json?.error === 'owner_protected'), denied.map((x) => `${x.status}:${x.json?.error}`).join(' '));
+  r = await api('GET', '/api/auth/me');
+  check('نشستِ مالک هنوز زنده است', r.status === 200 && r.json?.user?.role === 'admin', r.text);
+  r = await api('POST', '/api/auth/login', { username: 'admin', password: 'ControlCenter!2026' }, 'none');
+  check('رمزِ مالک دست نخورده', Boolean(r.json?.token), r.text);
+  r = await api('PUT', `/api/panel/v1/users/${admin2Id}/password`, { password: 'NoOldPass!2026' }, 'admin2');
+  check('رمزِ خودت بی رمزِ فعلی عوض نمی‌شود', r.status === 400 && r.json?.error === 'use_change_password', r.text);
+  r = await api('GET', '/api/control/audit?q=owner_protected');
+  check('هر تلاش در دفترِ رخدادها می‌ماند', (r.json?.rows || []).filter((x) => x.action === 'panel.user.owner_protected').length === denied.length, r.text.slice(0, 300));
+
+  // دوعاملیِ روشن با یک نشست جا زده نمی‌شود
+  const { totp: totpNow } = await import('../src/lib/totp.js');
+  const setup1 = await api('POST', '/api/auth/totp/setup', {}, 'admin2');
+  const en1 = await api('POST', '/api/auth/totp/enable', { code: totpNow(setup1.json?.secret) }, 'admin2');
+  check('مدیرِ دوم دوعاملی را روشن کرد', en1.status === 200 && Array.isArray(en1.json?.recoveryCodes), en1.text);
+  const setup2 = await api('POST', '/api/auth/totp/setup', {}, 'admin2');
+  const en2 = await api('POST', '/api/auth/totp/enable', { code: '000000' }, 'admin2');
+  check('رازِ روشن با نشست عوض نمی‌شود (اول خاموش، با رمز + کد)', setup2.status === 409 && setup2.json?.error === 'totp_already_enabled'
+    && en2.status === 409, `${setup2.status} ${en2.status}`);
+
+  // و مالک بیش از اندازه قفل نشده: مدیرِ دیگر را هنوز اداره می‌کند
+  r = await api('PATCH', `/api/auth/users/${admin2Id}`, { role: 'operator' });
+  check('مالک مدیرِ دوم را تنزل می‌دهد', r.status === 200, r.text);
+  r = await api('DELETE', `/api/auth/users/${admin2Id}`);
+  check('و حذف می‌کند', r.status === 200, r.text);
+
   console.log('\n── حسابِ از کار افتاده ──');
   const viewerId = users.find((u) => u.username === 'viewer1').id;
   await api('PATCH', `/api/auth/users/${viewerId}`, { disabled: true });

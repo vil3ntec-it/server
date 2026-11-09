@@ -7,11 +7,16 @@
 //      (وگرنه پنلی می‌ماند که هیچ‌کس نمی‌تواند مدیریتش کند)
 //    • آخرین admin نه حذف می‌شود، نه بسته، نه تنزل داده
 //    • تغییرِ نقش یا بستنِ حساب، همهٔ نشست‌های آن کاربر را باطل می‌کند
+//    • ⛔ مالکِ اصلی (`ownerId()` — قدیمی‌ترین مدیرِ فعال) نه تنزل، نه بسته،
+//      نه حذف، و رمزش را هیچ مدیرِ دیگری عوض نمی‌کند (۱۴۰۵/۰۸/۰۹)
+//    • رمزِ خودت از این‌جا نه — از ‎/auth/change-password‎ با رمزِ فعلی
 // ---------------------------------------------------------------------------
 import { Router } from 'express';
 import { requireAuth, requireRole, createUser, hashPassword, ROLES, isValidRole } from '../auth.js';
 import { db, logEvent } from '../db.js';
 import { v } from '../platform/validate.js';
+import { ownerId } from '../control/roles.js';
+import { auditFromReq } from '../control/audit.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('admin'));
@@ -25,7 +30,9 @@ function countAdmins(excludeId = null) {
 }
 
 router.get('/', (req, res) => {
-  const users = db.prepare(`SELECT ${PUBLIC_COLUMNS} FROM users ORDER BY id`).all();
+  const owner = ownerId();
+  const users = db.prepare(`SELECT ${PUBLIC_COLUMNS} FROM users ORDER BY id`).all()
+    .map((u) => ({ ...u, owner: u.id === owner }));
   res.json({ users, roles: ROLES });
 });
 
@@ -45,6 +52,7 @@ router.post('/', (req, res, next) => {
 
     const user = createUser(username, password, role);
     logEvent('info', 'panel', `کاربر «${username}» با نقشِ ${user.role} ساخته شد`);
+    auditFromReq(req, 'panel.user.create', { entity: 'user', entityId: username, detail: { role: user.role } });
     res.json({ ok: true, user });
   } catch (e) {
     next(e);
@@ -76,6 +84,7 @@ router.put('/:id', (req, res, next) => {
     if (losingAdmin && countAdmins(target.id) === 0) {
       return res.status(400).json({ error: 'last_admin' });
     }
+    if (losingAdmin && target.id === ownerId()) return ownerDenied(req, res, 'role');
 
     db.prepare('UPDATE users SET role = ?, disabled = ? WHERE id = ?').run(role, disabled, id);
 
@@ -87,6 +96,7 @@ router.put('/:id', (req, res, next) => {
         'panel',
         `کاربر «${target.username}»: نقش ${target.role} → ${role}${disabled ? ' و حساب بسته شد' : ''}`
       );
+      auditFromReq(req, 'panel.user.role', { entity: 'user', entityId: target.username, detail: { from: target.role, to: role, disabled: Boolean(disabled) } });
     }
 
     res.json({ ok: true, user: db.prepare(`SELECT ${PUBLIC_COLUMNS} FROM users WHERE id = ?`).get(id) });
@@ -102,10 +112,14 @@ router.put('/:id/password', (req, res, next) => {
     const password = v.password(req.body?.password);
     const target = db.prepare('SELECT id, username FROM users WHERE id = ?').get(id);
     if (!target) return res.status(404).json({ error: 'not_found' });
+    // رمزِ خودت فقط با رمزِ فعلی — وگرنه نشستِ دزدیده‌شده رمز را عوض می‌کرد
+    if (id === req.user.id) return res.status(400).json({ error: 'use_change_password' });
+    if (id === ownerId()) return ownerDenied(req, res, 'password');
 
     db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), id);
     db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
     logEvent('warn', 'panel', `رمزِ کاربر «${target.username}» توسط مدیر بازنشانی شد`);
+    auditFromReq(req, 'panel.user.password_reset', { entity: 'user', entityId: target.username });
     res.json({ ok: true });
   } catch (e) {
     next(e);
@@ -121,13 +135,21 @@ router.delete('/:id', (req, res, next) => {
     if (target.role === 'admin' && !target.disabled && countAdmins(target.id) === 0) {
       return res.status(400).json({ error: 'last_admin' });
     }
+    if (id === ownerId()) return ownerDenied(req, res, 'delete');
 
     db.prepare('DELETE FROM users WHERE id = ?').run(id); // نشست‌ها با CASCADE می‌روند
     logEvent('warn', 'panel', `کاربر «${target.username}» حذف شد`);
+    auditFromReq(req, 'panel.user.delete', { entity: 'user', entityId: target.username });
     res.json({ ok: true });
   } catch (e) {
     next(e);
   }
 });
+
+/** دستِ کسی به نقش، وضعیت، رمز یا حذفِ مالکِ اصلی نمی‌رسد — و تلاشش می‌ماند. */
+function ownerDenied(req, res, what) {
+  auditFromReq(req, 'panel.user.owner_protected', { entity: 'user', entityId: String(req.params.id), result: 'forbidden', detail: { what } });
+  return res.status(403).json({ error: 'owner_protected' });
+}
 
 export default router;
