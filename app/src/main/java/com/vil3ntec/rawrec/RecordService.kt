@@ -1831,7 +1831,7 @@ class RecordService : Service(), Recorder.Events {
     private fun applyFpsCap() {
         val f = recorder?.filter ?: return
         val full = recorder?.plan?.fps ?: 0
-        val caps = listOfNotNull(hotFps.takeIf { it > 0 }, when (netLevel) { 2 -> 20; 1 -> 30; else -> null })
+        val caps = listOfNotNull(hotFps.takeIf { it > 0 }, when (netLevel) { 0 -> null; else -> 30 })
         f.fpsCap = caps.filter { it in 1 until full }.minOrNull() ?: 0
     }
 
@@ -1847,7 +1847,8 @@ class RecordService : Service(), Recorder.Events {
         val narrow = s.targetKbps < full * 55 / 100
         val wide = s.targetKbps >= full * 75 / 100
         val level = when {
-            s.targetKbps < 900 || (netLevel == 2 && s.targetKbps < 1300) -> 2
+            // 6.6: never under 30 pictures a second (20 looked choppy); fewer pictures before a smaller picture
+            s.targetKbps < 4500 || (netLevel >= 1 && s.targetKbps < 5500) -> 1
             narrow || (netLevel >= 1 && !wide) -> 1
             else -> 0
         }
@@ -1871,9 +1872,10 @@ class RecordService : Service(), Recorder.Events {
     private fun followSize(kbps: Int) {
         val r = recorder ?: return
         val want = when {
-            kbps < 700 -> 360
-            kbps < 1300 -> 480
-            kbps < 3000 -> 720
+            // 6.6: YouTube's own table for 30 fps — 720p from 1.5 Mbps (kept down to 1), 480p from 0.5, 360p under
+            kbps < 450 -> 360
+            kbps < 1000 -> 480
+            kbps < 4500 -> 720
             else -> 0
         }
         val now = System.currentTimeMillis()
