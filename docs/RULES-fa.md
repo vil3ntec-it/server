@@ -3324,3 +3324,21 @@ POST /api/pump-updates-admin/testers {codes}   فقط مدیر · دفترِ م�
   `shopDeskDash`)، `scFinanceLater*`، `scOnline`، `scSuspension`، `tabIncidents`/`tabAlerts` و `useOpsTabLabels`، `TAB_LABEL` ِ `market/tx.ts`.
 - آزمون: `npm test` همهٔ `console-shell`، `console-market`، `console-ops` و `account-finance` را دارد؛ `console-shell.mjs` حالا می‌سنجد که
   هیچ ماژولی «ساخته‌نشده» نیست؛ آزمون‌های کرومیوم به شناسه‌های پوسته (`?tab=errors`) و انتخاب‌گرِ درونِ ماژول (`[data-module=…]`).
+
+## 📊 کارتِ داشبوردِ بازار، پیک، رخدادها و هشدارها — بخشِ «فروشگاه» (از ۱۴۰۵/۰۸/۱۸، نسخه 1.50.70)
+
+همان «مانده» ِ shop #606: داشبوردِ ۴.۱ برای `market` · `courier` · `errors` · `alerts` فقط «خلاصه‌ای ندارد» می‌گفت.
+
+- ⛔ **هر چهار کارت از درِ خواندنیِ خودِ ماژول** (`/api/admin/market/overview?days=30` · `/api/admin/delivery/overview?days=7` ·
+  `/api/admin/ops/incidents?status=live` · `/api/admin/ops/alerts?status=open&severity=critical`) و **پشتِ همان توانایی**
+  (`market-admin.v1` · `delivery-watch.v1` · `ops.v1`، `need()` در `src/console/summaries.js`): سرورِ کهنه ⇒ کارتِ «—» با
+  `capability_missing` و هیچ درخواستی به آن درها. نیامده ⇒ `null` («—»)، نه صفر (`sumOf`: یکی نیامده ⇒ کلِ جمع `null`).
+- ⛔ **`/api/admin/ops/alerts` یک بار:** `total` = بحرانی‌های باز (پالایش‌شده)، `counts` = همهٔ وضعیت‌ها (بی پالایش، shop
+  `ops-alerts.list`).
+- ⛔ **درهای سنگین (اسکنِ سفارش، جذبِ رخداد، ارزیابیِ هشدار) با `slow()` هر ۳۰ ثانیه حداکثر یک بار برای همهٔ نشست‌ها.** پلِ پنل از
+  ‎127.0.0.1‎ و بی ‎X-Forwarded-For‎ به سرورِ حساب می‌رود ⇒ آن‌جا با **سطلِ عمومیِ یک IP** شمرده می‌شود (`RATE_GENERAL_MAX` ۶۰۰ در
+  ربع ساعت، همان «سقفِ نرخِ سرورِ حساب پر شده» ِ ۱۴۰۵/۰۷/۱۰). کهنگی پنهان نیست: کارت زمانِ سنجشِ خودِ منبع (`at`) را نشان می‌دهد.
+  `/api/admin/me` (توانایی) کش نمی‌شود — توانایی که رفت، کارت همان لحظه «—» است.
+- هشدارها: پروندهٔ بازِ بازار و سفارشِ گیرکرده (warn)، گیرکرده و مغایرتِ پولِ پیک (warn)، رخدادِ بررسی‌نشده (info)، هشدارِ بحرانیِ
+  باز (bad، اول) یا هشدارِ بازِ بی‌پاسخ (warn).
+- آزمون: `test/console-shell.mjs` بندِ «۲ب» (۱۶ بند؛ ۹۹ سبز). ⚠️ بندِ «ساخته‌شدهٔ بی خلاصه» حالا `audit` را می‌سنجد، نه `market`.

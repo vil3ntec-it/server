@@ -129,6 +129,22 @@ const fake = http.createServer((req, res) => {
     if (M === 'GET /api/admin/plans') return j(200, { plans: [], config });
     if (M === 'PATCH /api/admin/config') { if (body.trial_days !== undefined) config.trial_days = String(body.trial_days); return j(200, { config }); }
     if (M === 'GET /api/admin/audit') return j(200, { entries: [] });
+    //  کارت‌های ۴.۶ · ۴.۷ · ۴.۱۰ · ۴.۱۱ — همان شکلِ shop ‎lib/admin-market|admin-delivery|ops-errors|ops-alerts‎
+    if (M === 'GET /api/admin/market/overview') {
+      return j(200, { serverTime: NOW - 120e3, window: { from: NOW - 30 * 864e5, to: NOW }, sellers: { total: 9, listedOpen: 5 },
+        trust: { productReports: 1, complaints: 2, appealed: 0 }, orders: { total: 40, problems: { stuck: 3, mismatch: 0, discrepancy: 0 } } });
+    }
+    //  ⚠️ بی `couriers` ⇒ «پیکِ فعال» باید «—» (null) شود، نه صفر
+    if (M === 'GET /api/admin/delivery/overview') {
+      return j(200, { serverTime: NOW - 90e3, windowDays: 7, stages: { in_delivery: 4 }, last24h: { delivered: 11, failed: 1 },
+        ordersWith: { stuck: 0, mismatch: 0, discrepancy: 2 } });
+    }
+    if (M === 'GET /api/admin/ops/incidents') return j(200, { incidents: [], total: 5, counts: { open: 2, investigating: 3, resolved: 10 }, checkedAt: NOW - 10e3 });
+    //  `total` پالایش‌شده (بحرانیِ باز)، `counts` بی پالایش — همان ‎ops-alerts.list‎
+    if (M === 'GET /api/admin/ops/alerts') {
+      const crit = u.searchParams.get('severity') === 'critical' && u.searchParams.get('status') === 'open';
+      return j(200, { alerts: [], total: crit ? 1 : 4, counts: { open: 3, acknowledged: 1 }, checkedAt: NOW - 5e3 });
+    }
     return err(404, 'route_not_found', 'این مسیرِ مدیر روی این سرور نیست');
   });
 });
@@ -223,7 +239,7 @@ try {
   check('⛔ نیامده = null («—»)، نه صفر: «اشتراکِ فعال» در پاسخِ ناقصِ مالی', item('finance')?.ok && item('finance').metrics.find((x) => x.id === 'active')?.value === null
     && item('finance').metrics.find((x) => x.id === 'month_AFN')?.value === 12000, JSON.stringify(item('finance')));
   check('⛔ خطای یک منبع فقط همان کارت: «نسخه‌ها» با کدِ خودش، بقیه سالم', item('versions')?.ok === false && item('versions').error?.code === 'versions_unavailable' && item('health')?.ok === true);
-  check('ماژولِ ساخته‌شدهٔ بی تابعِ خلاصه «no_summary» است (نه «not_built»)، بی عدد', item('market')?.reason === 'no_summary' && !item('market').metrics
+  check('ماژولِ ساخته‌شدهٔ بی تابعِ خلاصه «no_summary» است (نه «not_built»)، بی عدد', item('audit')?.reason === 'no_summary' && !item('audit').metrics
     && !sum.json.items.some((x) => x.reason === 'not_built'));
   check('ماژولِ بی خلاصه «no_summary»', item('codes')?.reason === 'no_summary');
   const al = sum.json.alerts || [];
@@ -234,6 +250,52 @@ try {
   const sum2 = await api('GET', '/api/account-admin/console/summary', undefined, T.admin);
   check('بی «رو به پایان» هشداری ساخته نمی‌شود؛ مالک کارتِ کاربرانِ پنل را می‌گیرد (۴ کاربر)', !(sum2.json.alerts || []).some((a) => a.module === 'subs')
     && sum2.json.items.find((x) => x.module === 'users')?.metrics.find((x) => x.id === 'panelUsers')?.value === 4);
+
+  /* ── ۲ب) کارت‌های بازار، پیک، رخدادها و هشدارها ── */
+  console.log('\n── ۲ب) کارت‌های بازار (۴.۶)، پیک (۴.۷)، رخداد (۴.۱۰) و هشدار (۴.۱۱) ──');
+  const NEW4 = ['market', 'courier', 'errors', 'alerts'];
+  check('⛔ سرورِ بی توانایی: هر چهار کارت «—» با ‎capability_missing‎، نه عدد', NEW4.every((id) => item(id)?.ok === false
+    && item(id).reason === 'error' && item(id).error?.code === 'capability_missing' && !item(id).metrics), JSON.stringify(NEW4.map(item)));
+  check('⛔ و بی توانایی هیچ درخواستی به درهای بازار/پیک/عملیات نرسید', !seen.some((c) => /^\/api\/admin\/(market|delivery|ops)\//.test(c.path)));
+  caps.push('market-admin.v1', 'delivery-watch.v1', 'ops.v1');
+  const meBefore = seen.filter((c) => c.path === '/api/admin/me').length;
+  const sum3 = await api('GET', '/api/account-admin/console/summary', undefined, T.viewer);
+  const meCalls = seen.filter((c) => c.path === '/api/admin/me').length - meBefore;
+  caps = caps.filter((c) => !['market-admin.v1', 'delivery-watch.v1', 'ops.v1'].includes(c));
+  const it3 = (id) => sum3.json?.items?.find((x) => x.module === id);
+  const mv = (id, m) => it3(id)?.metrics?.find((x) => x.id === m)?.value;
+  check('viewer هر چهار کارت را با منبع و زمانِ خودِ سرورِ حساب می‌گیرد', sum3.status === 200 && NEW4.every((id) => it3(id)?.ok && it3(id).source)
+    && it3('market').at === NOW - 120e3 && it3('courier').at === NOW - 90e3 && it3('errors').at === NOW - 10e3 && it3('alerts').at === NOW - 5e3,
+  JSON.stringify(NEW4.map(it3)).slice(0, 900));
+  check('بازار: فروشندهٔ باز ۵، سفارشِ ۳۰ روز ۴۰، پروندهٔ باز ۳ (۱+۲+۰)، گیرکرده ۳', mv('market', 'listedOpen') === 5 && mv('market', 'orders30') === 40
+    && mv('market', 'trustPending') === 3 && mv('market', 'stuck') === 3, JSON.stringify(it3('market')));
+  check('‎days=30‎ و ‎days=7‎ به همان درها رسید', seen.some((c) => c.path === '/api/admin/market/overview' && c.query.days === '30')
+    && seen.some((c) => c.path === '/api/admin/delivery/overview' && c.query.days === '7'));
+  check('پیک: در راه ۴، تحویلِ ۲۴ ساعت ۱۱، ناموفق ۱، گیرکرده ۰، مغایرتِ پول ۲', mv('courier', 'inDelivery') === 4 && mv('courier', 'delivered24h') === 11
+    && mv('courier', 'failed24h') === 1 && mv('courier', 'stuck') === 0 && mv('courier', 'discrepancy') === 2, JSON.stringify(it3('courier')));
+  check('⛔ پاسخِ بی ‎couriers‎ ⇒ «پیکِ فعال» null («—»)، نه صفر', mv('courier', 'activeCouriers') === null);
+  check('رخداد: باز ۵ (‎status=live‎)، بررسی‌نشده ۲، در دستِ بررسی ۳', mv('errors', 'live') === 5 && mv('errors', 'open') === 2 && mv('errors', 'investigating') === 3
+    && seen.some((c) => c.path === '/api/admin/ops/incidents' && c.query.status === 'live'), JSON.stringify(it3('errors')));
+  check('هشدار: باز ۳، دیده‌شده ۱، بحرانیِ باز ۱ (‎status=open&severity=critical‎)', mv('alerts', 'open') === 3 && mv('alerts', 'acknowledged') === 1
+    && mv('alerts', 'critical') === 1 && seen.some((c) => c.path === '/api/admin/ops/alerts' && c.query.status === 'open' && c.query.severity === 'critical'),
+  JSON.stringify(it3('alerts')));
+  check('⛔ ‎/api/admin/me‎ در یک داشبورد یک بار خوانده شد (نه چهار)', meCalls === 1, `${meCalls} بار`);
+  const slowRe = /^\/api\/admin\/(market|delivery|ops)\//;
+  const slowBefore = seen.filter((c) => slowRe.test(c.path)).length;
+  check('هر منبعِ سنگین در یک داشبورد یک بار (بازار، پیک، رخداد، هشدار = ۴)', slowBefore === 4, `${slowBefore}`);
+  caps.push('market-admin.v1', 'delivery-watch.v1', 'ops.v1');
+  const sum4 = await api('GET', '/api/account-admin/console/summary', undefined, T.admin);
+  caps = caps.filter((c) => !['market-admin.v1', 'delivery-watch.v1', 'ops.v1'].includes(c));
+  check('⛔ داشبوردِ دوم در ۳۰ ثانیه درهای سنگین را دوباره نزد (سطلِ مشترکِ پل)، همان عددها با همان `at` ِ منبع',
+    seen.filter((c) => slowRe.test(c.path)).length === slowBefore && sum4.json?.items?.find((x) => x.module === 'market')?.metrics?.find((x) => x.id === 'stuck')?.value === 3
+    && sum4.json.items.find((x) => x.module === 'market').at === NOW - 120e3, `${seen.filter((c) => slowRe.test(c.path)).length - slowBefore} درخواستِ تازه`);
+  const al3 = sum3.json?.alerts || [];
+  check('هشدارِ بحرانی «bad» اول است و به ‎?tab=alerts‎ می‌رود', al3[0]?.module === 'alerts' && al3[0].level === 'bad' && al3[0].link === '/shop?tab=alerts', JSON.stringify(al3[0]));
+  check('هشدار از عددِ واقعی: پروندهٔ بازار (۳)، سفارشِ گیرکردهٔ بازار (۳)، مغایرتِ پیک (۲)، رخدادِ بررسی‌نشده (۲)',
+    al3.some((a) => a.module === 'market' && /^3 marketplace cases/.test(a.text.en)) && al3.some((a) => a.module === 'market' && /^3 storefront orders/.test(a.text.en))
+    && al3.some((a) => a.module === 'courier' && /^2 orders/.test(a.text.en)) && al3.some((a) => a.module === 'errors' && a.level === 'info' && /^2 /.test(a.text.en)), JSON.stringify(al3));
+  check('⛔ گیرکردهٔ پیک صفر ⇒ هشدارِ «گیرکرده» ِ پیک ساخته نشد', !al3.some((a) => a.module === 'courier' && /stuck/.test(a.text.en)));
+  check('هشدارها همچنان به شدت مرتب‌اند', al3.map((a) => ({ bad: 0, warn: 1, info: 2 }[a.level])).every((x, i, a) => i === 0 || a[i - 1] <= x));
 
   /* ── ۳) جست‌وجو ── */
   console.log('\n── ۳) جست‌وجوی سراسری ──');

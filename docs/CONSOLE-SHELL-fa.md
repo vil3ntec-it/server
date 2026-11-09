@@ -41,6 +41,9 @@
   `async (ctx) => ({ source, at, metrics: [{ id, label: {fa,en,ps}, value }], alerts?: [{ level, text, link }] })`.
   `ctx.get(path, query)` همان پلِ فهرست‌سفید است و هر مسیر را در هر درخواستِ داشبورد یک بار می‌زند. نیامده ⇒ `null`؛ خطا ⇒
   پرتاب کنید (همان کارت «—» با کد می‌شود، بقیه سرِ جایشان). ماژولِ بی تابع کارتِ «خلاصه‌ای ندارد» می‌گیرد.
+  از 1.50.70 کارتِ `market` · `courier` · `errors` · `alerts` هم هست: پشتِ همان «توانایی» ِ ماژول (`need(ctx, cap)` ⇒ نبود =
+  `capability_missing`) و درهای سنگینشان با `slow(ctx, …)` (۳۰ ثانیه برای همهٔ نشست‌ها — پل در سرورِ حساب سطلِ عمومیِ
+  ‎127.0.0.1‎ را می‌خورد). امروز فقط `codes` و `audit` کارتِ عددی ندارند.
 
 **ب) وب — یک فایل `homelab-panel/web/src/pages/account/console/modules/<id>.tsx`:**
 
