@@ -458,7 +458,11 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLO
             // after 5 s caught up, +15 % every 4 s (was +10 % every 8 s after 10 s — minutes at 1 Mbps on a 7 Mbps line)
             val calmFor = if (fresh) 3_000_000_000L else 5_000_000_000L
             val since = if (fresh) 3_000_000_000L else 4_000_000_000L
-            if (target < cap && nowNs - calmSince > calmFor && nowNs - lastAdjust > since) {
+            // 7.1 (found streaming for real through a 3 Mbps link): only up when the link really carries the
+            // current rate — the encoder sent 3 Mbps of a 5 Mbps target, the target climbed to 6 untested, the
+            // encoder followed, the stream fell 4 s behind, frames were lost and the viewer froze for 10 s
+            val filled = link >= target * 0.85
+            if (filled && target < cap && nowNs - calmSince > calmFor && nowNs - lastAdjust > since) {
                 lastAdjust = nowNs; calmSince = nowNs
                 return if (set(minOf((target * (if (fresh) 1.2 else 1.15)).toInt(), cap))) Act.SET else Act.NONE
             }
