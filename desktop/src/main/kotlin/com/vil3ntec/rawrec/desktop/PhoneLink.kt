@@ -121,6 +121,9 @@ class PhoneLink(private val adb: Adb, private val serial: String, private val op
         fail("the phone did not answer: ${lastServerError ?: lastErr?.message}")
     }
 
+    /** For checks: the phone's stream exactly as it came (-Drawrec.dumpVideo=<file>), to look at with other tools. */
+    private val dump = System.getProperty("rawrec.dumpVideo")?.let { java.io.FileOutputStream(it).buffered() }
+
     private fun readVideo(i: DataInputStream) {
         var err: String? = null
         try {
@@ -134,6 +137,7 @@ class PhoneLink(private val adb: Adb, private val serial: String, private val op
                 val data = ByteArray(size); i.readFully(data)
                 val config = pts and FLAG_CONFIG != 0L
                 val key = pts and FLAG_KEY != 0L
+                dump?.write(data)
                 events.onVideoPacket(data, if (config) -1 else pts and PTS_MASK, config, key)
             }
         } catch (e: Exception) {
@@ -141,6 +145,7 @@ class PhoneLink(private val adb: Adb, private val serial: String, private val op
                 "اتصال با گوشی قطع شد (کابل جدا شد، یا گوشی قفل شد/برنامه را بست). دوباره «وصل شو» را بزن."
             else (e.message ?: e.javaClass.simpleName)
         }
+        try { dump?.close() } catch (_: Exception) {}
         // always told, on this thread, after its last packet: whoever decodes can close its decoder safely here
         stop()
         events.onEnded(err)

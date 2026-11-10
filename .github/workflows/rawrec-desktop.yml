@@ -158,6 +158,10 @@ jobs:
 
   # The real phone-side server on a real Android (emulator), through the real adb, into the installed app.
   e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        gpu: [swiftshader_indirect, guest]
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
@@ -201,7 +205,7 @@ jobs:
           $SM --install "emulator" "platform-tools" "system-images;android-34;google_apis;x86_64" > /tmp/sdk.log 2>&1 || (tail -20 /tmp/sdk.log; exit 1)
           export ANDROID_AVD_HOME=$HOME/.android/avd; mkdir -p $ANDROID_AVD_HOME
           echo no | $AM create avd -n e2e -k "system-images;android-34;google_apis;x86_64" -d pixel_tablet -p $ANDROID_AVD_HOME/e2e.avd --force
-          nohup $SDK/emulator/emulator -avd e2e -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -accel on > /tmp/emu.log 2>&1 &
+          nohup $SDK/emulator/emulator -avd e2e -no-window -gpu ${{ matrix.gpu }} -no-snapshot -no-boot-anim -accel on > /tmp/emu.log 2>&1 &
           A=$SDK/platform-tools/adb
           timeout 600 $A wait-for-device || { tail -60 /tmp/emu.log; exit 1; }
           for i in $(seq 1 120); do [ "$($A shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] && break; sleep 5; done
@@ -211,7 +215,7 @@ jobs:
         timeout-minutes: 15
         run: |
           set -e
-          O=out/desktop-$VER/e2e; mkdir -p $O
+          O=out/desktop-$VER/e2e-${{ matrix.gpu }}; mkdir -p $O
           APP="desktop/build/compose/binaries/main/app/RawRec Desktop"
           # the same adb as the app's (another version would restart adb's server under the app);
           # the app finds and readies its bundled one by itself (shown in its log)
@@ -222,9 +226,12 @@ jobs:
           "$AD" shell am start -a android.settings.SETTINGS >/dev/null
           ( for i in $(seq 1 60); do "$AD" shell input swipe 800 2000 800 700 300; "$AD" shell input swipe 800 700 800 2000 300; done ) > /dev/null 2>&1 &
           set +e
-          timeout 300 "$APP/bin/RawRec Desktop" --selftest 15 > $O/selftest.txt 2>&1; echo "exit $?" >> $O/selftest.txt
+          JAVA_TOOL_OPTIONS="-Drawrec.dumpVideo=$RUNNER_TEMP/phone.h264" timeout 300 "$APP/bin/RawRec Desktop" --selftest 15 > $O/selftest.txt 2>&1; echo "exit $?" >> $O/selftest.txt
           set -e
           cat $O/selftest.txt
+          # what the phone itself sent, decoded by ffmpeg alone (not by the app): tells the phone's picture from ours
+          ls -la $RUNNER_TEMP/phone.h264
+          ffmpeg -v error -i $RUNNER_TEMP/phone.h264 -vf "select='not(mod(n\,10))',scale=640:-2,tile=4x2" -frames:v 1 -y $O/phone-stream-raw.png || true
           F=$(grep '^RESULT_FILE=' $O/selftest.txt | tail -1 | cut -d= -f2-)
           [ -n "$F" ] && [ -f "$F" ]
           ffprobe -v error -show_entries stream=codec_name,width,height,r_frame_rate,nb_read_frames,color_space,sample_rate,channels:format=duration,size -count_frames -of default=nw=1 "$F" | tee $O/ffprobe.txt
@@ -246,7 +253,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          cp /tmp/emu.log out/desktop-$VER/e2e/ 2>/dev/null || true
-          git add -f out/desktop-$VER/e2e || true
-          git commit -m "RawRec Desktop $VER e2e [skip ci]" || exit 0
+          cp /tmp/emu.log out/desktop-$VER/e2e-${{ matrix.gpu }}/ 2>/dev/null || true
+          git add -f out/desktop-$VER/e2e-${{ matrix.gpu }} || true
+          git commit -m "RawRec Desktop $VER e2e ${{ matrix.gpu }} [skip ci]" || exit 0
           for i in 1 2 3 4 5 6 7 8; do git pull --rebase -q && git push -q && exit 0; sleep $((5 * i)); done
