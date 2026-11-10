@@ -1,0 +1,51 @@
+Picked up JAVA_TOOL_OPTIONS: -Drawrec.dumpVideo=/home/runner/work/_temp/phone.h264
+rawrec-desktop selftest: os Linux amd64, java 17.0.21
+[hevc_nvenc @ 0x75bc38648a40] Cannot load libcuda.so.1
+[h264_nvenc @ 0x75bc38648a40] Cannot load libcuda.so.1
+[av1_nvenc @ 0x75bc38648a40] Cannot load libcuda.so.1
+[libopenh264 @ 0x75bc38648a40] [OpenH264] this = 0x0x75bc38640590, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0x75bc38648a40] [OpenH264] this = 0x0x75bc38640590, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+Svt[info]: -------------------------------------------
+Svt[info]: SVT [version]:	SVT-AV1 Encoder Lib v2.2.0
+Svt[info]: SVT [build]  :	GCC 9.4.0	 64 bit
+Svt[info]: LIB Build date: Nov 16 2024 01:13:32
+Svt[info]: -------------------------------------------
+Svt[info]: Number of logical cores available: 4
+Svt[info]: Number of PPCS 59
+Svt[info]: [asm level on system : up to avx512]
+Svt[info]: [asm level selected : up to avx2]
+Svt[info]: -------------------------------------------
+Svt[info]: SVT [config]: main profile	tier (auto)	level (auto)
+Svt[info]: SVT [config]: width / height / fps numerator / fps denominator 		: 640 / 360 / 30 / 1
+Svt[info]: SVT [config]: bit-depth / color format 					: 8 / YUV420
+Svt[info]: SVT [config]: preset / tune / pred struct 					: 10 / PSNR / random access
+Svt[info]: SVT [config]: gop size / mini-gop size / key-frame type 			: 161 / 16 / key frame
+Svt[info]: SVT [config]: BRC mode / target bitrate (kbps)				: VBR / 2000 
+Svt[info]: SVT [config]: AQ mode / variance boost 					: 2 / 0
+Svt[info]: -------------------------------------------
+encoders: libopenh264(cpu), libsvtav1(cpu)
+adb: /home/runner/.config/rawrec/platform-tools/adb
+phone: sdk gphone64 x86 64 (emulator-5554), Android SDK 34
+live: sdk_gphone64_x86_64 h264 2560x1600
+[libopenh264 @ 0x75bb94001400] [OpenH264] this = 0x0x75bb940021e0, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0x75bb94001400] [OpenH264] this = 0x0x75bb940021e0, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+t=1s in: 1 fps 0.5 Mbps 2560x1600 audio=on rec: 0 bytes dropped 0
+t=2s in: 0 fps 0.0 Mbps 2560x1600 audio=on rec: 23473 bytes dropped 0
+t=3s in: 0 fps 0.0 Mbps 2560x1600 audio=on rec: 26182 bytes dropped 0
+t=4s in: 0 fps 0.1 Mbps 2560x1600 audio=on rec: 50986 bytes dropped 0
+t=5s in: 0 fps 0.3 Mbps 2560x1600 audio=on rec: 74977 bytes dropped 0
+t=6s in: 0 fps 0.1 Mbps 2560x1600 audio=on rec: 76186 bytes dropped 0
+t=7s in: 2 fps 3.4 Mbps 2560x1600 audio=on rec: 99388 bytes dropped 0
+t=8s in: 3 fps 2.8 Mbps 2560x1600 audio=on rec: 100176 bytes dropped 0
+t=9s in: 1 fps 2.0 Mbps 2560x1600 audio=on rec: 123419 bytes dropped 0
+t=10s in: 0 fps 0.3 Mbps 2560x1600 audio=on rec: 187845 bytes dropped 0
+t=11s in: 0 fps 0.1 Mbps 2560x1600 audio=on rec: 205376 bytes dropped 0
+t=12s in: 3 fps 0.1 Mbps 2560x1600 audio=on rec: 208519 bytes dropped 0
+t=13s in: 0 fps 0.0 Mbps 2560x1600 audio=on rec: 219868 bytes dropped 0
+t=14s in: 4 fps 0.1 Mbps 2560x1600 audio=on rec: 221149 bytes dropped 0
+t=15s in: 4 fps 0.1 Mbps 2560x1600 audio=on rec: 231779 bytes dropped 0
+[aac @ 0x75bb94be1dc0] Qavg: 65536.000
+[mp4 @ 0x75bc39b29500] Starting second pass: moving the moov atom to the beginning of the file
+result: /home/runner/Videos/RawRec/RawRec 2026-11-10 14-57-58.mp4 1152x720 15.00s frames=450 dropped=0 bytes=252300 encoder=libopenh264 error=null
+RESULT_FILE=/home/runner/Videos/RawRec/RawRec 2026-11-10 14-57-58.mp4
+exit 0
