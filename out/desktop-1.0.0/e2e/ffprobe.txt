@@ -1,0 +1,13 @@
+codec_name=h264
+width=1152
+height=720
+color_space=bt709
+r_frame_rate=16000/1
+nb_read_frames=23
+codec_name=aac
+sample_rate=48000
+channels=2
+r_frame_rate=0/0
+nb_read_frames=773
+duration=16.490000
+size=25152
