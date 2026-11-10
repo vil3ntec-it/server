@@ -1,17 +1,18 @@
 // ---------------------------------------------------------------------------
 //  ⬇️ نشانیِ دانلود و نسخهٔ هر برنامه (پورتال و SDK همین را به مشتری می‌دهند) — خواندن و نوشتن (۱.۵۰.۸۰، S11)
 //
-//  ⛔ خواندن برای هر نقشِ ماژولِ «نسخه‌ها» (`GET /console/downloads` ⇐ ‎/api/downloads‎ ِ عمومی)؛ نوشتن فقط admin (آن‌جا ارشد) با
-//     `SensitiveDialog` (دلیل + تأیید + یک کلید برای همین پنجره). فقط فیلدِ عوض‌شده می‌رود؛ رشتهٔ خالی = پاک کردن.
+//  ⛔ خواندن برای هر نقشِ ماژولِ «نسخه‌ها» (`GET /console/downloads` ⇐ ‎/api/downloads‎ ِ عمومی)؛ نوشتن فقط مالک/«فنی» (آن‌جا ارشد) با
+//     `SensitiveDialog` (دلیل + تأیید + رمز + یک کلید برای همین پنجره). فقط فیلدِ عوض‌شده می‌رود؛ رشتهٔ خالی = پاک کردن.
 //  ⛔ نشانی به دستِ **همهٔ** مشتری‌ها می‌رسد ⇒ فقط ‎http(s)‎ ِ کامل (همان سنجشِ پل)، و هرگز پیوندِ کلیک‌خور در خودِ پنل نیست —
 //     متن است تا نشانیِ بدی که از جای دیگر نوشته شده در مرورگرِ مدیر باز نشود.
 //  ⛔ ‎min_above_latest‎ / ‎bad_version‎ ِ سرورِ حساب در همان پنجره گفته می‌شود (نه «انجام شد»).
+//  ⛔ (۱.۵۰.۸۱) نوشتن «انتشار» است ⇒ فقط مالکِ پنل (یا نقشِ «فنی»، `canChange` ِ سرور) و با **رمزِ خودش** — همان قاعدهٔ انتشارِ مرحله‌ای.
+//     نشانی همان سنجشِ تازهٔ پل (یک‌معنا برای هر خواننده)، آخرین نسخه مثلِ حداقل، و حداقل ≤ آخرین پیش از «ذخیره».
 // ---------------------------------------------------------------------------
 import { useState, type ReactNode } from 'react';
 import { Download } from 'lucide-react';
 
 import { api } from '../../../api';
-import { useApp } from '../../../app-context';
 import { Card } from '../../../components/ui';
 import { KV, Notice } from '../../../control/ui';
 import { useLoad, type Load } from '../shared';
@@ -22,27 +23,39 @@ import { useTx } from './text';
 export const DOWNLOADS_API = '/api/account-admin/console/downloads';
 type App = 'shop' | 'pump';
 type Dl = { app: App; title: string; url: string; version: string; notes: string; minVersion: string };
-type Doc = { downloads: Dl[]; fetchedAt?: number; serverTime?: number | null };
+type Doc = { downloads: Dl[]; fetchedAt?: number; serverTime?: number | null; canChange?: boolean };
 type Draft = { url: string; version: string; notes: string; minVersion: string };
 const FIELDS = ['url', 'version', 'notes', 'minVersion'] as const;
 const VERSION_RE = /^\d+(\.\d+){1,3}$/;
 
 // eslint-disable-next-line no-control-regex
 const clean = (s: string) => s.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
-/** همان سنجشِ پل: خالی، یا ‎http(s)‎ ِ کامل بی فاصله و بی نام/رمز، تا ۳۰۰ */
+/** همان سنجشِ پل (‎routes/console-parity.js‎): نویسه‌های نشانیِ لاتین (بی ‎'‎)، و ‎http(s)://میزبان[:درگاه]‎ ِ صریح */
+const URL_CHARS = /^[A-Za-z0-9\-._~:/?#[\]@!$&()*+,;=%]+$/;
+const URL_HEAD = /^https?:\/\/([A-Za-z0-9.-]+)(?::\d{1,5})?(?=[/?#]|$)/i;
+/** خالی، یا ‎http(s)‎ ِ کامل و یک‌معنا (همان رشته برای هر خواننده) بی نام/رمز، تا ۳۰۰ */
 export function downloadUrlOk(s: string): boolean {
   if (s === '') return true;
-  if (s.length > 300 || /\s/.test(s)) return false;
+  if (s.length > 300 || !URL_CHARS.test(s)) return false;
+  const head = URL_HEAD.exec(s);
+  if (!head || !/[A-Za-z0-9]/.test(head[1])) return false;
   try {
     const u = new URL(s);
     return (u.protocol === 'https:' || u.protocol === 'http:') && Boolean(u.hostname) && !u.username && !u.password;
   } catch { return false; }
 }
+/** ‎compare‎ ِ ‎lib/app-compat.js‎ ِ shop */
+function cmpVersion(a: string, b: string): number {
+  const x = a.split('.').map(Number), y = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] || 0) - (y[i] || 0);
+    if (d) return d > 0 ? 1 : -1;
+  }
+  return 0;
+}
 
 export default function DownloadsCard() {
   const tx = useTx();
-  const { can } = useApp();
-  const admin = can('admin');
   const load = useLoad<Doc>(DOWNLOADS_API);
   const [app, setApp] = useState<App>('shop');
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -53,17 +66,26 @@ export default function DownloadsCard() {
   if (load.error) return wrap(<Problem load={load as Load<unknown>} />);
   if (!load.data) return wrap(<StateLoading />);
   const list = Array.isArray(load.data.downloads) ? load.data.downloads : [];
+  const canChange = load.data.canChange === true;
   const cur = list.find((d) => d.app === app);
   const label: Record<(typeof FIELDS)[number], string> = {
     url: tx('نشانیِ دانلود', 'Download URL', 'د ښکته کولو پته'), version: tx('آخرین نسخه', 'Latest version', 'وروستۍ نسخه'),
     notes: tx('یادداشتِ انتشار', 'Release notes', 'د خپرونې یادښت'), minVersion: tx('حداقل نسخه', 'Minimum version', 'لږ تر لږه نسخه'),
   };
-  const next = draft ? { url: clean(draft.url), version: clean(draft.version), notes: clean(draft.notes), minVersion: clean(draft.minVersion).replace(/^v/i, '') } : null;
+  const next = draft ? { url: clean(draft.url), version: clean(draft.version).replace(/^v/i, ''), notes: clean(draft.notes), minVersion: clean(draft.minVersion).replace(/^v/i, '') } : null;
   const errs: string[] = [];
   if (next) {
-    if (!downloadUrlOk(next.url)) errs.push(tx('نشانی باید کاملِ http یا https باشد (بی فاصله، تا ۳۰۰) — یا خالی', 'The URL must be a full http or https address (no spaces, up to 300) — or empty', 'پته باید بشپړه http یا https وي'));
+    if (!downloadUrlOk(next.url)) {
+      errs.push(tx('نشانی باید کاملِ http یا https باشد (https://میزبان/…، تا ۳۰۰) و فقط با نویسه‌های لاتینِ نشانی — حرفِ فارسی، فاصله و \\ را از نوارِ نشانیِ مرورگر (به شکلِ %..) کپی کنید؛ یا خالی',
+        'The URL must be a full http or https address (https://host/…, up to 300) using URL characters only — copy Persian letters, spaces and \\ from the browser address bar (as %..); or empty',
+        'پته باید بشپړه http یا https وي، یوازې د پتې لاتیني توري'));
+    }
     if (next.version.length > 32) errs.push(tx('نسخه بلندتر از ۳۲ نویسه', 'Version longer than 32 characters', 'نسخه له ۳۲ اوږده'));
+    else if (next.version && !VERSION_RE.test(next.version)) errs.push(tx('آخرین نسخه مثلِ 2.14.6', 'Latest version like 2.14.6', 'وروستۍ نسخه لکه 2.14.6'));
     if (next.minVersion && !VERSION_RE.test(next.minVersion)) errs.push(tx('حداقل نسخه مثلِ 2.14.2', 'Minimum version like 2.14.2', 'لږ تر لږه نسخه لکه 2.14.2'));
+    else if (next.minVersion && VERSION_RE.test(next.version) && cmpVersion(next.minVersion, next.version) > 0) {
+      errs.push(tx('حداقل نسخه از آخرین نسخه بالاتر است — نسخه‌ای که منتشر نشده را نمی‌شود از کسی خواست', 'The minimum version is above the latest version — nobody can be asked for an unreleased version', 'لږ تر لږه نسخه له وروستۍ لوړه ده'));
+    }
     if (next.notes.length > 1000) errs.push(tx('یادداشت بلندتر از ۱۰۰۰ نویسه', 'Notes longer than 1000 characters', 'یادښت له ۱۰۰۰ اوږد'));
   }
   const changed = next && cur ? FIELDS.filter((k) => next[k] !== (cur[k] || '')) : [];
@@ -109,8 +131,14 @@ export default function DownloadsCard() {
         </>
       )}
       {done && <Notice tone="good">{done}</Notice>}
-      {!admin && <Notice>{tx('فقط مدیرِ پنل این‌ها را عوض می‌کند (سرورِ حساب هم فقط مدیرِ ارشد را می‌پذیرد).', 'Only panel admins change these (the account server accepts super admins only).', 'یوازې د پینل مدیر یې بدلوي.')}</Notice>}
-      {admin && cur && !draft && (
+      {!canChange && (
+        <Notice>
+          <span data-dl-owner-only>{tx('فقط مالکِ پنل (یا نقشِ فنی) این‌ها را عوض می‌کند — همان قاعدهٔ انتشارِ مرحله‌ای، با رمزِ خودش (سرورِ حساب هم فقط مدیرِ ارشد را می‌پذیرد).',
+            'Only the panel owner (or the technical role) changes these — the same rule as staged releases, with their own password (the account server accepts super admins only).',
+            'یوازې د پینل خاوند (یا تخنیکي رول) دا بدلوي — له خپل پټنوم سره.')}</span>
+        </Notice>
+      )}
+      {canChange && cur && !draft && (
         <button className="btn btn-sm mt-2" data-dl-edit onClick={() => { setDone(''); setDraft({ url: cur.url, version: cur.version, notes: cur.notes, minVersion: cur.minVersion }); }}>
           {tx('ویرایش', 'Edit', 'سمول')}
         </button>
@@ -127,7 +155,7 @@ export default function DownloadsCard() {
       )}
       <SourceLine source="/api/downloads · /api/admin/downloads" data={load.data} at={load.at} />
       {open && next && cur && (
-        <SensitiveDialog title={title} onClose={() => setOpen(false)} onSubmit={submit} onUnknown={() => { void load.reload(); }}
+        <SensitiveDialog title={title} needPassword onClose={() => setOpen(false)} onSubmit={submit} onUnknown={() => { void load.reload(); }}
                          effect={<>
                            <span className="block">{tx('عوض می‌شود: {f}', 'Changing: {f}', 'بدلېږي: {f}', { f: changed.map((k) => label[k]).join('، ') })}</span>
                            {changed.includes('url') && <code dir="ltr" className="block break-all text-[11px]">{next.url || '—'}</code>}

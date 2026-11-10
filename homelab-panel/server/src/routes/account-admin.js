@@ -45,7 +45,7 @@ import * as panelAuth from '../auth.js';
 import { requireRecentAuth, reauthMoneyEnforced } from '../auth.js';
 import { db } from '../db.js';
 import { rateLimit } from '../platform/rate-limit.js';
-import { mountConsoleOps } from './console-ops.js';
+import { mountConsoleOps, mayChangeRelease } from './console-ops.js';
 import financeRoutes from './account-finance.js';
 import {
   withPanelActor, readServiceKey, storeServiceKey, forgetServiceKey, publicServiceKey, SERVICE_KEY_RE,
@@ -2143,7 +2143,8 @@ router.post('/console/system/chain-verify', requireRole('admin'), guard(async (r
  * (`shapeBeta`، همان نسخه‌ای که نوشتن می‌خواهد)؛ نوشتنش (‎PUT‎) در ‎routes/console-parity.js‎.
  */
 router.get('/console/release/beta', requireRole('admin'), guard(async (req, res) => {
-  res.json(stamped(shapeBeta(await cloudRaw('GET', '/api/admin/release/beta'))));
+  //  `canChange` (۱.۵۰.۸۱): همان قاعدهٔ نوشتن (مالک یا «فنی») تا رابط دکمه را فقط به همان نشان دهد؛ مرزِ واقعی در خودِ ‎PUT‎ است
+  res.json(stamped({ ...shapeBeta(await cloudRaw('GET', '/api/admin/release/beta')), canChange: mayChangeRelease(req, isPanelOwner) }));
 }));
 
 /** «یک نسخه: چند دستگاه، چند خطا» — شمرده در سرورِ حساب، نه این‌جا. */
@@ -2423,8 +2424,11 @@ function reauth(req, res, next) {
   if (r.pass) return next();
   if (r.failed) {
     res.locals.reauthFailed = true;
-    //  همان احرازِ دوباره برای انتشارِ مرحله‌ای (‎console-ops.js‎) — ردیفِ دفتر نامِ همان کار را می‌گیرد
-    const what = String(req.path || '').includes('/release/stage') ? 'release_stage' : 'service_key';
+    //  همان احرازِ دوباره برای درهای «انتشار» (مرحله‌ای ‎console-ops.js‎؛ کانالِ آزمایشی و دانلود ‎console-parity.js‎، ۱.۵۰.۸۱)
+    //  — ردیفِ دفتر نامِ همان کار را می‌گیرد
+    const p = String(req.path || '');
+    const what = p.includes('/release/stage') ? 'release_stage' : p.includes('/release/beta') ? 'release_beta'
+      : p.includes('/console/downloads') ? 'downloads' : 'service_key';
     audit({ actor: actorOf(req), action: `account.${what}.reauth_failed`, entity: what, result: 'forbidden', detail: { step: r.error } });
     return res.status(403).json({ error: 'reauth_failed', message: 'رمزِ پنل یا کدِ دوعاملی درست نیست' });
   }
@@ -2569,7 +2573,7 @@ mountConsoleHolidays(router, { guard, badInput, actorOf, capListed, missingErr, 
  *  ۱.۵۰.۸۰ (S11، ممیزی §۹ «هم‌ترازی»): نوشتنِ کانالِ آزمایشی، نشانیِ دانلود، مصرفِ پیام و پشتیبان‌های هر حساب — تا امروز
  *  فقط در ‎/admin/‎ ِ سرورِ حساب. ‎routes/console-parity.js‎، روی **همین** روتر.
  */
-mountConsoleParity(router, { guard, badInput, actorOf });
+mountConsoleParity(router, { guard, badInput, actorOf, isPanelOwner, reauthLimit, reauth });
 
 /* ماژولِ ۴.۵ ِ پنلِ مرکزی — مالیِ مرکزی (‎routes/account-finance.js‎؛ همین نشست، همین «انجام‌دهنده») */
 router.use('/console/finance', financeRoutes);
