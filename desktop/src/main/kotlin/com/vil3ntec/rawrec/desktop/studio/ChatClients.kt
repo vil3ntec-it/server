@@ -47,10 +47,12 @@ class YouTubeChat(channel: String) : ChatClient(Platform.YOUTUBE, channel) {
     private fun run() {
         while (running.get()) {
             try {
-                // a channel: its current live video; then that video's own chat page
-                val vid = videoId(channel) ?: liveVideoOf(get(watchUrl(channel)))
-                if (vid == null) { status = "پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)"; connected = false; sleep(20_000); continue }
-                val page = get("https://www.youtube.com/live_chat?is_popout=1&v=$vid")
+                // a channel: its current live video; then that video's own chat page (or the live page itself, when
+                // YouTube shows the chat there but hides the video's address — it does to some networks)
+                val chanPage = if (videoId(channel) == null) get(watchUrl(channel)) else null
+                val vid = videoId(channel) ?: chanPage?.let(::liveVideoOf)
+                if (vid == null && chanPage?.contains("liveChatRenderer") != true) { status = "پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)"; connected = false; sleep(20_000); continue }
+                val page = vid?.let { get("https://www.youtube.com/live_chat?is_popout=1&v=$it") }?.takeIf { it.contains("INNERTUBE_API_KEY") } ?: chanPage!!
                 val key = Regex("\"INNERTUBE_API_KEY\":\"([^\"]+)\"").find(page)?.groupValues?.get(1)
                 val ver = Regex("\"INNERTUBE_CLIENT_VERSION\":\"([^\"]+)\"").find(page)?.groupValues?.get(1) ?: "2.20240101.00.00"
                 var cont = initialData(page)?.let(::allChatContinuation)
@@ -100,6 +102,8 @@ class YouTubeChat(channel: String) : ChatClient(Platform.YOUTUBE, channel) {
         fun liveVideoOf(page: String): String? {
             val id = Regex("<link rel=\"canonical\" href=\"https://www\\.youtube\\.com/watch\\?v=([A-Za-z0-9_-]{11})\"").find(page)?.groupValues?.get(1)
                 ?: Regex("\"videoDetails\":\\{\"videoId\":\"([A-Za-z0-9_-]{11})\"").find(page)?.groupValues?.get(1)
+                ?: Regex("\"currentVideoEndpoint\":\\{[^}]*?\"watchEndpoint\":\\{\"videoId\":\"([A-Za-z0-9_-]{11})\"").find(page)?.groupValues?.get(1)
+                ?: Regex("<meta itemprop=\"(?:videoId|identifier)\" content=\"([A-Za-z0-9_-]{11})\"").find(page)?.groupValues?.get(1)
                 ?: return null
             return id.takeIf { page.contains("\"isLive\":true") || page.contains("\"isLiveNow\":true") || page.contains("liveChatRenderer") }
         }
@@ -290,6 +294,7 @@ class TwitchChat(channel: String) : ChatClient(Platform.TWITCH, channel.trim().r
 /** Kick's chat through its public push service (the one kick.com itself uses): messages and gifted subs. */
 class KickChat(channel: String) : ChatClient(Platform.KICK, channel.trim().removePrefix("https://").removePrefix("www.").removePrefix("kick.com/").trim('/').lowercase()) {
     private var ws: WebSocket? = null
+    private var debugFrames = 0
     override fun start() { Thread({ loop() }, "chat-kick").apply { isDaemon = true; start() } }
 
     private fun chatroomId(): Long? {
@@ -316,6 +321,7 @@ class KickChat(channel: String) : ChatClient(Platform.KICK, channel.trim().remov
                         sb.append(data)
                         if (last) {
                             val t = sb.toString(); sb.setLength(0)
+                            if (System.getProperty("rawrec.debugChat") == "1" && debugFrames++ < 6) println("kick frame: ${t.take(300)}")
                             if (t.contains("pusher:ping")) w.sendText("{\"event\":\"pusher:pong\",\"data\":{}}", true)
                             else parse(t)?.let(::emit)
                         }

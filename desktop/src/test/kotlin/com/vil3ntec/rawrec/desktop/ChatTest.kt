@@ -61,6 +61,8 @@ class ChatTest {
         val live = """<link rel="canonical" href="https://www.youtube.com/watch?v=abcdefghijk"> ... "isLive":true"""
         assertEquals("abcdefghijk", YouTubeChat.liveVideoOf(live))
         assertNull(YouTubeChat.liveVideoOf("""<link rel="canonical" href="https://www.youtube.com/@x">"""))
+        // a page that hides its address but still has the live video in its data
+        assertEquals("zyxwvutsrqp", YouTubeChat.liveVideoOf(""""currentVideoEndpoint":{"clickTrackingParams":"x","watchEndpoint":{"videoId":"zyxwvutsrqp"}} "isLive":true"""))
     }
 
     @Test fun kickMessagesKeepEmoteNames() {

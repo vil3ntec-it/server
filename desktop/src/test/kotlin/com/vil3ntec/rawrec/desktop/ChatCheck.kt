@@ -14,6 +14,7 @@ import java.net.http.HttpResponse
  * (authors shortened). Plus one real translation. Args: seconds.
  */
 fun main(args: Array<String>) {
+    System.setProperty("rawrec.debugChat", "1")
     val seconds = args.getOrNull(0)?.toIntOrNull() ?: 60
     val twitch = try { topTwitch() } catch (e: Exception) { println("twitch top: ${e.message}"); emptyList() }.ifEmpty { listOf("kaicenat", "xqc", "ibai") }
     println("twitch channels: $twitch")
@@ -51,7 +52,8 @@ private fun kickLive(): List<String> = try {
     val r = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build().send(HttpRequest.newBuilder(URI("https://kick.com/stream/livestreams/en?page=1&limit=5&sort=desc"))
         .header("User-Agent", ChatClient.UA).header("Accept", "application/json").GET().build(), HttpResponse.BodyHandlers.ofString())
     println("kick live list -> ${r.statusCode()}")
-    Regex("\"slug\":\"([a-z0-9_-]+)\"").findAll(r.body()).map { it.groupValues[1] }.distinct().toList().also { println("kick live: $it") }
+    val d = JSONObject(r.body()).optJSONArray("data") ?: JSONArray()
+    (0 until d.length()).mapNotNull { d.getJSONObject(it).optJSONObject("channel")?.optString("slug")?.takeIf { s -> s.isNotBlank() } }.distinct().also { println("kick live: $it") }
 } catch (e: Exception) { println("kick live list: ${e.message}"); emptyList() }
 
 private fun topTwitch(): List<String> {
