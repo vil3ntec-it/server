@@ -244,12 +244,23 @@ export default function Sales({ fixedApp }: { fixedApp?: AppId } = {}) {
 /**
  * رسید را با نشستِ پنل می‌خواند و در تبِ تازه باز می‌کند.
  * ⛔ توکن در نشانی نمی‌رود — نشانیِ رسید قابلِ کپی و فرستادن است.
+ *
+ * ⛔ (۱.۵۰.۷۳) `window.open(url, '_blank', 'noopener')` طبقِ قاعدهٔ مرورگر **همیشه** null می‌دهد، پس پس از هر
+ * رسیدِ درست هم «پنجره باز نشد» می‌آمد. حالا تبِ خالی همان لحظهٔ کلیک (پیش از `fetch`؛ وگرنه Safari آن را
+ * «پنجرهٔ ناخواسته» می‌بندد) باز و `opener` ِ آن بریده می‌شود — همان حفاظِ noopener: صفحهٔ رسید به این تب دست
+ * ندارد. null فقط یعنی مرورگر واقعاً بست؛ رسیدی که نیامد تبِ خالی را می‌بندد.
  */
 function ReceiptButton({ id }: { id: string }) {
   return (
     <ActionButton
       busyLabel="…"
       onClick={async () => {
+        const win = window.open('', '_blank');
+        if (!win) {
+          toast('مرورگر پنجرهٔ تازه را باز نکرد', 'bad');
+          return;
+        }
+        win.opener = null;
         try {
           const res = await fetch(`/api/account-admin/payments/${id}/receipt`, {
             headers: { Authorization: `Bearer ${getToken() || ''}` },
@@ -257,10 +268,10 @@ function ReceiptButton({ id }: { id: string }) {
           if (!res.ok) throw new Error('رسید از سرورِ حساب نیامد');
           const html = await res.text();
           const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
-          const win = window.open(url, '_blank', 'noopener');
-          if (!win) toast('مرورگر پنجرهٔ تازه را باز نکرد', 'bad');
+          win.location.replace(url);
           setTimeout(() => URL.revokeObjectURL(url), 60_000);
         } catch (e) {
+          win.close();
           toast(e instanceof Error ? e.message : 'نشد', 'bad');
         }
       }}

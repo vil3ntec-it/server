@@ -119,7 +119,10 @@ export function detachDomain(siteId, domainName) {
 
 // -------------------------------- افزودن ----------------------------------
 export async function addSite({ rootPath, name, domain, port, kind, startCommand, autostart = false }) {
-  const resolved = path.resolve(String(rootPath || '').trim());
+  //  ⛔ (۱.۵۰.۷۳) مسیرِ خالی ⇒ `path.resolve('')` = پوشهٔ کاریِ خودِ پنل: کارگزاری که مسیر نمی‌فرستاد سایتی با ریشهٔ
+  //  کدِ پنل و «npm start» ِ پیداشده می‌ساخت — فایل‌منیجر روی ‎src/‎ و اجرای کد. مسیر باید گفته شود.
+  if (!String(rootPath ?? '').trim()) return { ok: false, error: 'path_required' };
+  const resolved = path.resolve(String(rootPath).trim());
   if (!resolved || !fs.existsSync(resolved)) return { ok: false, error: 'path_not_found' };
   if (!fs.statSync(resolved).isDirectory()) return { ok: false, error: 'not_a_directory' };
 

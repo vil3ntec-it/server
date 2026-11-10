@@ -168,6 +168,24 @@ try {
   check('برنامه‌ای که نامِ برنامه نمی‌فرستد همچنان کار می‌کند',
     main.status !== 404 && mainBody.error !== 'unknown_app',
     `status ${main.status} ${JSON.stringify(mainBody).slice(0, 200)}`);
+
+  /* ------------------------------------------------------------------ */
+  console.log('\n── ۴) «تغییرِ رمز» با نشستِ دزدیده رمزِ فعلی را بی‌سقف حدس نمی‌زند (S13 ِ ممیزی) ──');
+  /*
+   *  ⛔ تا ۱.۵۰.۷۲ `authLimiter` پس از روترِ ‎/api/auth‎ سوار بود و روی ‎change-password‎ نمی‌دوید: نشستِ دزدیده
+   *  (یا مرورگرِ بازِ رهاشده) رمزِ فعلی را بی‌پایان حدس می‌زد — همان چیزی که احرازِ دوباره سقف داشت.
+   */
+  //  همان نشستِ مدیری که بخشِ ۲ ساخت (رمزش ‎ControlCenter!2026‎)
+  const authH = { authorization: `Bearer ${token || ''}` };
+  const tries = [];
+  for (let i = 0; i < 6; i++) {
+    tries.push((await post('/api/auth/change-password', { oldPassword: `guess-${i}-x`, newPassword: 'Brand-New-2026-x' }, authH)).status);
+  }
+  check('⛔ پنج حدسِ غلط ۴۰۰ و ششمی ۴۲۹ (سقفِ خودِ نشست)', Boolean(token) && tries.slice(0, 5).every((x) => x === 400) && tries[5] === 429, tries.join(' '));
+  const forged = await post('/api/auth/change-password', { oldPassword: 'ControlCenter!2026', newPassword: 'Brand-New-2026-x' }, { ...authH, 'x-forwarded-for': '203.0.113.77' });
+  check('⛔ X-Forwarded-For ِ جعلی سقف را باز نمی‌کند (و رمز عوض نشد)', forged.status === 429, `status ${forged.status}`);
+  const v1 = await post('/api/panel/v1/auth/change-password', { oldPassword: 'guess-v1', newPassword: 'Brand-New-2026-x' }, authH);
+  check('⛔ درِ ‎/api/panel/v1‎ همان سقف را دارد', v1.status === 429, `status ${v1.status}`);
 } finally {
   child.kill('SIGTERM');
   await wait(400);

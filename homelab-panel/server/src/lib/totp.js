@@ -76,16 +76,29 @@ export function normalizeDigits(input) {
 /**
  * پنجرهٔ ±۱ گام (۳۰ ثانیه): ساعتِ گوشی و سرور دقیقاً یکی نیستند.
  * مقایسه با زمانِ ثابت تا از روی طولِ مقایسه چیزی لو نرود.
+ *
+ * ⛔ S13 (۱.۵۰.۷۳): **کدام گام** با کد جور شد — یا ‎-1‎. `after` = آخرین گامی که برای همین
+ * کاربر پذیرفته شده؛ آن گام و هر گامِ کهنه‌تر دیگر پذیرفته نمی‌شود. گامِ جورشده (نه شمارندهٔ
+ * ساعتِ سرور) است که باید ثبت شود: کدِ «گامِ بعد» از گوشیِ کمی جلو، اگر شمارندهٔ امروز ثبت
+ * می‌شد، سی ثانیهٔ بعد دوباره در پنجره بود. ثبتِ اتمی در `consumeTotp` ِ `auth.js` است.
  */
-export function verifyTotp(secretBase32, input, { at = Date.now(), window = 1 } = {}) {
+export function matchTotpStep(secretBase32, input, { at = Date.now(), window = 1, after = null } = {}) {
   const code = normalizeDigits(input);
-  if (code.length !== DIGITS || !secretBase32) return false;
+  if (code.length !== DIGITS || !secretBase32) return -1;
+  const floor = after === null || after === undefined ? -Infinity : Number(after);
   const counter = Math.floor(at / 1000 / STEP_SECONDS);
   for (let i = -window; i <= window; i++) {
-    const expected = hotp(secretBase32, counter + i);
-    if (crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(code))) return true;
+    const step = counter + i;
+    if (!(step > floor)) continue;
+    const expected = hotp(secretBase32, step);
+    if (crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(code))) return step;
   }
-  return false;
+  return -1;
+}
+
+/** فقط «جور است یا نه» — بی حافظهٔ گام. ⛔ برای ورود و احرازِ دوباره `consumeTotp` (auth.js)، نه این. */
+export function verifyTotp(secretBase32, input, opts = {}) {
+  return matchTotpStep(secretBase32, input, opts) >= 0;
 }
 
 export function otpauthUrl({ issuer, account, secret }) {

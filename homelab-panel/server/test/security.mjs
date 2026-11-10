@@ -191,6 +191,29 @@ try {
   tk = await j(await post('/api/auth/ticket', { path: '/api/dashboard' }));
   dl = await get(`${filePath}&ticket=${encodeURIComponent(tk.ticket)}`);
   check('⛔ بلیتِ مسیرِ دیگر این‌جا ۴۰۱', dl.status === 401, String(dl.status));
+  /*
+   *  ⛔ بلیت به «مسیر + پرس‌وجو» بسته است، نه فقط مسیر (۱.۵۰.۷۳): بلیتی که برای دانلودِ یک پرونده گرفته
+   *  شد و در لاگ یا Referer لو رفت، با عوض کردنِ ‎?path=‎ پروندهٔ دیگری را باز نمی‌کند.
+   */
+  const otherFile = `/api/files/download?path=${encodeURIComponent(path.join(dataDir, 'panel.db'))}`;
+  tk = await j(await post('/api/auth/ticket', { path: filePath }));
+  dl = await get(`${otherFile}&ticket=${encodeURIComponent(tk.ticket)}`);
+  check('⛔ بلیتِ یک پرونده با ‎?path=‎ ِ پروندهٔ دیگر ⇒ ۴۰۱', dl.status === 401, String(dl.status));
+  tk = await j(await post('/api/auth/ticket', { path: filePath }));
+  dl = await get(`${filePath}&path=${encodeURIComponent('/etc/passwd')}&ticket=${encodeURIComponent(tk.ticket)}`);
+  check('⛔ همان پرس‌وجو + ‎path‎ ِ دوم ⇒ ۴۰۱', dl.status === 401, String(dl.status));
+  tk = await j(await post('/api/auth/ticket', { path: filePath }));
+  dl = await get(`${filePath}&inline=1&ticket=${encodeURIComponent(tk.ticket)}`);
+  check('⛔ پارامترِ افزوده ⇒ ۴۰۱', dl.status === 401, String(dl.status));
+  tk = await j(await post('/api/auth/ticket', { path: '/api/dashboard' }));
+  dl = await get(`/api/dashboard?x=1&ticket=${encodeURIComponent(tk.ticket)}`);
+  check('⛔ بلیتِ مسیرِ بی پرس‌وجو با پرس‌وجوی افزوده ⇒ ۴۰۱', dl.status === 401, String(dl.status));
+  tk = await j(await post('/api/auth/ticket', { path: filePath }));
+  dl = await get(`/api/files/download?ticket=${encodeURIComponent(tk.ticket)}&path=${encodeURIComponent(path.join(sitesRoot, 'shop', 'index.html'))}`);
+  check('جای ‎ticket‎ در نشانی مهم نیست (همان پرس‌وجو ⇒ ۲۰۰)', dl.status === 200 && (await dl.text()).includes('<h1>shop</h1>'), String(dl.status));
+  tk = await j(await post('/api/auth/ticket', { path: filePath }));
+  dl = await get(`/api/files/download?path=${path.join(sitesRoot, 'shop', 'index.html').replace(/ /g, '+')}&ticket=${encodeURIComponent(tk.ticket)}`);
+  check('رمزگذاریِ دیگرِ همان مقدار (بی ‎%2F‎) ⇒ ۲۰۰', dl.status === 200, String(dl.status));
   tk = await j(await post('/api/auth/ticket', { path: '/api/auth/logout' }));
   const viaPost = await fetch(`${BASE}/api/auth/logout?ticket=${encodeURIComponent(tk.ticket)}`, { method: 'POST' });
   check('⛔ بلیت برای نوشتن (POST) کار نمی‌کند', viaPost.status === 401, String(viaPost.status));
@@ -328,11 +351,18 @@ try {
   const wrongCode = totp(tsu.secret) === '000000' ? '111111' : '000000';
   sk = await svk({ password: 'a-very-long-password', code: wrongCode });
   check('⛔ رمز + کدِ غلط ⇒ ۴۰۳ reauth_failed', sk.status === 403 && (await j(sk)).error === 'reauth_failed', String(sk.status));
-  sk = await svk({ password: 'a-very-long-password', code: totp(tsu.secret) });
+  //  ⛔ S13: کدی که دوعاملی را روشن کرد مصرف شده؛ کدِ گامِ بعد (ساعتِ گوشیِ کمی جلو، در پنجرهٔ ±۱)
+  const stepUpCode = totp(tsu.secret, Date.now() + 30_000);
+  sk = await svk({ password: 'a-very-long-password', code: stepUpCode });
   skBody = await j(sk);
   check('رمز + کدِ درست از احرازِ دوباره می‌گذرد (و به «دلیل» می‌رسد)', sk.status === 400 && skBody.error === 'reason_required', `${sk.status} ${JSON.stringify(skBody)}`);
   meNow = await j(await get('/api/auth/me', auth));
   check('و حالا نشست تازه است', meNow.freshUntil > Date.now());
+  staleAll();
+  sk = await svk({ password: 'a-very-long-password', code: stepUpCode });
+  check('⛔ S13: همان کد در «رمز همراهِ درخواست» بارِ دوم ⇒ ۴۰۳ reauth_failed (بازپخش)', sk.status === 403 && (await j(sk)).error === 'reauth_failed', String(sk.status));
+  meNow = await j(await get('/api/auth/me', auth));
+  check('⛔ S13: و نشست با کدِ بازپخش‌شده تازه نشد', !(meNow.freshUntil > Date.now()), String(meNow.freshUntil));
 
   console.log('\n▶ محدودیتِ نرخ');
   let limited = 0;

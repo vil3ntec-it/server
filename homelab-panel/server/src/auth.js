@@ -6,7 +6,7 @@ import jwt from 'jsonwebtoken';
 import { q, db, getSetting, setSetting, logEvent } from './db.js';
 import { config } from './config.js';
 import { issueTicket, useTicket } from './lib/ws-ticket.js';
-import { verifyTotp } from './lib/totp.js';
+import { matchTotpStep, useRecoveryCode } from './lib/totp.js';
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 
@@ -252,13 +252,30 @@ function pathOnly(url) {
   }
 }
 
-/** بلیتِ نشانی برای نشستِ همین درخواست — فقط مسیرِ `/api/...`، بی پرس‌وجو. */
+/**
+ * ⛔ (۱.۵۰.۷۳) پرس‌وجوی متعارف: جفت‌های رمزگشایی‌شده به **همان ترتیب**، بی هر `ticket`. تا ۱.۵۰.۷۲ بلیت فقط به
+ * مسیر بسته بود: بلیتِ دانلودِ یک پرونده که در لاگ یا Referer لو می‌رفت، با عوض کردنِ ‎?path=‎ هر پروندهٔ دیگرِ
+ * ریشه‌های فایل‌منیجر را باز می‌کرد. حالا هر پارامترِ افزوده، کم‌شده، تکراری یا عوض‌شده ⇒ ۴۰۱. فقط نوشتنِ
+ * دیگرِ همان مقدار (‎%2F‎ یا ‎/‎، ‎+‎ یا ‎%20‎) و جای خودِ `ticket` آزاد است.
+ */
+function queryOnly(url) {
+  try {
+    const pairs = [];
+    for (const [k, v] of new URL(String(url || ''), 'http://x').searchParams) if (k !== 'ticket') pairs.push([k, v]);
+    return JSON.stringify(pairs);
+  } catch {
+    return null;
+  }
+}
+
+/** بلیتِ نشانی برای نشستِ همین درخواست — فقط مسیرِ `/api/...`، بسته به مسیر **و** پرس‌وجو. */
 export function issueUrlTicket(user, rawPath) {
   //  فقط مسیرِ نسبیِ همین سرور — نه نشانیِ کامل، نه `//میزبانِ دیگر`
-  if (typeof rawPath !== 'string' || !rawPath.startsWith('/api/')) return null;
+  if (typeof rawPath !== 'string' || !rawPath.startsWith('/api/') || rawPath.length > 4096) return null;
   const p = pathOnly(rawPath);
-  if (!p || !p.startsWith('/api/') || p.length > 512) return null;
-  return issueTicket({ kind: TICKET_KIND, uid: user.id, sid: user.sessionId, path: p });
+  const query = queryOnly(rawPath);
+  if (!p || !p.startsWith('/api/') || p.length > 512 || query === null) return null;
+  return issueTicket({ kind: TICKET_KIND, uid: user.id, sid: user.sessionId, path: p, query });
 }
 
 function userFromTicket(req) {
@@ -266,6 +283,7 @@ function userFromTicket(req) {
   const t = useTicket(String(req.query.ticket || ''));
   if (!t || t.kind !== TICKET_KIND) return null;
   if (t.path !== pathOnly(req.originalUrl)) return null;
+  if (typeof t.query !== 'string' || t.query !== queryOnly(req.originalUrl)) return null;
   return sessionUser(t.uid, t.sid, null);
 }
 
@@ -335,15 +353,63 @@ export function requireRecentAuth(req, res, next) {
  * پنل، روشن کردنِ دوعاملی). یعنی دوعاملی برای احرازِ دوباره دور زده می‌شد.
  */
 export function verifyReauth(userId, password, code) {
-  const u = q('SELECT password_hash, totp_enabled, totp_secret FROM users WHERE id = ?').get(Number(userId));
+  const u = q('SELECT password_hash, totp_enabled FROM users WHERE id = ?').get(Number(userId));
   if (!u || typeof password !== 'string' || !password || !verifyPassword(password, u.password_hash)) {
     return { ok: false, error: 'wrong_password', totpRequired: Boolean(u?.totp_enabled) };
   }
   if (u.totp_enabled) {
     if (code === undefined || code === null || code === '') return { ok: false, error: 'totp_required', totpRequired: true };
-    if (!verifyTotp(u.totp_secret, code)) return { ok: false, error: 'totp_invalid', totpRequired: true };
+    //  ⛔ S13: کد پس از رمزِ درست مصرف می‌شود — کسی که رمز را ندارد کدهای صاحبِ حساب را نمی‌سوزاند
+    const t = consumeTotp(userId, code);
+    if (!t.ok) return { ok: false, error: 'totp_invalid', totpRequired: true, reused: Boolean(t.reused) };
   }
   return { ok: true, totpRequired: Boolean(u.totp_enabled) };
+}
+
+/**
+ * ⛔ S13 (۱.۵۰.۷۳) — **تنها** درِ پذیرفتنِ کدِ دوعاملیِ رازِ روشن: ورود (`/login/totp`)، احرازِ دوباره و
+ * «رمز همراهِ درخواست» (`verifyReauth`)، خاموش کردن، کلیدِ درِ مدیر و رباتِ تلگرام همه همین را صدا
+ * می‌زنند. هر کد یک بار: گامِ جورشده در `users.totp_last_step` می‌نشیند و همان گام یا هر گامِ
+ * کهنه‌تر دیگر پذیرفته نمی‌شود — حتی در پنجرهٔ ±۱ و حتی از درِ دیگر.
+ *
+ * «مقایسه و جایگذاری» در خودِ `UPDATE` است (`totp_last_step < گام` و همان راز): دو درخواستِ
+ * هم‌زمان با یک کد — یا دو پروسه روی یک `panel.db` — فقط یکی‌شان یک ردیف عوض می‌کند.
+ *
+ * ⚠️ ساعتِ سرور اگر به عقب برگردد (مثلاً ساعتِ جلوافتاده‌ای که NTP درست کرد)، کدها تا رسیدن به
+ * آخرین گامِ ثبت‌شده پذیرفته نمی‌شوند؛ کدِ بازیابی و `vill3n owner-reset` در این حال هم کار می‌کنند.
+ *
+ * @returns {{ ok: true, step: number } | { ok: false, reused: boolean }}
+ */
+export function consumeTotp(userId, code, { at = Date.now() } = {}) {
+  const id = Number(userId);
+  const u = q('SELECT totp_enabled, totp_secret, totp_last_step FROM users WHERE id = ?').get(id);
+  if (!u?.totp_enabled || !u.totp_secret) return { ok: false, reused: false };
+  const last = u.totp_last_step === null || u.totp_last_step === undefined ? null : Number(u.totp_last_step);
+  const step = matchTotpStep(u.totp_secret, code, { at, after: last });
+  if (step < 0) {
+    //  فقط برای دفتر: کدِ درستی که گامش مصرف شده بود (بازپخش)، نه کدِ غلط
+    return { ok: false, reused: last !== null && matchTotpStep(u.totp_secret, code, { at }) >= 0 };
+  }
+  const won = q('UPDATE users SET totp_last_step = ? WHERE id = ? AND totp_enabled = 1 AND totp_secret = ? AND (totp_last_step IS NULL OR totp_last_step < ?)')
+    .run(step, id, u.totp_secret, step);
+  return Number(won.changes) === 1 ? { ok: true, step } : { ok: false, reused: true };
+}
+
+/**
+ * کدِ بازیابیِ یک‌بارمصرف — همان یک در برای ورود، کلیدِ درِ مدیر و رباتِ تلگرام. فهرستِ تازه فقط
+ * اگر فهرست از لحظهٔ خواندن عوض نشده نوشته می‌شود (`totp_recovery IS ?`)، پس یک کد دو بار نمی‌گذرد.
+ *
+ * @returns {{ ok: boolean, remaining: number }}
+ */
+export function consumeRecoveryCode(userId, code) {
+  const id = Number(userId);
+  const before = q('SELECT totp_recovery FROM users WHERE id = ?').get(id)?.totp_recovery ?? null;
+  let list = [];
+  try { list = JSON.parse(before || '[]'); } catch { list = []; }
+  const r = useRecoveryCode(list, String(code ?? ''));
+  if (!r.ok) return { ok: false, remaining: Array.isArray(list) ? list.length : 0 };
+  const won = q('UPDATE users SET totp_recovery = ? WHERE id = ? AND totp_recovery IS ?').run(JSON.stringify(r.remaining), id, before);
+  return Number(won.changes) === 1 ? { ok: true, remaining: r.remaining.length } : { ok: false, remaining: list.length };
 }
 
 /**

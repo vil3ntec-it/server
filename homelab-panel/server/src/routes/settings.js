@@ -10,6 +10,7 @@ import { allSettings, getSetting, setSetting, logEvent } from '../db.js';
 import { config, paths } from '../config.js';
 import { versionInfo } from '../version.js';
 import { sitesRoot, setSitesRoot, NEXT_TO_SERVER } from '../sites/root.js';
+import { denyUnlessShellAllowed } from '../lib/shell-owner.js';
 import { folderReport, moveSitesIntoFolder } from '../sites/portable.js';
 import { normalizeDomain } from '../sites/registry.js';
 import { adminUrl, publicState as tunnelState } from '../tunnel.js';
@@ -92,8 +93,28 @@ router.get('/', (req, res) => {
   });
 });
 
+/**
+ * ⛔ S19: کدام ریشهٔ فایل‌منیجر **عوض** می‌شود — رابط هر بار همهٔ فرم را می‌فرستد، پس فقط تغییرِ واقعی شمرده می‌شود
+ * (ریشهٔ افزوده به‌صورتِ مجموعه؛ پوشهٔ سایت‌ها با مقدارِ مؤثر: خالی = پیش‌فرض).
+ */
+function rootChanges(body) {
+  const out = [];
+  if (Array.isArray(body.extraFileRoots)) {
+    const norm = (list) => [...new Set((list || []).filter((r) => typeof r === 'string' && r.trim()).map((r) => path.resolve(r.trim())))].sort();
+    if (JSON.stringify(norm(body.extraFileRoots)) !== JSON.stringify(norm(getSetting('extra_file_roots', []) || []))) out.push('extraFileRoots');
+  }
+  if ('sitesRoot' in body) {
+    const raw = String(body.sitesRoot ?? '').trim();
+    if ((raw ? path.resolve(raw) : path.resolve(config.sitesRoot)) !== path.resolve(sitesRoot())) out.push('sitesRoot');
+  }
+  return out;
+}
+
 router.put('/', async (req, res) => {
   const body = req.body || {};
+  //  پیش از نوشتنِ هر چیز: درخواستِ ردشده هیچ بخشی‌اش نمی‌نشیند
+  const roots = rootChanges(body);
+  if (roots.length && !denyUnlessShellAllowed(req, res, `file_roots:${roots.join(',')}`)) return;
   if (typeof body.serverName === 'string' && body.serverName.trim()) {
     setSetting('server_name', body.serverName.trim().slice(0, 60));
   }

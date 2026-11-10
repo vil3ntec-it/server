@@ -10,6 +10,7 @@ import { getSiteSync } from './state.js';
 import { userRole, liveSessionUser, freshUntil } from './auth.js';
 import { audit } from './lib/audit.js';
 import * as terminal from './system/terminal.js';
+import { shellAllowed, OWNER_ONLY_MESSAGE } from './lib/shell-owner.js';
 
 // تبی که پشت پنجره رفته «بیننده» حساب نمی‌شود؛ سرور برای آن کاری انجام نمی‌دهد
 function countViewers(io) {
@@ -84,6 +85,11 @@ export function attachRealtime(httpServer) {
     socket.on('term:open', (_payload, ack) => {
       if (!alive()) return ack?.({ ok: false, error: 'unauthorized' });
       if (!isAdmin()) return ack?.({ ok: false, error: 'forbidden' });
+      //  ⛔ S19: `HLP_SHELL_OWNER_ONLY=1` ⇒ پوسته فقط مالک (lib/shell-owner.js)؛ خاموش ⇒ همان «هر admin»
+      if (!shellAllowed(socket.data.user)) {
+        audit({ user: socket.data.user, ip: socket.handshake.address }, 'panel.shell.owner_only', { target: 'terminal', ok: false });
+        return ack?.({ ok: false, error: 'owner_only', message: OWNER_ONLY_MESSAGE });
+      }
       //  ⛔ ترمینال = اجرای هر فرمانی روی این کامپیوتر ⇒ همان احرازِ دوبارهٔ کارِ حساس (۶-۵):
       //  نشستِ دزدیده‌شده یا مرورگرِ بازِ رهاشده بی رمزِ ده دقیقهٔ اخیر پوسته نمی‌گیرد.
       if (!(freshUntil(socket.data.user?.sessionId) > Date.now())) return ack?.({ ok: false, error: 'reauth_required' });
@@ -98,6 +104,7 @@ export function attachRealtime(httpServer) {
     socket.on('term:run', async (payload, ack) => {
       if (!alive()) return ack?.({ ok: false, error: 'unauthorized' });
       if (!isAdmin()) return ack?.({ ok: false, error: 'forbidden' });
+      if (!shellAllowed(socket.data.user)) return ack?.({ ok: false, error: 'owner_only', message: OWNER_ONLY_MESSAGE });
       const id = socket.data.termId;
       const command = String(payload?.command ?? '');
       if (!id) return ack?.({ ok: false, error: 'no_session' });
@@ -118,6 +125,7 @@ export function attachRealtime(httpServer) {
     socket.on('term:interrupt', (_payload, ack) => {
       if (!alive()) return ack?.({ ok: false, error: 'unauthorized' });
       if (!isAdmin()) return ack?.({ ok: false, error: 'forbidden' });
+      if (!shellAllowed(socket.data.user)) return ack?.({ ok: false, error: 'owner_only', message: OWNER_ONLY_MESSAGE });
       ack?.(terminal.interrupt(socket.data.termId));
     });
 
