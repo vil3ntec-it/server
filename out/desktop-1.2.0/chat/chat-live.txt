@@ -1,25 +1,25 @@
-twitch channels: [auronplay, kaicenat, dangerlyoha, trymacs, ravshann]
-probe https://www.youtube.com/@LofiGirl/live -> 200 len 1276019 title= - YouTube canonical=undefined isLive=true videoDetails=null liveChat=true bot=true kick_livestream=null chatroom=null
+twitch channels: [auronplay, kaicenat, trymacs, zackrawrr, dangerlyoha]
+probe https://www.youtube.com/@LofiGirl/live -> 200 len 1597862 title= - YouTube canonical=undefined isLive=true videoDetails=null liveChat=true bot=true kick_livestream=null chatroom=null
 probe https://kick.com/api/v2/channels/xqc -> 200 len 6385 title=null canonical=null isLive=false videoDetails=null liveChat=false bot=false kick_livestream=null chatroom=668
 kick live list -> 200
-kick live: [sxb, maherco, mafanyatopeu, adinross, absi]
+kick live: [sxb, maherco, adinross, mafanyatopeu, n3on]
 kick pusher candidates from site: []
 kick pusher candidates from site: []
 kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
 kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
 kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key eb1d5f283081a78b932c not in this cluster. Did you forget to specify the cluster?"}}
 kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key eb1d5f283081a78b932c not in this cluster. Did you forget to specify the cluster?"}}
-t=10s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 12 (وصل) | Twitch/kaicenat: 27 (وصل) | Twitch/dangerlyoha: 18 (وصل) | Kick/sxb: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…) | Kick/maherco: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…)
+t=10s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 20 (وصل) | Twitch/kaicenat: 7 (وصل) | Twitch/trymacs: 6 (وصل) | Kick/sxb: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…) | Kick/maherco: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…)
 kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
 kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
-t=20s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 34 (وصل) | Twitch/kaicenat: 51 (وصل) | Twitch/dangerlyoha: 38 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/maherco: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
-t=30s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 61 (وصل) | Twitch/kaicenat: 81 (وصل) | Twitch/dangerlyoha: 59 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/maherco: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
-t=40s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 79 (وصل) | Twitch/kaicenat: 104 (وصل) | Twitch/dangerlyoha: 112 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/maherco: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
-t=50s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 94 (وصل) | Twitch/kaicenat: 144 (وصل) | Twitch/dangerlyoha: 157 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/maherco: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
-t=60s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 115 (وصل) | Twitch/kaicenat: 189 (وصل) | Twitch/dangerlyoha: 185 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/maherco: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
-t=70s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 132 (وصل) | Twitch/kaicenat: 243 (وصل) | Twitch/dangerlyoha: 224 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/maherco: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
-t=80s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 154 (وصل) | Twitch/kaicenat: 276 (وصل) | Twitch/dangerlyoha: 269 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/maherco: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
-t=90s YouTube/@LofiGirl: 0 (چتِ این پخش بسته است یا پیدا نشد) | Twitch/auronplay: 176 (وصل) | Twitch/kaicenat: 305 (وصل) | Twitch/dangerlyoha: 323 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/maherco: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
+t=20s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 37 (وصل) | Twitch/kaicenat: 18 (وصل) | Twitch/trymacs: 17 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/maherco: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
+t=30s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 58 (وصل) | Twitch/kaicenat: 35 (وصل) | Twitch/trymacs: 21 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/maherco: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
+t=40s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 73 (وصل) | Twitch/kaicenat: 42 (وصل) | Twitch/trymacs: 63 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/maherco: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
+t=50s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 84 (وصل) | Twitch/kaicenat: 55 (وصل) | Twitch/trymacs: 141 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/maherco: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
+t=60s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 117 (وصل) | Twitch/kaicenat: 70 (وصل) | Twitch/trymacs: 250 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/maherco: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
+t=70s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 131 (وصل) | Twitch/kaicenat: 79 (وصل) | Twitch/trymacs: 308 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/maherco: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
+t=80s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 143 (وصل) | Twitch/kaicenat: 97 (وصل) | Twitch/trymacs: 333 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/maherco: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
+t=90s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 152 (وصل) | Twitch/kaicenat: 118 (وصل) | Twitch/trymacs: 340 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/maherco: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
 youtube last http 400: {
   "error": {
     "code": 400,
@@ -36,10 +36,10 @@ youtube last http 400: {
 }
 
 RESULT YouTube: 0 messages; paid/gifts: 0
-RESULT Twitch: 804 messages; paid/gifts: 0
-   seb…: wwwwww
-   que…: )))
-   gav…: +rep
-   cha…: mañana imantado funado en x con 40'000000000 hilos
+RESULT Twitch: 610 messages; paid/gifts: 0
+   Jac…: Que te fune metrika es loco
+   Nas…: si eia tiene una cruz invertida te cuelga al perro de un arbol
+   she…: We really got 44k people watching him beat gta5 SeemsGood
+   you…: PS5 again BleedPurpleHD BleedPurpleHD BleedPurpleHD
 RESULT Kick: 0 messages; paid/gifts: 0
 TRANSLATE en→fa: چه بازی خوبیه، فردا همه شما رو می‌بینم! 
