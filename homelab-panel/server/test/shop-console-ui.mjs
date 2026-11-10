@@ -46,6 +46,7 @@ const holds = [];
 let svcKey = '';
 let breakFlags = false;
 let conflictRestoredAt = null;
+let conflictLists = 0;       //  ۱.۵۰.۷۶: «نامعلوم» ⇒ فهرستِ تعارض‌ها دوباره خوانده می‌شود
 const auditQueries = [];
 const fake = http.createServer((req, res) => {
   let raw = '';
@@ -159,8 +160,15 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/sync/errors') return j(503, { error: { code: 'db_unavailable', message: 'دیتابیس در دسترس نیست' } });
     //  ۱.۵۰.۷۴ (ممیزی §۳-۳): تعارضی که بازگرداندنش **فقط با دلیل** است — همان قاعدهٔ `admin-sync.js` ِ shop
     if (p === '/api/admin/sync/conflicts') {
+      conflictLists++;
       return j(200, { conflicts: [{ id: 51, app: 'shop', account: { kind: 'shop', id: 'shp-1' }, table: 'products', row_id: 'p1', field: 'price',
-        loser_value: 1, winner_value: 2, loser_device: 'dev-1', winner_device: 'dev-2', at: NOW - 3600e3, restored_at: conflictRestoredAt }] });
+        loser_value: 1, winner_value: 2, loser_device: 'dev-1', winner_device: 'dev-2', at: NOW - 3600e3, restored_at: conflictRestoredAt },
+      { id: 52, app: 'shop', account: { kind: 'shop', id: 'shp-1' }, table: 'products', row_id: 'p2', field: 'stock',
+        loser_value: 3, winner_value: 4, loser_device: 'dev-1', winner_device: 'dev-2', at: NOW - 1800e3, restored_at: null }] });
+    }
+    //  ۱.۵۰.۷۶: همان پاسخی که یادِ پل پس از بازگرداندنِ «نامعلوم» به پنجرهٔ تازه می‌دهد (آزمونِ سرورش: bridge-timeout.mjs)
+    if (p === '/api/admin/sync/conflicts/52/restore' && req.method === 'POST') {
+      return j(409, { error: { code: 'restore_outcome_unknown', message: 'نتیجهٔ بازگرداندنِ قبلیِ همین تعارض معلوم نیست — پیش از تکرار، فهرست را ببینید' } });
     }
     if (p === '/api/admin/sync/conflicts/51/restore' && req.method === 'POST') {
       const reason = String(posted.at(-1).body?.reason || '').trim();
@@ -223,7 +231,8 @@ try {
   browser = await chromium.launch({ executablePath: CHROME, args: ['--no-sandbox'] });
   const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
   page.on('pageerror', (e) => jsErrors.push(String(e.message)));
-  page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource.*\b503\b/.test(m.text())) jsErrors.push(m.text()); });
+  //  ۵۰۳: سرورِ حسابِ ساختگیِ خاموش؛ ۴۰۹: پاسخِ عمدیِ «نامعلوم» ِ بازگرداندن (۱.۵۰.۷۶) — فقط پیامِ شبکهٔ مرورگر، نه خطای JS
+  page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource.*\b(503|409)\b/.test(m.text())) jsErrors.push(m.text()); });
 
   await page.goto(BASE, { waitUntil: 'networkidle' });
   await page.fill('input[autocomplete="username"]', 'admin');
@@ -365,6 +374,19 @@ try {
     restored.length === 1 && JSON.stringify(restored[0].body) === JSON.stringify({ reason: 'مشتری قیمتِ پیشین را خواست' }), JSON.stringify(restored));
   body = await main();
   check('و پنجره بسته، فهرست تازه: «برگردانده شد»', (await page.locator('textarea').count()) === 0 && body.includes('برگردانده شد'), body.slice(0, 600));
+  //  ۱.۵۰.۷۶: بازگرداندنِ «نامعلوم» زرد است، نه سرخِ «نشد»، و فهرست دوباره خوانده می‌شود تا آدم «ببیند»
+  await page.locator('main tr', { hasText: 'stock' }).locator('button', { hasText: 'بازگرداندن' }).click();
+  await page.waitForTimeout(300);
+  await page.locator('textarea').fill('آزمونِ نتیجهٔ نامعلوم');
+  const l0 = conflictLists;
+  await page.getByRole('button', { name: 'تأیید و فرستادن' }).click();
+  await page.waitForTimeout(1200);
+  const unk = page.locator('[data-outcome="unknown"]');
+  check('⛔ ‎409 restore_outcome_unknown‎ ⇒ «نتیجه معلوم نیست» (زرد)، نه خطای سرخ؛ و فهرستِ تعارض‌ها دوباره خوانده شد',
+    (await unk.count()) === 1 && (await unk.innerText()).includes('restore_outcome_unknown') && conflictLists > l0,
+    `unknown=${await unk.count()} lists=${conflictLists - l0} ${(await main()).slice(0, 300)}`);
+  await page.getByRole('button', { name: 'انصراف' }).click();
+  await page.waitForTimeout(200);
 
   /* ══════════ چسبِ فاز ۳: سرورِ حساب `capabilities` را می‌گوید ══════════ */
   console.log('\n── چسبِ فاز ۳: حالت‌ها، سلامت، پرچم‌ها، کلیدِ سرویس ──');

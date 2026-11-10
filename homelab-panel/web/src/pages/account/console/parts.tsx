@@ -99,10 +99,10 @@ export const errText = (e: unknown) => (e instanceof ApiError ? `${e.message} ($
 export const errCode = (e: unknown) => (e instanceof ApiError ? e.code : '');
 /**
  * ⛔ کارِ فرستاده‌شده‌ای که سرورِ حساب در مهلتِ پل جوابش را نداد (‎504 outcome_unknown‎، ۱.۵۰.۷۵) یا پل هنوز نتیجهٔ
- * قبلی‌اش را نمی‌داند (‎backup_outcome_unknown‎): **نامعلوم** است، نه شکست — شاید انجام شده. رابط باید بگوید
- * «پیش از تکرار ببینید»، نه سرخِ «نشد».
+ * قبلی‌اش را نمی‌داند (‎backup_outcome_unknown‎، و از ۱.۵۰.۷۶ ‎restore_outcome_unknown‎ ِ بازگرداندنِ تعارض): **نامعلوم** است،
+ * نه شکست — شاید انجام شده. رابط باید بگوید «پیش از تکرار ببینید»، نه سرخِ «نشد».
  */
-export const outcomeUnknown = (e: unknown) => ['outcome_unknown', 'backup_outcome_unknown'].includes(errCode(e));
+export const outcomeUnknown = (e: unknown) => ['outcome_unknown', 'backup_outcome_unknown', 'restore_outcome_unknown'].includes(errCode(e));
 
 export function fmtTime(ms: unknown): string {
   const n = Number(ms);
