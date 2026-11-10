@@ -55,11 +55,32 @@ class Adb(val exe: String) {
             val exe = if (System.getProperty("os.name").lowercase().contains("win")) "adb.exe" else "adb"
             val candidates = buildList {
                 System.getProperty("rawrec.adb")?.let { add(File(it)) }
-                AppPaths.bundled("platform-tools/$exe")?.let { add(it) }
+                AppPaths.bundled("platform-tools/$exe")?.let { add(runnable(it)) }
                 System.getenv("PATH")?.split(File.pathSeparator)?.forEach { add(File(it, exe)) }
                 listOfNotNull(System.getenv("ANDROID_HOME"), System.getenv("ANDROID_SDK_ROOT")).forEach { add(File(it, "platform-tools/$exe")) }
             }
             return candidates.firstOrNull { it.isFile && it.canExecute() }?.let { Adb(it.absolutePath) }
+        }
+
+        /**
+         * Installers (jpackage) drop the "may run" mark from the bundled adb on Linux and macOS, and an
+         * installed app's folder is not the user's to change: then a copy in the app's own data folder,
+         * marked runnable, is used (made again when the bundled one changes).
+         */
+        internal fun runnable(bundled: File, dataDir: File = AppPaths.data): File {
+            if (bundled.canExecute()) return bundled
+            val copy = File(dataDir, "platform-tools/${bundled.name}")
+            try {
+                if (!copy.isFile || copy.length() != bundled.length() || copy.lastModified() < bundled.lastModified()) {
+                    copy.parentFile.mkdirs()
+                    val tmp = File(copy.parentFile, copy.name + ".tmp")
+                    bundled.copyTo(tmp, overwrite = true)
+                    tmp.setExecutable(true, false)
+                    if (!tmp.renameTo(copy)) { copy.delete(); tmp.renameTo(copy) }
+                }
+                if (!copy.canExecute()) copy.setExecutable(true, false)
+            } catch (_: Exception) { return bundled }
+            return copy
         }
     }
 }

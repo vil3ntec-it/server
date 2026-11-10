@@ -1,5 +1,6 @@
 package com.vil3ntec.rawrec.desktop
 
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -38,5 +39,17 @@ class CoreTest {
         assertTrue(VideoEncoder.options("h264_amf", true).contains("quality" to "quality"))
         assertTrue(VideoEncoder.options("hevc_qsv", true).isNotEmpty())
         assertTrue(VideoEncoder.options("h264_videotoolbox", true).contains("allow_sw" to "0"))
+    }
+
+    @Test fun bundledAdbWithoutRunMarkIsCopiedAndMadeRunnable() {
+        val dir = kotlin.io.path.createTempDirectory("rr").toFile()
+        val b = File(dir, "app/adb").apply { parentFile.mkdirs(); writeText("#!/bin/sh\necho ok\n"); setExecutable(false, false) }
+        val r = Adb.runnable(b, File(dir, "data"))
+        if (System.getProperty("os.name").lowercase().contains("win")) return
+        assertTrue(r.canExecute(), "copy must be runnable")
+        assertEquals(File(dir, "data/platform-tools/adb"), r)
+        assertEquals("#!/bin/sh\necho ok\n", r.readText())
+        assertEquals(r, Adb.runnable(b, File(dir, "data")))   // reused, not copied again
+        dir.deleteRecursively()
     }
 }

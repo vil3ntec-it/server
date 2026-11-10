@@ -109,19 +109,19 @@ jobs:
           set -e
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
           T=$RUNNER_TEMP/fp; mkdir -p $T; cd desktop
-          # landscape 3 s then portrait 3 s: the phone turning mid-recording
-          ffmpeg -loglevel error -f lavfi -i testsrc2=s=1280x720:r=30 -t 3 -c:v libx264 -g 30 -pix_fmt yuv420p -f h264 $T/a.h264
-          ffmpeg -loglevel error -f lavfi -i testsrc2=s=720x1280:r=30 -t 3 -c:v libx264 -g 30 -pix_fmt yuv420p -f h264 $T/b.h264
+          # landscape 8 s then portrait 8 s: the phone turning mid-recording
+          ffmpeg -loglevel error -f lavfi -i testsrc2=s=1280x720:r=30 -t 8 -c:v libx264 -g 30 -pix_fmt yuv420p -f h264 $T/a.h264
+          ffmpeg -loglevel error -f lavfi -i testsrc2=s=720x1280:r=30 -t 8 -c:v libx264 -g 30 -pix_fmt yuv420p -f h264 $T/b.h264
           cat $T/a.h264 $T/b.h264 > $T/turn.h264
           O=../out/desktop-$VER/linux
           # 1) the code from Gradle
           export FAKE_PORT_FILE=$T/port
-          gradle pipelineCheck --no-daemon -q -PcheckArgs="$T/turn.h264 $T/port 30 8" -Prawrec.adb=$PWD/src/test/fakeadb -Prawrec.resources=$PWD/appres/common | tee $O/fake-phone-gradle.txt
+          gradle pipelineCheck --no-daemon -q -PcheckArgs="$T/turn.h264 $T/port 30 10" -Prawrec.adb=$PWD/src/test/fakeadb -Prawrec.resources=$PWD/appres/common | tee $O/fake-phone-gradle.txt
           # 2) the installed app (its own Java runtime and libraries) against the fake phone
           gradle pipelineCheck --no-daemon -q -PcheckMain=com.vil3ntec.rawrec.desktop.FakePhoneServerKt -PcheckArgs="$T/turn.h264 $T/port 30" > $T/fp.log 2>&1 &
           sleep 25
           set +e
-          JAVA_TOOL_OPTIONS="-Drawrec.adb=$PWD/src/test/fakeadb" timeout 120 "build/compose/binaries/main/app/RawRec Desktop/bin/RawRec Desktop" --selftest 8 > $O/fake-phone-installed.txt 2>&1
+          JAVA_TOOL_OPTIONS="-Drawrec.adb=$PWD/src/test/fakeadb" timeout 120 "build/compose/binaries/main/app/RawRec Desktop/bin/RawRec Desktop" --selftest 10 > $O/fake-phone-installed.txt 2>&1
           echo "exit $?" >> $O/fake-phone-installed.txt
           set -e
           cat $O/fake-phone-installed.txt
@@ -130,7 +130,7 @@ jobs:
           ffprobe -v error -show_entries stream=codec_name,width,height,r_frame_rate,color_space,color_primaries,color_transfer,sample_rate,channels:format=duration -of default=nw=1 "$F" | tee $O/fake-phone-ffprobe.txt
           ffmpeg -v error -i "$F" -f null - 2>&1 | tee $O/fake-phone-decode-errors.txt
           ffmpeg -v error -ss 1.5 -i "$F" -frames:v 1 -y $O/fake-phone-landscape.png
-          ffmpeg -v error -ss 6.5 -i "$F" -frames:v 1 -y $O/fake-phone-portrait.png
+          ffmpeg -v error -ss 9.3 -i "$F" -frames:v 1 -y $O/fake-phone-portrait.png
           grep -q 'exit 0' $O/fake-phone-installed.txt
       - name: Collect the installers
         run: |
@@ -207,16 +207,15 @@ jobs:
           for i in $(seq 1 120); do [ "$($A shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] && break; sleep 5; done
           [ "$($A shell getprop sys.boot_completed | tr -d '\r')" = "1" ] || { tail -60 /tmp/emu.log; exit 1; }
           $A shell input keyevent 82
-          # the app's own adb takes over from here (the same server version, so no restart)
-          $A kill-server || true
       - name: The installed app records the real emulator screen over adb
         timeout-minutes: 15
         run: |
           set -e
           O=out/desktop-$VER/e2e; mkdir -p $O
           APP="desktop/build/compose/binaries/main/app/RawRec Desktop"
-          AD="$APP/lib/app/resources/platform-tools/adb"; [ -x "$AD" ] || AD=$(find "$APP" -name adb -type f | head -1)
-          echo "bundled adb: $AD"; "$AD" devices -l
+          # the runner's own adb drives the screen; the app finds its bundled one by itself (shown in its log)
+          AD=$ANDROID_HOME/platform-tools/adb; "$AD" devices -l
+          ls -la "$APP/lib/app/resources/platform-tools/adb"
           # something moving on the screen the whole time (scrcpy sends a picture when the screen changes)
           "$AD" shell am start -a android.settings.SETTINGS >/dev/null
           ( for i in $(seq 1 60); do "$AD" shell input swipe 800 2000 800 700 300; "$AD" shell input swipe 800 700 800 2000 300; done ) > /dev/null 2>&1 &
@@ -230,6 +229,7 @@ jobs:
           ffmpeg -v error -i "$F" -f null - 2>&1 | tee $O/decode-errors.txt
           for s in 3 8 13; do ffmpeg -v error -ss $s -i "$F" -frames:v 1 -y $O/frame-${s}s.png; done
           "$AD" exec-out screencap -p > $O/emulator-screen.png || true
+          grep -q '^adb: .*rawrec/platform-tools/adb' $O/selftest.txt   # the app's own adb, made runnable
           grep -q 'exit 0' $O/selftest.txt
       - name: Commit the evidence
         if: always()
