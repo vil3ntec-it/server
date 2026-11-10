@@ -1,0 +1,4 @@
+rawrec-desktop selftest: os Linux amd64, java 17.0.21
+encoders: libopenh264(cpu), libsvtav1(cpu)
+adb: /home/runner/.config/rawrec/platform-tools/adb
+FAIL: no usable phone: []
