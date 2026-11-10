@@ -1,0 +1,2 @@
+# the noise model is read byte for byte; never converted to CRLF on Windows
+*.rnnn -text
