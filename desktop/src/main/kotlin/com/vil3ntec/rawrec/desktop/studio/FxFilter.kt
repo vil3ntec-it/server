@@ -13,10 +13,11 @@ import kotlin.math.pow
 import kotlin.math.sin
 
 /**
- * A layer's green screen and sharpening, done by FFmpeg's filters (SIMD C) on the source's own thread at
- * the size it is shown — never per pixel in the drawing: chromakey in the colour plane as OBS keys,
- * despill for the edges, unsharp for detail. BGRA in, BGRA with alpha out. One per source; made again
- * only when the size or the settings change.
+ * A layer's green screen and sharpening on the source's own thread at the size it is shown — never per pixel in the
+ * drawing. Sharpening is FFmpeg's unsharp (SIMD C, luma only). The key is one integer pass over the picture that does
+ * what FFmpeg's chromakey does (BT.601 limited-range chroma, distance averaged over 3×3, the same similarity and blend
+ * scale, so the measured settings mean the same) together with despill and premultiplication — chromakey alone took
+ * 21 of 28 ms at 720p, this pass a few. BGRA in, premultiplied BGRA with alpha out. One per source.
  */
 class FxFilter : AutoCloseable {
     private var graph: org.bytedeco.ffmpeg.avfilter.AVFilterGraph? = null
@@ -34,23 +35,16 @@ class FxFilter : AutoCloseable {
 
         fun needed(f: Fx) = f.key || f.sharpen > 0f
 
-        fun desc(f: Fx): String {
-            val parts = ArrayList<String>()
-            if (f.sharpen > 0f) parts.add("unsharp=lx=5:ly=5:la=${"%.2f".format(java.util.Locale.US, f.sharpen * 1.5f)}:cx=5:cy=5:ca=0")
-            if (f.key) {
-                val c = "0x%06X".format(f.keyColor and 0xFFFFFF)
-                // OBS's similarity (0..1, default 0.4) and smoothness (0.08) → chromakey's own scale. Measured on a card of
-                // bright, shaded and light greens against red, skin, white and denim: 0.24–0.32 keys every green and keeps the rest; 0.4 → 0.28
-                parts.add("format=yuva444p")
-                parts.add("chromakey=color=$c:similarity=${"%.3f".format(java.util.Locale.US, (f.similarity * 0.7f).coerceIn(0.01f, 1f))}:blend=${"%.3f".format(java.util.Locale.US, (f.smoothness * 0.6f).coerceIn(0f, 1f))}")
-                if (f.spill > 0f) {
-                    val g = f.keyColor shr 8 and 0xFF; val b = f.keyColor and 0xFF
-                    parts.add("format=gbrap,despill=type=${if (b > g) "blue" else "green"}:mix=${"%.2f".format(java.util.Locale.US, (f.spill * 4f).coerceIn(0f, 1f))}:expand=0")
-                }
-            }
-            parts.add("format=bgra")
-            return parts.joinToString(",")
-        }
+        /** The FFmpeg part: sharpening only (the key is [key]). */
+        fun desc(f: Fx): String =
+            "format=yuva444p,unsharp=lx=5:ly=5:la=${"%.2f".format(java.util.Locale.US, f.sharpen * 1.5f)}:cx=5:cy=5:ca=0,format=bgra"
+
+        /** √(d²/(255²·2)) · 4096 for every squared chroma distance d² (limited-range chroma differs by at most 224). */
+        private val DIST = IntArray(2 * 224 * 224 + 1) { (Math.sqrt(it / (255.0 * 255.0 * 2)) * 4096 + 0.5).toInt() }
+
+        /** BT.601 limited-range chroma (less its 128 offset) as swscale and chromakey compute it: coefficients · 224/255 · 2^16. */
+        private fun u(r: Int, g: Int, b: Int) = (-9714 * r - 19070 * g + 28784 * b) shr 16
+        private fun v(r: Int, g: Int, b: Int) = (28784 * r - 24103 * g - 4681 * b) shr 16
 
         /** Brightness, contrast, saturation, hue and gamma as one colour filter for the drawing (cheap on the CPU). */
         fun colorFilter(f: Fx): ColorFilter? {
@@ -89,44 +83,95 @@ class FxFilter : AutoCloseable {
         }
     }
 
-    private fun premultiply(p: ByteArray) {
-        val t = PREMUL
-        var i = 0
-        while (i < p.size) {
-            val a = p[i + 3].toInt() and 0xFF
-            if (a != 255) {
-                val row = a shl 8
-                p[i] = t[row or (p[i].toInt() and 0xFF)]; p[i + 1] = t[row or (p[i + 1].toInt() and 0xFF)]; p[i + 2] = t[row or (p[i + 2].toInt() and 0xFF)]
+    private var dist = IntArray(0)
+    private var rows = IntArray(0)
+    private val alphaOf = IntArray(9 * 4096 + 1)
+
+    /**
+     * Keys [p] (w×h BGRA) in place: alpha from the chroma distance to the key colour averaged over 3×3 (as chromakey),
+     * then despill (as FFmpeg's despill with expand 0: the key channel no higher than the mix of the other two), then
+     * premultiplied.
+     */
+    fun key(p: ByteArray, w: Int, h: Int, f: Fx) {
+        val n = w * h
+        if (dist.size < n) { dist = IntArray(n); rows = IntArray(n) }
+        val d = dist; val hs = rows; val lut = DIST
+        val kr = f.keyColor shr 16 and 0xFF; val kg = f.keyColor shr 8 and 0xFF; val kb = f.keyColor and 0xFF
+        val ku = u(kr, kg, kb); val kv = v(kr, kg, kb)
+        var i = 0; var o = 0
+        while (i < n) {
+            val b = p[o].toInt() and 0xFF; val g = p[o + 1].toInt() and 0xFF; val r = p[o + 2].toInt() and 0xFF
+            val du = u(r, g, b) - ku; val dv = v(r, g, b) - kv
+            d[i] = lut[(du * du + dv * dv).coerceAtMost(lut.size - 1)]
+            i++; o += 4
+        }
+        // the 3×3 sum, separable: across each row, then down (the edges repeat their last pixel)
+        for (y in 0 until h) {
+            val r0 = y * w
+            for (x in 0 until w) {
+                val c = d[r0 + x]
+                hs[r0 + x] = (if (x > 0) d[r0 + x - 1] else c) + c + (if (x < w - 1) d[r0 + x + 1] else c)
             }
-            i += 4
+        }
+        // key alpha for every 3×3 sum: chromakey's clip((diff − similarity) / blend) · 255
+        val sim9 = (f.similarity * 0.7f).coerceIn(0.01f, 1f) * 4096 * 9
+        val blend9 = (f.smoothness * 0.6f).coerceIn(0f, 1f) * 4096 * 9
+        val am = alphaOf
+        for (s in am.indices) am[s] = if (blend9 > 0.0001f * 4096 * 9) ((s - sim9) * 255f / blend9).toInt().coerceIn(0, 255) else if (s > sim9) 255 else 0
+        val mix = ((f.spill * 4f).coerceIn(0f, 1f) * 256).toInt()
+        val blueKey = kb > kg
+        val t = PREMUL
+        for (y in 0 until h) {
+            val up = if (y > 0) (y - 1) * w else y * w; val mid = y * w; val dn = if (y < h - 1) (y + 1) * w else y * w
+            var q = mid * 4
+            for (x in 0 until w) {
+                val ka = am[hs[up + x] + hs[mid + x] + hs[dn + x]]
+                val a = t[(ka shl 8) or (p[q + 3].toInt() and 0xFF)].toInt() and 0xFF
+                if (a == 0) { p[q] = 0; p[q + 1] = 0; p[q + 2] = 0; p[q + 3] = 0; q += 4; continue }
+                var b = p[q].toInt() and 0xFF; var g = p[q + 1].toInt() and 0xFF; val r = p[q + 2].toInt() and 0xFF
+                if (mix > 0) {
+                    if (blueKey) { val lim = (r * mix + g * (256 - mix)) shr 8; if (b > lim) b = lim }
+                    else { val lim = (r * mix + b * (256 - mix)) shr 8; if (g > lim) g = lim }
+                }
+                if (a == 255) { p[q] = b.toByte(); p[q + 1] = g.toByte() }
+                else {
+                    val row = a shl 8
+                    p[q] = t[row or b]; p[q + 1] = t[row or g]; p[q + 2] = t[row or r]; p[q + 3] = a.toByte()
+                }
+                q += 4
+            }
         }
     }
 
-    /** [bgra] (w×h, packed) through the effects; the result premultiplied when keyed; null when nothing is needed or the filter failed. */
+    /** [bgra] (w×h, packed) through the effects into a new array; premultiplied when keyed; null when nothing is needed or the filter failed. */
     fun apply(bgra: ByteArray, w: Int, h: Int, f: Fx): ByteArray? {
         if (!needed(f)) return null
         try {
-            val k = listOf(w, h, f.key, f.keyColor, f.similarity, f.smoothness, f.spill, f.sharpen)
-            if (k != key) { build(w, h, desc(f)); key = k }
-            inF.width(w); inF.height(h); inF.format(AV_PIX_FMT_BGRA); inF.pts(0)
-            check(av_frame_get_buffer(inF, 0) >= 0)
-            val ls = inF.linesize(0)
-            val dst = inF.data(0)
-            if (ls == w * 4) dst.put(bgra, 0, w * h * 4) else for (y in 0 until h) dst.position(y.toLong() * ls).put(bgra, y * w * 4, w * 4)
-            dst.position(0)
-            check(av_buffersrc_add_frame_flags(src, inF, 0) >= 0) { "filter in" }
-            av_frame_unref(inF)
-            if (av_buffersink_get_frame(sink, outF) < 0) return null
-            val out = ByteArray(w * h * 4)
-            val ols = outF.linesize(0); val o = outF.data(0)
-            if (ols == w * 4) o.get(out, 0, w * h * 4) else for (y in 0 until h) o.position(y.toLong() * ols).get(out, y * w * 4, w * 4)
-            o.position(0)
-            av_frame_unref(outF)
-            // premultiplied once here (on the source's thread), so the drawing never converts it again
-            if (f.key) premultiply(out)
+            val out = if (f.sharpen > 0f) sharpen(bgra, w, h, f) ?: return null else bgra.copyOf(w * h * 4)
+            if (f.key) key(out, w, h, f)
             error = null
             return out
         } catch (t: Throwable) { error = t.message; key = null; return null }
+    }
+
+    private fun sharpen(bgra: ByteArray, w: Int, h: Int, f: Fx): ByteArray? {
+        val k = listOf(w, h, f.sharpen)
+        if (k != key) { build(w, h, desc(f)); key = k }
+        inF.width(w); inF.height(h); inF.format(AV_PIX_FMT_BGRA); inF.pts(0)
+        check(av_frame_get_buffer(inF, 0) >= 0)
+        val ls = inF.linesize(0)
+        val dst = inF.data(0)
+        if (ls == w * 4) dst.put(bgra, 0, w * h * 4) else for (y in 0 until h) dst.position(y.toLong() * ls).put(bgra, y * w * 4, w * 4)
+        dst.position(0)
+        check(av_buffersrc_add_frame_flags(src, inF, 0) >= 0) { "filter in" }
+        av_frame_unref(inF)
+        if (av_buffersink_get_frame(sink, outF) < 0) return null
+        val out = ByteArray(w * h * 4)
+        val ols = outF.linesize(0); val o = outF.data(0)
+        if (ols == w * 4) o.get(out, 0, w * h * 4) else for (y in 0 until h) o.position(y.toLong() * ols).get(out, y * w * 4, w * 4)
+        o.position(0)
+        av_frame_unref(outF)
+        return out
     }
 
     private fun build(w: Int, h: Int, desc: String) {
