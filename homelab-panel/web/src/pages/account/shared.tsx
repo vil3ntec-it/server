@@ -150,6 +150,8 @@ const RETRY_CODES = new Set([
   'account_server_unreachable',
   'cloud_session_expired',
   'auto_login_failed',
+  //  مهلتِ پل روی **خواندن** (‎stations/cloud.js‎، ۱.۵۰.۷۵) — تکرارش بی‌اثر است؛ ‎outcome_unknown‎ ِ نوشتن عمداً نه
+  'account_server_timeout',
 ]);
 
 /** فاصلهٔ تلاش‌ها — فزاینده، با سقفِ یک دقیقه. */

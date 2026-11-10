@@ -25,6 +25,8 @@ import type { Dict } from '../../i18n';
 import { ActionButton, Cell, KV, Notice, Row, Stat, Table } from '../../control/ui';
 import { CloudProblem, useLoad, type Load } from './shared';
 import ShopFinance from './ShopFinance';
+import StaffCard from './console/StaffCard';
+import ContractCard from './console/ContractCard';
 import {
   CONSOLE, HOLD_KINDS, HOLD_SERVICES, MONEY_HOLDS, actorLabel, bytes, flagValue, healthTone, isUnavailable, minutesAgo,
   newIdemKey, nextBefore, num, providerTone, reasonOk, shown, stampOf,
@@ -360,6 +362,9 @@ function ShopDetail({ id, onClose }: { id: string; onClose: () => void }) {
       <h3 className="mb-2 mt-4 text-xs font-semibold">{t('scShopHealth')}</h3>
       {health.error ? <Problem load={health as Load<unknown>} /> : !health.data ? <Loading /> : isUnavailable(health.data)
         ? <NotAvailable data={health.data} /> : <ShopHealthView h={health.data} />}
+
+      {/* ممیزی §۳-۴ (۱.۵۰.۷۵): کارکنان، مجوزها و دستگاه‌های همین دکان — تا امروز فقط در ‎/admin/‎ ِ سرورِ حساب */}
+      <div className="mt-4"><StaffCard shopId={id} /></div>
 
       <h3 className="mb-2 mt-4 text-xs font-semibold">{t('scSyncDevices')}</h3>
       {sync.error ? <Problem load={sync as Load<unknown>} /> : !sync.data ? <Loading /> : (
@@ -881,6 +886,8 @@ export function IntegrationsTab() {
   return (
     <div className="space-y-4">
       <ServiceKeyCard />
+      {/* S18 (۱.۵۰.۷۵): نسخهٔ قراردادِ سرورِ حساب و درهای پل که آن‌جا نیستند */}
+      <ContractCard />
       <Panel title={t('scProviders')} icon={<Plug size={16} />} source="/api/admin/system/providers" load={load}>
         {(d) => (
           <>

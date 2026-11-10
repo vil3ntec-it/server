@@ -97,6 +97,12 @@ export function Forbidden({ children }: { children: ReactNode }) {
 
 export const errText = (e: unknown) => (e instanceof ApiError ? `${e.message} (${e.code})` : String((e as Error)?.message || e));
 export const errCode = (e: unknown) => (e instanceof ApiError ? e.code : '');
+/**
+ * ⛔ کارِ فرستاده‌شده‌ای که سرورِ حساب در مهلتِ پل جوابش را نداد (‎504 outcome_unknown‎، ۱.۵۰.۷۵) یا پل هنوز نتیجهٔ
+ * قبلی‌اش را نمی‌داند (‎backup_outcome_unknown‎): **نامعلوم** است، نه شکست — شاید انجام شده. رابط باید بگوید
+ * «پیش از تکرار ببینید»، نه سرخِ «نشد».
+ */
+export const outcomeUnknown = (e: unknown) => ['outcome_unknown', 'backup_outcome_unknown'].includes(errCode(e));
 
 export function fmtTime(ms: unknown): string {
   const n = Number(ms);
@@ -113,9 +119,11 @@ export type SensitiveSubmit = { reason: string; idempotencyKey: string; password
  * دلیل (۳ تا ۲۰۰) + تأیید + (در صورتِ نیاز) رمزِ پنل و نوشتنِ نامِ کلید + **یک** کلیدِ یکتایی برای همین پنجره
  * (دوبار زدن یا تکرارِ پس از قطعِ شبکه همان یک کار است). نتیجه را صداکننده نشان می‌دهد: «تأییدشده از سرور».
  */
-export function SensitiveDialog({ title, effect, danger, needPassword, confirmKey, onSubmit, onClose, children, disabled }: {
+export function SensitiveDialog({ title, effect, danger, needPassword, confirmKey, onSubmit, onClose, children, disabled, onUnknown }: {
   title: string; effect: ReactNode; danger?: boolean; needPassword?: boolean; confirmKey?: string;
   onSubmit: (x: SensitiveSubmit) => Promise<void>; onClose: () => void; children?: ReactNode; disabled?: boolean;
+  /** نتیجه نامعلوم ماند ⇒ صداکننده فهرستِ خودش را از سرور دوباره بخواند تا آدم «ببیند» */
+  onUnknown?: () => void;
 }) {
   const tx = useTx();
   const [reason, setReason] = useState('');
@@ -123,16 +131,21 @@ export function SensitiveDialog({ title, effect, danger, needPassword, confirmKe
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [unknown, setUnknown] = useState('');
   const [idem] = useState(newIdemKey);
   const ready = reasonOk(reason) && (!needPassword || password.length > 0) && (!confirmKey || typed === confirmKey) && !disabled;
   const send = async () => {
     if (!ready || busy) return;
     setBusy(true);
     setErr('');
+    setUnknown('');
     try {
       await onSubmit({ reason: reason.trim(), idempotencyKey: idem, ...(needPassword ? { password } : {}), ...(confirmKey ? { confirmKey: typed } : {}) });
     } catch (e) {
-      setErr(errText(e));
+      if (outcomeUnknown(e)) {
+        setUnknown(errCode(e));
+        onUnknown?.();
+      } else setErr(errText(e));
     } finally { setBusy(false); }
   };
   return createPortal(
@@ -164,6 +177,19 @@ export function SensitiveDialog({ title, effect, danger, needPassword, confirmKe
           </label>
         )}
         {err && <Notice tone="bad">{err}</Notice>}
+        {unknown && (
+          <div data-outcome="unknown">
+            <Notice tone="warn">
+              <span className="block font-semibold">{tx('نتیجه معلوم نیست', 'Outcome unknown', 'پایله معلومه نه ده')}</span>
+              {tx(
+                'سرورِ حساب به‌موقع جواب نداد؛ شاید این کار انجام شده باشد. پیش از تکرار، نتیجه را در همین بخش ببینید.',
+                'The account server did not answer in time; this may have been done. Check the result in this section before retrying.',
+                'د حساب سرور په وخت ځواب ورنکړ؛ کېدای شي دا کار شوی وي. له بیا هڅې مخکې پایله همدلته وګورئ.',
+              )}
+              <code dir="ltr" className="mt-1 block font-mono text-[11px] text-ink-muted">{unknown}</code>
+            </Notice>
+          </div>
+        )}
       </div>
     </Modal>,
     document.body,

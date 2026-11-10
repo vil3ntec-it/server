@@ -123,6 +123,12 @@ for (const [method, p, want] of [
   ['GET', '/api/admin/shops/x/staff-codes', false],
   ['POST', '/api/admin/shops/x/staff-codes/reveal', true],
   ['GET', '/api/admin/trust/cases', true],
+  //  ۱.۵۰.۷۵ (ممیزی §۳-۴): کارکنان/دستگاه و بانکِ عکس
+  ['GET', '/api/admin/shops/x/staff-perms', false],
+  ['POST', '/api/admin/shops/x/staff-perms/devices/d1/disable', true],
+  ['GET', '/api/admin/image-bank/review', false],
+  ['POST', '/api/admin/image-bank/images/x/approve', true],
+  ['POST', '/api/admin/image-bank/images/x/search', true],
 ]) {
   const r = shopRoleOf(method, p);
   check(`لنگر: ${method} ${p} ⇒ ${want ? 'فقط ارشد' : 'مدیر'}`, Boolean(r) && r.superOnly === want, r ? `${r.file} ${r.path} super=${r.superOnly}` : 'پیدا نشد');
@@ -211,7 +217,9 @@ const PHASE3 = ['GET /api/admin/shops/:id/health', 'GET /api/admin/shops/:id/hol
   'GET /api/admin/finance/payments/:id', 'GET /api/admin/finance/adjustments', 'POST /api/admin/finance/adjustments',
   'GET /api/admin/finance/receivables', 'GET /api/admin/finance/pending', 'GET /api/admin/finance/gateway',
   'GET /api/admin/finance/discrepancies', 'GET /api/admin/finance/history', 'GET /api/admin/finance/export',
-  'GET /api/admin/system/reconciliation']
+  'GET /api/admin/system/reconciliation',
+  //  ممیزی §۹ (۱.۵۰.۷۵؛ shop ‎claude/acct-console‎، #1024): پایانِ دوره از سرور (S15) و قراردادِ نسخه‌دار (S18)
+  'GET /api/admin/subscriptions/period-end', 'GET /api/admin/contract']
   .map((x) => { const [method, p] = x.split(' '); return { method, re: toRe(p), id: x }; });
 const phase3Of = (method, p) => PHASE3.find((x) => x.method === method && x.re.test(p)) || null;
 
@@ -237,6 +245,8 @@ const sample = {
   notices: [], campaigns: [], reps: [], addons: [], errors: [], conflicts: [], devices: [], logins: [], series: [],
   thread: { id: 'x1', status: 'open' }, notice: { id: 'x1' }, payment: { id: 'x1' }, code: 'X', token: 'tok-1',
   total: 1, serverTime: NOW,
+  //  S15: پایانِ دورهٔ ‎period-end‎ (تا مسیرِ اعطا/تمدید پس از آن هم دیده و سنجیده شود)
+  endsAt: NOW + 9e8,
   //  پوستهٔ کنسول: کاتالوگِ پرچم (تا PUT/DELETE ِ «فقط ارشد» واقعاً دیده شود)، نوع‌های جست‌وجو، مدیرِ غیرِمالک
   known: [{ key: 'shop.receipt_v2', scope: 'shop', default: false }],
   kinds: ['shops', 'users', 'payments', 'orders', 'errors', 'admins'], results: {},
@@ -254,7 +264,7 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
     if (!BACKGROUND.test(p)) calls.push({ method: req.method, path: p });
     //  همهٔ تواناییِ فاز ۳ اعلام می‌شود تا مقصدِ آن مسیرها هم دیده و سنجیده شود
-    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1', 'admin-sessions.v1', 'search.v1', 'market-admin.v1', 'delivery-watch.v1', 'ops.v1', 'release-stage.v1', 'finance.v1'], serverTime: NOW });
+    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1', 'admin-sessions.v1', 'search.v1', 'market-admin.v1', 'delivery-watch.v1', 'ops.v1', 'release-stage.v1', 'finance.v1', 'sync-restore-once.v1', 'subscription-period.v1', 'admin-contract.v1'], serverTime: NOW });
     if (/\/receipt$/.test(p)) { res.setHeader('content-type', 'text/html; charset=utf-8'); return res.end('<html>رسید</html>'); }
     if (/^\/api\/admin\/support\/media\//.test(p)) { res.setHeader('content-type', 'image/png'); return res.end(Buffer.from([137, 80, 78, 71])); }
     return j(200, sample);
@@ -293,7 +303,7 @@ async function hit(method, url, token, body, contentType = 'application/json') {
 }
 
 /** مقدارِ نمونه برای هر پارامترِ مسیر */
-const PARAMS = { id: 'x1', code: 'm1', key: 'k1', mid: 'md1', deviceId: 'd1', action: 'revoke', addonId: 'ad1' };
+const PARAMS = { id: 'x1', code: 'm1', key: 'k1', mid: 'md1', deviceId: 'd1', action: 'revoke', addonId: 'ad1', did: 'd1' };
 /** بدنهٔ پُر تا اعتبارسنجیِ پنل پیش از پل رد نکند */
 const bodyFor = (app) => ({
   app, reason: 'سنجهٔ هم‌خوانیِ نقش', status: 'active', disabled: true, amount: 1, unit: 'month', plan: 'm1',
@@ -335,6 +345,13 @@ const SPECIAL = {
   'POST /api/account-admin/sync/conflicts/:id/restore': { params: { id: '5' }, body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-sync-0001' } },
   //  پشتیبانِ دستیِ سرورِ حساب (۱.۵۰.۷۴): تأیید + دلیل + کلیدِ یکتاییِ رابط تا مقصدِ «فقط ارشد» دیده شود
   'POST /api/account-admin/console/backups': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-backup-0001' } },
+  //  ممیزی §۳-۴ (۱.۵۰.۷۵): ازکارانداختنِ دستگاهِ کارمند و بازبینیِ بانکِ عکس — دلیل + تأیید + کلیدِ یکتاییِ رابط (هر در کلیدِ خودش)
+  'POST /api/account-admin/console/shops/:id/staff/devices/:did/disable': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-dev-0001' } },
+  'POST /api/account-admin/console/image-bank/images/:id/approve': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-img-0001' } },
+  'POST /api/account-admin/console/image-bank/images/:id/reject': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-img-0002' } },
+  'POST /api/account-admin/console/image-bank/images/:id/archive': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-img-0003' } },
+  'POST /api/account-admin/console/image-bank/images/:id/search': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, enabled: false, idempotencyKey: 'bridge-roles-img-0004' } },
+  'GET /api/account-admin/console/image-bank/file/:id/:version/:size': { params: { version: '1', size: 'thumb' } },
   //  سندِ اصلاحیِ مالی: بدنهٔ کامل و رمزِ درستِ مالک تا از احرازِ دوبارهٔ پنل بگذرد (بی کلیدِ سرویس ۴۰۹ می‌گیرد؛
   //  مقصدِ بالادستش را `account-finance.mjs` با کلیدِ سرویس می‌سنجد)
   'POST /api/account-admin/console/finance/adjustments': {

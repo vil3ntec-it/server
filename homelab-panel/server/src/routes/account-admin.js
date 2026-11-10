@@ -31,11 +31,14 @@
 //     (‎support-media-cache.js‎): سرورِ حساب رسانه را پس از رسیدن پاک
 //     می‌کند، پس «هر طرف روی دستگاهِ خودش نگه می‌دارد» یعنی همین‌جا.
 // ---------------------------------------------------------------------------
+import crypto from 'node:crypto';
 import express from 'express';
 import {
-  cloudRaw, cloudRawText, cloudRawBytes, cloudProbeServiceKey, serviceKeyReset, serviceKeyStatus, legacyAvailable,
+  cloudRaw, cloudRawText, cloudRawBytes, cloudProbeServiceKey, serviceKeyReset, serviceKeyStatus, legacyAvailable, adminApiVersionSeen,
 } from '../stations/cloud.js';
+import { contractStatus } from '../account/bridge-contract.js';
 import { fetchOnce, writeCached } from '../support-media-cache.js';
+import { bridgeFail } from '../account/bridge-fail.js';
 import * as panelRoles from '../control/roles.js';
 import { audit } from '../control/audit.js';
 import * as panelAuth from '../auth.js';
@@ -49,6 +52,8 @@ import {
 } from '../account/service-key.js';
 import { mountConsoleShell } from './console-shell.js';
 import { mountConsoleMarket, MARKET_CAPABILITIES } from './console-market.js';
+import { mountConsoleStaff } from './console-staff.js';
+import { mountConsoleImageBank } from './console-image-bank.js';
 
 const { requireRole } = panelRoles;
 const router = express.Router();
@@ -61,12 +66,8 @@ router.use(withPanelActor);
 const DAY = 24 * 3600 * 1000;
 
 /** خطای پل را با همان کدِ خودش برگردان، نه ۵۰۰ی گنگ. */
-function cloudFail(res, err) {
-  return res.status(err.status || 502).json({
-    error: err.code || 'cloud_error',
-    message: err.message || 'سرورِ حساب جواب نداد',
-  });
-}
+//  ⛔ نوشتنِ بی‌پاسخ (مهلتِ پل) ⇒ «نامعلوم» + ردیفِ دفتر — ‎account/bridge-fail.js‎
+const cloudFail = bridgeFail;
 
 function guard(handler) {
   return async (req, res) => {
@@ -102,6 +103,32 @@ export function addPeriod(startMs, amount, unit) {
     default: d.setUTCMonth(d.getUTCMonth() + n); break;
   }
   return d.getTime();
+}
+
+/**
+ * S15 (۱.۵۰.۷۵، ممیزی §۳-۸ / ۶-۱۰): پایانِ دوره از **سرورِ حساب** وقتی `subscription-period.v1` را اعلام کرده — همان
+ * تابعِ اعطای آن‌جا (`subscriptions.periodEnd`، با منطقهٔ زمانیِ همان‌جا)، پس تصمیمِ اشتراک یک جا گرفته می‌شود. سرورِ کهنه
+ * ⇒ همان `addPeriod` ِ پیشین. ⛔ خطای سرورِ حساب (مقدار/واحدِ نادرست ⇒ ۴۰۰) همان‌طور بالا می‌رود — نه بازگشتِ بی‌صدا به
+ * حسابِ پنل، وگرنه دوباره دو حقیقت می‌داشتیم.
+ * @returns {Promise<{ endsAt: number, source: 'server' | 'panel' }>}
+ */
+/** «توانایی» هست؟ — پرسشِ ناموفق ⇒ «نه» (همان رفتارِ سرورِ کهنه)، نه شکستِ کار. */
+async function capListed(cap) {
+  try { return (await capabilities()).list.includes(cap); } catch { return false; }
+}
+
+export async function periodEndOf(app, base, amount, unit) {
+  if (await capListed('subscription-period.v1')) {
+    const out = await cloudRaw('GET', '/api/admin/subscriptions/period-end', {
+      query: { app: app === 'pump' ? 'pump' : 'shop', amount: String(amount), unit: String(unit), from: String(Math.max(0, Math.round(Number(base) || 0))) },
+    });
+    const endsAt = Number(out?.endsAt);
+    if (!Number.isSafeInteger(endsAt) || endsAt <= 0) {
+      throw Object.assign(new Error('سرورِ حساب پایانِ دوره را نداد'), { code: 'bad_period_end', status: 502 });
+    }
+    return { endsAt, source: 'server' };
+  }
+  return { endsAt: addPeriod(base, amount, unit), source: 'panel' };
 }
 
 const daysLeftOf = (endsAt, at = Date.now()) => (endsAt ? Math.max(0, Math.ceil((Number(endsAt) - at) / DAY)) : -1);
@@ -346,6 +373,7 @@ router.post('/shop-accounts/:id/vip', money, guard(async (req, res) => {
   if (b.maxDevices) body.maxDevices = Number(b.maxDevices);
   if (b.graceDays) body.graceDays = Number(b.graceDays);
   const samePeriod = plan && amount === Number(plan.amount) && unit === String(plan.unit);
+  let periodSource = null;
   if (!samePeriod) {
     if (!amount) {
       return res.status(400).json({ error: 'missing_duration', message: 'مدتِ اشتراک مشخص نیست' });
@@ -354,11 +382,14 @@ router.post('/shop-accounts/:id/vip', money, guard(async (req, res) => {
     const detail = await cloudRaw('GET', `/api/admin/shops/${id}`);
     const live = detail.entitlement?.subscription;
     const base = live?.active && Number(live.endsAt) > Date.now() ? Number(live.endsAt) : Date.now();
-    body.endsAt = addPeriod(base, amount, unit);
+    const pe = await periodEndOf('shop', base, amount, unit);
+    body.endsAt = pe.endsAt;
+    periodSource = pe.source;
     if (!(live?.active)) body.startsAt = Date.now();
   }
   const out = await cloudRaw('POST', '/api/admin/subscriptions', { body });
-  audit({ actor: actorOf(req), action: 'account.subscription.grant', entity: 'shop', entityId: id, detail: { plan: planCode, amount, unit } });
+  audit({ actor: actorOf(req), action: 'account.subscription.grant', entity: 'shop', entityId: id,
+    detail: { plan: planCode, amount, unit, ...(periodSource ? { period: periodSource } : {}) } });
   res.json({ ok: true, subscription: out.subscription || null, state: out.state || null });
 }));
 
@@ -382,8 +413,9 @@ router.post('/subscriptions/:id/extend', money, guard(async (req, res) => {
   const unit = String(req.body?.unit || 'month');
   const current = await findSubscription(id);
   const base = Math.max(Number(current.ends_at) || 0, Date.now());
-  const out = await cloudRaw('PUT', `/api/admin/subscriptions/${id}`, { body: { endsAt: addPeriod(base, amount, unit) } });
-  audit({ actor: actorOf(req), action: 'account.subscription.extend', entity: 'subscription', entityId: id, detail: { amount, unit } });
+  const pe = await periodEndOf('shop', base, amount, unit);
+  const out = await cloudRaw('PUT', `/api/admin/subscriptions/${id}`, { body: { endsAt: pe.endsAt } });
+  audit({ actor: actorOf(req), action: 'account.subscription.extend', entity: 'subscription', entityId: id, detail: { amount, unit, period: pe.source } });
   res.json({ ok: true, subscription: out.subscription || null, state: out.state || null });
 }));
 
@@ -974,7 +1006,8 @@ export async function extendSubscription(appIn, idIn, amountIn, unitIn, actor = 
   const amount = Number(amountIn) || 1;
   const unit = String(unitIn || 'month');
   const current = await subscriptionOf(app, id);
-  const endsAt = addPeriod(Math.max(Number(current.ends_at) || 0, Date.now()), amount, unit);
+  const pe = await periodEndOf(app, Math.max(Number(current.ends_at) || 0, Date.now()), amount, unit);
+  const endsAt = pe.endsAt;
   const out = app === 'pump'
     ? await cloudRaw('POST', subsPath(app), {
       body: {
@@ -984,7 +1017,7 @@ export async function extendSubscription(appIn, idIn, amountIn, unitIn, actor = 
       },
     })
     : await cloudRaw('PUT', `${subsPath(app)}/${id}`, { body: { endsAt } });
-  audit({ actor, action: 'account.subscription.extend', entity: 'subscription', entityId: id, detail: { app, amount, unit } });
+  audit({ actor, action: 'account.subscription.extend', entity: 'subscription', entityId: id, detail: { app, amount, unit, period: pe.source } });
   return out;
 }
 
@@ -1585,6 +1618,18 @@ router.post('/sync/conflicts/:id/restore', requireRole('admin'), guard(async (re
   requireConfirm(req);
   const key = idemOf(req);
   if (!key) throw badInput('idempotency_key_required', 'کلیدِ یکتایی لازم است (رابطِ پنل خودش می‌فرستد)');
+  /*
+   *  ۱.۵۰.۷۵: سرورِ حسابی که `sync-restore-once.v1` را اعلام کرده «یک بار» را **خودش** در پایگاه نگه می‌دارد (کلیدِ
+   *  یکتایی، ۴۰۹ ِ `already_restored` / `restore_in_progress`، ‎Idempotent-Replayed‎) — پس از راه‌اندازیِ دوبارهٔ پنل و بی
+   *  مرزِ ده دقیقه. کلیدِ بالادست همان کلیدِ پنجره است، به کاربرِ پنل بسته (`u<id>.`)؛ چون با راهِ پیشین (رمزِ ارشد) همهٔ
+   *  کاربرانِ پنل یک «مدیر» ِ آن‌جایند. بی این توانایی: همان یادِ پل (`restoreOnce`) — سرورِ کهنه همان کار را می‌کند.
+   */
+  if (await capListed('sync-restore-once.v1')) {
+    const upKey = `u${req.user?.id ?? 'x'}.${key.length <= 110 ? key : crypto.createHash('sha256').update(key).digest('hex').slice(0, 64)}`;
+    const r = await cloudRaw('POST', `/api/admin/sync/conflicts/${id}/restore`, { body: { reason }, headers: { 'idempotency-key': upKey }, replayFlag: true });
+    if (!r?.replayed) audit({ actor: actorOf(req), action: 'account.sync.restore', entity: 'sync_conflict', entityId: id, detail: { reason, once: 'server' } });
+    return res.json(r);
+  }
   const out = await restoreOnce(req, id, reason, key, async () => {
     const r = await cloudRaw('POST', `/api/admin/sync/conflicts/${id}/restore`, { body: { reason } });
     audit({ actor: actorOf(req), action: 'account.sync.restore', entity: 'sync_conflict', entityId: id, detail: { reason } });
@@ -2128,6 +2173,10 @@ export const PHASE3 = Object.freeze({
   //  ‎GET /console/capabilities‎ (یکپارچه‌سازی) «هست/نیست» ِ همهٔ ماژول‌های بخشِ «فروشگاه» را یک‌جا بگوید
   'admin-sessions.v1': 'GET /api/admin/admins/:id/sessions · POST …/sessions/revoke (ماژولِ ۴.۳)',
   'search.v1': 'GET /api/admin/search (جست‌وجوی سراسریِ پوسته)',
+  //  ممیزی §۹ (۱.۵۰.۷۵، shop ‎claude/acct-console‎): «یک بار» ِ بازگرداندن در سرورِ حساب، پایانِ دوره از سرور (S15)، قراردادِ نسخه‌دار (S18)
+  'sync-restore-once.v1': 'POST /api/admin/sync/conflicts/:id/restore با Idempotency-Key و ۴۰۹ ِ already_restored',
+  'subscription-period.v1': 'GET /api/admin/subscriptions/period-end (S15)',
+  'admin-contract.v1': 'GET /api/admin/contract + X-Admin-API-Version (S18)',
   ...MARKET_CAPABILITIES,
 });
 const CAP_RE = /^[a-z][a-z0-9-]{0,40}\.v\d{1,3}$/;
@@ -2170,9 +2219,17 @@ function badInput(code, message) {
 
 router.get('/console/capabilities', guard(async (req, res) => {
   const caps = await capabilities();
+  //  S18 (۱.۵۰.۷۵): قراردادِ نسخه‌دار — شکستِ خواندنِ قرارداد فقط همین بخش را «نامعلوم» می‌کند، نه کلِ پاسخ
+  let contract;
+  try {
+    contract = await contractStatus(caps.list, (p) => cloudRaw('GET', p), adminApiVersionSeen(), { refresh: req.query.refresh === '1' });
+  } catch (err) {
+    contract = { available: false, reason: 'upstream_error', error: err.code || 'cloud_error', message: String(err.message || '').slice(0, 200) };
+  }
   res.json({
     capabilities: caps.list,
     known: Object.entries(PHASE3).map(([id, needs]) => ({ id, needs, available: caps.list.includes(id) })),
+    contract,
     checkedAt: caps.at,
   });
 }));
@@ -2472,6 +2529,13 @@ mountConsoleShell(router);
  *  فهرستِ سفید، «انجام‌دهنده» و ‎bridge-roles.mjs‎ یکی بمانند.
  */
 mountConsoleMarket(router);
+
+/*
+ *  🏪 ممیزی §۳-۴ (۱.۵۰.۷۵): کارکنان/مجوز/دستگاهِ هر دکان (پروندهٔ دکان) و بانکِ عکسِ مرکزی — تا امروز فقط در
+ *  ‎/admin/‎ ِ سرورِ حساب. درهایشان در ‎routes/console-staff.js‎ و ‎routes/console-image-bank.js‎، روی **همین** روتر.
+ */
+mountConsoleStaff(router, { guard, badInput, actorOf });
+mountConsoleImageBank(router, { guard, badInput, actorOf });
 
 /* ماژولِ ۴.۵ ِ پنلِ مرکزی — مالیِ مرکزی (‎routes/account-finance.js‎؛ همین نشست، همین «انجام‌دهنده») */
 router.use('/console/finance', financeRoutes);

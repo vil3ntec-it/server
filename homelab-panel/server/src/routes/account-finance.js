@@ -20,6 +20,7 @@
 // ---------------------------------------------------------------------------
 import express from 'express';
 import { cloudRaw, serviceKeyStatus } from '../stations/cloud.js';
+import { bridgeFail } from '../account/bridge-fail.js';
 import { roleOf, requireRole } from '../control/roles.js';
 import { audit } from '../control/audit.js';
 import * as panelAuth from '../auth.js';
@@ -31,9 +32,8 @@ const router = express.Router();
 export const FINANCE_CAPABILITY = 'finance.v1';
 const NEEDS = 'GET /api/admin/finance/* · POST /api/admin/finance/adjustments (shop: claude/console-finance-api، مهاجرتِ ۱۷۱)';
 
-function fail(res, err) {
-  return res.status(err.status || 502).json({ error: err.code || 'cloud_error', message: err.message || 'سرورِ حساب جواب نداد' });
-}
+//  ⛔ یک قاعده برای خطای پل (نوشتنِ بی‌پاسخ ⇒ «نامعلوم» + ردیفِ دفتر) — ‎account/bridge-fail.js‎
+const fail = bridgeFail;
 const guard = (handler) => async (req, res) => {
   try { await handler(req, res); } catch (err) { fail(res, err); }
 };
