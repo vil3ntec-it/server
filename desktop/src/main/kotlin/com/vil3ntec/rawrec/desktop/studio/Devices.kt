@@ -8,6 +8,19 @@ import java.io.File
 
 /** The cameras this computer has, by the names its own capture system gives them. */
 object Devices {
+    /**
+     * FFmpeg's capture devices (screen, webcam, desktop sound) are loaded once and only when asked for. On Linux they
+     * need the system's sound and X libraries; when one is missing only these sources say why — the rest of the app runs.
+     */
+    val captureError: String? by lazy {
+        try { avdevice_register_all(); null } catch (t: Throwable) {
+            val os = System.getProperty("os.name").lowercase()
+            if (os.contains("linux")) "ضبطِ صفحه، وب‌کم و صدای کامپیوتر به کتابخانه‌های سیستم نیاز دارند: sudo apt install libpulse0 libasound2 libxcb1 libxcb-shm0 libdrm2"
+            else "ابزارِ ضبطِ دستگاه‌ها بار نشد: ${t.message ?: t.javaClass.simpleName}"
+        }
+    }
+    val captureReady get() = captureError == null
+
     fun webcams(): List<String> {
         val os = System.getProperty("os.name").lowercase()
         return try {
@@ -20,7 +33,7 @@ object Devices {
     }
 
     private fun listed(format: String): List<String> {
-        avdevice_register_all()
+        if (!captureReady) return emptyList()
         val fmt = av_find_input_format(format) ?: return emptyList()
         val list = AVDeviceInfoList(null as Pointer?)
         if (avdevice_list_input_sources(fmt, null as String?, null, list) < 0 || list.isNull) return emptyList()

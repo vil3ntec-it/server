@@ -6,7 +6,6 @@ import org.bytedeco.ffmpeg.avcodec.AVCodecContext
 import org.bytedeco.ffmpeg.avformat.AVFormatContext
 import org.bytedeco.ffmpeg.avutil.AVDictionary
 import org.bytedeco.ffmpeg.global.avcodec.*
-import org.bytedeco.ffmpeg.global.avdevice.avdevice_register_all
 import org.bytedeco.ffmpeg.global.avformat.*
 import org.bytedeco.ffmpeg.global.avutil.*
 import org.bytedeco.ffmpeg.global.swscale.*
@@ -154,7 +153,9 @@ class MediaSource(
         while (running) {
             try {
                 val ic = AVFormatContext(null as Pointer?)
-                val fmt = format?.let { avdevice_register_all(); av_find_input_format(it) }
+                val capErr = if (format != null) Devices.captureError else null
+                if (capErr != null) { error = capErr; Thread.sleep(5000); continue }
+                val fmt = format?.let { av_find_input_format(it) }
                 val opts = AVDictionary(null as Pointer?)
                 for ((k, v) in options) av_dict_set(opts, k, v, 0)
                 val r = avformat_open_input(ic, url, fmt, opts)
