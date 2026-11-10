@@ -8,6 +8,7 @@
 #      ./service-linux.sh stop        توقف
 #      ./service-linux.sh status      وضعیت
 #      ./service-linux.sh logs        دیدن لاگ زنده
+#      ./service-linux.sh setup-code  کدِ یک‌بارِ ساختِ نخستین مدیر (فقط تا مدیری نیست)
 #      ./service-linux.sh uninstall   حذف از راه‌اندازی خودکار
 #
 #  اگر systemd باشد از آن استفاده می‌کند (بهترین حالت)؛ اگر نبود — مثلاً روی مک
@@ -125,7 +126,8 @@ do_start() {
     echo "ℹ️  از قبل بالاست (PID $pid)."
     return
   fi
-  mkdir -p "$DATA_DIR"
+  # پوشهٔ داده فقط مالِ همین کاربر (۱.۵۰.۸۵) — خودِ پنل هم در هر بالا آمدن ‎700‎ را تنگ می‌کند
+  (umask 077; mkdir -p "$DATA_DIR")
   # setsid پروسه را از ترمینال جدا می‌کند تا با بسته شدن پنجره نمیرد
   if command -v setsid >/dev/null 2>&1; then
     setsid nohup node --disable-warning=ExperimentalWarning src/index.js >> "$LOGFILE" 2>&1 < /dev/null &
@@ -155,8 +157,43 @@ show_address() {
   echo "  ============================================================"
   echo "    پنل را در مرورگر باز کنید:"
   echo "        http://localhost:$port"
+  echo
+  echo "    بارِ اول روی همین کامپیوتر مدیر را بسازید. از گوشی یا کامپیوترِ"
+  echo "    دیگرِ شبکه «کدِ یک‌بارِ راه‌اندازی» لازم است:"
+  echo "        $0 setup-code"
   echo "  ============================================================"
   echo
+}
+
+# ⛔ (۱.۵۰.۸۵) کدِ یک‌بارِ ساختِ نخستین مدیر را سرور فقط در لاگِ خودش چاپ می‌کند (نه روی دیسکِ
+# جدا، نه در پنل). این‌جا فقط آخرین خطِ همان لاگ نشان داده می‌شود، و فقط تا مدیری ساخته نشده —
+# پس از آن کد باطل است. روی همین کامپیوتر (http://localhost) کد لازم نیست.
+do_setup_code() {
+  local port="${HLP_PORT:-4700}"
+  local status
+  status="$(curl -fsS --max-time 3 "http://127.0.0.1:$port/api/auth/status" 2>/dev/null || true)"
+  if [ -z "$status" ]; then
+    echo "⚠️  پنل روی پورت $port جواب نمی‌دهد — اول: $0 start"
+    return 1
+  fi
+  case "$status" in
+    *'"initialized":true'*)
+      echo "✅ مدیرِ پنل از قبل ساخته شده — کدِ راه‌اندازی در کار نیست."
+      return 0 ;;
+  esac
+  local line=""
+  if have_systemd && [ -f "$UNIT" ]; then
+    line="$(journalctl --user -u "$NAME.service" --no-pager -o cat 2>/dev/null | grep -a 'setup code):' | tail -n 1 || true)"
+  elif [ -f "$LOGFILE" ]; then
+    line="$(grep -a 'setup code):' "$LOGFILE" | tail -n 1 || true)"
+  fi
+  if [ -z "$line" ]; then
+    echo "⚠️  خطِ کد در لاگ پیدا نشد. سرور را دوباره بالا بیاورید ($0 restart) تا کدِ تازه بسازد،"
+    echo "    یا پنل را روی همین کامپیوتر باز کنید: http://localhost:$port"
+    return 1
+  fi
+  echo "${line##*: }"
+  echo "  (کدِ یک‌بار — فقط برای ساختِ نخستین مدیر از دستگاهِ دیگرِ شبکه؛ با ساختِ مدیر باطل می‌شود)"
 }
 
 do_stop() {
@@ -214,9 +251,10 @@ case "${1:-install}" in
   restart)   do_stop; do_start ;;
   status)    do_status ;;
   logs)      do_logs ;;
+  setup-code) do_setup_code ;;
   uninstall) do_uninstall ;;
   *)
-    echo "استفاده: $0 [install|start|stop|restart|status|logs|uninstall]"
+    echo "استفاده: $0 [install|start|stop|restart|status|logs|setup-code|uninstall]"
     exit 1
     ;;
 esac

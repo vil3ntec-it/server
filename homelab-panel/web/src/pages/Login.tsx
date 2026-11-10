@@ -1,16 +1,17 @@
 import { useState, type FormEvent } from 'react';
-import { KeyRound, Loader2, Server, User } from 'lucide-react';
+import { KeyRound, Loader2, Server, ShieldCheck, User } from 'lucide-react';
 import { useApp } from '../app-context';
 import { ApiError, logoUrl } from '../api';
 import { LANGUAGES } from '../i18n';
 import CodeInput from '../components/CodeInput';
 
 export default function Login() {
-  const { t, initialized, login, loginTotp, setup, serverName, hasLogo, lang, setLang, resolvedTheme, setTheme } = useApp();
+  const { t, initialized, setupCodeNeeded, login, loginTotp, setup, serverName, hasLogo, lang, setLang, resolvedTheme, setTheme } = useApp();
   const [ticket, setTicket] = useState<string | null>(null);
   const [codeReset, setCodeReset] = useState(0);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [setupCode, setSetupCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,7 +23,7 @@ export default function Login() {
       if (initialized) {
         const r = await login(username, password);
         if (r?.totpRequired) setTicket(r.ticket);
-      } else await setup(username, password);
+      } else await setup(username, password, setupCodeNeeded ? setupCode.trim() : undefined);
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === 'invalid_credentials') setError(t('wrongCredentials'));
@@ -30,6 +31,9 @@ export default function Login() {
         else if (err.code === 'recovery_expired') setError(t('recoveryExpired'));
         else if (err.code === 'password_too_short') setError(t('passwordTooShort'));
         else if (err.code === 'username_too_short') setError(t('usernameTooShort'));
+        //  ساختِ نخستین مدیر از دستگاهی جز خودِ سرور (۱.۵۰.۸۵)
+        else if (err.code === 'setup_code_required') setError(t('setupCodeRequired'));
+        else if (err.code === 'setup_code_invalid') setError(t('setupCodeInvalid'));
         //  پیامِ خواندنیِ خودِ سرور (مثلاً «پنل از اینترنت فقط با کدِ دومرحله‌ای…»)
         else setError(err.message && err.message !== err.code ? err.message : err.code);
       } else {
@@ -125,6 +129,31 @@ export default function Login() {
               required
             />
           </div>
+
+          {!initialized && setupCodeNeeded && (
+            <>
+              <label className="label mt-3">{t('setupCode')}</label>
+              <div className="relative" dir="ltr">
+                <ShieldCheck className="pointer-events-none absolute inset-y-0 start-3 my-auto h-4 w-4 text-ink-muted" />
+                <input
+                  className="input ps-9 font-mono tracking-wider"
+                  value={setupCode}
+                  onChange={(e) => setSetupCode(e.target.value)}
+                  autoComplete="one-time-code"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  placeholder="XXXX-XXXX-XXXX"
+                  required
+                />
+              </div>
+              <p className="mt-1.5 text-xs text-ink-muted">{t('setupCodeHint')}</p>
+              <p className="mt-1 font-mono text-[11px] leading-5 text-ink-muted" dir="ltr">
+                ./service-linux.sh setup-code
+                <br />
+                docker compose logs panel
+              </p>
+            </>
+          )}
 
           {error && (
             <p

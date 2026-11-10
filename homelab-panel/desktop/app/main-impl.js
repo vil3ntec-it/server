@@ -8,7 +8,7 @@
 //  سرور با Node ای که خودِ Electron همراه دارد اجرا می‌شود، پس نصبِ جداگانهٔ
 //  Node.js لازم نیست.
 // ---------------------------------------------------------------------------
-import { app, BrowserWindow, dialog, ipcMain, shell, Menu } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, Menu, session } from 'electron';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -18,7 +18,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { ensureFirewall } from './firewall.js';
 import { loginItemPlan, restartDelay, shouldRelaunch, HEALTHY_RESET_MS, AUTOSTART_ARG } from './autostart.js';
-import { guardWindow, senderIsOwnPage } from './guards.js';
+import { guardWindow, senderIsOwnPage, guardPermissions } from './guards.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -47,6 +47,17 @@ const ownPages = () => [implFile('shell.html'), implFile('terminal.html')];
 const guardOpts = () => ({
   pages: ownPages,
   openExternal: (url) => shell.openExternal(url),
+  log: (m) => pushLog(m, 'err'),
+});
+/**
+ * ⛔ (۱.۵۰.۸۵) اجازه‌های مرورگر فقط برای مبدأِ پنلِ **همین اجرا** (درگاه با هر راه‌اندازی عوض
+ * می‌شود) و صفحه‌های خودِ برنامه — `guardPermissions` در `app/guards.js`.
+ */
+const permissionOpts = () => ({
+  panelOrigin: () => {
+    try { return state.url ? new URL(state.url).origin : null; } catch { return null; }
+  },
+  pages: ownPages,
   log: (m) => pushLog(m, 'err'),
 });
 
@@ -812,8 +823,13 @@ export async function start(context) {
     stopServer();
   });
 
+  //  هر نشستِ تازه (‎partition‎ ِ احتمالیِ آینده) همان گرداننده را می‌گیرد؛ نشستِ پیش‌فرض پایین
+  app.on('session-created', (ses) => guardPermissions(ses, permissionOpts()));
+
   await app.whenReady();
   Menu.setApplicationMenu(null);
+  //  ⛔ پیش از ساختنِ هر پنجره: Electron بی گرداننده هر اجازه‌ای را بی‌پرسش می‌دهد
+  guardPermissions(session.defaultSession, permissionOpts());
   //  ⛔ هر بار که برنامه باز می‌شود دوباره نوشته می‌شود: مسیرِ برنامه با نصبِ
   //  تازه عوض می‌شود و ثبتِ کهنه یعنی فردا صبح ویندوز چیزی را اجرا نمی‌کند.
   applyLoginItem();

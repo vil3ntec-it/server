@@ -11,6 +11,9 @@
 //    ۴) IPC فقط از قابِ اصلیِ shell.html/terminal.html
 //    ۵) ‎<webview>‎ هرگز preload و Node نمی‌گیرد
 //    ۶) قاعده‌های خالص با مسیرِ ویندوز (فاصله، حروفِ بزرگ/کوچک، UNC)
+//    ۷) (۱.۵۰.۸۵) اجازه‌های مرورگر: فقط مبدأِ پنل و صفحه‌های خودِ برنامه، فقط آن‌چه پنل به‌کار می‌برد
+//    ۸) همان، با سرورِ بالا: نمونهٔ دومِ main-impl.js با یک «سرورِ» کوچکِ ساختگی (فقط ‎/health‎)
+//       تا مبدأِ پنلِ **همین اجرا** (درگاهِ انتخاب‌شده) از سیم‌کشیِ واقعی سنجیده شود
 // ---------------------------------------------------------------------------
 import { register } from 'node:module';
 import fs from 'node:fs';
@@ -153,6 +156,112 @@ console.log('\n── ۶) قاعده‌های خالص (مسیرِ ویندوز)
       !g.externalUrlOk('file:///etc/passwd') && !g.externalUrlOk('ms-settings:') && !g.externalUrlOk('data:text/html,x') &&
       !g.externalUrlOk('javascript:alert(1)') && !g.externalUrlOk('https://'));
   }
+}
+
+/* ─────────────────────────── ۷) اجازه‌های مرورگر ─────────────────────────── */
+console.log('\n── ۷) اجازه‌های مرورگر (میکروفون، کلیپ‌بورد، اعلان، مکان…) ──');
+{
+  const ses = fake.session.defaultSession;
+  const ask = (permission, requestingUrl, extra = {}) => new Promise((resolve) => {
+    if (!ses.requestHandler) return resolve('بی گرداننده ⇒ Electron همه را می‌دهد');
+    let done = false;
+    ses.requestHandler(main.webContents, permission, (ok) => { done = true; resolve(ok); }, { requestingUrl, isMainFrame: true, ...extra });
+    setTimeout(() => { if (!done) resolve('پاسخی نیامد'); }, 200);
+  });
+  const checkPerm = (permission, origin, details = {}) => (ses.checkHandler ? ses.checkHandler(main.webContents, permission, origin, details) : 'بی گرداننده');
+  check('⛔ نشستِ پیش‌فرض گردانندهٔ درخواستِ اجازه دارد (پیش از هر پنجره)', typeof ses.requestHandler === 'function');
+  check('⛔ و گردانندهٔ سنجشِ اجازه و دستگاه', typeof ses.checkHandler === 'function' && typeof ses.deviceHandler === 'function');
+  check('⛔ دستگاه‌ها (HID/USB/Serial) ⇒ نه', ses.deviceHandler?.({ deviceType: 'hid', origin: 'http://127.0.0.1:4700' }) === false);
+
+  for (const [label, perm, url, extra] of [
+    ['صفحهٔ بیگانه: میکروفون', 'media', EVIL, { mediaTypes: ['audio'] }],
+    ['صفحهٔ بیگانه: اعلان', 'notifications', EVIL],
+    ['صفحهٔ بیگانه: مکان', 'geolocation', EVIL],
+    ['صفحهٔ بیگانه: کلیپ‌بورد', 'clipboard-sanitized-write', EVIL],
+    ['shell.html: میکروفون', 'media', SHELL, { mediaTypes: ['audio'] }],
+    ['shell.html: خواندنِ کلیپ‌بورد', 'clipboard-read', SHELL],
+    ['shell.html: بازکردنِ پروتکلِ بیرونی', 'openExternal', SHELL],
+    ['پنل پیش از بالا آمدنِ سرور (مبدأ هنوز نامعلوم)', 'media', 'http://127.0.0.1:4700/support', { mediaTypes: ['audio'] }],
+    ['درخواستِ بی نشانیِ قاب', 'media', '', { mediaTypes: ['audio'] }],
+  ]) {
+    check(`⛔ ${label} ⇒ رد`, (await ask(perm, url, extra)) === false);
+  }
+  check('shell.html: نوشتن در کلیپ‌بورد (کپیِ لاگ) — همان رفتارِ امروز', (await ask('clipboard-sanitized-write', SHELL)) === true);
+  check('terminal.html: نوشتن در کلیپ‌بورد', (await ask('clipboard-sanitized-write', `${TERM}#x`)) === true);
+  check('سنجش: shell.html با مبدأِ ‎file://‎ و قابِ اصلی ⇒ کلیپ‌بورد بله، اعلان نه',
+    (main.webContents.getURL = () => SHELL, checkPerm('clipboard-sanitized-write', 'file://', { isMainFrame: true })) === true
+    && checkPerm('notifications', 'file://', { isMainFrame: true }) === false);
+  check('⛔ سنجش: مبدأِ بیگانه ⇒ نه', checkPerm('media', 'https://evil.example', { mediaType: 'audio', requestingUrl: EVIL }) === false);
+  const before = fake.calls.windows.length;
+  const logs = await invoke('logs', SHELL);
+  check('ردها در ترمینالِ برنامه یک خط می‌گیرند (بی تکرارِ هر بار)', Array.isArray(logs) && logs.some((l) => /اجازهٔ «notifications»/.test(l.text))
+    && logs.filter((l) => /اجازهٔ «media» برای «https:\/\/evil/.test(l.text)).length === 1, JSON.stringify(logs.slice(-3)));
+  check('هیچ پنجره‌ای از این‌ها ساخته نشد', fake.calls.windows.length === before);
+
+  const fresh = new fake.Session('persist:other');
+  fake.app.emit('session-created', fresh);
+  check('⛔ هر نشستِ تازه (partition) هم همان گرداننده را می‌گیرد', typeof fresh.requestHandler === 'function' && typeof fresh.checkHandler === 'function');
+
+  let g = null;
+  try { g = await import(pathToFileURL(path.join(APP, 'guards.js')).href); } catch { /* بالا سنجیده شد */ }
+  const P = 'http://127.0.0.1:4711';
+  const allow = (permission, url, extra = {}) => Boolean(g?.permissionAllowed?.({ permission, url, ...extra }, { panelOrigin: () => P, pages: () => [path.join(APP, 'shell.html')] }));
+  check('قاعدهٔ خالص هست (permissionAllowed)', typeof g?.permissionAllowed === 'function');
+  check('پنل: میکروفون برای پیامِ صوتی (فقط صدا) — راهِ مالک بسته نشد', allow('media', `${P}/account/support`, { mediaTypes: ['audio'] }));
+  check('پنل: سنجشِ میکروفون (mediaType=audio)', allow('media', `${P}/`, { mediaType: 'audio' }));
+  check('پنل: نوشتن در کلیپ‌بورد (دکمه‌های کپی) و تمام‌صفحهٔ ویدیو', allow('clipboard-sanitized-write', `${P}/x`) && allow('fullscreen', `${P}/x`));
+  check('⛔ پنل: دوربین، صدا+دوربین، یا «نامعلوم» نه', !allow('media', `${P}/`, { mediaTypes: ['video'] }) && !allow('media', `${P}/`, { mediaTypes: ['audio', 'video'] })
+    && !allow('media', `${P}/`, { mediaType: 'unknown' }) && !allow('media', `${P}/`, {}));
+  check('⛔ پنل: اعلان، مکان، خواندنِ کلیپ‌بورد، MIDI، قفلِ نشانگر، پروتکلِ بیرونی نه',
+    ['notifications', 'geolocation', 'clipboard-read', 'midiSysex', 'pointerLock', 'openExternal', 'display-capture', 'idle-detection'].every((x) => !allow(x, `${P}/`)));
+  check('⛔ همان میزبان با درگاهِ دیگر، localhost، https یا قابِ بیگانهٔ درونِ پنل نه',
+    !allow('media', 'http://127.0.0.1:4700/', { mediaTypes: ['audio'] }) && !allow('media', 'http://localhost:4711/', { mediaTypes: ['audio'] })
+    && !allow('media', 'https://127.0.0.1:4711/', { mediaTypes: ['audio'] }) && !allow('clipboard-sanitized-write', EVIL));
+}
+
+/* ─────────────── ۸) سرورِ بالا: مبدأِ پنلِ همین اجرا ─────────────── */
+console.log('\n── ۸) با سرورِ بالا: میکروفونِ پنل از سیم‌کشیِ واقعی ──');
+{
+  //  «سرورِ» ساختگی کنارِ یک پوستهٔ ساختگی: ‎serverDir() = packagedDir/../../server‎ — فقط ‎/health‎
+  const stub = fs.mkdtempSync(path.join(fake.userData, 'stub-'));
+  fs.mkdirSync(path.join(stub, 'server', 'src'), { recursive: true });
+  fs.mkdirSync(path.join(stub, 'shell', 'app'), { recursive: true });
+  fs.writeFileSync(path.join(stub, 'server', 'src', 'index.js'),
+    "require('node:http').createServer((q, r) => { r.writeHead(200, { 'content-type': 'application/json' }); r.end('{\"ok\":true}'); })"
+    + ".listen(Number(process.env.HLP_PORT), process.env.HLP_HOST || '127.0.0.1');\n");
+  fs.writeFileSync(path.join(stub, 'package.json'), '{"type":"commonjs"}');
+  const dataDir = path.join(stub, 'data');
+  fs.mkdirSync(dataDir);
+  const port = Number(process.env.TEST_PORT || 4987);
+  fs.writeFileSync(settingsFile, JSON.stringify({ ...readSettings(), dataDir, lanAccess: false, port }));
+  const second = await import(`${pathToFileURL(path.join(APP, 'main-impl.js')).href}?with-server`);
+  const t0 = Date.now();
+  await second.start({
+    implDir: APP, packagedDir: path.join(stub, 'shell', 'app'), overlayDir: null, assetsDir: path.join(APP, '..', 'assets'),
+    usingOverlay: false, markBooted() {},
+  });
+  const st = await invoke('state', SHELL);
+  check('سرورِ ساختگی بالا آمد و نشانیِ پنلِ همین اجرا معلوم شد', st?.status === 'running' && /^http:\/\/127\.0\.0\.1:\d+$/.test(String(st?.url)),
+    `${JSON.stringify(st).slice(0, 160)} (${Date.now() - t0}ms)`);
+  const ses = fake.session.defaultSession;
+  const ask = (permission, requestingUrl, extra = {}) => new Promise((resolve) => {
+    if (!ses.requestHandler) return resolve('بی گرداننده ⇒ Electron همه را می‌دهد');
+    ses.requestHandler(main.webContents, permission, resolve, { requestingUrl, isMainFrame: true, ...extra });
+  });
+  const checkPerm = (...a) => (ses.checkHandler ? ses.checkHandler(...a) : 'بی گرداننده');
+  if (st?.url) {
+    check('پنلِ همین اجرا: میکروفون (فقط صدا) برای پیامِ صوتی ⇒ بله', (await ask('media', `${st.url}/account/support`, { mediaTypes: ['audio'] })) === true);
+    check('پنلِ همین اجرا: کپی ⇒ بله', (await ask('clipboard-sanitized-write', `${st.url}/`)) === true);
+    check('⛔ پنلِ همین اجرا: دوربین و اعلان ⇒ نه', (await ask('media', `${st.url}/`, { mediaTypes: ['video'] })) === false
+      && (await ask('notifications', `${st.url}/`)) === false);
+    const other = `http://127.0.0.1:${Number(new URL(st.url).port) + 1}`;
+    check('⛔ درگاهِ دیگرِ همین کامپیوتر (سایتِ دیگر روی لوپ‌بک) ⇒ نه', (await ask('media', `${other}/`, { mediaTypes: ['audio'] })) === false);
+    check('سنجش: مبدأِ پنل + صدا ⇒ بله؛ مبدأِ دیگر ⇒ نه',
+      checkPerm(main.webContents, 'media', st.url, { mediaType: 'audio', requestingUrl: `${st.url}/` }) === true
+      && checkPerm(main.webContents, 'media', other, { mediaType: 'audio', requestingUrl: `${other}/` }) === false);
+  }
+  fake.app.emit('before-quit');
+  await new Promise((r) => setTimeout(r, 300));
 }
 
 fs.rmSync(fake.userData, { recursive: true, force: true });
