@@ -203,6 +203,11 @@ async function readBundle(file, pass, dest = null) {
   let state = { mode: 'magic' };
   let out = null;
   let hash = null;
+  //  ⛔ `pipeline` با نخستین خطا (رمزگشایی/gunzip) رد می‌شود ولی نوشتنِ ناهمگامِ همان دم (mkdir، ساختنِ فایل) ادامه
+  //  داشت ⇒ پس از پاک شدنِ پوشهٔ موقت دوباره ساخته می‌شد و دادهٔ نیمه‌بازِ بستهٔ دست‌خورده در مقصد می‌ماند (۷ از ۴۰
+  //  جای بیتِ دست‌خورده). حالا کارِ در جریان پیش از بازگشت تمام و بسته می‌شود و پس از شکست هیچ فایلی ساخته نمی‌شود.
+  let inflight = Promise.resolve();
+  let aborted = false;
   const realDest = dest ? path.resolve(dest) : null;
 
   const openFile = async (name, size) => {
@@ -213,6 +218,7 @@ async function readBundle(file, pass, dest = null) {
     const rel = path.relative(realDest, target);
     if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) throw new Error(`مسیرِ بیرون از پوشه در بسته: ${name}`);
     await fsp.mkdir(path.dirname(target), { recursive: true });
+    if (aborted) throw new Error('بسته باز نشد (کار نیمه‌کاره بسته شد).');
     out = fs.createWriteStream(target, { mode: 0o600 });
     state.size = size;
   };
@@ -224,8 +230,8 @@ async function readBundle(file, pass, dest = null) {
   const closeOut = () => new Promise((r, j) => (out ? out.end((e) => (e ? j(e) : r())) : r()));
 
   const parser = new Writable({
-    async write(chunk, _e, cb) {
-      try {
+    write(chunk, _e, cb) {
+      inflight = (async () => {
         buf = buf.length ? Buffer.concat([buf, chunk]) : chunk;
         for (;;) {
           if (state.mode === 'magic') {
@@ -275,8 +281,8 @@ async function readBundle(file, pass, dest = null) {
             break;
           }
         }
-        cb();
-      } catch (e) { cb(e); }
+      })();
+      inflight.then(() => cb(), cb);
     },
   });
 
@@ -284,7 +290,9 @@ async function readBundle(file, pass, dest = null) {
   try {
     await pipeline(body, decipher, zlib.createGunzip(), parser);
   } catch (e) {
-    try { out?.destroy(); } catch { /* بسته */ }
+    aborted = true;
+    await inflight.catch(() => {});
+    if (out && !out.closed) await new Promise((r) => { out.once('close', r); out.destroy(); });
     //  ⚠️ با رمزِ غلط یا بایتِ دست‌خورده، خروجیِ رمزگشایی پیش از سنجشِ برچسب
     //  به gunzip می‌رسد و همان‌جا می‌شکند — هر دو یک معنا دارند.
     if (/unable to authenticate|auth|header check|invalid|unexpected end|Z_DATA_ERROR|JSON|قالب|سرآیند|مانیفست/i.test(`${e.code || ''} ${e.message}`)) {

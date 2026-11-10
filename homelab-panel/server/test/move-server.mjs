@@ -153,6 +153,20 @@ try {
   const DEST = path.join(tmp, 'vps-data');
   const tamImp = await rejects(() => importData({ file: TAMPER, dataDir: DEST, pass: PASS, accountTool: TOOL }), /.+/);
   check('بستهٔ دست‌خورده ⇒ import رد و مقصد خالی ماند', tamImp.ok && (!fs.existsSync(DEST) || fs.readdirSync(DEST).length === 0), fs.existsSync(DEST) ? fs.readdirSync(DEST).join(',') : '');
+  //  ⛔ CI ِ #124: شکستِ رمزگشایی وسطِ نوشتن ⇒ نوشتنِ ناهمگامِ در جریان پس از پاک‌سازی پوشهٔ موقت را دوباره می‌ساخت (کدِ پیشین
+  //  ۷ از ۴۰ جای بیتِ دست‌خورده). بیت در ۲۴ جای پراکنده: هر بار رد، و مقصد پس از رد (و پس از درنگ) تهی
+  {
+    let left = 0; let rej = 0; const N = 24;
+    for (let i = 1; i <= N; i++) {
+      const tb = Buffer.from(raw); tb[64 + Math.floor((raw.length - 100) * i / (N + 1))] ^= 0x01;
+      const TF = path.join(tmp, `flip-${i}.vmove`); fs.writeFileSync(TF, tb);
+      const D = path.join(tmp, `flip-dest-${i}`);
+      try { await importData({ file: TF, dataDir: D, pass: PASS, accountTool: TOOL }); } catch { rej++; }
+      await new Promise((r) => setTimeout(r, 300));
+      if (fs.existsSync(D) && fs.readdirSync(D).length) left++;
+    }
+    check(`بیتِ دست‌خورده در ${N} جا ⇒ هر بار رد و هیچ پوشهٔ موقت یا دادهٔ نیمه‌باز در مقصد نماند`, rej === N && left === 0, `rejected ${rej}, left ${left}`);
+  }
   const imp = await importData({ file: BUNDLE, dataDir: DEST, pass: PASS, accountTool: TOOL, accountEnv: path.join(tmp, 'account.env') });
   check('import: همهٔ فایل‌ها باز و سنجیده شدند', imp.files === ex.manifest.files.length);
   check('import: سرورِ حساب پس از انتقال همان شمار/هش/مبلغ', imp.account.reconciled === true && imp.account.totals.money === '12345678', JSON.stringify(imp.account));
