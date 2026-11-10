@@ -1,18 +1,22 @@
-twitch channels: [arrowwoods, kaicenat, caedrel, rostikfacekid, buster]
-t=10s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 53 (وصل) | Twitch/kaicenat: 21 (وصل) | Twitch/caedrel: 12 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
-t=20s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 72 (وصل) | Twitch/kaicenat: 38 (وصل) | Twitch/caedrel: 18 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
-t=30s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 81 (وصل) | Twitch/kaicenat: 80 (وصل) | Twitch/caedrel: 44 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
-t=40s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 101 (وصل) | Twitch/kaicenat: 116 (وصل) | Twitch/caedrel: 67 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
-t=50s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 111 (وصل) | Twitch/kaicenat: 136 (وصل) | Twitch/caedrel: 85 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
-t=60s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 120 (وصل) | Twitch/kaicenat: 151 (وصل) | Twitch/caedrel: 106 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
-t=70s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 129 (وصل) | Twitch/kaicenat: 180 (وصل) | Twitch/caedrel: 109 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
-t=80s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 150 (وصل) | Twitch/kaicenat: 208 (وصل) | Twitch/caedrel: 121 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
-t=90s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 164 (وصل) | Twitch/kaicenat: 229 (وصل) | Twitch/caedrel: 220 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
+twitch channels: [kaicenat, caedrel, arrowwoods, rostikfacekid, buster]
+probe https://www.youtube.com/@LofiGirl/live -> 200 len 1638029 title= - YouTube canonical=undefined isLive=true videoDetails=null liveChat=true bot=true kick_livestream=null chatroom=null
+probe https://kick.com/api/v2/channels/xqc -> 200 len 6385 title=null canonical=null isLive=false videoDetails=null liveChat=false bot=false kick_livestream=null chatroom=668
+kick live list -> 200
+kick live: [2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone, sxb, just-chatting, irl, bfa1a262-bigboss-watchpartyjoin-discord-support-scoutop, neyoo_gaming, 3f262e23-fat-camp-no-zempic-w-at-cuffem-at-n3on-day-2, adinross, special-events, d4d0e6b9-dunatofon-s-gundos-armani-500-rub-1-min-strima, mafanyatopeu, e726f3f0-albth-ln-yghlk-mn-hna-al-akhr-alsn, maherco, crack, games]
+t=10s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 29 (وصل) | Twitch/caedrel: 43 (وصل) | Twitch/arrowwoods: 26 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
+t=20s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 66 (وصل) | Twitch/caedrel: 133 (وصل) | Twitch/arrowwoods: 46 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
+t=30s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 98 (وصل) | Twitch/caedrel: 168 (وصل) | Twitch/arrowwoods: 64 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
+t=40s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 117 (وصل) | Twitch/caedrel: 210 (وصل) | Twitch/arrowwoods: 84 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
+t=50s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 130 (وصل) | Twitch/caedrel: 276 (وصل) | Twitch/arrowwoods: 95 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
+t=60s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 149 (وصل) | Twitch/caedrel: 310 (وصل) | Twitch/arrowwoods: 118 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
+t=70s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 159 (وصل) | Twitch/caedrel: 339 (وصل) | Twitch/arrowwoods: 143 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
+t=80s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 173 (وصل) | Twitch/caedrel: 361 (وصل) | Twitch/arrowwoods: 151 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
+t=90s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 184 (وصل) | Twitch/caedrel: 378 (وصل) | Twitch/arrowwoods: 156 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
 RESULT YouTube: 0 messages; paid/gifts: 0
-RESULT Twitch: 613 messages; paid/gifts: 0
-   ben…: WW
-   bum…: романтик Wowers
-   SoB…: Таже херня, брат. Ты у меня первый после школы
-   Tem…: Эй, привет, красотка! Я мечтаю жениться на тебе NeedHeal GiveHeal
+RESULT Twitch: 718 messages; paid/gifts: 0
+   gla…: пиздец подчерк
+   xve…: w
+   M0k…: yui2dYes TeaTime 󠀀 󠀀 󠀀
+   2NM…: идиотина
 RESULT Kick: 0 messages; paid/gifts: 0
-TRANSLATE en→fa: چه بازی خوبی است، فردا همه شما رو می‌بینم! 
+TRANSLATE en→fa: چه بازی خوبیه، فردا همه شما رو می‌بینم! 
