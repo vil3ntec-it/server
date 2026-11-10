@@ -4,7 +4,7 @@
 //  با حسابِ مدیرِ پنل، یا با کلیدِ محلیِ برنامهٔ رویِ همین کامپیوتر.
 // ---------------------------------------------------------------------------
 import { Router } from 'express';
-import { requireWriteRole } from '../auth.js';
+import { requireWriteRole, requireRecentAuth } from '../auth.js';
 import path from 'node:path';
 import { requireLocalOrAuth } from '../local-key.js';
 import { audit } from '../lib/audit.js';
@@ -43,6 +43,10 @@ router.use(requireLocalOrAuth);
 //  ۱.۵۰.۸ هر «بیننده‌ای» می‌توانست پشتیبان‌ها را هرس کند. کلیدِ محلی (خودِ
 //  همین کامپیوتر) مثلِ قبل رد می‌شود.
 router.use((req, res, next) => (req.user?.local ? next() : writeAdmin(req, res, next)));
+
+//  ⛔ (۱.۵۰.۸۲) کارِ حساس روی همان کامپیوتر (برگرداندن؛ همان S7): احرازِ دوباره
+//  برای نشستِ وب، ولی نه برای کلیدِ محلیِ خودِ همین کامپیوتر (مالک‌هم‌ارز، بی نشست).
+const reauthUnlessLocal = (req, res, next) => (req.user?.local ? next() : requireRecentAuth(req, res, next));
 
 // ------------------------------ وضعیت ---------------------------------------
 router.get('/', async (req, res) => {
@@ -147,8 +151,9 @@ router.post('/backups/prune', async (req, res) => {
   res.json({ ok: true, ...(await pruneBackups(req.body || {})) });
 });
 
-/* بازگرداندن — پیش از هر چیز از وضعِ فعلی پشتیبان می‌گیرد */
-router.post('/backups/restore', async (req, res) => {
+/* بازگرداندن — پیش از هر چیز از وضعِ فعلی پشتیبان می‌گیرد. احرازِ دوباره مثلِ
+ *  درِ `panel.db` (نشستِ وب؛ کلیدِ محلی مستثنا). */
+router.post('/backups/restore', reauthUnlessLocal, async (req, res) => {
   const target = String(req.body?.path || '').trim();
   if (!target) return res.status(400).json({ ok: false, error: 'no_path' });
   const result = await restoreBackup(target);

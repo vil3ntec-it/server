@@ -1,11 +1,10 @@
 // فایل‌منیجر واقعی — فقط داخل ریشه‌های مجاز (پوشهٔ سایت‌ها و فضای کاری پنل)
 import { Router } from 'express';
-import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { pipeline } from 'node:stream/promises';
 import { requireAuth, requireRole } from '../auth.js';
 import { resolveSafe, rootsWithMeta, safeName } from '../lib/safe-path.js';
+import { streamToFileCapped } from '../lib/capped-upload.js';
 import { audit } from '../lib/audit.js';
 import { config } from '../config.js';
 import { sitesRoot } from '../sites/root.js';
@@ -113,16 +112,19 @@ router.put('/upload', async (req, res) => {
   const safeTarget = resolveSafe(target);
   if (!safeTarget.ok) return fail(res, 403, safeTarget.error);
 
+  //  ⛔ `content-length` فقط ردِ زودهنگام است؛ سقفِ واقعی در جریان شمرده می‌شود
+  //  وگرنه `Transfer-Encoding: chunked` (بی طول) بی‌سقف روی دیسک می‌ریخت.
   const size = Number(req.headers['content-length'] || 0);
   if (size > config.maxUploadBytes) return fail(res, 413, 'too_large', { max: config.maxUploadBytes });
 
   try {
     await fsp.mkdir(dir.path, { recursive: true });
-    await pipeline(req, fs.createWriteStream(safeTarget.path));
+    await streamToFileCapped(req, safeTarget.path, config.maxUploadBytes);
     invalidateSizeCache();
     logEvent('info', 'panel', `فایل آپلود شد: ${safeTarget.path}`);
     res.json({ ok: true, path: safeTarget.path });
   } catch (e) {
+    if (e.code === 'TOO_LARGE') return fail(res, 413, 'too_large', { max: config.maxUploadBytes });
     fail(res, 500, e.code || 'upload_failed');
   }
 });

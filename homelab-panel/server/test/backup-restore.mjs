@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 const PORT = Number(process.env.TEST_PORT || 4802);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -107,10 +108,38 @@ try {
   const apps2 = await fetch(`${BASE}/api/codes-admin/apps`, { headers: admin }).then((r) => r.json());
   check('برنامهٔ دوم هم ثبت شد', (apps2.apps || []).some((a) => a.slug === 'after-backup'));
 
+  console.log('\n── احرازِ دوباره: نشستِ کهنهٔ مدیرِ دوم بازگردانی نمی‌کند (۱.۵۰.۸۲) ──');
+  /*
+   *  ⛔ بازگردانی کلِ panel.db — کاربران، نقش‌ها، نشست‌ها — را جای‌گزین می‌کند، پس
+   *  مدیرِ دوم می‌توانست با نسخهٔ کهنه مرزهای «فقط مالک» را دور بزند؛ تا ۱.۵۰.۸۱ بی
+   *  احرازِ دوباره و بی ردیفِ دفتر بود. حالا نشستی که ده دقیقه رمز نزده ۴۰۳ می‌گیرد.
+   */
+  await fetch(`${BASE}/api/auth/users`, { method: 'POST', headers: J(admin),
+    body: JSON.stringify({ username: 'second', password: 'Second-Pass-2026!', role: 'admin' }) });
+  const uid2 = (await fetch(`${BASE}/api/auth/users`, { headers: admin }).then((r) => r.json())).users?.find((u) => u.username === 'second')?.id;
+  const t2 = (await fetch(`${BASE}/api/auth/login`, { method: 'POST', headers: J(),
+    body: JSON.stringify({ username: 'second', password: 'Second-Pass-2026!' }) }).then((r) => r.json())).token;
+  //  نشستِ مدیرِ دوم را کهنه می‌کنیم (بیش از ده دقیقه از رمز گذشته)، نه نشستِ مالک را
+  const sdb = new DatabaseSync(path.join(dataDir, 'panel.db'));
+  sdb.exec(`UPDATE sessions SET auth_at = 1 WHERE user_id = ${Number(uid2)}`);
+  sdb.close();
+  const stale = await fetch(`${BK}/${encodeURIComponent(file)}/restore`,
+    { method: 'POST', headers: J({ authorization: `Bearer ${t2}` }) });
+  const staleBody = await stale.json().catch(() => ({}));
+  check('⛔ نشستِ کهنه بازگردانی را ۴۰۳ reauth_required می‌گیرد', stale.status === 403 && staleBody.error === 'reauth_required', `status ${stale.status} ${JSON.stringify(staleBody).slice(0, 120)}`);
+  check('⛔ و هیچ فایلِ در انتظاری ساخته نشد', !fs.existsSync(path.join(dataDir, 'panel.db.restore')));
+
   console.log('\n── بازگردانی ──');
   const restore = await fetch(`${BK}/${encodeURIComponent(file)}/restore`,
     { method: 'POST', headers: J(admin) }).then((r) => r.json()).catch((e) => ({ error: e.message }));
   check('بازگردانی پذیرفته شد', restore.ok === true || restore.pending === true, JSON.stringify(restore).slice(0, 200));
+  //  ⛔ ردیفِ دفترِ یکپارچه پیش از راه‌اندازیِ دوباره (بازگردانی خودِ همین ردیف را هم برمی‌گرداند)
+  {
+    const adb = new DatabaseSync(path.join(dataDir, 'panel.db'), { readOnly: true });
+    const n = adb.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'panel.backup.restore' AND ok = 1").get().n;
+    adb.close();
+    check('⛔ بازگردانی ردیفِ دفترِ رخداد نوشت (تا ۱.۵۰.۸۱ هیچ نبود)', n >= 1, `rows ${n}`);
+  }
   /*
    *  ⚠️ بازگردانی *در لحظه* انجام نمی‌شود و این عمدی است: فایلِ دیتابیسِ
    *  باز را نمی‌شود زیرِ پای خودش عوض کرد. فایل کنار گذاشته می‌شود و
