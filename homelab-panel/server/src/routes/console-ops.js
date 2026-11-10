@@ -207,8 +207,10 @@ export function mountConsoleOps(router, d) {
     const seen = backupSlots.get(slotKey);
     //  پرسشِ ناموفقِ توانایی ⇒ «نیست» (همان یادِ پل)، نه شکستِ کار
     const viaServer = await has('idempotent-writes.v1').catch(() => false);
-    //  همان کلید پس از «نامعلوم» + سرورِ حسابِ با کلید ⇒ از خودِ او بپرس (همان کلید ⇒ بی pg_dump ِ دوم)
-    const resolving = Boolean(seen && seen.unknown && viaServer);
+    //  همان کلید پس از «نامعلوم» + سرورِ حسابِ با کلید ⇒ از خودِ او بپرس (همان کلید ⇒ بی pg_dump ِ دوم) — ⛔ فقط اگر همان
+    //  «نامعلوم» هم با کلید رفته بود (۱.۵۰.۷۸): نامعلومِ بی‌کلید (سرورِ کهنه / پرسشِ ناموفقِ توانایی) را سرورِ حساب نمی‌شناسد ⇒
+    //  پرسیدن همان pg_dump ِ دوم بود، کنارِ نخستی که شاید هنوز می‌دود، و ردیفِ «روشن شد» ِ نادرست.
+    const resolving = Boolean(seen && seen.unknown && seen.server && viaServer);
     if (seen) {
       if (seen.reason !== reason) throw conflictErr('idempotency_key_reused', 'این کلیدِ یکتایی برای کارِ دیگری به کار رفته است');
       if (!resolving) return res.json({ ...(await seen.promise), replayed: true });
@@ -220,7 +222,7 @@ export function mountConsoleOps(router, d) {
         'نتیجهٔ پشتیبانِ قبلی معلوم نیست و شاید هنوز در حالِ ساخت باشد — اول فهرستِ پشتیبان‌ها را ببینید؛ پشتیبانِ تازه کمی بعد'),
         { retryAt: backupUnknownUntil });
     }
-    const slot = { reason, at: now, done: false, unknown: false, promise: null };
+    const slot = { reason, at: now, done: false, unknown: false, server: viaServer, promise: null };
     backupRunning = slot;
     backupSlots.set(slotKey, slot);
     slot.promise = (async () => {

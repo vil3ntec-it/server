@@ -10,6 +10,8 @@
 //  سنجیده می‌شود: بی توانایی ⇒ همان رفتارِ پیشین (یادِ پل، «پشتیبانی نمی‌شود»، ۵۰۰ تا با `truncated`)؛ با توانایی ⇒ کلیدِ
 //  پنجره بسته به کاربرِ پنل (`u<id>.`) بالا می‌رود، بازپخش ⇒ `replayed` بی ردیفِ دوم، «نامعلوم» با همان کلید از خودِ سرورِ
 //  حساب روشن می‌شود (ردیف با `resolved`)، ‎409‎ ها همان‌طور می‌گذرند، و کارت ورق می‌خورد.
+//  ۱.۵۰.۷۸ (بازبینیِ ۱.۵۰.۷۷): راهِ هر کلید ثابت است — «نامعلوم» ِ بی‌کلید پس از به‌روز شدنِ سرورِ حساب با کلید دوباره
+//  فرستاده نمی‌شد (کارِ دوم، و پشتیبان: pg_dump ِ دوم + ردیفِ «روشن شد» ِ نادرست)، و کلیدِ کلیددار با پرسشِ ناموفقِ توانایی بی‌کلید.
 // ---------------------------------------------------------------------------
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -36,6 +38,7 @@ let caps = [...BASE_CAPS];
 const seen = [];
 const held = new Set();
 let hangNext = false;          //  کار انجام می‌شود ولی پاسخ گم می‌شود (هیچ پاسخی نمی‌آید)
+let meFail = 0;                //  چند پرسشِ بعدیِ ‎/api/admin/me‎ ۵۰۳ می‌گیرند
 let dumps = 0;
 const keys = new Map();        //  Idempotency-Key ⇒ { hash, status, body }
 const disabled = new Set(['d3']);
@@ -65,7 +68,11 @@ const fake = http.createServer((req, res) => {
     const j = (code, obj, headers = {}) => { res.writeHead(code, { 'content-type': 'application/json', ...headers }); res.end(JSON.stringify(obj)); };
     if (p === '/api/health') return j(200, { ok: true, version: '9.9.9' });
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
-    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: caps, serverTime: NOW });
+    if (p === '/api/admin/me') {
+      //  پرسشِ ناموفقِ توانایی (۱.۵۰.۷۸): ‎capListed‎ ⇒ «نیست»، با این‌که سرورِ حساب همان سرورِ کلیددار است
+      if (meFail > 0) { meFail--; return j(503, { error: { code: 'busy', message: 'کمی بعد' } }); }
+      return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: caps, serverTime: NOW });
+    }
     const idem = String(req.headers['idempotency-key'] || '');
     seen.push({ method: req.method, path: p, query: Object.fromEntries(u.searchParams), body, idem });
     const paged = caps.includes('staff-perms.v1');
@@ -201,8 +208,34 @@ try {
   const bk0 = await api('POST', '/api/account-admin/console/backups', { reason: 'آزمونِ پشتیبان', confirm: true, idempotencyKey: 'cap-bk-none-0001' }, H(T.owner));
   check('پشتیبان بی توانایی: ‎201‎، بی کلید به سرورِ حساب', bk0.status === 201 && last(/^\/api\/admin\/backups$/)?.idem === '', `${bk0.status} ${bk0.text.slice(0, 160)}`);
 
+  //  ۱.۵۰.۷۸ — «نامعلوم» روی راهِ یادِ پل (بی کلید)، و سرورِ حساب پیش از تکرار به‌روز می‌شود (پایین)
+  const dumpsFlip = dumps;
+  hangNext = true;
+  const fd1 = await api('POST', dev('d40', 'disable'), dB('flip'), H(T.adm1));
+  hangNext = true;
+  const fi1 = await api('POST', '/api/account-admin/console/image-bank/images/img_9/approve', { reason: 'مجوز درست است', confirm: true, idempotencyKey: 'cap-img-flip-0001', version: 1 }, H(T.adm1));
+  hangNext = true;
+  const fbBody = { reason: 'آزمونِ پشتیبانِ جابه‌جا', confirm: true, idempotencyKey: 'cap-bk-flip-0001' };
+  const fb1 = await api('POST', '/api/account-admin/console/backups', fbBody, H(T.owner));
+  check('پیش‌زمینه: سه نوشتنِ بی‌پاسخ روی سرورِ کهنه ⇒ «نامعلوم»، بی کلید به سرورِ حساب',
+    [fd1, fi1, fb1].every((r) => r.status === 504 && r.json?.outcome === 'unknown') && [last(/\/d40\/disable$/), last(/img_9\/approve$/), last(/^\/api\/admin\/backups$/)].every((x) => x?.idem === '')
+      && dumps === dumpsFlip + 1, [fd1, fi1, fb1].map((r) => `${r.status}:${r.json?.error}`).join(' '));
+
   caps = [...BASE_CAPS, ...NEW_CAPS];
   console.log('\n── با `staff-perms.v1` و `idempotent-writes.v1` (shop #1025) ──');
+  //  ⛔ همان کلید پس از به‌روز شدنِ سرورِ حساب: کارِ نخست **بی کلید** رفت، پس سرورِ حساب آن را نمی‌شناسد — فرستادنِ همان کار با
+  //     کلید کارِ دوم است (و پشتیبان: pg_dump ِ دوم کنارِ شاید-هنوز-در-راهِ نخست). همان «نامعلوم» ِ یادِ پل باید بماند.
+  const fd2 = await api('POST', dev('d40', 'disable'), dB('flip'), H(T.adm1));
+  const fi2 = await api('POST', '/api/account-admin/console/image-bank/images/img_9/approve', { reason: 'مجوز درست است', confirm: true, idempotencyKey: 'cap-img-flip-0001', version: 1 }, H(T.adm1));
+  const fb2 = await api('POST', '/api/account-admin/console/backups', fbBody, H(T.owner));
+  check('⛔ دستگاه: همان کلید پس از به‌روز شدنِ سرورِ حساب ⇒ همان «نامعلوم» ِ یادِ پل، بی درخواستِ دوم (راهِ کلید عوض نمی‌شود)',
+    fd2.status === 504 && fd2.json?.outcome === 'unknown' && ups(/\/d40\/disable$/).length === 1, `${fd2.status} ${fd2.text.slice(0, 160)} n=${ups(/\/d40\/disable$/).length}`);
+  check('⛔ بانکِ عکس: همان', fi2.status === 504 && fi2.json?.outcome === 'unknown' && ups(/img_9\/approve$/).length === 1, `${fi2.status} ${fi2.text.slice(0, 160)} n=${ups(/img_9\/approve$/).length}`);
+  check('⛔ پشتیبان: همان «نامعلوم»، بی pg_dump ِ دوم و بی ردیفِ «روشن شد»',
+    fb2.status === 504 && fb2.json?.outcome === 'unknown' && dumps === dumpsFlip + 1 && ups(/^\/api\/admin\/backups$/).filter((x) => x.idem.endsWith('cap-bk-flip-0001')).length === 0,
+    `${fb2.status} ${fb2.text.slice(0, 160)} dumps=${dumps - dumpsFlip}`);
+  await sleep(LONG + 200);   //  ته‌نشینیِ «نامعلوم» ِ پشتیبان (‎HLP_BRIDGE_LONG_TIMEOUT_MS‎) تا پشتیبان‌های پایین
+
   const g1 = await api('GET', ST, undefined, H(T.view));
   check('صفحهٔ نخست: ۵۰ عضو و ۵۰ دستگاه با ‎page {limit, offset, totals, nextOffset: 50}‎ و ‎canEnable: true‎',
     g1.status === 200 && g1.json?.members?.length === 50 && g1.json?.devices?.length === 50 && JSON.stringify(g1.json?.page)
@@ -263,6 +296,15 @@ try {
   const u2 = await api('POST', dev('d22', 'disable'), dB('lost'), H(T.adm1));
   check('⛔ همان پنجره دوباره ⇒ سرورِ حساب می‌گوید «انجام شده بود» (‎replayed‎) — نه «نامعلوم» ِ یادِ پل، نه کارِ دوم',
     u2.status === 200 && u2.json?.replayed === true && u2.json?.sessionsRevoked === 1 && ups(/\/d22\/disable$/).length === 2, `${u2.status} ${u2.text.slice(0, 160)}`);
+  //  ۱.۵۰.۷۸ — وارونه: «نامعلوم» روی راهِ کلیددار، و پرسشِ توانایی سرِ تکرار شکست می‌خورد (‎capListed‎ ⇒ «نیست»)
+  hangNext = true;
+  const v1 = await api('POST', dev('d41', 'disable'), dB('flipb'), H(T.adm1));
+  meFail = 1;
+  const v2 = await api('POST', dev('d41', 'disable'), dB('flipb'), H(T.adm1));
+  meFail = 0;
+  check('⛔ همان کلید که با کلید رفت، با کلید می‌ماند: پرسشِ ناموفقِ توانایی آن را به راهِ بی‌کلید (کارِ دوم) نمی‌برد — بازپخشِ سرورِ حساب',
+    v1.status === 504 && v2.status === 200 && v2.json?.replayed === true && ups(/\/d41\/disable$/).length === 2 && ups(/\/d41\/disable$/).every((x) => x.idem === `u${U1}.cap-key-flipb-0001`),
+    `${v1.status} ${v2.status} ${v2.text.slice(0, 160)} ${JSON.stringify(ups(/\/d41\/disable$/).map((x) => x.idem))}`);
   const disRows = await auditRows(T.owner, 'account.shop_device', 'account.shop_device.disabled');
   check('دفترِ پنل: بازپخشِ عادی ردیفِ دوم ندارد، ولی بازپخشی که «نامعلوم» را روشن کرد ردیف دارد (‎resolved‎)',
     disRows.filter((r) => String(r.detail).includes('d20')).length === 2 && disRows.filter((r) => String(r.detail).includes('d22')).length === 1

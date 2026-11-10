@@ -20,14 +20,14 @@
 //  ⛔ بازبینی: admin ِ پنل (آن‌جا ارشد) + دلیلِ ۳ تا ۲۰۰ + تأیید + کلیدِ یکتاییِ رابط (‎account/idem-once.js‎) + سقفِ نرخ
 //     + ردیفِ دفترِ پنل. بارگذاری، ورودِ گروهی و ویرایشِ کالای بانک این‌جا نیست (کارِ ابزارِ بارگذاری، نه بازبینی).
 //     کلید (۱.۵۰.۷۷): سرورِ حسابِ با `idempotent-writes.v1` ⇒ کلیدِ پنجره بسته به کاربرِ پنل بالا می‌رود (`makeUpstreamOnce`)؛
-//     بی آن همان یادِ حافظهٔ پل.
+//     بی آن همان یادِ حافظهٔ پل. راهِ هر کلید ثابت است (۱.۵۰.۷۸، `serverPathFor`).
 // ---------------------------------------------------------------------------
 import * as panelRoles from '../control/roles.js';
 import { audit } from '../control/audit.js';
 import { cloudRaw, cloudRawBytes } from '../stations/cloud.js';
 import { rateLimit } from '../platform/rate-limit.js';
 import { requireModule } from '../console/modules.js';
-import { checkIdemKey, makeIdemOnce, makeUpstreamOnce } from '../account/idem-once.js';
+import { checkIdemKey, makeIdemOnce, makeUpstreamOnce, serverPathFor } from '../account/idem-once.js';
 
 const { requireRole } = panelRoles;
 const BASE = '/api/admin/image-bank';
@@ -206,7 +206,7 @@ export function mountConsoleImageBank(router, { guard, badInput, actorOf, capLis
           ...(act === 'search' ? { searchEnabled: typeof r?.search_enabled === 'boolean' ? r.search_enabled : null } : {}), confirmedAt: Date.now(),
         };
       };
-      const out = (await capListed('idempotent-writes.v1'))
+      const out = (await serverPathFor(req, key, { once, viaServer, capable: () => capListed('idempotent-writes.v1') }))
         ? await viaServer(req, key, (headers) => cloudRaw('POST', `${BASE}/images/${id}/${act}`, { body, headers, replayFlag: true }), finish)
         : await once(req, key, `${act}|${id}|${JSON.stringify(body)}`, `image:${id}`,
           async () => finish(await cloudRaw('POST', `${BASE}/images/${id}/${act}`, { body }), { record: true }));

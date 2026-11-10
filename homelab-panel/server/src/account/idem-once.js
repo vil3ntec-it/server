@@ -51,26 +51,51 @@ export function upstreamKey(req, key) {
  *   • ‎409‎ ِ سرورِ حساب (کلیدِ تکراری برای کارِ دیگر، یا همان کار هنوز در راه) همان‌طور بالا می‌رود.
  */
 export function makeUpstreamOnce({ ttl = TTL } = {}) {
-  const unknown = new Map();   // کلیدِ بالادست ⇒ زمانِ «نامعلوم»
-  return async function viaServer(req, key, send, finish) {
+  //  کلیدِ بالادست ⇒ { at, unknown } — هر کلیدی که از این راه رفت (نه فقط «نامعلوم»‌ها): `has` تا تلاشِ دوباره راه عوض نکند
+  const sent = new Map();
+  const prune = (now) => {
+    for (const [k, v] of sent) if (now - v.at > ttl) sent.delete(k);
+    while (sent.size > MAX_SLOTS) sent.delete(sent.keys().next().value);
+  };
+  async function viaServer(req, key, send, finish) {
     const upKey = upstreamKey(req, key);
+    const now = Date.now();
+    prune(now);
+    const mark = sent.get(upKey) || { at: now, unknown: false };
+    mark.at = now;
+    sent.delete(upKey);
+    sent.set(upKey, mark);
     let r;
     try {
       r = await send({ 'idempotency-key': upKey });
     } catch (err) {
-      if (err?.outcome === 'unknown') {
-        const now = Date.now();
-        for (const [k, at] of unknown) if (now - at > ttl) unknown.delete(k);
-        while (unknown.size >= MAX_SLOTS) unknown.delete(unknown.keys().next().value);
-        unknown.set(upKey, now);
-      }
+      if (err?.outcome === 'unknown') { mark.unknown = true; mark.at = Date.now(); }
       throw err;
     }
     const replayed = r?.replayed === true;
-    const resolved = replayed && unknown.delete(upKey);
+    const resolved = replayed && mark.unknown;
+    if (resolved) mark.unknown = false;
     const out = finish(r, { record: !replayed || resolved, resolved });
     return replayed ? { ...out, replayed: true } : out;
+  }
+  /** همین کلید (همین کاربر) در همین ده دقیقه از راهِ سرورِ حساب رفت؟ */
+  viaServer.has = (req, key) => {
+    prune(Date.now());
+    try { return sent.has(upstreamKey(req, key)); } catch { return false; }
   };
+  return viaServer;
+}
+
+/**
+ * ⛔ راهِ یک کلید عوض نمی‌شود (۱.۵۰.۷۸): کلیدی که با یادِ پل رفت (سرورِ کهنه، یا پرسشِ ناموفقِ توانایی) سرورِ حساب آن را
+ * نمی‌شناسد ⇒ فرستادنِ همان کار با کلید پس از به‌روز شدنِ سرورِ حساب **کارِ دوم** است؛ و کلیدی که با کلید رفت، بی کلید
+ * فرستادنش همان. پس همان کلید ⇒ همان راهی که پیش‌تر رفت؛ فقط کلیدِ تازه با توانایی ِ همین لحظه.
+ * @param {() => Promise<boolean>} capable  همان ‎capListed('idempotent-writes.v1')‎
+ */
+export async function serverPathFor(req, key, { once, viaServer, capable }) {
+  if (viaServer.has(req, key)) return true;
+  if (once.has(req, key)) return false;
+  return capable();
 }
 
 export function makeIdemOnce({ ttl = TTL } = {}) {
@@ -90,7 +115,7 @@ export function makeIdemOnce({ ttl = TTL } = {}) {
    * @param {() => Promise<object>} run
    * @returns {Promise<object>} پاسخ؛ تکرار ⇒ با `replayed: true`
    */
-  return async function once(req, key, fp, target, run) {
+  async function once(req, key, fp, target, run) {
     const k = checkIdemKey(key);
     const now = Date.now();
     prune(now);
@@ -119,5 +144,11 @@ export function makeIdemOnce({ ttl = TTL } = {}) {
       }
     })();
     return slot.promise;
+  }
+  /** همین کلید (همین کاربر) هنوز در یاد است؟ — `serverPathFor` */
+  once.has = (req, key) => {
+    prune(Date.now());
+    return slots.has(`${req.user?.id ?? 'x'}:${String(key ?? '').trim()}`);
   };
+  return once;
 }

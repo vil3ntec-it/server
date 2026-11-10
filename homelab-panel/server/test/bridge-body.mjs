@@ -10,17 +10,24 @@
 //    ۲) بدنهٔ ۲xx که با افتادنِ اتصال نیمه ماند یا JSON نبود «‎{}‎ ِ موفق» خوانده می‌شد. حالا:
 //       خواندن ⇒ ‎502 account_server_bad_response‎؛ نوشتن ⇒ ‎502 outcome_unknown‎ (`outcome: 'unknown'`، ردیفِ دفتر) —
 //       همان قاعدهٔ مهلتِ پل. پاسخِ غیرِ ۲xx همچنان با «وضعیتِ خودش» (۴۰۴ ِ HTML نامعلوم نیست)، و ۲۰۴ همان «انجام شد».
+//    ۳) (۱.۵۰.۷۸، بازبینیِ ۱.۵۰.۷۷) بدنهٔ فشرده: ‎content-length‎ اندازهٔ **فشرده** است و ‎fetch‎ خودش ‎gzip/br‎ را باز می‌کند —
+//       سقف روی بایتِ بازشده است، پس «بمبِ» چند ده کیلوبایتی هم پیش از گذشتن از سقف بریده می‌شود (شکاف نبود؛ شاهدِ ماندگار).
 // ---------------------------------------------------------------------------
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import zlib from 'node:zlib';
 
 const PANEL = Number(process.env.TEST_PORT || 4979);
 const MiB = 1024 * 1024;
 const CAP = 32 * MiB;   //  همان ‎BRIDGE_MAX_BODY_BYTES‎ ِ cloud.js
 const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'bridge-body-'));
+//  «بمبِ» فشرده: چند ده کیلوبایت که به سقف + ۸ مگابایت باز می‌شود
+const BOMB_RAW = Buffer.alloc(CAP + 8 * MiB, 0x20);
+const BOMB_GZ = zlib.gzipSync(BOMB_RAW, { level: 9 });
+const BOMB_BR = zlib.brotliCompressSync(BOMB_RAW);
 
 let pass = 0, fail = 0;
 const check = (name, ok, extra = '') => {
@@ -79,6 +86,13 @@ const fake = http.createServer((req, res) => {
       if (overview === 'empty') { res.writeHead(200, { 'content-type': 'application/json', 'content-length': '0' }); return res.end(); }
       if (overview === 'big') return stream(res, 'jsonBig', CAP + 4 * MiB, { length: true, type: 'application/json' });
       if (overview === 'bigChunked') return stream(res, 'jsonChunked', CAP * 3, { type: 'application/json' });
+      //  ۱.۵۰.۷۸: بدنهٔ فشرده — ‎content-length‎ اندازهٔ فشرده است و ‎fetch‎ خودش باز می‌کند؛ سقف روی بایتِ بازشده
+      if (overview === 'gzipOk') { res.writeHead(200, { 'content-type': 'application/json', 'content-encoding': 'gzip' }); return res.end(zlib.gzipSync(JSON.stringify({ shops: 7, users: 9 }))); }
+      if (overview === 'gzipBomb' || overview === 'brBomb') {
+        const z = overview === 'gzipBomb' ? BOMB_GZ : BOMB_BR;
+        res.writeHead(200, { 'content-type': 'application/json', 'content-encoding': overview === 'gzipBomb' ? 'gzip' : 'br', 'content-length': String(z.length) });
+        return res.end(z);
+      }
       if (overview === 'nf') { res.writeHead(404, { 'content-type': 'text/html' }); return res.end('<pre>Cannot GET /api/admin/overview</pre>'); }
       return j(200, { shops: 3, users: 5 });
     }
@@ -204,6 +218,17 @@ try {
   await sleep(300);
   check('⛔ JSON ِ بیش از سقف (با و بی content-length) ⇒ ‎502 account_server_too_large‎', jb.status === 502 && jb.json?.error === 'account_server_too_large'
     && jc.status === 502 && jc.json?.error === 'account_server_too_large' && sent.jsonChunked < CAP * 1.5, `${jb.status} ${jc.status} ${(sent.jsonChunked / MiB).toFixed(1)} MiB`);
+  console.log('\n── بدنهٔ فشرده (۱.۵۰.۷۸) ──');
+  overview = 'gzipOk';
+  const gz = await api('GET', '/api/account-admin/overview', undefined, H(view));
+  check('بدنهٔ ‎gzip‎ ِ درست همان JSON است', gz.status === 200 && gz.json?.shops === 7, `${gz.status} ${gz.text.slice(0, 160)}`);
+  overview = 'gzipBomb';
+  const gb = await api('GET', '/api/account-admin/overview', undefined, H(view));
+  overview = 'brBomb';
+  const bb = await api('GET', '/api/account-admin/overview', undefined, H(view));
+  overview = 'ok';
+  check(`⛔ بدنهٔ فشردهٔ کوچک (${BOMB_GZ.length} بایتِ ‎gzip‎ · ${BOMB_BR.length} بایتِ ‎br‎) که از سقف بزرگ‌تر باز می‌شود ⇒ ‎502 account_server_too_large‎ — سقف روی بایتِ بازشده است، نه ‎content-length‎`,
+    gb.status === 502 && gb.json?.error === 'account_server_too_large' && bb.status === 502 && bb.json?.error === 'account_server_too_large', `${gb.status} ${gb.json?.error} ${bb.status} ${bb.json?.error}`);
   const after = await api('GET', '/api/account-admin/overview', undefined, H(view));
   check('پس از همهٔ این‌ها پل سالم است', after.status === 200 && after.json?.shops === 3, `${after.status}`);
 } catch (e) {
