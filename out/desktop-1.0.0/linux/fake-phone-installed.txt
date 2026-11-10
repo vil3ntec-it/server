@@ -1,10 +1,10 @@
 Picked up JAVA_TOOL_OPTIONS: -Drawrec.adb=/home/runner/work/server/server/desktop/src/test/fakeadb
 rawrec-desktop selftest: os Linux amd64, java 17.0.21
-[hevc_nvenc @ 0x7b5b9470b740] Cannot load libcuda.so.1
-[h264_nvenc @ 0x7b5b9470b740] Cannot load libcuda.so.1
-[av1_nvenc @ 0x7b5b9470b740] Cannot load libcuda.so.1
-[libopenh264 @ 0x7b5b9470b740] [OpenH264] this = 0x0x7b5b94727a10, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
-[libopenh264 @ 0x7b5b9470b740] [OpenH264] this = 0x0x7b5b94727a10, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[hevc_nvenc @ 0x7a9934693840] Cannot load libcuda.so.1
+[h264_nvenc @ 0x7a9934693840] Cannot load libcuda.so.1
+[av1_nvenc @ 0x7a9934693840] Cannot load libcuda.so.1
+[libopenh264 @ 0x7a9934693840] [OpenH264] this = 0x0x7a99346afb10, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0x7a9934693840] [OpenH264] this = 0x0x7a99346afb10, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
 Svt[info]: -------------------------------------------
 Svt[info]: SVT [version]:	SVT-AV1 Encoder Lib v2.2.0
 Svt[info]: SVT [build]  :	GCC 9.4.0	 64 bit
@@ -27,20 +27,20 @@ encoders: libopenh264(cpu), libsvtav1(cpu)
 adb: /home/runner/work/server/server/desktop/src/test/fakeadb
 phone: Fake Phone (FAKE123), Android SDK 34
 live: Fake Phone h264 0x0
-[libopenh264 @ 0x7b5aec001400] [OpenH264] this = 0x0x7b5aec001f60, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
-[libopenh264 @ 0x7b5aec001400] [OpenH264] this = 0x0x7b5aec001f60, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[libopenh264 @ 0x7a988c001400] [OpenH264] this = 0x0x7a988c001f60, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0x7a988c001400] [OpenH264] this = 0x0x7a988c001f60, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
 t=1s in: 21 fps 2.4 Mbps 1280x720 audio=on rec: 562599 bytes dropped 0
 t=2s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 1306906 bytes dropped 0
-t=3s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 2092324 bytes dropped 0
+t=3s in: 29 fps 3.3 Mbps 1280x720 audio=on rec: 2092324 bytes dropped 0
 t=4s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 2862524 bytes dropped 0
-t=5s in: 29 fps 3.1 Mbps 1280x720 audio=on rec: 3670221 bytes dropped 0
-t=6s in: 29 fps 3.1 Mbps 1280x720 audio=on rec: 4379803 bytes dropped 0
-t=7s in: 29 fps 3.3 Mbps 1280x720 audio=on rec: 5186679 bytes dropped 0
+t=5s in: 29 fps 3.0 Mbps 1280x720 audio=on rec: 3670221 bytes dropped 0
+t=6s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 4379803 bytes dropped 0
+t=7s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 5186679 bytes dropped 0
 t=8s in: 29 fps 3.1 Mbps 720x1280 audio=on rec: 5947174 bytes dropped 0
 t=9s in: 29 fps 3.2 Mbps 720x1280 audio=on rec: 6553052 bytes dropped 0
 t=10s in: 29 fps 3.3 Mbps 720x1280 audio=on rec: 7124626 bytes dropped 0
-[aac @ 0x7b5aecd23140] Qavg: 52214.812
-[mp4 @ 0x7b5b95bd84c0] Starting second pass: moving the moov atom to the beginning of the file
-result: /home/runner/Videos/RawRec/RawRec 2026-11-10 13-52-57.mp4 1280x720 9.97s frames=300 dropped=0 bytes=7304982 encoder=libopenh264 error=null
-RESULT_FILE=/home/runner/Videos/RawRec/RawRec 2026-11-10 13-52-57.mp4
+[aac @ 0x7a988cd23140] Qavg: 52214.812
+[mp4 @ 0x7a98a841be80] Starting second pass: moving the moov atom to the beginning of the file
+result: /home/runner/Videos/RawRec/RawRec 2026-11-10 14-10-34.mp4 1280x720 9.97s frames=300 dropped=0 bytes=7304982 encoder=libopenh264 error=null
+RESULT_FILE=/home/runner/Videos/RawRec/RawRec 2026-11-10 14-10-34.mp4
 exit 0
