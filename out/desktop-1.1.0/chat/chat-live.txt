@@ -1,31 +1,25 @@
 twitch channels: [auronplay, kaicenat, caedrel, rostikfacekid, anarabdullaev]
-probe https://www.youtube.com/@LofiGirl/live -> 200 len 1600906 title= - YouTube canonical=undefined isLive=true videoDetails=null liveChat=true bot=true kick_livestream=null chatroom=null
+probe https://www.youtube.com/@LofiGirl/live -> 200 len 1598861 title= - YouTube canonical=undefined isLive=true videoDetails=null liveChat=true bot=true kick_livestream=null chatroom=null
 probe https://kick.com/api/v2/channels/xqc -> 200 len 6385 title=null canonical=null isLive=false videoDetails=null liveChat=false bot=false kick_livestream=null chatroom=668
 kick live list -> 200
-kick live: [sxb, neyoo_gaming, mafanyatopeu, adinross, maherco]
+kick live: [sxb, neyoo_gaming, mafanyatopeu, adinross, absi]
 kick pusher candidates from site: []
 kick pusher candidates from site: []
 kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
 kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
 kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key eb1d5f283081a78b932c not in this cluster. Did you forget to specify the cluster?"}}
 kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key eb1d5f283081a78b932c not in this cluster. Did you forget to specify the cluster?"}}
-t=10s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 37 (وصل) | Twitch/kaicenat: 27 (وصل) | Twitch/caedrel: 11 (وصل) | Kick/sxb: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…) | Kick/neyoo_gaming: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…)
+t=10s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 47 (وصل) | Twitch/kaicenat: 69 (وصل) | Twitch/caedrel: 25 (وصل) | Kick/sxb: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…) | Kick/neyoo_gaming: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…)
 kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
 kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
-kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
-kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
-t=20s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 65 (وصل) | Twitch/kaicenat: 61 (وصل) | Twitch/caedrel: 26 (وصل) | Kick/sxb: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…) | Kick/neyoo_gaming: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…)
-kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key eb1d5f283081a78b932c not in this cluster. Did you forget to specify the cluster?"}}
-kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key eb1d5f283081a78b932c not in this cluster. Did you forget to specify the cluster?"}}
-t=30s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 80 (وصل) | Twitch/kaicenat: 118 (وصل) | Twitch/caedrel: 38 (وصل) | Kick/sxb: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…) | Kick/neyoo_gaming: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…)
-kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
-kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
-t=40s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 104 (وصل) | Twitch/kaicenat: 138 (وصل) | Twitch/caedrel: 58 (وصل) | Kick/sxb: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…) | Kick/neyoo_gaming: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…)
-t=50s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 124 (وصل) | Twitch/kaicenat: 155 (وصل) | Twitch/caedrel: 74 (وصل) | Kick/sxb: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…) | Kick/neyoo_gaming: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…)
-t=60s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 142 (وصل) | Twitch/kaicenat: 171 (وصل) | Twitch/caedrel: 77 (وصل) | Kick/sxb: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…) | Kick/neyoo_gaming: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…)
-t=70s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 203 (وصل) | Twitch/kaicenat: 185 (وصل) | Twitch/caedrel: 81 (وصل) | Kick/sxb: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…) | Kick/neyoo_gaming: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…)
-t=80s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 269 (وصل) | Twitch/kaicenat: 195 (وصل) | Twitch/caedrel: 87 (وصل) | Kick/sxb: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…) | Kick/neyoo_gaming: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…)
-t=90s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 309 (وصل) | Twitch/kaicenat: 216 (وصل) | Twitch/caedrel: 92 (وصل) | Kick/sxb: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…) | Kick/neyoo_gaming: 0 (کیک: کلیدِ دیگری را امتحان می‌کنم…)
+t=20s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 70 (وصل) | Twitch/kaicenat: 129 (وصل) | Twitch/caedrel: 52 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/neyoo_gaming: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
+t=30s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 86 (وصل) | Twitch/kaicenat: 232 (وصل) | Twitch/caedrel: 96 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/neyoo_gaming: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
+t=40s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 120 (وصل) | Twitch/kaicenat: 299 (وصل) | Twitch/caedrel: 128 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/neyoo_gaming: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
+t=50s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 147 (وصل) | Twitch/kaicenat: 391 (وصل) | Twitch/caedrel: 169 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/neyoo_gaming: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
+t=60s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 175 (وصل) | Twitch/kaicenat: 418 (وصل) | Twitch/caedrel: 186 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/neyoo_gaming: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
+t=70s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 200 (وصل) | Twitch/kaicenat: 443 (وصل) | Twitch/caedrel: 214 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/neyoo_gaming: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
+t=80s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 248 (وصل) | Twitch/kaicenat: 456 (وصل) | Twitch/caedrel: 245 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/neyoo_gaming: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
+t=90s YouTube/@LofiGirl: 0 (یوتیوب پاسخ نداد (400)) | Twitch/auronplay: 295 (وصل) | Twitch/kaicenat: 480 (وصل) | Twitch/caedrel: 251 (وصل) | Kick/sxb: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)) | Kick/neyoo_gaming: 0 (کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند))
 youtube last http 400: {
   "error": {
     "code": 400,
@@ -42,10 +36,10 @@ youtube last http 400: {
 }
 
 RESULT YouTube: 0 messages; paid/gifts: 0
-RESULT Twitch: 617 messages; paid/gifts: 10
-   hrm…: Sacaron un trailer del GTA
-   sco…: USE THE FOCUS!
-   rem…: ¿Vas a mostrar los regalos?
-   ron…: Keepo Keepo Keepo Keepo Keepo Keepo
+RESULT Twitch: 1026 messages; paid/gifts: 2
+   aro…: vivan las manifestaciones en contra de los tocamientos
+   con…: chiapas mención 🗣️🗣️🗣️
+   soy…: Una vez me tocaron en la puebla de Yucatán
+   max…: jajajaja
 RESULT Kick: 0 messages; paid/gifts: 0
 TRANSLATE en→fa: چه بازی خوبیه، فردا همه شما رو می‌بینم! 
