@@ -122,6 +122,11 @@ const fake = http.createServer((req, res) => {
     }
     if (p === '/api/admin/plans') return j(200, { plans: [], config: {} });
     if (p === '/api/admin/support/threads') return j(200, { threads: [], unread: 0 });
+    //  ۱.۵۰.۸۰ (S11): کارت‌های تازهٔ همان صفحه‌ها — همان شکلِ main ِ shop (‎portal.downloadsOf‎، ‎lib/notify-usage.js‎، ‎lib/account-backups.js‎)
+    if (p === '/api/downloads') return j(200, { downloads: [{ app: 'shop', title: 'برنامهٔ دکان', url: '', version: '', notes: '', minVersion: '' }], apps: [], serverTime: NOW });
+    if (p === '/api/admin/system/notify-usage') return j(200, { days: 7, since: NOW - 7 * 86400e3, checkedAt: NOW, channels: [], totals: { sent: 0, costMicros: 0, costCap: 0, rateLimited: 0, shops: 0 },
+      shops: [], shopsTruncated: false, truncated: false, codes: { currency: 'AFN', unitCostMinor: 0, total: {}, byPurpose: [] } });
+    if (/^\/api\/admin\/accounts\/(shop|pump)\/[^/]+\/backups$/.test(p)) return j(200, { app: p.split('/')[4], backups: [], stats: { count: 0, usedBytes: 0, lastAt: 0, keep: 3, quotaBytes: 0, maxBytes: 0, freeBytes: 0, paid: false, source: 'free' } });
     return j(404, { error: { code: 'not_found', message: 'این مسیر وجود ندارد' } });
   });
 });

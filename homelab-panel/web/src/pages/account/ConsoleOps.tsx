@@ -26,6 +26,8 @@ import { HealthTab, IntegrationsTab, Problem, SourceLine, VersionsTab } from './
 import { bytes, isUnavailable, newIdemKey, num, reasonOk, shown } from './consoleData';
 import { opsText, type OpsKey } from './consoleOpsI18n';
 import BackupsCard from './console/BackupsCard';
+import DownloadsCard from './console/DownloadsCard';
+import NotifyUsageCard from './console/NotifyUsageCard';
 
 /** ترجمه با زبانِ همین نشست (جدولِ ‎consoleOpsI18n.ts‎)؛ متغیرها با ‎{n}‎. */
 function useOpsT() {
@@ -293,6 +295,8 @@ export function ReleasesTab() {
       <ReleaseBoard />
       {/* همان کارت‌های فاز ۲ (نسخهٔ دستگاه‌ها، کانالِ آزمایشی) — رونوشتِ دومی نیست */}
       <VersionsTab />
+      {/* ۱.۵۰.۸۰ (S11): نشانیِ دانلود و نسخهٔ هر برنامه — پیش‌تر فقط در ‎/admin/‎ ِ سرورِ حساب */}
+      <DownloadsCard />
     </div>
   );
 }
@@ -378,6 +382,8 @@ export function OpsHealthTab() {
       <HealthTab />
       {/* ۱.۵۰.۷۴ (ممیزی §۳-۴): فهرستِ پشتیبانِ سرورِ حساب، تمرینِ بازیابی و پشتیبانِ دستی — پیش‌تر فقط در ‎/admin/‎ ِ آن‌جا */}
       <BackupsCard />
+      {/* ۱.۵۰.۸۰ (S11): مصرف و هزینهٔ پیامِ مشتری (OPS-09) — پیش‌تر فقط در ‎/admin/‎ ِ سرورِ حساب */}
+      <NotifyUsageCard />
     </div>
   );
 }

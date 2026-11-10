@@ -129,6 +129,13 @@ for (const [method, p, want] of [
   ['GET', '/api/admin/image-bank/review', false],
   ['POST', '/api/admin/image-bank/images/x/approve', true],
   ['POST', '/api/admin/image-bank/images/x/search', true],
+  //  ۱.۵۰.۸۰ (S11، «هم‌ترازی»): نوشتنِ کانالِ آزمایشی و دانلود فقط ارشد؛ مصرفِ پیام و فهرستِ پشتیبانِ حساب مدیر؛
+  //  حذفِ پشتیبانِ حساب فقط ارشد (پل نمی‌زندش — تصمیمِ مالک)
+  ['PUT', '/api/admin/release/beta', true],
+  ['PUT', '/api/admin/downloads', true],
+  ['GET', '/api/admin/system/notify-usage', false],
+  ['GET', '/api/admin/accounts/shop/x/backups', false],
+  ['DELETE', '/api/admin/accounts/shop/x/backups/b1', true],
 ]) {
   const r = shopRoleOf(method, p);
   check(`لنگر: ${method} ${p} ⇒ ${want ? 'فقط ارشد' : 'مدیر'}`, Boolean(r) && r.superOnly === want, r ? `${r.file} ${r.path} super=${r.superOnly}` : 'پیدا نشد');
@@ -178,6 +185,8 @@ const LOCAL = new Map([
  */
 const PUBLIC_UP = new Map([
   ['GET /api/pump/plans', 'پلن و قیمتِ عمومیِ پمپ — همان چیزی که برنامهٔ پمپ بی ورود می‌خواند'],
+  //  ۱.۵۰.۸۰: نشانیِ دانلود و آخرین نسخه (‎portal.downloadsOf‎) — همان که پورتال و SDK بی ورود می‌خوانند؛ درِ خواندنیِ مدیر ندارد
+  ['GET /api/downloads', 'نشانیِ دانلود و نسخهٔ هر برنامه — همان چیزی که پورتال و SDK بی ورود می‌خوانند'],
 ]);
 
 /*
@@ -269,6 +278,8 @@ const fake = http.createServer((req, res) => {
     if (!BACKGROUND.test(p)) calls.push({ method: req.method, path: p });
     //  همهٔ تواناییِ فاز ۳ اعلام می‌شود تا مقصدِ آن مسیرها هم دیده و سنجیده شود
     if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1', 'admin-sessions.v1', 'search.v1', 'market-admin.v1', 'delivery-watch.v1', 'ops.v1', 'release-stage.v1', 'finance.v1', 'sync-restore-once.v1', 'subscription-period.v1', 'admin-contract.v1', 'staff-perms.v1', 'image-bank.v1', 'idempotent-writes.v1', 'holidays.v1'], serverTime: NOW });
+    //  ۱.۵۰.۸۰: نوشتنِ کانالِ آزمایشی نسخهٔ دیده‌شده را با همین می‌سنجد (‎sample‎ نسخه ندارد) تا ‎PUT‎ ِ «فقط ارشد» هم دیده شود
+    if (p === '/api/admin/release/beta' && req.method === 'GET') return j(200, { ...sample, version: 7 });
     if (/\/receipt$/.test(p)) { res.setHeader('content-type', 'text/html; charset=utf-8'); return res.end('<html>رسید</html>'); }
     if (/^\/api\/admin\/support\/media\//.test(p)) { res.setHeader('content-type', 'image/png'); return res.end(Buffer.from([137, 80, 78, 71])); }
     return j(200, sample);
@@ -356,6 +367,9 @@ const SPECIAL = {
   //  ۱.۵۰.۷۸: جدولِ تعطیلات (پشتِ `holidays.v1`) — دلیل + تأیید + کلید + نسخه و جدولِ درست
   'PUT /api/account-admin/console/calendar/holidays': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-hol-0001', version: 0,
     holidays: [{ date: '2026-03-21', name: { fa: 'نوروز' } }] } },
+  //  ۱.۵۰.۸۰ (S11): کانالِ آزمایشی (نسخهٔ همان ‎GET‎ ِ بالا) و نشانیِ دانلود — دلیل + تأیید + کلید
+  'PUT /api/account-admin/console/release/beta': { body: { shops: ['x1'], version: 7, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-beta-0001' } },
+  'PUT /api/account-admin/console/downloads': { body: { app: 'shop', version: '2.14.6', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-dl-0001' } },
   'POST /api/account-admin/console/image-bank/images/:id/approve': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-img-0001' } },
   'POST /api/account-admin/console/image-bank/images/:id/reject': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-img-0002' } },
   'POST /api/account-admin/console/image-bank/images/:id/archive': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-img-0003' } },
