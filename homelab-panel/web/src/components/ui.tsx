@@ -159,6 +159,8 @@ export function Modal({
       }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
         className={`card rise flex max-h-[92vh] w-full flex-col overflow-hidden rounded-b-none sm:rounded-2xl ${
           wide ? 'sm:max-w-3xl' : 'sm:max-w-lg'
         }`}

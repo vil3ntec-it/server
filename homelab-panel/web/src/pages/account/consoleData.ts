@@ -121,9 +121,9 @@ export type Versions = { checkedAt?: number; fetchedAt?: number; activeDays?: nu
                          status?: HealthStatus; apps?: AppVersions[] };
 
 export type ReleaseBeta = {
-  shops?: { ids?: string[]; updatedAt?: number; updatedBy?: string };
-  devices?: { ids?: string[]; updatedAt?: number; updatedBy?: string };
-  version?: number; fetchedAt?: number;
+  shops?: { ids?: string[]; updatedAt?: number | null; updatedBy?: string; truncated?: boolean };
+  devices?: { ids?: string[]; updatedAt?: number | null; updatedBy?: string; truncated?: boolean };
+  version?: number | null; fetchedAt?: number;
 };
 export type VersionHealth = { app?: string; version?: string; installs?: number; crashes?: number; fetchedAt?: number };
 export type LiveConfig = { scope?: string; version?: number; fetchedAt?: number;

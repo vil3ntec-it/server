@@ -17,6 +17,9 @@ export function bridgeFail(res, err) {
       detail: { method: err.method || req?.method || '', path: String(err.path || ''), timeoutMs: err.timeoutMs || null },
       result: 'unknown',
     });
+    //  ۱.۵۰.۸۰: یادِ یک‌باره (`makeIdemOnce`) همان خطا را برای همان کلید دوباره پرتاب می‌کند — بازپخش درخواستی به سرورِ حساب
+    //  نفرستاده، پس ردیفِ دوم «نامعلوم» ِ دروغ بود (دو کار در دفتر، یکی در واقع)
+    err.audited = true;
   }
   return res.status(err?.status || 502).json({
     error: err?.code || 'cloud_error',

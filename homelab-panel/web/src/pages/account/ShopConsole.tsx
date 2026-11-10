@@ -26,6 +26,8 @@ import { ActionButton, Cell, KV, Notice, Row, Stat, Table } from '../../control/
 import { CloudProblem, useLoad, type Load } from './shared';
 import ShopFinance from './ShopFinance';
 import StaffCard from './console/StaffCard';
+import BetaCard from './console/BetaCard';
+import TenantBackupsCard from './console/TenantBackupsCard';
 import ContractCard from './console/ContractCard';
 import {
   CONSOLE, HOLD_KINDS, HOLD_SERVICES, MONEY_HOLDS, actorLabel, bytes, flagValue, healthTone, isUnavailable, minutesAgo,
@@ -365,6 +367,8 @@ function ShopDetail({ id, onClose }: { id: string; onClose: () => void }) {
 
       {/* ممیزی §۳-۴ (۱.۵۰.۷۵): کارکنان، مجوزها و دستگاه‌های همین دکان — تا امروز فقط در ‎/admin/‎ ِ سرورِ حساب */}
       <div className="mt-4"><StaffCard shopId={id} /></div>
+      {/* ۱.۵۰.۸۰ (S11): پشتیبان‌های خودِ همین دکان (فهرست و سهم) — تا امروز فقط در ‎/admin/‎ ِ سرورِ حساب */}
+      <div className="mt-4"><TenantBackupsCard app="shop" tenantId={id} /></div>
 
       <h3 className="mb-2 mt-4 text-xs font-semibold">{t('scSyncDevices')}</h3>
       {sync.error ? <Problem load={sync as Load<unknown>} /> : !sync.data ? <Loading /> : (
@@ -535,16 +539,8 @@ export function VersionsTab() {
           return a ? <AppVersionsCard a={a} data={d} /> : <Notice>{t('scNoShopVersions')}</Notice>;
         }}
       </Panel>
-      <Card title={t('scBeta')} icon={<Flag size={16} />}>
-        {!can('admin') ? <Notice>{t('scAdminOnly')}</Notice> : beta.error ? <Problem load={beta as Load<unknown>} /> : !beta.data ? <Loading /> : (
-          <>
-            <KV label={t('scBetaShops')}>{(beta.data.shops?.ids || []).join('، ') || '—'}</KV>
-            <KV label={t('scBetaDevices')}>{(beta.data.devices?.ids || []).join('، ') || '—'}</KV>
-            <KV label={t('scChangedBy')}>{beta.data.shops?.updatedBy || '—'} · {moment(beta.data.shops?.updatedAt)}</KV>
-            <SourceLine source="/api/admin/release/beta" data={beta.data} at={beta.at} />
-          </>
-        )}
-      </Card>
+      {/* ۱.۵۰.۸۰ (S11): خواندن و نوشتنِ کانالِ آزمایشی — `console/BetaCard.tsx` */}
+      <BetaCard load={beta} />
     </div>
   );
 }

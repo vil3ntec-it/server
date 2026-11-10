@@ -490,6 +490,9 @@ const ALLOWED = {
   makeCode:     ['POST', '/api/admin/pump/vip-codes'],
   //  پلن و قیمتِ خودِ پمپ — باز است، ولی از همین پل می‌رود تا نشانی یکی بماند
   pumpPlans:    ['GET',  '/api/pump/plans'],
+  //  نشانیِ دانلود و آخرین نسخهٔ هر برنامه (‎portal.downloadsOf‎ ِ shop) — باز است و درِ خواندنیِ مدیر ندارد؛ فقط
+  //  ‎routes/console-parity.js‎ (ماژولِ «نسخه‌ها») می‌خواندش، پیش از ‎PUT /api/admin/downloads‎ (۱.۵۰.۸۰)
+  downloads:    ['GET',  '/api/downloads'],
   //  ‎:id‎ از ‎params.id‎ می‌آید و فقط حرف/رقم/خطِ تیره — نه هر چیزی
   stationDetail:['GET',  '/api/admin/pump/stations/:id'],
   revokeCode:   ['POST', '/api/admin/pump/vip-codes/:id/revoke'],

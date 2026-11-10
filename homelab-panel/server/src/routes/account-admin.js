@@ -55,6 +55,7 @@ import { mountConsoleMarket, MARKET_CAPABILITIES } from './console-market.js';
 import { mountConsoleStaff } from './console-staff.js';
 import { mountConsoleImageBank } from './console-image-bank.js';
 import { mountConsoleHolidays } from './console-holidays.js';
+import { mountConsoleParity, shapeBeta } from './console-parity.js';
 
 const { requireRole } = panelRoles;
 const router = express.Router();
@@ -2137,9 +2138,12 @@ router.post('/console/system/chain-verify', requireRole('admin'), guard(async (r
   res.json(stamped(out));
 }));
 
-/** کانالِ آزمایشیِ برنامهٔ دکان (F0-27) — خواندن فقط؛ سرورِ حساب حتی خواندنش را فقط به ارشد می‌دهد. */
+/**
+ * کانالِ آزمایشیِ برنامهٔ دکان (F0-27) — سرورِ حساب حتی خواندنش را فقط به ارشد می‌دهد. ۱.۵۰.۸۰: فقط فیلدهای شناخته
+ * (`shapeBeta`، همان نسخه‌ای که نوشتن می‌خواهد)؛ نوشتنش (‎PUT‎) در ‎routes/console-parity.js‎.
+ */
 router.get('/console/release/beta', requireRole('admin'), guard(async (req, res) => {
-  res.json(stamped(await cloudRaw('GET', '/api/admin/release/beta')));
+  res.json(stamped(shapeBeta(await cloudRaw('GET', '/api/admin/release/beta'))));
 }));
 
 /** «یک نسخه: چند دستگاه، چند خطا» — شمرده در سرورِ حساب، نه این‌جا. */
@@ -2561,6 +2565,11 @@ mountConsoleStaff(router, { guard, badInput, actorOf, capListed, missingErr });
 mountConsoleImageBank(router, { guard, badInput, actorOf, capListed });
 /* ۱.۵۰.۷۸ (LOC-04): جدولِ تعطیلاتِ رسمی در «تنظیماتِ مرکزی» — ‎routes/console-holidays.js‎، روی **همین** روتر */
 mountConsoleHolidays(router, { guard, badInput, actorOf, capListed, missingErr, unavailable });
+/*
+ *  ۱.۵۰.۸۰ (S11، ممیزی §۹ «هم‌ترازی»): نوشتنِ کانالِ آزمایشی، نشانیِ دانلود، مصرفِ پیام و پشتیبان‌های هر حساب — تا امروز
+ *  فقط در ‎/admin/‎ ِ سرورِ حساب. ‎routes/console-parity.js‎، روی **همین** روتر.
+ */
+mountConsoleParity(router, { guard, badInput, actorOf });
 
 /* ماژولِ ۴.۵ ِ پنلِ مرکزی — مالیِ مرکزی (‎routes/account-finance.js‎؛ همین نشست، همین «انجام‌دهنده») */
 router.use('/console/finance', financeRoutes);
