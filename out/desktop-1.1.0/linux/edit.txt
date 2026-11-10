@@ -8,3 +8,13 @@ before 1280x720
 after 2560x1440
 enh: stream|width=2560|height=1440|nb_read_frames=360 stream|nb_read_frames=281 format|duration=5.999000 
 enh quality (lower is better): block mean: 2.4408554 blur mean: 7.2700082 
+EXPORT /home/runner/work/_temp/edit/o-plain/RawRec Edit 2026-11-10 16-25-51.mp4 error=null in 13.009s
+before 1280x720
+after 2560x1440
+plain: stream|width=2560|height=1440|nb_read_frames=360 stream|nb_read_frames=281 format|duration=5.999000 
+plain quality (lower is better): block mean: 3.3115009 blur mean: 7.5502687 
+EXPORT /home/runner/work/_temp/edit/o-enh/RawRec Edit 2026-11-10 16-26-41.mp4 error=null in 27.017s
+before 1280x720
+after 2560x1440
+enh: stream|width=2560|height=1440|nb_read_frames=360 stream|nb_read_frames=281 format|duration=5.999000 
+enh quality (lower is better): block mean: 2.4823246 blur mean: 7.2571761 
