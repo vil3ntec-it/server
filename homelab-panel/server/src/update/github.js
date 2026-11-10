@@ -24,6 +24,7 @@ import { audit } from '../control/audit.js';
 import { extractZip, readZipIndex, createZip, walk } from '../control/zip.js';
 import { versionInfo } from '../version.js';
 import { run } from '../lib/exec.js';
+import { featureOn, disabledPayload } from '../lib/feature-gate.js';
 import { get as httpGet, getJson } from './http.js';
 import { markOffline } from '../support/telegram-heartbeat.js';
 import {
@@ -612,6 +613,7 @@ export function scheduleRestart(delayMs = 1200) {
 
 /** آخرین بکاپِ نصب را برمی‌گرداند */
 export async function rollback({ actor = 'admin' } = {}) {
+  if (!featureOn('update')) return { ...disabledPayload('update'), reason: 'feature_disabled' };
   const backupPath = getSetting('cc_update_last_backup', null);
   if (!backupPath || !fs.existsSync(backupPath)) throw new Error('no_backup');
   const staging = path.join(UPDATE_DIR, `rollback-${Date.now()}`);
@@ -654,6 +656,8 @@ export function updateStatus() {
  *   پرتاب می‌شود.
  */
 export async function installLatest({ actor = 'admin', force = false, restart = true } = {}) {
+  //  ⛔ داکر/PaaS: کد جزوِ ایمیج است؛ نوشتن رویش با بالا آمدنِ بعدی برمی‌گردد (src/deploy.js)
+  if (!featureOn('update')) return { ...disabledPayload('update'), reason: 'feature_disabled' };
   if (install.running) return { ok: false, reason: 'install_running', progress: installProgress() };
   markInstall({ running: true, phase: 'check', got: 0, total: 0, why: '' });
   try {
@@ -721,6 +725,7 @@ export function heldBack(info, fail, now = Date.now()) {
 }
 
 export async function autoUpdateOnce({ actor = 'به‌روزرسانِ خودکار', restart = true } = {}) {
+  if (!featureOn('update')) return { ok: false, skipped: true, reason: disabledPayload('update').message };
   if (!autoInstallEnabled()) return { ok: false, skipped: true, reason: 'نصبِ خودکار خاموش است' };
   if (install.running) return { ok: false, skipped: true, reason: 'نصبِ دیگری در جریان است' };
 

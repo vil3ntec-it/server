@@ -11,10 +11,13 @@ import { config } from '../config.js';
 import { sitesRoot } from '../sites/root.js';
 import { logEvent } from '../db.js';
 import { invalidateSizeCache } from '../sites/registry.js';
+import { featureGate } from '../lib/feature-gate.js';
 
 const router = Router();
 // فایل‌منیجر خطرناک‌ترین سطح است: viewer اصلاً واردش نمی‌شود
 router.use(requireAuth, requireRole('operator'));
+//  ⛔ روی میزبانِ عمومی پیش‌فرض خاموش — خواندن/نوشتنِ دیسکِ سرور (src/deploy.js)
+router.use(featureGate('files'));
 
 const TEXT_EXT = new Set([
   '.txt', '.md', '.json', '.js', '.mjs', '.cjs', '.ts', '.tsx', '.jsx', '.css', '.scss', '.html',

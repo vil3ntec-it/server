@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { q, db, logEvent, getSetting, setSetting } from '../db.js';
-import { config } from '../config.js';
+import { config, deploy } from '../config.js';
 import { sitesRoot } from './root.js';
 import { detectProject, defaultScanRoots } from './detect.js';
 import { ensureWorkspace, removeWorkspace, slugify, workspacePaths } from './workspace.js';
@@ -219,7 +219,8 @@ function freeSubdomain(site, zone) {
 
 /** آیا اجازه داریم تونل بالا بیاوریم؟ (در آزمون‌ها و حالت آفلاین خاموش است) */
 function tunnelAllowed() {
-  return (process.env.HLP_TUNNEL ?? '1') !== '0';
+  //  همان HLP_TUNNEL با همان معنا؛ روی میزبانِ عمومی پیش‌فرض خاموش (src/deploy.js)
+  return deploy.features.tunnel;
 }
 
 /**
@@ -599,6 +600,10 @@ export async function listSites(options = {}) {
 }
 
 export async function autostartAll() {
+  //  ⛔ روی میزبانِ عمومی اجرای پروسهٔ سایت‌ها خاموش است (src/deploy.js) — پوشهٔ
+  //  دادهٔ خانه که این‌جا آمده، سایت‌های «اجرای خودکار»ش را بی‌صدا رها می‌کند،
+  //  نه این‌که هر بار برای هر کدام خطا بنویسد.
+  if (!deploy.features.sites) return;
   const rows = listSitesRaw().filter((s) => s.autostart && s.enabled);
   const { startSite } = await import('./process.js');
   for (const site of rows) {

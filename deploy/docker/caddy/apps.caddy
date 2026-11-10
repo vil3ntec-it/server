@@ -1,0 +1,24 @@
+# ---------------------------------------------------------------------------
+#  درِ عمومی — برنامه‌ها (پمپ، دکان، اپِ کارمندان، سایت) و اپِ مدیر
+#  ⇒ پورتِ عمومیِ پنل (۴۷۰۱)، همان جایی که در خانه تونلِ Cloudflare می‌رسد.
+#  Caddy خودش از Let's Encrypt گواهی می‌گیرد و تازه می‌کند (پورتِ ۸۰ و ۴۴۳ باز).
+# ---------------------------------------------------------------------------
+(vill3n_upstream) {
+	# ⛔ پنل IPِ کاربر را از این سرآیندها می‌خواند؛ آن‌چه خودِ کاربر ساخته نباید
+	# برسد، وگرنه سقفِ نرخ با یک سرآیندِ جعلی دور می‌خورد (همان install.sh).
+	header_up -Cf-Connecting-Ip
+	header_up -X-Real-Ip
+	header_up X-Forwarded-For {remote_host}
+}
+
+{$API_HOST}, {$ADMIN_HOST} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+	reverse_proxy panel:4701 {
+		import vill3n_upstream
+	}
+}

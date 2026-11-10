@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { ensureWorkspace, workspacePaths, siteEnv } from './workspace.js';
 import { staticRootOf } from './detect.js';
 import { logEvent } from '../db.js';
+import { featureOn, disabledPayload } from '../lib/feature-gate.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATIC_SERVER = path.join(__dirname, 'static-server.js');
@@ -146,6 +147,8 @@ function buildCommand(site) {
 
 export async function startSite(site) {
   if (isRunning(site.slug)) return { ok: true, already: true, ...processInfo(site.slug) };
+  //  ⛔ اجرای فرمانِ شروعِ سایت — روی میزبانِ عمومی پیش‌فرض خاموش (src/deploy.js)
+  if (!featureOn('sites')) return disabledPayload('sites');
   if (!fs.existsSync(site.root_path)) {
     return { ok: false, error: 'path_missing' };
   }

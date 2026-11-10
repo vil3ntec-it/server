@@ -219,10 +219,10 @@ export async function runServer(a, { tg, tok, chatId }) {
       return bg('panelInstall', async () => {
         const r = await installLatest({ actor: ACTOR, restart: true });
         if (r.ok) return `✅ نسخهٔ ${r.version || a.version} نصب شد. کنترول سنتر همین حالا دوباره باز می‌شود؛ «🟢 دوباره روشن شد» را همین‌جا می‌بینید.`;
-        return { already_up_to_date: '✅ از قبل به‌روز بود.', install_running: '⏳ نصبِ دیگری در جریان است.', github_unreachable: '⚠️ گیت‌هاب جواب نداد؛ کمی بعد دوباره.' }[r.reason] || `⚠️ نصب نشد: ${r.reason}`;
+        return { already_up_to_date: '✅ از قبل به‌روز بود.', install_running: '⏳ نصبِ دیگری در جریان است.', github_unreachable: '⚠️ گیت‌هاب جواب نداد؛ کمی بعد دوباره.', feature_disabled: `⚠️ ${r.message}` }[r.reason] || `⚠️ نصب نشد: ${r.reason}`;
       }, `⏳ نصبِ ${a.version} شروع شد (دانلود ⇒ پشتیبان ⇒ نصب). نتیجه همین‌جا می‌آید.`);
     case 'panelRollback':
-      return bg('panelRollback', async () => { await rollback({ actor: ACTOR }); return '↩️ نسخهٔ قبلی برگشت؛ کنترول سنتر دوباره باز می‌شود.'; }, '⏳ برگرداندن شروع شد…');
+      return bg('panelRollback', async () => { const r = await rollback({ actor: ACTOR }); if (r?.reason === 'feature_disabled') return `⚠️ ${r.message}`; return '↩️ نسخهٔ قبلی برگشت؛ کنترول سنتر دوباره باز می‌شود.'; }, '⏳ برگرداندن شروع شد…');
     case 'panelAuto':
       setSetting('cc_update_autoinstall', !!a.on);
       audit({ actor: ACTOR, action: 'update.autoinstall', entity: 'panel', detail: { on: !!a.on } });

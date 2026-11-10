@@ -20,9 +20,12 @@ import {
   createDatabase, dropDatabase, createUser, setPassword, dropUser,
   dump, restore, validIdent,
 } from '../system/database.js';
+import { featureGate } from '../lib/feature-gate.js';
 
 const router = Router();
 router.use(requireAuth);
+//  ⛔ روی میزبانِ عمومی پیش‌فرض خاموش — کلاینتِ دیتابیسِ همین کامپیوتر (src/deploy.js)
+router.use(featureGate('databases'));
 
 const SETTING_KEY = 'db_connections';
 const secretName = (engine) => `db_${engine}_password`;
