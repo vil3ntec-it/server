@@ -13,6 +13,7 @@ import * as updater from '../../update/github.js';
 import { setSetting, getSetting } from '../../db.js';
 import { guard, fail, withProject, actorOf, num, str, bool, rateLimit } from './_shared.js';
 import { requireRole } from '../../control/roles.js';
+import { denyUnlessShellAllowed } from '../../lib/shell-owner.js';
 
 const router = Router();
 
@@ -230,10 +231,19 @@ router.post(
   })
 );
 
+/*
+ *  ⛔ S19 (۱.۵۰.۸۳): عوض کردنِ منبعِ به‌روزرسانی (`cc_update_repo`/شاخه/توکن) و خودِ نصب/برگشت یعنی
+ *  انتخاب و اجرای کدی که روی همین کامپیوتر می‌دود — دقیقاً هم‌ردهٔ ترمینال و «فرمانِ اجرا». پس با
+ *  `HLP_SHELL_OWNER_ONLY=1` فقط مالک (یا کلیدِ محلی). وگرنه مدیرِ دومِ پنل می‌توانست `cc_update_repo` را به
+ *  مخزنِ خودش ببرد و با نصبش کدِ دلخواه را روی میزبان اجرا کند — همان مرزی که گزینهٔ «فقط مالک» می‌بندد،
+ *  و این در بیرونش مانده بود (روی نمایهٔ `vps` که ترمینال خاموش است ولی `update` روشن، تنها راهِ اجرای کد).
+ *  پیش‌فرض خاموش ⇒ رفتارِ پیشین بی کم و زیاد؛ مالک هرگز بیرون نمی‌ماند.
+ */
 router.post(
   '/update/settings',
   requireRole('admin'),
   guard(async (req, res) => {
+    if (!denyUnlessShellAllowed(req, res, 'update')) return;
     if (req.body?.repo !== undefined) {
       const repo = str(req.body.repo, 120);
       if (repo && !/^[\w.-]+\/[\w.-]+$/.test(repo)) return fail(res, 400, 'invalid_repo');
@@ -267,6 +277,7 @@ router.post(
   requireRole('admin'),
   rateLimit({ windowMs: 600000, max: 6 }),
   guard(async (req, res) => {
+    if (!denyUnlessShellAllowed(req, res, 'update')) return;
     if (!bool(req.body?.confirm)) return fail(res, 400, 'confirmation_required');
     //  ⛔ نصبِ دوم هم‌زمان با اولی راه نمی‌افتد — برگشتن به صفحه و کلیکِ دوباره
     //  همان کارِ در جریان را نشان می‌دهد، نه این‌که از سر شروع کند.
@@ -302,6 +313,7 @@ router.post(
   requireRole('admin'),
   rateLimit({ windowMs: 600000, max: 3 }),
   guard(async (req, res) => {
+    if (!denyUnlessShellAllowed(req, res, 'update')) return;
     if (!bool(req.body?.confirm)) return fail(res, 400, 'confirmation_required');
     const out = await updater.rollback({ actor: actorOf(req) });
     res.status(out.reason === 'feature_disabled' ? 403 : 200).json(out);

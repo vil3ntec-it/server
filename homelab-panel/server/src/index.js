@@ -571,6 +571,26 @@ if (fs.existsSync(PUBLIC_DIR)) {
 // ورودیِ بد باید ۴۰۰ بدهد نه ۵۰۰ — و ۵۰۰ نباید جزئیاتِ داخلی لو بدهد
 app.use(handleValidation);
 
+/*
+ *  ⛔ (۱.۵۰.۸۳) خطای تجزیهٔ بدنه (body-parser): بدنهٔ JSON ِ خراب یا بزرگ‌تر از سقف. تا امروز به هندلرِ ۵۰۰ می‌رسید
+ *  که `err.message` را هم در پاسخ و هم در دفترِ رخداد (که viewer می‌خواند) می‌گذاشت — و پیامِ body-parser تکه‌ای از
+ *  **خودِ بدنه** را دارد (مثلاً نیمی از یک فیلدِ رمز). حالا پیامِ ثابت: ‎400 bad_json‎ یا ‎413 payload_too_large‎،
+ *  و در لاگ فقط «نامعتبر/بزرگ» — نه تکهٔ بدنه.
+ */
+app.use((err, req, res, next) => {
+  const type = String(err?.type || '');
+  const parseFail = (err instanceof SyntaxError && (err.status === 400 || err.statusCode === 400) && 'body' in err)
+    || ['entity.parse.failed', 'entity.verify.failed', 'charset.unsupported', 'encoding.unsupported', 'request.aborted', 'request.size.invalid'].includes(type);
+  const tooBig = type === 'entity.too.large';
+  if (!parseFail && !tooBig) return next(err);
+  logEvent('warn', 'panel', `${req.method} ${req.path} → بدنهٔ درخواست ${tooBig ? 'بزرگ‌تر از سقف بود' : 'JSON ِ معتبر نبود'}`);
+  if (res.headersSent) return next(err);
+  return res.status(tooBig ? 413 : 400).json({
+    error: tooBig ? 'payload_too_large' : 'bad_json',
+    message: tooBig ? 'بدنهٔ درخواست از سقفِ مجاز بزرگ‌تر است' : 'بدنهٔ درخواست JSON ِ معتبر نیست',
+  });
+});
+
 app.use((err, req, res, next) => {
   logEvent('error', 'panel', `${req.method} ${req.path} → ${err.message}`);
   if (res.headersSent) return next(err);

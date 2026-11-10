@@ -132,6 +132,13 @@ try {
   check('فایل‌ها در مقصدند', fs.existsSync(path.join(step.target, 'index.html')));
   check('بدونِ اجازه، منبع پاک نمی‌شود', fs.existsSync(path.join(sitesRoot, 'shop')));
 
+  //  ⛔ (۱.۵۰.۸۳) مبدأ باید داخلِ ریشه‌های مجاز باشد — پوشهٔ دادهٔ پنل یا هر مسیرِ دلخواه رد می‌شود
+  const badSrc = await post('/api/storage/organize/apply', {
+    items: [{ path: dataDir, name: 'data', branch: 'Unsorted' }],
+  });
+  check('⛔ پوشهٔ دادهٔ پنل به‌عنوان مبدأ رد می‌شود (bad_source)', badSrc.status === 403 && badSrc.body?.error === 'bad_source', `${badSrc.status} ${JSON.stringify(badSrc.body)}`);
+  check('⛔ و `panel.db` کپی/جابه‌جا نشد', !fs.existsSync(path.join(library, 'Unsorted', 'data')), 'leaked');
+
   console.log('\n▶ نظافتِ فایل‌های موقت');
   const oldFile = path.join(library, 'Temp', 'old.txt');
   fs.writeFileSync(oldFile, 'x');
