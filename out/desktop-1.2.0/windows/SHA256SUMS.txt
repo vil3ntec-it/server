@@ -1,0 +1,10 @@
+3ce1a92a6ae660570a2fa700fd54ca5ccc31fb9d5bdf8ef14afe777612518ba1 *RawRec Desktop-1.2.0.exe.part00
+90f273d0c77aaaf6b958bdf8fea26b0fda9966342197f6db665b6c474b6f0692 *RawRec Desktop-1.2.0.exe.part01
+79ecb5cb628421a38810af95e23a42dbe7ed5f25ee0e2def22125d0aef8f9151 *RawRec Desktop-1.2.0.msi.part00
+b62b56c713bdb14cec32b6e5e1ba436239807d854d22a211588358265ae57adc *RawRec Desktop-1.2.0.msi.part01
+7dd3e079a4abb10c0778e1e862c8322bdd9d186c6c9f2bfb4655d3054cfcd502 *RawRec-Desktop-1.2.0-windows-portable.zip.part00
+ae59da5974dfc37663cbe3f2451b03d149fa054898a99d854b0036c6de5652f4 *RawRec-Desktop-1.2.0-windows-portable.zip.part01
+1ce94ec673252d19cabad29dda2fe84c983dbc6fa80ac7ac1bce88bad84135c7 *selftest-no-phone-console.txt
+5362fb632b157f283b9135804a517da6491d939d8635435911a91f389c9e4aff *selftest-no-phone-exit.txt
+baa7dbe66d2192b5e9f242648e624094e704d4db7304e76d457ec4f0896fc65d *selftest-no-phone.txt
+a72fa309ffafecf48f9b87e54e36b119fc3e2668a5c12866d49d4ce02c442fa8 *tests.txt
