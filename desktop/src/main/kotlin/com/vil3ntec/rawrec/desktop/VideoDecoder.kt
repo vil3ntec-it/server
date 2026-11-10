@@ -36,6 +36,15 @@ class VideoDecoder(codec: String) : AutoCloseable {
     /** A configuration packet (SPS/PPS/VPS) waits to go in front of the next picture, as scrcpy itself does. */
     private var pendingConfig: ByteArray? = null
     @Volatile var decoded = 0L; private set
+    /**
+     * The size the picture is shown at, from its own size (null = as it is): converting straight to it here,
+     * from YUV where FFmpeg's scaler is fastest, spares the studio any resampling (laid down 1:1).
+     */
+    @Volatile var scaleTo: ((Int, Int) -> Pair<Int, Int>?)? = null
+    private var lastCs = -1; private var lastRange = -1
+    /** The picture's own size as the phone sends it (before [scaleTo]). */
+    @Volatile var srcW = 0; private set
+    @Volatile var srcH = 0; private set
     @Volatile var errors = 0L; private set
 
     init {
@@ -65,19 +74,32 @@ class VideoDecoder(codec: String) : AutoCloseable {
 
     private fun toBgra(f: AVFrame): VideoFrame {
         val w = f.width(); val h = f.height()
-        if (w != outW || h != outH || out == null) {
+        srcW = w; srcH = h
+        val (ow, oh) = (scaleTo?.invoke(w, h) ?: (w to h)).let { (a, b) -> a.coerceIn(2, 7680) to b.coerceIn(2, 7680) }
+        if (ow != outW || oh != outH || out == null) {
             out?.let { av_free(it) }
-            out = BytePointer(av_malloc(w.toLong() * h * 4)).capacity(w.toLong() * h * 4)
-            outW = w; outH = h
+            out = BytePointer(av_malloc(ow.toLong() * oh * 4)).capacity(ow.toLong() * oh * 4)
+            outW = ow; outH = oh
         }
-        sws = sws_getCachedContext(sws, w, h, f.format(), w, h, AV_PIX_FMT_BGRA, SWS_BILINEAR, null, null, null as DoublePointer?)
+        // smaller: every source pixel counted (no shimmer); bigger: bicubic (sharp); same size: colours only
+        val flags = when { ow * oh < w * h -> SWS_AREA; ow * oh > w * h -> SWS_BICUBIC; else -> SWS_BILINEAR } or SWS_FULL_CHR_H_INT or SWS_ACCURATE_RND
+        val before = sws
+        sws = sws_getCachedContext(sws, w, h, f.format(), ow, oh, AV_PIX_FMT_BGRA, flags, null, null, null as DoublePointer?)
+        // the phone's own colour standard (BT.709 or BT.601, video or full range): colours exactly as on its screen
+        val cs = f.colorspace(); val range = f.color_range()
+        if (sws != before || cs != lastCs || range != lastRange) {
+            val std = when (cs) { AVCOL_SPC_BT709 -> SWS_CS_ITU709; AVCOL_SPC_BT2020_NCL, AVCOL_SPC_BT2020_CL -> SWS_CS_BT2020; else -> SWS_CS_ITU601 }
+            val coefs = sws_getCoefficients(std)
+            sws_setColorspaceDetails(sws, coefs, if (range == AVCOL_RANGE_JPEG) 1 else 0, coefs, 1, 0, 1 shl 16, 1 shl 16)
+            lastCs = cs; lastRange = range
+        }
         val dst = PointerPointer<BytePointer>(4L).put(0L, out)
-        val ls = IntPointer(4L).put(0L, w * 4)
+        val ls = IntPointer(4L).put(0L, ow * 4)
         sws_scale(sws, f.data(), f.linesize(), 0, h, dst, ls)
         dst.close(); ls.close()
         decoded++
         val pts = f.best_effort_timestamp().takeIf { it != AV_NOPTS_VALUE } ?: f.pts()
-        return VideoFrame(w, h, out!!.asByteBuffer(), pts)
+        return VideoFrame(ow, oh, out!!.asByteBuffer(), pts)
     }
 
     override fun close() {

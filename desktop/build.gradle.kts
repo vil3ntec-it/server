@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.vil3ntec.rawrec"
-version = "1.0.0"
+version = "1.1.0"
 
 /** FFmpeg's native libraries for the system this build runs on (each system builds its own installer). */
 val nativePlatform: String = run {
@@ -27,6 +27,7 @@ dependencies {
     implementation("org.bytedeco:javacpp:1.5.11:$nativePlatform")
     implementation("org.bytedeco:ffmpeg:7.1-1.5.11")
     implementation("org.bytedeco:ffmpeg:7.1-1.5.11:$nativePlatform")
+    implementation("org.json:json:20240303")
     testImplementation(kotlin("test"))
 }
 
@@ -50,6 +51,7 @@ tasks.register<JavaExec>("pipelineCheck") {
     mainClass.set((findProperty("checkMain") as String?) ?: "com.vil3ntec.rawrec.desktop.PipelineCheckKt")
     args = ((findProperty("checkArgs") as String?) ?: "").split(" ").filter { it.isNotBlank() }
     project.properties.filterKeys { it.startsWith("rawrec.") }.forEach { (k, v) -> systemProperty(k, v.toString()) }
+    (findProperty("checkHome") as String?)?.let { systemProperty("user.home", it) }
 }
 
 compose.desktop {
@@ -59,7 +61,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "RawRec Desktop"
-            packageVersion = "1.0.0"
+            packageVersion = "1.1.0"
             description = "Phone screen over USB, recording and live streaming"
             vendor = "VIL3NTEC"
             appResourcesRootDir.set(layout.projectDirectory.dir("appres"))

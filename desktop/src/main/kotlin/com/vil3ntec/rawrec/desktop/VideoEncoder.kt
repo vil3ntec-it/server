@@ -65,10 +65,13 @@ class VideoEncoder(
     }
 
     /** One picture at [ptsMs]; every packet the encoder gives back goes to [out] (valid only during the call). */
-    fun encode(src: VideoFrame, ptsMs: Long, out: (AVPacket) -> Unit) {
+    fun encode(src: VideoFrame, ptsMs: Long, key: Boolean = false, out: (AVPacket) -> Unit) {
         check(av_frame_make_writable(frame) >= 0) { "frame not writable" }
         place(src)
         frame.pts(ptsMs)
+        // a key frame on request (a platform reconnected: its viewers need a whole picture now)
+        frame.pict_type(if (key) AV_PICTURE_TYPE_I else AV_PICTURE_TYPE_NONE)
+        frame.flags(if (key) frame.flags() or FRAME_FLAG_KEY else frame.flags() and FRAME_FLAG_KEY.inv())
         send(frame, out)
         frames++
     }
@@ -77,11 +80,29 @@ class VideoEncoder(
     fun repeat(ptsMs: Long, out: (AVPacket) -> Unit) {
         check(av_frame_make_writable(frame) >= 0) { "frame not writable" }
         frame.pts(ptsMs)
+        frame.pict_type(AV_PICTURE_TYPE_NONE); frame.flags(frame.flags() and FRAME_FLAG_KEY.inv())
         send(frame, out)
         frames++
     }
 
     fun flush(out: (AVPacket) -> Unit) = send(null, out)
+
+    /** A picture already in YUV at this size (from a filter chain): only the encoder's own layout is made. */
+    fun encodeFrame(src: AVFrame, ptsMs: Long, cached: SwsContext?, out: (AVPacket) -> Unit): SwsContext? {
+        check(av_frame_make_writable(frame) >= 0) { "frame not writable" }
+        val s = sws_getCachedContext(cached, src.width(), src.height(), src.format(), width, height, ctx.pix_fmt(), SWS_BICUBIC or SWS_ACCURATE_RND, null, null, null as DoublePointer?)
+        sws_scale(s, src.data(), src.linesize(), 0, src.height(), frame.data(), frame.linesize())
+        frame.pts(ptsMs)
+        frame.pict_type(AV_PICTURE_TYPE_NONE); frame.flags(frame.flags() and FRAME_FLAG_KEY.inv())
+        send(frame, out)
+        frames++
+        return s
+    }
+
+    /** A new rate for the encoders FFmpeg reconfigures between pictures (NVENC, x264); see LiveOutput.liveRate. */
+    fun setBitrate(kbps: Int) {
+        ctx.bit_rate(kbps * 1000L); ctx.rc_max_rate(kbps * 1500L); ctx.rc_buffer_size(kbps * 2000)
+    }
 
     private fun send(f: AVFrame?, out: (AVPacket) -> Unit) {
         val r = avcodec_send_frame(ctx, f)
@@ -142,6 +163,8 @@ class VideoEncoder(
     }
 
     companion object {
+        /** AV_FRAME_FLAG_KEY (libavutil/frame.h: 1 << 1), not mapped by the Java presets. */
+        private const val FRAME_FLAG_KEY = 1 shl 1
         /** NV12 for every graphics card's encoder; planar 4:2:0 for the software ones. */
         fun pixFmtFor(name: String) = if (name.startsWith("lib")) AV_PIX_FMT_YUV420P else AV_PIX_FMT_NV12
 
