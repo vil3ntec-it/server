@@ -781,8 +781,8 @@ root دارد نه اینترنتِ آزاد. آن مسیر فقط `bash -n` و 
   `object-src 'none'`، `frame-ancestors 'self'`، وب‌سوکتِ همان میزبان. `style-src` عمداً `'unsafe-inline'` دارد (سبک کد
   اجرا نمی‌کند). صفحهٔ `/connect` اسکریپتِ درون‌خطی‌اش را با **هش** اجازه می‌گیرد. ⛔ اسکریپتِ درون‌خطی به
   `web/index.html` نیفزایید — پنل سفید می‌شود (`security.mjs` می‌سنجد).
-- ⛔ **دفترِ رخدادِ یکپارچه: `GET /api/audit`** (فقط admin، فقط‌خواندنی — هر روشِ دیگر ۴۰۵)، در «لاگ‌ها ← دفترِ رخدادِ
-  یکپارچه»: `audit_log` + `cc_audit` با `UNION ALL` و صفحه‌بندیِ واقعی، به‌علاوهٔ ۵۰۰ ردیفِ آخرِ `audit_logs` ِ سرورِ حساب
+- ⛔ **دفترِ رخدادِ یکپارچه: `GET /api/audit`** (فقط admin، فقط‌خواندنی — هر روشِ دیگر ۴۰۵)، از ۱.۵۰.۷۴ در **فروشگاه ←
+  دفترِ رخداد** (`/shop?tab=audit`؛ بخشِ ۱.۵۰.۷۴ پایین): `audit_log` + `cc_audit` با `UNION ALL` و صفحه‌بندیِ واقعی، به‌علاوهٔ ۵۰۰ ردیفِ آخرِ `audit_logs` ِ سرورِ حساب
   (`capped`، و `sources.account.ok=false` با دلیل وقتی در دسترس نیست — نه فهرستِ خالی). در `routes/v1.js` هم سوار است
   و در جاروی `platform.mjs`. ⛔ `lib/audit.js` جزئیاتِ شیء را JSON (با `scrub`) می‌نویسد، نه `"[object Object]"`.
 
@@ -861,6 +861,41 @@ node test/security.mjs        + بلیتِ بسته به پرس‌وجو، با�
 npm run test:shell-owner      HLP_SHELL_OWNER_ONLY خاموش/روشن، discover/import، سایتِ بی مسیر (۴۱)
 node test/auth-abuse.mjs      + سقفِ change-password (۱۷)
 npm run test:shop-finance-ui  + رسید در تبِ تازه با کرومیوم (۳۶)
+```
+
+### ⛔ ۱.۵۰.۷۴ — بندهای بازِ ممیزی بی تصمیم: بازگرداندنِ تعارض، یک نمای دفتر، پشتیبانِ سرورِ حساب
+
+فهرستِ کاملِ آن‌چه مانده و دسته‌اش (تصمیم / بیرونی / shop / هیچ): `docs/OWNER-CONSOLE-AUDIT-fa.md` §۹.
+
+- ⛔ **«بازگرداندنِ تعارض» (§۳-۳) فقط با دلیل، تأیید و کلیدِ یکتاییِ رابط** (`/sync` ⇒ `SensitiveDialog`). پل پیش از هر
+  درخواست: دلیلِ ۳ تا ۲۰۰ (`reason_required` / `reason_too_long` — بالادست بلندتر را بی‌صدا می‌بُرد)، `confirm_required`،
+  `idempotency_key_required`. سرورِ حساب برای بازگرداندن کلیدِ یکتایی ندارد و هر بار op ِ تازه می‌سازد ⇒ `restoreOnce` ِ
+  `account-admin.js`: همان کلید ⇒ همان پاسخ (`replayed`)، کلید با دلیلِ دیگر ⇒ ۴۰۹، همان تعارض در راه ⇒ ۴۰۹
+  `restore_in_progress`، همان تعارض تازه برگشته ⇒ ۴۰۹ `already_restored` (دومی مقدارِ تازه‌ترِ همان خانه را رو می‌نوشت).
+  ⛔ شناسهٔ تعارض فقط رقم و یک شکل (`conflictIdOf`): بالادست `Number(id)` می‌خواند، پس «05» و «5e0» از یادِ پل
+  می‌گذشتند (گذرِ رخنه‌یابی). ⚠️ یادِ پل ده دقیقه و در حافظه است؛ رد کردنِ تعارضِ برگشته کارِ سرورِ حساب است (shop).
+- ⛔ **دفترِ رخداد یک نما دارد: ماژولِ `audit` ِ فروشگاه** (۶-۷). admin ⇒ دفترِ یکپارچه
+  (`web/src/pages/account/console/UnifiedAudit.tsx`، سه‌زبانه، «یک دفتر» و «یک دکان» در نشانی: `?source=` و `?shop=`)؛
+  viewer/operator ⇒ همان دو کارتِ پیشین (`AuditTab`) چون `/api/audit` فقط admin است. `/logs?tab=audit`، `/control/audit`
+  و `/account-server?tab=audit` (با `source=account`) برای admin به همان می‌روند (`AUDIT_HOME` ِ `hubs.tsx`). ⛔ نسخهٔ
+  دوم نسازید — `live-pages` می‌سنجد که فقط `modules/audit.tsx` آن را وارد می‌کند.
+  `GET /api/audit?shop=<id>`: دفترِ سرورِ حساب با `shopId` ِ **همان‌جا**؛ دو دفترِ پنل فقط هدفِ «…:<id>» یا رشتهٔ دقیقِ
+  `"<id>"` در جزئیات (‎s1‎ ردیفِ ‎s10‎ را نمی‌آورد)، با `ESCAPE` برای `%` و `_`؛ شناسهٔ ناجور ⇒ ۴۰۰ `bad_shop`.
+- ⛔ **پشتیبانِ سرورِ حساب در «سلامت»** (§۳-۴؛ `console-ops.js`، `console/BackupsCard.tsx`): `GET /console/backups`
+  (همان `minRole` ِ `health`) فقط نامِ پرونده، اندازه، رمزنگاری و تمرینِ بازیابی (عدد و نشان) — **نه** `dir`، `path` یا
+  مسیرِ کامل. `POST /console/backups` (پشتیبانِ دستی): admin (آن‌جا ارشد) + تأیید + دلیل + کلیدِ یکتایی؛ بالادست فقط
+  `{kind:'manual'}` و کلید ندارد ⇒ پل: همان کلید ⇒ همان پاسخ، هر پشتیبانِ در راه ⇒ ۴۰۹ `backup_in_progress` (یک pg_dump
+  برای همهٔ نشست‌ها)، شکست در یاد نمی‌ماند؛ یک ردیفِ `account.backup.created` بی پوشه. ⚠️ `fetch` ِ پل سقفِ زمانِ
+  خودش را ندارد (پیش‌فرضِ undici، ۵ دقیقه) — پشتیبانِ کندتر از آن «شکست» دیده می‌شود ولی شاید آن‌جا ساخته شده باشد.
+
+```
+node test/account-admin.mjs     + بازگرداندنِ تعارض (۹) و دفترِ یکپارچهٔ یک دکان (۶)        ۳۴۰
+node test/console-ops.mjs       + پشتیبانِ سرورِ حساب (۱۱)                                  ۶۷
+node test/bridge-roles.mjs      + دو مقصدِ تازه؛ ‎HLP_RATE_API‎ در محیطِ آزمون (سطلِ ۱۲۰۰ پر می‌شد) ۲۰ (۲۰۴ مقصد)
+npm run test:live-pages         + §۳-۳ (۲) و ۶-۷ (۵، یکی جای سنجهٔ «لاگ‌ها»)                ۱۵۵
+node test/shop-console-ui.mjs   کرومیوم: بازگرداندن، دفتر در فروشگاه، نشانی‌های کهنه، viewer   ۷۹
+node test/console-ops-ui.mjs    کرومیوم: کارتِ پشتیبان، دوکلیک ⇒ یک pg_dump                 ۲۷
+node test/control-ui.mjs        کرومیوم: ‎/shop?tab=audit‎ و ‎/account-server?tab=audit‎      ۱۵۰
 ```
 
 ## 🧾 مشتری، پول و پیام در خودِ پنل — قاعده‌هایی که نباید برگردند (از ۱۴۰۵/۰۷/۰۳)

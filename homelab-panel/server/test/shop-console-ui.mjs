@@ -45,6 +45,8 @@ const posted = [];          // { path, body, idem, bearer }
 const holds = [];
 let svcKey = '';
 let breakFlags = false;
+let conflictRestoredAt = null;
+const auditQueries = [];
 const fake = http.createServer((req, res) => {
   let raw = '';
   req.on('data', (d) => (raw += d));
@@ -138,6 +140,10 @@ const fake = http.createServer((req, res) => {
         sync: { status: 'ok', conflicts24h: 0 }, storage: { status: 'unknown' },
         backups: { status: 'warn', enabled: true, count: 0, last: null, ageMs: null } });
     }
+    //  ۱.۵۰.۷۴: پشتیبانِ سرورِ حساب (‎admin.js /backups‎) — هیچ پشتیبانی گرفته نشده و هیچ تمرینِ بازیابی نیست
+    if (p === '/api/admin/backups' && req.method === 'GET') {
+      return j(200, { backups: [], dir: '/srv/shop/backups', enabled: true, encryption: { configured: true, required: true, warning: '' }, drill: null });
+    }
     if (p === '/api/admin/system/versions') {
       return j(200, { checkedAt: NOW - 60e3, activeDays: 30, status: 'ok',
         apps: [{ app: 'shop', latest: '', minVersion: '', devices: 5, unknown: 0, belowMin: 0, outdated: null, status: 'ok',
@@ -151,7 +157,18 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/release/beta') return j(200, { shops: { ids: ['shop-beta-1'], updatedAt: NOW - DAY, updatedBy: 'boss' }, devices: { ids: [] }, version: 1 });
     if (p === '/api/admin/sync/version-health') return j(200, { app: 'shop', version: u.searchParams.get('version'), installs: 5, crashes: 0 });
     if (p === '/api/admin/sync/errors') return j(503, { error: { code: 'db_unavailable', message: 'دیتابیس در دسترس نیست' } });
-    if (p === '/api/admin/sync/status') return j(200, { app: 'shop', devices: [{ device_id: 'dev-1', app_version: '2.14.4', last_seen_at: NOW - 60e3, last_push_at: null, queued_count: 0, behind: 0, conflicts: 0 }] });
+    //  ۱.۵۰.۷۴ (ممیزی §۳-۳): تعارضی که بازگرداندنش **فقط با دلیل** است — همان قاعدهٔ `admin-sync.js` ِ shop
+    if (p === '/api/admin/sync/conflicts') {
+      return j(200, { conflicts: [{ id: 51, app: 'shop', account: { kind: 'shop', id: 'shp-1' }, table: 'products', row_id: 'p1', field: 'price',
+        loser_value: 1, winner_value: 2, loser_device: 'dev-1', winner_device: 'dev-2', at: NOW - 3600e3, restored_at: conflictRestoredAt }] });
+    }
+    if (p === '/api/admin/sync/conflicts/51/restore' && req.method === 'POST') {
+      const reason = String(posted.at(-1).body?.reason || '').trim();
+      if (reason.length < 3) return j(400, { error: { code: 'reason_required', message: 'دلیلِ این دسترسی را بنویسید (دست‌کم ۳ نویسه)' } });
+      return void setTimeout(() => { conflictRestoredAt = Date.now(); j(200, { ok: true, head: 12 }); }, 300);
+    }
+    //  ⚠️ `account` همان شکلِ `adminStatus` ِ shop است (صفحهٔ «وضعیت Sync» آن را می‌خواند)
+    if (p === '/api/admin/sync/status') return j(200, { app: 'shop', devices: [{ account: { kind: 'shop', id: 'shp-1' }, device_id: 'dev-1', app_version: '2.14.4', last_seen_at: NOW - 60e3, last_push_at: null, queued_count: 0, behind: 0, conflicts: 0 }] });
     if (p === '/api/admin/shops') {
       if (caps.length && u.searchParams.get('q')) {
         return j(200, { total: 1, limit: 25, offset: 0, shops: [
@@ -162,7 +179,14 @@ const fake = http.createServer((req, res) => {
         { id: 'shp-2', name: 'دکانِ دو', status: 'active', owner_email: 'b@x.af', sub_status: 'trial', ends_at: String(NOW + 3 * DAY) },
       ] });
     }
-    if (p === '/api/admin/audit') return j(200, { entries: [{ id: 'aud1', shop_id: 'shp-1', actor_type: 'admin', user_id: 'adm1', action: 'admin.subscription_set', target_type: 'subscription', target_id: 's9', created_at: String(NOW - 3600e3) }] });
+    if (p === '/api/admin/audit') {
+      //  ۱.۵۰.۷۴: «یک دکان» سمتِ سرورِ حساب (`shopId`) — همان `admin.js /audit` ِ shop
+      const entries = [{ id: 'aud1', shop_id: 'shp-1', actor_type: 'admin', user_id: 'adm1', action: 'admin.subscription_set', target_type: 'subscription', target_id: 's9', created_at: String(NOW - 3600e3) },
+        { id: 'aud2', shop_id: 'shp-2', actor_type: 'admin', user_id: 'adm1', action: 'admin.vip_code_created', target_type: 'vip', target_id: 'v2', created_at: String(NOW - 7200e3) }];
+      auditQueries.push(Object.fromEntries(u.searchParams));
+      const shopId = u.searchParams.get('shopId');
+      return j(200, { entries: shopId ? entries.filter((e) => e.shop_id === shopId) : entries });
+    }
     if (p === '/api/admin/plans') return j(200, { plans: [], config: { trial_days: '14' } });
     if (p === '/api/admin/support/threads') return j(200, { threads: [], unread: 0 });
     if (p === '/api/admin/apps') return j(200, { apps: [{ id: 'a1', slug: 'shop', title: 'دکان', status: 'active', keySet: true, keyHint: '••1234', lastCheckAt: NOW, lastOk: true }] });
@@ -260,6 +284,9 @@ try {
   body = await open('health');
   check('⛔ خطای بالادست کدِ خودش را نشان می‌دهد (db_unavailable)', body.includes('db_unavailable') && body.includes('دیتابیس در دسترس نیست'), body.slice(0, 900));
   check('⛔ پشتیبانِ هیچ‌وقت‌گرفته «آخرین: —»', body.includes('آخرین: —'), body.slice(0, 900));
+  const bkCard = await page.locator('[data-card="account-backups"]').innerText();
+  check('§۳-۴ کارتِ پشتیبانِ سرورِ حساب: بی تمرینِ بازیابی «—»، بی هشدارِ رمز وقتی رمز هست، و پوشهٔ میزبان نه',
+    /آخرین تمرینِ بازیابی: —/.test(bkCard) && !bkCard.includes('رمز ندارند') && !(await page.content()).includes('/srv/shop'), bkCard);
   await page.locator('main button', { hasText: 'وارسیِ زنجیرهٔ سابقه' }).first().click();
   await page.waitForTimeout(300);
   check('⛔ کارِ پرهزینه پیش از رفتن تأیید می‌خواهد (هنوز چیزی نرفته)', chainCalls === 0 && (await page.locator('text=ادامه می‌دهید؟').count()) > 0, String(chainCalls));
@@ -275,15 +302,67 @@ try {
   body = await open('integrations');
   check('سرویس‌ها با حالتِ واقعی و فیلدِ کم (بی مقدار)', body.includes('mock') && body.includes('incomplete') && body.includes('email_pass'), body.slice(0, 600));
   check('⛔ کلیدِ برنامه فقط پوشیده', body.includes('••1234') && !/KEY-|secret/i.test(body), body.slice(0, 900));
+  /*
+   *  ⛔ ۱.۵۰.۷۴ (ممیزی ۶-۷): admin در ماژولِ «دفترِ رخداد» همان **دفترِ یکپارچه** را می‌بیند (هر سه دفتر، ‎GET /api/audit‎) —
+   *  تا ۱.۵۰.۷۳ این‌جا دو کارتِ جدا بود و یکپارچه در «لاگ‌ها». viewer همان دو کارت را دارد (پایین، بخشِ نقش).
+   */
   body = await open('audit');
-  check('دفترِ سرورِ حساب و دفترِ پنل، هر دو با منبع', body.includes('admin.subscription_set') && body.includes('/api/admin/audit') && body.includes('/api/control/audit'), body.slice(0, 900));
+  check('۶-۷ admin: «دفترِ رخدادِ یکپارچه» در خودِ بخشِ فروشگاه، با ردیفِ سرورِ حساب و منبعِ ‎GET /api/audit‎',
+    body.includes('دفترِ رخدادِ یکپارچه') && body.includes('admin.subscription_set') && body.includes('admin.vip_code_created')
+      && body.includes('GET /api/audit') && body.includes('سرورِ حساب'), body.slice(0, 900));
   check('و یادداشتِ «انجام‌دهنده» (فاز ۳)', body.includes('actor.v1'));
+  check('ردِ نان: فروشگاه › … › دفترِ رخداد', (await page.locator('nav[aria-label="ردِ نان"]').innerText()).includes('دفترِ رخداد'));
+  let aq = auditQueries.length;
+  await page.fill('main input[aria-label="شناسهٔ دکان"]', 'shp-1');
+  await page.locator('main form button', { hasText: 'نشان بده' }).click();
+  await page.waitForTimeout(900);
+  body = await main();
+  check('۶-۷ «یک دکان»: نشانی ‎?tab=audit&shop=shp-1‎، پالایش در سرورِ حساب (shopId)، ردیفِ دکانِ دیگر نیست',
+    /\/shop\?tab=audit&shop=shp-1$/.test(page.url()) && auditQueries.slice(aq).some((q) => q.shopId === 'shp-1')
+      && body.includes('admin.subscription_set') && !body.includes('admin.vip_code_created'), `${page.url()} ${JSON.stringify(auditQueries.slice(aq))}`);
+  check('ردِ نان شناسهٔ دکان را دارد', (await page.locator('nav[aria-label="ردِ نان"]').innerText()).includes('shp-1'));
+  await page.goto(`${BASE}/logs?tab=audit`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  check('۶-۷ ⛔ نشانیِ کهنهٔ «لاگ‌ها ← دفتر» برای مدیر ⇒ همان ماژول در فروشگاه',
+    /\/shop\?tab=audit$/.test(page.url()) && (await main()).includes('دفترِ رخدادِ یکپارچه'), page.url());
+  await page.goto(`${BASE}/control/audit`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(600);
+  check('۶-۷ و ‎/control/audit‎ هم', /\/shop\?tab=audit$/.test(page.url()), page.url());
+  aq = auditQueries.length;
+  await page.goto(`${BASE}/account-server?tab=audit`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(800);
+  check('۶-۷ «سرورِ حساب ← دفترِ ممیزی» برای مدیر ⇒ همان دفتر با «فقط سرورِ حساب»',
+    /\/shop\?tab=audit&source=account$/.test(page.url()) && (await page.locator('main [data-audit="unified"] select').first().inputValue()) === 'account'
+      && auditQueries.slice(aq).length >= 1, page.url());
   body = await open('finance');
   //  ماژولِ ۴.۵: سرورِ حسابِ بی `finance.v1` ⇒ «داده در دسترس نیست» با نامِ توانایی (آزمونِ کاملش: shop-finance-ui.mjs)
   check('مالی: سرورِ حسابِ بی finance.v1 ⇒ «داده در دسترس نیست» با نامِ توانایی، نه عدد', body.includes('داده در دسترس نیست') && body.includes('finance.v1'), body.slice(0, 900));
   await page.goto(`${BASE}/shop?tab=subs&view=sales`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(300);
   check('⛔ یک موضوع یک در: ‎?tab=subs&view=sales‎ ⇒ ‎?tab=finance‎', page.url().endsWith('/shop?tab=finance'), page.url());
+
+  /* ══════════ ۱.۵۰.۷۴ — ممیزی §۳-۳: «بازگرداندنِ تعارض» دلیل می‌خواهد ══════════ */
+  console.log('\n── وضعیتِ Sync: بازگرداندنِ تعارض با دلیل، تأیید و یک درخواست ──');
+  await page.goto(`${BASE}/sync`, { waitUntil: 'networkidle' });
+  await page.locator('main button', { hasText: 'تعارض‌ها' }).first().click();
+  await page.fill('main input[placeholder^="شناسهٔ حساب"]', 'shp-1');
+  await page.waitForTimeout(900);
+  await page.locator('main tr', { hasText: 'price' }).locator('button', { hasText: 'بازگرداندن' }).click();
+  await page.waitForTimeout(300);
+  const rsend = page.getByRole('button', { name: 'تأیید و فرستادن' });
+  check('⛔ پنجرهٔ بازگرداندن کادرِ دلیل دارد و بی دلیل دکمه بسته است',
+    (await page.locator('textarea').count()) > 0 && await rsend.isDisabled(), String(await page.locator('textarea').count()));
+  await page.locator('textarea').fill('اب');
+  check('دلیلِ دو نویسه هم نه', await rsend.isDisabled());
+  const r0 = posted.length;
+  await page.locator('textarea').fill('مشتری قیمتِ پیشین را خواست');
+  await rsend.dblclick();
+  await page.waitForTimeout(1300);
+  const restored = posted.slice(r0).filter((x) => x.path === '/api/admin/sync/conflicts/51/restore');
+  check('⛔ دوکلیک ⇒ یک بازگرداندن در سرورِ حساب، بدنهٔ بالادست فقط {reason}',
+    restored.length === 1 && JSON.stringify(restored[0].body) === JSON.stringify({ reason: 'مشتری قیمتِ پیشین را خواست' }), JSON.stringify(restored));
+  body = await main();
+  check('و پنجره بسته، فهرست تازه: «برگردانده شد»', (await page.locator('textarea').count()) === 0 && body.includes('برگردانده شد'), body.slice(0, 600));
 
   /* ══════════ چسبِ فاز ۳: سرورِ حساب `capabilities` را می‌گوید ══════════ */
   console.log('\n── چسبِ فاز ۳: حالت‌ها، سلامت، پرچم‌ها، کلیدِ سرویس ──');
@@ -452,6 +531,12 @@ try {
   await vpage.goto(`${BASE}/shop?tab=users`, { waitUntil: 'networkidle' });
   await vpage.waitForTimeout(600);
   check('⛔ viewer با لینکِ مستقیم ‎?tab=users‎ ⇒ «برای نقشِ شما باز نیست»', (await vpage.locator('main').innerText()).includes('برای نقشِ شما باز نیست'));
+  //  ۱.۵۰.۷۴ (۶-۷): دفترِ یکپارچه فقط admin است (‎/api/audit‎)؛ viewer در همان ماژول دو کارتِ پیشین را دارد و ۴۰۳ نمی‌بیند
+  await vpage.goto(`${BASE}/shop?tab=audit`, { waitUntil: 'networkidle' });
+  await vpage.waitForTimeout(800);
+  const vAudit = await vpage.locator('main').innerText();
+  check('۶-۷ viewer: ماژولِ دفتر همان دو کارت (سرورِ حساب + پنل)، نه دفترِ یکپارچه و نه خطای ۴۰۳',
+    vAudit.includes('/api/admin/audit') && vAudit.includes('/api/control/audit') && !vAudit.includes('دفترِ رخدادِ یکپارچه') && !/forbidden|403/.test(vAudit), vAudit.slice(0, 600));
   await vctx.close();
 
   check('هیچ خطای جاوااسکریپت', jsErrors.length === 0, jsErrors.join(' | '));

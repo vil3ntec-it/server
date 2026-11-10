@@ -1514,12 +1514,82 @@ router.get('/sync/conflicts', guard(async (req, res) => {
  * ⛔ (۱۴۰۵/۰۸/۰۹) دادهٔ یک حساب را عوض می‌کند و سرورِ حساب آن را فقط به مدیرِ
  * **ارشد** و فقط **با دلیل** می‌دهد (`admin-sync.js`، ADMIN-CONTROL-PLANE). پل با
  * حسابِ ارشد حرف می‌زند، پس مرزِ نقش همین‌جاست: فقط admin، و دلیل همراه می‌رود.
+ *
+ * ⛔ (۱.۵۰.۷۴، ممیزی §۳-۳) پیش از هر درخواست به سرورِ حساب: دلیلِ ۳ تا ۲۰۰ (همان سقفِ `admin-access.js` ِ آن‌جا —
+ *    بلندتر را آن‌جا بی‌صدا می‌بُرد)، `confirm: true` و کلیدِ یکتاییِ **رابط** (یکی برای هر پنجره). سرورِ حساب برای
+ *    بازگرداندن کلیدِ یکتایی ندارد و هر بار یک opِ تازه می‌سازد؛ پس تکرار را پل می‌گیرد (`restoreOnce`):
+ *      • همان کلید + همان دلیل ⇒ همان پاسخ با `replayed` (دوبار زدن، تکرارِ پس از قطعِ شبکه)؛ همان کلید + دلیلِ دیگر ⇒ ۴۰۹؛
+ *      • همان تعارض در حالِ رفتن ⇒ ۴۰۹ `restore_in_progress` (دو مدیر، دو پنجره)؛
+ *      • همان تعارض تازه برگردانده‌شده ⇒ ۴۰۹ `already_restored` — بازگرداندنِ دوم مقدارِ تازه‌ترِ همان خانه را رو می‌نوشت.
+ *    شکستِ بالادست در حافظه نمی‌ماند. یادِ پل ده دقیقه است؛ پس از آن، دکمه را خودِ فهرست (‎restored_at‎) پنهان می‌کند.
  */
+const RESTORE_TTL = 10 * 60_000;
+const restoreMemo = new Map();      // conflictId ⇒ { key, user, reason, at, promise, done }
+function restoreReasonOf(req) {
+  const reason = String(req.body?.reason ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
+  if (reason.length < 3) throw badInput('reason_required', 'دلیلِ بازگرداندن را بنویسید (۳ تا ۲۰۰ نویسه) — در سابقهٔ سرورِ حساب می‌ماند');
+  if (reason.length > 200) throw badInput('reason_too_long', 'دلیل حداکثر ۲۰۰ نویسه است');
+  return reason;
+}
+function conflictErr(code, message) {
+  const err = new Error(message);
+  err.code = code;
+  err.status = 409;
+  return err;
+}
+async function restoreOnce(req, id, reason, key, run) {
+  const now = Date.now();
+  for (const [k, v] of restoreMemo) if (v.done && now - v.at > RESTORE_TTL) restoreMemo.delete(k);
+  const seen = restoreMemo.get(id);
+  if (seen) {
+    const same = seen.key === key && seen.user === req.user?.id;
+    if (same && seen.reason !== reason) throw conflictErr('idempotency_key_reused', 'این کلیدِ یکتایی برای کارِ دیگری به کار رفته است');
+    if (same) return { ...(await seen.promise), replayed: true };
+    if (!seen.done) throw conflictErr('restore_in_progress', 'همین تعارض همین حالا در حالِ بازگرداندن است');
+    throw conflictErr('already_restored', 'این تعارض همین تازگی برگردانده شد؛ فهرست را تازه کنید');
+  }
+  const slot = { key, user: req.user?.id, reason, at: now, done: false, promise: null };
+  slot.promise = (async () => {
+    try {
+      const out = await run();
+      slot.done = true;
+      slot.at = Date.now();
+      return out;
+    } catch (err) {
+      restoreMemo.delete(id);   //  شکست ⇒ همان کلید دوباره قابلِ تلاش است، نه پاسخِ خطای ماندگار
+      throw err;
+    }
+  })();
+  restoreMemo.set(id, slot);
+  return slot.promise;
+}
+
+/**
+ * ⛔ شناسهٔ تعارض فقط رقم و یک شکل: سرورِ حساب آن را با `Number(id)` می‌خواند، پس «05» و «5e0» همان ۵ بودند و از
+ *    یادِ `restoreMemo` (به شناسه بسته) می‌گذشتند ⇒ بازگرداندنِ دوم (گذرِ رخنه‌یابیِ ۱.۵۰.۷۴).
+ */
+function conflictIdOf(value) {
+  const raw = String(value || '');
+  if (!/^\d{1,15}$/.test(raw) || Number(raw) < 1) {
+    const err = new Error('شناسهٔ تعارض معتبر نیست');
+    err.code = 'bad_id';
+    err.status = 400;
+    throw err;
+  }
+  return String(Number(raw));
+}
+
 router.post('/sync/conflicts/:id/restore', requireRole('admin'), guard(async (req, res) => {
-  const id = idOf(req.params.id);
-  const reason = String(req.body?.reason ?? '').trim().slice(0, 500);
-  const out = await cloudRaw('POST', `/api/admin/sync/conflicts/${id}/restore`, { body: { reason } });
-  audit({ actor: actorOf(req), action: 'account.sync.restore', entity: 'sync_conflict', entityId: id, detail: { reason } });
+  const id = conflictIdOf(req.params.id);
+  const reason = restoreReasonOf(req);
+  requireConfirm(req);
+  const key = idemOf(req);
+  if (!key) throw badInput('idempotency_key_required', 'کلیدِ یکتایی لازم است (رابطِ پنل خودش می‌فرستد)');
+  const out = await restoreOnce(req, id, reason, key, async () => {
+    const r = await cloudRaw('POST', `/api/admin/sync/conflicts/${id}/restore`, { body: { reason } });
+    audit({ actor: actorOf(req), action: 'account.sync.restore', entity: 'sync_conflict', entityId: id, detail: { reason } });
+    return r;
+  });
   res.json(out);
 }));
 

@@ -37,6 +37,7 @@ const check = (name, ok, extra = '') => {
 const NOW = Date.now();
 let caps = ['actor.v1'];
 const posted = [];
+const backupsMade = [];
 const INC = { id: 'inc_a1', source: 'client', app: 'shop', title: 'NullPointer در ثبتِ فروش', kind: 'pos.save', status: 'open', priority: 'p3',
   firstSeenAt: NOW - 3600e3, lastSeenAt: NOW - 60e3, occurrences: 7, recent1h: 0, lastVersion: '2.14.5', supportThreadId: '', version: 3 };
 const fake = http.createServer((req, res) => {
@@ -57,6 +58,17 @@ const fake = http.createServer((req, res) => {
         apps: { shop: { minVersion: '2.10.0', latestDeclared: '', devices: { total: 12, belowMin: 0 }, errorsByVersion: [{ version: '2.14.4', errors: 7, devices: 2, shops: 1, incidents: 1, lastAt: NOW }], afterRelease: { version: '2.14.4', errors: 7, devices: 2 } } },
         stage: { supported: true, rollback: { supported: false, reason: 'downgrade_not_supported' } },
       });
+    }
+    //  ۱.۵۰.۷۴ (ممیزی §۳-۴): پشتیبانِ سرورِ حساب — همان شکلِ ‎admin.js /backups‎ ِ shop، با پوشهٔ میزبان و بی رمزنگاری
+    if (p === '/api/admin/backups' && req.method === 'GET') {
+      return j(200, { backups: [{ kind: 'daily', file: 'shop-20261109.sql.gz', path: '/srv/shop/backups/daily/shop-20261109.sql.gz', bytes: 2048,
+        createdAt: NOW - 3600e3, encrypted: false, sha256: '' }, ...backupsMade], dir: '/srv/shop/backups', enabled: true,
+        encryption: { configured: false, required: false, warning: 'BACKUP_PASSPHRASE تنظیم نیست' },
+        drill: { last: { at: NOW - 86400e3, ok: true, restoredMs: 5000, backupAgeMs: 120000, error: null }, lastOkAt: NOW - 86400e3, count: 2 } });
+    }
+    if (p === '/api/admin/backups' && req.method === 'POST') {
+      const made = { kind: 'manual', file: '/srv/shop/backups/manual/shop-manual-9.sql.gz', bytes: 4096, createdAt: Date.now(), encrypted: false, sha256: '' };
+      return void setTimeout(() => { backupsMade.unshift({ ...made, path: made.file, file: 'shop-manual-9.sql.gz' }); j(201, made); }, 400);
     }
     if (p === '/api/admin/release/stage') return j(200, { stages: { 'tohid-native': { version: '2.14.5', percent: 10, updatedAt: NOW - 3600e3, updatedBy: 'boss' } }, version: 1 });
     if (p === '/api/admin/ops/health') {
@@ -180,6 +192,25 @@ try {
   check('سنجه‌های پنل: رفت‌وبرگشتِ پل با عدد', /پلِ سرورِ حساب \(رفت‌وبرگشت\)[\s\S]{0,40}\d+ ms/.test(body) || /ms/.test(body), body.slice(0, 600));
   check('⛔ کارِ راه‌نیفتاده «نامعلوم»، نه سبز', body.includes('در این پروسه راه نیفتاده') && body.includes('نامعلوم'), body.slice(0, 1500));
   check('⛔ خطای سرور: نیامده «—» و صفرِ واقعی «۰»', body.includes('— / ۰'), body.slice(0, 1500));
+  //  ۱.۵۰.۷۴ (ممیزی §۳-۴): پشتیبانِ خودِ سرورِ حساب — پیش‌تر فقط در ‎/admin/‎ ِ آن‌جا
+  const bk = await page.locator('[data-card="account-backups"]').innerText();
+  check('§۳-۴ پشتیبانِ سرورِ حساب: پرونده، اندازه، تمرینِ بازیابی با RTO/RPO، و هشدارِ سرخِ «رمز ندارند»',
+    bk.includes('shop-20261109.sql.gz') && bk.includes('آخرین تمرینِ بازیابی') && bk.includes('RTO') && bk.includes('رمز ندارند') && bk.includes('BACKUP_PASSPHRASE'), bk);
+  check('⛔ پوشهٔ میزبانِ سرورِ حساب هیچ‌جای صفحه نیست', !(await page.content()).includes('/srv/shop'));
+  await page.locator('[data-card="account-backups"] button', { hasText: 'پشتیبانِ دستی' }).click();
+  await page.waitForTimeout(300);
+  const bsend = page.getByRole('button', { name: 'تأیید و فرستادن' });
+  check('⛔ پشتیبانِ دستی: بی دلیل دکمه بسته است', await bsend.isDisabled());
+  await page.locator('textarea').fill('پیش از به‌روزرسانیِ سرورِ حساب');
+  const b0 = posted.length;
+  await bsend.dblclick();
+  await page.waitForTimeout(1400);
+  const bposts = posted.slice(b0).filter((x) => x.path === '/api/admin/backups');
+  check('⛔ دوکلیک ⇒ یک پشتیبان در سرورِ حساب، بدنهٔ بالادست فقط ‎{kind:"manual"}‎',
+    bposts.length === 1 && JSON.stringify(bposts[0].body) === JSON.stringify({ kind: 'manual' }), JSON.stringify(bposts));
+  const bk2 = await page.locator('[data-card="account-backups"]').innerText();
+  check('و «تأییدشده از سرورِ حساب» با نامِ پرونده (بی پوشه)، و فهرست تازه شد',
+    bk2.includes('تأییدشده از سرورِ حساب') && bk2.includes('shop-manual-9.sql.gz') && !(await page.content()).includes('/srv/shop'), bk2);
 
   console.log('\n── یکپارچه‌سازی ──');
   body = await open('integrations');

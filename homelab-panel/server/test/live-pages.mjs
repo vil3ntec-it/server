@@ -693,9 +693,8 @@ console.log('\n── فاز ۱: «حسابِ من»، کاربرانِ پنل،
   check('۶-۴ ⛔ رمزِ ارشد از وضعیت خوانده نمی‌شود؛ فقط نمایشِ یک‌بارهٔ مالک',
     !/admin\.password\b/.test(cloud) && /admin-password\/reveal/.test(cloud) && /passwordSet && owner/.test(cloud));
 
-  const hubsSrc = read('pages/hubs.tsx');
-  const ua = read('pages/control/UnifiedAudit.tsx');
-  check('۶-۷ دفترِ یکپارچه برای مدیر در «لاگ‌ها ← دفتر»', /can\('admin'\) \? <UnifiedAudit \/> : <Audit \/>/.test(hubsSrc));
+  //  ⚠️ ۱.۵۰.۷۴: دفترِ یکپارچه از «لاگ‌ها» به بخشِ «فروشگاه» رفت (ممیزی ۶-۷) — سنجهٔ جایش در بخشِ «۱.۵۰.۷۴» پایین است
+  const ua = read('pages/account/console/UnifiedAudit.tsx');
   check('۶-۷ صفحه‌بندی و فیلتر در سرور، و صفحه هیچ درِ نوشتنی ندارد',
     /\/api\/audit\?\$\{qs\}/.test(ua) && /offset: String\(offset\)/.test(ua) && !/method: '(DELETE|POST|PUT|PATCH)'/.test(ua));
 }
@@ -712,8 +711,44 @@ console.log('\n── ۱.۵۰.۷۱: ترمینال با احرازِ دوبار�
   const login = read('pages/Login.tsx');
   check('ورود: «رمزِ یک‌بارمصرف منقضی شد» پیامِ خودش را دارد (نه کدِ خام)',
     (login.match(/recovery_expired/g) || []).length >= 2 && /t\('recoveryExpired'\)/.test(login));
-  const ua = read('pages/control/UnifiedAudit.tsx');
+  const ua = read('pages/account/console/UnifiedAudit.tsx');
   check('دفترِ یکپارچه می‌گوید ردیف‌های کهنه بایگانی شده‌اند، نه پاک', /data\?\.archive && data\.archive\.files\.length > 0/.test(ua));
+}
+
+/* ═════════════ ۱.۵۰.۷۴ — بندهای بازِ ممیزیِ پنلِ مرکزی ═════════════ */
+console.log('\n── ۱.۵۰.۷۴: بازگرداندنِ تعارض با دلیل (§۳-۳) ──\n');
+{
+  const sync = read('pages/account/SyncStatus.tsx');
+  check('§۳-۳ ⛔ «بازگرداندنِ تعارض» دیگر بدنهٔ خالی نمی‌فرستد', !/restore`, \{ body: \{\} \}/.test(sync));
+  check('§۳-۳ پنجرهٔ کارِ حساس (دلیل + تأیید + یک کلیدِ یکتایی) و همان سه فیلد به پل',
+    /<SensitiveDialog/.test(sync) && /body: \{ reason, confirm: true, idempotencyKey \}/.test(sync));
+}
+
+console.log('\n── ۱.۵۰.۷۴: یک نمای دفترِ رخداد، در بخشِ «فروشگاه» (۶-۷) ──\n');
+{
+  const hubsSrc = read('pages/hubs.tsx');
+  const mod = read('pages/account/console/modules/audit.tsx');
+  const ua = read('pages/account/console/UnifiedAudit.tsx');
+  check('۶-۷ ماژولِ `audit` ِ فروشگاه برای admin همان دفترِ یکپارچه است، و برای بقیه دو کارتِ پیشین',
+    /role === 'admin'\s*\?\s*<UnifiedAudit params=\{params\} setParams=\{setParams\} \/>\s*:\s*<AuditTab /.test(mod));
+  check('۶-۷ ⛔ «لاگ‌ها ← دفتر» برای مدیر به همان ماژول می‌رود (نشانیِ کهنه کار می‌کند)، بی نسخهٔ دوم',
+    /export const AUDIT_HOME = '\/shop\?tab=audit';/.test(hubsSrc)
+      && /can\('admin'\) \? <Navigate to=\{AUDIT_HOME\} replace \/> : <Audit \/>/.test(hubsSrc) && !/UnifiedAudit/.test(hubsSrc));
+  check('۶-۷ «سرورِ حساب ← دفترِ ممیزی» برای مدیر ⇒ همان دفتر با «فقط سرورِ حساب»',
+    /can\('admin'\) \? <Navigate to=\{`\$\{AUDIT_HOME\}&source=account`\} replace \/> : <AccountAudit \/>/.test(hubsSrc));
+  const users = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const f = path.join(dir, e.name);
+      if (e.isDirectory()) walk(f);
+      else if (/\.tsx?$/.test(e.name) && /import UnifiedAudit\b/.test(fs.readFileSync(f, 'utf8'))) users.push(path.relative(webSrc, f));
+    }
+  };
+  walk(webSrc);
+  check('۶-۷ ⛔ فقط یک جا دفترِ یکپارچه را نشان می‌دهد (ماژولِ audit)', users.join(',') === path.join('pages', 'account', 'console', 'modules', 'audit.tsx'), users.join(', '));
+  check('۶-۷ «یک دکان» و «یک دفتر» در نشانی‌اند و به سرور می‌روند (‎shop‎ در پرس‌وجو)، و رشته‌ها سه‌زبانه',
+    /params\.get\('source'\)/.test(ua) && /params\.get\('shop'\)/.test(ua) && /qs\.set\('shop', shop\)/.test(ua) && /useTx\(\)/.test(ua)
+      && !/>\s*دفترِ رخدادِ یکپارچه\s*</.test(ua));
 }
 
 console.log('\n════════════════════════════════════');

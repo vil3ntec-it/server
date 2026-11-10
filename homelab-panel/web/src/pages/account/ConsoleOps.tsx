@@ -25,6 +25,7 @@ import { useLoad, type Load } from './shared';
 import { HealthTab, IntegrationsTab, Problem, SourceLine, VersionsTab } from './ShopConsole';
 import { bytes, isUnavailable, newIdemKey, num, reasonOk, shown } from './consoleData';
 import { opsText, type OpsKey } from './consoleOpsI18n';
+import BackupsCard from './console/BackupsCard';
 
 /** ترجمه با زبانِ همین نشست (جدولِ ‎consoleOpsI18n.ts‎)؛ متغیرها با ‎{n}‎. */
 function useOpsT() {
@@ -375,6 +376,8 @@ export function OpsHealthTab() {
       <HealthBoard />
       {/* همان کارت‌های فاز ۲ (دیتابیس، صف‌ها، دیسک، پشتیبان، وارسیِ زنجیره، خطاهای خامِ برنامه) */}
       <HealthTab />
+      {/* ۱.۵۰.۷۴ (ممیزی §۳-۴): فهرستِ پشتیبانِ سرورِ حساب، تمرینِ بازیابی و پشتیبانِ دستی — پیش‌تر فقط در ‎/admin/‎ ِ آن‌جا */}
+      <BackupsCard />
     </div>
   );
 }
