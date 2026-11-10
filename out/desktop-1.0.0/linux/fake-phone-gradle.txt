@@ -3,15 +3,15 @@ encoders: libopenh264(cpu), libsvtav1(cpu)
 adb: /home/runner/work/server/server/desktop/src/test/fakeadb
 phone: Fake Phone (FAKE123), Android SDK 34
 live: Fake Phone h264 0x0
-t=1s in: 24 fps 2.7 Mbps 1280x720 audio=on rec: 518370 bytes dropped 0
-t=2s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 1158822 bytes dropped 0
-t=3s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 1908937 bytes dropped 0
-t=4s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 2649827 bytes dropped 0
-t=5s in: 29 fps 3.0 Mbps 1280x720 audio=on rec: 3409748 bytes dropped 0
-t=6s in: 29 fps 3.1 Mbps 1280x720 audio=on rec: 4092844 bytes dropped 0
-t=7s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 4818577 bytes dropped 0
-t=8s in: 29 fps 3.1 Mbps 720x1280 audio=on rec: 5577210 bytes dropped 0
-t=9s in: 29 fps 3.2 Mbps 720x1280 audio=on rec: 5949324 bytes dropped 0
-t=10s in: 29 fps 3.3 Mbps 720x1280 audio=on rec: 6298068 bytes dropped 0
-result: /home/runner/Videos/RawRec/RawRec 2026-11-10 14-45-24.mp4 1280x720 10.00s frames=300 dropped=0 bytes=6403666 encoder=libopenh264 error=null
-RESULT_FILE=/home/runner/Videos/RawRec/RawRec 2026-11-10 14-45-24.mp4
+t=1s in: 25 fps 2.9 Mbps 1280x720 audio=on rec: 591321 bytes dropped 0
+t=2s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 1280104 bytes dropped 0
+t=3s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 2054409 bytes dropped 0
+t=4s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 2740983 bytes dropped 0
+t=5s in: 29 fps 3.0 Mbps 1280x720 audio=on rec: 3496128 bytes dropped 0
+t=6s in: 29 fps 3.1 Mbps 1280x720 audio=on rec: 4188140 bytes dropped 0
+t=7s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 4940611 bytes dropped 0
+t=8s in: 29 fps 3.1 Mbps 720x1280 audio=on rec: 5725064 bytes dropped 0
+t=9s in: 29 fps 3.2 Mbps 720x1280 audio=on rec: 6102438 bytes dropped 0
+t=10s in: 29 fps 3.3 Mbps 720x1280 audio=on rec: 6431096 bytes dropped 0
+result: /home/runner/Videos/RawRec/RawRec 2026-11-10 14-54-03.mp4 1280x720 10.03s frames=301 dropped=0 bytes=6556320 encoder=libopenh264 error=null
+RESULT_FILE=/home/runner/Videos/RawRec/RawRec 2026-11-10 14-54-03.mp4
