@@ -333,6 +333,12 @@ class KickChat(channel: String) : ChatClient(Platform.KICK, channel.trim().remov
     private fun loop() {
         while (running.get()) {
             try {
+                if (pusherIdx >= pusher.size) {
+                    // every known address of Kick's chat service was refused: say so plainly, try again much later
+                    connected = false
+                    status = "کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)"
+                    Thread.sleep(30 * 60_000L); pusherIdx = 0; continue
+                }
                 val room = chatroomId()
                 if (room == null) { Thread.sleep(30_000); continue }
                 val (key, cluster) = pusher.getOrNull(pusherIdx % pusher.size.coerceAtLeast(1)) ?: ("32cbd69e4b950bf97679" to "us2")
