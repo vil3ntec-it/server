@@ -1,0 +1,10 @@
+11-10 00:12:30.882  3537  3760 I RAWREC_E2E: fa>en [google] هی چطوری امروز خوش گذشت => Hey, how did you have a good day today?
+11-10 00:12:31.812  3537  3760 I RAWREC_E2E: fa>en [google] بازی zero dum برو استارت کن => Go start the zero dum game
+11-10 00:12:32.988  3537  3760 I RAWREC_E2E: fa>en [google] اون مپ رو دوست دارم => I like that map
+11-10 00:12:33.578  3537  3760 I RAWREC_E2E: fa>en [google] داداش میخام لول بعدی رو باهات بازی کنم => Brother, I want to play the next level with you
+11-10 00:12:33.824  3537  3760 I RAWREC_E2E: fa>en [google] نمیدونم چرا لگ داره => I don't know why it lags
+11-10 00:12:34.262  3537  3760 I RAWREC_E2E: fa>en [google] اگه میتونی یه راند دیگه بریم => Let's go one more round if you can
+11-10 00:12:35.602  3537  3760 I RAWREC_E2E: en>fa [google] I want to see that map => من میخام اون نقشه رو ببینم
+11-10 00:12:36.142  3537  3760 I RAWREC_E2E: en>fa [google] Hey bro, can you play the next round with me? => هی داداش، میشه دور بعدی رو با من بازی کنی؟
+11-10 00:12:36.552  3537  3760 I RAWREC_E2E: en>fa [google] I don't know what is going on => من نمیدونم چه خبر است
+2026-11-10 00:12:30  translate: by Google Translate

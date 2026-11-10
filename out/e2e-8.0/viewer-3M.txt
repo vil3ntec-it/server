@@ -1,0 +1,3 @@
+viewer: gaps over 0.5 s at (s from first frame, length): [(4.2, 0.8), (13.8, 0.5), (16.9, 0.5), (29.1, 0.5), (44.8, 0.8), (50.7, 0.7)]
+viewer: 378 frames in 56.5s = 6.7 fps; longest gap 846 ms; gaps >0.5s: 6; >2s: 0
+viewer: decode errors: 0

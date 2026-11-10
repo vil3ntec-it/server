@@ -1,0 +1,208 @@
+11-10 00:11:57.991   337   337 D AndroidRuntime: >>>>>> START com.android.internal.os.ZygoteInit uid 0 <<<<<<
+11-10 00:11:57.996   337   337 I AndroidRuntime: Using default boot image
+11-10 00:11:57.996   337   337 I AndroidRuntime: Leaving lock profiling enabled
+11-10 00:12:10.799   468   496 D MediaCodecList: ignored failed builder
+11-10 00:12:11.252   951   951 I AndroidRuntime: VM exiting with result code 0, cleanup skipped.
+11-10 00:12:23.921   519   570 V BackupManagerService: [UserID:0] restoreAtInstall pkg=com.vil3ntec.rawrec token=1 restoreSet=0
+11-10 00:12:24.098   830   830 I SafetyLabelChangedBroadcastReceiver: received broadcast packageName: com.vil3ntec.rawrec, current user: UserHandle{0}, packageChangeEvent: NEW_INSTALL, intent user: UserHandle{0}
+11-10 00:12:24.528   519   794 I SdkSandboxManager: No SDKs used. Skipping SDK data reconcilation for CallingInfo{mUid=10192, mPackageName='com.vil3ntec.rawrec, mAppProcessToken='null'}
+11-10 00:12:24.741  1042  1042 D CarrierSvcBindHelper: onPackageAdded: com.vil3ntec.rawrec
+11-10 00:12:24.746  1042  1302 D ImsResolver: maybeAddedImsService, packageName: com.vil3ntec.rawrec
+11-10 00:12:25.053   519   570 I AppsFilter: interaction: PackageSetting{13592f5 com.vil3ntec.rawrec/10192} -> PackageSetting{514688a com.google.android.googlequicksearchbox/10131} BLOCKED
+11-10 00:12:25.053   519   570 I AppsFilter: interaction: PackageSetting{13592f5 com.vil3ntec.rawrec/10192} -> PackageSetting{646befb com.google.android.as/10125} BLOCKED
+11-10 00:12:25.053   519   570 I AppsFilter: interaction: PackageSetting{13592f5 com.vil3ntec.rawrec/10192} -> PackageSetting{b71fb18 com.google.android.gm/10143} BLOCKED
+11-10 00:12:25.053   519   570 I AppsFilter: interaction: PackageSetting{13592f5 com.vil3ntec.rawrec/10192} -> PackageSetting{6996971 com.google.android.devicelockcontroller/10175} BLOCKED
+11-10 00:12:25.053   519   570 I AppsFilter: interaction: PackageSetting{13592f5 com.vil3ntec.rawrec/10192} -> PackageSetting{bd88356 com.google.android.dialer/10128} BLOCKED
+11-10 00:12:25.053   519   570 I AppsFilter: interaction: PackageSetting{13592f5 com.vil3ntec.rawrec/10192} -> PackageSetting{db84fd7 com.google.android.contacts/10154} BLOCKED
+11-10 00:12:25.053   519   570 I AppsFilter: interaction: PackageSetting{13592f5 com.vil3ntec.rawrec/10192} -> PackageSetting{717b0c4 com.google.android.partnersetup/10124} BLOCKED
+11-10 00:12:25.054   519   570 I AppsFilter: interaction: PackageSetting{13592f5 com.vil3ntec.rawrec/10192} -> PackageSetting{88a2bad com.google.android.cellbroadcastreceiver/10191} BLOCKED
+11-10 00:12:25.054   519   570 I AppsFilter: interaction: PackageSetting{13592f5 com.vil3ntec.rawrec/10192} -> PackageSetting{f17ee2 com.google.android.inputmethod.latin/10142} BLOCKED
+11-10 00:12:25.873  1042  1042 D CarrierSvcBindHelper: onPackageModified: com.vil3ntec.rawrec
+11-10 00:12:25.993   519  3026 V SplashScreenExceptionList: SplashScreen checking exception for package com.vil3ntec.rawrec (target sdk:35) -> false
+11-10 00:12:25.994   519  3026 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.vil3ntec.rawrec/.E2EActivity (has extras)} with LAUNCH_SINGLE_TOP from uid 2000 (BAL_ALLOW_PERMISSION) result code=0
+11-10 00:12:26.035   827   863 V WindowManagerShell: Transition requested: android.os.BinderProxy@12ce8f4 TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=8 displayId=0 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=com.vil3ntec.rawrec/.E2EActivity } baseActivity=ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity} topActivity=ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity} origActivity=null realActivity=ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity} numActivities=1 lastActiveTime=36907 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@fd1b81d} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=null topActivityInfo=ActivityInfo{5d26a92 com.vil3ntec.rawrec.E2EActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=false isSleeping=false topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= false topActivityLetterboxed= false isFromDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 locusId=null displayAreaFeatureId=1 cameraCompatControlState=hidden}, remoteTransition = null, displayChange = null }
+11-10 00:12:26.212   519   590 D CoreBackPreview: Window{da69f11 u0 Splash Screen com.vil3ntec.rawrec}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@240cb8, mPriority=0, mIsAnimationCallback=false}
+11-10 00:12:26.578   519   537 V WindowManager: Sent Transition #6 createdAt=11-10 00:12:25.979 via request=TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=8 displayId=0 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=com.vil3ntec.rawrec/.E2EActivity } baseActivity=ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity} topActivity=ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity} origActivity=null realActivity=ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity} numActivities=1 lastActiveTime=36907 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{198a8cb Task{93e0117 #8 type=standard A=10192:com.vil3ntec.rawrec}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=null topActivityInfo=ActivityInfo{96fe8a8 com.vil3ntec.rawrec.E2EActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=false isVisible=false isVisibleRequested=false isSleeping=false topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= false topActivityLetterboxed= false isFromDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 locusId=null displayAreaFeatureId=1 cameraCompatControlState=hidden}, remoteTransition = null, displayChange = null }
+11-10 00:12:26.579   519   537 V WindowManager:     info={id=6 t=OPEN f=0x0 trk=0 r=[0@Point(0, 0)] c=[{WCT{RemoteToken{198a8cb Task{93e0117 #8 type=standard A=10192:com.vil3ntec.rawrec}}} m=OPEN f=NONE leash=Surface(name=Task=8)/@0x4a5208d sb=Rect(0, 0 - 2560, 1600) eb=Rect(0, 0 - 2560, 1600) d=0},{WCT{RemoteToken{7796fc1 Task{170f44 #1 type=home}}} m=TO_BACK f=SHOW_WALLPAPER leash=Surface(name=Task=1)/@0x2aa981d sb=Rect(0, 0 - 2560, 1600) eb=Rect(0, 0 - 2560, 1600) d=0}]}
+11-10 00:12:26.582   519   548 I ActivityManager: Start proc 3537:com.vil3ntec.rawrec/u0a192 for next-top-activity {com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity}
+11-10 00:12:26.586  3537  3537 I vil3ntec.rawrec: Late-enabling -Xcheck:jni
+11-10 00:12:26.603  3537  3537 I vil3ntec.rawrec: Using CollectorTypeCC GC.
+11-10 00:12:26.603  3537  3537 W vil3ntec.rawrec: Unexpected CPU variant for x86: x86_64.
+11-10 00:12:26.603  3537  3537 W vil3ntec.rawrec: Known variants: atom, sandybridge, silvermont, goldmont, goldmont-plus, tremont, kabylake, default
+11-10 00:12:27.347  1042  1302 D ImsResolver: maybeAddedImsService, packageName: com.vil3ntec.rawrec
+11-10 00:12:27.671  3537  3537 W ziparchive: Unable to open '/data/app/~~gX_gYUJL8UAqZjDcMBcVng==/com.vil3ntec.rawrec-Fe8gefTUfSUjhBekpIE2PQ==/base.dm': No such file or directory
+11-10 00:12:27.671  3537  3537 W ziparchive: Unable to open '/data/app/~~gX_gYUJL8UAqZjDcMBcVng==/com.vil3ntec.rawrec-Fe8gefTUfSUjhBekpIE2PQ==/base.dm': No such file or directory
+11-10 00:12:27.753  3537  3537 D nativeloader: Configuring clns-6 for other apk /data/app/~~gX_gYUJL8UAqZjDcMBcVng==/com.vil3ntec.rawrec-Fe8gefTUfSUjhBekpIE2PQ==/base.apk. target_sdk_version=35, uses_libraries=, library_path=/data/app/~~gX_gYUJL8UAqZjDcMBcVng==/com.vil3ntec.rawrec-Fe8gefTUfSUjhBekpIE2PQ==/lib/arm64:/data/app/~~gX_gYUJL8UAqZjDcMBcVng==/com.vil3ntec.rawrec-Fe8gefTUfSUjhBekpIE2PQ==/base.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand:/data/user/0/com.vil3ntec.rawrec
+11-10 00:12:27.772  3537  3537 V GraphicsEnvironment: ANGLE GameManagerService for com.vil3ntec.rawrec: false
+11-10 00:12:27.772  3537  3537 V GraphicsEnvironment: com.vil3ntec.rawrec is not listed in per-application setting
+11-10 00:12:28.109   519  2190 D CoreBackPreview: Window{36e87e3 u0 com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@69be0f8, mPriority=0, mIsAnimationCallback=false}
+11-10 00:12:28.636   519   537 W system_server: Failed to determine oat file name for dex location /data/app/~~gX_gYUJL8UAqZjDcMBcVng==/com.vil3ntec.rawrec-Fe8gefTUfSUjhBekpIE2PQ==/base.apk: Dalvik cache directory does not exist
+11-10 00:12:28.637   519   537 W ziparchive: Unable to open '/data/app/~~gX_gYUJL8UAqZjDcMBcVng==/com.vil3ntec.rawrec-Fe8gefTUfSUjhBekpIE2PQ==/base.dm': No such file or directory
+11-10 00:12:28.638   519   537 I ActivityTaskManager: Displayed com.vil3ntec.rawrec/.E2EActivity for user 0: +2s668ms
+11-10 00:12:28.712   519  3026 D CoreBackPreview: Window{da69f11 u0 Splash Screen com.vil3ntec.rawrec EXITING}: Setting back callback null
+11-10 00:12:28.712   519  2391 W InputManager-JNI: Input channel object 'da69f11 Splash Screen com.vil3ntec.rawrec (client)' was disposed without first being removed with the input manager!
+11-10 00:12:28.854   519  2391 I ImeTracker: com.vil3ntec.rawrec:5066bb40: onRequestHide at ORIGIN_SERVER_HIDE_INPUT reason HIDE_UNSPECIFIED_WINDOW
+11-10 00:12:28.854   519  2391 I ImeTracker: com.vil3ntec.rawrec:5066bb40: onCancelled at PHASE_SERVER_SHOULD_HIDE
+11-10 00:12:28.857  1455  1455 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():1877 onStartInput(EditorInfo{inputType=0x0(NULL) imeOptions=0x0 privateImeOptions=null actionName=UNSPECIFIED actionLabel=null actionId=0 initialSelStart=-1 initialSelEnd=-1 initialCapsMode=0x0 hintText=null label=null packageName=com.vil3ntec.rawrec fieldId=0 fieldName=null extras=null}, false)
+11-10 00:12:29.283   519  2190 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.vil3ntec.rawrec/.E2EActivity (has extras)} with LAUNCH_SINGLE_TOP from uid 2000 (BAL_ALLOW_PERMISSION) result code=3
+11-10 00:12:29.291   827   863 D WindowManagerShell: onActivityRestartAttempt: ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity}
+11-10 00:12:29.805  1583  1583 I AiAiEcho: AppFetcherImplV2 updateApps package:[com.vil3ntec.rawrec], userId:[0], reason:[package is added.].
+11-10 00:12:30.882  3537  3760 I RAWREC_E2E: fa>en [google] هی چطوری امروز خوش گذشت => Hey, how did you have a good day today?
+11-10 00:12:30.968  1583  1583 I AiAiEcho: AppFetcherImpl onPackageChanged com.vil3ntec.rawrec.
+11-10 00:12:30.973  1583  3131 I AiAiEcho: AppIndexer Package:[com.vil3ntec.rawrec] UserProfile:[0] Enabled:[true].
+11-10 00:12:30.973  1583  3131 I AiAiEcho: AppFetcherImplV2 updateApps package:[com.vil3ntec.rawrec], userId:[0], reason:[package is updated.].
+11-10 00:12:31.812  3537  3760 I RAWREC_E2E: fa>en [google] بازی zero dum برو استارت کن => Go start the zero dum game
+11-10 00:12:32.988  3537  3760 I RAWREC_E2E: fa>en [google] اون مپ رو دوست دارم => I like that map
+11-10 00:12:33.578  3537  3760 I RAWREC_E2E: fa>en [google] داداش میخام لول بعدی رو باهات بازی کنم => Brother, I want to play the next level with you
+11-10 00:12:33.824  3537  3760 I RAWREC_E2E: fa>en [google] نمیدونم چرا لگ داره => I don't know why it lags
+11-10 00:12:34.262  3537  3760 I RAWREC_E2E: fa>en [google] اگه میتونی یه راند دیگه بریم => Let's go one more round if you can
+11-10 00:12:35.531   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{65cc4f8 com.android.camera2/10147} BLOCKED
+11-10 00:12:35.531   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{9539dd1 com.google.android.gm/10143} BLOCKED
+11-10 00:12:35.531   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{3561036 com.google.android.devicelockcontroller/10175} BLOCKED
+11-10 00:12:35.602  3537  3760 I RAWREC_E2E: en>fa [google] I want to see that map => من میخام اون نقشه رو ببینم
+11-10 00:12:36.142  3537  3760 I RAWREC_E2E: en>fa [google] Hey bro, can you play the next round with me? => هی داداش، میشه دور بعدی رو با من بازی کنی؟
+11-10 00:12:36.552  3537  3760 I RAWREC_E2E: en>fa [google] I don't know what is going on => من نمیدونم چه خبر است
+11-10 00:12:36.961   519   534 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{dec85ff com.google.android.gm/10143} BLOCKED
+11-10 00:12:40.194   519   590 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{8e7e187 com.google.android.settings.intelligence/10118} BLOCKED
+11-10 00:12:40.196   519   590 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{6dc58b4 com.google.android.settings.intelligence/10118} BLOCKED
+11-10 00:12:46.539   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{22ab23a com.google.android.googlequicksearchbox/10131} BLOCKED
+11-10 00:12:46.539   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{157beeb com.google.android.gm/10143} BLOCKED
+11-10 00:12:46.539   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{34a1448 com.google.android.rkpdapp/10182} BLOCKED
+11-10 00:12:46.540   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{68c2e1 com.google.android.settings.intelligence/10118} BLOCKED
+11-10 00:12:46.540   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{5a2d7cb com.google.android.projection.gearhead/10123} BLOCKED
+11-10 00:12:55.765  3537  3583 I vil3ntec.rawrec: Background concurrent copying GC freed 47131(2204KB) AllocSpace objects, 22(568KB) LOS objects, 49% free, 2524KB/5049KB, paused 32us,9us total 202.637ms
+11-10 00:12:55.996   519  1645 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.vil3ntec.rawrec/.E2EActivity (has extras)} with LAUNCH_SINGLE_TOP from uid 2000 (BAL_ALLOW_PERMISSION) result code=3
+11-10 00:12:56.027   827   863 D WindowManagerShell: onActivityRestartAttempt: ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity}
+11-10 00:12:56.179   827   863 V WindowManagerShell: Transition requested: android.os.BinderProxy@a24ee88 TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=8 displayId=0 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=com.vil3ntec.rawrec/.E2EActivity } baseActivity=ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity} topActivity=ComponentInfo{com.android.systemui/com.android.systemui.media.MediaProjectionPermissionActivity} origActivity=null realActivity=ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity} numActivities=2 lastActiveTime=67065 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{android.window.IWindowContainerToken$Stub$Proxy@7973021} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=null topActivityInfo=ActivityInfo{68fbc46 com.android.systemui.media.MediaProjectionPermissionActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isSleeping=false topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= false topActivityLetterboxed= false isFromDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 locusId=null displayAreaFeatureId=1 cameraCompatControlState=hidden}, remoteTransition = null, displayChange = null }
+11-10 00:12:56.326   519   537 V WindowManager: Sent Transition #9 createdAt=11-10 00:12:56.121 via request=TransitionRequestInfo { type = OPEN, triggerTask = TaskInfo{userId=0 taskId=8 displayId=0 isRunning=true baseIntent=Intent { flg=0x10000000 cmp=com.vil3ntec.rawrec/.E2EActivity } baseActivity=ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity} topActivity=ComponentInfo{com.android.systemui/com.android.systemui.media.MediaProjectionPermissionActivity} origActivity=null realActivity=ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity} numActivities=2 lastActiveTime=67065 supportsMultiWindow=true resizeMode=1 isResizeable=true minWidth=-1 minHeight=-1 defaultMinSize=220 token=WCT{RemoteToken{198a8cb Task{93e0117 #8 type=standard A=10192:com.vil3ntec.rawrec}}} topActivityType=1 pictureInPictureParams=null shouldDockBigOverlays=false launchIntoPipHostTaskId=-1 lastParentTaskIdBeforePip=-1 displayCutoutSafeInsets=null topActivityInfo=ActivityInfo{6409010 com.android.systemui.media.MediaProjectionPermissionActivity} launchCookies=[] positionInParent=Point(0, 0) parentTaskId=-1 isFocused=true isVisible=true isVisibleRequested=true isSleeping=false topActivityInSizeCompat=false topActivityEligibleForLetterboxEducation= false topActivityLetterboxed= false isFromDoubleTap= false topActivityLetterboxVerticalPosition= -1 topActivityLetterboxHorizontalPosition= -1 topActivityLetterboxWidth=-1 topActivityLetterboxHeight=-1 locusId=null displayAreaFeatureId=1 cameraCompatControlState=hidden}, remoteTransition = null, displayChange = null }
+11-10 00:12:56.479  3537  3537 I RAWREC_E2E: projection result -1
+11-10 00:12:56.539   519   891 I ActivityManager: Background started FGS: Allowed [callingPackage: com.vil3ntec.rawrec; callingUid: 10192; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { act=rawrec.START cmp=com.vil3ntec.rawrec/.RecordService (has extras) }; code:PROC_STATE_TOP; tempAllowListReason:<null>; targetSdkVersion:35; callerTargetSdkVersion:35; startForegroundCount:0; bindFromPackage:null: isBindService:false]
+11-10 00:12:56.541   519  2940 I ImeTracker: com.vil3ntec.rawrec:55dbbe6d: onRequestHide at ORIGIN_SERVER_HIDE_INPUT reason HIDE_SAME_WINDOW_FOCUSED_WITHOUT_EDITOR
+11-10 00:12:56.541   519  2940 I ImeTracker: com.vil3ntec.rawrec:55dbbe6d: onCancelled at PHASE_SERVER_SHOULD_HIDE
+11-10 00:12:56.544  1455  1455 I GoogleInputMethodService: GoogleInputMethodService.onStartInput():1877 onStartInput(EditorInfo{inputType=0x0(NULL) imeOptions=0x0 privateImeOptions=null actionName=UNSPECIFIED actionLabel=null actionId=0 initialSelStart=-1 initialSelEnd=-1 initialCapsMode=0x0 hintText=null label=null packageName=com.vil3ntec.rawrec fieldId=0 fieldName=null extras=null}, false)
+11-10 00:12:56.607   519   891 W PackageConfigPersister: App-specific configuration not found for packageName: com.vil3ntec.rawrec and userId: 0
+11-10 00:12:56.810   519  2195 D CoreBackPreview: Window{37a0ca3 u0 RawRec control}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@e77b2a, mPriority=0, mIsAnimationCallback=false}
+11-10 00:12:57.946   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{3b2f6cf com.google.android.googlequicksearchbox/10131} BLOCKED
+11-10 00:12:57.948   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{d80585c com.google.android.apps.messaging/10129} BLOCKED
+11-10 00:12:58.045   519   586 I DisplayDeviceRepository: Display device added: DisplayDeviceInfo{"RawRec": uniqueId="virtual:com.vil3ntec.rawrec,10192,RawRec,0", 1728 x 1072, modeId 2, renderFrameRate 60.0, defaultModeId 2, supportedModes [{id=2, width=1728, height=1072, fps=60.0, alternativeRefreshRates=[], supportedHdrTypes=[]}], colorMode 0, supportedColorModes [0], hdrCapabilities null, allmSupported false, gameContentTypeSupported false, density 476, 476.0 x 476.0 dpi, appVsyncOff 0, presDeadline 16666666, touch NONE, rotation 0, type VIRTUAL, deviceProductInfo null, state ON, committedState UNKNOWN, owner com.vil3ntec.rawrec (uid 10192), frameRateOverride , brightnessMinimum 0.0, brightnessMaximum 0.0, brightnessDefault 0.0, hdrSdrRatio NaN, FLAG_PRIVATE, FLAG_PRESENTATION, installOrientation 0, displayShape DisplayShape{ spec=-1386485785 displayWidth=1728 displayHeight=1072 physicalPixelDisplaySizeRatio=1.0 rotation=0 offsetX=0 offsetY=0 scale=1.0}}
+11-10 00:12:58.046   519   586 I LogicalDisplayMapper: Adding new display: 2: DisplayInfo{"RawRec", displayId 2, displayGroupId 0, FLAG_PRIVATE, FLAG_PRESENTATION, real 1728 x 1072, largest app 1728 x 1072, smallest app 1728 x 1072, appVsyncOff 0, presDeadline 16666666, mode 260.0, defaultMode 2, modes [{id=2, width=1728, height=1072, fps=60.0, alternativeRefreshRates=[], supportedHdrTypes=[]}], hdrCapabilities null, userDisabledHdrTypes [], minimalPostProcessingSupported false, rotation 0, state ON, committedState UNKNOWN, type VIRTUAL, uniqueId "virtual:com.vil3ntec.rawrec,10192,RawRec,0", app 1728 x 1072, density 476 (476.0 x 476.0) dpi, layerStack 2, colorMode 0, supportedColorModes [0], deviceProductInfo null, owner com.vil3ntec.rawrec (uid 10192), removeMode 1, refreshRateOverride 0.0, brightnessMinimum 0.0, brightnessMaximum 0.0, brightnessDefault 0.0, installOrientation ROTATION_0, layoutLimitedRefreshRate null, hdrSdrRatio not_available, thermalRefreshRateThrottling {}, thermalBrightnessThrottlingDataId default}
+11-10 00:12:58.073   519   586 I DisplayDevice: [2] Layerstack set to 2 for virtual:com.vil3ntec.rawrec,10192,RawRec,0
+11-10 00:12:58.197   519   564 I DisplayPowerController2[2]: BrightnessEvent: disp=2, physDisp=virtual:com.vil3ntec.rawrec,10192,RawRec,0, brt=0.0, initBrt=NaN, rcmdBrt=NaN, preBrt=NaN, lux=0.0, preLux=0.0, hbmMax=1.0, hbmMode=off, rbcStrength=-1, thrmMax=1.0, powerFactor=1.0, wasShortTermModelActive=false, flags=, reason=manual, autoBrightness=false, strategy=InvalidBrightnessStrategy
+11-10 00:12:58.621   519  1645 I AudioService.RecordingActivityMonitor: rec update riid:95 uid:10192 session:97 src:REMOTE_SUBMIX not silenced pack:com.vil3ntec.rawrec
+11-10 00:12:59.238   827   827 D TileServices: Couldn't find tile for ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.RecTileService}(0)
+11-10 00:12:59.528   519   894 I AudioService.RecordingActivityMonitor: rec update riid:103 uid:10192 session:105 src:REMOTE_SUBMIX not silenced pack:com.vil3ntec.rawrec
+11-10 00:13:00.120   519  3026 W AppOps  : Noting op not finished: uid 10192 pkg com.vil3ntec.rawrec code 24 startTime of in progress event=1794269576776
+11-10 00:13:00.126   519  3026 W WindowManager: App com.vil3ntec.rawrec has a system alert window (type = 2038) with FLAG_NOT_TOUCHABLE and LayoutParams.alpha = 1.00 > 0.80, setting alpha to 0.80 to let touches pass through (if this is isn't desirable, remove flag FLAG_NOT_TOUCHABLE).
+11-10 00:13:00.162   519  2195 D CoreBackPreview: Window{7058503 u0 com.vil3ntec.rawrec}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@f5b9b98, mPriority=0, mIsAnimationCallback=false}
+11-10 00:13:00.163   519  2940 W WindowManager: App com.vil3ntec.rawrec has a system alert window (type = 2038) with FLAG_NOT_TOUCHABLE and LayoutParams.alpha = 1.00 > 0.80, setting alpha to 0.80 to let touches pass through (if this is isn't desirable, remove flag FLAG_NOT_TOUCHABLE).
+11-10 00:13:00.203   519   894 I AudioService.RecordingActivityMonitor: rec update riid:111 uid:10192 session:113 src:REMOTE_SUBMIX not silenced pack:com.vil3ntec.rawrec
+11-10 00:13:00.421  3537  3583 I vil3ntec.rawrec: Background young concurrent copying GC freed 28436(1294KB) AllocSpace objects, 13(508KB) LOS objects, 34% free, 3308KB/5049KB, paused 35us,11us total 213.490ms
+11-10 00:13:00.661   519   534 I AudioService.RecordingActivityMonitor: rec update riid:119 uid:10192 session:121 src:REMOTE_SUBMIX not silenced pack:com.vil3ntec.rawrec
+11-10 00:13:01.014  3537  3583 I vil3ntec.rawrec: Background concurrent copying GC freed 4238(323KB) AllocSpace objects, 3(148KB) LOS objects, 49% free, 5215KB/10MB, paused 18us,7us total 122.447ms
+11-10 00:13:01.160  4715  4715 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-10 00:13:01.174  4715  4715 I AndroidRuntime: Using default boot image
+11-10 00:13:01.175  4715  4715 I AndroidRuntime: Leaving lock profiling enabled
+11-10 00:13:01.492  4715  4715 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-10 00:13:02.270  1436  4560 I BlockstoreStorage: Clearing Blockstore Data for package com.vil3ntec.rawrec [CONTEXT service_id=258 ]
+11-10 00:13:02.605   519  2391 W AppOps  : Noting op not finished: uid 10192 pkg com.vil3ntec.rawrec code 24 startTime of in progress event=1794269576776
+11-10 00:13:02.738   519   894 D CoreBackPreview: Window{c0399ed u0 RawRec mirror}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@4020415, mPriority=0, mIsAnimationCallback=false}
+11-10 00:13:02.944   519  1634 D CoreBackPreview: Window{7058503 u0 com.vil3ntec.rawrec}: Setting back callback null
+11-10 00:13:02.949   519  2940 W InputManager-JNI: Input channel object '7058503 com.vil3ntec.rawrec (client)' was disposed without first being removed with the input manager!
+11-10 00:13:05.879  4715  4715 D AndroidRuntime: Shutting down VM
+11-10 00:13:09.251   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{4044c92 com.google.android.apps.messaging/10129} BLOCKED
+11-10 00:13:09.252   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{154663 com.google.android.gm/10143} BLOCKED
+11-10 00:13:09.252   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{8135260 com.google.android.contacts/10154} BLOCKED
+11-10 00:13:09.410  4868  4868 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-10 00:13:09.418  4868  4868 I AndroidRuntime: Using default boot image
+11-10 00:13:09.418  4868  4868 I AndroidRuntime: Leaving lock profiling enabled
+11-10 00:13:09.663  4868  4868 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-10 00:13:12.776  4868  4868 D AndroidRuntime: Shutting down VM
+11-10 00:13:16.156  4981  4981 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-10 00:13:16.164  4981  4981 I AndroidRuntime: Using default boot image
+11-10 00:13:16.164  4981  4981 I AndroidRuntime: Leaving lock profiling enabled
+11-10 00:13:16.647  4981  4981 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-10 00:13:20.015   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{fb78ea2 com.google.android.contacts/10154} BLOCKED
+11-10 00:13:20.606  4981  4981 D AndroidRuntime: Shutting down VM
+11-10 00:13:24.336  5058  5058 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-10 00:13:24.365  5058  5058 I AndroidRuntime: Using default boot image
+11-10 00:13:24.369  5058  5058 I AndroidRuntime: Leaving lock profiling enabled
+11-10 00:13:25.000  5058  5058 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+11-10 00:13:26.606  5058  5058 D AndroidRuntime: Shutting down VM
+11-10 00:13:32.776  3537  3583 I vil3ntec.rawrec: Background young concurrent copying GC freed 40239(2998KB) AllocSpace objects, 62(1972KB) LOS objects, 47% free, 5467KB/10MB, paused 20us,14us total 381.788ms
+11-10 00:13:36.434   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{4251510 com.google.android.apps.maps/10155} BLOCKED
+11-10 00:13:45.052   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{1a78e94 com.google.android.googlequicksearchbox/10131} BLOCKED
+11-10 00:13:50.494  3537  3583 I vil3ntec.rawrec: Background concurrent copying GC freed 42598(3214KB) AllocSpace objects, 52(1872KB) LOS objects, 49% free, 5410KB/10MB, paused 21us,14us total 704.668ms
+11-10 00:14:06.772  3537  3583 I vil3ntec.rawrec: Background young concurrent copying GC freed 41710(3014KB) AllocSpace objects, 79(2348KB) LOS objects, 49% free, 5410KB/10MB, paused 359us,12us total 125.027ms
+11-10 00:14:07.048   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{c1c4b8e com.google.android.contacts/10154} BLOCKED
+11-10 00:14:11.983   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{56c0d36 com.google.android.as/10125} BLOCKED
+11-10 00:14:13.627   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{2a05ab4 com.google.android.as/10125} BLOCKED
+11-10 00:14:20.972   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{cb98776 com.google.android.contacts/10154} BLOCKED
+11-10 00:14:24.665  3537  3583 I vil3ntec.rawrec: Background young concurrent copying GC freed 42973(3215KB) AllocSpace objects, 69(2160KB) LOS objects, 49% free, 5434KB/10MB, paused 17us,13us total 154.403ms
+11-10 00:14:40.286  3537  3583 I vil3ntec.rawrec: Background young concurrent copying GC freed 41503(3272KB) AllocSpace objects, 54(2036KB) LOS objects, 48% free, 5558KB/10MB, paused 21us,13us total 155.003ms
+11-10 00:14:54.662  3537  3583 I vil3ntec.rawrec: Background young concurrent copying GC freed 41305(3244KB) AllocSpace objects, 54(1996KB) LOS objects, 47% free, 5633KB/10MB, paused 10.810ms,10us total 189.250ms
+11-10 00:15:45.225  3537  3583 I vil3ntec.rawrec: Background young concurrent copying GC freed 37691(2824KB) AllocSpace objects, 70(2148KB) LOS objects, 46% free, 5831KB/10MB, paused 44us,11us total 101.181ms
+11-10 00:15:57.470  3537  3583 I vil3ntec.rawrec: Background young concurrent copying GC freed 35920(3084KB) AllocSpace objects, 50(1776KB) LOS objects, 44% free, 6027KB/10MB, paused 21us,14us total 133.733ms
+11-10 00:16:27.458   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{6ab9a2d com.google.android.googlequicksearchbox/10131} BLOCKED
+11-10 00:16:33.808   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{8e5bfa4 com.google.android.apps.messaging/10129} BLOCKED
+11-10 00:16:35.512  3537  3583 I vil3ntec.rawrec: Background young concurrent copying GC freed 36726(2791KB) AllocSpace objects, 54(1844KB) LOS objects, 42% free, 6170KB/10MB, paused 22us,19us total 292.041ms
+11-10 00:16:45.104   519   586 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.vil3ntec.rawrec/.E2EActivity (has extras)} with LAUNCH_SINGLE_TOP from uid 2000 (BAL_ALLOW_PERMISSION) result code=3
+11-10 00:16:45.106   827   863 D WindowManagerShell: onActivityRestartAttempt: ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity}
+11-10 00:16:47.400  3537  3583 I vil3ntec.rawrec: Background concurrent copying GC freed 41624(2947KB) AllocSpace objects, 74(2284KB) LOS objects, 49% free, 6351KB/12MB, paused 26us,11us total 310.339ms
+11-10 00:16:49.040  1573  1631 I MediaProvider: Open with lower FS for /storage/emulated/0/Movies/RawRec/.pending-1794874608-RawRec 2026-11-10 00-16.mp4. Uid: 10192
+11-10 00:16:49.441   519  2803 W NotificationService: Toast already killed. pkg=com.vil3ntec.rawrec token=android.os.BinderProxy@bd90175
+11-10 00:16:50.172  3537  3583 I vil3ntec.rawrec: Background young concurrent copying GC freed 6508(571KB) AllocSpace objects, 6(196KB) LOS objects, 8% free, 11MB/12MB, paused 19us,16us total 276.353ms
+11-10 00:16:52.840   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{dd71d99 com.google.android.settings.intelligence/10118} BLOCKED
+11-10 00:16:54.052  3537  3583 I vil3ntec.rawrec: Background concurrent copying GC freed 10395(733KB) AllocSpace objects, 11(336KB) LOS objects, 49% free, 11MB/22MB, paused 20us,14us total 381.830ms
+11-10 00:16:55.316   519  1634 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{65bb45a com.google.android.settings.intelligence/10118} BLOCKED
+11-10 00:17:03.940   519   570 I AppsFilter: interaction: PackageSetting{f19045b com.vil3ntec.rawrec/10192} -> PackageSetting{a1106ba com.google.android.as/10125} BLOCKED
+11-10 00:17:05.848   519  2947 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.vil3ntec.rawrec/.E2EActivity (has extras)} with LAUNCH_SINGLE_TOP from uid 2000 (BAL_ALLOW_PERMISSION) result code=3
+11-10 00:17:05.854   827   863 D WindowManagerShell: onActivityRestartAttempt: ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity}
+11-10 00:17:07.741  1573  1631 D MediaProvider: Moving /storage/emulated/0/Movies/RawRec/.pending-1794874608-RawRec 2026-11-10 00-16.mp4 to /storage/emulated/0/Movies/RawRec/RawRec 2026-11-10 00-16.mp4
+11-10 00:17:10.137   519  3026 W NotificationService: Toast already killed. pkg=com.vil3ntec.rawrec token=android.os.BinderProxy@2aeb342
+11-10 00:17:10.142   519   895 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.vil3ntec.rawrec/.E2EActivity (has extras)} with LAUNCH_SINGLE_TOP from uid 2000 (BAL_ALLOW_PERMISSION) result code=3
+11-10 00:17:10.161   827   863 D WindowManagerShell: onActivityRestartAttempt: ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity}
+11-10 00:17:10.664   827   827 D TileServices: Couldn't find tile for ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.RecTileService}(0)
+11-10 00:17:10.713   519  1730 D CoreBackPreview: Window{c0399ed u0 RawRec mirror}: Setting back callback null
+11-10 00:17:10.740   519   803 W InputManager-JNI: Input channel object 'c0399ed RawRec mirror (client)' was disposed without first being removed with the input manager!
+11-10 00:17:10.769   519  2391 W InputManager-JNI: Input channel object '37a0ca3 RawRec control (client)' was disposed without first being removed with the input manager!
+11-10 00:17:10.771   519  2195 I WindowManager: setOnBackInvokedCallback(): No window state for package:com.vil3ntec.rawrec
+11-10 00:17:11.948   519   892 I AudioService.RecordingActivityMonitor: rec update riid:119 uid:10192 session:121 src:REMOTE_SUBMIX not silenced pack:com.vil3ntec.rawrec
+11-10 00:17:11.995   519   892 I AudioService.RecordingActivityMonitor: rec update riid:111 uid:10192 session:113 src:REMOTE_SUBMIX not silenced pack:com.vil3ntec.rawrec
+11-10 00:17:12.492   519  3026 I AudioService.RecordingActivityMonitor: rec update riid:95 uid:10192 session:97 src:REMOTE_SUBMIX not silenced pack:com.vil3ntec.rawrec
+11-10 00:17:12.498   519  3026 I AudioService.RecordingActivityMonitor: rec update riid:119 uid:10192 session:121 src:REMOTE_SUBMIX not silenced pack:com.vil3ntec.rawrec
+11-10 00:17:12.556   519  3026 I AudioService.RecordingActivityMonitor: rec update riid:95 uid:10192 session:97 src:REMOTE_SUBMIX not silenced pack:com.vil3ntec.rawrec
+11-10 00:17:12.607   519  3026 I AudioService.RecordingActivityMonitor: rec update riid:95 uid:10192 session:97 src:REMOTE_SUBMIX not silenced pack:com.vil3ntec.rawrec
+11-10 00:17:13.545   519  2944 I DisplayDeviceRepository: Display device removed: DisplayDeviceInfo{"RawRec": uniqueId="virtual:com.vil3ntec.rawrec,10192,RawRec,0", 1728 x 1072, modeId 2, renderFrameRate 60.0, defaultModeId 2, supportedModes [{id=2, width=1728, height=1072, fps=60.0, alternativeRefreshRates=[], supportedHdrTypes=[]}], colorMode 0, supportedColorModes [0], hdrCapabilities null, allmSupported false, gameContentTypeSupported false, density 476, 476.0 x 476.0 dpi, appVsyncOff 0, presDeadline 16666666, touch NONE, rotation 0, type VIRTUAL, deviceProductInfo null, state ON, committedState UNKNOWN, owner com.vil3ntec.rawrec (uid 10192), frameRateOverride , brightnessMinimum 0.0, brightnessMaximum 0.0, brightnessDefault 0.0, hdrSdrRatio NaN, FLAG_PRIVATE, FLAG_PRESENTATION, installOrientation 0, displayShape DisplayShape{ spec=-1386485785 displayWidth=1728 displayHeight=1072 physicalPixelDisplaySizeRatio=1.0 rotation=0 offsetX=0 offsetY=0 scale=1.0}}
+11-10 00:17:14.378   827   827 D TileServices: Couldn't find tile for ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.RecTileService}(0)
+11-10 00:17:14.455   519  1730 D CoreBackPreview: Window{aa67537 u0 com.vil3ntec.rawrec}: Setting back callback OnBackInvokedCallbackInfo{mCallback=android.window.IOnBackInvokedCallback$Stub$Proxy@f73400d, mPriority=0, mIsAnimationCallback=false}
+11-10 00:17:16.403   519  1730 I ActivityTaskManager: START u0 {flg=0x10000000 cmp=com.vil3ntec.rawrec/.E2EActivity (has extras)} with LAUNCH_SINGLE_TOP from uid 2000 (BAL_ALLOW_PERMISSION) result code=3
+11-10 00:17:16.427   827   863 D WindowManagerShell: onActivityRestartAttempt: ComponentInfo{com.vil3ntec.rawrec/com.vil3ntec.rawrec.E2EActivity}
+11-10 00:17:16.510  3537  3537 I RAWREC_E2E: 2026-11-10 00:12:58  start: c2.android.avc.encoder 1152x720@60 7 Mbps level 3.2 • Android 34
+11-10 00:17:16.512  3537  3537 I RAWREC_E2E: 2026-11-10 00:12:58  screen sources: metrics 2560x1600, rotation 0, display context 2560x1600, config 2
+11-10 00:17:16.512  3537  3537 I RAWREC_E2E: 2026-11-10 00:12:58  captured app on screen
+11-10 00:17:16.512  3537  3537 I RAWREC_E2E: 2026-11-10 00:13:00  rtmp: CONNECTING
+11-10 00:17:16.512  3537  3537 I RAWREC_E2E: 2026-11-10 00:13:01  rtmp: LIVE via=direct 10.0.2.2
+11-10 00:17:16.512  3537  3537 I RAWREC_E2E: 2026-11-10 00:13:01  rate: sent 0 kbps, target 6000, behind 0 ms, lost 0 frames, 0 pictures a second sent, picture 1152×720 at 60
+11-10 00:17:16.512  3537  3537 I RAWREC_E2E: 2026-11-10 00:13:02  chat panel: whole screen captured
+11-10 00:17:16.512  3537  3537 I RAWREC_E2E: 2026-11-10 00:13:02  mirror: on the screen, 1 pictures
+11-10 00:17:16.512  3537  3537 I RAWREC_E2E: 2026-11-10 00:13:05  screen: 18 pictures, 17 drawn
+11-10 00:17:16.512  3537  3537 I RAWREC_E2E: 2026-11-10 00:13:05  mirror: on the screen, 1 pictures
+11-10 00:17:16.512  3537  3537 I RAWREC_E2E: 2026-11-10 00:13:18  screen: 47 pictures, 46 drawn
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:13:18  mirror: on the screen, 1 pictures
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:13:30  screen: 68 pictures, 67 drawn
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:13:30  mirror: on the screen, 1 pictures
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:13:31  rate: sent 480 kbps, target 3000, behind 0 ms, lost 0 frames, 5 pictures a second sent, picture 1152×720 at 60
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:14:01  rate: sent 966 kbps, target 3000, behind 0 ms, lost 0 frames, 11 pictures a second sent, picture 1152×720 at 60
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:14:31  rate: sent 430 kbps, target 3000, behind 0 ms, lost 0 frames, 6 pictures a second sent, picture 1152×720 at 60
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:15:01  rate: sent 485 kbps, target 3000, behind 0 ms, lost 0 frames, 6 pictures a second sent, picture 1152×720 at 60
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:15:32  rate: sent 612 kbps, target 3000, behind 0 ms, lost 0 frames, 8 pictures a second sent, picture 1152×720 at 60
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:16:03  rate: sent 427 kbps, target 3000, behind 2 ms, lost 0 frames, 10 pictures a second sent, picture 1152×720 at 60
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:16:34  rate: sent 429 kbps, target 3000, behind 0 ms, lost 0 frames, 4 pictures a second sent, picture 1152×720 at 60
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:16:45  record: started beside the stream
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:16:45  notice: record: H.264 1712x1072 33 fps 12 Mbps beside the stream
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:17:04  rate: sent 260 kbps, target 3000, behind 5 ms, lost 0 frames, 1 pictures a second sent, picture 1152×720 at 60
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:17:07  record: closed and kept
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:17:07  link: 3000 of 7000 kbps, 30 fps
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:17:10  stop: APP
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 2026-11-10 00:17:14  rtmp: ENDED via=direct 10.0.2.2
+11-10 00:17:16.513  3537  3537 I RAWREC_E2E: 
