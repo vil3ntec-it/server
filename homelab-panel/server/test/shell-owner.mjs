@@ -122,6 +122,22 @@ try {
       const updSet = await s.call('POST', '/api/control/update/settings', { autoCheck: true }, p.admin2);
       check('مدیرِ دوم تنظیماتِ به‌روزرسانی را عوض می‌کند (گزینه خاموش)', updSet.status === 200, JSON.stringify(updSet.json));
 
+      //  ⛔ (۱.۵۰.۸۳) فرمانِ مؤثرِ سایت از پوشه: operator با پوشه‌ای که `package.json` با `npm start` دارد سایت نمی‌سازد
+      //  (حتی بی فرستادنِ startCommand — همان چیزی که addSite واقعاً اجرا می‌کند)
+      const nodeDir = path.join(s.sitesRoot, 'node-app');
+      fs.mkdirSync(nodeDir, { recursive: true });
+      fs.writeFileSync(path.join(nodeDir, 'package.json'), JSON.stringify({ name: 'n', scripts: { start: 'node server.js' } }));
+      const nodeAsOper = await s.call('POST', '/api/sites', { path: nodeDir, name: 'node-app', port: 18071 }, p.oper);
+      check('⛔ operator سایتِ با فرمانِ مؤثرِ پوشه (npm start) نمی‌سازد (۴۰۳ admin)', nodeAsOper.status === 403 && nodeAsOper.json?.needed === 'admin', JSON.stringify(nodeAsOper.json));
+      const impNode = await s.call('POST', '/api/sites/discover/import', { items: [{ path: nodeDir, name: 'node-app', port: 18072 }] }, p.oper);
+      check('⛔ و از discover/import هم نه (فرمان از پوشه خوانده می‌شود، نه از بدنه)', impNode.status === 403 && impNode.json?.needed === 'admin', JSON.stringify(impNode.json));
+      const nodeAsAdmin = await s.call('POST', '/api/sites', { path: nodeDir, name: 'node-app', port: 18073 }, p.admin2);
+      check('مدیر همان سایت را می‌سازد (گزینه خاموش)', nodeAsAdmin.status === 200, JSON.stringify(nodeAsAdmin.json));
+
+      //  ⛔ (۱.۵۰.۸۳) متغیرِ محیطیِ سایت = اجرای کد (NODE_OPTIONS) ⇒ operator نه، حتی با گزینهٔ خاموش
+      const envAsOper = await s.call('PUT', `/api/sites/${p.siteId}/config`, { env: { NODE_OPTIONS: '--import data:text/javascript,0' } }, p.oper);
+      check('⛔ operator متغیرِ محیطیِ سایت را عوض نمی‌کند (۴۰۳ admin)', envAsOper.status === 403 && envAsOper.json?.needed === 'admin', JSON.stringify(envAsOper.json));
+
       console.log('── ⛔ هر دو حالت: کارگزار از «وارد کردنِ پیداشده‌ها» پوسته نمی‌گیرد ──');
       const imp = await s.call('POST', '/api/sites/discover/import', { items: [{ path: path.join(s.sitesRoot, 'site-c'), name: 'c', port: 18083, startCommand: 'sh -c id' }] }, p.oper);
       check('⛔ کارگزار + فرمانِ اجرا در ‎discover/import‎ ⇒ ۴۰۳ (همان قاعدهٔ ‎POST /api/sites‎)', imp.status === 403 && imp.json?.needed === 'admin', JSON.stringify(imp.json));
@@ -201,6 +217,12 @@ try {
       check('مالک کتابخانه را می‌گذارد', libO.status === 200, JSON.stringify(libO.json));
       const impO = await s.call('POST', '/api/sites/discover/import', { items: [{ path: path.join(s.sitesRoot, 'site-c'), name: 'c', port: 18083, startCommand: 'node c.js' }] }, p.owner);
       check('مالک با فرمانِ اجرا وارد می‌کند', impO.status === 200 && impO.json?.added?.length === 1, JSON.stringify(impO.json));
+
+      //  ⛔ (۱.۵۰.۸۳) «مرتب کردنِ» کتابخانه هم نوشتن روی دیسک است ⇒ با گزینهٔ روشن فقط مالک
+      const orgA = await s.call('POST', '/api/storage/organize/apply', { items: [{ path: path.join(s.sitesRoot, 'site-a'), name: 'a', branch: 'Sites' }] }, p.admin2);
+      check('⛔ مدیرِ دوم پوشه‌ها را مرتب (جابه‌جا) نمی‌کند', ownerOnly(orgA), JSON.stringify(orgA.json));
+      const orgO = await s.call('POST', '/api/storage/organize/apply', { items: [{ path: path.join(s.sitesRoot, 'site-a'), name: 'a', branch: 'Sites' }] }, p.owner);
+      check('مالک مرتب می‌کند (هرگز بیرون نمی‌ماند)', !ownerOnly(orgO), JSON.stringify(orgO.json));
 
       const localKey = fs.readFileSync(path.join(s.dataDir, 'local-admin.key'), 'utf8').trim();
       const cmdL = await s.call('PUT', `/api/sites/${p.siteId}`, { startCommand: 'node local.js' }, null, { 'X-Local-Key': localKey });

@@ -12,6 +12,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { paths } from '../config.js';
 import { updateUrlFor } from '../siteupdates/mirror.js';
+import { childBaseEnv } from '../lib/child-env.js';
 
 export function slugify(name) {
   const base = String(name || '')
@@ -92,7 +93,8 @@ export function siteEnv(site) {
   const p = workspacePaths(site.slug);
   const cfg = readSiteConfig(site.slug);
   return {
-    ...process.env,
+    //  ⛔ (۱.۵۰.۸۳) بی رازهای پنل (کلیدِ نشست، رمزها، توکن‌ها) — `lib/child-env.js`
+    ...childBaseEnv(),
     ...(cfg.env || {}),
     PORT: String(site.port || ''),
     SITE_NAME: site.name,

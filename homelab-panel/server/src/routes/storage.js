@@ -9,6 +9,8 @@ import path from 'node:path';
 import { requireLocalOrAuth } from '../local-key.js';
 import { audit } from '../lib/audit.js';
 import { config } from '../config.js';
+import { isOwner } from '../control/roles.js';
+import { resolveSafe } from '../lib/safe-path.js';
 import {
   overview,
   suggestRoot,
@@ -101,10 +103,20 @@ router.post('/apps', async (req, res) => {
 });
 
 // ---------------------- مرتب کردنِ پراکنده‌ها --------------------------------
+//  ⛔ (۱.۵۰.۸۳) کلیدِ محلی و مالک به هر مسیری سر می‌زنند؛ بقیه (حتی admin) فقط `root` ِ داخلِ ریشه‌های
+//  مجاز را می‌دهند — وگرنه viewer می‌توانست هر جای دیسک را بپیماید و پوشه‌های پروژه‌مانند را فهرست کند.
+const privilegedRoot = (req) => Boolean(req.user?.local || (req.user?.id != null && isOwner(req.user.id)));
+
 router.get('/scan', async (req, res) => {
   // جاهایی که پیش از کتابخانه ممکن بود پوشه ساخته شود
   const roots = [config.sitesRoot, path.dirname(config.dataDir)];
-  if (req.query.root) roots.push(String(req.query.root));
+  if (req.query.root) {
+    const wanted = String(req.query.root);
+    if (!privilegedRoot(req) && !resolveSafe(wanted).ok) {
+      return res.status(403).json({ ok: false, error: 'bad_root', message: 'این مسیر در فهرستِ ریشه‌های مجاز نیست' });
+    }
+    roots.push(wanted);
+  }
   res.json({ ok: true, found: await scanStray({ extraRoots: roots }) });
 });
 
@@ -113,9 +125,18 @@ router.post('/organize/preview', async (req, res) => {
 });
 
 router.post('/organize/apply', async (req, res) => {
+  //  ⛔ (۱.۵۰.۸۳) S19: جابه‌جایی کارِ نوشتن روی دیسکِ میزبان است ⇒ با `HLP_SHELL_OWNER_ONLY=1` فقط مالک (کلیدِ محلی مستثنا)
+  if (!denyUnlessShellAllowed(req, res, 'library')) return;
   const items = req.body?.items || [];
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ ok: false, error: 'nothing_to_move' });
+  }
+  //  ⛔ (۱.۵۰.۸۳) مبدأ باید داخلِ ریشه‌های مجازِ فایل‌منیجر باشد — نه پوشهٔ دادهٔ پنل، نه مسیرِ دلخواهِ دیسک
+  //  (وگرنه admin می‌توانست `panel.db` یا هر پوشه‌ای را به کتابخانه بکشد و با `removeSource` جابه‌جا کند).
+  for (const it of Array.isArray(items) ? items : []) {
+    if (!resolveSafe(String(it?.path ?? '')).ok) {
+      return res.status(403).json({ ok: false, error: 'bad_source', message: 'مبدأ باید داخلِ ریشه‌های مجاز باشد' });
+    }
   }
   // پاک کردنِ منبع فقط وقتی صریحاً خواسته شود
   audit(req, 'storage.organize', { target: `${items.length} پوشه`, detail: req.body?.removeSource === true ? 'با پاک کردنِ منبع' : 'فقط کپی' });

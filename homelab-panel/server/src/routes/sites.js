@@ -3,6 +3,8 @@ import { Router } from 'express';
 import { requireLocalOrAuth } from '../local-key.js';
 import { requireWriteRole, userRole } from '../auth.js';
 import path from 'node:path';
+import fs from 'node:fs';
+import { detectProject } from '../sites/detect.js';
 import {
   listSites,
   getSite,
@@ -57,9 +59,37 @@ router.get('/:id', async (req, res) => {
  *  یک فرمانِ دلخواه، کلِ کامپیوتر را داشت. و ریشه‌ای که خودِ پوشهٔ دادهٔ
  *  پنل یا بالاتر از آن باشد برای هیچ‌کس پذیرفته نمی‌شود.
  */
+/*
+ *  ⛔ (۱.۵۰.۸۳) «فرمانِ اجرا» فقط آنی نیست که در بدنه می‌آید: `addSite` فرمان را از
+ *  `site.json`/`package.json` ِ خودِ پوشه هم درمی‌آورد (`detectProject`). پس operator با ساختِ سایتی
+ *  که پوشه‌اش یک `npm start` دارد، بی آنکه فرمانی بفرستد، همان اجرای کد را می‌گرفت. این‌جا فرمانِ **مؤثر**
+ *  (صریح، وگرنه از پوشه) سنجیده می‌شود — نه فقط فیلدِ درخواست.
+ */
+function effectiveStartCommand(body) {
+  const explicit = body.startCommand ?? body.start_command;
+  if (explicit !== undefined && String(explicit || '').trim()) return String(explicit).trim();
+  const root = body.path ?? body.rootPath ?? body.root_path;
+  if (root !== undefined && String(root || '').trim()) {
+    try {
+      const resolved = path.resolve(String(root).trim());
+      if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+        const detected = detectProject(resolved).startCommand;
+        if (detected && String(detected).trim()) return String(detected).trim();
+      }
+    } catch { /* پوشهٔ نخواندنی ⇒ addSite خودش رد می‌کند */ }
+  }
+  return '';
+}
+
 function sensitiveSiteChange(body, before = null) {
-  const cmd = body.startCommand ?? body.start_command;
-  if (cmd !== undefined && String(cmd || '') !== String(before?.start_command || '')) return true;
+  if (before) {
+    //  ویرایش: فقط اگر فرمانِ صریح عوض شد (پوشه عوض نمی‌شود)
+    const cmd = body.startCommand ?? body.start_command;
+    if (cmd !== undefined && String(cmd || '') !== String(before.start_command || '')) return true;
+  } else if (effectiveStartCommand(body)) {
+    //  ساخت/وارد کردن: هر فرمانِ مؤثرِ غیرخالی (صریح یا از پوشه) ⇒ حساس
+    return true;
+  }
   const root = body.path ?? body.rootPath ?? body.root_path;
   if (root !== undefined) {
     const rel = path.relative(path.resolve(sitesRoot()), path.resolve(String(root || '')));
@@ -86,7 +116,7 @@ function guardSite(req, res, before = null, body = req.body || {}) {
       return false;
     }
     //  ⛔ S19: `HLP_SHELL_OWNER_ONLY=1` ⇒ فرمانِ اجرا و ریشهٔ بیرونی فقط مالک (خاموش ⇒ همان «هر admin»)
-    const what = (body.startCommand ?? body.start_command) !== undefined ? 'site.command' : 'site.root';
+    const what = effectiveStartCommand(body) ? 'site.command' : 'site.root';
     if (!denyUnlessShellAllowed(req, res, what)) return false;
   }
   return true;
@@ -201,8 +231,13 @@ router.put('/:id/config', (req, res) => {
   if (!site) return res.status(404).json({ error: 'not_found' });
   const current = readSiteConfig(site.slug);
   const env = req.body?.env && typeof req.body.env === 'object' ? req.body.env : current.env;
-  //  ⛔ S19: متغیرِ محیطی همان «فرمانِ اجرا» است (‎NODE_OPTIONS=--import data:…‎، ‎PATH‎) ⇒ با گزینهٔ روشن فقط مالک
-  if (!req.user?.local && JSON.stringify(env || {}) !== JSON.stringify(current.env || {}) && !denyUnlessShellAllowed(req, res, 'site.env')) return;
+  //  ⛔ S19 (۱.۵۰.۸۳): متغیرِ محیطی همان «فرمانِ اجرا» است (‎NODE_OPTIONS=--import data:…‎، ‎PATH‎) ⇒ همان نقشِ
+  //  فرمانِ اجرا: دستِ‌کم admin (نه operator)، و با `HLP_SHELL_OWNER_ONLY=1` فقط مالک. تا امروز فقط سوئیچ سنجیده
+  //  می‌شد، پس operator با سوئیچِ خاموش ‎NODE_OPTIONS‎ می‌گذاشت و کد اجرا می‌کرد.
+  if (!req.user?.local && JSON.stringify(env || {}) !== JSON.stringify(current.env || {})) {
+    if (userRole(req.user.id) !== 'admin') return res.status(403).json({ ok: false, error: 'forbidden', needed: 'admin' });
+    if (!denyUnlessShellAllowed(req, res, 'site.env')) return;
+  }
   const next = { ...current, ...req.body, env, updatedAt: Date.now() };
   writeSiteConfig(site.slug, next);
   res.json({ ok: true, config: next });

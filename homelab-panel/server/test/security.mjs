@@ -499,6 +499,28 @@ try {
   console.log('\n▶ جداییِ توکن‌ها');
   const panelWithLocal = await fetch(`${BASE}/api/dashboard`, { headers: { 'X-Local-Key': 'wrong-key-here-1234567890' } });
   check('کلیدِ محلیِ غلط رد می‌شود', panelWithLocal.status === 401, `status=${panelWithLocal.status}`);
+
+  console.log('\n▶ بدنهٔ JSON ِ خراب تکهٔ خودش را لو نمی‌دهد (۶-۶)');
+  //  یک راز در بدنهٔ خرابِ JSON: نباید در پاسخ یا دفترِ رخداد دیده شود
+  const SECRET_IN_BODY = 'PWLEAK-super-secret-9b3f';
+  //  به `/api/dashboard` (نه login، که سقفِ نرخِ جدا دارد و پیش از تجزیهٔ بدنه می‌دود)
+  const badJson = await fetch(`${BASE}/api/dashboard`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: `{"username":"a","password":"${SECRET_IN_BODY}"`,   //  آکولادِ بسته ندارد ⇒ خطای تجزیه
+  });
+  const badJsonText = await badJson.text();
+  check('⛔ بدنهٔ JSON ِ خراب ⇒ ۴۰۰ bad_json', badJson.status === 400 && /bad_json/.test(badJsonText), `${badJson.status} ${badJsonText.slice(0, 120)}`);
+  check('⛔ و تکهٔ بدنه (رمز) در پاسخ نیست', !badJsonText.includes(SECRET_IN_BODY), badJsonText.slice(0, 160));
+  //  سقفِ ۵ مگابایت ِ JSON ⇒ ۴۱۳، نه ۵۰۰
+  const tooBig = await fetch(`${BASE}/api/dashboard`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: `{"x":"${'A'.repeat(6 * 1024 * 1024)}"}`,
+  });
+  check('⛔ بدنهٔ بزرگ‌تر از سقف ⇒ ۴۱۳ payload_too_large', tooBig.status === 413, String(tooBig.status));
+  //  و دفترِ رخداد (که admin/viewer می‌خواند) هم تکهٔ بدنه را ندارد
+  const logs = await j(await get('/api/logs?limit=200', auth));
+  const logText = JSON.stringify(logs.events || logs);
+  check('⛔ و تکهٔ بدنه در دفترِ رخداد هم ننشست', !logText.includes(SECRET_IN_BODY), logText.slice(0, 160));
 } catch (e) {
   failed++;
   console.log(`\n❌ ${e.message}`);

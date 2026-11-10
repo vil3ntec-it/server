@@ -27,6 +27,7 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { featureOn, disabledPayload } from '../lib/feature-gate.js';
+import { childBaseEnv } from '../lib/child-env.js';
 
 const IDLE_MS = 15 * 60 * 1000;      // نشستِ رهاشده بسته می‌شود
 const MAX_COMMAND_MS = 10 * 60 * 1000; // یک فرمان تا کِی حق دارد بدود
@@ -174,13 +175,13 @@ export function run(id, command, { onData } = {}) {
   const { cmd, args } = shellFor();
   const child = spawn(cmd, args, {
     cwd: s.cwd,
-    env: {
-      ...process.env,
+    //  ⛔ (۱.۵۰.۸۳) بی رازهای پنل (کلیدِ نشست، رمزها، توکن‌ها) — `lib/child-env.js`
+    env: childBaseEnv({
       // برنامه‌ها باید بدانند پایانهٔ واقعی نیست تا خروجیِ ساده بدهند
       TERM: 'dumb',
       NO_COLOR: '1',
       CI: '1',
-    },
+    }),
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
   });

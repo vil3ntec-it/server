@@ -118,6 +118,19 @@ try {
   r = await api('POST', `/api/control/projects/${project.project_id}/test`, {}, 'viewer');
   check('viewer می‌تواند آزمایش کند', r.status === 200, r.text);
 
+  console.log('\n── اسکنِ انبار: مسیرِ دلخواه فقط برای مالک/کلیدِ محلی (۱.۵۰.۸۳) ──');
+  //  مسیرِ بیرون از ریشه‌های مجاز
+  const outsideRoot = encodeURIComponent(path.join(tmp, 'outside-scan'));
+  fs.mkdirSync(path.join(tmp, 'outside-scan'), { recursive: true });
+  r = await api('GET', `/api/storage/scan?root=${outsideRoot}`, undefined, 'viewer');
+  check('⛔ viewer مسیرِ دلخواهِ دیسک را نمی‌پیماید (bad_root)', r.status === 403 && r.json?.error === 'bad_root', r.text);
+  r = await api('GET', `/api/storage/scan?root=${outsideRoot}`, undefined, 'operator');
+  check('⛔ operator هم نه', r.status === 403 && r.json?.error === 'bad_root', r.text);
+  r = await api('GET', `/api/storage/scan?root=${outsideRoot}`, undefined, 'admin');
+  check('مالک (نخستین مدیر) مسیرِ دلخواه را می‌پیماید', r.status === 200, r.text);
+  r = await api('GET', '/api/storage/scan', undefined, 'viewer');
+  check('viewer اسکنِ بی‌مسیر را می‌بیند (ریشه‌های پیش‌فرض)', r.status === 200, r.text);
+
   console.log('\n── آخرین مدیر نباید برود ──');
   const users = (await api('GET', '/api/auth/users')).json.users;
   const adminId = users.find((u) => u.username === 'admin').id;
