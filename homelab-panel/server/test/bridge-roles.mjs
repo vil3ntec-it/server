@@ -219,7 +219,9 @@ const PHASE3 = ['GET /api/admin/shops/:id/health', 'GET /api/admin/shops/:id/hol
   'GET /api/admin/finance/discrepancies', 'GET /api/admin/finance/history', 'GET /api/admin/finance/export',
   'GET /api/admin/system/reconciliation',
   //  ممیزی §۹ (۱.۵۰.۷۵؛ shop ‎claude/acct-console‎، #1024): پایانِ دوره از سرور (S15) و قراردادِ نسخه‌دار (S18)
-  'GET /api/admin/subscriptions/period-end', 'GET /api/admin/contract']
+  'GET /api/admin/subscriptions/period-end', 'GET /api/admin/contract',
+  //  ۱.۵۰.۷۷ (shop ‎claude/acct-console-2‎، #1025، پشتِ `staff-perms.v1`): برگرداندنِ دستگاه برای مدیر
+  'POST /api/admin/shops/:id/staff-perms/devices/:did/enable']
   .map((x) => { const [method, p] = x.split(' '); return { method, re: toRe(p), id: x }; });
 const phase3Of = (method, p) => PHASE3.find((x) => x.method === method && x.re.test(p)) || null;
 
@@ -264,7 +266,7 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
     if (!BACKGROUND.test(p)) calls.push({ method: req.method, path: p });
     //  همهٔ تواناییِ فاز ۳ اعلام می‌شود تا مقصدِ آن مسیرها هم دیده و سنجیده شود
-    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1', 'admin-sessions.v1', 'search.v1', 'market-admin.v1', 'delivery-watch.v1', 'ops.v1', 'release-stage.v1', 'finance.v1', 'sync-restore-once.v1', 'subscription-period.v1', 'admin-contract.v1'], serverTime: NOW });
+    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1', 'admin-sessions.v1', 'search.v1', 'market-admin.v1', 'delivery-watch.v1', 'ops.v1', 'release-stage.v1', 'finance.v1', 'sync-restore-once.v1', 'subscription-period.v1', 'admin-contract.v1', 'staff-perms.v1', 'image-bank.v1', 'idempotent-writes.v1'], serverTime: NOW });
     if (/\/receipt$/.test(p)) { res.setHeader('content-type', 'text/html; charset=utf-8'); return res.end('<html>رسید</html>'); }
     if (/^\/api\/admin\/support\/media\//.test(p)) { res.setHeader('content-type', 'image/png'); return res.end(Buffer.from([137, 80, 78, 71])); }
     return j(200, sample);
@@ -347,6 +349,8 @@ const SPECIAL = {
   'POST /api/account-admin/console/backups': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-backup-0001' } },
   //  ممیزی §۳-۴ (۱.۵۰.۷۵): ازکارانداختنِ دستگاهِ کارمند و بازبینیِ بانکِ عکس — دلیل + تأیید + کلیدِ یکتاییِ رابط (هر در کلیدِ خودش)
   'POST /api/account-admin/console/shops/:id/staff/devices/:did/disable': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-dev-0001' } },
+  //  ۱.۵۰.۷۷: برگرداندنِ دستگاه (پشتِ `staff-perms.v1`) — همان دلیل + تأیید + کلید
+  'POST /api/account-admin/console/shops/:id/staff/devices/:did/enable': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-dev-0002' } },
   'POST /api/account-admin/console/image-bank/images/:id/approve': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-img-0001' } },
   'POST /api/account-admin/console/image-bank/images/:id/reject': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-img-0002' } },
   'POST /api/account-admin/console/image-bank/images/:id/archive': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-img-0003' } },

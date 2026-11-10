@@ -19,13 +19,15 @@
 //  ⛔ پاسخِ فایل: فقط ‎image/(jpeg|png|webp|avif|gif)‎ با ‎nosniff‎ و ‎CSP: default-src 'none'‎ — نه SVG، نه HTML.
 //  ⛔ بازبینی: admin ِ پنل (آن‌جا ارشد) + دلیلِ ۳ تا ۲۰۰ + تأیید + کلیدِ یکتاییِ رابط (‎account/idem-once.js‎) + سقفِ نرخ
 //     + ردیفِ دفترِ پنل. بارگذاری، ورودِ گروهی و ویرایشِ کالای بانک این‌جا نیست (کارِ ابزارِ بارگذاری، نه بازبینی).
+//     کلید (۱.۵۰.۷۷): سرورِ حسابِ با `idempotent-writes.v1` ⇒ کلیدِ پنجره بسته به کاربرِ پنل بالا می‌رود (`makeUpstreamOnce`)؛
+//     بی آن همان یادِ حافظهٔ پل.
 // ---------------------------------------------------------------------------
 import * as panelRoles from '../control/roles.js';
 import { audit } from '../control/audit.js';
 import { cloudRaw, cloudRawBytes } from '../stations/cloud.js';
 import { rateLimit } from '../platform/rate-limit.js';
 import { requireModule } from '../console/modules.js';
-import { makeIdemOnce } from '../account/idem-once.js';
+import { checkIdemKey, makeIdemOnce, makeUpstreamOnce } from '../account/idem-once.js';
 
 const { requireRole } = panelRoles;
 const BASE = '/api/admin/image-bank';
@@ -110,8 +112,9 @@ function pick(q, keys) {
  * @param {import('express').Router} router  همان روترِ ‎account-admin.js‎
  * @param {{ guard: Function, badInput: Function, actorOf: Function }} d
  */
-export function mountConsoleImageBank(router, { guard, badInput, actorOf }) {
+export function mountConsoleImageBank(router, { guard, badInput, actorOf, capListed }) {
   const once = makeIdemOnce();
+  const viaServer = makeUpstreamOnce();
   const writeLimit = rateLimit({ name: 'console-image-bank-write', max: 120, windowMs: 10 * 60_000, key: (req) => `u${req.user?.id ?? 'x'}` });
   const read = requireModule('imagebank');
   const imgId = (v) => {
@@ -192,15 +195,21 @@ export function mountConsoleImageBank(router, { guard, badInput, actorOf }) {
       if (v !== undefined && v !== null && !(Number.isInteger(v) && v >= 1 && v <= 100000)) throw badInput('bad_version', 'نسخه درست نیست');
       if (act === 'search' && typeof req.body?.enabled !== 'boolean') throw badInput('enabled_required', 'روشن یا خاموش را بگویید');
       const body = { reason, ...(act === 'search' ? { enabled: req.body.enabled } : {}), ...(Number.isInteger(v) && act !== 'archive' && act !== 'search' ? { version: v } : {}) };
-      const out = await once(req, req.body?.idempotencyKey, `${act}|${id}|${JSON.stringify(body)}`, `image:${id}`, async () => {
-        const r = await cloudRaw('POST', `${BASE}/images/${id}/${act}`, { body });
-        audit({ actor: actorOf(req), action: `account.image_bank.${act}`, entity: 'bank_image', entityId: id,
-          detail: { reason, ...(act === 'search' ? { enabled: body.enabled } : {}), ...(body.version ? { version: body.version } : {}) } });
+      const key = checkIdemKey(req.body?.idempotencyKey);
+      const finish = (r, { record, resolved }) => {
+        if (record) {
+          audit({ actor: actorOf(req), action: `account.image_bank.${act}`, entity: 'bank_image', entityId: id,
+            detail: { reason, ...(act === 'search' ? { enabled: body.enabled } : {}), ...(body.version ? { version: body.version } : {}), ...(resolved ? { resolved: true } : {}) } });
+        }
         return {
           ok: true, act, id: str(r?.id, 40) || id, status: str(r?.status, 20) || null, version: numOr(r?.version ?? r?.current_version),
           ...(act === 'search' ? { searchEnabled: typeof r?.search_enabled === 'boolean' ? r.search_enabled : null } : {}), confirmedAt: Date.now(),
         };
-      });
+      };
+      const out = (await capListed('idempotent-writes.v1'))
+        ? await viaServer(req, key, (headers) => cloudRaw('POST', `${BASE}/images/${id}/${act}`, { body, headers, replayFlag: true }), finish)
+        : await once(req, key, `${act}|${id}|${JSON.stringify(body)}`, `image:${id}`,
+          async () => finish(await cloudRaw('POST', `${BASE}/images/${id}/${act}`, { body }), { record: true }));
       res.json(out);
     }));
   }

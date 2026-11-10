@@ -31,7 +31,7 @@
 //     (‎support-media-cache.js‎): سرورِ حساب رسانه را پس از رسیدن پاک
 //     می‌کند، پس «هر طرف روی دستگاهِ خودش نگه می‌دارد» یعنی همین‌جا.
 // ---------------------------------------------------------------------------
-import crypto from 'node:crypto';
+import { upstreamKey } from '../account/idem-once.js';
 import express from 'express';
 import {
   cloudRaw, cloudRawText, cloudRawBytes, cloudProbeServiceKey, serviceKeyReset, serviceKeyStatus, legacyAvailable, adminApiVersionSeen,
@@ -1635,7 +1635,7 @@ router.post('/sync/conflicts/:id/restore', requireRole('admin'), guard(async (re
    *  کاربرانِ پنل یک «مدیر» ِ آن‌جایند. بی این توانایی: همان یادِ پل (`restoreOnce`) — سرورِ کهنه همان کار را می‌کند.
    */
   if (await capListed('sync-restore-once.v1')) {
-    const upKey = `u${req.user?.id ?? 'x'}.${key.length <= 110 ? key : crypto.createHash('sha256').update(key).digest('hex').slice(0, 64)}`;
+    const upKey = upstreamKey(req, key);   //  ‎account/idem-once.js‎ — یک تعریف برای همهٔ درهای «یک بار» ِ سرورِ حساب
     const r = await cloudRaw('POST', `/api/admin/sync/conflicts/${id}/restore`, { body: { reason }, headers: { 'idempotency-key': upKey }, replayFlag: true });
     if (!r?.replayed) audit({ actor: actorOf(req), action: 'account.sync.restore', entity: 'sync_conflict', entityId: id, detail: { reason, once: 'server' } });
     return res.json(r);
@@ -2187,6 +2187,9 @@ export const PHASE3 = Object.freeze({
   'sync-restore-once.v1': 'POST /api/admin/sync/conflicts/:id/restore با Idempotency-Key و ۴۰۹ ِ already_restored',
   'subscription-period.v1': 'GET /api/admin/subscriptions/period-end (S15)',
   'admin-contract.v1': 'GET /api/admin/contract + X-Admin-API-Version (S18)',
+  //  ۱.۵۰.۷۷ (shop #1025، ‎claude/acct-console-2‎): برگرداندنِ دستگاه و صفحه‌بندیِ کارکنان، و کلیدِ یکتاییِ خودِ سرورِ حساب
+  'staff-perms.v1': 'GET /api/admin/shops/:id/staff-perms?limit=&offset= · POST …/devices/:did/disable|enable (ارشد + دلیل)',
+  'idempotent-writes.v1': 'Idempotency-Key روی دستگاه (disable/enable)، بازبینیِ بانکِ عکس و POST /api/admin/backups',
   ...MARKET_CAPABILITIES,
 });
 const CAP_RE = /^[a-z][a-z0-9-]{0,40}\.v\d{1,3}$/;
@@ -2544,8 +2547,8 @@ mountConsoleMarket(router);
  *  🏪 ممیزی §۳-۴ (۱.۵۰.۷۵): کارکنان/مجوز/دستگاهِ هر دکان (پروندهٔ دکان) و بانکِ عکسِ مرکزی — تا امروز فقط در
  *  ‎/admin/‎ ِ سرورِ حساب. درهایشان در ‎routes/console-staff.js‎ و ‎routes/console-image-bank.js‎، روی **همین** روتر.
  */
-mountConsoleStaff(router, { guard, badInput, actorOf });
-mountConsoleImageBank(router, { guard, badInput, actorOf });
+mountConsoleStaff(router, { guard, badInput, actorOf, capListed, missingErr });
+mountConsoleImageBank(router, { guard, badInput, actorOf, capListed });
 
 /* ماژولِ ۴.۵ ِ پنلِ مرکزی — مالیِ مرکزی (‎routes/account-finance.js‎؛ همین نشست، همین «انجام‌دهنده») */
 router.use('/console/finance', financeRoutes);
