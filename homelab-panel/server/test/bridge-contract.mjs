@@ -4,6 +4,7 @@
 //
 //    sync-restore-once.v1   بازگرداندنِ تعارض: کلیدِ پنجره (بسته به کاربرِ پنل) در ‎Idempotency-Key‎ ⇒ «یک بار» در سرورِ حساب،
 //                           ‎Idempotent-Replayed‎ ⇒ ‎replayed‎، ۴۰۹ ِ آن‌جا همان‌طور؛ بی آن ⇒ همان یادِ پل (بی سرآیند)
+//                           (۱.۵۰.۷۸: بازپخشی که «نامعلوم» ِ پل را روشن کرد ⇒ ردیفِ دفتر با ‎resolved‎)
 //    subscription-period.v1 S15: پایانِ دوره از ‎GET /api/admin/subscriptions/period-end‎ برای هر سه درِ اعطا/تمدید (دکان و پمپ)؛
 //                           خطای آن‌جا بی‌صدا به حسابِ پنل برنمی‌گردد؛ بی آن ⇒ همان ‎addPeriod‎
 //    admin-contract.v1      S18: ‎GET /api/admin/contract‎ (کش به ‎routesHash‎) ⇒ ‎{apiVersion, compatible, missing}‎ در
@@ -36,6 +37,7 @@ let contractCalls = 0;
 const seen = [];
 const restored = new Set();
 const idem = new Map();             //  کلید ⇒ { body, response }
+let hangRestore = false;            //  ۱.۵۰.۷۸: بازگرداندن انجام می‌شود ولی پاسخ گم می‌شود
 const fake = http.createServer((req, res) => {
   const chunks = [];
   req.on('data', (d) => chunks.push(d));
@@ -69,6 +71,7 @@ const fake = http.createServer((req, res) => {
       restored.add(m[1]);
       const response = { ok: true, opId: `op-${m[1]}-${restored.size}` };
       if (key) idem.set(key, { body, response });
+      if (hangRestore) { hangRestore = false; return void setTimeout(() => res.socket?.destroy(), 4000); }
       return j(200, response);
     }
     if (p === '/api/admin/subscriptions/period-end') {
@@ -91,7 +94,7 @@ const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning',
          HLP_DATA_DIR: path.join(tmp, 'data'), HLP_SITES_ROOT: path.join(tmp, 'sites'), HLP_SITESYNC: '0',
          HLP_TUNNEL: '0', HLP_AI_ENABLED: '0', HLP_ACCOUNT_AUTOSTART: '0', HLP_AUTOMATION: '0', HLP_STATIONS: '0',
          HLP_ACCOUNT_API: FAKE_URL, HLP_ACCOUNT_ADMIN_USER: 'boss', HLP_ACCOUNT_ADMIN_PASSWORD: 'top-secret',
-         HLP_AUTH_RATE_LIMIT: '100000', HLP_TG_WATCH_MS: '0', HLP_TG_LONGPOLL: '0' },
+         HLP_AUTH_RATE_LIMIT: '100000', HLP_TG_WATCH_MS: '0', HLP_TG_LONGPOLL: '0', HLP_BRIDGE_TIMEOUT_MS: '1500' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let out = '';
@@ -150,6 +153,17 @@ try {
   const b5 = await api('POST', '/api/account-admin/sync/conflicts/12/restore', { reason: 'مقدارِ درست همان قبلی بود', confirm: true, idempotencyKey: 'ctr-restore-c-0001' }, H(admin2));
   check('⛔ همان کلید از کاربرِ دیگرِ پنل پاسخِ او را بازپخش نمی‌کند (کلیدِ بالادست فرق دارد)',
     b5.status === 409 && b5.json?.error === 'already_restored' && last(/conflicts\/12\/restore$/)?.idem !== sent?.idem, `${b5.status} ${b5.json?.error} ${last(/conflicts\/12\/restore$/)?.idem}`);
+  //  ۱.۵۰.۷۸: بازگرداندنی که پاسخش گم شد و همان کلید بازپخشش کرد **انجام شده بود** — دفترِ پنل آن را می‌نویسد (`resolved`)،
+  //  همان قاعدهٔ دستگاه/بانکِ عکس/پشتیبان (`makeUpstreamOnce`)؛ تا ۱.۵۰.۷۷ فقط ردیفِ «نامعلوم» می‌ماند
+  hangRestore = true;
+  const h1 = await R(13, 'h');
+  const h2 = await R(13, 'h');
+  const h3 = await R(13, 'h');
+  const rows13 = ((await api('GET', '/api/control/audit?q=account.sync.restore&limit=20&offset=0', undefined, H(owner))).json?.rows || [])
+    .filter((r) => r.action === 'account.sync.restore' && r.entity_id === '13');
+  check('⛔ بازگرداندنِ «نامعلوم» که همان کلید بازپخشش کرد ⇒ یک ردیفِ «بازگردانده شد» با ‎resolved‎ (بازپخشِ سوم بی ردیف)',
+    h1.status === 504 && h1.json?.outcome === 'unknown' && h2.status === 200 && h2.json?.replayed === true && h3.json?.replayed === true
+      && rows13.length === 1 && String(rows13[0].detail).includes('resolved'), `${h1.status} ${h2.status} ${JSON.stringify(rows13).slice(0, 300)}`);
   const aud = await api('GET', '/api/control/audit?q=account.sync.restore&limit=20&offset=0', undefined, H(owner));
   const rows = (aud.json?.rows || []).filter((r) => r.action === 'account.sync.restore' && r.entity_id === '12');
   check('دفترِ پنل: یک ردیف برای بازگرداندنِ واقعی، نه برای بازپخش و ردها', rows.length === 1 && String(rows[0].detail).includes('server'), JSON.stringify(rows).slice(0, 300));

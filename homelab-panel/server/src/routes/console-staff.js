@@ -19,7 +19,8 @@
 //     (‎404 device_not_found‎ · ‎409 disabled_by_other_shop‎ · ‎400 device_not_disabled‎). سرورِ کهنه ⇒ ‎501 capability_missing‎ و
 //     رابط همان «پشتیبانی نمی‌شود» ِ پیشین.
 //  ⛔ کلیدِ یکتایی: سرورِ حسابِ با `idempotent-writes.v1` کلید را خودش نگه می‌دارد ⇒ کلیدِ پنجره بسته به کاربرِ پنل بالا
-//     می‌رود (`makeUpstreamOnce`)؛ بی آن همان یادِ حافظهٔ پل (`makeIdemOnce`).
+//     می‌رود (`makeUpstreamOnce`)؛ بی آن همان یادِ حافظهٔ پل (`makeIdemOnce`). ⛔ ۱.۵۰.۷۸: راهِ هر کلید ثابت است (`serverPathFor`):
+//     تکرارِ کلیدی که با یاد رفت با کلید فرستاده نمی‌شود (سرورِ حساب آن را نمی‌شناسد ⇒ کارِ دوم) و وارونه‌اش هم نه.
 //  ⛔ صفحه‌بندی: پل همیشه ‎limit/offset‎ می‌فرستد؛ سرورِ تازه ‎page‎ می‌دهد (هر دو فهرست با همان دو عدد) و کارت ورق می‌خورد؛
 //     سرورِ کهنه همان پاسخِ کامل را می‌دهد و پل ۵۰۰ تا را نشان می‌دهد با `truncated`، نه بریدنِ بی‌صدا.
 // ---------------------------------------------------------------------------
@@ -28,7 +29,7 @@ import { audit } from '../control/audit.js';
 import { cloudRaw } from '../stations/cloud.js';
 import { rateLimit } from '../platform/rate-limit.js';
 import { requireModule } from '../console/modules.js';
-import { checkIdemKey, makeIdemOnce, makeUpstreamOnce } from '../account/idem-once.js';
+import { checkIdemKey, makeIdemOnce, makeUpstreamOnce, serverPathFor } from '../account/idem-once.js';
 
 const { requireRole } = panelRoles;
 const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
@@ -160,7 +161,7 @@ export function mountConsoleStaff(router, { guard, badInput, actorOf, capListed,
       }
       return result;
     };
-    if (await capListed('idempotent-writes.v1')) {
+    if (await serverPathFor(req, key, { once, viaServer, capable: () => capListed('idempotent-writes.v1') })) {
       return viaServer(req, key, (headers) => post({ body: { reason }, headers, replayFlag: true }), finish);
     }
     return once(req, key, `${act}|${id}|${did}|${reason}`, `device:${id}:${did}`, async () => finish(await post({ body: { reason } }), { record: true }));

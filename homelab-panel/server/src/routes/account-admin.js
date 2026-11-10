@@ -31,7 +31,7 @@
 //     (‎support-media-cache.js‎): سرورِ حساب رسانه را پس از رسیدن پاک
 //     می‌کند، پس «هر طرف روی دستگاهِ خودش نگه می‌دارد» یعنی همین‌جا.
 // ---------------------------------------------------------------------------
-import { upstreamKey } from '../account/idem-once.js';
+import { makeUpstreamOnce } from '../account/idem-once.js';
 import express from 'express';
 import {
   cloudRaw, cloudRawText, cloudRawBytes, cloudProbeServiceKey, serviceKeyReset, serviceKeyStatus, legacyAvailable, adminApiVersionSeen,
@@ -1570,6 +1570,9 @@ function conflictErr(code, message) {
   err.status = 409;
   return err;
 }
+/** راهِ سرورِ حسابِ با `sync-restore-once.v1` — همان `makeUpstreamOnce` ِ دستگاه/بانکِ عکس/پشتیبان (۱.۵۰.۷۸: ردیفِ `resolved`) */
+const restoreViaServer = makeUpstreamOnce();
+
 async function restoreOnce(req, id, reason, key, run) {
   const now = Date.now();
   for (const [k, v] of restoreMemo) if (v.done && now - v.at > RESTORE_TTL) restoreMemo.delete(k);
@@ -1635,10 +1638,14 @@ router.post('/sync/conflicts/:id/restore', requireRole('admin'), guard(async (re
    *  کاربرانِ پنل یک «مدیر» ِ آن‌جایند. بی این توانایی: همان یادِ پل (`restoreOnce`) — سرورِ کهنه همان کار را می‌کند.
    */
   if (await capListed('sync-restore-once.v1')) {
-    const upKey = upstreamKey(req, key);   //  ‎account/idem-once.js‎ — یک تعریف برای همهٔ درهای «یک بار» ِ سرورِ حساب
-    const r = await cloudRaw('POST', `/api/admin/sync/conflicts/${id}/restore`, { body: { reason }, headers: { 'idempotency-key': upKey }, replayFlag: true });
-    if (!r?.replayed) audit({ actor: actorOf(req), action: 'account.sync.restore', entity: 'sync_conflict', entityId: id, detail: { reason, once: 'server' } });
-    return res.json(r);
+    //  کلیدِ بالادست `upstreamKey` (‎account/idem-once.js‎ — یک تعریف برای همهٔ درهای «یک بار» ِ سرورِ حساب). ⛔ ۱.۵۰.۷۸: بازپخشی
+    //  که «نامعلوم» ِ همین پنل را روشن کرد ردیفِ «بازگردانده شد» دارد (`resolved`) — تا ۱.۵۰.۷۷ دفتر فقط «نامعلوم» داشت.
+    return res.json(await restoreViaServer(req, key,
+      (headers) => cloudRaw('POST', `/api/admin/sync/conflicts/${id}/restore`, { body: { reason }, headers, replayFlag: true }),
+      (r, { record, resolved }) => {
+        if (record) audit({ actor: actorOf(req), action: 'account.sync.restore', entity: 'sync_conflict', entityId: id, detail: { reason, once: 'server', ...(resolved ? { resolved: true } : {}) } });
+        return r;
+      }));
   }
   const out = await restoreOnce(req, id, reason, key, async () => {
     const r = await cloudRaw('POST', `/api/admin/sync/conflicts/${id}/restore`, { body: { reason } });
