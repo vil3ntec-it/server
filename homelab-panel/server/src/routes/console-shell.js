@@ -19,6 +19,7 @@
 // ---------------------------------------------------------------------------
 import crypto from 'node:crypto';
 import { cloudRaw, legacyAvailable } from '../stations/cloud.js';
+import { bridgeFail } from '../account/bridge-fail.js';
 import * as panelRoles from '../control/roles.js';
 import * as panelAuth from '../auth.js';
 import { audit } from '../control/audit.js';
@@ -40,9 +41,7 @@ function fail(code, status, message, extra = {}) {
 
 function guard(handler) {
   return async (req, res) => {
-    try { await handler(req, res); } catch (err) {
-      res.status(err.status || 502).json({ error: err.code || 'cloud_error', message: err.message || 'سرورِ حساب جواب نداد' });
-    }
+    try { await handler(req, res); } catch (err) { bridgeFail(res, err); }
   };
 }
 

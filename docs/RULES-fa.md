@@ -885,8 +885,8 @@ npm run test:shop-finance-ui  + رسید در تبِ تازه با کرومیو�
   (همان `minRole` ِ `health`) فقط نامِ پرونده، اندازه، رمزنگاری و تمرینِ بازیابی (عدد و نشان) — **نه** `dir`، `path` یا
   مسیرِ کامل. `POST /console/backups` (پشتیبانِ دستی): admin (آن‌جا ارشد) + تأیید + دلیل + کلیدِ یکتایی؛ بالادست فقط
   `{kind:'manual'}` و کلید ندارد ⇒ پل: همان کلید ⇒ همان پاسخ، هر پشتیبانِ در راه ⇒ ۴۰۹ `backup_in_progress` (یک pg_dump
-  برای همهٔ نشست‌ها)، شکست در یاد نمی‌ماند؛ یک ردیفِ `account.backup.created` بی پوشه. ⚠️ `fetch` ِ پل سقفِ زمانِ
-  خودش را ندارد (پیش‌فرضِ undici، ۵ دقیقه) — پشتیبانِ کندتر از آن «شکست» دیده می‌شود ولی شاید آن‌جا ساخته شده باشد.
+  برای همهٔ نشست‌ها)، شکست در یاد نمی‌ماند؛ یک ردیفِ `account.backup.created` بی پوشه. ~~⚠️ `fetch` ِ پل سقفِ زمانِ
+  خودش را ندارد~~ **اصلاح: ۱.۵۰.۷۵** (پایین: «مهلتِ پل»).
 
 ```
 node test/account-admin.mjs     + بازگرداندنِ تعارض (۹) و دفترِ یکپارچهٔ یک دکان (۶)        ۳۴۰
@@ -896,6 +896,51 @@ npm run test:live-pages         + §۳-۳ (۲) و ۶-۷ (۵، یکی جای سن
 node test/shop-console-ui.mjs   کرومیوم: بازگرداندن، دفتر در فروشگاه، نشانی‌های کهنه، viewer   ۷۹
 node test/console-ops-ui.mjs    کرومیوم: کارتِ پشتیبان، دوکلیک ⇒ یک pg_dump                 ۲۷
 node test/control-ui.mjs        کرومیوم: ‎/shop?tab=audit‎ و ‎/account-server?tab=audit‎      ۱۵۰
+```
+
+### ⛔ ۱.۵۰.۷۵ — مهلتِ پل، کارکنان/دستگاهِ هر دکان، بانکِ عکس، و سه توانایی ِ shop #1024 (ممیزی §۹ و §۳-۴)
+
+- ⛔ **هر درخواستِ پل مهلت و ‎AbortSignal‎ ِ خودش را دارد** (`stations/cloud.js` ⇒ `dial`/`readBody`): عادی ‎30s‎، «بلند»
+  ‎270s‎ فقط برای `POST /api/admin/backups` (pg_dump) و بایتِ `cloudRawBytes` (رسانه تا ۲۵ مگابایت، راهِ تونل) — زیرِ سقفِ
+  ۳۰۰ثانیه‌ایِ undici تا مهلتِ **پل** با پیامِ درست برسد. سیگنال تا پایانِ **بدنه** زنده است: بدنهٔ نیمه‌کاره دیگر «{}» ِ موفق
+  نیست. آزمون: `HLP_BRIDGE_TIMEOUT_MS` / `HLP_BRIDGE_LONG_TIMEOUT_MS` (۱۰۰ تا ۲۹۰٬۰۰۰). ⛔ درِ تازه‌ای که واقعاً طول می‌کشد
+  `timeout: 'long'` می‌گیرد، نه مهلتِ بلندتر برای همه.
+- ⛔ **نوشتنِ بی‌پاسخ «نامعلوم» است، نه «شکست»:** خواندن (GET/HEAD و ورود) ⇒ ‎504 account_server_timeout‎ (در `RETRY_CODES` ِ
+  `useLoad`)؛ نوشتن ⇒ ‎504 outcome_unknown‎ + `outcome: 'unknown'` + ردیفِ `account.bridge.outcome_unknown` در دفترِ پنل؛
+  همان برای نوشتنی که اتصالش **پس از** فرستادن افتاد (‎502 outcome_unknown‎؛ «وصل نشد» ‎ECONNREFUSED/ENOTFOUND‎ همان ‎503‎ ِ
+  پیشین است) (`account/bridge-fail.js` — **تنها** پاسخِ خطای پل برای `account-admin`، `account-finance`، `console-shell`، `console-market`،
+  `stations`؛ نسخهٔ دوم نسازید). پل نوشتنِ گیرکرده را هرگز خودکار دوباره نمی‌فرستد. رابط: `SensitiveDialog` با
+  `outcomeUnknown` ⇒ «نتیجه معلوم نیست… پیش از تکرار ببینید» (زرد) و `onUnknown` (فهرست دوباره). پشتیبانِ نامعلوم: همان
+  کلید ⇒ همان «نامعلوم» بی pg_dump ِ دوم، کلیدِ تازه تا یک «مهلتِ بلند» ⇒ ‎409 backup_outcome_unknown‎.
+- ⛔ **کارکنان، مجوز و دستگاه‌ها در پروندهٔ دکان** (`routes/console-staff.js`، `console/StaffCard.tsx`): فقط
+  `GET|POST /api/admin/shops/:id/staff-perms[/devices/:did/disable]` ِ shop؛ مجوزِ «مؤثر» همان سرورِ حساب (perm-core)، این‌جا
+  حساب نمی‌شود. پاسخ فقط فیلدهای شناخته (نه توکنِ پوش، ایمیل یا پوشه). ازکارانداختن: admin + دلیل + تأیید + کلید
+  (`account/idem-once.js`: همان کلید ⇒ `replayed`، کارِ دیگر ⇒ ‎409 idempotency_key_reused‎، همان دستگاه هم‌زمان ⇒ ‎409
+  action_in_progress‎، شکستِ روشن کلید را آزاد می‌کند، نامعلوم نگهش می‌دارد) + سقفِ ۳۰ در ده دقیقه برای هر کاربر +
+  `account.shop_device.disabled`. «دستگاه مالِ همین دکان است» را **سرورِ حساب** می‌سنجد (`device_not_found`)؛ شناسهٔ دکان
+  فقط از مسیر. برگرداندن از پنل نیست (درِ مدیرش در shop نیست) ⇒ `NotSupported`، نه دکمهٔ بی‌عمل.
+- ⛔ **بانکِ عکس = ماژولِ `imagebank`** (`routes/console-image-bank.js`، `console/ImageBankModule.tsx`): اول `/status` (پرچمِ
+  خاموش ⇒ «روشن نیست»)، بعد صف/جست‌وجو/گزارش/جزئیات. نشانیِ فایلِ بالادست فقط به `…/console/image-bank/file/:id/:v/:size`
+  بازنویسی می‌شود (هر چیزِ دیگر ⇒ null)؛ فایل فقط `image/(jpeg|png|webp|avif|gif)` با `nosniff` و `CSP default-src 'none'`
+  (SVG ⇒ ‎415‎) و با سرآیندِ نشست (`fetchBlobUrl`)، نه `?token=`. از «مبدأ» فقط شناسهٔ دکان و زمانِ اجازه. بازبینی
+  (تأیید/رد/بایگانی/جست‌وجو): admin + دلیل + تأیید + کلید + سقفِ ۱۲۰ در ده دقیقه + `account.image_bank.<کار>`؛ قاعدهٔ
+  انتشار (مجوز، کالا، تطبیق) فقط در سرورِ حساب. بارگذاری/ورودِ گروهی/ویرایشِ کالا عمداً نیست (تصمیم، ممیزی §۹).
+- ⛔ **سه توانایی ِ تازهٔ سرورِ حساب (shop #1024)، هر کدام با راهِ سرورِ کهنه:** `sync-restore-once.v1` ⇒ بازگرداندنِ تعارض
+  کلیدِ پنجره را بسته به کاربر (`u<id>.<کلید>`) در `Idempotency-Key` می‌فرستد و `Idempotent-Replayed` را `replayed` می‌کند
+  (`cloudRaw(…, { replayFlag: true })`)؛ بی آن ⇒ `restoreOnce` ِ حافظه. `subscription-period.v1` ⇒ پایانِ دوره **فقط**
+  `periodEndOf` (سه درِ اعطا/تمدید؛ خطای بالادست بی‌صدا به `addPeriod` برنمی‌گردد)؛ ⛔ `addPeriod` را جای تازه صدا نزنید.
+  `admin-contract.v1` ⇒ `contract` در `/console/capabilities` (`account/bridge-contract.js`)؛ «فهرستِ سفید» از سورسِ پل خوانده
+  می‌شود، پس مقصدِ تازه را به شکلِ `cloudRaw('METHOD', '/api/admin/…')` یا ثابتِ `const X = '/api/admin/…'` بنویسید تا شمرده
+  شود، نه متغیرِ ساخته‌شده. پرسشِ ناموفقِ توانایی ⇒ «نیست» (`capListed`)، نه شکستِ کار.
+
+```
+node test/bridge-timeout.mjs    تازه: خواندن/نوشتن/بدنهٔ گیرکرده، اتصالِ افتاده، پشتیبانِ بلند و نامعلوم (سرخ روی پایه ۱۱)  ۱۹
+node test/console-staff.mjs     تازه: کارکنان/دستگاه + بانکِ عکس، نقش، IDOR، کلید، نرخ (سرخ روی پایه ۳۵)    ۴۰
+node test/bridge-roles.mjs      + ۶ درِ تازه و ۵ لنگر (ACCOUNT_SERVER_DIR = shop@main)                  ۲۵ (۲۳۴ مسیر)
+node test/bridge-contract.mjs   تازه: سه توانایی، هر کدام با و بی (سرخ روی پایه ۱۳)                     ۲۱
+node test/staff-bank-ui.mjs     تازه، کرومیوم: پرونده، ازکارانداختن، «نامعلوم»، بانک، viewer          ۱۷
+node test/console-ops-ui.mjs    + پشتیبانِ کُند ⇒ «نتیجه معلوم نیست» و فهرستِ تازه                     ۲۹
+node test/shop-console-ui.mjs   سرورِ ساختگی درِ staff-perms را هم دارد (پرونده آن را می‌خواند)          ۷۹
 ```
 
 ## 🧾 مشتری، پول و پیام در خودِ پنل — قاعده‌هایی که نباید برگردند (از ۱۴۰۵/۰۷/۰۳)

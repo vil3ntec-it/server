@@ -38,6 +38,8 @@ const NOW = Date.now();
 let caps = ['actor.v1'];
 const posted = [];
 const backupsMade = [];
+let backupSlow = false;   //  ۱.۵۰.۷۵: pg_dump ِ کُندتر از مهلتِ بلندِ پل
+let backupGets = 0;
 const INC = { id: 'inc_a1', source: 'client', app: 'shop', title: 'NullPointer در ثبتِ فروش', kind: 'pos.save', status: 'open', priority: 'p3',
   firstSeenAt: NOW - 3600e3, lastSeenAt: NOW - 60e3, occurrences: 7, recent1h: 0, lastVersion: '2.14.5', supportThreadId: '', version: 3 };
 const fake = http.createServer((req, res) => {
@@ -61,6 +63,7 @@ const fake = http.createServer((req, res) => {
     }
     //  ۱.۵۰.۷۴ (ممیزی §۳-۴): پشتیبانِ سرورِ حساب — همان شکلِ ‎admin.js /backups‎ ِ shop، با پوشهٔ میزبان و بی رمزنگاری
     if (p === '/api/admin/backups' && req.method === 'GET') {
+      backupGets++;
       return j(200, { backups: [{ kind: 'daily', file: 'shop-20261109.sql.gz', path: '/srv/shop/backups/daily/shop-20261109.sql.gz', bytes: 2048,
         createdAt: NOW - 3600e3, encrypted: false, sha256: '' }, ...backupsMade], dir: '/srv/shop/backups', enabled: true,
         encryption: { configured: false, required: false, warning: 'BACKUP_PASSPHRASE تنظیم نیست' },
@@ -68,7 +71,7 @@ const fake = http.createServer((req, res) => {
     }
     if (p === '/api/admin/backups' && req.method === 'POST') {
       const made = { kind: 'manual', file: '/srv/shop/backups/manual/shop-manual-9.sql.gz', bytes: 4096, createdAt: Date.now(), encrypted: false, sha256: '' };
-      return void setTimeout(() => { backupsMade.unshift({ ...made, path: made.file, file: 'shop-manual-9.sql.gz' }); j(201, made); }, 400);
+      return void setTimeout(() => { backupsMade.unshift({ ...made, path: made.file, file: 'shop-manual-9.sql.gz' }); j(201, made); }, backupSlow ? 3000 : 400);
     }
     if (p === '/api/admin/release/stage') return j(200, { stages: { 'tohid-native': { version: '2.14.5', percent: 10, updatedAt: NOW - 3600e3, updatedBy: 'boss' } }, version: 1 });
     if (p === '/api/admin/ops/health') {
@@ -110,7 +113,9 @@ const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning',
   env: { ...process.env, HLP_PORT: String(PORT), HLP_HOST: '127.0.0.1', HLP_DATA_DIR: path.join(tmp, 'data'),
          HLP_SITES_ROOT: path.join(tmp, 'sites'), HLP_SITESYNC: '0', HLP_AI_ENABLED: '0', HLP_TUNNEL: '0', HLP_STATIONS: '0',
          HLP_AUTOMATION: '0', HLP_ACCOUNT_AUTOSTART: '0', HLP_ACCOUNT_API: `http://127.0.0.1:${fake.address().port}`,
-         HLP_ACCOUNT_ADMIN_USER: 'boss', HLP_ACCOUNT_ADMIN_PASSWORD: 'top-secret', HLP_TG_WATCH_MS: '0', HLP_TG_LONGPOLL: '0' },
+         HLP_ACCOUNT_ADMIN_USER: 'boss', HLP_ACCOUNT_ADMIN_PASSWORD: 'top-secret', HLP_TG_WATCH_MS: '0', HLP_TG_LONGPOLL: '0',
+         //  ۱.۵۰.۷۵: مهلتِ بلندِ پل (فقط پشتیبان) کوتاه برای آزمون — بیش از ۴۰۰ms ِ پشتیبانِ عادیِ همین آزمون
+         HLP_BRIDGE_LONG_TIMEOUT_MS: '1200' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let out = '';
@@ -211,6 +216,20 @@ try {
   const bk2 = await page.locator('[data-card="account-backups"]').innerText();
   check('و «تأییدشده از سرورِ حساب» با نامِ پرونده (بی پوشه)، و فهرست تازه شد',
     bk2.includes('تأییدشده از سرورِ حساب') && bk2.includes('shop-manual-9.sql.gz') && !(await page.content()).includes('/srv/shop'), bk2);
+  //  ۱.۵۰.۷۵ (مهلتِ پل): pg_dump ِ کُندتر از مهلتِ بلند ⇒ «نتیجه معلوم نیست» (زرد) + فهرستِ تازه — نه «شکست» ِ سرخ
+  backupSlow = true;
+  await page.locator('[data-card="account-backups"] button', { hasText: 'پشتیبانِ دستی' }).click();
+  await page.waitForTimeout(300);
+  await page.locator('textarea').fill('آزمونِ مهلتِ بلندِ پل');
+  const g0 = backupGets;
+  await page.getByRole('button', { name: 'تأیید و فرستادن' }).click();
+  await page.waitForTimeout(2200);
+  const dlg = await page.locator('div.fixed.inset-0').last().innerText().catch(() => '');
+  check('⛔ پشتیبانِ کُند ⇒ «نتیجه معلوم نیست… پیش از تکرار ببینید»، نه «شکست»',
+    (await page.locator('[data-outcome="unknown"]').count()) === 1 && dlg.includes('نتیجه معلوم نیست') && dlg.includes('پیش از تکرار') && !/شکست|ناموفق/.test(dlg), dlg);
+  check('و فهرستِ پشتیبان‌ها همان دم از سرورِ حساب دوباره خوانده شد', backupGets > g0, `${g0} ⇒ ${backupGets}`);
+  await page.getByRole('button', { name: 'انصراف' }).click();
+  backupSlow = false;
 
   console.log('\n── یکپارچه‌سازی ──');
   body = await open('integrations');

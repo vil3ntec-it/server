@@ -22,7 +22,7 @@
 //     (زمانِ رفت‌وبرگشتِ پل، حالِ پروسهٔ سرورِ حساب، نسخه و زمانِ روشن بودنِ پنل) — هر کدام با تعریف.
 //  ⛔ هیچ راز: نه کلیدِ سرویس، نه رمزِ ارشد، نه توکنِ ربات — فقط «هست / نیست».
 // ---------------------------------------------------------------------------
-import { cloudRaw, cloudStatus } from '../stations/cloud.js';
+import { cloudRaw, cloudStatus, bridgeTimeouts } from '../stations/cloud.js';
 import { audit } from '../control/audit.js';
 import * as panelRoles from '../control/roles.js';
 import { getSetting, setSetting } from '../db.js';
@@ -187,6 +187,7 @@ export function mountConsoleOps(router, d) {
   const BACKUP_TTL = 10 * 60_000;
   const backupSlots = new Map();      // `${userId}:${key}` ⇒ { reason, at, done, promise }
   let backupRunning = null;
+  let backupUnknownUntil = 0;         //  پس از «نامعلوم»: تا این لحظه پشتیبانِ تازه نه (pg_dump ِ قبلی شاید هنوز می‌دود)
   const conflictErr = (code, message) => Object.assign(new Error(message), { code, status: 409 });
   router.post('/console/backups', requireRole('admin'), guard(async (req, res) => {
     if (req.body?.confirm !== true) throw badInput('confirm_required', 'این کار پیش از فرستادن تأیید می‌خواهد');
@@ -204,12 +205,19 @@ export function mountConsoleOps(router, d) {
       return res.json({ ...(await seen.promise), replayed: true });
     }
     if (backupRunning) throw conflictErr('backup_in_progress', 'یک پشتیبانِ سرورِ حساب همین حالا در حالِ ساخت است');
+    //  ⛔ نامعلومِ تازه: pg_dump ِ قبلی شاید هنوز در سرورِ حساب می‌دود ⇒ تا یک «مهلتِ بلند» دیگر پشتیبانِ تازه نه
+    if (backupUnknownUntil > now) {
+      throw Object.assign(conflictErr('backup_outcome_unknown',
+        'نتیجهٔ پشتیبانِ قبلی معلوم نیست و شاید هنوز در حالِ ساخت باشد — اول فهرستِ پشتیبان‌ها را ببینید؛ پشتیبانِ تازه کمی بعد'),
+        { retryAt: backupUnknownUntil });
+    }
     const slot = { reason, at: now, done: false, promise: null };
     backupRunning = slot;
     backupSlots.set(slotKey, slot);
     slot.promise = (async () => {
       try {
-        const out = await cloudRaw('POST', '/api/admin/backups', { body: { kind: 'manual' } });
+        //  ⏱️ تنها درِ پل با مهلتِ «بلند»: یک pg_dump ِ واقعی (‎stations/cloud.js‎ ⇒ ‎BRIDGE_LONG_TIMEOUT_MS‎)
+        const out = await cloudRaw('POST', '/api/admin/backups', { body: { kind: 'manual' }, timeout: 'long' });
         const backup = backupRow(out);
         audit({ actor: actorOf(req), action: 'account.backup.created', entity: 'account_server', entityId: 'backup',
           detail: { file: backup.file, bytes: backup.bytes, encrypted: backup.encrypted, reason } });
@@ -217,6 +225,16 @@ export function mountConsoleOps(router, d) {
         slot.at = Date.now();
         return { ok: true, backup, confirmedAt: slot.at };
       } catch (err) {
+        if (err?.outcome === 'unknown') {
+          //  ⛔ «نامعلوم»، نه «شکست»: همان کلید ⇒ همان پاسخ (بی pg_dump ِ دوم)؛ ردیفِ دفتر با دلیل
+          slot.done = true;
+          slot.at = Date.now();
+          backupUnknownUntil = Date.now() + bridgeTimeouts().longMs;
+          audit({ actor: actorOf(req), action: 'account.backup.unknown', entity: 'account_server', entityId: 'backup',
+            detail: { reason, timeoutMs: err.timeoutMs || null }, result: 'unknown' });
+          err.audited = true;
+          throw err;
+        }
         backupSlots.delete(slotKey);   //  شکست ⇒ همان کلید دوباره قابلِ تلاش است
         throw err;
       } finally {

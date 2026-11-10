@@ -29,6 +29,7 @@ import { describeFolder } from '../stations/layout.js';
 import { validateChatInput, CHAT_RELAY_DAYS, CHAT_MEDIA_HOURS, CHAT_MEDIA_MAX } from '../stations/chat.js';
 import { cloudStatus, cloudLogin, cloudForget, cloudCall } from '../stations/cloud.js';
 import { withPanelActor } from '../account/service-key.js';
+import { bridgeFail } from '../account/bridge-fail.js';
 import { noticesFor } from '../announce/store.js';
 
 /** شاخهٔ حساب‌های کیو‌آردار — ‎acct/<شناسه>‎ (برنامهٔ نیتیو می‌نویسد) */
@@ -681,12 +682,8 @@ adminRouter.get('/:code/connect', async (req, res) => {
 //  دفتری می‌بود، روزی یکی می‌گفت «فعال» و آن یکی «تمام شده».
 
 /** کمکی: خطای پل را با همان کدِ خودش برگردان، نه ۵۰۰ی گنگ. */
-function cloudFail(res, err) {
-  return res.status(err.status || 502).json({
-    error: err.code || 'cloud_error',
-    message: err.message || 'سرورِ حساب جواب نداد',
-  });
-}
+//  ⛔ نوشتنِ بی‌پاسخ (مهلتِ پل: اشتراک، کدِ VIP) ⇒ «نامعلوم» + ردیفِ دفتر، نه «شکست» — ‎account/bridge-fail.js‎
+const cloudFail = bridgeFail;
 
 adminRouter.get('/cloud/status', (req, res) => res.json(cloudStatus()));
 

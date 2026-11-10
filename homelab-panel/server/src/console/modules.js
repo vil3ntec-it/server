@@ -46,6 +46,9 @@ export const CONSOLE_MODULES = Object.freeze([
     label: L('اشتراک و مجوز', 'Subscriptions & licences', 'ګډون او جواز'), probe: '/api/account-admin/shop-desk/groups' },
   { id: 'codes', spec: '', group: 'shops', order: 30, minRole: 'viewer',
     label: L('کدِ شاگرد', 'Staff codes', 'د شاګرد کوډ'), probe: '/api/account-admin/shop-desk/groups' },
+  //  ممیزی §۳-۴ (۱.۵۰.۷۵) — ‎routes/console-image-bank.js‎: مرور/جست‌وجو برای همه؛ بازبینی admin (آن‌جا ارشد) + دلیل
+  { id: 'imagebank', spec: '', group: 'shops', order: 40, minRole: 'viewer',
+    label: L('بانکِ عکس', 'Image bank', 'د انځورونو بانک'), probe: '/api/account-admin/console/image-bank/status' },
 
   { id: 'finance', spec: '4.5', group: 'money', order: 10, minRole: 'viewer',
     label: L('مالیِ مرکزی', 'Central finance', 'مرکزي مالي'), probe: '/api/account-admin/console/finance/summary' },

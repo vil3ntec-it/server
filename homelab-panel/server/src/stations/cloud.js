@@ -66,17 +66,120 @@ function autoCreds() {
   try { return managedAdminCreds(); } catch { return null; }
 }
 
+/*
+ *  ⏱️ **مهلتِ پل** (۱.۵۰.۷۵، ممیزی §۹ «باقی‌مانده»). تا پیش از این هیچ درخواستِ پل مهلتِ خودش را نداشت و فقط
+ *  مهلتِ پیش‌فرضِ fetch ِ Node (undici: سرآیند و بدنه هر کدام ۳۰۰ ثانیه) بود ⇒ سرورِ حسابِ گیرکرده هر صفحه و هر
+ *  ربات را پنج دقیقه نگه می‌داشت، و پشتیبانِ کُند «شکست» نشان داده می‌شد با این‌که شاید ساخته شده بود.
+ *
+ *  ⛔ هر درخواست یک ‎AbortSignal‎ دارد (‎AbortSignal.timeout‎، و اگر صداکننده ‎signal‎ داد، هر دو) که **تا پایانِ
+ *     خواندنِ بدنه** زنده است — نه فقط تا سرآیند؛ بدنهٔ نیمه‌کاره دیگر «{}» ِ موفق نمی‌شود (`readBody`).
+ *  ⛔ عادی ‎30s‎؛ «بلند» فقط برای کاری که واقعاً طول می‌کشد (‎POST /api/admin/backups‎ = یک pg_dump، و جابه‌جاییِ
+ *     بایتِ رسانهٔ پشتیبانی تا ۲۵ مگابایت در `cloudRawBytes` وقتی سرورِ حساب از راهِ تونل است) ‎270s‎ — زیرِ
+ *     سقفِ ۳۰۰ ثانیه‌ایِ undici تا همیشه مهلتِ **ما** (با پیامِ درست) برسد. آزمون: ‎HLP_BRIDGE_TIMEOUT_MS‎ و
+ *     ‎HLP_BRIDGE_LONG_TIMEOUT_MS‎ (۱۰۰ تا ۲۹۰٬۰۰۰).
+ *  ⛔ خواندن (‎GET/HEAD‎، و ورود) ⇒ ‎504 account_server_timeout‎ (تکرارپذیر). **نوشتن** ⇒ ‎504 outcome_unknown‎ با
+ *     ‎outcome: 'unknown'‎: سرورِ حساب شاید انجامش داده — «پیش از تکرار ببینید»، هرگز «شکست»؛ و هیچ‌جا خودکار
+ *     دوباره فرستاده نمی‌شود (تنها تکرارِ پل روی ۴۰۱ است، که یعنی سرورِ حساب اصلاً به کار نرسیده).
+ */
+export const BRIDGE_TIMEOUT_MS = 30_000;
+export const BRIDGE_LONG_TIMEOUT_MS = 270_000;
+const SAFE_METHODS = new Set(['GET', 'HEAD']);
+const envMs = (name, def) => {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n >= 100 && n <= 290_000 ? Math.round(n) : def;
+};
+export function bridgeTimeouts() {
+  return { normalMs: envMs('HLP_BRIDGE_TIMEOUT_MS', BRIDGE_TIMEOUT_MS), longMs: envMs('HLP_BRIDGE_LONG_TIMEOUT_MS', BRIDGE_LONG_TIMEOUT_MS) };
+}
+const timeoutMsOf = (t) => (t === 'long' ? bridgeTimeouts().longMs : bridgeTimeouts().normalMs);
+
+/*
+ *  S18 (۱.۵۰.۷۵): سرورِ حسابِ تازه سرِ هر پاسخِ ‎/api/admin/*‎ ‎X-Admin-API-Version‎ می‌گذارد (فقط با شکستنِ یک درِ موجود
+ *  بالا می‌رود). پل آخرین مقدارِ دیده‌شده را نگه می‌دارد تا «یکپارچه‌سازی» بگوید سازگار است یا نه (‎account/bridge-contract.js‎).
+ */
+let apiVersionSeen = null;   // { version, at }
+function noteApiVersion(res) {
+  const v = String(res?.headers?.get?.('x-admin-api-version') || '');
+  if (/^\d{1,4}$/.test(v)) apiVersionSeen = { version: Number(v), at: Date.now() };
+}
+export function adminApiVersionSeen() { return apiVersionSeen; }
+
+/** پاسخ ⇒ مهلتِ همان درخواست، برای خواندنِ بدنه (`readBody`). */
+const DIALED = new WeakMap();
+
+function stalled(e, ctx) {
+  const code = String(e?.cause?.code || e?.code || '');
+  return ctx.signal.aborted || e?.name === 'TimeoutError' || e?.name === 'AbortError'
+    || code === 'UND_ERR_HEADERS_TIMEOUT' || code === 'UND_ERR_BODY_TIMEOUT';
+}
+
+function timeoutErr(ctx) {
+  const s = Math.max(1, Math.round(ctx.ms / 1000));
+  const err = ctx.safe
+    ? new Error(`سرورِ حساب در ${s} ثانیه جواب نداد — دوباره بخوانید`)
+    : new Error(`سرورِ حساب در ${s} ثانیه جواب نداد و معلوم نیست این کار انجام شد یا نه — پیش از تکرار، نتیجه را در همان فهرست ببینید`);
+  err.code = ctx.safe ? 'account_server_timeout' : 'outcome_unknown';
+  err.status = 504;
+  if (!ctx.safe) err.outcome = 'unknown';
+  err.method = ctx.method;
+  err.path = ctx.path;
+  err.timeoutMs = ctx.ms;
+  return err;
+}
+
+/** خطاهایی که یعنی درخواست اصلاً به سرورِ حساب نرسید ⇒ تکرارش بی‌خطر است. */
+const NEVER_SENT = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH', 'UND_ERR_CONNECT_TIMEOUT']);
+function droppedErr(ctx) {
+  const err = new Error('ارتباط با سرورِ حساب وسطِ کار قطع شد و معلوم نیست این کار انجام شد یا نه — پیش از تکرار، نتیجه را در همان فهرست ببینید');
+  return Object.assign(err, { code: 'outcome_unknown', status: 502, outcome: 'unknown', method: ctx.method, path: ctx.path, timeoutMs: null });
+}
+
 /**
- * fetch که خطای شبکه را به خطای بادار برمی‌گرداند.
+ * بدنهٔ پاسخ — با همان مهلتِ درخواست. بدنهٔ غیرِ JSON همان رفتارِ پیشین (‎{}‎ / ‎''‎)؛ ولی بدنه‌ای که مهلتش
+ * سر رسید **خطای مهلت** است، نه پاسخِ خالیِ موفق.
+ * @param {'json'|'text'|'bytes'} kind
+ */
+async function readBody(res, kind = 'json') {
+  try {
+    if (kind === 'text') return await res.text();
+    if (kind === 'bytes') return Buffer.from(await res.arrayBuffer());
+    return await res.json();
+  } catch (e) {
+    const ctx = DIALED.get(res);
+    if (ctx && stalled(e, ctx)) throw timeoutErr(ctx);
+    if (kind === 'json') return {};
+    if (kind === 'text') return '';
+    throw e;
+  }
+}
+
+/**
+ * fetch که خطای شبکه را به خطای بادار برمی‌گرداند — و مهلت دارد (بالا).
  *
  * ‎ECONNREFUSED‎ روی نشانیِ محلی یعنی سرورِ حساب روی همین کامپیوتر روشن
  * نیست — و پیامش باید همان راهِ درست کردن را بگوید (‎downPayload‎)، نه
  * «fetch failed».
+ *
+ * @param {{ timeout?: 'normal'|'long', safe?: boolean, signal?: AbortSignal|null }} [opts]
+ *        ‎safe‎: تکرارش بی‌اثر است (پیش‌فرض: فقط GET/HEAD) — ورود هم.
  */
-async function dial(url, init) {
+async function dial(url, init = {}, { timeout = 'normal', safe = null, signal = null } = {}) {
+  const method = String(init.method || 'GET').toUpperCase();
+  const ms = timeoutMsOf(timeout);
+  const timer = AbortSignal.timeout(ms);
+  const ctx = {
+    ms, method, safe: safe ?? SAFE_METHODS.has(method),
+    signal: signal ? AbortSignal.any([timer, signal]) : timer,
+    path: (() => { try { return new URL(url).pathname.slice(0, 200); } catch { return ''; } })(),
+  };
   try {
-    return await fetch(url, init);
+    const res = await fetch(url, { ...init, signal: ctx.signal });
+    DIALED.set(res, ctx);
+    return res;
   } catch (e) {
+    if (stalled(e, ctx)) throw timeoutErr(ctx);
+    //  ⛔ همان دسته: نوشتنی که فرستاده شد و اتصال **وسطِ کار** افتاد (نه «وصل نشد») هم نامعلوم است، نه «سرور خاموش»
+    if (!ctx.safe && !NEVER_SENT.has(String(e?.cause?.code || e?.code || ''))) throw droppedErr(ctx);
     const local = !!accountApiUrl();
     const err = new Error(local
       ? downPayload().error.message
@@ -202,8 +305,8 @@ async function doLogin(creds) {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(creds),
-  });
-  const body = await res.json().catch(() => ({}));
+  }, { safe: true });
+  const body = await readBody(res);
   if (!res.ok || !body?.token) {
     const code = body?.error?.code === 'bad_credentials'
       ? 'auto_login_rejected'
@@ -327,8 +430,8 @@ export async function cloudLogin(username, password, actor = 'admin') {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ username, password }),
-  });
-  const body = await res.json().catch(() => ({}));
+  }, { safe: true });
+  const body = await readBody(res);
 
   if (!res.ok || !body?.token) {
     const err = new Error(body?.error?.message || 'ورود به سرورِ حساب نشد');
@@ -364,7 +467,7 @@ export function cloudForget(actor = 'admin') {
  * @param {string} name کلیدی از ALLOWED — نه یک مسیرِ دلخواه.
  * @param {object} opts { query, body }
  */
-export async function cloudCall(name, { query = {}, body = null, params = {} } = {}) {
+export async function cloudCall(name, { query = {}, body = null, params = {}, timeout = 'normal', signal = null } = {}) {
   let entry = ALLOWED[name];
   if (!entry) {
     const err = new Error('این مسیر از پنل باز نیست');
@@ -384,7 +487,7 @@ export async function cloudCall(name, { query = {}, body = null, params = {} } =
   }
   //  کلیدِ سرویس (اگر هست و پذیرفته است) جلوتر؛ وگرنه ورودِ خودکار، وگرنه توکنِ گاوصندوق (`sendAuthed`)
   const [method, path] = entry;
-  return authedSend(method, path, { query, body });
+  return authedSend(method, path, { query, body, timeout, signal });
 }
 
 /**
@@ -400,7 +503,7 @@ export async function cloudCall(name, { query = {}, body = null, params = {} } =
  * @param {string} path   مثلاً ‎/api/admin/shops‎
  * @param {object} opts   { query, body }
  */
-export async function cloudRaw(method, path, { query = {}, body = null, headers = {}, legacyOnly = false } = {}) {
+export async function cloudRaw(method, path, { query = {}, body = null, headers = {}, legacyOnly = false, timeout = 'normal', signal = null, replayFlag = false } = {}) {
   const m = String(method || 'GET').toUpperCase();
   const p = String(path || '');
   if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(m)
@@ -410,7 +513,7 @@ export async function cloudRaw(method, path, { query = {}, body = null, headers 
     err.status = 400;
     throw err;
   }
-  return authedSend(m, p, { query, body, headers: extraHeaders(headers), legacyOnly });
+  return authedSend(m, p, { query, body, headers: extraHeaders(headers), legacyOnly, timeout, signal, replayFlag });
 }
 
 /*
@@ -458,7 +561,7 @@ async function probeKey(key, keyId) {
   const res = await dial(`${cloudTarget()}/api/admin/me`, {
     headers: { authorization: `Bearer ${key}`, ...actorHeaders(SYSTEM_ACTOR) },
   });
-  const body = await res.json().catch(() => ({}));
+  const body = await readBody(res);
   if (res.status !== 200) {
     return { keyId, at: Date.now(), ok: false, caps: [], code: String(body?.error?.code || `http_${res.status}`).slice(0, 60) };
   }
@@ -589,7 +692,8 @@ async function sendAuthed(send, path, { legacyOnly = false } = {}) {
  */
 async function tokenAlive(bearer) {
   try {
-    const r = await fetch(`${cloudTarget()}/api/admin/me`, { headers: { authorization: `Bearer ${bearer}` } });
+    const r = await dial(`${cloudTarget()}/api/admin/me`, { headers: { authorization: `Bearer ${bearer}` } });
+    await r.arrayBuffer().catch(() => null);
     return r.status === 200;
   } catch { return false; }
 }
@@ -623,7 +727,7 @@ async function send401(send, t, creds, path) {
 }
 
 /** خودِ فرستادن — یک بار، و روی ۴۰۱ِ توکنِ خودکار فقط یک بار دیگر. */
-async function authedSend(method, path, { query = {}, body = null, headers = {}, legacyOnly = false } = {}) {
+async function authedSend(method, path, { query = {}, body = null, headers = {}, legacyOnly = false, timeout = 'normal', signal = null, replayFlag = false } = {}) {
   const qs = new URLSearchParams(
     Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== '')
   ).toString();
@@ -636,11 +740,15 @@ async function authedSend(method, path, { query = {}, body = null, headers = {},
       ...(body ? { 'content-type': 'application/json' } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
-  });
+  }, { timeout, signal });
 
   //  کلیدِ سرویس، یا توکنِ خودکار (مرده ⇒ یک بار، و فقط یک بار، دوباره وارد شو؛ ولی ۴۰۱ِ «مسیر نیست» نه)
   const res = await sendAuthed(send, path, { legacyOnly });
-  const out = await res.json().catch(() => ({}));
+  noteApiVersion(res);
+  const out = await readBody(res);
+  //  ‎Idempotent-Replayed: true‎ ِ سرورِ حساب (کلیدِ یکتاییِ خودش) ⇒ ‎replayed‎ در همان پاسخ — فقط درهایی که خواستند
+  if (replayFlag && res.ok && out && typeof out === 'object' && !Array.isArray(out)
+      && String(res.headers.get('idempotent-replayed') || '').toLowerCase() === 'true') out.replayed = true;
 
   if (!res.ok) {
     const err = new Error(out?.error?.message || 'سرورِ حساب جواب نداد');
@@ -664,7 +772,8 @@ async function authedSend(method, path, { query = {}, body = null, headers = {},
  *
  * @returns برای POST همان JSON؛ برای GET ‎{ buffer, contentType }‎
  */
-export async function cloudRawBytes(method, path, { body = null, contentType = '' } = {}) {
+//  ⏱️ بایت (رسانهٔ پشتیبانی تا ۲۵ مگابایت) با سرورِ حسابِ دور (راهِ تونل) واقعاً طول می‌کشد ⇒ پیش‌فرض «بلند»
+export async function cloudRawBytes(method, path, { body = null, contentType = '', timeout = 'long', signal = null } = {}) {
   const m = String(method || 'GET').toUpperCase();
   const p = String(path || '');
   if (!['GET', 'POST'].includes(m) || (m === 'POST' && !Buffer.isBuffer(body))
@@ -682,11 +791,11 @@ export async function cloudRawBytes(method, path, { body = null, contentType = '
       ...(m === 'POST' ? { 'content-type': String(contentType || 'application/octet-stream') } : {}),
     },
     body: m === 'POST' ? body : undefined,
-  });
+  }, { timeout, signal });
 
   const res = await sendAuthed(send, p);
   if (!res.ok || m === 'POST') {
-    const out = await res.json().catch(() => ({}));
+    const out = await readBody(res);
     if (!res.ok) {
       const err = new Error(out?.error?.message || 'سرورِ حساب جواب نداد');
       err.code = out?.error?.code || 'cloud_error';
@@ -695,7 +804,7 @@ export async function cloudRawBytes(method, path, { body = null, contentType = '
     }
     return out;
   }
-  const buffer = Buffer.from(await res.arrayBuffer());
+  const buffer = await readBody(res, 'bytes');
   return { buffer, contentType: res.headers.get('content-type') || 'application/octet-stream' };
 }
 
@@ -711,7 +820,7 @@ export async function cloudRawBytes(method, path, { body = null, contentType = '
  * ⛔ همان فهرستِ سفید و همان قفلِ ‎/api/admin/‎؛ این تابع دری تازه باز
  * نمی‌کند، فقط شکلِ خواندنِ پاسخ فرق دارد.
  */
-export async function cloudRawText(method, path, { query = {} } = {}) {
+export async function cloudRawText(method, path, { query = {}, timeout = 'normal', signal = null } = {}) {
   const m = String(method || 'GET').toUpperCase();
   const p = String(path || '');
   if (m !== 'GET' || !/^\/api\/admin\/[A-Za-z0-9_\-/]+$/.test(p) || p.includes('..')) {
@@ -724,10 +833,10 @@ export async function cloudRawText(method, path, { query = {} } = {}) {
     Object.entries(query).filter(([, v]) => v !== undefined && v !== null && v !== '')
   ).toString();
   const url = `${cloudTarget()}${p}${qs ? `?${qs}` : ''}`;
-  const send = (auth) => dial(url, { method: m, headers: { ...auth } });
+  const send = (auth) => dial(url, { method: m, headers: { ...auth } }, { timeout, signal });
 
   const res = await sendAuthed(send, p);
-  const text = await res.text().catch(() => '');
+  const text = await readBody(res, 'text');
   if (!res.ok) {
     let payload = null;
     try { payload = JSON.parse(text); } catch { /* متنِ ساده */ }

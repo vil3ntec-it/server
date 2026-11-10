@@ -168,6 +168,8 @@ const fake = http.createServer((req, res) => {
       return void setTimeout(() => { conflictRestoredAt = Date.now(); j(200, { ok: true, head: 12 }); }, 300);
     }
     //  ⚠️ `account` همان شکلِ `adminStatus` ِ shop است (صفحهٔ «وضعیت Sync» آن را می‌خواند)
+    //  ۱.۵۰.۷۵ (ممیزی §۳-۴): پروندهٔ دکان کارکنان و دستگاه‌ها را هم می‌خواند — همان شکلِ ‎admin-staff-perms.js‎ ِ shop
+    if (/^\/api\/admin\/shops\/[^/]+\/staff-perms$/.test(p)) return j(200, { shop: { id: 'shp-1', name: 'دکانِ یک' }, perms: { v: 1, catalog: [], roles: {}, members: [] }, devices: [] });
     if (p === '/api/admin/sync/status') return j(200, { app: 'shop', devices: [{ account: { kind: 'shop', id: 'shp-1' }, device_id: 'dev-1', app_version: '2.14.4', last_seen_at: NOW - 60e3, last_push_at: null, queued_count: 0, behind: 0, conflicts: 0 }] });
     if (p === '/api/admin/shops') {
       if (caps.length && u.searchParams.get('q')) {
