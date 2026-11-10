@@ -129,6 +129,14 @@ const fake = http.createServer((req, res) => {
       return j(200, { entries: [{ id: 'au1', at: NOW - DAY, action: 'admin.finance_adjustment_created', adminId: 'svk1', actor: { kind: 'panel', id: 'panel:1', name: 'admin' }, targetType: 'payment', targetId: 'pay1', shopId: 's1', detail: { reason: 'برگشتِ حواله' } }],
         actions: ['admin.payment_created', 'admin.finance_adjustment_created'], nextCursor: null, checkedAt: NOW });
     }
+    //  زبانهٔ «ثبتِ پرداخت و رسید» (`Sales.tsx`): فهرستِ پرداخت‌ها و رسیدِ HTML ِ یکی‌شان (pay3 رسید ندارد ⇒ ۴۰۴)
+    if (p === '/api/admin/payments' && req.method === 'GET') return j(200, { payments: [pay('pay1'), pay('pay3')] });
+    if (p === '/api/admin/payments/pay1/receipt') {
+      res.statusCode = 200;
+      res.setHeader('content-type', 'text/html; charset=utf-8');
+      return res.end('<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"></head><body><h1>رسیدِ R-pay1</h1>'
+        + '<script>document.title = "pwned:" + (localStorage.length > 0)</script></body></html>');
+    }
     if (p.startsWith('/api/admin/finance/')) return j(200, { checkedAt: NOW, rows: [], total: 0, totals: {}, adjustments: [], nextCursor: null });
     return j(404, { error: { code: 'route_not_found', message: 'نیست' } });
   });
@@ -268,6 +276,49 @@ try {
   check('⛔ viewer دکمهٔ سندِ اصلاحی ندارد', (await vpage.getByRole('button', { name: 'سندِ اصلاحی' }).count()) === 0);
   body = await open('recon', vpage);
   check('viewer: تطبیقِ فروشِ آنلاین «فقط مالک»', body.includes('فقط مالک'), body.slice(0, 900));
+
+  console.log('\n── رسیدِ پرداخت در زبانهٔ تازه (Sales.tsx) ──');
+  /*
+   *  ⛔ (۱.۵۰.۷۳) `window.open(url, '_blank', 'noopener')` همیشه null برمی‌گرداند (قاعدهٔ مرورگر)، پس رابط پس از
+   *  هر رسیدِ درست هم «مرورگر پنجرهٔ تازه را باز نکرد» نشان می‌داد. حالا پنجره همان لحظهٔ کلیک باز، `opener` ِ آن
+   *  بریده و پس از رسیدنِ رسید به آن برده می‌شود؛ null فقط یعنی واقعاً بسته شد.
+   */
+  await open('record');
+  await page.locator('main button', { hasText: 'پرداخت‌ها و رسید' }).first().click();
+  await page.waitForSelector('main >> text=R-pay3', { timeout: 10000 });
+  const receiptBtn = (no) => page.locator('main tr', { hasText: no }).locator('button', { hasText: 'رسید' }).first();
+  const popupFrom = async (no) => {
+    const [pg] = await Promise.all([
+      page.context().waitForEvent('page', { timeout: 8000 }).catch(() => null),
+      receiptBtn(no).click(),
+    ]);
+    return pg;
+  };
+  const toastSaid = async (text) => (await page.locator('body').innerText()).includes(text);
+  const popup = await popupFrom('R-pay1');
+  if (popup) await popup.waitForURL(/^blob:/, { timeout: 8000 }).catch(() => {});
+  check('رسید در زبانهٔ تازه باز شد (blob، همان HTML ِ سرورِ حساب)', Boolean(popup) && popup.url().startsWith('blob:') && (await popup.content()).includes('رسیدِ R-pay1'),
+    popup ? popup.url() : 'no popup');
+  check('⛔ صفحهٔ رسید به زبانهٔ پنل دست ندارد (window.opener === null)', Boolean(popup) && (await popup.evaluate(() => window.opener === null)));
+  //  blob هم‌مبدأِ پنل است؛ حفاظِ واقعی CSP ِ به‌ارث‌رسیده است: اسکریپتِ درون‌خطیِ رسید اجرا نمی‌شود (توکن را نمی‌خواند)
+  check('⛔ اسکریپتِ درون‌خطیِ رسید در زبانهٔ تازه اجرا نشد (CSP ِ پنل)', Boolean(popup) && !String(await popup.title()).startsWith('pwned'),
+    popup ? await popup.title() : '');
+  await page.waitForTimeout(400);
+  check('⛔ پیامِ دروغِ «پنجرهٔ تازه باز نشد» پس از رسیدِ درست نیامد', !(await toastSaid('پنجرهٔ تازه را باز نکرد')));
+  await popup?.close();
+  await page.waitForTimeout(3400); //  پیام‌های پیشین بروند
+  await page.evaluate(() => { window.__realOpen = window.open; window.open = () => null; });
+  await receiptBtn('R-pay1').click();
+  await page.waitForTimeout(500);
+  check('پنجره‌ای که مرورگر واقعاً بست ⇒ همان پیام', await toastSaid('پنجرهٔ تازه را باز نکرد'));
+  await page.evaluate(() => { window.open = window.__realOpen; });
+  await page.waitForTimeout(3400);
+  const sawFail = page.waitForFunction((t) => document.body.innerText.includes(t), 'رسید از سرورِ حساب نیامد', { timeout: 8000 })
+    .then(() => true, () => false);
+  const empty = await popupFrom('R-pay3');
+  if (empty && !empty.isClosed()) await empty.waitForEvent('close', { timeout: 8000 }).catch(() => {});
+  check('رسیدی که از سرورِ حساب نیامد ⇒ زبانهٔ خالی بسته شد و پیامِ خطا', (!empty || empty.isClosed()) && (await sawFail),
+    `${empty ? (empty.isClosed() ? 'closed' : 'open') : 'none'}`);
 
   console.log('\n── زبان و موبایل ──');
   await page.evaluate(() => localStorage.setItem('hlp.lang', 'en'));

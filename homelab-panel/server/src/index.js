@@ -395,6 +395,12 @@ const reauthSessionLimiter = rateLimitCfg({
   },
 });
 app.use(['/api/auth/reauth', '/api/panel/v1/auth/reauth'], reauthLimiter, reauthSessionLimiter);
+/*
+ *  ⛔ S13 ِ ممیزی (۱.۵۰.۷۳): «تغییرِ رمز» هم همان حدسِ رمزِ فعلی است با یک نشست. `authLimiter` ِ پایین برای
+ *  ‎/api/auth/change-password‎ پس از روتر سوار بود و هرگز نمی‌دوید — نشستِ دزدیده بی‌سقف حدس می‌زد. همان دو سقفِ
+ *  احرازِ دوباره (IP و خودِ نشست، فقط ناموفق‌ها، یک شمارنده برای هر دو در): پنج حدس برای هر نشست، نه پنج برای هر در.
+ */
+app.use(['/api/auth/change-password', '/api/panel/v1/auth/change-password'], reauthLimiter, reauthSessionLimiter);
 app.use('/api/auth', authRoutes);
 //  دفترِ رخدادِ یکپارچه (۶-۷) — فقط‌خواندنی، فقط admin؛ نگهبان داخلِ خودِ روتر
 app.use('/api/audit', auditRoutes);

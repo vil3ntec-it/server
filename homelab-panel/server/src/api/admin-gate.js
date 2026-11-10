@@ -23,12 +23,11 @@
 // ---------------------------------------------------------------------------
 import { clientIp } from '../platform/security.js';
 import crypto from 'node:crypto';
-import { verifyTotp, useRecoveryCode } from '../lib/totp.js';
 import http from 'node:http';
 import { config } from '../config.js';
 import { db, logEvent } from '../db.js';
 import { audit } from '../control/audit.js';
-import { findUser, verifyPassword } from '../auth.js';
+import { findUser, verifyPassword, consumeTotp, consumeRecoveryCode } from '../auth.js';
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS admin_gate_devices (
@@ -151,14 +150,15 @@ export function enrollDevice({ username, password, deviceId, name, ip = '', totp
   if (user.totp_enabled) {
     const code = String(totp || '').trim();
     if (!code) return { totp: 'required' };
-    if (!verifyTotp(user.totp_secret, code)) {
-      const recovery = useRecoveryCode(JSON.parse(user.totp_recovery || '[]'), code);
+    //  ⛔ S13: همان یک درِ کدِ یک‌بارمصرف (`consumeTotp`، auth.js) — کدی که ورود داد کلیدِ در نمی‌دهد
+    const t = consumeTotp(user.id, code);
+    if (!t.ok) {
+      const recovery = consumeRecoveryCode(user.id, code);
       if (!recovery.ok) {
-        logEvent('warn', 'panel', `کدِ دوعاملیِ غلط هنگامِ گرفتنِ کلیدِ درِ مدیر برای «${user.username}»`);
+        logEvent('warn', 'panel', `کدِ دوعاملیِ ${t.reused ? 'ازپیش‌مصرف‌شده' : 'غلط'} هنگامِ گرفتنِ کلیدِ درِ مدیر برای «${user.username}»`);
         return { totp: 'invalid' };
       }
-      db.prepare('UPDATE users SET totp_recovery = ? WHERE id = ?').run(JSON.stringify(recovery.remaining), user.id);
-      logEvent('warn', 'panel', `کلیدِ درِ مدیر با کدِ بازیابی گرفته شد (${user.username}، ${recovery.remaining.length} کد مانده)`);
+      logEvent('warn', 'panel', `کلیدِ درِ مدیر با کدِ بازیابی گرفته شد (${user.username}، ${recovery.remaining} کد مانده)`);
     }
   }
 

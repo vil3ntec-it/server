@@ -267,7 +267,8 @@ try {
   check('کدِ دومرحله‌ای از راهِ خصوصی روشن شد', en.status === 200, JSON.stringify(en.json).slice(0, 200));
   const l3 = await call(pub, 'POST', '/api/auth/login', { username: 'owner', password: 'Owner-pass-123' }, null, XFF);
   check('حالا از راهِ پراکسی: رمز ⇒ بلیتِ کدِ دومرحله‌ای (نه نشست)', l3.status === 200 && l3.json?.totpRequired === true && !l3.json?.token, JSON.stringify(l3));
-  const l4 = await call(pub, 'POST', '/api/auth/login/totp', { ticket: l3.json.ticket, code: totp(st.json.secret) }, null, XFF);
+  //  ⛔ S13: کدِ روشن کردن مصرف شده — ورود با کدِ گامِ بعد (در پنجرهٔ ±۱)
+  const l4 = await call(pub, 'POST', '/api/auth/login/totp', { ticket: l3.json.ticket, code: totp(st.json.secret, Date.now() + 30_000) }, null, XFF);
   check('… و با کد وارد می‌شود', l4.status === 200 && l4.json?.token, JSON.stringify(l4).slice(0, 200));
 
   console.log('── ۵) خاموشی در سطحِ خودِ تابع ──');

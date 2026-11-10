@@ -29,6 +29,7 @@ import { readInterfaces } from '../metrics/network.js';
 import { q, db, logEvent } from '../db.js';
 import { config } from '../config.js';
 import { sitesRoot } from '../sites/root.js';
+import { denyUnlessShellAllowed } from '../lib/shell-owner.js';
 
 const router = Router();
 // حسابِ مدیرِ پنل، یا کلیدِ محلیِ برنامهٔ رویِ همین کامپیوتر
@@ -74,15 +75,19 @@ function badSiteRoot(body) {
   const rel = path.relative(abs, path.resolve(config.dataDir));
   return !rel.startsWith('..') && !path.isAbsolute(rel);       //  خودِ پوشهٔ دادهٔ پنل یا بالاترش
 }
-function guardSite(req, res, before = null) {
-  const body = req.body || {};
+function guardSite(req, res, before = null, body = req.body || {}) {
   if (badSiteRoot(body)) {
     res.status(400).json({ ok: false, error: 'bad_root', message: 'این پوشه نمی‌تواند ریشهٔ سایت باشد' });
     return false;
   }
-  if (!req.user?.local && sensitiveSiteChange(body, before) && userRole(req.user.id) !== 'admin') {
-    res.status(403).json({ ok: false, error: 'forbidden', needed: 'admin' });
-    return false;
+  if (!req.user?.local && sensitiveSiteChange(body, before)) {
+    if (userRole(req.user.id) !== 'admin') {
+      res.status(403).json({ ok: false, error: 'forbidden', needed: 'admin' });
+      return false;
+    }
+    //  ⛔ S19: `HLP_SHELL_OWNER_ONLY=1` ⇒ فرمانِ اجرا و ریشهٔ بیرونی فقط مالک (خاموش ⇒ همان «هر admin»)
+    const what = (body.startCommand ?? body.start_command) !== undefined ? 'site.command' : 'site.root';
+    if (!denyUnlessShellAllowed(req, res, what)) return false;
   }
   return true;
 }
@@ -136,8 +141,18 @@ router.post('/discover', async (req, res) => {
   res.json(await discoverSites({ roots }));
 });
 
+/*
+ *  ⛔ (۱.۵۰.۷۳) «وارد کردنِ پیداشده‌ها» همان «افزودنِ سایت» است با چند ردیف: هر ردیف از همان `guardSite` می‌گذرد،
+ *  و یک ردیفِ ردشده کلِ درخواست را رد می‌کند (هیچ چیز نیمه‌کاره وارد نمی‌شود). تا ۱.۵۰.۷۲ این در بی نگهبان بود:
+ *  کارگزار با `startCommand` ِ دلخواه پوسته می‌گرفت و با ریشهٔ `data/` ِ پنل، `panel.db` را در فایل‌منیجر می‌دید.
+ */
 router.post('/discover/import', async (req, res) => {
-  const result = await importDiscovered(req.body?.items || []);
+  const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, 200) : [];
+  for (const item of items) {
+    const row = item && typeof item === 'object' ? item : {};
+    if (!guardSite(req, res, null, { path: row.path, startCommand: row.startCommand })) return;
+  }
+  const result = await importDiscovered(items);
   res.json(result);
 });
 
@@ -186,6 +201,8 @@ router.put('/:id/config', (req, res) => {
   if (!site) return res.status(404).json({ error: 'not_found' });
   const current = readSiteConfig(site.slug);
   const env = req.body?.env && typeof req.body.env === 'object' ? req.body.env : current.env;
+  //  ⛔ S19: متغیرِ محیطی همان «فرمانِ اجرا» است (‎NODE_OPTIONS=--import data:…‎، ‎PATH‎) ⇒ با گزینهٔ روشن فقط مالک
+  if (!req.user?.local && JSON.stringify(env || {}) !== JSON.stringify(current.env || {}) && !denyUnlessShellAllowed(req, res, 'site.env')) return;
   const next = { ...current, ...req.body, env, updatedAt: Date.now() };
   writeSiteConfig(site.slug, next);
   res.json({ ok: true, config: next });

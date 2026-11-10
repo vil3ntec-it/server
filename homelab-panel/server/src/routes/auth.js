@@ -21,10 +21,12 @@ import {
   requireRecentAuth,
   verifyReauth,
   recoveryExpired,
+  consumeTotp,
+  consumeRecoveryCode,
 } from '../auth.js';
 import jwt from 'jsonwebtoken';
 import QRCode from 'qrcode';
-import { newSecret, verifyTotp, otpauthUrl, newRecoveryCodes, hashRecovery, useRecoveryCode } from '../lib/totp.js';
+import { newSecret, matchTotpStep, otpauthUrl, newRecoveryCodes, hashRecovery } from '../lib/totp.js';
 import { getSetting } from '../db.js';
 import { db, logEvent } from '../db.js';
 import {
@@ -37,6 +39,7 @@ import { noteLogin } from '../automation/sources.js';
 import { clientIp } from '../platform/security.js';
 import { deploy } from '../config.js';
 import { deploySummary, viaProxy } from '../deploy.js';
+import { shellOwnerOnly } from '../lib/shell-owner.js';
 
 /*
  *  ⛔ «پنلِ عمومی» (HLP_PANEL_PUBLIC=1، پشتِ Caddy با TLS — src/deploy.js).
@@ -163,18 +166,21 @@ router.post('/login/totp', (req, res) => {
   //  `owner-reset --keep-2fa`: مهلتِ رمزِ یک‌بارمصرف در گامِ دوم هم (۱.۵۰.۷۱)
   if (recoveryExpired(user)) return res.status(401).json({ error: 'recovery_expired' });
 
-  if (verifyTotp(user.totp_secret, code)) return finishLogin(req, res, user);
+  //  ⛔ S13: هر کد یک بار — همان کد (یا کدِ گامِ کهنه‌تر) با بلیتِ تازه یا از درِ دیگر دوباره نمی‌گذرد
+  const t = consumeTotp(user.id, code);
+  if (t.ok) return finishLogin(req, res, user);
 
   // کدِ بازیابی — یک‌بارمصرف
-  const recovery = useRecoveryCode(JSON.parse(user.totp_recovery || '[]'), String(code || ''));
+  const recovery = consumeRecoveryCode(user.id, code);
   if (recovery.ok) {
-    db.prepare('UPDATE users SET totp_recovery = ? WHERE id = ?').run(JSON.stringify(recovery.remaining), user.id);
-    logEvent('warn', 'panel', `کاربر «${user.username}» با کدِ بازیابی وارد شد (${recovery.remaining.length} کد مانده)`);
-    audit(req, 'panel.totp.recovery_used', { target: user.username, detail: { remaining: recovery.remaining.length } });
+    logEvent('warn', 'panel', `کاربر «${user.username}» با کدِ بازیابی وارد شد (${recovery.remaining} کد مانده)`);
+    audit(req, 'panel.totp.recovery_used', { target: user.username, detail: { remaining: recovery.remaining } });
     return finishLogin(req, res, user);
   }
-  logEvent('warn', 'panel', `کدِ دوعاملیِ غلط برای «${user.username}»`);
-  audit(req, 'panel.login', { target: user.username, ok: false, detail: { step: 'totp' } });
+  logEvent('warn', 'panel', t.reused
+    ? `کدِ دوعاملیِ ازپیش‌مصرف‌شده برای «${user.username}» (بازپخش؟)`
+    : `کدِ دوعاملیِ غلط برای «${user.username}»`);
+  audit(req, 'panel.login', { target: user.username, ok: false, detail: { step: 'totp', ...(t.reused ? { reused: true } : {}) } });
   return res.status(401).json({ error: 'totp_invalid' });
 });
 
@@ -193,6 +199,8 @@ router.get('/me', requireAuth, (req, res) => {
     //  تا کِی این نشست برای کارِ حساس تازه است (میلی‌ثانیه؛ صفر = نیست)
     freshUntil: freshUntil(req.user.sessionId),
     abilities: ROLE_ABILITIES[role] || [],
+    //  S19: `HLP_SHELL_OWNER_ONLY=1` ⇒ ترمینال/فرمانِ اجرا/ریشه‌ها فقط مالک — رابط با این پیامِ درست نشان می‌دهد؛ مجوز در سرور است
+    shellOwnerOnly: shellOwnerOnly(),
     sessions: listSessions(req.user.id),
     //  کدام بخش‌ها روی این میزبان هستند (src/deploy.js) — رابط همان‌ها را نشان می‌دهد
     deploy: deploySummary(deploy),
@@ -208,7 +216,7 @@ router.post('/reauth', requireAuth, (req, res) => {
   const r = verifyReauth(req.user.id, String(req.body?.password || ''), req.body?.code);
   if (!r.ok) {
     const okPass = r.error !== 'wrong_password';
-    audit(req, 'panel.reauth', { target: req.user.username, ok: false, detail: { step: okPass ? 'totp' : 'password' } });
+    audit(req, 'panel.reauth', { target: req.user.username, ok: false, detail: { step: okPass ? 'totp' : 'password', ...(r.reused ? { reused: true } : {}) } });
     //  ۴۰۰ نه ۴۰۱: نشست سالم است، فقط رمز غلط بود — رابط نباید بیرونش بیندازد
     return res.status(400).json({
       error: okPass ? 'totp_invalid' : 'wrong_password',
@@ -269,10 +277,13 @@ router.post('/totp/enable', requireAuth, requireRecentAuth, (req, res) => {
   const u = db.prepare('SELECT totp_pending, totp_enabled, username FROM users WHERE id = ?').get(req.user.id);
   if (u?.totp_enabled) return res.status(409).json({ error: 'totp_already_enabled' });
   if (!u?.totp_pending) return res.status(400).json({ error: 'totp_not_setup' });
-  if (!verifyTotp(u.totp_pending, req.body?.code)) return res.status(400).json({ error: 'totp_invalid' });
+  //  ⛔ S13: گامِ همین کد از همین حالا «مصرف‌شده» است — کدی که دوعاملی را روشن کرد ورود نمی‌دهد
+  const step = matchTotpStep(u.totp_pending, req.body?.code);
+  if (step < 0) return res.status(400).json({ error: 'totp_invalid' });
   const codes = newRecoveryCodes();
-  db.prepare('UPDATE users SET totp_secret = ?, totp_pending = NULL, totp_enabled = 1, totp_recovery = ? WHERE id = ?')
-    .run(u.totp_pending, JSON.stringify(codes.map(hashRecovery)), req.user.id);
+  const won = db.prepare('UPDATE users SET totp_secret = ?, totp_pending = NULL, totp_enabled = 1, totp_recovery = ?, totp_last_step = ? WHERE id = ? AND totp_enabled = 0 AND totp_pending = ?')
+    .run(u.totp_pending, JSON.stringify(codes.map(hashRecovery)), step, req.user.id, u.totp_pending);
+  if (Number(won.changes) !== 1) return res.status(409).json({ error: 'totp_already_enabled' });
   logEvent('info', 'panel', `ورودِ دوعاملی برای «${u.username}» روشن شد`);
   audit(req, 'panel.totp.enable', { target: u.username });
   res.json({ ok: true, recoveryCodes: codes });
@@ -283,8 +294,9 @@ router.post('/totp/disable', requireAuth, (req, res) => {
   if (!u?.totp_enabled) return res.status(400).json({ error: 'totp_not_enabled' });
   // خاموش کردن هم رمز می‌خواهد هم کد — وگرنه نشستِ دزدیده‌شده خودش قفل را برمی‌داشت
   if (!verifyPassword(String(req.body?.password || ''), u.password_hash)) return res.status(400).json({ error: 'wrong_password' });
-  if (!verifyTotp(u.totp_secret, req.body?.code)) return res.status(400).json({ error: 'totp_invalid' });
-  db.prepare('UPDATE users SET totp_secret = NULL, totp_pending = NULL, totp_enabled = 0, totp_recovery = NULL WHERE id = ?').run(u.id);
+  if (!consumeTotp(u.id, req.body?.code).ok) return res.status(400).json({ error: 'totp_invalid' });
+  //  رازِ بعدی گام‌های خودش را دارد؛ «آخرین گام» ِ این راز با خودش می‌رود
+  db.prepare('UPDATE users SET totp_secret = NULL, totp_pending = NULL, totp_enabled = 0, totp_recovery = NULL, totp_last_step = NULL WHERE id = ?').run(u.id);
   logEvent('warn', 'panel', `ورودِ دوعاملی برای «${u.username}» خاموش شد`);
   audit(req, 'panel.totp.disable', { target: u.username });
   res.json({ ok: true });

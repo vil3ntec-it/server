@@ -79,7 +79,8 @@ export default function TerminalPage() {
           });
           return;
         }
-        setError(res?.error === 'forbidden' ? t('trmForbidden') : res?.error === 'reauth_required' ? t('trmReauth') : t('trmOpenFailed'));
+        setError(res?.error === 'forbidden' ? t('trmForbidden') : res?.error === 'owner_only' ? t('trmOwnerOnly')
+          : res?.error === 'reauth_required' ? t('trmReauth') : t('trmOpenFailed'));
       });
     open(false);
 
@@ -137,7 +138,7 @@ export default function TerminalPage() {
       (res: { ok: boolean; cwd?: string; exitCode?: number; error?: string; truncated?: boolean }) => {
         setBusy(false);
         if (!res?.ok) {
-          push('err', res?.error === 'forbidden' ? t('trmForbidden') : `[${res?.error ?? 'error'}]`);
+          push('err', res?.error === 'forbidden' ? t('trmForbidden') : res?.error === 'owner_only' ? t('trmOwnerOnly') : `[${res?.error ?? 'error'}]`);
           return;
         }
         if (res.cwd) setCwd(res.cwd);

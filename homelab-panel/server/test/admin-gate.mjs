@@ -15,6 +15,7 @@ import http from 'node:http';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 const PORT = Number(process.env.TEST_PORT || 4781);
 const PUBLIC_PORT = PORT + 1;
@@ -382,14 +383,27 @@ try {
       method: 'POST', body: { username: 'admin', password: 'NotTheRealOne!', deviceId: 'x', totp: totpNow(secret) },
     });
     check('رمزِ غلط با کدِ درست همچنان «نبوده» است (۴۰۴)', wrongPass.status === 404, `status ${wrongPass.status}`);
-    const good = await enroll({ totp: totpNow(secret) });
+    //  ⛔ S13: کدی که دوعاملی را روشن کرد مصرف شده — کلید با کدِ گامِ بعد (ساعتِ گوشیِ کمی جلو، در پنجرهٔ ±۱)
+    const sameAsEnable = await enroll({ totp: totpNow(secret) });
+    check('⛔ S13: کدی که دوعاملی را روشن کرد کلیدِ در نمی‌دهد', sameAsEnable.status === 401 && sameAsEnable.body?.error === 'totp_invalid'
+      && !sameAsEnable.body?.key, sameAsEnable.text.slice(0, 120));
+    const nextCode = totpNow(secret, Date.now() + 30_000);
+    const good = await enroll({ totp: nextCode });
     check('کدِ درست ⇒ کلید', good.status === 200 && String(good.body?.key || '').length > 20, good.text.slice(0, 120));
+    const replay = await enroll({ totp: nextCode });
+    check('⛔ S13: همان کد بارِ دوم کلیدِ دیگری نمی‌دهد', replay.status === 401 && replay.body?.error === 'totp_invalid' && !replay.body?.key,
+      replay.text.slice(0, 120));
     const rec = en.body.recoveryCodes[0];
     const viaRec = await enroll({ totp: rec });
     check('کدِ بازیابی ⇒ کلید', viaRec.status === 200 && Boolean(viaRec.body?.key), viaRec.text.slice(0, 120));
     const recAgain = await enroll({ totp: rec });
     check('همان کدِ بازیابی بارِ دوم پذیرفته نمی‌شود', recAgain.status === 401, `status ${recAgain.status}`);
     await call(PANEL, '/api/settings/remote/device/phone-totp', { method: 'DELETE', token });
+    //  کدِ سوم یعنی گامِ سوم: به‌جای سی ثانیه صبر، «آخرین گامِ پذیرفته» پاک می‌شود (= یک دقیقه گذشت)
+    {
+      const d = new DatabaseSync(path.join(dataDir, 'panel.db'));
+      try { d.exec('PRAGMA busy_timeout = 5000'); d.exec('UPDATE users SET totp_last_step = NULL'); } finally { d.close(); }
+    }
     const off = await call(PANEL, '/api/auth/totp/disable', {
       method: 'POST', token, body: { password: 'ControlCenter!2026', code: totpNow(secret) },
     });

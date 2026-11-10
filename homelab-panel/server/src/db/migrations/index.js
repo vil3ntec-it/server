@@ -17,6 +17,7 @@ import { up as up005 } from './005_automation.js';
 import { up as up006 } from './006_totp_sessions.js';
 import { up as up007 } from './007_owner_console.js';
 import { up as up008 } from './008_recovery_expiry.js';
+import { up as up009 } from './009_totp_last_step.js';
 
 export const migrations = [
   { version: 1, name: 'initial', up: up001 },
@@ -27,4 +28,5 @@ export const migrations = [
   { version: 6, name: 'totp_sessions', up: up006 },
   { version: 7, name: 'owner_console', up: up007 },
   { version: 8, name: 'recovery_expiry', up: up008 },
+  { version: 9, name: 'totp_last_step', up: up009 },
 ];

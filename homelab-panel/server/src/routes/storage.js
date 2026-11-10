@@ -22,7 +22,9 @@ import {
   libraryRoot,
   libraryPath,
   safeFolderName,
+  isConfigured,
 } from '../storage/library.js';
+import { denyUnlessShellAllowed } from '../lib/shell-owner.js';
 import { scanStray, planMove, applyMove } from '../storage/migrate.js';
 import {
   createBackup,
@@ -66,6 +68,10 @@ router.post('/check', async (req, res) => {
 
 router.post('/setup', async (req, res) => {
   const target = String(req.body?.root || '').trim() || libraryRoot();
+  //  ⛔ S19: کتابخانه یکی از ریشه‌های فایل‌منیجر است ⇒ با `HLP_SHELL_OWNER_ONLY=1` گذاشتن یا جابه‌جاییش فقط مالک
+  //  (همان ریشهٔ ازپیش‌گذاشته = «تعمیر»، آزاد)
+  const same = isConfigured() && path.resolve(target) === path.resolve(libraryRoot());
+  if (!same && !denyUnlessShellAllowed(req, res, 'library')) return;
   const result = await setLibraryRoot(target);
   audit(req, 'storage.setRoot', { target, ok: result.ok });
   if (!result.ok) return res.status(400).json(result);

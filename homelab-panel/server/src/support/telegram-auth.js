@@ -14,8 +14,7 @@
 // ---------------------------------------------------------------------------
 import crypto from 'node:crypto';
 import { db, getSetting, setSetting, logEvent } from '../db.js';
-import { findUser, verifyPassword } from '../auth.js';
-import { verifyTotp, useRecoveryCode } from '../lib/totp.js';
+import { findUser, verifyPassword, consumeTotp, consumeRecoveryCode } from '../auth.js';
 import { audit } from '../control/audit.js';
 import { mainKeyboard, setMenu } from './telegram-menus.js';
 
@@ -119,12 +118,9 @@ export async function handleLogin(tg, tok, chatId, m) {
     await wipe();
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(st.uid));
     if (!user || user.disabled || !user.totp_enabled) return fail('totp');
-    if (verifyTotp(user.totp_secret, text)) return ok(user);
-    const rec = useRecoveryCode(JSON.parse(user.totp_recovery || '[]'), text);
-    if (rec.ok) {
-      db.prepare('UPDATE users SET totp_recovery = ? WHERE id = ?').run(JSON.stringify(rec.remaining), user.id);
-      return ok(user);
-    }
+    //  ⛔ S13: کدِ یک‌بارمصرف — همان درِ ورودِ پنل (`consumeTotp`، auth.js)
+    if (consumeTotp(user.id, text).ok) return ok(user);
+    if (consumeRecoveryCode(user.id, text).ok) return ok(user);
     return fail('totp');
   }
   save({ ...a, stage: null });
