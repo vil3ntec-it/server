@@ -1,9 +1,10 @@
-tests 13, failed 0
+tests 14, failed 0
 pass com.vil3ntec.rawrec.desktop.ChatTest.youtubeMessagesEmojiSuperChatsAndNextPage()
 pass com.vil3ntec.rawrec.desktop.ChatTest.translationIsCasualPersianAndSameLanguageIsLeftAlone()
 pass com.vil3ntec.rawrec.desktop.ChatTest.kickMessagesKeepEmoteNames()
 pass com.vil3ntec.rawrec.desktop.ChatTest.youtubeWhatTheOwnerTypes()
 pass com.vil3ntec.rawrec.desktop.ChatTest.theSameMessageTwiceIsShownOnce()
+pass com.vil3ntec.rawrec.desktop.ChatTest.persianIsSpokenNotWritten()
 pass com.vil3ntec.rawrec.desktop.ChatTest.twitchMessagesCheersAndGifts()
 pass com.vil3ntec.rawrec.desktop.ChatTest.youtubeStartsFromLiveChatNotTopChat()
 pass com.vil3ntec.rawrec.desktop.CoreTest.scrcpyPacketHeaderCarriesTheFlags()
