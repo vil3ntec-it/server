@@ -93,4 +93,13 @@ class ChatTest {
         assertNotNull(ChatHub.alerts.peekFirst())
         ChatHub.clear()
     }
+
+    @Test fun persianIsSpokenNotWritten() {
+        assertEquals("چه بازی خوبیه، فردا همه شما رو می‌بینم!", Translator.spoken("چه بازی خوبی است، فردا همه شما رو می‌بینم!"))
+        assertEquals("این خوبه", Translator.spoken("این خوب است"))
+        assertEquals("خیلی خسته‌ست.", Translator.spoken("خیلی خسته است."))
+        assertEquals("همین‌جاست", Translator.spoken("همین‌جا است"))
+        assertEquals("او هست", Translator.spoken("او هست"))            // «هست» stays
+        assertEquals("استاد خوب", Translator.spoken("استاد خوب"))     // «است» inside a word stays
+    }
 }

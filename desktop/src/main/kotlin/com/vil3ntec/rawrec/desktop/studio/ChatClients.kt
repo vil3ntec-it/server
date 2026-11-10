@@ -98,7 +98,9 @@ class YouTubeChat(channel: String) : ChatClient(Platform.YOUTUBE, channel) {
 
         /** The video a channel's «live» page leads to, only when it is really live now. */
         fun liveVideoOf(page: String): String? {
-            val id = Regex("<link rel=\"canonical\" href=\"https://www\\.youtube\\.com/watch\\?v=([A-Za-z0-9_-]{11})\"").find(page)?.groupValues?.get(1) ?: return null
+            val id = Regex("<link rel=\"canonical\" href=\"https://www\\.youtube\\.com/watch\\?v=([A-Za-z0-9_-]{11})\"").find(page)?.groupValues?.get(1)
+                ?: Regex("\"videoDetails\":\\{\"videoId\":\"([A-Za-z0-9_-]{11})\"").find(page)?.groupValues?.get(1)
+                ?: return null
             return id.takeIf { page.contains("\"isLive\":true") || page.contains("\"isLiveNow\":true") || page.contains("liveChatRenderer") }
         }
 

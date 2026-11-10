@@ -55,7 +55,7 @@ object Translator {
             val from = a.optString(2)
             var out = sb.toString().trim()
             if (out.isEmpty() || out == text || from.substringBefore('-') == to) return null
-            if (to == "fa") out = PersianCasual.casual(out)
+            if (to == "fa") out = spoken(PersianCasual.casual(out))
             synchronized(cache) { cache[key] = out }
             lastError = null
             out
@@ -63,4 +63,17 @@ object Translator {
     }
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
+
+    /**
+     * «… است» as it is said: «خوب است» → «خوبه», «خوبی است» → «خوبیه», «خسته است» → «خسته‌ست»,
+     * «این‌جا است» → «این‌جاست». Only the separate word «است» (never «هست», never inside a word).
+     */
+    fun spoken(fa: String): String = Regex("([\\u0600-\\u06FF\\u200C]+)\\s+است(?=$|[\\s.!?،؛؟…])").replace(fa) { m ->
+        val w = m.groupValues[1]
+        when {
+            w.endsWith("ا") || w.endsWith("و") -> w + "ست"
+            w.endsWith("ه") && !w.endsWith("ده") -> w + "\u200cست"
+            else -> w + "ه"
+        }
+    }
 }

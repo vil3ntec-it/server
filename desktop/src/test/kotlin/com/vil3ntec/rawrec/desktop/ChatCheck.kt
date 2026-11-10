@@ -17,7 +17,16 @@ fun main(args: Array<String>) {
     val seconds = args.getOrNull(0)?.toIntOrNull() ?: 60
     val twitch = try { topTwitch() } catch (e: Exception) { println("twitch top: ${e.message}"); emptyList() }.ifEmpty { listOf("kaicenat", "xqc", "ibai") }
     println("twitch channels: $twitch")
-    val clients = listOf<ChatClient>(YouTubeChat("@LofiGirl")) + twitch.take(3).map { TwitchChat(it) } + listOf("xqc", "adinross").map { KickChat(it) }
+    // what YouTube and Kick answer this machine (to tell «no live» from «blocked»)
+    for (u in listOf("https://www.youtube.com/@LofiGirl/live", "https://kick.com/api/v2/channels/xqc")) try {
+        val r = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build().send(HttpRequest.newBuilder(URI(u)).header("User-Agent", ChatClient.UA)
+            .header("Cookie", "CONSENT=YES+1; SOCS=CAI").GET().build(), HttpResponse.BodyHandlers.ofString())
+        val b = r.body()
+        println("probe $u -> ${r.statusCode()} len ${b.length} title=${Regex("<title>([^<]*)").find(b)?.groupValues?.get(1)} canonical=${Regex("rel=\"canonical\" href=\"([^\"]+)").find(b)?.groupValues?.get(1)} " +
+            "isLive=${b.contains("\"isLive\":true")} videoDetails=${Regex("\"videoDetails\":\\{\"videoId\":\"([^\"]+)").find(b)?.groupValues?.get(1)} liveChat=${b.contains("liveChatRenderer")} " +
+            "bot=${b.contains("confirm you") || b.contains("unusual traffic")} kick_livestream=${Regex("\"livestream\":(null|\\{\"id\":\\d+)").find(b)?.groupValues?.get(1)} chatroom=${Regex("\"chatroom\":\\{\"id\":(\\d+)").find(b)?.groupValues?.get(1)}")
+    } catch (e: Exception) { println("probe $u -> ${e.message}") }
+    val clients = listOf<ChatClient>(YouTubeChat("@LofiGirl")) + twitch.take(3).map { TwitchChat(it) } + kickLive().ifEmpty { listOf("xqc", "adinross") }.take(2).map { KickChat(it) }
     val firsts = java.util.concurrent.ConcurrentHashMap<Platform, MutableList<ChatMessage>>()
     ChatHub.listeners.add { m -> firsts.getOrPut(m.platform) { java.util.Collections.synchronizedList(ArrayList()) }.let { if (it.size < 4) it.add(m) } }
     clients.forEach { it.start() }
@@ -36,6 +45,14 @@ fun main(args: Array<String>) {
     println("TRANSLATE en→fa: $tr ${Translator.lastError ?: ""}")
     System.exit(0)
 }
+
+/** Kick channels live now (its public list), for a test that has someone to read. */
+private fun kickLive(): List<String> = try {
+    val r = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build().send(HttpRequest.newBuilder(URI("https://kick.com/stream/livestreams/en?page=1&limit=5&sort=desc"))
+        .header("User-Agent", ChatClient.UA).header("Accept", "application/json").GET().build(), HttpResponse.BodyHandlers.ofString())
+    println("kick live list -> ${r.statusCode()}")
+    Regex("\"slug\":\"([a-z0-9_-]+)\"").findAll(r.body()).map { it.groupValues[1] }.distinct().toList().also { println("kick live: $it") }
+} catch (e: Exception) { println("kick live list: ${e.message}"); emptyList() }
 
 private fun topTwitch(): List<String> {
     val body = JSONArray().put(JSONObject().put("query", "query{streams(first:5){edges{node{broadcaster{login}}}}}")).toString()
