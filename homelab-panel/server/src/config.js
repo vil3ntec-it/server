@@ -125,6 +125,9 @@ export const config = {
   //  ⚠️ پیش‌فرضش با نمایه است: home خاموش (همان امروز)، docker/paas روشن —
   //  آن‌جا همیشه پراکسی/لودبالانسر جلوست (src/deploy.js).
   trustProxy: deploy.trustProxy,
+  //  ⛔ (۱.۵۰.۸۴) و از کدام همتا: home/vps فقط لوپ‌بک (‎[]‎)، docker/paas ‎'any'‎، یا
+  //  فهرستِ صریحِ نشانیِ پراکسی — `proxyPeers` در src/deploy.js.
+  trustProxyFrom: deploy.trustProxyFrom,
 
   // مبدأهای اضافیِ مجاز برای CORS (با کاما جدا) — علاوه بر دامنه و شبکهٔ خانگی
   corsOrigins: String(process.env.HLP_CORS_ORIGINS || '')

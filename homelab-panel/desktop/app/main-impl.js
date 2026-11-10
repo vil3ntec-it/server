@@ -18,6 +18,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { ensureFirewall } from './firewall.js';
 import { loginItemPlan, restartDelay, shouldRelaunch, HEALTHY_RESET_MS, AUTOSTART_ARG } from './autostart.js';
+import { guardWindow, senderIsOwnPage } from './guards.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -36,6 +37,18 @@ let ctx = {
 
 const implFile = (name) => path.join(ctx.implDir, name);
 const assetFile = (name) => path.join(ctx.assetsDir, name);
+
+/**
+ * ⛔ (۱.۵۰.۸۴) صفحه‌هایی که پلِ `window.cc` دارند — و تنها صفحه‌هایی که این دو پنجره
+ * باز می‌کنند و IPC از آن‌ها پاسخ می‌گیرد (`app/guards.js`). پیوند یا فایلی که روی
+ * پنجره رها شود، دیگر جای پوسته را نمی‌گیرد و پل را به دستِ صفحهٔ بیگانه نمی‌دهد.
+ */
+const ownPages = () => [implFile('shell.html'), implFile('terminal.html')];
+const guardOpts = () => ({
+  pages: ownPages,
+  openExternal: (url) => shell.openExternal(url),
+  log: (m) => pushLog(m, 'err'),
+});
 
 /* ------------------------------ جای فایل‌ها ------------------------------ */
 
@@ -419,21 +432,19 @@ function createWindow() {
       preload: implFile('preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       webviewTag: true,
     },
   });
 
+  //  ⛔ پیش از بار شدن: ناوبری فقط صفحه‌های خودِ برنامه، ‎window.open‎ فقط ‎http(s)‎ به
+  //  مرورگرِ سیستم، و ‎<webview>‎ ِ پنل بی preload و بی Node (`app/guards.js`).
+  guardWindow(state.win, guardOpts());
   state.win.loadFile(implFile('shell.html'));
   state.win.once('ready-to-show', () => {
     state.win.show();
     // پنجره آمد، پس این نسخه سالم است
     ctx.markBooted();
-  });
-
-  // پیوندهای بیرونی در مرورگرِ خودِ سیستم باز شوند، نه داخلِ برنامه
-  state.win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: 'deny' };
   });
 
   // بستنِ پنجرهٔ اصلی یعنی پایانِ کار — ترمینالِ جدا شده هم با آن می‌رود
@@ -470,9 +481,11 @@ function openTerminalWindow() {
       preload: implFile('preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
 
+  guardWindow(state.termWin, guardOpts());
   state.termWin.loadFile(implFile('terminal.html'));
   state.termWin.once('ready-to-show', () => {
     // خواستهٔ کاربر: در پنجرهٔ جدا، تمامِ صفحه باشد
@@ -495,18 +508,34 @@ function closeTerminalWindow() {
 
 /* --------------------------------- IPC ---------------------------------- */
 
-ipcMain.handle('state', () => publicState());
-ipcMain.handle('logs', () => state.logs);
-ipcMain.handle('restart', () => restartServer());
-ipcMain.handle('open-browser', () => (state.url ? shell.openExternal(state.url) : null));
+/*
+ *  ⛔ (۱.۵۰.۸۴) هر درِ IPC اول می‌پرسد «از کدام صفحه؟» — فقط قابِ اصلیِ shell.html و
+ *  terminal.html ِ همین نسخه. تا ۱.۵۰.۸۳ هر صفحه‌ای که در این دو پنجره بار می‌شد
+ *  (preload برای همه می‌دود) لاگِ سرور، پوشهٔ داده، راه‌اندازی و «روشن با ویندوز» را
+ *  داشت. پاسخِ صفحهٔ بیگانه ‎null‎ است، بی هیچ کار.
+ */
+function handle(channel, fn) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!senderIsOwnPage(event, ownPages())) {
+      pushLog(`درخواستِ «${channel}» از صفحه‌ای جز صفحه‌های خودِ برنامه رد شد`, 'err');
+      return null;
+    }
+    return fn(event, ...args);
+  });
+}
+
+handle('state', () => publicState());
+handle('logs', () => state.logs);
+handle('restart', () => restartServer());
+handle('open-browser', () => (state.url ? shell.openExternal(state.url) : null));
 // فقط صفحهٔ انتشارهای همین مخزن — نه هر نشانی‌ای که پوسته بدهد
-ipcMain.handle('open-external', (_event, url) => {
+handle('open-external', (_event, url) => {
   const s = String(url || '');
   if (!s.startsWith('https://github.com/vil3ntec-it/')) return false;
   shell.openExternal(s);
   return true;
 });
-ipcMain.handle('open-data', () => (state.dataDir ? shell.openPath(state.dataDir) : null));
+handle('open-data', () => (state.dataDir ? shell.openPath(state.dataDir) : null));
 
 /**
  * کپیِ خودِ برنامه به داخلِ پوشهٔ داده — تا پوشه «همه‌چیز» را با خود ببرد.
@@ -515,7 +544,7 @@ ipcMain.handle('open-data', () => (state.dataDir ? shell.openPath(state.dataDir)
  * نسخهٔ نصبی بی پوشهٔ کنارش (‎resources/‎) باز نمی‌شود. پس برای نسخهٔ نصبی
  * نشانیِ دانلودِ نسخهٔ قابل‌حمل برمی‌گردد و کاربر همان را در پوشه می‌گذارد.
  */
-ipcMain.handle('copy-app-into-data', async () => {
+handle('copy-app-into-data', async () => {
   if (!state.dataDir) return { ok: false, error: 'هنوز پوشهٔ داده انتخاب نشده است' };
   const exe = portableExe();
   if (!exe) {
@@ -539,25 +568,25 @@ ipcMain.handle('copy-app-into-data', async () => {
     return { ok: false, error: `کپی نشد (${e.code || e.message})` };
   }
 });
-ipcMain.handle('clear-logs', () => {
+handle('clear-logs', () => {
   state.logs = [];
 });
 
-ipcMain.handle('terminal-popout', () => {
+handle('terminal-popout', () => {
   openTerminalWindow();
   return { popped: true };
 });
 
-ipcMain.handle('terminal-dock', () => {
+handle('terminal-dock', () => {
   closeTerminalWindow();
   return { popped: false };
 });
 
-ipcMain.handle('terminal-place', () => ({
+handle('terminal-place', () => ({
   popped: Boolean(state.termWin && !state.termWin.isDestroyed()),
 }));
 
-ipcMain.handle('terminal-fullscreen', (event) => {
+handle('terminal-fullscreen', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) return { full: false };
   const next = !win.isFullScreen();
@@ -565,7 +594,7 @@ ipcMain.handle('terminal-fullscreen', (event) => {
   return { full: next };
 });
 
-ipcMain.handle('focus-main', () => {
+handle('focus-main', () => {
   if (!state.win || state.win.isDestroyed()) return null;
   if (state.win.isMinimized()) state.win.restore();
   state.win.focus();
@@ -573,18 +602,18 @@ ipcMain.handle('focus-main', () => {
 });
 
 /* تنظیماتِ کوچکِ رابط (مثلِ بلندیِ ترمینال) — کنارِ بقیهٔ تنظیماتِ برنامه */
-ipcMain.handle('get-ui', () => readSettings().ui || {});
-ipcMain.handle('set-ui', (_event, patch) => {
+handle('get-ui', () => readSettings().ui || {});
+handle('set-ui', (_event, patch) => {
   const ui = { ...(readSettings().ui || {}), ...(patch && typeof patch === 'object' ? patch : {}) };
   writeSettings({ ui });
   return ui;
 });
 
-ipcMain.handle('setup-needed', () => !readSettings().dataDir);
+handle('setup-needed', () => !readSettings().dataDir);
 
-ipcMain.handle('default-data-dir', () => defaultDataDir());
+handle('default-data-dir', () => defaultDataDir());
 
-ipcMain.handle('choose-folder', async (_event, current) => {
+handle('choose-folder', async (_event, current) => {
   const res = await dialog.showOpenDialog(state.win, {
     title: 'پوشهٔ نگهداری اطلاعات را انتخاب کنید',
     defaultPath: current || defaultDataDir(),
@@ -621,7 +650,7 @@ async function ensureWritable(target, timeoutMs = 8000) {
   work.catch(() => {});
 }
 
-ipcMain.handle('save-setup', async (_event, dataDir) => {
+handle('save-setup', async (_event, dataDir) => {
   const raw = String(dataDir || '').trim();
   if (!raw) return { ok: false, error: 'مسیر خالی است' };
   const target = path.resolve(raw);
@@ -736,11 +765,11 @@ function applyLoginItem() {
   return plan;
 }
 
-ipcMain.handle('autostart', () => ({
+handle('autostart', () => ({
   enabled: readSettings().autoStart !== false,
   supported: Boolean(loginItemPlan({ platform: process.platform, isPackaged: true, execPath: process.execPath })),
 }));
-ipcMain.handle('set-autostart', (_event, on) => {
+handle('set-autostart', (_event, on) => {
   writeSettings({ autoStart: Boolean(on) });
   applyLoginItem();
   pushLog(on ? '✅ برنامه با روشن شدنِ ویندوز خودش باز می‌شود.' : 'روشن شدن با ویندوز خاموش شد.');
@@ -748,8 +777,8 @@ ipcMain.handle('set-autostart', (_event, on) => {
   return { enabled: Boolean(on) };
 });
 
-ipcMain.handle('update-applied', () => readApplied());
-ipcMain.handle('relaunch', () => {
+handle('update-applied', () => readApplied());
+handle('relaunch', () => {
   relaunchApp();
   return true;
 });

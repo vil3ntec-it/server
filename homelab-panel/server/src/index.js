@@ -36,7 +36,7 @@ import {
   syncTunnelRoutes,
 } from './tunnel.js';
 import { versionInfo, versionLine } from './version.js';
-import { corsMiddleware, isAllowedOrigin, secureHeaders, panelCsp, panelCspValue } from './platform/security.js';
+import { corsMiddleware, isAllowedOrigin, secureHeaders, panelCsp, panelCspValue, proxyTrustSetting } from './platform/security.js';
 import { createApiV1 } from './routes/v1.js';
 import { createPublicApi, apiIndex, publicHealth } from './api/public.js';
 import { rateLimit as rateLimitCfg } from './platform/rate-limit.js';
@@ -207,7 +207,8 @@ const app = express();
 app.disable('x-powered-by');
 
 // اگر پشتِ reverse proxy هستیم، Express باید بداند تا req.ip و req.secure درست باشند
-if (config.trustProxy) app.set('trust proxy', true);
+//  ⛔ (۱.۵۰.۸۴) همان «از کدام همتا» ِ `clientIp`: home/vps فقط لوپ‌بک، نه هر دستگاهِ شبکه
+if (config.trustProxy) app.set('trust proxy', proxyTrustSetting());
 
 app.use(secureHeaders);
 //  ⛔ CSP فقط روی پورتِ پنل (۶-۶): پورتِ عمومی صفحه‌های سرورِ حساب و سایت‌ها را
@@ -737,7 +738,7 @@ if (siteSync && config.siteSync.port && config.siteSync.port !== config.port) {
   // پنل، فایل‌منیجر و کنترل پروسه‌ها هرگز به اینترنت درز نمی‌کنند.
   const publicApp = express();
   publicApp.disable('x-powered-by');
-  if (config.trustProxy) publicApp.set('trust proxy', true);
+  if (config.trustProxy) publicApp.set('trust proxy', proxyTrustSetting());
   publicApp.use(secureHeaders);
   publicApp.use((req, res, next) => {
     // این پورت عمداً عمومی است (اپ‌ها از اینترنت می‌آیند) ولی بدونِ credentials
