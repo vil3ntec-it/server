@@ -277,6 +277,7 @@ router.post(
         force: bool(req.body?.force),
         restart: bool(req.body?.restart, true),
       });
+      if (out.reason === 'feature_disabled') return res.status(403).json(out);
       if (out.reason === 'install_running') return res.status(409).json({ error: 'install_running', detail: 'نصب در جریان است', progress: out.progress });
       if (out.reason === 'github_unreachable') return fail(res, 502, 'github_unreachable', out.info?.error);
       res.json(out);
@@ -302,7 +303,8 @@ router.post(
   rateLimit({ windowMs: 600000, max: 3 }),
   guard(async (req, res) => {
     if (!bool(req.body?.confirm)) return fail(res, 400, 'confirmation_required');
-    res.json(await updater.rollback({ actor: actorOf(req) }));
+    const out = await updater.rollback({ actor: actorOf(req) });
+    res.status(out.reason === 'feature_disabled' ? 403 : 200).json(out);
   })
 );
 

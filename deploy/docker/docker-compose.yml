@@ -1,0 +1,80 @@
+# ---------------------------------------------------------------------------
+#  VILL3N روی یک VPS با داکر — پنل + سرورِ حساب (فروشگاه و اشتراک‌ها) + Caddy
+#
+#      cp .env.example .env      ⇐ دامنه و رمزها را بنویسید (فقط همین فایل)
+#      docker compose up -d --build
+#
+#  راهنمای قدم‌به‌قدم (فارسی): docs/DEPLOY-ANYWHERE-fa.md، بخشِ «VPS با داکر».
+#
+#  ⛔ هیچ مسیر یا نامِ کامپیوترِ خاصی این‌جا نیست؛ همه از .env.
+#  ⛔ پورتِ پنل (۴۷۰۰) هرگز روی اینترنت منتشر نمی‌شود — فقط روی ‎127.0.0.1‎ِ
+#     خودِ سرور (برای تونلِ SSH). اینترنت فقط ۸۰/۴۴۳ِ Caddy را می‌بیند که به
+#     پورتِ عمومیِ پنل (۴۷۰۱: برنامه‌ها، درگاهِ سرورِ حساب، درِ کلیددارِ اپِ مدیر)
+#     می‌رسد — همان چیزی که در خانه تونلِ Cloudflare به آن می‌رسد.
+#  ⛔ سرورِ حساب داخلِ کانتینرِ پنل است (Dockerfile) و دیتابیسش (PGlite) در
+#     volumeِ panel-data — درست مثلِ خانه، پس جابه‌جایی یعنی همان پوشهٔ داده.
+# ---------------------------------------------------------------------------
+name: vill3n
+
+services:
+  panel:
+    build:
+      context: ../../homelab-panel/server
+      args:
+        SHOP_REF: ${SHOP_REF:-main}
+    image: vill3n-panel:${PANEL_TAG:-local}
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      HLP_DEPLOY: docker
+      HLP_DATA_DIR: /data
+      HLP_BACKUP_ROOT: /backups
+      HLP_HOST: 0.0.0.0
+      HLP_PORT: "4700"
+      HLP_SITESYNC_PORT: "4701"
+      #  Caddy جلوست: IPِ کاربر از سرآیندِ او خوانده می‌شود (سقفِ نرخ)
+      HLP_TRUST_PROXY: "1"
+      HLP_DOMAIN: ${HLP_DOMAIN:?دامنه را در .env بنویسید (HLP_DOMAIN=example.com)}
+    volumes:
+      - panel-data:/data
+      - panel-backups:/backups
+    ports:
+      #  فقط روی خودِ سرور — از خانه: ssh -L 4700:127.0.0.1:4700 <سرور>
+      - "127.0.0.1:${PANEL_LOCAL_PORT:-4700}:4700"
+    #  خاموش‌سازیِ تمیز: سرورِ حساب، دیتابیس و پمپ‌ها پیش از رفتن ذخیره می‌شوند
+    stop_grace_period: 45s
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on:
+      panel:
+        condition: service_healthy
+    command: ["caddy", "run", "--config", "/etc/caddy/${CADDYFILE:-Caddyfile}", "--adapter", "caddyfile"]
+    environment:
+      API_HOST: ${API_HOST:-api.${HLP_DOMAIN}}
+      ADMIN_HOST: ${ADMIN_HOST:-admin.${HLP_DOMAIN}}
+      PANEL_HOST: ${PANEL_HOST:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./caddy:/etc/caddy:ro
+      #  گواهی‌ها این‌جا می‌مانند؛ بی آن هر بالا آمدن گواهیِ تازه می‌خواست
+      - caddy-data:/data
+      - caddy-config:/config
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  panel-data:
+  panel-backups:
+  caddy-data:
+  caddy-config:

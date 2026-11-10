@@ -26,6 +26,7 @@ import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
+import { featureOn, disabledPayload } from '../lib/feature-gate.js';
 
 const IDLE_MS = 15 * 60 * 1000;      // نشستِ رهاشده بسته می‌شود
 const MAX_COMMAND_MS = 10 * 60 * 1000; // یک فرمان تا کِی حق دارد بدود
@@ -63,6 +64,8 @@ function homeDir() {
 }
 
 export function create({ userId, username, cwd } = {}) {
+  //  ⛔ فرمانِ دلخواه روی سرور — روی میزبانِ عمومی پیش‌فرض خاموش (src/deploy.js)
+  if (!featureOn('terminal')) return disabledPayload('terminal');
   if (sessions.size >= MAX_SESSIONS) return { ok: false, error: 'too_many_sessions' };
 
   const id = crypto.randomBytes(12).toString('base64url');

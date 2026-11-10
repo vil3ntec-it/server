@@ -170,6 +170,9 @@ console.log('\n۱ب) خواندنِ پورتِ SSH — هیچ حالتی نبا�
     env.HLP_DATA_DIR === path.join(ROOT, 'data', 'core') && env.HLP_PORT === String(PORT) && env.HLP_SITESYNC_PORT === String(PUBLIC_PORT)
       && env.HLP_TRUST_PROXY === 'true' && env.HLP_ACCOUNT_DIR === path.join(ROOT, 'core', 'account-server', 'server')
       && env.HLP_OLLAMA_URL === 'http://127.0.0.1:11434' && env.HLP_BACKUP_ROOT === path.join(ROOT, 'backups'));
+  check('نمایهٔ استقرار پیش‌فرض home (همان سرورِ خانگی — docs/DEPLOY-ANYWHERE-fa.md)', env.HLP_DEPLOY === 'home', env.HLP_DEPLOY);
+  const badDeploy = spawnSync('/bin/bash', [INSTALLER, '--list-steps'], { encoding: 'utf8', env: { ...process.env, VILL3N_DEPLOY: 'cpanel' } });
+  check('VILL3N_DEPLOY ناشناخته ⇒ کدِ ۲ و پیام (نه نصبِ نیمه‌کاره)', badDeploy.status === 2 && /VILL3N_DEPLOY=cpanel/.test(badDeploy.stderr), badDeploy.stderr);
   check('مدلِ هوش مصنوعی از روی سخت‌افزار انتخاب شده', /^qwen2\.5:(1\.5b|3b|7b|14b)$/.test(env.HLP_AGENT_MODEL || ''), env.HLP_AGENT_MODEL);
   check('کدِ پنل کپی شده (بی .git)', fs.existsSync(path.join(ROOT, 'core', 'panel', 'homelab-panel', 'server', 'src', 'index.js')) && !fs.existsSync(path.join(ROOT, 'core', 'panel', '.git')));
   check('سرورِ حساب در core/account-server/server', fs.existsSync(path.join(ROOT, 'core', 'account-server', 'server', 'src', 'index.js')));

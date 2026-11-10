@@ -41,7 +41,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../app-context';
 import { LANGUAGES, type Dict } from '../i18n';
-import { featureOn, type FeatureKey } from '../features';
+import { featureOn, type FeatureKey, type ServerFeature } from '../features';
 import { logoUrl } from '../api';
 import CommandPalette, { usePaletteKey, type PaletteItem } from './CommandPalette';
 import { subsPath } from '../pages/account/subsPath';
@@ -54,6 +54,8 @@ type NavItem = {
   needs?: 'operator' | 'admin';
   /** اگر این بخش در features.ts خاموش باشد، اصلاً در منو نمی‌آید */
   feature?: FeatureKey;
+  /** اگر سرور بگوید این قابلیت روی این میزبان نیست (VPS/داکر)، در منو نمی‌آید */
+  server?: ServerFeature;
 };
 type NavGroup = {
   id: string;
@@ -80,9 +82,9 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       // صفحه‌ای که بعد از ورود روی آن می‌نشینید — پس اولین چیزِ منو
       { to: '/', key: 'dashboard', icon: LayoutDashboard, end: true },
-      { to: '/assistant', key: 'agTitle', icon: Bot },
+      { to: '/assistant', key: 'agTitle', icon: Bot, server: 'agent' },
       { to: '/control', key: 'ccCommand', icon: CommandIcon, end: true, feature: 'commandCenter' },
-      { to: '/sites', key: 'websites', icon: Server },
+      { to: '/sites', key: 'websites', icon: Server, server: 'sites' },
       { to: '/site-server', key: 'siteServer', icon: Globe },
       { to: '/stations', key: 'stations', icon: Fuel },
       /*
@@ -145,7 +147,7 @@ const NAV_GROUPS: NavGroup[] = [
     collapsed: true,
     items: [
       { to: '/control/servers', key: 'ccServers', icon: Server },
-      { to: '/databases', key: 'databases', icon: Database },
+      { to: '/databases', key: 'databases', icon: Database, server: 'databases' },
       { to: '/control/storage', key: 'ccStorage', icon: Archive },
       { to: '/control/vault', key: 'ccVault', icon: KeyRound, needs: 'admin' },
     ],
@@ -186,8 +188,8 @@ const NAV_GROUPS: NavGroup[] = [
       //  «حسابِ من» برای هر واردشده (۶-۲) — همان گروهِ بسته، پس بلندیِ منو عوض نمی‌شود
       { to: '/account', key: 'myAccount', icon: ShieldCheck },
       { to: '/control/panel-users', key: 'ccPanelUsers', icon: UserCog, needs: 'admin', feature: 'panelUsers' },
-      { to: '/files', key: 'files', icon: FolderTree, feature: 'files' },
-      { to: '/terminal', key: 'terminal', icon: TerminalSquare, needs: 'admin' },
+      { to: '/files', key: 'files', icon: FolderTree, feature: 'files', server: 'files' },
+      { to: '/terminal', key: 'terminal', icon: TerminalSquare, needs: 'admin', server: 'terminal' },
       { to: '/settings', key: 'settings', icon: SettingsIcon, feature: 'settings' },
     ],
   },
@@ -208,7 +210,7 @@ const DEFAULT_COLLAPSED = NAV_GROUPS.filter((g) => g.collapsed).map((g) => g.id)
 const COLLAPSE_KEY = 'hlp.nav.collapsed';
 
 export default function Layout() {
-  const { t, serverName, hasLogo, resolvedTheme, setTheme, lang, setLang, logout, connected, username, role, can } = useApp();
+  const { t, serverName, hasLogo, resolvedTheme, setTheme, lang, setLang, logout, connected, username, role, can, serverOn } = useApp();
   const [open, setOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -231,10 +233,10 @@ export default function Layout() {
   const paletteItems: PaletteItem[] = useMemo(
     () => NAV_GROUPS.flatMap((group) =>
       group.items
-        .filter((item) => (!item.feature || featureOn(item.feature)) && (!item.needs || can(item.needs)))
+        .filter((item) => (!item.feature || featureOn(item.feature)) && (!item.server || serverOn(item.server)) && (!item.needs || can(item.needs)))
         .map((item) => ({ to: item.to, label: t(item.key), group: t(group.key) })))
       .concat(PALETTE_EXTRA.map((x) => ({ to: x.to, label: t(x.key), group: t(x.group) }))),
-    [t, can]
+    [t, can, serverOn]
   );
   usePaletteKey(useCallback(() => setPaletteOpen(true), []));
 
@@ -254,7 +256,7 @@ export default function Layout() {
         const isCollapsed = collapsed.includes(group.id);
         // چیزی که خاموش است یا نقشِ کاربر به آن دسترسی ندارد، اصلاً نشان داده نمی‌شود
         const items = group.items.filter(
-          (item) => (!item.feature || featureOn(item.feature)) && (!item.needs || can(item.needs))
+          (item) => (!item.feature || featureOn(item.feature)) && (!item.server || serverOn(item.server)) && (!item.needs || can(item.needs))
         );
         if (items.length === 0) return null;
         return (

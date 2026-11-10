@@ -38,7 +38,9 @@ import SupportPage from './pages/account/Support';
 import SyncStatusPage from './pages/account/SyncStatus';
 
 function Shell() {
-  const { ready, authed, mustChangePassword } = useApp();
+  //  serverOn: قابلیتی که روی این میزبان نیست (VPS/داکر — نمایهٔ استقرارِ سرور)
+  //  با نشانیِ دستی هم باز نمی‌شود؛ همان قاعدهٔ featureOn.
+  const { ready, authed, mustChangePassword, serverOn } = useApp();
   if (!ready) return <Loading />;
   if (!authed) return <Login />;
   //  ⛔ رمزِ یک‌بارمصرفِ بازیابی: سرور هر درِ دیگری را بسته است (۶-۳)
@@ -48,12 +50,12 @@ function Shell() {
     <Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
-        <Route path="/assistant" element={<Assistant />} />
-        <Route path="/sites" element={<Sites />} />
+        {serverOn('agent') && <Route path="/assistant" element={<Assistant />} />}
+        {serverOn('sites') && <Route path="/sites" element={<Sites />} />}
         <Route path="/domains" element={<DomainsHub />} />
-        {featureOn('files') && <Route path="/files" element={<Files />} />}
-        <Route path="/databases" element={<DatabasesPage />} />
-        <Route path="/terminal" element={<TerminalPage />} />
+        {featureOn('files') && serverOn('files') && <Route path="/files" element={<Files />} />}
+        {serverOn('databases') && <Route path="/databases" element={<DatabasesPage />} />}
+        {serverOn('terminal') && <Route path="/terminal" element={<TerminalPage />} />}
         <Route path="/automation" element={<AutomationPage />} />
         <Route path="/tunnel-domains" element={<Navigate to="/domains?tab=tunnel" replace />} />
         {/*

@@ -14,6 +14,7 @@
 // ---------------------------------------------------------------------------
 import { defineJob } from '../engine.js';
 import { getSetting } from '../../db.js';
+import { deploy } from '../../config.js';
 import { getSiteBySlug, listSitesRaw } from '../../sites/registry.js';
 import { isRunning, restartSite } from '../../sites/process.js';
 import { tick as monitorTick, syncMonitors } from '../../control/monitor.js';
@@ -39,6 +40,8 @@ export const healthCheck = defineJob({
   quiet: true,
   catchUp: false,
   async run(ctx) {
+    //  ⛔ اجرای سایت‌ها روی این میزبان خاموش است ⇒ «افتاده» هم نیست (وگرنه هر دقیقه هشدارِ دروغ)
+    if (!deploy.features.sites) return { skipped: 'feature_disabled' };
     const should = listSitesRaw().filter((s) => s.autostart && s.enabled);
     const down = should.filter((s) => !isRunning(s.slug));
     for (const s of down) {
