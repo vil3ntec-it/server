@@ -1,6 +1,9 @@
 name: RawRec APK (temporary)
 on:
   push:
+    paths-ignore:
+      - "desktop/**"
+      - ".github/workflows/rawrec-desktop.yml"
 permissions:
   contents: write
 jobs:
