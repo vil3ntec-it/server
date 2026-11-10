@@ -19,12 +19,24 @@ import java.awt.Frame
 
 fun kindLabel(k: SourceKind) = when (k) {
     SourceKind.PHONE -> "گوشی"; SourceKind.WEBCAM -> "وب‌کم"; SourceKind.VIDEO -> "فایلِ ویدیو"; SourceKind.IMAGE -> "عکس"
+    SourceKind.SCREEN -> "صفحهٔ کامپیوتر / پنجره"; SourceKind.SLIDESHOW -> "اسلایدشو"; SourceKind.COUNTER -> "شمارندهٔ بیننده/مشترک"; SourceKind.GOAL -> "نوارِ هدف"
     SourceKind.TEXT -> "متن"; SourceKind.COLOR -> "رنگ / پس‌زمینه"; SourceKind.CHAT -> "چت"; SourceKind.ALERTS -> "سوپرچت و هدیه"
 }
 
 private fun kindMark(k: SourceKind) = when (k) {
     SourceKind.PHONE -> "▯"; SourceKind.WEBCAM -> "◉"; SourceKind.VIDEO -> "▶"; SourceKind.IMAGE -> "▣"
+    SourceKind.SCREEN -> "▭"; SourceKind.SLIDESHOW -> "◫"; SourceKind.COUNTER -> "#"; SourceKind.GOAL -> "▰"
     SourceKind.TEXT -> "T"; SourceKind.COLOR -> "■"; SourceKind.CHAT -> "☰"; SourceKind.ALERTS -> "★"
+}
+
+fun pickFolder(title: String): String? {
+    val c = javax.swing.JFileChooser().apply { dialogTitle = title; fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY }
+    return if (c.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) c.selectedFile.absolutePath else null
+}
+
+fun saveFile(title: String, name: String): String? {
+    val d = FileDialog(null as Frame?, title, FileDialog.SAVE); d.file = name; d.isVisible = true
+    return d.file?.let { java.io.File(d.directory, it).absolutePath }
 }
 
 fun pickFile(title: String, exts: List<String>): String? {
@@ -36,22 +48,26 @@ fun pickFile(title: String, exts: List<String>): String? {
 
 @Composable
 fun ScenesPanel(studio: Studio, onEdit: (Studio) -> Unit, locked: Boolean) {
+    val studioMode = studio.preview != null
     var renaming by remember { mutableStateOf<String?>(null) }
     Section("صحنه‌ها", trailing = {
-        Btn("+ صحنه", { onEdit(studio.addScene("صحنهٔ ${studio.scenes.size + 1}", studio.scene)) }, height = 24.dp)
+        Btn("+ صحنه", { onEdit(studio.addScene("صحنهٔ ${studio.scenes.size + 1}", studio.editing)) }, height = 24.dp)
     }) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            for (s in studio.scenes) {
-                val cur = s.id == studio.current
+            for ((idx, s) in studio.scenes.withIndex()) {
+                val cur = s.id == (if (studioMode) studio.preview else studio.current)
+                val air = studioMode && s.id == studio.current
                 Row(Modifier.fillMaxWidth().height(32.dp).clip(RoundedCornerShape(6.dp))
                     .background(if (cur) K.AccentDim else K.Raised).border(1.dp, if (cur) K.Accent else K.Line, RoundedCornerShape(6.dp))
-                    .clickable { onEdit(studio.copy(current = s.id)) }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    .clickable { onEdit(if (studioMode) studio.copy(preview = s.id) else studio.copy(current = s.id)) }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (renaming == s.id) {
                         var name by remember(s.id) { mutableStateOf(s.name) }
                         Field(name, { name = it; onEdit(studio.copy(scenes = studio.scenes.map { x -> if (x.id == s.id) x.copy(name = it) else x })) }, Modifier.weight(1f))
                         Btn("✓", { renaming = null }, height = 24.dp)
                     } else {
+                        if (idx < 9) T("${idx + 1}", 11, K.Faint, modifier = Modifier.width(14.dp))
                         T(s.name, 13, if (cur) K.Accent else K.Text, bold = cur, modifier = Modifier.weight(1f), maxLines = 1)
+                        if (air) { Pill("روی آنتن", K.Live, K.Live); Spacer(Modifier.width(6.dp)) }
                         T("${s.layers.size} لایه", 11, K.Faint)
                         Spacer(Modifier.width(6.dp))
                         T("✎", 13, K.Dim, modifier = Modifier.clickable { renaming = s.id })
@@ -59,7 +75,8 @@ fun ScenesPanel(studio: Studio, onEdit: (Studio) -> Unit, locked: Boolean) {
                             Spacer(Modifier.width(8.dp))
                             T("✕", 12, K.Dim, modifier = Modifier.clickable {
                                 val rest = studio.scenes.filter { it.id != s.id }
-                                onEdit(studio.copy(scenes = rest, current = if (cur) rest.first().id else studio.current))
+                                onEdit(studio.copy(scenes = rest, current = if (s.id == studio.current) rest.first().id else studio.current,
+                                    preview = studio.preview?.let { p -> if (p == s.id) rest.first().id else p }))
                             })
                         }
                     }
@@ -67,6 +84,20 @@ fun ScenesPanel(studio: Studio, onEdit: (Studio) -> Unit, locked: Boolean) {
             }
         }
         if (locked) T("حینِ ضبط یا پخش اندازهٔ تصویر ثابت می‌ماند؛ صحنه و لایه‌ها را آزادانه عوض کن.", 11, K.Faint, modifier = Modifier.padding(top = 6.dp))
+        Spacer(Modifier.height(8.dp))
+        T("گذار بینِ صحنه‌ها", 11, K.Dim)
+        Spacer(Modifier.height(4.dp))
+        Seg(listOf(Transition.CUT to "بُرش", Transition.FADE to "محو", Transition.SLIDE to "کشویی", Transition.ZOOM to "زوم"), studio.transition, { onEdit(studio.copy(transition = it)) })
+        if (studio.transition != Transition.CUT) SliderRow("مدت", studio.transitionMs.toFloat(), 100f..2000f, "${studio.transitionMs} ms") { onEdit(studio.copy(transitionMs = (it / 50).toInt() * 50)) }
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Btn("ذخیرهٔ همهٔ صحنه‌ها…", {
+                saveFile("ذخیرهٔ مجموعهٔ صحنه‌ها", "RawRec scenes.json")?.let { java.io.File(it).writeText(Studio.toJson(studio)) }
+            }, Modifier.weight(1f), height = 26.dp)
+            Btn("باز کردن…", {
+                pickFile("مجموعهٔ صحنه‌ها", listOf(".json"))?.let { f -> runCatching { Studio.fromJson(java.io.File(f).readText()) }.getOrNull()?.let(onEdit) }
+            }, Modifier.weight(1f), height = 26.dp)
+        }
     }
 }
 
@@ -83,11 +114,11 @@ fun LayersPanel(studio: Studio, selected: String?, onSelect: (String?) -> Unit, 
                 for (k in SourceKind.entries) {
                     if (k == SourceKind.PHONE && studio.sources.any { it.kind == SourceKind.PHONE }) {
                         // the one phone again (another scene, or after a delete)
-                        if (studio.scene.layers.none { studio.source(it.sourceId)?.kind == SourceKind.PHONE }) {
+                        if (studio.editing.layers.none { studio.source(it.sourceId)?.kind == SourceKind.PHONE }) {
                             Row(Modifier.fillMaxWidth().clickable {
                                 val src = studio.sources.first { it.kind == SourceKind.PHONE }
                                 val l = Layer(Studio.newId(), src.id, 0f, 0f, studio.width.toFloat(), studio.height.toFloat())
-                                onEdit(studio.withScene(studio.scene.copy(layers = listOf(l) + studio.scene.layers))); onSelect(l.id); adding = false
+                                onEdit(studio.withScene(studio.editing.copy(layers = listOf(l) + studio.editing.layers))); onSelect(l.id); adding = false
                             }.padding(6.dp)) { T("${kindMark(k)}   ${kindLabel(k)}") }
                         }
                         continue
@@ -102,13 +133,17 @@ fun LayersPanel(studio: Studio, selected: String?, onSelect: (String?) -> Unit, 
                             SourceKind.CHAT -> add(k, mapOf("size" to "30", "fade" to "0"))
                             SourceKind.ALERTS -> add(k, mapOf("hold" to "7"))
                             SourceKind.PHONE -> add(k)
+                            SourceKind.SCREEN -> add(k, mapOf("display" to "", "window" to ""))
+                            SourceKind.SLIDESHOW -> pickFolder("پوشهٔ عکس‌ها")?.let { add(k, mapOf("folder" to it, "every" to "5", "fit" to "cover"), java.io.File(it).name) }
+                            SourceKind.COUNTER -> add(k, mapOf("platform" to "ALL", "metric" to "VIEWERS"))
+                            SourceKind.GOAL -> add(k, mapOf("platform" to "ALL", "metric" to "SUBSCRIBERS", "target" to "100", "start" to "0"))
                         }
                     }.padding(6.dp)) { T("${kindMark(k)}   ${kindLabel(k)}") }
                 }
             }
             Spacer(Modifier.height(8.dp))
         }
-        val layers = studio.scene.layers.asReversed()
+        val layers = studio.editing.layers.asReversed()
         if (layers.isEmpty()) T("این صحنه خالی است. «+ افزودن» را بزن.", 12, K.Faint)
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             items(layers, key = { it.id }) { l ->
@@ -138,7 +173,7 @@ private fun IconTxt(t: String, c: Color, onClick: () -> Unit) {
 /** The chosen layer: where, how big, how it looks, and its source's own settings. */
 @Composable
 fun Inspector(app: StudioApp, studio: Studio, selected: String?, onEdit: (Studio) -> Unit, webcams: () -> List<String>) {
-    val l = studio.scene.layers.firstOrNull { it.id == selected }
+    val l = studio.editing.layers.firstOrNull { it.id == selected }
     if (l == null) {
         Section("ویژگی‌ها") { T("یک لایه را در پیش‌نمایش یا فهرستِ لایه‌ها انتخاب کن.", 12, K.Faint) }
         return
@@ -160,12 +195,24 @@ fun Inspector(app: StudioApp, studio: Studio, selected: String?, onEdit: (Studio
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Btn("تمامِ تصویر", { set(l.copy(x = 0f, y = 0f, w = studio.width.toFloat(), h = studio.height.toFloat(), rot = 0f)) }, Modifier.weight(1f))
             Btn("وسط", { set(l.copy(x = (studio.width - l.w) / 2, y = (studio.height - l.h) / 2)) }, Modifier.weight(1f))
+            Btn("تکثیر", { studio.duplicate(l.id)?.let { (s2, _) -> onEdit(s2) } }, Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(6.dp))
+        // alignment to the canvas edges (as OBS's «Transform → Align»)
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            val W = studio.width.toFloat(); val H = studio.height.toFloat()
+            Btn("⇥ راست", { set(l.copy(x = W - l.w)) }, Modifier.weight(1f), height = 26.dp)
+            Btn("↔ وسط", { set(l.copy(x = (W - l.w) / 2)) }, Modifier.weight(1f), height = 26.dp)
+            Btn("⇤ چپ", { set(l.copy(x = 0f)) }, Modifier.weight(1f), height = 26.dp)
+            Btn("⤒ بالا", { set(l.copy(y = 0f)) }, Modifier.weight(1f), height = 26.dp)
+            Btn("↕ وسط", { set(l.copy(y = (H - l.h) / 2)) }, Modifier.weight(1f), height = 26.dp)
+            Btn("⤓ پایین", { set(l.copy(y = H - l.h)) }, Modifier.weight(1f), height = 26.dp)
         }
         Spacer(Modifier.height(8.dp))
         SliderRow("شفافیت", l.opacity, 0f..1f, "${(l.opacity * 100).toInt()}٪") { set(l.copy(opacity = it)) }
         SliderRow("گوشه", l.radius, 0f..120f, "${l.radius.toInt()}") { set(l.copy(radius = it)) }
         SliderRow("چرخش", l.rot, -180f..180f, "${l.rot.toInt()}°") { set(l.copy(rot = if (kotlin.math.abs(it) < 2f) 0f else it)) }
-        if (src.kind in setOf(SourceKind.PHONE, SourceKind.WEBCAM, SourceKind.VIDEO, SourceKind.IMAGE)) {
+        if (src.kind in setOf(SourceKind.PHONE, SourceKind.WEBCAM, SourceKind.VIDEO, SourceKind.IMAGE, SourceKind.SCREEN)) {
             Spacer(Modifier.height(6.dp))
             T("وقتی شکلِ تصویر با کادر فرق دارد (گوشی می‌چرخد):", 11, K.Dim)
             Spacer(Modifier.height(4.dp))
@@ -177,6 +224,10 @@ fun Inspector(app: StudioApp, studio: Studio, selected: String?, onEdit: (Studio
             SliderRow("راست", l.crop.r, 0f..0.45f, "${(l.crop.r * 100).toInt()}٪") { set(l.copy(crop = l.crop.copy(r = it))) }
             SliderRow("چپ", l.crop.l, 0f..0.45f, "${(l.crop.l * 100).toInt()}٪") { set(l.copy(crop = l.crop.copy(l = it))) }
         }
+    }
+    if (src.kind in setOf(SourceKind.PHONE, SourceKind.WEBCAM, SourceKind.VIDEO, SourceKind.IMAGE, SourceKind.SCREEN)) {
+        HLine()
+        FxSection(l.fx) { set(l.copy(fx = it)) }
     }
     HLine()
     Section("تنظیماتِ ${kindLabel(src.kind)}") {
@@ -207,6 +258,10 @@ fun Inspector(app: StudioApp, studio: Studio, selected: String?, onEdit: (Studio
             }
             SourceKind.IMAGE, SourceKind.VIDEO -> {
                 T(src.prop("path"), 11, K.Dim, maxLines = 2)
+                if (src.kind == SourceKind.VIDEO) Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    T("صدای خودِ فایل در میکسر", 12, modifier = Modifier.weight(1f))
+                    Seg(listOf("1" to "باشد", "0" to "نباشد"), src.prop("audio", "1"), { setSrc(src.with("audio", it)) }, Modifier.width(130.dp))
+                }
                 Btn("انتخابِ فایلِ دیگر", {
                     pickFile("فایل", if (src.kind == SourceKind.IMAGE) listOf(".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp") else listOf(".mp4", ".mov", ".mkv", ".webm", ".avi"))
                         ?.let { setSrc(src.with("path", it).copy(name = java.io.File(it).name)) }
@@ -227,6 +282,40 @@ fun Inspector(app: StudioApp, studio: Studio, selected: String?, onEdit: (Studio
                 Btn("سوپرچتِ آزمایشی", { ChatHub.add(ChatMessage(Studio.newId(), Platform.TEST, "بیننده", "عالی بود! ادامه بده 🔥", ChatMessage.Kind.SUPERCHAT, "$5.00")) }, Modifier.fillMaxWidth())
             }
             SourceKind.PHONE -> T("کیفیتِ گرفتن از گوشی در پنلِ «گوشی» است.", 12, K.Dim)
+            SourceKind.SCREEN -> {
+                val win = System.getProperty("os.name").lowercase().contains("win")
+                T(if (win) "تمامِ صفحه، یا فقط یک پنجره با نوشتنِ عنوانش (همان که بالای پنجره نوشته):" else "شمارهٔ صفحه (برای چند مانیتور): خالی = اولی", 11, K.Dim)
+                Spacer(Modifier.height(4.dp))
+                if (win) Field(src.prop("window"), { setSrc(src.with("window", it)) }, Modifier.fillMaxWidth(), hint = "عنوانِ پنجره (خالی = کلِ صفحه)")
+                else Field(src.prop("display"), { setSrc(src.with("display", it)) }, Modifier.fillMaxWidth(), hint = "0", ltr = true)
+                app.engine.sourceError(src.id)?.let { T("گرفتنِ صفحه نشد: $it", 12, K.Live) }
+            }
+            SourceKind.SLIDESHOW -> {
+                T(src.prop("folder"), 11, K.Dim, maxLines = 2)
+                Btn("پوشهٔ دیگر", { pickFolder("پوشهٔ عکس‌ها")?.let { setSrc(src.with("folder", it).copy(name = java.io.File(it).name)) } }, Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                SliderRow("هر عکس", src.prop("every", "5").toFloat(), 1f..60f, "${src.prop("every", "5")} ث") { setSrc(src.with("every", it.toInt().toString())) }
+                Seg(listOf("cover" to "پر کردنِ کادر", "contain" to "کامل در کادر"), src.prop("fit", "cover"), { setSrc(src.with("fit", it)) })
+            }
+            SourceKind.COUNTER, SourceKind.GOAL -> {
+                T("کانال‌ها از پنلِ «چت» خوانده می‌شوند (هر ۳۰ ثانیه، بی‌ورود و بی‌سهمیه).", 11, K.Faint)
+                Spacer(Modifier.height(4.dp))
+                Seg(listOf("VIEWERS" to "بیننده", "FOLLOWERS" to "دنبال‌کننده", "SUBSCRIBERS" to "مشترک"), src.prop("metric", "VIEWERS"), { setSrc(src.with("metric", it)) })
+                Spacer(Modifier.height(4.dp))
+                val plats = listOf("ALL" to "همه با هم", "YOUTUBE" to "YouTube", "TWITCH" to "Twitch", "KICK" to "Kick") + (if (src.kind == SourceKind.GOAL) listOf("MANUAL" to "دستی") else emptyList())
+                Seg(plats, src.prop("platform", "ALL"), { setSrc(src.with("platform", it)) })
+                Spacer(Modifier.height(4.dp))
+                Field(src.prop("label"), { setSrc(src.with("label", it)) }, Modifier.fillMaxWidth(), hint = "نوشته (خالی = خودکار)")
+                if (src.kind == SourceKind.GOAL) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Field(src.prop("target", "100"), { setSrc(src.with("target", it.filter(Char::isDigit))) }, Modifier.weight(1f), hint = "هدف", ltr = true)
+                        Field(src.prop("start", "0"), { setSrc(src.with("start", it.filter(Char::isDigit))) }, Modifier.weight(1f), hint = "شروع از", ltr = true)
+                        if (src.prop("platform") == "MANUAL") Field(src.prop("value", "0"), { setSrc(src.with("value", it.filter(Char::isDigit))) }, Modifier.weight(1f), hint = "الان", ltr = true)
+                    }
+                    T("«شروع از»: شمارِ امروزِ پیش از پخش، تا فقط تازه‌ها شمرده شوند.", 11, K.Faint)
+                }
+                PlatformStats.errors.forEach { (p, e) -> T("${p.label}: $e", 11, K.Warn) }
+            }
         }
     }
 }
@@ -255,5 +344,31 @@ fun ColorRow(label: String, value: String, allowNone: Boolean = false, onPick: (
                     .border(if (c.equals(value, true)) 2.dp else 1.dp, if (c.equals(value, true)) K.Accent else K.Line, RoundedCornerShape(4.dp)).clickable { onPick(c) })
             }
         }
+    }
+}
+
+/** Green screen, colour and sharpness of a picture layer (OBS's «Chroma Key», «Color Correction», «Sharpen» filters, in one). */
+@Composable
+fun FxSection(fx: Fx, onFx: (Fx) -> Unit) {
+    Section("جلوه‌ها", trailing = { if (fx.active) Btn("بی‌جلوه", { onFx(Fx()) }, height = 24.dp) }) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            T("پردهٔ سبز (حذفِ رنگ)", 12, modifier = Modifier.weight(1f))
+            Seg(listOf(true to "روشن", false to "خاموش"), fx.key, { onFx(fx.copy(key = it)) }, Modifier.width(130.dp))
+        }
+        if (fx.key) {
+            Row(Modifier.padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for ((c, n) in listOf(0xFF00FF00.toInt() to "سبز", 0xFF0000FF.toInt() to "آبی", 0xFFFF00FF.toInt() to "سرخابی")) Btn(n, { onFx(fx.copy(keyColor = c)) }, Modifier.weight(1f), on = fx.keyColor == c, height = 26.dp)
+            }
+            SliderRow("شباهت", fx.similarity, 0.01f..1f, "${(fx.similarity * 1000).toInt()}") { onFx(fx.copy(similarity = it)) }
+            SliderRow("نرمیِ لبه", fx.smoothness, 0.01f..0.5f, "${(fx.smoothness * 1000).toInt()}") { onFx(fx.copy(smoothness = it)) }
+            SliderRow("رنگِ برگشتی", fx.spill, 0.01f..0.5f, "${(fx.spill * 1000).toInt()}") { onFx(fx.copy(spill = it)) }
+        }
+        Spacer(Modifier.height(6.dp))
+        SliderRow("روشنی", fx.brightness, -0.5f..0.5f, "%+.2f".format(fx.brightness)) { onFx(fx.copy(brightness = if (kotlin.math.abs(it) < 0.01f) 0f else it)) }
+        SliderRow("کنتراست", fx.contrast, 0.5f..2f, "%.2f".format(fx.contrast)) { onFx(fx.copy(contrast = if (kotlin.math.abs(it - 1) < 0.02f) 1f else it)) }
+        SliderRow("اشباعِ رنگ", fx.saturation, 0f..2f, "%.2f".format(fx.saturation)) { onFx(fx.copy(saturation = if (kotlin.math.abs(it - 1) < 0.02f) 1f else it)) }
+        SliderRow("گاما", fx.gamma, 0.5f..2f, "%.2f".format(fx.gamma)) { onFx(fx.copy(gamma = if (kotlin.math.abs(it - 1) < 0.02f) 1f else it)) }
+        SliderRow("رنگ‌مایه", fx.hue, -180f..180f, "${fx.hue.toInt()}°") { onFx(fx.copy(hue = if (kotlin.math.abs(it) < 2f) 0f else it)) }
+        SliderRow("تیزی", fx.sharpen, 0f..1f, "${(fx.sharpen * 100).toInt()}٪") { onFx(fx.copy(sharpen = if (it < 0.02f) 0f else it)) }
     }
 }

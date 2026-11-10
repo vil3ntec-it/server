@@ -33,13 +33,15 @@ private enum class Grip { MOVE, TL, T, TR, R, BR, B, BL, L }
  * (corners keep the shape), edges and centre pull the layer to them with a guide line.
  */
 @Composable
-fun ProgramView(app: StudioApp, studio: Studio, selected: String?, onSelect: (String?) -> Unit, onEdit: (Studio) -> Unit, phoneLive: Boolean, modifier: Modifier = Modifier) {
+fun ProgramView(app: StudioApp, studio: Studio, selected: String?, onSelect: (String?) -> Unit, onEdit: (Studio) -> Unit, phoneLive: Boolean, modifier: Modifier = Modifier,
+                /** Studio mode: show the scene being prepared (editable) instead of the program. */
+                prepared: Boolean = false, interactive: Boolean = true) {
     var bmp by remember { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(prepared) {
         var seen = -1L
         while (true) {
-            val s = app.engine.previewSeq
-            if (s != seen) { seen = s; bmp = app.engine.usePreview { it.toComposeImageBitmap() } }
+            val s = if (prepared) app.engine.nextSeq else app.engine.previewSeq
+            if (s != seen) { seen = s; bmp = (if (prepared) app.engine.useNext { it.toComposeImageBitmap() } else app.engine.usePreview { it.toComposeImageBitmap() }) }
             delay(15)
         }
     }
@@ -49,12 +51,13 @@ fun ProgramView(app: StudioApp, studio: Studio, selected: String?, onSelect: (St
     var guides by remember { mutableStateOf<List<Pair<Boolean, Float>>>(emptyList()) }   // (vertical?, canvas coord)
     val tm = rememberTextMeasurer()
 
+    fun sceneOf(): Scene = if (interactive) cur.editing else cur.scene
     fun fit(): Pair<Float, Offset> {
         val k = min(box.width / cur.width.toFloat(), box.height / cur.height.toFloat())
         return k to Offset((box.width - cur.width * k) / 2, (box.height - cur.height * k) / 2)
     }
     fun toCanvas(p: Offset): Offset { val (k, o) = fit(); return Offset((p.x - o.x) / k, (p.y - o.y) / k) }
-    fun hitLayer(c: Offset): Layer? = cur.scene.layers.lastOrNull { l -> l.visible && c.x in l.x..(l.x + l.w) && c.y in l.y..(l.y + l.h) }
+    fun hitLayer(c: Offset): Layer? = sceneOf().layers.lastOrNull { l -> l.visible && c.x in l.x..(l.x + l.w) && c.y in l.y..(l.y + l.h) }
     fun grips(l: Layer): List<Pair<Grip, Offset>> = listOf(
         Grip.TL to Offset(l.x, l.y), Grip.T to Offset(l.x + l.w / 2, l.y), Grip.TR to Offset(l.x + l.w, l.y), Grip.R to Offset(l.x + l.w, l.y + l.h / 2),
         Grip.BR to Offset(l.x + l.w, l.y + l.h), Grip.B to Offset(l.x + l.w / 2, l.y + l.h), Grip.BL to Offset(l.x, l.y + l.h), Grip.L to Offset(l.x, l.y + l.h / 2))
@@ -64,16 +67,16 @@ fun ProgramView(app: StudioApp, studio: Studio, selected: String?, onSelect: (St
 
     Box(modifier.background(Color(0xFF07090C)).onSizeChanged { box = it }
         .pointerHoverIcon(PointerIcon.Crosshair)
-        .pointerInput(Unit) {
-            detectTapGestures { p -> onSelect(hitLayer(toCanvas(p))?.id) }
+        .pointerInput(interactive) {
+            if (interactive) detectTapGestures { p -> onSelect(hitLayer(toCanvas(p))?.id) }
         }
-        .pointerInput(Unit) {
-            detectDragGestures(
+        .pointerInput(interactive) {
+            if (interactive) detectDragGestures(
                 onDragStart = { p ->
                     val c = toCanvas(p)
                     val (k, _) = fit()
                     val reach = 9f / k
-                    val s = cur.scene.layers.firstOrNull { it.id == sel }
+                    val s = sceneOf().layers.firstOrNull { it.id == sel }
                     val g = s?.let { l -> grips(l).firstOrNull { (_, o) -> abs(o.x - c.x) < reach && abs(o.y - c.y) < reach } }
                     val hit = if (g != null) s else hitLayer(c)
                     // a layer covering the whole picture (the game) moves only once chosen: never by a stray drag
@@ -118,7 +121,7 @@ fun ProgramView(app: StudioApp, studio: Studio, selected: String?, onSelect: (St
                             if (abs(edge - cy) < snap) { y += cy - edge; g.add(false to cy); break }
                     }
                     guides = g
-                    onEdit(cur.withLayer(cur.scene.layers.first { it.id == d.first }.copy(x = x, y = y, w = w, h = h)))
+                    onEdit(cur.withLayer(sceneOf().layers.first { it.id == d.first }.copy(x = x, y = y, w = w, h = h)))
                 },
             )
         }) {
@@ -128,7 +131,7 @@ fun ProgramView(app: StudioApp, studio: Studio, selected: String?, onSelect: (St
             drawRect(Color.Black, o, Size(cw, ch))
             bmp?.let { drawImage(it, dstOffset = androidx.compose.ui.unit.IntOffset(o.x.toInt(), o.y.toInt()), dstSize = IntSize(cw.toInt(), ch.toInt()), filterQuality = FilterQuality.Medium) }
             // a phone layer with no phone yet: say so here (never in the program itself)
-            for (l in cur.scene.layers) {
+            for (l in sceneOf().layers) {
                 if (!l.visible) continue
                 val src = cur.source(l.sourceId) ?: continue
                 if (src.kind == SourceKind.PHONE && !phoneLive) {
@@ -142,7 +145,7 @@ fun ProgramView(app: StudioApp, studio: Studio, selected: String?, onSelect: (St
                 if (vertical) drawLine(K.Amber, Offset(o.x + at * k, o.y), Offset(o.x + at * k, o.y + ch), 1f)
                 else drawLine(K.Amber, Offset(o.x, o.y + at * k), Offset(o.x + cw, o.y + at * k), 1f)
             }
-            cur.scene.layers.firstOrNull { it.id == sel }?.let { l ->
+            if (interactive) sceneOf().layers.firstOrNull { it.id == sel }?.let { l ->
                 val tl = Offset(o.x + l.x * k, o.y + l.y * k)
                 drawRect(if (l.locked) K.Dim else K.Accent, tl, Size(l.w * k, l.h * k), style = Stroke(1.5f))
                 if (!l.locked) for ((_, g) in grips(l)) {

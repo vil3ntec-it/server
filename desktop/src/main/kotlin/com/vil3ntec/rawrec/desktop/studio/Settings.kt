@@ -45,6 +45,12 @@ data class Settings(
     // chat
     val youtubeChannel: String = "", val twitchChannel: String = "", val kickChannel: String = "",
     val translateTo: String = "fa", val translate: Boolean = true,
+    // sound, more
+    val desktopDevice: String = "", val desktopGain: Float = 1f,
+    val phoneFx: AudioFx = AudioFx(), val micFx: AudioFx = AudioFx(denoise = true, gate = true), val desktopFx: AudioFx = AudioFx(),
+    val monitor: Boolean = false, val limiter: Boolean = true,
+    // recording, more
+    val replaySeconds: Int = 0, val splitMinutes: Int = 0,
 ) {
     fun toJson(): String = JSONObject().apply {
         put("phoneCodec", phoneCodec); put("phoneMbps", phoneMbps); put("phoneSize", phoneSize); put("phoneFps", phoneFps); put("phoneAudio", phoneAudio)
@@ -56,9 +62,18 @@ data class Settings(
         put("mic", mic); put("micGain", micGain.toDouble()); put("phoneGain", phoneGain.toDouble())
         put("youtubeChannel", youtubeChannel); put("twitchChannel", twitchChannel); put("kickChannel", kickChannel)
         put("translateTo", translateTo); put("translate", translate)
+        put("desktopDevice", desktopDevice); put("desktopGain", desktopGain.toDouble())
+        put("phoneFx", fxJ(phoneFx)); put("micFx", fxJ(micFx)); put("desktopFx", fxJ(desktopFx))
+        put("monitor", monitor); put("limiter", limiter); put("replaySeconds", replaySeconds); put("splitMinutes", splitMinutes)
     }.toString(2)
 
     companion object {
+        fun fxJ(f: AudioFx) = JSONObject().put("denoise", f.denoise).put("denoisePct", f.denoisePct).put("gate", f.gate).put("gateDb", f.gateDb.toDouble())
+            .put("comp", f.comp).put("compDb", f.compDb.toDouble()).put("ratio", f.ratio.toDouble()).put("delayMs", f.delayMs)
+        fun fxF(o: JSONObject?, d: AudioFx) = if (o == null) d else AudioFx(o.optBoolean("denoise", d.denoise), o.optInt("denoisePct", d.denoisePct),
+            o.optBoolean("gate", d.gate), o.optDouble("gateDb", d.gateDb.toDouble()).toFloat(), o.optBoolean("comp", d.comp),
+            o.optDouble("compDb", d.compDb.toDouble()).toFloat(), o.optDouble("ratio", d.ratio.toDouble()).toFloat(), o.optInt("delayMs", d.delayMs))
+
         fun fromJson(t: String): Settings {
             val o = JSONObject(t); val d = Settings()
             val ds = o.optJSONArray("dests") ?: JSONArray()
@@ -74,6 +89,9 @@ data class Settings(
                 o.optString("mic", d.mic), o.optDouble("micGain", 1.0).toFloat(), o.optDouble("phoneGain", 1.0).toFloat(),
                 o.optString("youtubeChannel"), o.optString("twitchChannel"), o.optString("kickChannel"),
                 o.optString("translateTo", "fa"), o.optBoolean("translate", true),
+                o.optString("desktopDevice"), o.optDouble("desktopGain", 1.0).toFloat(),
+                fxF(o.optJSONObject("phoneFx"), d.phoneFx), fxF(o.optJSONObject("micFx"), d.micFx), fxF(o.optJSONObject("desktopFx"), d.desktopFx),
+                o.optBoolean("monitor", false), o.optBoolean("limiter", true), o.optInt("replaySeconds", 0), o.optInt("splitMinutes", 0),
             )
         }
         val file: File get() = File(AppPaths.data, "settings.json")

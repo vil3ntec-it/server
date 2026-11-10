@@ -48,6 +48,17 @@ class Recording(
     @Volatile private var stopNs = 0L
     private val waiting = java.util.concurrent.atomic.AtomicInteger()   // pictures in the queue
     @Volatile private var firstNs = 0L      // when the first picture came (this computer's clock)
+    // pause: nothing is taken while paused, and the time it lasted is taken out, so the file has no gap
+    @Volatile var paused = false; private set
+    @Volatile private var pauseAtUs = Long.MIN_VALUE
+    @Volatile private var pauseAtNs = 0L
+    @Volatile private var offsetUs = 0L
+    @Volatile private var pausedNs = 0L
+    @Volatile private var holdFill = false
+    @Volatile private var lastInUs = 0L
+    fun pause() { if (!paused) { pauseAtUs = lastInUs; pauseAtNs = System.nanoTime(); paused = true } }
+    fun resume() { if (paused) { pausedNs += System.nanoTime() - pauseAtNs; holdFill = true; resumeWanted = true; paused = false } }
+    @Volatile private var resumeWanted = false
     private var wallClock = false           // the phone's picture clock proved wrong: arrival times instead
     private var audioShift: Long? = null    // sound's phone µs → the file's µs
     private var outW = 0
@@ -63,8 +74,12 @@ class Recording(
     }
 
     /** A picture (copied now; the caller's buffer may be reused at once). */
-    fun video(f: VideoFrame) {
+    fun video(f0: VideoFrame) {
         if (!running) return
+        if (paused) return
+        if (resumeWanted) { resumeWanted = false; offsetUs += (f0.ptsUs - pauseAtUs) - (1_000_000L / fps) }
+        lastInUs = f0.ptsUs
+        val f = if (offsetUs == 0L) f0 else VideoFrame(f0.width, f0.height, f0.bgra, f0.ptsUs - offsetUs)
         if (baseUs == Long.MIN_VALUE) { firstNs = System.nanoTime(); baseUs = f.ptsUs }
         val need = f.width * f.height * 4
         var b = free.poll()
@@ -75,14 +90,14 @@ class Recording(
         val src = f.bgra.duplicate(); src.clear(); src.limit(need)
         b.put(src); b.flip()
         waiting.incrementAndGet()
-        if (!queue.offer(Item(b, f.width, f.height, f.ptsUs, null, System.nanoTime()))) { waiting.decrementAndGet(); free.offer(b); dropped++ }
+        if (!queue.offer(Item(b, f.width, f.height, f.ptsUs, null, System.nanoTime() - pausedNs))) { waiting.decrementAndGet(); free.offer(b); dropped++ }
     }
     private var allocated = 0
 
     /** The phone's sound (16-bit PCM, 48 kHz, stereo) at [ptsUs] on the phone's clock (the same as the pictures'). */
     fun audio(pcm: ByteArray, ptsUs: Long) {
-        if (!running || !withAudio || baseUs == Long.MIN_VALUE) return
-        queue.offer(Item(null, 0, 0, ptsUs, pcm, System.nanoTime()))
+        if (!running || !withAudio || baseUs == Long.MIN_VALUE || paused || resumeWanted) return
+        queue.offer(Item(null, 0, 0, ptsUs - offsetUs, pcm, System.nanoTime() - pausedNs))
     }
 
     private fun loop() {
@@ -95,9 +110,9 @@ class Recording(
                 }
                 // a still screen: the last picture again, a little behind "now" so a late picture keeps its place
                 // (only while no picture waits: a waiting one is newer and goes in its own frame)
-                if (running && waiting.get() == 0) fillTo(phoneNowUs(System.nanoTime()) - LATE_US)
+                if (running && !paused && !holdFill && waiting.get() == 0) fillTo(phoneNowUs(System.nanoTime() - pausedNs) - LATE_US)
             }
-            fillTo(phoneNowUs(if (stopNs != 0L) stopNs else System.nanoTime()))   // the file lasts until «stop»
+            if (!paused) fillTo(phoneNowUs((if (stopNs != 0L) stopNs else System.nanoTime()) - pausedNs))   // the file lasts until «stop»
             venc?.flush { p -> writer?.writeVideo(p) }
             aenc?.flush { p -> writer?.writeAudio(p) }
         } catch (t: Throwable) {
@@ -124,6 +139,7 @@ class Recording(
         val wallT = (it.atNs - firstNs) / 1000
         if (!wallClock && wallT > 1_500_000 && kotlin.math.abs(phoneT - wallT) > wallT / 5) wallClock = true
         val t = if (wallClock) wallT else phoneT
+        holdFill = false
         if (t >= anchorUs || !haveFrame) { anchorUs = t; anchorNs = it.atNs }
         val slot = (t * fps + 500_000) / 1_000_000
         if (slot < nextSlot) return                     // this frame of the file already has its picture

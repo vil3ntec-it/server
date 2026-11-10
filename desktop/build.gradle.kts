@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.vil3ntec.rawrec"
-version = "1.1.0"
+version = "1.2.0"
 
 /** FFmpeg's native libraries for the system this build runs on (each system builds its own installer). */
 val nativePlatform: String = run {
@@ -61,11 +61,11 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "RawRec Desktop"
-            packageVersion = "1.1.0"
+            packageVersion = "1.2.0"
             description = "Phone screen over USB, recording and live streaming"
             vendor = "VIL3NTEC"
             appResourcesRootDir.set(layout.projectDirectory.dir("appres"))
-            modules("java.prefs", "java.desktop", "jdk.unsupported", "java.net.http", "java.management", "jdk.crypto.ec", "jdk.localedata")
+            modules("java.prefs", "java.desktop", "jdk.unsupported", "java.net.http", "java.management", "jdk.management", "jdk.crypto.ec", "jdk.localedata")
             windows { menu = true; shortcut = true; dirChooser = true; perUserInstall = true; upgradeUuid = "6f5d2c3e-8a1b-4c7e-9f3a-2b1d0e7c4a55" }
             linux { packageName = "rawrec-desktop"; debMaintainer = "rawrec@vil3ntec.invalid"; shortcut = true; menuGroup = "AudioVideo" }
             macOS { bundleID = "com.vil3ntec.rawrec.desktop" }

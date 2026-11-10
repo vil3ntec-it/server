@@ -73,6 +73,8 @@ private fun isRtl(s: String) = s.firstOrNull { it.isLetter() }?.let { it in '֐'
  * its platform's mark and the author's name kept exactly as written (never translated).
  */
 class ChatSource(private val def: () -> SourceDef?) : DrawnSource {
+    // a chat that does not fade only changes with a new message (or a translation)
+    override fun stamp(w: Float, h: Float): Any? = def()?.let { d -> if ((d.prop("fade", "0").toIntOrNull() ?: 0) > 0) null else listOf(ChatHub.version, d.props, w, h) }
     private val cache = LinkedHashMap<String, Paragraph>()
     override fun draw(c: Canvas, w: Float, h: Float) {
         val d = def() ?: return
@@ -123,6 +125,7 @@ class ChatSource(private val def: () -> SourceDef?) : DrawnSource {
  * the next waits its turn (none is ever skipped).
  */
 class AlertSource(private val def: () -> SourceDef?) : DrawnSource {
+    override fun stamp(w: Float, h: Float): Any? = if (current == null && ChatHub.alerts.isEmpty()) "idle" else null
     private var current: ChatMessage? = null
     private var since = 0L
     private var para: Paragraph? = null

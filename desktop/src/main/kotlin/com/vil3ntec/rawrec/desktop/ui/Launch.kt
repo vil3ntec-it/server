@@ -27,13 +27,17 @@ import com.vil3ntec.rawrec.desktop.AppPaths
 import com.vil3ntec.rawrec.desktop.Encoders
 import com.vil3ntec.rawrec.desktop.Session
 import com.vil3ntec.rawrec.desktop.studio.*
+import androidx.compose.ui.input.key.*
 import kotlinx.coroutines.delay
 import java.awt.Desktop
+
+/** The window's keys go to whatever screen is showing (set by it). */
+object Keys { @Volatile var handler: ((KeyEvent) -> Boolean)? = null }
 
 fun launch() = application {
     val app = remember { StudioApp(Adb.find()) }
     Window(onCloseRequest = { app.close(); exitApplication() }, title = "RawRec Studio",
-        state = rememberWindowState(size = DpSize(1480.dp, 900.dp))) {
+        state = rememberWindowState(size = DpSize(1480.dp, 900.dp)), onKeyEvent = { Keys.handler?.invoke(it) ?: false }) {
         MaterialTheme(colorScheme = darkColorScheme(primary = K.Accent, onPrimary = Color.Black, background = K.Bg, surface = K.Raised, onSurface = K.Text)) {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 Box(Modifier.fillMaxSize().background(K.Bg)) { Studio(app) }
@@ -42,7 +46,7 @@ fun launch() = application {
     }
 }
 
-private enum class Tab(val label: String) { PROPS("ویژگی‌ها"), OUTPUT("خروجی"), PHONE("گوشی"), CHAT("چت") }
+private enum class Tab(val label: String) { PROPS("ویژگی‌ها"), OUTPUT("خروجی"), PHONE("گوشی"), CHAT("چت"), STATS("آمار") }
 
 @Composable
 fun Studio(app: StudioApp) {
@@ -55,7 +59,39 @@ fun Studio(app: StudioApp) {
     var message by remember { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf(false) }
     val webcams = remember { lazy { Devices.webcams() } }
-    fun edit(s: Studio) { studio = s; app.studio = s; studio = app.studio }
+    fun edit(s: Studio) { app.edit(s, "ui"); studio = app.studio }
+    var clipboard by remember { mutableStateOf<Layer?>(null) }
+    // keys, as in OBS and every editor: undo, delete, duplicate, copy/paste, nudge; record/live/replay/screenshot; scenes 1–9
+    Keys.handler = h@{ e ->
+        if (e.type != KeyEventType.KeyDown) return@h false
+        val ctrl = e.isCtrlPressed || e.isMetaPressed
+        val sel = studio.editing.layers.firstOrNull { it.id == selected }
+        fun nudge(dx: Float, dy: Float): Boolean { val l = sel ?: return false; if (l.locked) return false
+            val k = if (e.isShiftPressed) 10f else 1f; edit(studio.withLayer(l.copy(x = l.x + dx * k, y = l.y + dy * k))); return true }
+        when {
+            ctrl && e.key == Key.Z && !e.isShiftPressed -> { if (app.undo()) studio = app.studio; true }
+            ctrl && (e.key == Key.Y || (e.key == Key.Z && e.isShiftPressed)) -> { if (app.redo()) studio = app.studio; true }
+            ctrl && e.key == Key.D -> { sel?.let { l -> studio.duplicate(l.id)?.let { (s2, c) -> edit(s2); selected = c.id } }; true }
+            ctrl && e.key == Key.C -> { clipboard = sel; sel != null }
+            ctrl && e.key == Key.V -> { clipboard?.let { l -> studio.paste(l)?.let { (s2, c) -> edit(s2); selected = c.id } }; clipboard != null }
+            ctrl && e.key.keyCode in Key.One.keyCode..Key.Nine.keyCode -> {
+                val i = (e.key.keyCode - Key.One.keyCode).toInt()
+                studio.scenes.getOrNull(i)?.let { sc -> edit(if (studio.preview != null) studio.copy(preview = sc.id) else studio.copy(current = sc.id)) }; true
+            }
+            e.key == Key.Delete || e.key == Key.Backspace -> { sel?.let { l -> edit(studio.removeLayer(l.id)); selected = null }; sel != null }
+            e.key == Key.Escape -> { selected = null; true }
+            e.key == Key.DirectionLeft -> nudge(-1f, 0f)
+            e.key == Key.DirectionRight -> nudge(1f, 0f)
+            e.key == Key.DirectionUp -> nudge(0f, -1f)
+            e.key == Key.DirectionDown -> nudge(0f, 1f)
+            e.key == Key.F9 -> { if (app.recording != null) Thread { app.stopRecording() }.start() else message = app.startRecording(); true }
+            e.key == Key.F10 -> { if (app.live != null) app.stopLive() else message = app.startLive(); true }
+            e.key == Key.F8 -> { app.pauseRecording(); true }
+            e.key == Key.F11 -> { Thread { app.saveReplay() }.start(); true }
+            e.key == Key.F12 -> { app.screenshot(); true }
+            else -> false
+        }
+    }
 
     LaunchedEffect(Unit) { Thread { encoders = Encoders.available() }.apply { isDaemon = true; start() } }
     LaunchedEffect(Unit) { while (true) { delay(200); tick++ } }
@@ -71,7 +107,9 @@ fun Studio(app: StudioApp) {
     val onAir = app.live != null
 
     Column(Modifier.fillMaxSize()) {
-        TopBar(app, st, recording, onAir, tick, editing) { editing = it }
+        TopBar(app, st, recording, onAir, tick, editing, { editing = it },
+            onStudioMode = { on -> edit(if (on) studio.copy(preview = studio.current) else studio.copy(preview = null)) },
+            onUndo = { if (app.undo()) studio = app.studio }, onRedo = { if (app.redo()) studio = app.studio })
         HLine()
         if (editing) Box(Modifier.weight(1f)) { EditorScreen(encoders) }
         else Row(Modifier.weight(1f)) {
@@ -84,8 +122,26 @@ fun Studio(app: StudioApp) {
             Box(Modifier.width(1.dp).fillMaxHeight().background(K.Line))
             // the program and the big buttons
             Column(Modifier.weight(1f).fillMaxHeight().padding(12.dp)) {
-                ProgramView(app, studio, selected, { selected = it; if (it != null) tab = Tab.PROPS }, ::edit, st.phase == Session.Phase.LIVE,
-                    Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, K.Line, RoundedCornerShape(8.dp)))
+                val box = Modifier.clip(RoundedCornerShape(8.dp)).border(1.dp, K.Line, RoundedCornerShape(8.dp))
+                if (studio.preview == null) ProgramView(app, studio, selected, { selected = it; if (it != null) tab = Tab.PROPS }, ::edit, st.phase == Session.Phase.LIVE,
+                    Modifier.weight(1f).fillMaxWidth().then(box))
+                else Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    // studio mode, as OBS: the scene being prepared (editable) beside what is on air
+                    Column(Modifier.weight(1f)) {
+                        T("آماده: ${studio.editing.name}", 12, K.Accent, bold = true)
+                        ProgramView(app, studio, selected, { selected = it; if (it != null) tab = Tab.PROPS }, ::edit, st.phase == Session.Phase.LIVE,
+                            Modifier.fillMaxWidth().aspectRatio(studio.width / studio.height.toFloat()).then(box), prepared = true)
+                    }
+                    Column(Modifier.padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Btn("گذار ⟵", { edit(studio.copy(current = studio.preview!!)) }, on = true, height = 40.dp, bold = true)
+                        T(studio.transition.name.lowercase(), 11, K.Faint)
+                    }
+                    Column(Modifier.weight(1f)) {
+                        T("روی آنتن: ${studio.scene.name}", 12, K.Live, bold = true)
+                        ProgramView(app, studio, null, {}, {}, st.phase == Session.Phase.LIVE,
+                            Modifier.fillMaxWidth().aspectRatio(studio.width / studio.height.toFloat()).then(box), interactive = false)
+                    }
+                }
                 Spacer(Modifier.height(10.dp))
                 Transport(app, recording, onAir, tick, { message = it })
                 message?.let { T(it, 12, K.Live, modifier = Modifier.padding(top = 6.dp).clickable { message = null }) }
@@ -103,6 +159,7 @@ fun Studio(app: StudioApp) {
                         Tab.OUTPUT -> OutputPanel(app, encoders, studio, ::edit, recording, onAir)
                         Tab.PHONE -> PhonePanel(app, devices, st, recording || onAir)
                         Tab.CHAT -> ChatPanel(app)
+                        Tab.STATS -> StatsPanel(app, tick)
                     }
                 }
             }
@@ -113,13 +170,20 @@ fun Studio(app: StudioApp) {
 }
 
 @Composable
-private fun TopBar(app: StudioApp, st: Session.State, recording: Boolean, onAir: Boolean, tick: Int, editing: Boolean, onMode: (Boolean) -> Unit) {
+private fun TopBar(app: StudioApp, st: Session.State, recording: Boolean, onAir: Boolean, tick: Int, editing: Boolean, onMode: (Boolean) -> Unit,
+                   onStudioMode: (Boolean) -> Unit, onUndo: () -> Unit, onRedo: () -> Unit) {
+    @Suppress("UNUSED_VARIABLE") val refresh = tick     // read every 200 ms: the numbers below are not Compose state
     Row(Modifier.fillMaxWidth().height(46.dp).background(K.Panel).padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(Modifier.size(22.dp).clip(RoundedCornerShape(6.dp)).background(K.Accent), contentAlignment = Alignment.Center) { T("R", 13, Color.Black, bold = true) }
         T("RawRec Studio", 15, bold = true)
         Spacer(Modifier.width(16.dp))
         Seg(listOf(false to "استودیو", true to "ویرایش"), editing, onMode, Modifier.width(200.dp))
+        if (!editing) {
+            Btn("حالتِ استودیو", { onStudioMode(app.studio.preview == null) }, on = app.studio.preview != null, height = 28.dp)
+            Btn("↶", onUndo, enabled = app.history.canUndo, height = 28.dp)
+            Btn("↷", onRedo, enabled = app.history.canRedo, height = 28.dp)
+        }
         Spacer(Modifier.weight(1f))
         val s = app.studio
         Pill("${s.width}×${s.height} • ${s.fps} فریم")
@@ -127,13 +191,15 @@ private fun TopBar(app: StudioApp, st: Session.State, recording: Boolean, onAir:
             dot = if (app.engine.fps >= s.fps - 2) K.Good else K.Warn)
         Pill(when (st.phase) { Session.Phase.LIVE -> "گوشی: ${st.device}"; Session.Phase.CONNECTING -> "گوشی: وصل می‌شود…"; else -> "گوشی وصل نیست" },
             dot = when (st.phase) { Session.Phase.LIVE -> K.Good; Session.Phase.CONNECTING -> K.Warn; else -> K.Faint })
-        if (recording) Pill("● ضبط ${clock((System.currentTimeMillis() - (app.recording?.startedAtMs ?: 0)) / 1000)}", K.Live, K.Live)
+        if (app.replay != null) Pill("بازپخش ${"%.0f".format(app.replay?.heldSeconds ?: 0.0)} ث", K.Amber, K.Amber)
+        if (recording) Pill((if (app.recording?.paused == true) "❚❚ مکث " else "● ضبط ") + clock((System.currentTimeMillis() - (app.recording?.startedAtMs ?: 0)) / 1000), K.Live, K.Live)
         if (onAir) Pill("روی آنتن ${clock((System.currentTimeMillis() - app.liveStartedMs) / 1000)}", K.Live, K.Live)
     }
 }
 
 @Composable
 private fun Transport(app: StudioApp, recording: Boolean, onAir: Boolean, tick: Int, onMessage: (String?) -> Unit) {
+    @Suppress("UNUSED_VARIABLE") val refresh = tick
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         BigButton(if (recording) "■  پایانِ ضبط  ${clock((System.currentTimeMillis() - (app.recording?.startedAtMs ?: 0)) / 1000)}" else "●  ضبط", recording) {
             if (recording) Thread { app.stopRecording() }.start() else onMessage(app.startRecording())
@@ -141,7 +207,18 @@ private fun Transport(app: StudioApp, recording: Boolean, onAir: Boolean, tick: 
         BigButton(if (onAir) "■  پایانِ پخش  ${clock((System.currentTimeMillis() - app.liveStartedMs) / 1000)}" else "◉  شروعِ پخشِ زنده", onAir) {
             if (onAir) app.stopLive() else onMessage(app.startLive())
         }
+        if (recording) Btn(if (app.recording?.paused == true) "▶ ادامه" else "❚❚ مکث", { app.pauseRecording() }, on = app.recording?.paused == true, tint = K.Amber, height = 44.dp)
+        Column {
+            Btn(if (app.replay != null) "بافرِ بازپخش: روشن" else "بافرِ بازپخش", { if (app.replay != null) app.stopReplay() else onMessage(app.startReplay()) },
+                on = app.replay != null, tint = K.Amber, height = 21.dp)
+            Spacer(Modifier.height(2.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                Btn("ذخیرهٔ بازپخش", { Thread { app.saveReplay() }.start() }, enabled = app.replay != null, height = 21.dp)
+                Btn("عکس", { app.screenshot() }, height = 21.dp)
+            }
+        }
         Column(Modifier.weight(1f)) {
+            app.lastSaved?.let { T("ذخیره شد: $it", 12, K.Good, maxLines = 1) }
             app.recording?.let { r -> T("ضبط: ${r.bytes / 1_048_576} مگابایت • فریمِ جامانده ${r.dropped}", 12, K.Dim) }
             app.liveStatus?.let { s -> T("پخش: " + destState(s), 12, if (s.state == RtmpSink.State.LIVE) K.Good else K.Warn, maxLines = 1) }
             if (!recording) app.lastRecording?.let { r ->

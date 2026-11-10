@@ -18,6 +18,9 @@ object SelfTest {
         val seconds = args.getOrNull(0)?.toIntOrNull() ?: 10
         val codec = args.getOrNull(1) ?: "h264"
         println("rawrec-desktop selftest: os ${System.getProperty("os.name")} ${System.getProperty("os.arch")}, java ${System.getProperty("java.version")}")
+        org.bytedeco.ffmpeg.global.avdevice.avdevice_register_all()
+        println("capture: " + listOf("gdigrab", "dshow", "avfoundation", "x11grab", "v4l2", "pulse").filter { org.bytedeco.ffmpeg.global.avformat.av_find_input_format(it) != null }.joinToString())
+        println("noise model: ${com.vil3ntec.rawrec.desktop.studio.Denoiser.model()?.length() ?: "missing"} bytes")
         val encs = Encoders.available()
         println("encoders: " + encs.joinToString { it.name + if (it.hardware) "(gpu)" else "(cpu)" })
         val enc = Encoders.best() ?: return fail("no working video encoder")
