@@ -90,6 +90,10 @@ if "%RUNNING%"=="1" (
   echo     Open it in your browser at:
   echo         http://localhost:%PANEL_PORT%
   echo.
+  echo     First time: create the admin on THIS computer. From a phone or
+  echo     another computer it asks for the one-time setup code - see the
+  echo     line "setup code" in data\panel.log
+  echo.
   echo     You can close this window - the panel keeps running,
   echo     and it comes back by itself every time you log in.
   echo   ============================================================

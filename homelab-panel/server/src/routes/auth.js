@@ -40,6 +40,7 @@ import { clientIp } from '../platform/security.js';
 import { deploy } from '../config.js';
 import { deploySummary, viaProxy } from '../deploy.js';
 import { shellOwnerOnly } from '../lib/shell-owner.js';
+import { isDirectLocal, checkSetupCode, hasSetupCode, issueSetupCode, clearSetupCode } from '../lib/setup-code.js';
 
 /*
  *  ⛔ «پنلِ عمومی» (HLP_PANEL_PUBLIC=1، پشتِ Caddy با TLS — src/deploy.js).
@@ -57,9 +58,14 @@ function publicPath(req) {
 const router = Router();
 
 // آیا پنل هنوز راه‌اندازی نشده؟ (ساخت اولین حساب مدیر)
+//  `setupCode`: آیا ساختن **از همین دستگاه** کدِ یک‌بارِ کنسول را می‌خواهد (۱.۵۰.۸۵) — هرگز خودِ کد
 router.get('/status', (req, res) => {
-  res.json({ initialized: isInitialized() });
+  const initialized = isInitialized();
+  res.json({ initialized, setupCode: !initialized && !isDirectLocal(req) });
 });
+
+const SETUP_CODE_MESSAGE =
+  'نخستین مدیر از دستگاهی جز خودِ سرور فقط با «کدِ یک‌بارِ راه‌اندازی» ساخته می‌شود — همان که سرور هنگامِ بالا آمدن در کنسول/لاگِ خودش چاپ کرده (برنامهٔ ویندوز: ترمینالِ پایینِ برنامه؛ لینوکس: ./service-linux.sh setup-code؛ داکر: docker compose logs panel). یا پنل را روی خودِ همان کامپیوتر باز کنید.';
 
 router.post('/setup', (req, res) => {
   if (isInitialized()) return res.status(409).json({ error: 'already_initialized' });
@@ -70,6 +76,23 @@ router.post('/setup', (req, res) => {
       message: 'نخستین مدیر از راهِ عمومی ساخته نمی‌شود — HLP_ADMIN_USER/HLP_ADMIN_PASSWORD را در محیط بگذارید یا از تونلِ SSH/Tailscale وارد شوید.',
     });
   }
+  /*
+   *  ⛔ (۱.۵۰.۸۵) تا امروز هر همتای شبکهٔ خانه که زودتر می‌رسید مالک می‌شد. حالا از همین
+   *  کامپیوتر (لوپ‌بک، بی پراکسی، Host/Origin ِ لوپ‌بک) مثلِ پیش؛ از هر جای دیگر فقط با کدِ
+   *  یک‌باری که فقط در کنسولِ خودِ سرور چاپ شده (`lib/setup-code.js`). کد پیش از سنجشِ نام/رمز
+   *  سنجیده می‌شود ولی تنها با ساختِ مدیر مصرف می‌شود.
+   */
+  const local = isDirectLocal(req);
+  if (!local) {
+    //  کدی نیست ولی مدیری هم نیست (مثلاً کاربران پس از بالا آمدن خالی شدند) ⇒ کدِ تازه در کنسول؛ مالک بیرون نمی‌ماند
+    if (!hasSetupCode()) issueSetupCode();
+    const r = checkSetupCode(req.body?.setupCode);
+    if (!r.ok) {
+      const error = r.reason === 'missing' ? 'setup_code_required' : 'setup_code_invalid';
+      audit(req, 'panel.setup', { ok: false, detail: { reason: error, ...(r.rotated ? { rotated: true } : {}) } });
+      return res.status(403).json({ error, message: SETUP_CODE_MESSAGE });
+    }
+  }
   const { username, password } = req.body || {};
   if (!username || String(username).trim().length < 3) {
     return res.status(400).json({ error: 'username_too_short' });
@@ -78,8 +101,9 @@ router.post('/setup', (req, res) => {
     return res.status(400).json({ error: 'password_too_short' });
   }
   const user = createUser(String(username).trim(), String(password));
+  clearSetupCode();
   const session = createSession(user, req);
-  audit(req, 'panel.setup', { target: user.username });
+  audit(req, 'panel.setup', { target: user.username, detail: { via: local ? 'this_computer' : 'setup_code' } });
   logEvent('info', 'panel', `حساب مدیر «${user.username}» ساخته شد`);
   res.json({ ok: true, user: { id: user.id, username: user.username, role: user.role || 'admin' }, ...session });
 });

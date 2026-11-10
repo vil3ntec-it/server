@@ -15,6 +15,7 @@ import express from 'express';
 import { config, ensureDirs, SERVER_ROOT, deploy } from './config.js';
 import { db, logEvent, pruneEvents, getSetting, setSetting } from './db.js';
 import { pruneSessions } from './auth.js';
+import { issueSetupCode } from './lib/setup-code.js';
 import { setSiteSync, setStations, setIo, getIo } from './state.js';
 import { createSiteSync } from './sitesync/index.js';
 import { createStations } from './stations/index.js';
@@ -1165,6 +1166,10 @@ async function main() {
     console.log(`  ریشهٔ سایت‌ها: ${sitesRoot()}`);
     console.log('==============================================================');
     console.log('');
+    //  ⛔ (۱.۵۰.۸۵) تا نخستین مدیر نیست، ساختنش از دستگاهِ دیگرِ شبکه کدِ یک‌بار می‌خواهد؛ کد فقط
+    //  همین‌جا (کنسول/لاگِ سرور، ترمینالِ برنامهٔ ویندوز) دیده می‌شود — نه در دفتر و نه روی دیسک.
+    //  مدیرِ محیطِ نصب (install.sh/داکر) از قبل ساخته شده ⇒ هیچ کدی ساخته نمی‌شود. `lib/setup-code.js`
+    if (!isInitialized()) issueSetupCode();
     logEvent('info', 'panel', `پنل روی پورت ${config.port} اجرا شد`);
 
     // تونل اینترنتی: به‌صورت پیش‌فرض روشن است تا سایت از هر دستگاهی وصل شود.

@@ -10,6 +10,7 @@ import { box, unbox, isBoxed } from './lib/secret-box.js';
 import { paths } from './config.js';
 import { runMigrations } from './db/migrate.js';
 import { vacuumInto, backupFileName, applyPendingRestore } from './backup/sqlite.js';
+import { tightenDataPerms } from './lib/data-perms.js';
 
 // ماژول‌های ESM قبل از کد index اجرا می‌شوند، پس پوشه‌ها را همین‌جا می‌سازیم
 fs.mkdirSync(path.dirname(paths.db), { recursive: true });
@@ -20,6 +21,14 @@ fs.mkdirSync(paths.backups, { recursive: true });
 const restored = applyPendingRestore(paths.db);
 if (restored?.restored) console.log('[دیتابیس] بکاپ بازگردانده شد');
 else if (restored?.error) console.error(`[دیتابیس] بازگردانی ناموفق بود: ${restored.error}`);
+
+//  ⛔ (۱.۵۰.۸۵) پوشهٔ داده ‎700‎ و پایگاه ‎600‎ روی لینوکس/مک — پس از بازگردانی (پروندهٔ تازه) و پیش از
+//  باز شدن، تا SQLite پایگاه و WAL را با umask ِ گشاد نسازد؛ نصبِ موجود فقط تنگ می‌شود (`lib/data-perms.js`)
+{
+  const perms = tightenDataPerms({ dataDir: path.dirname(paths.db), dbFile: paths.db });
+  for (const t of perms.tightened) console.log(`[دیتابیس] دسترسیِ ${t.file} از ${t.from} به ${t.to} تنگ شد`);
+  for (const f of perms.failed) console.warn(`⚠️  [دیتابیس] دسترسیِ ${f.file} تنگ نشد (${f.code}) — پوشه مالِ کاربرِ دیگری است؟`);
+}
 
 export const db = new DatabaseSync(paths.db);
 

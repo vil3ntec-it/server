@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import { api, getToken, setMustChangeHandler, setToken, setUnauthorizedHandler } from './api';
+import { api, ApiError, getToken, setMustChangeHandler, setToken, setUnauthorizedHandler } from './api';
 import { dirOf, translate, type Dict, type Lang } from './i18n';
 import type { HistoryPoint, MetricsSnapshot, Site } from './types';
 import { serverFeatureOn, type ServerFeature, type ServerFeatures } from './features';
@@ -20,6 +20,8 @@ export type PanelRole = 'viewer' | 'operator' | 'admin';
 type AppState = {
   ready: boolean;
   initialized: boolean;
+  /** ساختِ نخستین مدیر از همین دستگاه کدِ یک‌بارِ کنسولِ سرور را می‌خواهد (۱.۵۰.۸۵) */
+  setupCodeNeeded: boolean;
   authed: boolean;
   username: string | null;
   role: PanelRole;
@@ -49,7 +51,7 @@ type AppState = {
   setTheme: (t: Theme) => void;
   login: (username: string, password: string) => Promise<{ totpRequired: true; ticket: string } | void>;
   loginTotp: (ticket: string, code: string) => Promise<void>;
-  setup: (username: string, password: string) => Promise<void>;
+  setup: (username: string, password: string, setupCode?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshPublic: () => Promise<void>;
 };
@@ -62,6 +64,7 @@ const prefersDark = () =>
 export function AppProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [initialized, setInitialized] = useState(true);
+  const [setupCodeNeeded, setSetupCodeNeeded] = useState(false);
   const [authed, setAuthed] = useState(Boolean(getToken()));
   const [username, setUsername] = useState<string | null>(null);
   const [role, setRole] = useState<PanelRole>('viewer');
@@ -132,10 +135,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const refreshPublic = useCallback(async () => {
     try {
       const [status, pub] = await Promise.all([
-        api<{ initialized: boolean }>('/api/auth/status'),
+        api<{ initialized: boolean; setupCode?: boolean }>('/api/auth/status'),
         api<{ serverName: string; hasLogo: boolean; language: Lang; theme: Theme }>('/api/settings/public'),
       ]);
       setInitialized(status.initialized);
+      setSetupCodeNeeded(Boolean(status.setupCode));
       setServerName(pub.serverName);
       setHasLogo(pub.hasLogo);
       // اگر کاربر روی این مرورگر انتخابی نکرده، از تنظیم سرور پیروی کن
@@ -259,9 +263,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     api<{ owner?: boolean }>('/api/auth/me').then((me) => setOwner(Boolean(me.owner))).catch(() => {});
   }, []);
 
-  const setup = useCallback(async (u: string, p: string) => {
+  const setup = useCallback(async (u: string, p: string, setupCode?: string) => {
     const res = await api<{ token: string; user: { username: string; role: PanelRole } }>('/api/auth/setup', {
-      body: { username: u, password: p },
+      body: { username: u, password: p, ...(setupCode ? { setupCode } : {}) },
+    }).catch((err: unknown) => {
+      //  سرور گفت این دستگاه کد می‌خواهد (وضعیت کهنه بود) ⇒ خانهٔ کد نشان داده شود
+      if (err instanceof ApiError && (err.code === 'setup_code_required' || err.code === 'setup_code_invalid')) setSetupCodeNeeded(true);
+      throw err;
     });
     setToken(res.token);
     setUsername(res.user.username);
@@ -291,6 +299,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     () => ({
       ready,
       initialized,
+      setupCodeNeeded,
       authed,
       username,
       role,
@@ -320,7 +329,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshPublic,
     }),
     [
-      ready, initialized, authed, username, role, owner, mustChangePassword, can, serverOn, deployProfile, serverName, hasLogo, lang, dir, theme, resolvedTheme,
+      ready, initialized, setupCodeNeeded, authed, username, role, owner, mustChangePassword, can, serverOn, deployProfile, serverName, hasLogo, lang, dir, theme, resolvedTheme,
       metrics, history, sites, connected, socket, t, setLang, setTheme, login, setup, logout, refreshPublic,
     ]
   );

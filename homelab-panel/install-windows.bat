@@ -45,12 +45,16 @@ exit /b 1
 REM ------------- download install.ps1 if it is not next to us -------------
 if exist "%PS1%" goto have_script
 
-echo  [*] Downloading the installer script...
-"%PWSH%" -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $out=$env:CC_PS1; $repo=$env:CC_REPO; $ok=$false; foreach ($b in @('main','master','claude/salam-khabi-d9i9jv')) { try { Invoke-WebRequest -UseBasicParsing -Uri ('https://raw.githubusercontent.com/' + $repo + '/' + $b + '/homelab-panel/install.ps1') -OutFile $out; $ok=$true; break } catch { } }; if (-not $ok) { exit 1 }"
+REM  Only from the main branch. There is deliberately NO fallback to any other
+REM  branch (master, claude/...): whoever can push to a fallback branch would
+REM  decide what every new install runs. If main cannot be reached, stop here.
+echo  [*] Downloading the installer script from the main branch...
+"%PWSH%" -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri ('https://raw.githubusercontent.com/' + $env:CC_REPO + '/main/homelab-panel/install.ps1') -OutFile $env:CC_PS1"
 if not errorlevel 1 goto have_script
 
 echo.
-echo  [X] Could not download install.ps1
+echo  [X] Could not download install.ps1 from the main branch of %REPO%
+echo      No other branch is tried, on purpose.
 echo.
 echo      Check your internet connection, or download the project
 echo      manually and run this file from inside its homelab-panel folder:

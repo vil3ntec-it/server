@@ -116,7 +116,9 @@ if ($panel) {
 
     New-Item -ItemType Directory -Force -Path $Target | Out-Null
     $zip = Join-Path $env:TEMP "control-center-$(Get-Random).zip"
-    $branches = if ($Branch) { @($Branch) } else { @("main", "master") }
+    #  ⛔ (۱.۵۰.۸۵) فقط main — یا شاخه‌ای که خودتان با -Branch بگویید. بازگشتِ خودکار به
+    #  شاخهٔ دیگر (master، claude/…) نیست: هر که به آن شاخه بنویسد، نصبِ همه را در دست می‌گرفت.
+    $branches = if ($Branch) { @($Branch) } else { @("main") }
 
     $got = $false
     foreach ($b in $branches) {
@@ -130,7 +132,7 @@ if ($panel) {
         Write-Host "      شاخهٔ $b نبود." -ForegroundColor DarkGray
       }
     }
-    if (-not $got) { Fail "دانلود از GitHub نشد. اینترنت را بررسی کنید، یا نام مخزن/شاخه را با -Repo و -Branch بدهید." }
+    if (-not $got) { Fail "دانلود از شاخهٔ $($branches -join ', ') ِ $Repo نشد — شاخهٔ دیگری عمداً امتحان نمی‌شود. اینترنت را بررسی کنید، یا مخزن/شاخه را خودتان با -Repo و -Branch بدهید." }
 
     $stage = Join-Path $env:TEMP "control-center-stage-$(Get-Random)"
     Expand-Archive -Path $zip -DestinationPath $stage -Force
@@ -196,6 +198,8 @@ Head "پنل در حال بالا آمدن است"
 Write-Host "   آدرس:  $url" -ForegroundColor Green
 Write-Host ""
 Write-Host "   بار اول یک نام کاربری و رمز مدیر می‌سازید." -ForegroundColor DarkGray
+Write-Host "   ساختنش از گوشی یا کامپیوترِ دیگر «کدِ یک‌بارِ راه‌اندازی» می‌خواهد که سرور همین پایین" -ForegroundColor DarkGray
+Write-Host "   در همین پنجره چاپ می‌کند (setup code)؛ روی همین کامپیوتر لازم نیست." -ForegroundColor DarkGray
 Write-Host "   دفعه‌های بعد: server\start-windows.bat" -ForegroundColor DarkGray
 Write-Host "   برای بستن: این پنجره را ببندید یا Ctrl+C بزنید." -ForegroundColor DarkGray
 Write-Host ""

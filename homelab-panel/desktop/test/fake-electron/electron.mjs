@@ -2,7 +2,8 @@
 //  جای‌گزینِ کوچکِ «electron» برای test/guards.mjs — فقط همان چند چیزی که
 //  app/main-impl.js صدا می‌زند، و هر چه پروسهٔ اصلی با پنجره‌ها می‌کند ثبت می‌شود
 //  تا آزمون همان رفتار را بی Electron بسنجد (پوشهٔ node_modules ِ برنامه لازم نیست).
-//  ⚠️ هیچ پروسه‌ای ساخته نمی‌شود: پوشهٔ داده انتخاب نشده، پس سرور بالا نمی‌آید.
+//  ⚠️ پنل هرگز بالا نمی‌آید: نمونهٔ نخست پوشهٔ داده ندارد؛ نمونهٔ دوم (بخشِ ۸ ِ آزمون، ۱.۵۰.۸۵)
+//  فقط یک «سرورِ» چندخطیِ ساختگی (‎/health‎) را اجرا می‌کند که آزمون پیش از پایان می‌بندد.
 // ---------------------------------------------------------------------------
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
@@ -68,6 +69,20 @@ export const dialog = {
 
 export const Menu = { setApplicationMenu() {} };
 
+/** نشستِ ساختگی: گرداننده‌های اجازه فقط ثبت می‌شوند تا آزمون صدایشان بزند (۱.۵۰.۸۵) */
+export class Session {
+  constructor(name = 'default') {
+    this.name = name;
+    this.requestHandler = null;
+    this.checkHandler = null;
+    this.deviceHandler = null;
+  }
+  setPermissionRequestHandler(fn) { this.requestHandler = fn; }
+  setPermissionCheckHandler(fn) { this.checkHandler = fn; }
+  setDevicePermissionHandler(fn) { this.deviceHandler = fn; }
+}
+export const session = { defaultSession: new Session('default') };
+
 export const app = Object.assign(new EventEmitter(), {
   isPackaged: false,
   getPath: (name) => (name === 'userData' || name === 'documents' ? userData : os.tmpdir()),
@@ -81,4 +96,4 @@ export const app = Object.assign(new EventEmitter(), {
   quit() {},
 });
 
-export default { app, BrowserWindow, dialog, ipcMain, shell, Menu };
+export default { app, BrowserWindow, dialog, ipcMain, shell, Menu, session };
