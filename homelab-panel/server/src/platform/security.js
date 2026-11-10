@@ -2,6 +2,7 @@
 //  لایهٔ امنیت: هدرهای امن، CORS با فهرستِ سفید، و IP واقعیِ کاربر
 // ---------------------------------------------------------------------------
 import { config } from '../config.js';
+import { isLocalPeer } from '../lib/lan-guard.js';
 
 // ---------------------------------------------------------------------------
 //  IP واقعیِ درخواست — تنها جای این محاسبه در کلِ سرور
@@ -24,7 +25,8 @@ import { config } from '../config.js';
 //
 //  پس هدر فقط در دو حالت باور می‌شود:
 //
-//    ۱) HLP_TRUST_PROXY=1 — خودتان گفته‌اید پراکسی جلو هست
+//    ۱) HLP_TRUST_PROXY=1 — خودتان گفته‌اید پراکسی جلو هست — و **همین اتصال**
+//       از همان پراکسی است (`fromTrustedProxy`، پایین)
 //    ۲) خودِ اتصال از لوکال‌هاست آمده باشد
 //
 //  حالتِ دوم همان چیزی است که نبودش این سوراخ را ساخته بود: با تونلِ
@@ -45,8 +47,32 @@ function fromLoopback(req) {
   return LOOPBACK.test(String(req.socket?.remoteAddress || ''));
 }
 
+/*
+ *  ⛔ (۱.۵۰.۸۴) «پراکسی جلو هست» یعنی سرآیند **از خودِ پراکسی**، نه از هر همتا.
+ *  `install.sh` در هر نصبِ home/vps ‎HLP_TRUST_PROXY=true‎ می‌نویسد و درِ پنل در
+ *  خانه مستقیم از شبکه باز است؛ تا ۱.۵۰.۸۳ همین یک کلمه سرآیندِ هر دستگاهِ شبکه
+ *  را باور می‌کرد ⇒ IPِ ساختگیِ تازه در هر درخواست، سقفِ ورود بی‌اثر و IPِ دروغ در
+ *  دفتر. حالا: لوپ‌بک همیشه (Caddy و تونلِ همین کامپیوتر)؛ و جز آن فقط
+ *  `config.trustProxyFrom` — ‎'any'‎ در docker/paas (درِ کانتینر فقط از پراکسی
+ *  می‌رسد)، فهرستِ صریحِ نشانی، یا هیچ (home/vps). شرح: `proxyPeers` در src/deploy.js.
+ */
+export function fromTrustedProxy(req) {
+  if (fromLoopback(req)) return true;
+  if (!config.trustProxy) return false;
+  const from = config.trustProxyFrom;
+  if (from === 'any') return true;
+  return Array.isArray(from) && from.length > 0 && isLocalPeer(req.socket?.remoteAddress, from, []);
+}
+
+/** همان قاعده برای ‎trust proxy‎ ِ Express (‎req.ip‎، ‎req.secure‎) — فقط وقتی روشن است */
+export function proxyTrustSetting() {
+  const from = config.trustProxyFrom;
+  if (from === 'any') return true;
+  return ['loopback', ...(Array.isArray(from) ? from : [])];
+}
+
 export function clientIp(req) {
-  if (config.trustProxy || fromLoopback(req)) {
+  if (fromTrustedProxy(req)) {
     const cf = String(req.headers['cf-connecting-ip'] || '').trim();
     if (cf) return normalizeIp(cf);
     const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
@@ -163,7 +189,7 @@ export function secureHeaders(req, res, next) {
   // HSTS فقط وقتی که واقعاً پشتِ TLS هستیم. گذاشتنِ آن روی http یعنی
   // مرورگر برای همیشه https را اجبار می‌کند و پنلِ داخلِ شبکهٔ خانگی
   // (که TLS ندارد) از دسترس خارج می‌شود — خرابیِ سختی برای برگرداندن.
-  const proto = config.trustProxy ? req.headers['x-forwarded-proto'] : null;
+  const proto = config.trustProxy && fromTrustedProxy(req) ? req.headers['x-forwarded-proto'] : null;
   if (proto === 'https' || req.secure) {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }

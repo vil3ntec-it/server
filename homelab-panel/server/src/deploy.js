@@ -24,7 +24,7 @@
 //  این فایل خالص است (فقط ‎env‎ می‌خواند) تا آزمون بتواند هر ترکیبی را بسنجد.
 // ---------------------------------------------------------------------------
 
-import { LOCAL_NETS } from './lib/lan-guard.js';
+import { LOCAL_NETS, parseCidr } from './lib/lan-guard.js';
 
 export const PROFILES = Object.freeze(['home', 'vps', 'docker', 'paas']);
 
@@ -97,12 +97,37 @@ export function parseBool(raw) {
 const defined = (v) => v !== undefined && v !== null && String(v).trim() !== '';
 
 /**
+ * ⛔ (۱.۵۰.۸۴) سرآیندِ پراکسی **از کدام همتا** باور شود — نه فقط «آیا».
+ *
+ * ‎HLP_TRUST_PROXY‎ همان معنای قدیمش را دارد (فقط «0» خاموش است)، ولی تا ۱.۵۰.۸۳
+ * «روشن» یعنی ‎X-Forwarded-For‎ و ‎CF-Connecting-IP‎ از **هر** اتصال — و `install.sh`
+ * آن را در هر نصبِ home/vps می‌نویسد، جایی که درِ پنل مستقیم از شبکهٔ خانه (و
+ * Tailscale) باز است و پراکسی‌ای جلویش نیست. دستگاهِ همان شبکه با یک IPِ ساختگیِ
+ * تازه در هر درخواست سقفِ ورود را نمی‌دید و IPِ دروغ در دفتر می‌نشست.
+ *
+ *   • home/vps ⇒ ‎[]‎: پراکسی‌هایی که این نمایه‌ها دارند (Caddy ِ install.sh، تونلِ
+ *     cloudflared، Caddy ِ پنلِ عمومیِ vps) همه روی همین کامپیوترند و لوپ‌بک
+ *     همیشه باور می‌شود (`platform/security.js`)؛ همسایهٔ شبکه هرگز.
+ *   • docker/paas ⇒ ‎'any'‎ (همان امروز): درِ کانتینر فقط از راهِ Caddy ِ compose
+ *     یا لودبالانسرِ سکو می‌رسد و درگاهِ پنل فقط روی ‎127.0.0.1‎ ِ میزبان منتشر است.
+ *   • فهرستِ نشانی/CIDR (‎HLP_TRUST_PROXY=192.168.1.10,10.9.0.0/16‎) ⇒ فقط همان‌ها —
+ *     برای پراکسی روی کامپیوترِ دیگرِ شبکه، یا ایمیجی که درگاهش را به شبکه داده.
+ * خاموش ⇒ ‎[]‎ (لوپ‌بک همچنان، مثلِ امروز).
+ */
+export function proxyPeers(raw, profile, on) {
+  if (!on) return [];
+  const list = String(raw ?? '').split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+  if (list.length && list.every((c) => parseCidr(c))) return list;
+  return profile === 'docker' || profile === 'paas' ? 'any' : [];
+}
+
+/**
  * نمایهٔ استقرار از روی محیط.
  *
  * @returns {{
  *   profile: string, home: boolean,
  *   features: Record<string, boolean>, sources: Record<string, string>,
- *   trustProxy: boolean, enroll: 'lan'|'off'|'open',
+ *   trustProxy: boolean, trustProxyFrom: 'any'|string[], enroll: 'lan'|'off'|'open',
  *   panel: { guard: boolean, nets: string[], netsName: string, public: boolean, url: string },
  *   errors: string[], warnings: string[],
  * }}
@@ -157,6 +182,7 @@ export function resolveDeploy(env = process.env) {
 
   // ── پراکسی، ثبتِ پمپ و درِ پنل ─────────────────────────────────────────
   const trustProxy = env.HLP_TRUST_PROXY !== undefined ? env.HLP_TRUST_PROXY !== '0' : base.trustProxy;
+  const trustProxyFrom = proxyPeers(env.HLP_TRUST_PROXY, profile, trustProxy);
   const enroll = ['lan', 'off', 'open'].includes(env.HLP_STATIONS_ENROLL) ? env.HLP_STATIONS_ENROLL : base.enroll;
   const guard = (env.HLP_PANEL_LAN_ONLY ?? '1') !== '0';
   const panelPublic = parseBool(env.HLP_PANEL_PUBLIC) === true;
@@ -204,6 +230,7 @@ export function resolveDeploy(env = process.env) {
     features,
     sources,
     trustProxy,
+    trustProxyFrom,
     enroll,
     panel: {
       guard,
