@@ -36,6 +36,7 @@ fun main(args: Array<String>) {
         if (i % 10 == 0) println("t=${i}s " + clients.joinToString(" | ") { "${it.platform.label}/${it.channel}: ${it.received} (${it.status})" })
     }
     clients.forEach { it.close() }
+    clients.filterIsInstance<YouTubeChat>().forEach { println("youtube last http ${it.lastHttp}: ${it.lastBody}") }
     for (p in Platform.entries) {
         val total = clients.filter { it.platform == p }.sumOf { it.received }
         if (p == Platform.TEST) continue

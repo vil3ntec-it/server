@@ -38,6 +38,9 @@ abstract class ChatClient(val platform: Platform, val channel: String) : AutoClo
  */
 class YouTubeChat(channel: String) : ChatClient(Platform.YOUTUBE, channel) {
     private var thread: Thread? = null
+    /** For checks: the last answer of the chat endpoint. */
+    @Volatile var lastHttp = 0; private set
+    @Volatile var lastBody: String? = null; private set
 
     override fun start() { thread = Thread({ run() }, "chat-youtube").apply { isDaemon = true; start() } }
 
@@ -55,23 +58,28 @@ class YouTubeChat(channel: String) : ChatClient(Platform.YOUTUBE, channel) {
                 val page = vid?.let { get("https://www.youtube.com/live_chat?is_popout=1&v=$it") }?.takeIf { it.contains("INNERTUBE_API_KEY") } ?: chanPage!!
                 val key = Regex("\"INNERTUBE_API_KEY\":\"([^\"]+)\"").find(page)?.groupValues?.get(1)
                 val ver = Regex("\"INNERTUBE_CLIENT_VERSION\":\"([^\"]+)\"").find(page)?.groupValues?.get(1) ?: "2.20240101.00.00"
+                val visitor = Regex("\"VISITOR_DATA\":\"([^\"]+)\"").find(page)?.groupValues?.get(1)
                 var cont = initialData(page)?.let(::allChatContinuation)
                 if (key == null || cont == null) { status = "چتِ این پخش بسته است یا پیدا نشد"; connected = false; sleep(20_000); continue }
                 status = "وصل"; connected = true
                 while (running.get() && cont != null) {
-                    val body = JSONObject().put("context", JSONObject().put("client", JSONObject().put("clientName", "WEB").put("clientVersion", ver).put("hl", "en")))
-                        .put("continuation", cont).toString()
-                    val r = http.send(HttpRequest.newBuilder(URI("https://www.youtube.com/youtubei/v1/live_chat/get_live_chat?key=$key&prettyPrint=false"))
-                        .header("User-Agent", UA).header("Content-Type", "application/json").timeout(Duration.ofSeconds(15))
-                        .POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString())
-                    if (r.statusCode() != 200) { status = "یوتیوب پاسخ نداد (${r.statusCode()})"; break }
+                    val client = JSONObject().put("clientName", "WEB").put("clientVersion", ver).put("hl", "en")
+                    if (visitor != null) client.put("visitorData", visitor)
+                    val body = JSONObject().put("context", JSONObject().put("client", client)).put("continuation", cont).toString()
+                    val rb = HttpRequest.newBuilder(URI("https://www.youtube.com/youtubei/v1/live_chat/get_live_chat?key=$key&prettyPrint=false"))
+                        .header("User-Agent", UA).header("Content-Type", "application/json").header("Origin", "https://www.youtube.com")
+                        .header("X-Youtube-Client-Name", "1").header("X-Youtube-Client-Version", ver).timeout(Duration.ofSeconds(15))
+                    if (visitor != null) rb.header("X-Goog-Visitor-Id", visitor)
+                    val r = http.send(rb.POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofString())
+                    lastHttp = r.statusCode()
+                    if (r.statusCode() != 200) { status = "یوتیوب پاسخ نداد (${r.statusCode()})"; lastBody = r.body().take(300); break }
                     val (msgs, next, wait) = parse(JSONObject(r.body()))
                     msgs.forEach(::emit)
                     cont = next
                     sleep(wait.coerceIn(1000, 8000))
                 }
                 connected = false
-                if (running.get()) { status = "پخش تمام شد یا قطع شد؛ دوباره می‌گردم…"; sleep(10_000) }
+                if (running.get()) { if (lastHttp == 200 || lastHttp == 0) status = "پخش تمام شد یا قطع شد؛ دوباره می‌گردم…"; sleep(10_000) }
             } catch (e: InterruptedException) { return } catch (e: Exception) {
                 connected = false; status = "اینترنت یا یوتیوب: ${e.message ?: e.javaClass.simpleName}"; sleep(10_000)
             }
@@ -297,6 +305,23 @@ class KickChat(channel: String) : ChatClient(Platform.KICK, channel.trim().remov
     private var debugFrames = 0
     override fun start() { Thread({ loop() }, "chat-kick").apply { isDaemon = true; start() } }
 
+    /** The push service's (key, cluster) pairs to try: what kick.com's own pages name first, then known ones. */
+    private val pusher: List<Pair<String, String>> by lazy {
+        val found = ArrayList<Pair<String, String>>()
+        try {
+            val home = http.send(HttpRequest.newBuilder(URI("https://kick.com/")).header("User-Agent", UA).timeout(Duration.ofSeconds(15)).GET().build(), HttpResponse.BodyHandlers.ofString()).body()
+            val scripts = Regex("src=\"(https://[^\"]+\\.js)\"").findAll(home).map { it.groupValues[1] }.take(25).toList()
+            val texts = listOf(home) + scripts.mapNotNull { u -> try { http.send(HttpRequest.newBuilder(URI(u)).header("User-Agent", UA).timeout(Duration.ofSeconds(15)).GET().build(), HttpResponse.BodyHandlers.ofString()).body() } catch (_: Exception) { null } }
+            for (t in texts) {
+                for (m in Regex("(?i)pusher[\\s\\S]{0,200}?[\"']([a-f0-9]{20})[\"'][\\s\\S]{0,200}?cluster[\"']?\\s*[:=]\\s*[\"']([a-z0-9-]+)[\"']").findAll(t))
+                    found.add(m.groupValues[1] to m.groupValues[2])
+            }
+        } catch (_: Exception) {}
+        if (System.getProperty("rawrec.debugChat") == "1") println("kick pusher candidates from site: $found")
+        (found + listOf("32cbd69e4b950bf97679" to "us2", "eb1d5f283081a78b932c" to "us2", "32cbd69e4b950bf97679" to "mt1")).distinct()
+    }
+    @Volatile private var pusherIdx = 0
+
     private fun chatroomId(): Long? {
         channel.toLongOrNull()?.let { return it }   // a chatroom number typed directly
         val r = http.send(HttpRequest.newBuilder(URI("https://kick.com/api/v2/channels/" + URLEncoder.encode(channel, "UTF-8")))
@@ -310,9 +335,10 @@ class KickChat(channel: String) : ChatClient(Platform.KICK, channel.trim().remov
             try {
                 val room = chatroomId()
                 if (room == null) { Thread.sleep(30_000); continue }
+                val (key, cluster) = pusher.getOrNull(pusherIdx % pusher.size.coerceAtLeast(1)) ?: ("32cbd69e4b950bf97679" to "us2")
                 val done = java.util.concurrent.CompletableFuture<Unit>()
                 val sb = StringBuilder()
-                ws = http.newWebSocketBuilder().buildAsync(URI("wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679?protocol=7&client=js&version=8.4.0&flash=false"), object : WebSocket.Listener {
+                ws = http.newWebSocketBuilder().buildAsync(URI("wss://ws-$cluster.pusher.com/app/$key?protocol=7&client=js&version=8.4.0&flash=false"), object : WebSocket.Listener {
                     override fun onOpen(w: WebSocket) {
                         w.sendText(JSONObject().put("event", "pusher:subscribe").put("data", JSONObject().put("auth", "").put("channel", "chatrooms.$room.v2")).toString(), true)
                         status = "وصل"; connected = true; w.request(1)
@@ -322,6 +348,7 @@ class KickChat(channel: String) : ChatClient(Platform.KICK, channel.trim().remov
                         if (last) {
                             val t = sb.toString(); sb.setLength(0)
                             if (System.getProperty("rawrec.debugChat") == "1" && debugFrames++ < 6) println("kick frame: ${t.take(300)}")
+                            if (t.contains("\"code\":4001") || t.contains("not in this cluster")) { pusherIdx++; status = "کیک: کلیدِ دیگری را امتحان می‌کنم…"; w.sendClose(WebSocket.NORMAL_CLOSURE, "next"); done.complete(Unit) }
                             if (t.contains("pusher:ping")) w.sendText("{\"event\":\"pusher:pong\",\"data\":{}}", true)
                             else parse(t)?.let(::emit)
                         }
