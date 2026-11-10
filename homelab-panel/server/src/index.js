@@ -401,6 +401,24 @@ app.use(['/api/auth/reauth', '/api/panel/v1/auth/reauth'], reauthLimiter, reauth
  *  احرازِ دوباره (IP و خودِ نشست، فقط ناموفق‌ها، یک شمارنده برای هر دو در): پنج حدس برای هر نشست، نه پنج برای هر در.
  */
 app.use(['/api/auth/change-password', '/api/panel/v1/auth/change-password'], reauthLimiter, reauthSessionLimiter);
+/*
+ *  ⛔ (۱.۵۰.۸۲) «خاموش کردنِ دوعاملی» هم رمزِ فعلی را می‌خواهد و تا ۱.۵۰.۸۱ **هیچ** سقفی نداشت:
+ *  `/reauth` و `change-password` سقفِ نشست+IP گرفتند ولی `totp/disable` نه — پس نشستِ دزدیده‌شده
+ *  رمزِ صاحبِ حساب را از این در بی‌پایان حدس می‌زد (۴۰۰ ِ `wrong_password`، بی ۴۲۹، بی سوزاندنِ کد).
+ *  همان دو سقف، با سطلِ جدا تا بودجهٔ درهای دیگر را نخورد؛ فقط ناموفق‌ها، پس خاموش کردنِ درست قفل نمی‌کند.
+ */
+const totpDisableLimiter = rateLimitCfg({ name: 'totp-disable', max: Number(process.env.HLP_REAUTH_RATE_LIMIT ?? 10), windowMs: 15 * 60 * 1000, skipSuccess: true });
+const totpDisableSessionLimiter = rateLimitCfg({
+  name: 'totp-disable-session',
+  max: Number(process.env.HLP_REAUTH_SESSION_LIMIT ?? 5),
+  windowMs: 15 * 60 * 1000,
+  skipSuccess: true,
+  key: (req) => {
+    const h = String(req.headers.authorization || '');
+    return h ? `t:${crypto.createHash('sha256').update(h).digest('base64url').slice(0, 24)}` : `ip:${req.ip}`;
+  },
+});
+app.use(['/api/auth/totp/disable', '/api/panel/v1/auth/totp/disable'], totpDisableLimiter, totpDisableSessionLimiter);
 app.use('/api/auth', authRoutes);
 //  دفترِ رخدادِ یکپارچه (۶-۷) — فقط‌خواندنی، فقط admin؛ نگهبان داخلِ خودِ روتر
 app.use('/api/audit', auditRoutes);

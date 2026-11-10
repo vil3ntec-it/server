@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { pipeline } from 'node:stream/promises';
 import { requireAuth, requireWriteRole } from '../auth.js';
+import { streamToFileCapped } from '../lib/capped-upload.js';
 import { allSettings, getSetting, setSetting, logEvent } from '../db.js';
 import { config, paths } from '../config.js';
 import { versionInfo } from '../version.js';
@@ -152,8 +152,11 @@ router.put('/logo', async (req, res) => {
   const type = String(req.headers['content-type'] || '').split(';')[0].trim();
   const ext = LOGO_TYPES[type];
   if (!ext) return res.status(415).json({ error: 'unsupported_type', allowed: Object.keys(LOGO_TYPES) });
+  //  ⛔ `content-length` فقط ردِ زودهنگام است؛ سقفِ ۳ مگابایت در جریان شمرده
+  //  می‌شود وگرنه بدنهٔ بی‌طول (chunked) بی‌سقف روی دیسک می‌نشست.
+  const LOGO_MAX = 3 * 1024 * 1024;
   const size = Number(req.headers['content-length'] || 0);
-  if (size > 3 * 1024 * 1024) return res.status(413).json({ error: 'too_large' });
+  if (size > LOGO_MAX) return res.status(413).json({ error: 'too_large' });
 
   const name = `logo${ext}`;
   const target = path.join(paths.uploads, name);
@@ -163,10 +166,11 @@ router.put('/logo', async (req, res) => {
     for (const e of Object.values(LOGO_TYPES)) {
       if (e !== ext) await fsp.rm(path.join(paths.uploads, `logo${e}`), { force: true });
     }
-    await pipeline(req, fs.createWriteStream(target));
+    await streamToFileCapped(req, target, LOGO_MAX);
     setSetting('logo_file', name);
     res.json({ ok: true });
   } catch (e) {
+    if (e.code === 'TOO_LARGE') return res.status(413).json({ error: 'too_large' });
     res.status(500).json({ error: e.message });
   }
 });
