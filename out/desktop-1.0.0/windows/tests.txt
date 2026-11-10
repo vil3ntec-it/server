@@ -1,0 +1,4 @@
+tests 3, failed 0
+pass com.vil3ntec.rawrec.desktop.CoreTest.scrcpyPacketHeaderCarriesTheFlags()
+pass com.vil3ntec.rawrec.desktop.CoreTest.eachGraphicsCardGetsItsOwnQualityWords()
+pass com.vil3ntec.rawrec.desktop.CoreTest.adbDeviceListIsRead()
