@@ -7,6 +7,7 @@
 //   • روزهای آزمایشیِ دکان: عددِ ۰ تا ۳۶۵۰، دلیل و تأیید؛ تاریخچه از دفترِ پنل (پیشین ⇒ تازه).
 //   • انتشار (کانالِ آزمایشی): خواندن؛ عوض کردنش جای «نسخه‌ها و انتشار» است.
 //   • حدها: سرورِ حساب امروز هیچ حدِ مرکزیِ تنظیم‌پذیری ندارد ⇒ صادقانه «پشتیبانی نمی‌شود».
+//   • تعطیلاتِ رسمی (۱.۵۰.۷۸، LOC-04، `holidays.v1`): `HolidaysCard.tsx`.
 //  ⛔ مقدار همیشه از سرور؛ «نوشته نشده» با پیش‌فرضش کنارش، نه مقدارِ ساختگی. نتیجه «تأییدشده از سرورِ حساب».
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
@@ -23,6 +24,7 @@ import { CONSOLE, isUnavailable, shown, type FlagItem, type Flags, type KnownFla
 import { SHELL_API, type ModuleProps } from './contract';
 import { NotSupported, SensitiveDialog, StateEmpty, StateLoading, fmtTime, type SensitiveSubmit } from './parts';
 import { useTx, type Tx } from './text';
+import HolidaysCard from './HolidaysCard';
 
 /** همان قاعدهٔ سرور (`routes/console-shell.js` ⇒ `isRiskyFlag`) — فقط برای این‌که پنجره از پیش رمز و نام را بخواهد. */
 const RISKY_KEYS = new Set(['shop.orders', 'shop.orders.refunds', 'shop.delivery', 'shop.storefront', 'hashchain.audit', 'market.directory']);
@@ -238,6 +240,7 @@ export default function SettingsModule(_props: ModuleProps) {
     <div className="space-y-4">
       <FlagsEditor />
       <FlagHistoryCard />
+      <HolidaysCard />
       <div className="grid gap-4 lg:grid-cols-2">
         <TrialCard />
         <ReleaseCard />

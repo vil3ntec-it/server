@@ -54,6 +54,7 @@ import { mountConsoleShell } from './console-shell.js';
 import { mountConsoleMarket, MARKET_CAPABILITIES } from './console-market.js';
 import { mountConsoleStaff } from './console-staff.js';
 import { mountConsoleImageBank } from './console-image-bank.js';
+import { mountConsoleHolidays } from './console-holidays.js';
 
 const { requireRole } = panelRoles;
 const router = express.Router();
@@ -2197,6 +2198,8 @@ export const PHASE3 = Object.freeze({
   //  ۱.۵۰.۷۷ (shop #1025، ‎claude/acct-console-2‎): برگرداندنِ دستگاه و صفحه‌بندیِ کارکنان، و کلیدِ یکتاییِ خودِ سرورِ حساب
   'staff-perms.v1': 'GET /api/admin/shops/:id/staff-perms?limit=&offset= · POST …/devices/:did/disable|enable (ارشد + دلیل)',
   'idempotent-writes.v1': 'Idempotency-Key روی دستگاه (disable/enable)، بازبینیِ بانکِ عکس و POST /api/admin/backups',
+  //  ۱.۵۰.۷۸ (shop ‎claude/loc-04‎، LOC-04): جدولِ تعطیلاتِ رسمی — ‎routes/console-holidays.js‎
+  'holidays.v1': 'GET|PUT /api/admin/calendar/holidays (ارشد + دلیل + نسخه؛ ۴۰۹ holiday_version)',
   ...MARKET_CAPABILITIES,
 });
 const CAP_RE = /^[a-z][a-z0-9-]{0,40}\.v\d{1,3}$/;
@@ -2556,6 +2559,8 @@ mountConsoleMarket(router);
  */
 mountConsoleStaff(router, { guard, badInput, actorOf, capListed, missingErr });
 mountConsoleImageBank(router, { guard, badInput, actorOf, capListed });
+/* ۱.۵۰.۷۸ (LOC-04): جدولِ تعطیلاتِ رسمی در «تنظیماتِ مرکزی» — ‎routes/console-holidays.js‎، روی **همین** روتر */
+mountConsoleHolidays(router, { guard, badInput, actorOf, capListed, missingErr, unavailable });
 
 /* ماژولِ ۴.۵ ِ پنلِ مرکزی — مالیِ مرکزی (‎routes/account-finance.js‎؛ همین نشست، همین «انجام‌دهنده») */
 router.use('/console/finance', financeRoutes);
