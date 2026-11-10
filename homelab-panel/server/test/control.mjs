@@ -510,6 +510,14 @@ async function main() {
   check('پروژه روی سرورِ تازه نشست', r.json.project.server_id === vps.id, r.text);
   check('دامنهٔ ثابت دست‌نخورده ماند', r.json.routes.some((x) => x.hostname === 'api.example.com'), r.text);
 
+  //  ⛔ تزریقِ آرگومان به scp (۱.۵۰.۸۳): نامِ کاربرِ SSH که با `-` آغاز شود، scp آن را گزینه می‌خواند
+  //  (مثلِ `-oProxyCommand=…` ⇒ اجرای فرمان روی همین کامپیوتر). پیش از هر کار رد می‌شود — حتی بی تأیید.
+  //  (سقفِ نرخِ /migrate فقط ۳ در ۵ دقیقه است، پس همین یک درخواستِ تزریقی را می‌فرستیم.)
+  r = await api('POST', `/api/control/projects/${shop.project_id}/migrate`, {
+    to_server_id: vps.id, confirm: false, ssh: { user: '-oProxyCommand=touch /tmp/pwned', host: '127.0.0.1', port: ORIGIN_PORT },
+  });
+  check('⛔ نامِ کاربرِ SSH با `-` رد می‌شود (تزریقِ گزینهٔ scp)', r.status === 400 && r.json?.error === 'bad_ssh_target', r.text);
+
   console.log('\n── مانیتورینگ ──');
   r = await api('POST', '/api/control/monitoring/sync');
   check('هماهنگیِ هدف‌ها', r.status === 200 && r.json.total > 0, r.text);

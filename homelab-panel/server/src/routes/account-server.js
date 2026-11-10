@@ -8,6 +8,7 @@
 import { Router } from 'express';
 import { requireAuth, requireRole, requireWriteRole, requireRecentAuth } from '../auth.js';
 import { isOwner } from '../control/roles.js';
+import { denyUnlessShellAllowed } from '../lib/shell-owner.js';
 import { auditFromReq } from '../control/audit.js';
 import {
   accountStatus, accountLogs, startAccountServer, stopAccountServer, restartAccountServer,
@@ -103,8 +104,13 @@ router.get('/update', async (req, res) => {
  *
  * ⛔ فقط `admin`: این سرویسِ حساب و اشتراکِ همهٔ برنامه‌ها را یک لحظه
  * می‌خواباند و دوباره بالا می‌آورد — همان قاعدهٔ `/api/platform/*`.
+ *
+ * ⛔ S19 (۱.۵۰.۸۳): بستهٔ سرورِ حساب از همان `cc_update_repo` می‌آید و کدِ تازه را روی میزبان
+ * (پروسهٔ سرورِ حساب، با همهٔ دادهٔ مشتری‌ها) می‌نشاند — پس با `HLP_SHELL_OWNER_ONLY=1` فقط مالک،
+ * درست مثلِ به‌روزرسانیِ خودِ پنل. پیش‌فرض خاموش ⇒ رفتارِ پیشین؛ مالک هرگز بیرون نمی‌ماند.
  */
 router.post('/update', requireRole('admin'), (req, res) => {
+  if (!denyUnlessShellAllowed(req, res, 'update')) return;
   res.json(startBundle({ actor: req.user?.username || 'admin' }));
 });
 

@@ -27,6 +27,7 @@ export function guard(handler) {
         invalid_environment: 400,
         invalid_path: 400,
         confirmation_required: 400,
+        bad_ssh_target: 400,
         config_must_be_object: 400,
         not_found: 404,
         target_server_not_found: 404,

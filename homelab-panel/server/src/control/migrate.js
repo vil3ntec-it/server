@@ -75,11 +75,40 @@ function transferSupport() {
   };
 }
 
+/*
+ *  ⛔ تزریقِ آرگومان به scp (۱.۵۰.۸۳): مقصدِ scp رشتهٔ `user@host:dir/` است و نخستین تکه‌اش `ssh.user` است.
+ *  نامِ کاربری که با `-` آغاز شود، scp آن را **گزینه** می‌خواند — مثلِ `-oProxyCommand=…` که یک فرمانِ دلخواه را
+ *  روی همین کامپیوتر اجرا می‌کند (scp با `lib/exec.js` ِ `execFile` می‌دود، پس shell نیست؛ ولی گزینهٔ ssh خودش
+ *  فرمان است). پس پیش از هر کاری نام/میزبان/پوشه سنجیده می‌شوند و `--` هم جداکنندهٔ گزینه‌هاست. مالک همیشه
+ *  می‌تواند مقصدِ درست بدهد؛ فقط ورودیِ خطرناک رد می‌شود.
+ */
+export function invalidSshTarget(ssh = {}) {
+  const user = String(ssh.user ?? 'root');
+  const host = String(ssh.host ?? '');
+  const dir = String(ssh.targetDir ?? '');
+  //  نامِ کاربر هرگز با `-` آغاز نشود (وگرنه scp آن را گزینه می‌خواند)؛ حرف/رقمِ آغاز، سپس حرف/رقم/._-
+  if (!/^[A-Za-z0-9_][A-Za-z0-9._-]{0,39}$/.test(user)) return 'user';
+  //  میزبان: نام یا IP (v4/v6)، بی فاصله و بی آغازِ `-`
+  if (host && !/^[A-Za-z0-9_][A-Za-z0-9.:_-]{0,199}$/.test(host)) return 'host';
+  //  پوشهٔ مقصد: مسیرِ ساده، بی فاصله و بی نویسهٔ شل
+  if (dir && !/^[A-Za-z0-9._/-]{1,300}$/.test(dir)) return 'targetDir';
+  return null;
+}
+
 /**
  * اجرای واقعیِ جابه‌جایی.
  * @param {object} options.ssh { host, user, port, targetDir } — اگر نباشد، گامِ انتقال دستی می‌شود
  */
 export async function migrateProject(project, { toServerId, actor = 'admin', ssh = null, confirm = false, updateEndpoints = true } = {}) {
+  //  ⛔ نشانیِ SSH پیش از هر کار سنجیده می‌شود — نه بکاپ، نه ردیفِ مهاجرت، نه scp تا ورودیِ تزریقی رد نشده
+  if (ssh) {
+    const badField = invalidSshTarget(ssh);
+    if (badField) {
+      const err = new Error('bad_ssh_target');
+      err.detail = { field: badField };
+      throw err;
+    }
+  }
   if (!confirm) throw new Error('confirmation_required');
   const to = getServer(toServerId);
   if (!to) throw new Error('target_server_not_found');
@@ -117,7 +146,8 @@ export async function migrateProject(project, { toServerId, actor = 'admin', ssh
   const targetDir = ssh?.targetDir || `/opt/control-center/incoming`;
   const remote = ssh ? `${ssh.user || 'root'}@${ssh.host || to.hostname || to.ip}:${targetDir}/` : null;
   if (ssh && (ssh.host || to.hostname || to.ip)) {
-    const args = ['-P', String(ssh.port || to.ssh_port || 22), '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new', backup.path, remote];
+    //  `--` پایانِ گزینه‌هاست: حتی اگر روزی مبدأ/مقصد با `-` آغاز شود، scp آن را گزینه نمی‌خواند
+    const args = ['-P', String(ssh.port || to.ssh_port || 22), '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new', '--', backup.path, remote];
     const res = await run('scp', args, { timeout: 30 * 60 * 1000 });
     if (res.ok) {
       steps.push(STEP('transfer', 'ok', { method: 'scp', to: remote }));
