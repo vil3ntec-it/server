@@ -1,10 +1,10 @@
 Picked up JAVA_TOOL_OPTIONS: -Drawrec.selftestOut=/home/runner/work/_temp/selftest.log
 rawrec-desktop selftest: os Linux amd64, java 17.0.21
-[hevc_nvenc @ 0x79e6d453da80] Cannot load libcuda.so.1
-[h264_nvenc @ 0x79e6d453da80] Cannot load libcuda.so.1
-[av1_nvenc @ 0x79e6d453da80] Cannot load libcuda.so.1
-[libopenh264 @ 0x79e6d453da80] [OpenH264] this = 0x0x79e6d4668d10, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
-[libopenh264 @ 0x79e6d453da80] [OpenH264] this = 0x0x79e6d4668d10, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[hevc_nvenc @ 0x7b862c56d600] Cannot load libcuda.so.1
+[h264_nvenc @ 0x7b862c56d600] Cannot load libcuda.so.1
+[av1_nvenc @ 0x7b862c56d600] Cannot load libcuda.so.1
+[libopenh264 @ 0x7b862c56d600] [OpenH264] this = 0x0x7b862c698850, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0x7b862c56d600] [OpenH264] this = 0x0x7b862c698850, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
 Svt[info]: -------------------------------------------
 Svt[info]: SVT [version]:	SVT-AV1 Encoder Lib v2.2.0
 Svt[info]: SVT [build]  :	GCC 9.4.0	 64 bit
@@ -12,7 +12,7 @@ Svt[info]: LIB Build date: Nov 16 2024 01:13:32
 Svt[info]: -------------------------------------------
 Svt[info]: Number of logical cores available: 4
 Svt[info]: Number of PPCS 59
-Svt[info]: [asm level on system : up to avx512]
+Svt[info]: [asm level on system : up to avx2]
 Svt[info]: [asm level selected : up to avx2]
 Svt[info]: -------------------------------------------
 Svt[info]: SVT [config]: main profile	tier (auto)	level (auto)

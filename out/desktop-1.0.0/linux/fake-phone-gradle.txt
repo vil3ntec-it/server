@@ -12,6 +12,6 @@ t=6s in: 29 fps 3.1 Mbps 1280x720 audio=on rec: 4092844 bytes dropped 0
 t=7s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 4818577 bytes dropped 0
 t=8s in: 29 fps 3.1 Mbps 720x1280 audio=on rec: 5577210 bytes dropped 0
 t=9s in: 29 fps 3.2 Mbps 720x1280 audio=on rec: 5949324 bytes dropped 0
-t=10s in: 29 fps 3.3 Mbps 720x1280 audio=on rec: 6276211 bytes dropped 0
-result: /home/runner/Videos/RawRec/RawRec 2026-11-10 14-26-26.mp4 1280x720 10.00s frames=300 dropped=0 bytes=6402799 encoder=libopenh264 error=null
-RESULT_FILE=/home/runner/Videos/RawRec/RawRec 2026-11-10 14-26-26.mp4
+t=10s in: 29 fps 3.3 Mbps 720x1280 audio=on rec: 6298068 bytes dropped 0
+result: /home/runner/Videos/RawRec/RawRec 2026-11-10 14-45-24.mp4 1280x720 10.00s frames=300 dropped=0 bytes=6403666 encoder=libopenh264 error=null
+RESULT_FILE=/home/runner/Videos/RawRec/RawRec 2026-11-10 14-45-24.mp4

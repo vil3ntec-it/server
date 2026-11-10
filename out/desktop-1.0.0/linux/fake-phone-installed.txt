@@ -1,10 +1,10 @@
 Picked up JAVA_TOOL_OPTIONS: -Drawrec.adb=/home/runner/work/server/server/desktop/src/test/fakeadb
 rawrec-desktop selftest: os Linux amd64, java 17.0.21
-[hevc_nvenc @ 0x73ae3c67b800] Cannot load libcuda.so.1
-[h264_nvenc @ 0x73ae3c67b800] Cannot load libcuda.so.1
-[av1_nvenc @ 0x73ae3c67b800] Cannot load libcuda.so.1
-[libopenh264 @ 0x73ae3c67b800] [OpenH264] this = 0x0x73ae3c6979f0, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
-[libopenh264 @ 0x73ae3c67b800] [OpenH264] this = 0x0x73ae3c6979f0, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[hevc_nvenc @ 0x786770712900] Cannot load libcuda.so.1
+[h264_nvenc @ 0x786770712900] Cannot load libcuda.so.1
+[av1_nvenc @ 0x786770712900] Cannot load libcuda.so.1
+[libopenh264 @ 0x786770712900] [OpenH264] this = 0x0x78677072ebb0, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0x786770712900] [OpenH264] this = 0x0x78677072ebb0, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
 Svt[info]: -------------------------------------------
 Svt[info]: SVT [version]:	SVT-AV1 Encoder Lib v2.2.0
 Svt[info]: SVT [build]  :	GCC 9.4.0	 64 bit
@@ -12,7 +12,7 @@ Svt[info]: LIB Build date: Nov 16 2024 01:13:32
 Svt[info]: -------------------------------------------
 Svt[info]: Number of logical cores available: 4
 Svt[info]: Number of PPCS 59
-Svt[info]: [asm level on system : up to avx512]
+Svt[info]: [asm level on system : up to avx2]
 Svt[info]: [asm level selected : up to avx2]
 Svt[info]: -------------------------------------------
 Svt[info]: SVT [config]: main profile	tier (auto)	level (auto)
@@ -26,21 +26,21 @@ Svt[info]: -------------------------------------------
 encoders: libopenh264(cpu), libsvtav1(cpu)
 adb: /home/runner/work/server/server/desktop/src/test/fakeadb
 phone: Fake Phone (FAKE123), Android SDK 34
-live: Fake Phone h264 1280x720
-[libopenh264 @ 0x73ad94001400] [OpenH264] this = 0x0x73ad94001f60, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
-[libopenh264 @ 0x73ad94001400] [OpenH264] this = 0x0x73ad94001f60, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
-t=1s in: 19 fps 2.2 Mbps 1280x720 audio=on rec: 548602 bytes dropped 0
-t=2s in: 29 fps 3.1 Mbps 1280x720 audio=on rec: 1194658 bytes dropped 0
-t=3s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 1897903 bytes dropped 0
-t=4s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 2647596 bytes dropped 0
-t=5s in: 29 fps 3.1 Mbps 1280x720 audio=on rec: 3406608 bytes dropped 0
-t=6s in: 29 fps 3.1 Mbps 1280x720 audio=on rec: 4095655 bytes dropped 0
-t=7s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 4826154 bytes dropped 0
-t=8s in: 29 fps 3.1 Mbps 720x1280 audio=on rec: 5554704 bytes dropped 0
-t=9s in: 29 fps 3.2 Mbps 720x1280 audio=on rec: 6006039 bytes dropped 0
-t=10s in: 29 fps 3.3 Mbps 720x1280 audio=on rec: 6350241 bytes dropped 0
-[aac @ 0x73ad94d23140] Qavg: 50176.480
-[mp4 @ 0x73ae3eba64c0] Starting second pass: moving the moov atom to the beginning of the file
-result: /home/runner/Videos/RawRec/RawRec 2026-11-10 14-27-02.mp4 1280x720 10.10s frames=303 dropped=0 bytes=6499020 encoder=libopenh264 error=null
-RESULT_FILE=/home/runner/Videos/RawRec/RawRec 2026-11-10 14-27-02.mp4
+live: Fake Phone h264 0x0
+[libopenh264 @ 0x7866c8001400] [OpenH264] this = 0x0x7866c8001f60, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0x7866c8001400] [OpenH264] this = 0x0x7866c8001f60, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+t=1s in: 19 fps 2.2 Mbps 1280x720 audio=on rec: 374807 bytes dropped 0
+t=2s in: 29 fps 3.1 Mbps 1280x720 audio=on rec: 1033073 bytes dropped 0
+t=3s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 1752924 bytes dropped 0
+t=4s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 2518971 bytes dropped 0
+t=5s in: 29 fps 3.1 Mbps 1280x720 audio=on rec: 3273238 bytes dropped 0
+t=6s in: 29 fps 3.1 Mbps 1280x720 audio=on rec: 3962259 bytes dropped 0
+t=7s in: 29 fps 3.2 Mbps 1280x720 audio=on rec: 4678888 bytes dropped 0
+t=8s in: 29 fps 3.1 Mbps 720x1280 audio=on rec: 5428604 bytes dropped 0
+t=9s in: 29 fps 3.2 Mbps 720x1280 audio=on rec: 5886773 bytes dropped 0
+t=10s in: 29 fps 3.3 Mbps 720x1280 audio=on rec: 6210082 bytes dropped 0
+[aac @ 0x7866c8d23140] Qavg: 53913.008
+[mp4 @ 0x78677087b880] Starting second pass: moving the moov atom to the beginning of the file
+result: /home/runner/Videos/RawRec/RawRec 2026-11-10 14-46-01.mp4 1280x720 10.00s frames=300 dropped=0 bytes=6403609 encoder=libopenh264 error=null
+RESULT_FILE=/home/runner/Videos/RawRec/RawRec 2026-11-10 14-46-01.mp4
 exit 0
