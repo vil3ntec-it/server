@@ -62,6 +62,8 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/ops/incidents') return j(200, { incidents: [], total: 0, limit: 200, offset: 0, counts: {} });
     if (p === '/api/admin/ops/alerts/evaluate') return j(200, { evaluatedAt: NOW, rules: [] });
     if (/\/notes$/.test(p)) return j(201, { ok: true });
+    //  ۱.۵۰.۷۶: بازگرداندنِ تعارض روی سرورِ کهنه (بی `sync-restore-once.v1`) که جواب نمی‌دهد
+    if (p === '/api/admin/sync/conflicts/77/restore') return;
     return j(404, { error: { code: 'route_not_found', message: 'نیست' } });
   });
 });
@@ -187,6 +189,22 @@ try {
   const b4 = await api('POST', '/api/account-admin/console/backups', bk('d'), H(owner));
   check('پس از پنجرهٔ ته‌نشینی، پشتیبانِ تازه دوباره آزاد است', b4.status === 201, `${b4.status} ${b4.text.slice(0, 200)}`);
   check('⛔ هیچ پوشهٔ میزبان در پاسخ‌ها', ![g, n, b2, b3, b4].some((r) => r.text.includes('/srv/b')), '');
+
+  /* ── ۱.۵۰.۷۶: بازگرداندنِ تعارضِ «نامعلوم» روی سرورِ کهنه (یادِ پل، `restoreOnce`) ──
+   *  تا ۱.۵۰.۷۵ یادِ پل روی **هر** خطا پاک می‌شد، «نامعلوم» هم ⇒ دوباره‌زدنِ همان پنجره بازگرداندنِ دوم را می‌فرستاد
+   *  و مقدارِ تازه‌ترِ همان خانه را رو می‌نوشت (همان چیزی که یادِ ۱.۵۰.۷۴ برایش ساخته شد). */
+  const RP = '/api/admin/sync/conflicts/77/restore';
+  const rs = (k) => ({ reason: 'آزمونِ بازگرداندنِ نامعلوم', confirm: true, idempotencyKey: `tmo-restore-${k}-0001` });
+  const r1 = await api('POST', '/api/account-admin/sync/conflicts/77/restore', rs('a'), H(owner));
+  check('بازگرداندنِ بی‌پاسخ ⇒ ‎504 outcome_unknown‎', r1.status === 504 && r1.json?.error === 'outcome_unknown' && r1.json?.outcome === 'unknown',
+    `${r1.status} ${r1.text.slice(0, 200)}`);
+  const r2 = await api('POST', '/api/account-admin/sync/conflicts/77/restore', rs('a'), H(owner));
+  check('⛔ همان پنجره دوباره ⇒ همان «نامعلوم»، بی بازگرداندنِ دوم به سرورِ حساب',
+    r2.status === 504 && r2.json?.error === 'outcome_unknown' && count('POST', RP) === 1, `${r2.status} ${r2.json?.error} posts=${count('POST', RP)}`);
+  const r3 = await api('POST', '/api/account-admin/sync/conflicts/77/restore', rs('b'), H(owner));
+  check('⛔ پنجرهٔ تازه پس از نامعلوم ⇒ ‎409 restore_outcome_unknown‎ (اول فهرست را ببینید)، بی درخواستِ دوم',
+    r3.status === 409 && r3.json?.error === 'restore_outcome_unknown' && /معلوم نیست/.test(r3.json?.message || '') && count('POST', RP) === 1,
+    `${r3.status} ${r3.text.slice(0, 200)} posts=${count('POST', RP)}`);
 } catch (e) {
   check('خطای غیرمنتظره', false, e.stack || e.message);
 } finally {

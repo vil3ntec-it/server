@@ -28,6 +28,7 @@ import { config } from '../config.js';
 import { db, logEvent } from '../db.js';
 import { audit } from '../control/audit.js';
 import { findUser, verifyPassword, consumeTotp, consumeRecoveryCode } from '../auth.js';
+import { bridgeTimeouts } from '../stations/cloud.js';
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS admin_gate_devices (
@@ -253,6 +254,54 @@ export function resetGateGuesses() {
   guesses.clear();
 }
 
+/* -------------------------------- مهلتِ در -------------------------------- */
+
+/*
+ *  ⏱️ (۱.۵۰.۷۶) مهلتِ در = **بی‌کاریِ** سوکت تا پنلِ محلی، نه کلِ درخواست. عادی ‎60s‎ (آزمون: ‎HLP_GATE_TIMEOUT_MS‎،
+ *  ۱۰۰ تا ۲۹۰٬۰۰۰). تا ۱.۵۰.۷۵ همین ‎60s‎ برای همه بود ⇒ پشتیبانِ دستیِ سرورِ حساب، که پل تا مهلتِ «بلند» (‎270s‎،
+ *  ‎stations/cloud.js‎) صبرش می‌کند، از راهِ در در ۶۰ ثانیه بریده می‌شد و برنامه «‎502 gate_upstream‎» می‌دید با این‌که
+ *  شاید ساخته شده بود.
+ *  ⛔ فقط درهای ‎LONG_ROUTES‎ (همان درهای `timeout: 'long'` ِ پل که از این در رد می‌شوند) مهلتِ بلندِ پل + حاشیه
+ *     می‌گیرند تا پاسخِ دقیقِ **خودِ پل** (‎201‎ یا ‎504 outcome_unknown‎) برسد؛ نه مهلتِ بلندتر برای همه.
+ *  ⛔ نوشتنی که با این همه از مهلتِ در گذشت یا اتصالش وسطِ کار افتاد ⇒ ‎504/502 outcome_unknown‎ با ‎outcome: 'unknown'‎
+ *     («معلوم نیست؛ پیش از تکرار ببینید») + ردیفِ دفتر — همان معنای پل؛ خواندن ⇒ ‎504 gate_timeout‎ (تکرارپذیر).
+ *     در هرگز خودش دوباره نمی‌فرستد.
+ */
+export const GATE_TIMEOUT_MS = 60_000;
+const GATE_LONG_MARGIN_MS = 15_000;
+const LONG_ROUTES = [['POST', /^\/api\/account-admin\/console\/backups\/?$/i]];
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+/** خطاهایی که یعنی درخواست اصلاً به پنل نرسید ⇒ «نامعلوم» نیست */
+const NEVER_SENT = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);
+
+export function gateTimeoutMs(method, innerPath) {
+  const n = Number(process.env.HLP_GATE_TIMEOUT_MS);
+  const normal = Number.isFinite(n) && n >= 100 && n <= 290_000 ? Math.round(n) : GATE_TIMEOUT_MS;
+  const p = String(innerPath || '').split('?')[0];
+  const m = String(method || 'GET').toUpperCase();
+  return LONG_ROUTES.some(([lm, re]) => lm === m && re.test(p)) ? Math.max(normal, bridgeTimeouts().longMs + GATE_LONG_MARGIN_MS) : normal;
+}
+
+/** پاسخِ در وقتی پنلِ محلی جواب نداد — همان شکلِ ‎account/bridge-fail.js‎ */
+function gateFail(res, { method, inner, device, ip, ms, timedOut, code }) {
+  if (res.headersSent) return void res.end();
+  const write = !SAFE_METHODS.has(method);
+  if (write && (timedOut || !NEVER_SENT.has(code))) {
+    const p = inner.split('?')[0].slice(0, 200);
+    audit({ actor: `gate:${device.id}`, action: 'admin-gate.outcome_unknown', entity: 'admin-gate', entityId: device.id,
+      detail: { method, path: p, timeoutMs: timedOut ? ms : null }, result: 'unknown', ip });
+    const s = Math.max(1, Math.round(ms / 1000));
+    return void res.status(timedOut ? 504 : 502).json({
+      error: 'outcome_unknown', outcome: 'unknown',
+      message: timedOut
+        ? `سرور در ${s} ثانیه جواب نداد و معلوم نیست این کار انجام شد یا نه — پیش از تکرار، نتیجه را در همان فهرست ببینید`
+        : 'ارتباط با سرور وسطِ کار قطع شد و معلوم نیست این کار انجام شد یا نه — پیش از تکرار، نتیجه را در همان فهرست ببینید',
+    });
+  }
+  if (timedOut) return void res.status(504).json({ error: 'gate_timeout', message: 'سرور در مهلت جواب نداد — دوباره بخوانید' });
+  res.status(502).json({ error: 'gate_upstream' });
+}
+
 /* -------------------------------- خودِ در -------------------------------- */
 
 /** هر چیزی که رد نشود، همین را می‌گیرد — دقیقاً مثلِ یک مسیرِ نبوده */
@@ -368,8 +417,11 @@ export function adminGate(req, res, { stripPrefix = true } = {}) {
   if (ip) headers['x-forwarded-for'] = ip;
   headers['x-admin-gate-device'] = device.id;
 
+  const method = String(req.method || 'GET').toUpperCase();
+  const ms = gateTimeoutMs(method, inner);
+  let timedOut = false;
   const upstream = http.request(
-    { host: '127.0.0.1', port: config.port, method: req.method, path: inner, headers, timeout: 60_000 },
+    { host: '127.0.0.1', port: config.port, method: req.method, path: inner, headers, timeout: ms },
     (answer) => {
       res.status(answer.statusCode || 502);
       for (const [name, value] of Object.entries(answer.headers)) {
@@ -381,11 +433,8 @@ export function adminGate(req, res, { stripPrefix = true } = {}) {
     },
   );
 
-  upstream.on('timeout', () => upstream.destroy(new Error('gate_timeout')));
-  upstream.on('error', () => {
-    if (!res.headersSent) res.status(502).json({ error: 'gate_upstream' });
-    else res.end();
-  });
+  upstream.on('timeout', () => { timedOut = true; upstream.destroy(new Error('gate_timeout')); });
+  upstream.on('error', (e) => gateFail(res, { method, inner, device, ip, ms, timedOut, code: String(e?.code || '') }));
 
   req.pipe(upstream);
 }

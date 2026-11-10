@@ -173,6 +173,7 @@ export default function SyncStatus() {
           title="بازگرداندنِ نسخهٔ بازنده"
           effect="مقدارِ بازنده به‌شکلِ یک تغییرِ تازه از طرفِ سرور ثبت می‌شود و در دریافتِ بعدیِ همهٔ دستگاه‌ها می‌نشیند. چیزی پاک نمی‌شود و تاریخچه دست نمی‌خورد."
           onClose={() => setRestore(null)}
+          onUnknown={() => { void conflicts.reload(); }}
           onSubmit={async ({ reason, idempotencyKey }) => {
             await api(`/api/account-admin/sync/conflicts/${encodeURIComponent(String(restore.id))}/restore`, {
               body: { reason, confirm: true, idempotencyKey },

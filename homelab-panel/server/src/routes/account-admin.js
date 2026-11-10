@@ -1579,9 +1579,13 @@ async function restoreOnce(req, id, reason, key, run) {
     if (same && seen.reason !== reason) throw conflictErr('idempotency_key_reused', 'این کلیدِ یکتایی برای کارِ دیگری به کار رفته است');
     if (same) return { ...(await seen.promise), replayed: true };
     if (!seen.done) throw conflictErr('restore_in_progress', 'همین تعارض همین حالا در حالِ بازگرداندن است');
+    if (seen.unknown) {
+      throw conflictErr('restore_outcome_unknown',
+        'نتیجهٔ بازگرداندنِ قبلیِ همین تعارض معلوم نیست — شاید انجام شده؛ پیش از تکرار، فهرستِ تعارض‌ها را تازه کنید و ببینید');
+    }
     throw conflictErr('already_restored', 'این تعارض همین تازگی برگردانده شد؛ فهرست را تازه کنید');
   }
-  const slot = { key, user: req.user?.id, reason, at: now, done: false, promise: null };
+  const slot = { key, user: req.user?.id, reason, at: now, done: false, unknown: false, promise: null };
   slot.promise = (async () => {
     try {
       const out = await run();
@@ -1589,7 +1593,13 @@ async function restoreOnce(req, id, reason, key, run) {
       slot.at = Date.now();
       return out;
     } catch (err) {
-      restoreMemo.delete(id);   //  شکست ⇒ همان کلید دوباره قابلِ تلاش است، نه پاسخِ خطای ماندگار
+      //  ⛔ (۱.۵۰.۷۶) «نامعلوم» (مهلتِ پل یا اتصالِ افتاده) شکست نیست — شاید برگردانده شد: یاد می‌ماند تا همان پنجره همان
+      //     «نامعلوم» را بگیرد و پنجرهٔ دیگر ‎409 restore_outcome_unknown‎، نه بازگرداندنِ دوم که مقدارِ تازه‌تر را رو بنویسد
+      if (err?.outcome === 'unknown') {
+        slot.done = true;
+        slot.unknown = true;
+        slot.at = Date.now();
+      } else restoreMemo.delete(id);   //  شکستِ روشن ⇒ همان کلید دوباره قابلِ تلاش است، نه پاسخِ خطای ماندگار
       throw err;
     }
   })();
