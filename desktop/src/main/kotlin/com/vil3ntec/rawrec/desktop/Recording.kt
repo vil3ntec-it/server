@@ -12,6 +12,10 @@ import java.util.concurrent.TimeUnit
  * held up by the encoder. Pictures wait in a short queue; if the encoder cannot keep up a picture is
  * dropped (counted, said in the result) — never a growing delay. The picture's size is the chosen
  * height, its width the shape of the first picture (rounded to even).
+ *
+ * The file is at exactly the chosen frame rate, on the phone's clock (the sound's clock too): the phone
+ * sends a picture only when its screen changes, so a still screen is filled with the last picture,
+ * and a phone faster than the file gives one picture per frame. The file lasts as long as the recording.
  */
 class Recording(
     private val encoder: Encoders.Encoder,
@@ -27,7 +31,7 @@ class Recording(
     private val mkv = File(dir, "RawRec $stamp.mkv")
     private val free = ArrayBlockingQueue<ByteBuffer>(POOL)
     private val queue = ArrayBlockingQueue<Item>(POOL + 64)
-    private class Item(val buf: ByteBuffer?, val w: Int, val h: Int, val ptsUs: Long, val pcm: ByteArray?)
+    private class Item(val buf: ByteBuffer?, val w: Int, val h: Int, val ptsUs: Long, val pcm: ByteArray?, val atNs: Long = 0)
     private var thread: Thread? = null
     @Volatile private var running = false
     @Volatile private var baseUs = Long.MIN_VALUE
@@ -37,6 +41,12 @@ class Recording(
     private var aenc: AudioEncoder? = null
     private var writer: FileWriter? = null
     private var lastMs = -1L
+    private var nextSlot = 0L                 // the next frame of the file to fill
+    private var haveFrame = false
+    private var anchorUs = 0L                 // the newest picture, on the phone's clock (from the first)…
+    private var anchorNs = 0L                 // …and when it came, on this computer's clock
+    @Volatile private var stopNs = 0L
+    private val waiting = java.util.concurrent.atomic.AtomicInteger()   // pictures in the queue
     private var outW = 0
     @Volatile var startedAtMs = 0L; private set
 
@@ -61,7 +71,8 @@ class Recording(
         b!!.clear()
         val src = f.bgra.duplicate(); src.clear(); src.limit(need)
         b.put(src); b.flip()
-        if (!queue.offer(Item(b, f.width, f.height, f.ptsUs, null))) { free.offer(b); dropped++ }
+        waiting.incrementAndGet()
+        if (!queue.offer(Item(b, f.width, f.height, f.ptsUs, null, System.nanoTime()))) { waiting.decrementAndGet(); free.offer(b); dropped++ }
     }
     private var allocated = 0
 
@@ -74,10 +85,16 @@ class Recording(
     private fun loop() {
         try {
             while (running || queue.isNotEmpty()) {
-                val it = queue.poll(100, TimeUnit.MILLISECONDS) ?: continue
-                if (it.pcm != null) { audioItem(it); continue }
-                try { videoItem(it) } finally { free.offer(it.buf!!) }
+                val it = queue.poll(1000L / fps, TimeUnit.MILLISECONDS)
+                if (it != null) {
+                    if (it.pcm != null) audioItem(it)
+                    else try { videoItem(it) } finally { free.offer(it.buf!!); waiting.decrementAndGet() }
+                }
+                // a still screen: the last picture again, a little behind "now" so a late picture keeps its place
+                // (only while no picture waits: a waiting one is newer and goes in its own frame)
+                if (running && waiting.get() == 0) fillTo(phoneNowUs(System.nanoTime()) - LATE_US)
             }
+            fillTo(phoneNowUs(if (stopNs != 0L) stopNs else System.nanoTime()))   // the file lasts until «stop»
             venc?.flush { p -> writer?.writeVideo(p) }
             aenc?.flush { p -> writer?.writeAudio(p) }
         } catch (t: Throwable) {
@@ -98,10 +115,29 @@ class Recording(
             venc = v; aenc = a
             writer = FileWriter(mkv, v.ctx, a?.ctx)
         }
-        var ms = (it.ptsUs - baseUs) / 1000
-        if (ms <= lastMs) ms = lastMs + 1
-        lastMs = ms
+        val t = it.ptsUs - baseUs
+        if (t >= anchorUs || !haveFrame) { anchorUs = t; anchorNs = it.atNs }
+        val slot = (t * fps + 500_000) / 1_000_000
+        if (slot < nextSlot) return                     // this frame of the file already has its picture
+        fillTo(slot - 1, inSlots = true)
+        val ms = slotMs(slot)
         venc!!.encode(VideoFrame(it.w, it.h, it.buf!!, it.ptsUs), ms) { p -> writer!!.writeVideo(p) }
+        lastMs = ms; nextSlot = slot + 1; haveFrame = true
+    }
+
+    private fun slotMs(slot: Long) = slot * 1000 / fps
+    private fun phoneNowUs(ns: Long) = anchorUs + (ns - anchorNs) / 1000
+
+    /** The last picture again for every frame of the file up to [to] (phone µs, or a frame number). */
+    private fun fillTo(to: Long, inSlots: Boolean = false) {
+        val v = venc ?: return
+        if (!haveFrame) return
+        val last = if (inSlots) to else to * fps / 1_000_000
+        while (nextSlot <= last) {
+            val ms = slotMs(nextSlot)
+            v.repeat(ms) { p -> writer!!.writeVideo(p) }
+            lastMs = ms; nextSlot++
+        }
     }
 
     private fun audioItem(it: Item) {
@@ -112,10 +148,11 @@ class Recording(
 
     /** Ends the recording: what waits is written, the file closed and copied into MP4. */
     fun stop(): Result {
+        stopNs = System.nanoTime()
         running = false
         thread?.join(15_000)
         val frames = venc?.frames ?: 0
-        val secs = lastMs.coerceAtLeast(0) / 1000.0
+        val secs = if (lastMs < 0) 0.0 else (lastMs + 1000.0 / fps) / 1000.0
         var out = mkv
         if (error == null && mkv.length() > 0) {
             val mp4 = File(mkv.parentFile, mkv.nameWithoutExtension + ".mp4")
@@ -124,5 +161,9 @@ class Recording(
         return Result(out, secs, frames, dropped, out.length(), encoder.name, outW, height, error)
     }
 
-    companion object { private const val POOL = 6 }
+    companion object {
+        private const val POOL = 6
+        /** How long a picture may be late before its frame is filled with the one before it. */
+        private const val LATE_US = 150_000L
+    }
 }

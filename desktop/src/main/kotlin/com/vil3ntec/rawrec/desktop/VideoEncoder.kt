@@ -73,6 +73,14 @@ class VideoEncoder(
         frames++
     }
 
+    /** The last picture again at [ptsMs] (a still screen): the frame keeps its content when made writable. */
+    fun repeat(ptsMs: Long, out: (AVPacket) -> Unit) {
+        check(av_frame_make_writable(frame) >= 0) { "frame not writable" }
+        frame.pts(ptsMs)
+        send(frame, out)
+        frames++
+    }
+
     fun flush(out: (AVPacket) -> Unit) = send(null, out)
 
     private fun send(f: AVFrame?, out: (AVPacket) -> Unit) {

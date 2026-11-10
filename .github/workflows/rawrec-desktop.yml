@@ -213,9 +213,11 @@ jobs:
           set -e
           O=out/desktop-$VER/e2e; mkdir -p $O
           APP="desktop/build/compose/binaries/main/app/RawRec Desktop"
-          # the runner's own adb drives the screen; the app finds its bundled one by itself (shown in its log)
-          AD=$ANDROID_HOME/platform-tools/adb; "$AD" devices -l
+          # the same adb as the app's (another version would restart adb's server under the app);
+          # the app finds and readies its bundled one by itself (shown in its log)
           ls -la "$APP/lib/app/resources/platform-tools/adb"
+          AD=$RUNNER_TEMP/adb; cp "$APP/lib/app/resources/platform-tools/adb" $AD; chmod +x $AD
+          "$AD" devices -l
           # something moving on the screen the whole time (scrcpy sends a picture when the screen changes)
           "$AD" shell am start -a android.settings.SETTINGS >/dev/null
           ( for i in $(seq 1 60); do "$AD" shell input swipe 800 2000 800 700 300; "$AD" shell input swipe 800 700 800 2000 300; done ) > /dev/null 2>&1 &
@@ -230,6 +232,14 @@ jobs:
           for s in 3 8 13; do ffmpeg -v error -ss $s -i "$F" -frames:v 1 -y $O/frame-${s}s.png; done
           "$AD" exec-out screencap -p > $O/emulator-screen.png || true
           grep -q '^adb: .*rawrec/platform-tools/adb' $O/selftest.txt   # the app's own adb, made runnable
+          # the file is at the chosen 30 frames a second for the whole 15 s, even when the screen stands still
+          python3 - $O/selftest.txt <<'PY2'
+          import re, sys
+          m = re.search(r"^result: .* ([0-9.]+)s frames=(\d+) dropped=(\d+)", open(sys.argv[1]).read(), re.M)
+          secs, frames, dropped = float(m.group(1)), int(m.group(2)), int(m.group(3))
+          print(f"seconds {secs}, frames {frames}, dropped {dropped}")
+          assert 14 <= secs <= 16.5 and frames >= 14 * 30, "file shorter than the recording"
+          PY2
           grep -q 'exit 0' $O/selftest.txt
       - name: Commit the evidence
         if: always()
