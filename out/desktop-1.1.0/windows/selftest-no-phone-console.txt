@@ -1,0 +1,37 @@
+Picked up JAVA_TOOL_OPTIONS: -Drawrec.selftestOut=D:\a\_temp\selftest.log
+rawrec-desktop selftest: os Windows Server 2025 amd64, java 17.0.21
+encoders: h264_mf(gpu), libopenh264(cpu), libsvtav1(cpu)
+adb: D:\a\server\server\desktop\build\compose\binaries\main\app\RawRec Desktop\app\resources\platform-tools\adb.exe
+FAIL: no usable phone: []
+[hevc_nvenc @ 0000027a7570d500] Cannot load nvcuda.dll
+[h264_nvenc @ 0000027a7570d500] Cannot load nvcuda.dll
+[av1_nvenc @ 0000027a7570d500] Cannot load nvcuda.dll
+[hevc_qsv @ 0000027a7570d500] Error initializing a MFX session: unsupported (-3)
+[hevc_qsv @ 0000027a7570d500] The current mfx implementation is not supported, try next mfx implementation.
+[hevc_qsv @ 0000027a7570d500] Error initializing a MFX session: unsupported (-3)
+[h264_qsv @ 0000027a7570d500] Error initializing a MFX session: unsupported (-3)
+[h264_qsv @ 0000027a7570d500] The current mfx implementation is not supported, try next mfx implementation.
+[h264_qsv @ 0000027a7570d500] Error initializing a MFX session: unsupported (-3)
+[hevc_mf @ 0000027a7570d500] could not find any MFT for the given media type
+[hevc_mf @ 0000027a7570d500] could not create MFT
+[h264_mf @ 0000027a7570d500] MFT name: 'H264 Encoder MFT'
+[libopenh264 @ 0000027a7570d500] [OpenH264] this = 0x0000027a7570de90, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0000027a7570d500] [OpenH264] this = 0x0000027a7570de90, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+Svt[info]: -------------------------------------------
+Svt[info]: SVT [version]:	SVT-AV1 Encoder Lib v2.2.0
+Svt[info]: SVT [build]  :	GCC 12.2.0	 64 bit
+Svt[info]: LIB Build date: Nov 16 2024 01:40:57
+Svt[info]: -------------------------------------------
+Svt[info]: Number of logical cores available: 4
+Svt[info]: Number of PPCS 59
+Svt[info]: [asm level on system : up to avx2]
+Svt[info]: [asm level selected : up to avx2]
+Svt[info]: -------------------------------------------
+Svt[info]: SVT [config]: main profile	tier (auto)	level (auto)
+Svt[info]: SVT [config]: width / height / fps numerator / fps denominator 		: 640 / 360 / 30 / 1
+Svt[info]: SVT [config]: bit-depth / color format 					: 8 / YUV420
+Svt[info]: SVT [config]: preset / tune / pred struct 					: 10 / PSNR / random access
+Svt[info]: SVT [config]: gop size / mini-gop size / key-frame type 			: 161 / 16 / key frame
+Svt[info]: SVT [config]: BRC mode / target bitrate (kbps)				: VBR / 2000 
+Svt[info]: SVT [config]: AQ mode / variance boost 					: 2 / 0
+Svt[info]: -------------------------------------------
