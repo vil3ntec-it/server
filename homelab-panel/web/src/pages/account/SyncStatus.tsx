@@ -14,12 +14,15 @@ import { useState } from 'react';
 import { GitMerge, RefreshCw, TriangleAlert } from 'lucide-react';
 
 import { api } from '../../api';
-import { Badge, Card, ConfirmDialog, Empty, Skeleton, toast } from '../../components/ui';
+import { useApp } from '../../app-context';
+import { Badge, Card, Empty, Skeleton, toast } from '../../components/ui';
 import { Cell, Notice, Row, Table, Tabs } from '../../control/ui';
+import { SensitiveDialog } from './console/parts';
 import { AppPicker, CloudProblem, PageHead, fa, moment, useLoad, type AppId, type Scope } from './shared';
 import type { ClientError, SyncConflict, SyncDevice } from './types';
 
 export default function SyncStatus() {
+  const { can } = useApp();
   const [tab, setTab] = useState('devices');
   const [app, setApp] = useState<AppId>('shop');
   const [account, setAccount] = useState('');
@@ -119,7 +122,10 @@ export default function SyncStatus() {
                       <Cell>
                         {c.restored_at
                           ? <Badge tone="good">برگردانده شد</Badge>
-                          : <button className="btn btn-sm" onClick={() => setRestore(c)}>بازگرداندن</button>}
+                          //  مرز در سرور است (فقط admin)؛ دکمه فقط برای نشان دادن پنهان می‌شود
+                          : can('admin')
+                            ? <button className="btn btn-sm" onClick={() => setRestore(c)}>بازگرداندن</button>
+                            : <span className="text-xs text-ink-muted">فقط مدیر</span>}
                       </Cell>
                     </Row>
                   ))}
@@ -156,25 +162,30 @@ export default function SyncStatus() {
         </Card>
       )}
 
-      <ConfirmDialog
-        open={Boolean(restore)}
-        title="بازگرداندنِ نسخهٔ بازنده"
-        message="مقدارِ بازنده به‌شکلِ یک تغییرِ تازه از طرفِ سرور ثبت می‌شود و در دریافتِ بعدیِ همهٔ دستگاه‌ها می‌نشیند. چیزی پاک نمی‌شود و تاریخچه دست نمی‌خورد."
-        onCancel={() => setRestore(null)}
-        onConfirm={async () => {
-          const c = restore;
-          setRestore(null);
-          if (!c) return;
-          try {
-            await api(`/api/account-admin/sync/conflicts/${c.id}/restore`, { body: {} });
-            toast('برگردانده شد');
+      {/*
+       *  ⛔ (۱.۵۰.۷۴، ممیزی §۳-۳) سرورِ حساب بازگرداندن را فقط **با دلیل** می‌دهد؛ تا امروز این پنجره بدنهٔ خالی
+       *  می‌فرستاد و همیشه ۴۰۰ می‌گرفت. حالا: دلیل (۳ تا ۲۰۰) + تأیید + **یک** کلیدِ یکتایی برای همین پنجره — دوبار
+       *  زدن یا تکرار پس از قطعِ شبکه یک opِ بالادست است (پل تکرار را می‌گیرد؛ سرورِ حساب کلیدِ یکتایی ندارد).
+       */}
+      {restore && (
+        <SensitiveDialog
+          key={restore.id}
+          title="بازگرداندنِ نسخهٔ بازنده"
+          effect="مقدارِ بازنده به‌شکلِ یک تغییرِ تازه از طرفِ سرور ثبت می‌شود و در دریافتِ بعدیِ همهٔ دستگاه‌ها می‌نشیند. چیزی پاک نمی‌شود و تاریخچه دست نمی‌خورد."
+          onClose={() => setRestore(null)}
+          onSubmit={async ({ reason, idempotencyKey }) => {
+            await api(`/api/account-admin/sync/conflicts/${encodeURIComponent(String(restore.id))}/restore`, {
+              body: { reason, confirm: true, idempotencyKey },
+            });
+            setRestore(null);
+            toast('برگردانده شد — تأییدشده از سرورِ حساب');
             await conflicts.reload();
             await devices.reload();
-          } catch (e) {
-            toast(e instanceof Error ? e.message : 'نشد', 'bad');
-          }
-        }}
-      />
+          }}
+        >
+          <p className="font-mono text-xs" dir="ltr">{restore.table} · {restore.row_id} · {restore.field}</p>
+        </SensitiveDialog>
+      )}
     </div>
   );
 }

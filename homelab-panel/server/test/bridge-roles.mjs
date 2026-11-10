@@ -272,7 +272,9 @@ const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning',
          HLP_SITESYNC: '0', HLP_TUNNEL: '0', HLP_AI_ENABLED: '0', HLP_AUTOMATION: '0', HLP_STATIONS: '0',
          HLP_ACCOUNT_AUTOSTART: '0', HLP_ACCOUNT_API: `http://127.0.0.1:${fake.address().port}`,
          HLP_ACCOUNT_ADMIN_USER: 'boss', HLP_ACCOUNT_ADMIN_PASSWORD: 'top-secret',
-         HLP_AUTH_RATE_LIMIT: '100000' },
+         //  سنجهٔ نقش است، نه سقفِ نرخ: هر مسیر × سه نقش × دو برنامه از یک IP — با ۱.۵۰.۷۴ از سقفِ ۱۲۰۰ در دقیقهٔ
+         //  سطلِ عمومیِ ‎/api‎ گذشت و مسیرهای آخر ۴۲۹ می‌گرفتند (نه ۴۰۳ و نه مقصد)
+         HLP_AUTH_RATE_LIMIT: '100000', HLP_RATE_API: '100000' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let out = '';
@@ -329,6 +331,10 @@ const SPECIAL = {
   //  انتشارِ مرحله‌ای: مالک با رمزِ درستِ خودش (احرازِ دوباره) تا مقصدِ «فقط ارشد» واقعاً دیده و سنجیده شود
   'PUT /api/account-admin/console/release/stage': { body: { tag: 'tohid-native', version: '2.14.5', percent: 10, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
   'POST /api/account-admin/console/release/stage/end': { body: { tag: 'tohid-native', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
+  //  بازگرداندنِ تعارض (۱.۵۰.۷۴): شناسهٔ تعارض فقط رقم است، و دلیل + تأیید + کلیدِ یکتاییِ رابط
+  'POST /api/account-admin/sync/conflicts/:id/restore': { params: { id: '5' }, body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-sync-0001' } },
+  //  پشتیبانِ دستیِ سرورِ حساب (۱.۵۰.۷۴): تأیید + دلیل + کلیدِ یکتاییِ رابط تا مقصدِ «فقط ارشد» دیده شود
+  'POST /api/account-admin/console/backups': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-backup-0001' } },
   //  سندِ اصلاحیِ مالی: بدنهٔ کامل و رمزِ درستِ مالک تا از احرازِ دوبارهٔ پنل بگذرد (بی کلیدِ سرویس ۴۰۹ می‌گیرد؛
   //  مقصدِ بالادستش را `account-finance.mjs` با کلیدِ سرویس می‌سنجد)
   'POST /api/account-admin/console/finance/adjustments': {
@@ -336,7 +342,8 @@ const SPECIAL = {
   },
 };
 const urlOf = (r, app) => {
-  const p = r.path.replace(/:([A-Za-z_]\w*)/g, (_, k) => (k === 'app' ? app : PARAMS[k] || 'x1'));
+  const own = SPECIAL[`${r.method} ${r.base}${r.path}`]?.params || {};
+  const p = r.path.replace(/:([A-Za-z_]\w*)/g, (_, k) => (k === 'app' ? app : own[k] || PARAMS[k] || 'x1'));
   const extra = SPECIAL[`${r.method} ${r.base}${r.path}`]?.query || '';
   return `${r.base}${p}?app=${app}&version=2.14.4&scope=all&limit=5${extra}`;
 };

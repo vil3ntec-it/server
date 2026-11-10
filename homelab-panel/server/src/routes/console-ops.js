@@ -151,6 +151,81 @@ export function mountConsoleOps(router, d) {
     res.json({ panel, account, fetchedAt: Date.now() });
   }));
 
+  /* ───── ۴.۹ پشتیبانِ خودِ سرورِ حساب (۱.۵۰.۷۴، ممیزی §۳-۴ — تا امروز فقط در کنسولِ وبِ سرورِ حساب) ─────
+   *  ⛔ پوشهٔ میزبان (`dir`، `path`، `file` ِ کامل) از پل بیرون نمی‌رود — فقط نامِ پرونده؛ تمرینِ بازیابی فقط عدد و نشان
+   *     (همان قاعدهٔ `restore-drill.js` ِ shop: «هرگز متنِ خطا»). خواندن همان `minRole` ِ «سلامت».
+   *  ⛔ پشتیبانِ دستی: admin (آن‌جا ارشد) + تأیید + دلیل + کلیدِ یکتایی. سرورِ حساب برای ‎POST /backups‎ کلیدِ یکتایی ندارد
+   *     و هر بار یک pg_dump ِ تازه می‌دواند ⇒ پل: همان کلید (همان کاربر) ⇒ همان پاسخ با `replayed`؛ کلید با دلیلِ دیگر ⇒ ۴۰۹؛
+   *     هر پشتیبانِ در حالِ ساخت ⇒ ۴۰۹ `backup_in_progress` (یکی در هر لحظه، برای همهٔ نشست‌ها). شکست در یاد نمی‌ماند.
+   */
+  const baseName = (f) => String(f || '').split(/[\\/]/).pop().slice(0, 200);
+  const numOr = (v) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : null);
+  const backupRow = (b) => ({
+    kind: String(b?.kind || '').slice(0, 20), file: baseName(b?.file), bytes: numOr(b?.bytes), createdAt: numOr(b?.createdAt),
+    encrypted: b?.encrypted === true, sha256: /^[0-9a-f]{64}$/.test(String(b?.sha256 || '')) ? String(b.sha256) : '',
+  });
+  const drillRow = (r) => (r && typeof r === 'object' ? {
+    at: numOr(r.at), ok: r.ok === true, restoredMs: numOr(r.restoredMs), verifiedMs: numOr(r.verifiedMs), backupAgeMs: numOr(r.backupAgeMs),
+    tables: numOr(r.tables), rows: numOr(r.rows), diffs: numOr(r.diffs),
+    withinTargets: typeof r.withinTargets === 'boolean' ? r.withinTargets : null,
+    error: /^[a-z_]{1,40}$/.test(String(r.error || '')) ? String(r.error) : null,
+  } : null);
+  router.get('/console/backups', requireModule('health'), guard(async (req, res) => {
+    const out = await cloudRaw('GET', '/api/admin/backups');
+    const enc = out?.encryption || {};
+    const d = out?.drill;
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      available: true, fetchedAt: Date.now(),
+      enabled: typeof out?.enabled === 'boolean' ? out.enabled : null,
+      backups: (Array.isArray(out?.backups) ? out.backups : []).slice(0, 500).map(backupRow),
+      encryption: { configured: enc.configured === true, required: enc.required === true, warning: String(enc.warning || '').slice(0, 300) },
+      drill: d && typeof d === 'object' ? { last: drillRow(d.last), lastOkAt: numOr(d.lastOkAt), count: numOr(d.count) } : null,
+    });
+  }));
+
+  const BACKUP_TTL = 10 * 60_000;
+  const backupSlots = new Map();      // `${userId}:${key}` ⇒ { reason, at, done, promise }
+  let backupRunning = null;
+  const conflictErr = (code, message) => Object.assign(new Error(message), { code, status: 409 });
+  router.post('/console/backups', requireRole('admin'), guard(async (req, res) => {
+    if (req.body?.confirm !== true) throw badInput('confirm_required', 'این کار پیش از فرستادن تأیید می‌خواهد');
+    const reason = String(req.body?.reason ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
+    if (reason.length < 3 || reason.length > 200) throw badInput('reason_required', 'دلیل را بنویسید (۳ تا ۲۰۰ نویسه) — در دفترِ پنل می‌ماند');
+    const key = String(req.body?.idempotencyKey ?? '').trim();
+    if (!key) throw badInput('idempotency_key_required', 'کلیدِ یکتایی لازم است (رابطِ پنل خودش می‌فرستد)');
+    if (!IDEM_RE.test(key)) throw badInput('bad_idempotency_key', 'کلیدِ یکتایی نامعتبر است');
+    const now = Date.now();
+    for (const [k, v] of backupSlots) if (v.done && now - v.at > BACKUP_TTL) backupSlots.delete(k);
+    const slotKey = `${req.user?.id}:${key}`;
+    const seen = backupSlots.get(slotKey);
+    if (seen) {
+      if (seen.reason !== reason) throw conflictErr('idempotency_key_reused', 'این کلیدِ یکتایی برای کارِ دیگری به کار رفته است');
+      return res.json({ ...(await seen.promise), replayed: true });
+    }
+    if (backupRunning) throw conflictErr('backup_in_progress', 'یک پشتیبانِ سرورِ حساب همین حالا در حالِ ساخت است');
+    const slot = { reason, at: now, done: false, promise: null };
+    backupRunning = slot;
+    backupSlots.set(slotKey, slot);
+    slot.promise = (async () => {
+      try {
+        const out = await cloudRaw('POST', '/api/admin/backups', { body: { kind: 'manual' } });
+        const backup = backupRow(out);
+        audit({ actor: actorOf(req), action: 'account.backup.created', entity: 'account_server', entityId: 'backup',
+          detail: { file: backup.file, bytes: backup.bytes, encrypted: backup.encrypted, reason } });
+        slot.done = true;
+        slot.at = Date.now();
+        return { ok: true, backup, confirmedAt: slot.at };
+      } catch (err) {
+        backupSlots.delete(slotKey);   //  شکست ⇒ همان کلید دوباره قابلِ تلاش است
+        throw err;
+      } finally {
+        if (backupRunning === slot) backupRunning = null;
+      }
+    })();
+    res.status(201).json(await slot.promise);
+  }));
+
   /* ───── ۴.۱۳ یکپارچه‌سازی: سرورِ حساب + درگاهِ همین پنل ───── */
   router.get('/console/ops/integrations', requireModule('integrations'), guard(async (req, res) => {
     const gateway = {

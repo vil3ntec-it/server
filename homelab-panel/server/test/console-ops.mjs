@@ -42,6 +42,7 @@ const seen = [];
 let caps = ['actor.v1', 'ops.v1', 'release-stage.v1'];
 let down = false;
 let alertsFeed = [];
+let backupFail = false;
 const INCIDENTS = [
   { id: 'inc_1', source: 'client', app: 'shop', title: '=HYPERLINK("http://x")', kind: 'k', status: 'open', priority: 'p2', occurrences: 3, firstSeenAt: NOW - 9e5, lastSeenAt: NOW, lastVersion: '2.14.5', supportThreadId: '', version: 2 },
   { id: 'inc_2', source: 'server', app: 'server', title: 'GET /api/x — "boom", again', kind: 'Error', status: 'resolved', priority: 'p3', occurrences: 1, firstSeenAt: NOW - 9e5, lastSeenAt: NOW - 1e5, lastVersion: '2.14.5', supportThreadId: 'thr_1', version: 4 },
@@ -78,6 +79,18 @@ const fake = http.createServer((req, res) => {
     }
     if (p === '/api/admin/ops/alerts/evaluate') return j(200, { evaluatedAt: NOW, rules: [] });
     if (/^\/api\/admin\/ops\/alerts\/[^/]+\/(ack|resolve)$/.test(p)) return j(200, { alert: { id: 'alr_1', status: 'acknowledged' }, changed: true });
+    //  ۱.۵۰.۷۴ (ممیزی §۳-۴): پشتیبانِ خودِ سرورِ حساب — همان شکلِ ‎admin.js /backups‎ ِ shop (با پوشهٔ میزبان)
+    if (p === '/api/admin/backups' && req.method === 'GET') {
+      return j(200, { backups: [{ kind: 'daily', file: 'shop-20261110.sql.gz.enc', path: '/var/lib/shop/backups/daily/shop-20261110.sql.gz.enc', bytes: 12345,
+        createdAt: NOW - 3600e3, encrypted: true, sha256: 'ab'.repeat(32) }], dir: '/var/lib/shop/backups', enabled: true,
+        encryption: { configured: false, required: false, warning: 'پشتیبان‌ها رمز ندارند' },
+        drill: { last: { at: NOW - 86400e3, ok: true, restoredMs: 4000, backupAgeMs: 60000, error: null }, lastOkAt: NOW - 86400e3, recent: [], count: 3 } });
+    }
+    if (p === '/api/admin/backups' && req.method === 'POST') {
+      if (backupFail) return j(500, { error: { code: 'backup_failed', message: 'pg_dump شکست' } });
+      return void setTimeout(() => j(201, { file: '/var/lib/shop/backups/manual/shop-manual-1.sql.gz', bytes: 999, kind: 'manual', createdAt: Date.now(),
+        encrypted: false, sha256: 'cd'.repeat(32), manifest: 'm1' }), 400);
+    }
     if (p === '/api/admin/release/stage') {
       if (req.method === 'GET') return j(200, { stages: { 'tohid-native': null }, version: 1 });
       if (req.method === 'PUT') return j(200, { ok: true, stages: { 'tohid-native': { version: body?.version, percent: body?.percent } } });
@@ -239,8 +252,67 @@ try {
   const acts = (stAudit.json?.rows || []).map((r) => r.action);
   check('دفترِ پنل: set، ended، denied و reauth_failed ِ همین کار', ['account.release_stage.set', 'account.release_stage.ended', 'account.release_stage.denied', 'account.release_stage.reauth_failed'].every((a) => acts.includes(a)), acts.join(' '));
 
+  /*
+   *  ══ ۱.۵۰.۷۴ — ممیزی §۳-۴: پشتیبانِ خودِ سرورِ حساب در «سلامت» (تا امروز فقط در کنسولِ وبِ سرورِ حساب) ══
+   *  خواندن: فهرست، رمزنگاری، تمرینِ بازیابی — **بی** پوشهٔ میزبان. نوشتن (پشتیبانِ دستی): admin + تأیید + دلیل +
+   *  کلیدِ یکتایی؛ سرورِ حساب کلید ندارد ⇒ تکرار و هم‌زمانی را پل می‌گیرد (یک pg_dump، نه دو).
+   */
+  console.log('\n── پشتیبانِ سرورِ حساب: فهرست بی پوشه، پشتیبانِ دستی یک بار ──');
+  const bkRead = await api('GET', '/api/account-admin/console/backups', undefined, H(T.view));
+  check('viewer: فهرستِ پشتیبان با رمزنگاری و تمرینِ بازیابی، با زمانِ رسیدن',
+    bkRead.status === 200 && bkRead.json?.available === true && bkRead.json?.fetchedAt > 0 && bkRead.json?.backups?.[0]?.file === 'shop-20261110.sql.gz.enc'
+      && bkRead.json?.backups?.[0]?.bytes === 12345 && bkRead.json?.encryption?.configured === false && bkRead.json?.encryption?.warning
+      && bkRead.json?.drill?.lastOkAt === NOW - 86400e3 && bkRead.json?.enabled === true, bkRead.text.slice(0, 300));
+  check('⛔ پوشه‌های میزبانِ سرورِ حساب در پاسخ نیست (نه `dir`، نه `path`)', !bkRead.text.includes('/var/lib') && !('dir' in (bkRead.json || {})), bkRead.text.slice(0, 300));
+  const bkPosts = () => seen.filter((x) => x.method === 'POST' && x.path === '/api/admin/backups').length;
+  const bkBody = (k, extra = {}) => ({ reason: 'پیش از به‌روزرسانی', confirm: true, idempotencyKey: `backup-key-${k}-0001`, ...extra });
+  const bkDenied = [
+    await api('POST', '/api/account-admin/console/backups', bkBody('v'), H(T.view)),
+    await api('POST', '/api/account-admin/console/backups', bkBody('o'), H(T.op)),
+  ];
+  check('⛔ پشتیبانِ دستی فقط admin (سرورِ حساب: ارشد) — viewer و operator ۴۰۳، بی درخواست به بالادست',
+    bkDenied.every((r) => r.status === 403) && bkPosts() === 0, bkDenied.map((r) => r.status).join(' '));
+  const bkBad = [
+    await api('POST', '/api/account-admin/console/backups', bkBody('a', { confirm: false }), H(T.admin2)),
+    await api('POST', '/api/account-admin/console/backups', bkBody('a', { reason: 'ab' }), H(T.admin2)),
+    await api('POST', '/api/account-admin/console/backups', bkBody('a', { idempotencyKey: '' }), H(T.admin2)),
+  ];
+  check('⛔ بی تأیید / بی دلیل / بی کلید ⇒ ۴۰۰ با کدِ خودش، بی درخواست به بالادست',
+    bkBad.map((r) => `${r.status}:${r.json?.error}`).join(' ') === '400:confirm_required 400:reason_required 400:idempotency_key_required' && bkPosts() === 0,
+    bkBad.map((r) => `${r.status}:${r.json?.error}`).join(' '));
+  const [bk1, bk2] = await Promise.all([
+    api('POST', '/api/account-admin/console/backups', bkBody('a'), H(T.admin2)),
+    api('POST', '/api/account-admin/console/backups', bkBody('b'), H(T.owner)),
+  ]);
+  check('⛔ دو پنجرهٔ هم‌زمان ⇒ یک پشتیبان در سرورِ حساب؛ دومی ۴۰۹ backup_in_progress',
+    bkPosts() === 1 && [bk1.status, bk2.status].sort().join(',') === '201,409' && [bk1, bk2].some((r) => r.json?.error === 'backup_in_progress'),
+    `${bk1.status}/${bk1.json?.error} ${bk2.status}/${bk2.json?.error} posts=${bkPosts()}`);
+  check('بدنهٔ بالادست فقط ‎{kind: "manual"}‎ (نه دلیل، نه کلید)', JSON.stringify(lastTo('/api/admin/backups')?.body) === JSON.stringify({ kind: 'manual' }), JSON.stringify(lastTo('/api/admin/backups')));
+  check('⛔ پاسخ: نامِ پرونده، اندازه و رمزنگاری — بی پوشهٔ میزبان', bk1.json?.backup?.file === 'shop-manual-1.sql.gz' && bk1.json?.backup?.bytes === 999
+    && bk1.json?.backup?.encrypted === false && !bk1.text.includes('/var/lib'), bk1.text.slice(0, 300));
+  const bkAgain = await api('POST', '/api/account-admin/console/backups', bkBody('a'), H(T.admin2));
+  check('همان پنجره دوباره ⇒ همان پاسخ با replayed، بی پشتیبانِ دوم', bkAgain.status === 200 && bkAgain.json?.replayed === true && bkPosts() === 1,
+    `${bkAgain.status} posts=${bkPosts()}`);
+  const bkReuse = await api('POST', '/api/account-admin/console/backups', bkBody('a', { reason: 'دلیلِ دیگر' }), H(T.admin2));
+  check('همان کلید با دلیلِ دیگر ⇒ ۴۰۹', bkReuse.status === 409 && bkReuse.json?.error === 'idempotency_key_reused', `${bkReuse.status} ${bkReuse.json?.error}`);
+  backupFail = true;
+  const bkF1 = await api('POST', '/api/account-admin/console/backups', bkBody('f'), H(T.admin2));
+  backupFail = false;
+  const bkF2 = await api('POST', '/api/account-admin/console/backups', bkBody('f'), H(T.admin2));
+  check('شکستِ بالادست با کدِ خودش و در یادِ پل نمی‌ماند (همان کلید دوباره می‌رود و این بار ساخته می‌شود)',
+    bkF1.status === 500 && bkF1.json?.error === 'backup_failed' && bkF2.status === 201 && bkPosts() === 3, `${bkF1.status} ${bkF1.json?.error} ${bkF2.status} posts=${bkPosts()}`);
+  const bkAud = await api('GET', '/api/control/audit?q=account.backup&limit=20&offset=0', undefined, H(T.owner));
+  const bkRows = (bkAud.json?.rows || []).filter((r) => r.action === 'account.backup.created');
+  check('دفترِ پنل: یک ردیف برای هر پشتیبانِ ساخته‌شده، با دلیل و نامِ پرونده (بی پوشه)',
+    bkRows.length === 2 && bkRows.every((r) => String(r.detail).includes('پیش از به‌روزرسانی') && String(r.detail).includes('shop-manual-1.sql.gz') && !String(r.detail).includes('/var/lib')),
+    JSON.stringify(bkRows.map((r) => r.detail)));
+  down = true;
+  const bkDown = await api('GET', '/api/account-admin/console/backups', undefined, H(T.view));
+  down = false;
+  check('سرورِ حسابِ خاموش ⇒ خطا با کدِ خودش (db_unavailable)، نه فهرستِ خالی', bkDown.status === 503 && bkDown.json?.error === 'db_unavailable', `${bkDown.status} ${bkDown.text.slice(0, 120)}`);
+
   console.log('\n── پورتِ عمومی ──');
-  for (const p of ['/api/account-admin/console/ops/health', '/api/account-admin/console/ops/incidents.csv', '/api/account-admin/console/release/stage']) {
+  for (const p of ['/api/account-admin/console/ops/health', '/api/account-admin/console/ops/incidents.csv', '/api/account-admin/console/release/stage', '/api/account-admin/console/backups']) {
     const r = await api('GET', p, undefined, H(T.owner), `http://127.0.0.1:${PUBLIC}`);
     check(`پورتِ عمومی ${p} ⇒ ۴۰۴`, r.status === 404, `${r.status}`);
   }

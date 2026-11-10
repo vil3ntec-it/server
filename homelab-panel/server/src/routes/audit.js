@@ -28,6 +28,8 @@ const router = Router();
 router.use(requireAuth, requireRole('admin'));
 
 const SOURCES = ['all', 'panel', 'account'];
+/** همان شکلِ شناسهٔ دکانِ پل (`idOf` ِ `account-admin.js`) */
+const SHOP_RE = /^[A-Za-z0-9_-]{1,80}$/;
 const MAX_WINDOW = 5000;
 const ACCOUNT_CAP = 500;
 
@@ -56,9 +58,18 @@ function panelUnion() {
   return parts.length ? parts.join(' UNION ALL ') : null;
 }
 
-function panelWhere({ q, result, actor }) {
+/** نویسه‌های ویژهٔ LIKE (`%` و `_`) در شناسهٔ دکان نویسه‌اند، نه نویسه‌جایگزین */
+const likeEsc = (v) => String(v).replace(/[\\%_]/g, (c) => `\\${c}`);
+
+function panelWhere({ q, result, actor, shop }) {
   const where = [];
   const args = [];
+  if (shop) {
+    //  ⛔ (۱.۵۰.۷۴، ۶-۷) «یک دکان» در دو دفترِ پنل: هدفِ «…:<id>» (مثلِ `shop:<id>`) یا رشتهٔ دقیقِ "<id>" در جزئیاتِ
+    //     JSON — نه زیررشتهٔ خام (s1 ردیف‌های s10 را نمی‌آورد)
+    where.push("(target LIKE ? ESCAPE '\\' OR detail LIKE ? ESCAPE '\\')");
+    args.push(`%:${likeEsc(shop)}`, `%"${likeEsc(shop)}"%`);
+  }
   if (q) {
     where.push('(action LIKE ? OR actor LIKE ? OR target LIKE ? OR detail LIKE ?)');
     const like = `%${q}%`;
@@ -119,7 +130,8 @@ function accountRow(r) {
 async function accountWindow(filters, n) {
   const want = Math.min(ACCOUNT_CAP, Math.max(1, n));
   try {
-    const out = await cloudRaw('GET', '/api/admin/audit', { query: { limit: want } });
+    //  ⛔ «یک دکان» سمتِ **سرورِ حساب** (`shopId` ِ ‎admin.js /audit‎) — نه پالایشِ محلیِ ۵۰۰ ردیفِ آخر
+    const out = await cloudRaw('GET', '/api/admin/audit', { query: { limit: want, ...(filters.shop ? { shopId: filters.shop } : {}) } });
     const raw = Array.isArray(out?.entries) ? out.entries : Array.isArray(out?.audit) ? out.audit : [];
     const q = (filters.q || '').toLowerCase();
     const rows = raw.map(accountRow).filter((r) => {
@@ -138,10 +150,13 @@ router.get('/', async (req, res) => {
   const source = SOURCES.includes(String(req.query.source)) ? String(req.query.source) : 'all';
   const limit = int(req.query.limit, 50, 1, 200);
   const offset = int(req.query.offset, 0, 0, MAX_WINDOW);
+  const shop = req.query.shop ? String(req.query.shop) : '';
+  if (shop && !SHOP_RE.test(shop)) return res.status(400).json({ error: 'bad_shop', message: 'شناسهٔ دکان معتبر نیست' });
   const filters = {
     q: req.query.q ? String(req.query.q).slice(0, 80) : '',
     result: ['ok', 'failed'].includes(String(req.query.result)) ? String(req.query.result) : '',
     actor: req.query.actor ? String(req.query.actor).slice(0, 60) : '',
+    shop,
   };
   const sources = {};
   let rows = [];
@@ -170,7 +185,7 @@ router.get('/', async (req, res) => {
 
   res.setHeader('Cache-Control', 'no-store');
   //  ⛔ هرس با بایگانی (۱.۵۰.۷۱): فقط نام و اندازهٔ پرونده‌ها؛ محتوا از این در بیرون نمی‌رود
-  res.json({ rows, total, limit, offset, source, sources, archive: archiveInfo(), generatedAt: Date.now() });
+  res.json({ rows, total, limit, offset, source, shop: shop || null, sources, archive: archiveInfo(), generatedAt: Date.now() });
 });
 
 /* ⛔ فقط‌خواندنی: هیچ نوشتن، ویرایش یا پاک کردنی از این در نیست */

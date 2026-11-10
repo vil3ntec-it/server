@@ -159,6 +159,7 @@ try {
     ['/control/vault', 'گاوصندوق'],
     ['/control/monitoring', 'پایش'],
     //  ⛔ مدیر (همین آزمون) دفترِ **یکپارچه** را می‌بیند — فاز ۱ (۶-۷)، `pages/hubs.tsx`؛ بقیه همان «دفتر رخدادها»
+    //  (از ۱.۵۰.۷۴ ⇒ ‎/logs?tab=audit‎ ⇒ ‎/shop?tab=audit‎: همان ماژول در بخشِ فروشگاه)
     ['/control/audit', 'دفترِ رخدادِ یکپارچه'],
     ['/monitoring', 'مانیتورینگ'],
     ['/logs', 'لاگ'],
@@ -204,7 +205,10 @@ try {
     ['/shop?tab=health', 'زنجیرهٔ سابقه (SEC-02)'],
     ['/shop?tab=settings', 'تنظیماتِ زنده'],
     ['/shop?tab=integrations', 'سرویس‌های بیرونی'],
-    ['/shop?tab=audit', 'دفترِ پنل — کارهای پلِ سرورِ حساب'],
+    //  ⛔ ۱.۵۰.۷۴ (۶-۷): مدیر در ماژولِ «دفترِ رخداد» دفترِ **یکپارچه** را می‌بیند (تا ۱.۵۰.۷۳ دو کارت؛ آن‌ها حالا مالِ viewer/operator اند)
+    ['/shop?tab=audit', 'دفترِ رخدادِ یکپارچه'],
+    //  و نشانیِ کهنهٔ «سرورِ حساب ← دفترِ ممیزی» برای مدیر به همان می‌رسد
+    ['/account-server?tab=audit', 'دفترِ رخدادِ یکپارچه'],
     ['/sales', 'فروش'],
     ['/plans', 'اشتراک‌ها حالا در بخشِ خودِ هر برنامه‌اند'],
     ['/plans?tab=discounts', 'اشتراک‌ها حالا در بخشِ خودِ هر برنامه‌اند'],
@@ -238,7 +242,7 @@ try {
   /*  صفحه‌هایی که از سرورِ حساب می‌خوانند — فقط این‌ها حق دارند ۴۰۹/۵۰۳ بدهند.  */
   const ACCOUNT_PAGES = new Set(['/subscriptions', '/subscriptions?app=pump', '/subscriptions?app=pump&tab=plans', '/codes?app=pump', '/stations#codes', '/shop', '/shop?tab=subs', '/stations#subs', '/shop?tab=subs#', '/shop?tab=codes', '/customers', '/customers?app=shop', '/sales', '/plans', '/plans?tab=discounts', '/notices', '/support', '/sync', '/logins', '/discounts', '/discounts?app=pump',
     '/stations?view=codes#subs', '/stations?view=sales#subs', '/shop?tab=subs&view=groups', '/shop?tab=subs&view=discounts',
-    '/plans?tab=codes&app=shop', '/plans?tab=requests', '/customers?tab=visitors&app=pump', '/subscriptions?tab=reps&app=shop', '/account-server', '/account-server?tab=email', '/account-server?tab=status',
+    '/plans?tab=codes&app=shop', '/plans?tab=requests', '/customers?tab=visitors&app=pump', '/subscriptions?tab=reps&app=shop', '/account-server', '/account-server?tab=email', '/account-server?tab=status', '/account-server?tab=audit',
     '/vip-codes', '/vip-codes?app=pump', '/visitors',
     '/shop?tab=shops', '/shop?tab=finance', '/shop?tab=versions', '/shop?tab=health', '/shop?tab=settings', '/shop?tab=integrations', '/shop?tab=audit']);
 

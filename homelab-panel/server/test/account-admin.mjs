@@ -554,7 +554,12 @@ const fake = http.createServer((req, res) => {
       if (!u.searchParams.get('account')) return j(400, { error: { code: 'account_required', message: 'شناسهٔ حساب لازم است' } });
       return j(200, { conflicts: [{ id: 5, app: 'shop', account: { kind: 'shop', id: 's1' }, table: 'products', row_id: 'p1', field: 'price', loser_value: 1, winner_value: 2, loser_op_id: 'o1', winner_op_id: 'o2', loser_device: 'dev-1', winner_device: 'dev-2', at: NOW - 3600e3, restored_at: null }] });
     }
-    if ((m = /^\/api\/admin\/sync\/conflicts\/([^/]+)\/restore$/.exec(p)) && req.method === 'POST') return j(200, { ok: true, head: 11 });
+    if ((m = /^\/api\/admin\/sync\/conflicts\/([^/]+)\/restore$/.exec(p)) && req.method === 'POST') {
+      //  ۱.۵۰.۷۴: «۷» کند است (دو کلیکِ هم‌زمان) و «۴۰۴» پیدا نمی‌شود (شکست نباید در حافظهٔ پل بماند)
+      if (m[1] === '404') return j(404, { error: { code: 'conflict_not_found', message: 'این تعارض پیدا نشد' } });
+      if (m[1] === '7') return void setTimeout(() => j(200, { ok: true, head: 12 }), 400);
+      return j(200, { ok: true, head: 11 });
+    }
     if (p === '/api/admin/sync/errors') return j(200, { errors: [{ id: 'err1', app: 'shop', account_kind: 'shop', account_id: 's1', device_id: 'dev-1', user_id: 'u1', tenant_id: 's1', app_version: '2.1.0', version: '', platform: 'android', message: 'خطای آزمایشی', stack: '', at: NOW - 60e3, created_at: NOW - 60e3 }] });
 
     //  ورودها
@@ -651,7 +656,14 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/email/test' && req.method === 'POST') return j(200, { ok: true });
     if (p === '/api/admin/push') return j(200, { push: { enabled: false, project: '', tokens: 0 } });
     if (p === '/api/admin/sms') return j(200, { sms: { provider: 'none', ready: false, keySet: false } });
-    if (p === '/api/admin/audit') return j(200, { entries: [{ id: 1, action: 'admin.vip_code_created', target_id: 'v1', created_at: NOW }] });
+    if (p === '/api/admin/audit') {
+      //  ۱.۵۰.۷۴: پالایشِ دکان سمتِ سرورِ حساب (`shopId`) — همان `admin.js /audit` ِ shop
+      const entries = [{ id: 1, action: 'admin.vip_code_created', target_id: 'v1', created_at: NOW, shop_id: null },
+        { id: 2, action: 'admin.subscription_set', target_type: 'subscription', target_id: 'sub9', created_at: NOW - 1000, shop_id: 'q7' },
+        { id: 3, action: 'admin.subscription_set', target_type: 'subscription', target_id: 'sub10', created_at: NOW - 2000, shop_id: 'q70' }];
+      const shopId = u.searchParams.get('shopId');
+      return j(200, { entries: shopId ? entries.filter((e) => e.shop_id === shopId) : entries });
+    }
 
     /* ─── کنسولِ فروشگاه (فاز ۲) — همان شکلِ ‎lib/system-health.js‎ و ‎admin-release/sync/pump‎ ─── */
     const unknownRoute = () => j(401, { error: { code: 'invalid_token', message: 'نشست شما منقضی شده است، دوباره وارد شوید' } });
@@ -1293,10 +1305,65 @@ try {
   check('تعارض بی شناسهٔ حساب، همان ۴۰۰ی خودِ سرورِ حساب', syncNoAcc.status === 400 && syncNoAcc.json?.error === 'account_required', `${syncNoAcc.status}`);
   const syncCf = await api('GET', '/api/account-admin/sync/conflicts?app=shop&account=s1', undefined, auth);
   check('تعارض‌ها با جدول، ردیف و خانه', syncCf.status === 200 && syncCf.json?.conflicts?.[0]?.field === 'price');
-  const syncRestore = await api('POST', '/api/account-admin/sync/conflicts/5/restore', { reason: 'دلیلِ آزمون' }, auth);
-  check('بازگرداندنِ تعارض', syncRestore.status === 200 && last()?.path === '/api/admin/sync/conflicts/5/restore');
-  //  ⛔ سرورِ حساب بی دلیل ۴۰۰ می‌دهد (reason_required) — پل دلیل را می‌برد
-  check('⛔ دلیلِ بازگرداندن به سرورِ حساب می‌رسد', last()?.body?.reason === 'دلیلِ آزمون', JSON.stringify(last()?.body));
+  /*
+   *  ⛔ ۱.۵۰.۷۴ (ممیزی §۳-۳): «بازگرداندن» تا امروز از رابط بدنهٔ خالی می‌فرستاد ⇒ همیشه ۴۰۰ ِ سرورِ حساب. حالا پل
+   *  پیش از هر درخواست می‌سنجد: دلیلِ ۳ تا ۲۰۰، `confirm: true`، کلیدِ یکتاییِ رابط. و چون سرورِ حساب برای
+   *  بازگرداندن کلیدِ یکتایی ندارد (هر بار یک opِ تازه)، تکرار را **خودِ پل** می‌گیرد.
+   */
+  const restoreCalls = (id) => seen.filter((x) => x.method === 'POST' && x.path === `/api/admin/sync/conflicts/${id}/restore`).length;
+  const rKey = (s) => `restore-key-${s}-0001`;
+  const rNo = [
+    await api('POST', '/api/account-admin/sync/conflicts/5/restore', { confirm: true, idempotencyKey: rKey('a') }, auth),
+    await api('POST', '/api/account-admin/sync/conflicts/5/restore', { reason: 'اب', confirm: true, idempotencyKey: rKey('a') }, auth),
+    await api('POST', '/api/account-admin/sync/conflicts/5/restore', { reason: 'د'.repeat(201), confirm: true, idempotencyKey: rKey('a') }, auth),
+    await api('POST', '/api/account-admin/sync/conflicts/5/restore', { reason: 'دلیلِ آزمون', idempotencyKey: rKey('a') }, auth),
+    await api('POST', '/api/account-admin/sync/conflicts/5/restore', { reason: 'دلیلِ آزمون', confirm: true }, auth),
+    await api('POST', '/api/account-admin/sync/conflicts/5/restore', { reason: 'دلیلِ آزمون', confirm: true, idempotencyKey: 'bad key!' }, auth),
+  ];
+  check('⛔ بازگرداندن بی دلیل / دلیلِ کوتاه / بلند / بی تأیید / بی کلید / کلیدِ بد ⇒ ۴۰۰ با کدِ خودش',
+    rNo.map((r) => `${r.status}:${r.json?.error}`).join(' ') === '400:reason_required 400:reason_required 400:reason_too_long 400:confirm_required 400:idempotency_key_required 400:bad_idempotency_key',
+    rNo.map((r) => `${r.status}:${r.json?.error}`).join(' '));
+  check('⛔ و هیچ‌کدام به سرورِ حساب نرفت', restoreCalls(5) === 0, String(restoreCalls(5)));
+  const syncRestore = await api('POST', '/api/account-admin/sync/conflicts/5/restore', { reason: '  دلیلِ آزمون  ', confirm: true, idempotencyKey: rKey('a') }, auth);
+  check('بازگرداندنِ تعارض', syncRestore.status === 200 && last()?.path === '/api/admin/sync/conflicts/5/restore' && syncRestore.json?.ok === true,
+    `${syncRestore.status} ${JSON.stringify(syncRestore.json)}`);
+  //  ⛔ سرورِ حساب بی دلیل ۴۰۰ می‌دهد (reason_required) — پل دلیل را می‌برد، و فقط دلیل را (نه تأیید، نه کلید)
+  check('⛔ دلیلِ بازگرداندن به سرورِ حساب می‌رسد', JSON.stringify(last()?.body) === JSON.stringify({ reason: 'دلیلِ آزمون' }), JSON.stringify(last()?.body));
+  const rAgain = await api('POST', '/api/account-admin/sync/conflicts/5/restore', { reason: 'دلیلِ آزمون', confirm: true, idempotencyKey: rKey('a') }, auth);
+  check('⛔ همان پنجره دوباره (همان کلید) ⇒ همان پاسخ با replayed، بی opِ دوم در سرورِ حساب',
+    rAgain.status === 200 && rAgain.json?.replayed === true && restoreCalls(5) === 1, `${rAgain.status} ${JSON.stringify(rAgain.json)} calls=${restoreCalls(5)}`);
+  const rReuse = await api('POST', '/api/account-admin/sync/conflicts/5/restore', { reason: 'دلیلِ دیگر', confirm: true, idempotencyKey: rKey('a') }, auth);
+  check('⛔ همان کلید با دلیلِ دیگر ⇒ ۴۰۹', rReuse.status === 409 && rReuse.json?.error === 'idempotency_key_reused', `${rReuse.status} ${rReuse.json?.error}`);
+  const rOther = await api('POST', '/api/account-admin/sync/conflicts/5/restore', { reason: 'دوباره', confirm: true, idempotencyKey: rKey('b') }, auth);
+  check('⛔ همان تعارض با پنجرهٔ دیگر پس از بازگرداندن ⇒ ۴۰۹ already_restored، بی opِ دوم (مقدارِ تازه‌تر را رو نمی‌نویسد)',
+    rOther.status === 409 && rOther.json?.error === 'already_restored' && restoreCalls(5) === 1, `${rOther.status} ${rOther.json?.error} calls=${restoreCalls(5)}`);
+  //  ⛔ گذرِ رخنه‌یابی: سرورِ حساب شناسه را با `Number(id)` می‌خواند ⇒ «05» و «5e0» همان تعارضِ ۵ است؛ پل نباید با
+  //     نوشتنِ دیگرِ همان عدد از «already_restored» بگذرد. شناسهٔ تعارض فقط رقم است و یک شکل دارد.
+  const rAlias = [
+    await api('POST', '/api/account-admin/sync/conflicts/05/restore', { reason: 'دوباره', confirm: true, idempotencyKey: rKey('f') }, auth),
+    await api('POST', '/api/account-admin/sync/conflicts/5e0/restore', { reason: 'دوباره', confirm: true, idempotencyKey: rKey('g') }, auth),
+  ];
+  check('⛔ «05» ⇒ همان تعارضِ ۵ (already_restored)؛ «5e0» ⇒ ۴۰۰ bad_id — هیچ opِ دوم',
+    `${rAlias[0].status}:${rAlias[0].json?.error} ${rAlias[1].status}:${rAlias[1].json?.error}` === '409:already_restored 400:bad_id' && restoreCalls(5) === 1
+      && seen.every((x) => !/conflicts\/(05|5e0)\/restore/.test(x.path)),
+    `${rAlias.map((r) => `${r.status}:${r.json?.error}`).join(' ')} calls=${restoreCalls(5)}`);
+  const [c1, c2] = await Promise.all([
+    api('POST', '/api/account-admin/sync/conflicts/7/restore', { reason: 'هم‌زمان یک', confirm: true, idempotencyKey: rKey('c') }, auth),
+    api('POST', '/api/account-admin/sync/conflicts/7/restore', { reason: 'هم‌زمان دو', confirm: true, idempotencyKey: rKey('d') }, auth),
+  ]);
+  check('⛔ دو پنجرهٔ هم‌زمان روی یک تعارض ⇒ یک opِ بالادست، دومی ۴۰۹ restore_in_progress',
+    restoreCalls(7) === 1 && [c1.status, c2.status].sort().join(',') === '200,409'
+      && [c1, c2].some((r) => r.json?.error === 'restore_in_progress'), `calls=${restoreCalls(7)} ${c1.status}/${c1.json?.error} ${c2.status}/${c2.json?.error}`);
+  const r404 = await api('POST', '/api/account-admin/sync/conflicts/404/restore', { reason: 'نبوده', confirm: true, idempotencyKey: rKey('e') }, auth);
+  const r404b = await api('POST', '/api/account-admin/sync/conflicts/404/restore', { reason: 'نبوده', confirm: true, idempotencyKey: rKey('e') }, auth);
+  check('شکستِ بالادست با کدِ خودش، و در حافظهٔ پل نمی‌ماند (همان کلید دوباره به سرورِ حساب می‌رود)',
+    r404.status === 404 && r404.json?.error === 'conflict_not_found' && r404b.status === 404 && restoreCalls(404) === 2,
+    `${r404.status} ${r404.json?.error} calls=${restoreCalls(404)}`);
+  const rAud = await api('GET', '/api/control/audit?q=account.sync.restore&limit=20', undefined, auth);
+  const rRows = rAud.json?.rows || [];
+  check('دفترِ پنل: یک ردیف برای هر بازگرداندنِ واقعی، با دلیل (تکرارِ همان پنجره ردیفِ دوم نمی‌سازد)',
+    rRows.filter((r) => r.entity_id === '5').length === 1 && rRows.some((r) => r.entity_id === '5' && String(r.detail).includes('دلیلِ آزمون'))
+      && rRows.filter((r) => r.entity_id === '7').length === 1, JSON.stringify(rRows.map((r) => [r.entity_id, r.detail])));
   const syncErr = await api('GET', '/api/account-admin/sync/errors?app=shop', undefined, auth);
   check('خطاهای گزارش‌شدهٔ برنامه', syncErr.status === 200 && syncErr.json?.errors?.[0]?.message === 'خطای آزمایشی');
 
@@ -1812,6 +1879,43 @@ try {
   c_mark = seen.length;
   const c_auBad = await api('GET', '/api/account-admin/account-audit?shopId=a%20b', undefined, auth);
   check('⛔ شناسهٔ ناجورِ دکان ۴۰۰، به سرورِ حساب نمی‌رود', c_auBad.status === 400 && seen.length === c_mark, String(c_auBad.status));
+
+  /*
+   *  ══ ۱.۵۰.۷۴ — ممیزی ۶-۷: دفترِ یکپارچه جای خودش را در بخشِ «فروشگاه» دارد و «یک دکان» را هم می‌فهمد ══
+   *  `GET /api/audit?shop=<id>`: دفترِ سرورِ حساب با `shopId` ِ **همان‌جا** (نه پالایشِ محلیِ ۵۰۰ ردیف)، و دو دفترِ
+   *  پنل فقط ردیف‌هایی که هدفشان «…:<id>» است یا جزئیاتشان رشتهٔ دقیقِ "<id>" را دارد — «q7» ردیف‌های «q70» را نمی‌آورد.
+   */
+  c_mark = seen.length;
+  const u_acc = await api('GET', '/api/audit?source=account&shop=q7', undefined, auth);
+  check('۶-۷ دفترِ یکپارچه، فقط سرورِ حساب، یک دکان: پالایش در سرورِ حساب (shopId) و فقط ردیفِ همان دکان',
+    u_acc.status === 200 && seen.slice(c_mark).some((x) => x.path === '/api/admin/audit' && x.query?.shopId === 'q7')
+      && (u_acc.json?.rows || []).length === 1 && u_acc.json.rows[0].shopId === 'q7' && u_acc.json?.shop === 'q7',
+    `${u_acc.status} ${JSON.stringify(u_acc.json?.rows)} ${JSON.stringify(seen.slice(c_mark).map((x) => x.query))}`);
+  //  دو ردیفِ واقعیِ دفترِ پنل روی دو دکانِ هم‌پیشوند (q7، q70) — حالت‌ها پشتِ `shop-holds.v1` اند
+  const capsBeforeAudit = caps;
+  caps = ['shop-holds.v1'];
+  const u_h1 = await api('POST', '/api/account-admin/console/shops/q7/holds', { kind: 'archived', reason: 'دفترِ یک دکان', confirm: true, idempotencyKey: 'audit-shop-filter-0001' }, auth);
+  const u_h10 = await api('POST', '/api/account-admin/console/shops/q70/holds', { kind: 'archived', reason: 'دفترِ دکانِ ده', confirm: true, idempotencyKey: 'audit-shop-filter-0002' }, auth);
+  caps = capsBeforeAudit;
+  check('(زمینه) دو حالت روی q7 و q70 گذاشته شد', u_h1.status === 201 && u_h10.status === 201, `${u_h1.status} ${u_h10.status}`);
+  const u_pan = await api('GET', '/api/audit?source=panel&shop=q7&limit=200', undefined, auth);
+  const u_panRows = u_pan.json?.rows || [];
+  check('۶-۷ دو دفترِ پنل، یک دکان: ردیفِ «shop:q7» هست و ردیفِ «shop:q70» نیست',
+    u_pan.status === 200 && u_panRows.some((r) => r.target === 'shop:q7') && !u_panRows.some((r) => r.target === 'shop:q70')
+      && u_panRows.every((r) => /:q7$/.test(String(r.target)) || String(r.detail).includes('"q7"')),
+    JSON.stringify(u_panRows.map((r) => [r.action, r.target])).slice(0, 400));
+  const u_wild = await api('GET', '/api/audit?source=panel&shop=q_&limit=200', undefined, auth);
+  check('⛔ «_» در شناسهٔ دکان نویسه است، نه نویسه‌جایگزینِ LIKE (q_ ⇒ ردیفِ q7 نمی‌آید)',
+    u_wild.status === 200 && !(u_wild.json?.rows || []).some((r) => r.target === 'shop:q7'), JSON.stringify((u_wild.json?.rows || []).map((r) => r.target)));
+  c_mark = seen.length;
+  const u_bad = await api('GET', '/api/audit?shop=a%20b', undefined, auth);
+  check('⛔ شناسهٔ ناجورِ دکان در دفترِ یکپارچه ۴۰۰ bad_shop، به سرورِ حساب نمی‌رود',
+    u_bad.status === 400 && u_bad.json?.error === 'bad_shop' && seen.length === c_mark, `${u_bad.status} ${u_bad.json?.error}`);
+  const u_all = await api('GET', '/api/audit?source=all&shop=q7&limit=200', undefined, auth);
+  check('۶-۷ «هر سه دفتر» برای یک دکان: ردیفِ سرورِ حساب و ردیفِ پنل با هم، بی ردیفِ دکانِ دیگر',
+    u_all.status === 200 && (u_all.json?.rows || []).some((r) => r.source === 'account' && r.shopId === 'q7')
+      && (u_all.json?.rows || []).some((r) => r.source === 'panel' && r.target === 'shop:q7')
+      && !(u_all.json?.rows || []).some((r) => r.shopId === 'q70' || r.target === 'shop:q70'), JSON.stringify(u_all.json?.rows).slice(0, 400));
 
   //  ⛔ فاز ۳: بی تواناییِ اعلام‌شده، مسیرِ نبوده **هرگز** صدا زده نمی‌شود
   caps = [];

@@ -10,12 +10,11 @@
 //  می‌روند.
 // ---------------------------------------------------------------------------
 import type { ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { useApp } from '../app-context';
 import { Tabs } from '../control/ui';
 import Logs from './Logs';
 import Audit from './control/Audit';
-import UnifiedAudit from './control/UnifiedAudit';
 import Monitoring from './Monitoring';
 import MonitoringPage from './control/MonitoringPage';
 import NetworkPage from './NetworkPage';
@@ -43,11 +42,15 @@ function Hub({ tabs }: { tabs: Tab[] }) {
   );
 }
 
+/** تنها جای دفترِ یکپارچه (۶-۷) — ماژولِ `audit` ِ بخشِ «فروشگاه» */
+export const AUDIT_HOME = '/shop?tab=audit';
+
 /**
  * لاگِ سرور + دفترِ رخدادها (چه کسی چه کاری کرد).
  *
- * ⛔ (۶-۷) مدیر دفترِ **یکپارچه** را می‌بیند — هر سه دفتر، صفحه‌بندیِ سمتِ سرور،
- * فقط‌خواندنی (`/api/audit`، فقط admin). بقیه مثلِ پیش فقط دفترِ مدیریتِ پنل.
+ * ⛔ (۶-۷) دفترِ **یکپارچه** (هر سه دفتر، صفحه‌بندیِ سمتِ سرور، فقط‌خواندنی، `/api/audit` فقط admin) از ۱.۵۰.۷۴
+ *    یک جا دارد: بخشِ «فروشگاه» (`/shop?tab=audit`). این تب برای مدیر همان‌جا می‌برد (نشانیِ کهنه و
+ *    `/control/audit` کار می‌کنند)؛ نسخهٔ دوم این‌جا ساخته نشود. بقیه مثلِ پیش دفترِ مدیریتِ پنل.
  */
 export function LogsHub() {
   const { t, can } = useApp();
@@ -55,7 +58,7 @@ export function LogsHub() {
     <Hub
       tabs={[
         { id: 'events', label: t('logs'), body: <Logs /> },
-        { id: 'audit', label: can('admin') ? t('auditUnified') : t('ccAudit'), body: can('admin') ? <UnifiedAudit /> : <Audit /> },
+        { id: 'audit', label: can('admin') ? t('auditUnified') : t('ccAudit'), body: can('admin') ? <Navigate to={AUDIT_HOME} replace /> : <Audit /> },
       ]}
     />
   );
@@ -102,6 +105,7 @@ export function DomainsHub() {
  *    پنلِ دوم با یک ورودِ دوم — همان سردرگمی‌ای که قرار بود برداشته شود.
  */
 export function AccountServerHub() {
+  const { can } = useApp();
   return (
     <Hub
       tabs={[
@@ -111,7 +115,8 @@ export function AccountServerHub() {
         { id: 'status', label: 'وضعیت و لاگ', body: <AccountServerLog /> },
         { id: 'email', label: 'ایمیل', body: <AccountEmail /> },
         { id: 'smspush', label: 'پیامک و پوش', body: <AccountSmsPush /> },
-        { id: 'audit', label: 'دفترِ ممیزی', body: <AccountAudit /> },
+        //  ⛔ (۶-۷، ۱.۵۰.۷۴) برای مدیر همان دفترِ یکپارچه با «فقط سرورِ حساب» — یک نما، نه دو
+        { id: 'audit', label: 'دفترِ ممیزی', body: can('admin') ? <Navigate to={`${AUDIT_HOME}&source=account`} replace /> : <AccountAudit /> },
       ]}
     />
   );
