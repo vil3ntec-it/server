@@ -1,0 +1,10 @@
+#!/bin/bash
+# A stand-in for adb in tests: one phone, and "adb forward" writes the port for FakePhone to $FAKE_PORT_FILE.
+case "$*" in
+  *devices*) printf "List of devices attached\nFAKE123 device product:x model:Fake_Phone device:y transport_id:1\n";;
+  *" forward --remove"*) exit 0;;
+  *" forward tcp:"*) echo "$*" | sed -E 's/.*tcp:([0-9]+).*/\1/' > "$FAKE_PORT_FILE";;
+  *" push "*) exit 0;;
+  *" shell "*getprop*) echo 34;;
+  *" shell "*) sleep 600;;
+esac

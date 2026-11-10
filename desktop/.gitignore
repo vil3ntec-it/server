@@ -1,0 +1,5 @@
+appres/*/scrcpy/
+appres/*/platform-tools/
+src/main/resources/fonts/*.ttf
+build/
+.gradle/

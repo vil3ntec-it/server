@@ -1,0 +1,242 @@
+name: RawRec Desktop (temporary)
+on:
+  push:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/rawrec-desktop.yml"
+      - "app/src/main/java/com/vil3ntec/rawrec/RtmpPublisher.kt"
+      - "app/src/main/java/com/vil3ntec/rawrec/RtmpSink.kt"
+      - "app/src/main/java/com/vil3ntec/rawrec/MultiSink.kt"
+      - "app/src/main/java/com/vil3ntec/rawrec/Mp4Writer.kt"
+      - "app/src/main/java/com/vil3ntec/rawrec/PersianCasual.kt"
+      - "app/src/main/java/com/vil3ntec/rawrec/YtEmoji.kt"
+  workflow_dispatch:
+permissions:
+  contents: write
+env:
+  VER: "1.0.0"
+  SCRCPY: "3.1"
+  VAZIR: "33.003"
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, tag: linux, pt: linux, py: python3 }
+          - { os: windows-latest, tag: windows, pt: windows, py: python }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Gradle 8.10.2
+        run: |
+          for i in 1 2 3 4 5; do
+            curl -fsSL --retry 5 --retry-delay 10 -o "$RUNNER_TEMP/gradle.zip" https://services.gradle.org/distributions/gradle-8.10.2-bin.zip && break
+            sleep 20
+          done
+          ${{ matrix.py }} -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$RUNNER_TEMP/gradle.zip" "$RUNNER_TEMP"
+          chmod +x "$RUNNER_TEMP/gradle-8.10.2/bin/gradle" || true
+          echo "$RUNNER_TEMP/gradle-8.10.2/bin" >> "$GITHUB_PATH"
+      - name: What ships with the app (phone-side server, adb, Persian font)
+        run: |
+          set -e
+          cd desktop
+          get() { for i in 1 2 3 4 5; do curl -fsSL --retry 5 --retry-delay 5 -o "$2" "$1" && return 0; sleep 10; done; return 1; }
+          mkdir -p appres/common/scrcpy appres/${{ matrix.tag }} src/main/resources/fonts
+          get https://github.com/Genymobile/scrcpy/releases/download/v$SCRCPY/scrcpy-server-v$SCRCPY appres/common/scrcpy/scrcpy-server
+          printf "%s" "$SCRCPY" > appres/common/scrcpy/version
+          get https://dl.google.com/android/repository/platform-tools-latest-${{ matrix.pt }}.zip "$RUNNER_TEMP/pt.zip"
+          ${{ matrix.py }} -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$RUNNER_TEMP/pt.zip" appres/${{ matrix.tag }}
+          chmod +x appres/${{ matrix.tag }}/platform-tools/adb 2>/dev/null || true
+          get https://github.com/rastikerdar/vazirmatn/releases/download/v$VAZIR/vazirmatn-v$VAZIR.zip "$RUNNER_TEMP/vz.zip"
+          ${{ matrix.py }} - "$RUNNER_TEMP/vz.zip" <<'PY'
+          import zipfile, sys
+          z = zipfile.ZipFile(sys.argv[1])
+          for want in ("Vazirmatn-Regular.ttf", "Vazirmatn-Bold.ttf"):
+              n = [x for x in z.namelist() if x.endswith("/ttf/" + want) or x.endswith("/" + want)]
+              n.sort(key=len); open("src/main/resources/fonts/" + want, "wb").write(z.read(n[0])); print(want, "<-", n[0])
+          PY
+          ls -la appres/common/scrcpy appres/${{ matrix.tag }}/platform-tools | head -20
+          sha256sum appres/common/scrcpy/scrcpy-server
+      - name: Unit tests
+        run: |
+          cd desktop
+          for i in 1 2 3; do gradle test --no-daemon --stacktrace && break; [ $i = 3 ] && exit 1; sleep 30; done
+          mkdir -p ../out/desktop-$VER/${{ matrix.tag }}
+          ${{ matrix.py }} - ../out/desktop-$VER/${{ matrix.tag }}/tests.txt <<'PY'
+          import glob, sys, xml.etree.ElementTree as ET
+          tot = fail = 0; lines = []
+          for f in sorted(glob.glob('build/test-results/test/*.xml')):
+              r = ET.parse(f).getroot(); tot += int(r.get('tests', 0))
+              for tc in r.iter('testcase'):
+                  bad = tc.findall('failure') + tc.findall('error')
+                  fail += len(bad)
+                  lines.append(("FAIL " if bad else "pass ") + tc.get('classname') + "." + tc.get('name'))
+          open(sys.argv[1], 'w').write(f"tests {tot}, failed {fail}\n" + "\n".join(lines) + "\n")
+          print(open(sys.argv[1]).read())
+          PY
+      - name: Installer and portable folder
+        run: |
+          if [ "${{ matrix.tag }}" = linux ]; then sudo apt-get install -y -qq fakeroot >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq fakeroot >/dev/null); fi
+          cd desktop
+          for i in 1 2 3; do gradle packageDistributionForCurrentOS createDistributable suggestRuntimeModules --no-daemon --stacktrace && break; [ $i = 3 ] && exit 1; sleep 30; done
+          find build/compose/binaries -maxdepth 4 | head -40
+      - name: The installed app's own check (no phone here — shows the encoders it found, then must say no phone)
+        run: |
+          cd desktop
+          APP="build/compose/binaries/main/app/RawRec Desktop"
+          if [ "${{ matrix.tag }}" = windows ]; then EXE="$APP/RawRec Desktop.exe"; else EXE="$APP/bin/RawRec Desktop"; fi
+          ls -la "$APP" "$(dirname "$EXE")" | head -30
+          O=$(cd .. && pwd)/out/desktop-$VER/${{ matrix.tag }}
+          L="$RUNNER_TEMP/selftest.log"; [ "${{ matrix.tag }}" = windows ] && L=$(cygpath -w "$L")
+          set +e
+          JAVA_TOOL_OPTIONS="-Drawrec.selftestOut=$L" "$EXE" --selftest 3 > $O/selftest-no-phone-console.txt 2>&1; echo "exit $?" > $O/selftest-no-phone-exit.txt
+          set -e
+          cp "$RUNNER_TEMP/selftest.log" $O/selftest-no-phone.txt
+          cat $O/selftest-no-phone.txt $O/selftest-no-phone-exit.txt
+          grep -q '^encoders: ' $O/selftest-no-phone.txt
+      - name: Whole path with a fake phone (Linux)
+        if: matrix.tag == 'linux'
+        run: |
+          set -e
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+          T=$RUNNER_TEMP/fp; mkdir -p $T; cd desktop
+          # landscape 3 s then portrait 3 s: the phone turning mid-recording
+          ffmpeg -loglevel error -f lavfi -i testsrc2=s=1280x720:r=30 -t 3 -c:v libx264 -g 30 -pix_fmt yuv420p -f h264 $T/a.h264
+          ffmpeg -loglevel error -f lavfi -i testsrc2=s=720x1280:r=30 -t 3 -c:v libx264 -g 30 -pix_fmt yuv420p -f h264 $T/b.h264
+          cat $T/a.h264 $T/b.h264 > $T/turn.h264
+          O=../out/desktop-$VER/linux
+          # 1) the code from Gradle
+          export FAKE_PORT_FILE=$T/port
+          gradle pipelineCheck --no-daemon -q -PcheckArgs="$T/turn.h264 $T/port 30 8" -Prawrec.adb=$PWD/src/test/fakeadb -Prawrec.resources=$PWD/appres/common | tee $O/fake-phone-gradle.txt
+          # 2) the installed app (its own Java runtime and libraries) against the fake phone
+          gradle pipelineCheck --no-daemon -q -PcheckMain=com.vil3ntec.rawrec.desktop.FakePhoneServerKt -PcheckArgs="$T/turn.h264 $T/port 30" > $T/fp.log 2>&1 &
+          sleep 25
+          set +e
+          JAVA_TOOL_OPTIONS="-Drawrec.adb=$PWD/src/test/fakeadb" timeout 120 "build/compose/binaries/main/app/RawRec Desktop/bin/RawRec Desktop" --selftest 8 > $O/fake-phone-installed.txt 2>&1
+          echo "exit $?" >> $O/fake-phone-installed.txt
+          set -e
+          cat $O/fake-phone-installed.txt
+          F=$(grep '^RESULT_FILE=' $O/fake-phone-installed.txt | tail -1 | cut -d= -f2-)
+          [ -n "$F" ] && [ -f "$F" ]
+          ffprobe -v error -show_entries stream=codec_name,width,height,r_frame_rate,color_space,color_primaries,color_transfer,sample_rate,channels:format=duration -of default=nw=1 "$F" | tee $O/fake-phone-ffprobe.txt
+          ffmpeg -v error -i "$F" -f null - 2>&1 | tee $O/fake-phone-decode-errors.txt
+          ffmpeg -v error -ss 1.5 -i "$F" -frames:v 1 -y $O/fake-phone-landscape.png
+          ffmpeg -v error -ss 6.5 -i "$F" -frames:v 1 -y $O/fake-phone-portrait.png
+          grep -q 'exit 0' $O/fake-phone-installed.txt
+      - name: Collect the installers
+        run: |
+          set -e
+          O=out/desktop-$VER/${{ matrix.tag }}
+          mkdir -p $O
+          B=desktop/build/compose/binaries/main
+          for f in $B/msi/*.msi $B/exe/*.exe $B/deb/*.deb $B/dmg/*.dmg; do [ -f "$f" ] && cp "$f" $O/; done
+          (cd "$B/app" && ${{ matrix.py }} -c "import shutil; shutil.make_archive('portable', 'zip', '.', 'RawRec Desktop')") && mv "$B/app/portable.zip" "$O/RawRec-Desktop-$VER-${{ matrix.tag }}-portable.zip"
+          cp desktop/build/compose/tmp/suggestRuntimeModules*.txt $O/ 2>/dev/null || true
+          # GitHub takes files under 100 MB: bigger ones go in 90 MB parts (joined again when delivered)
+          for f in $O/*; do
+            s=$(stat -c %s "$f" 2>/dev/null || stat -f %z "$f")
+            if [ "$s" -gt 94000000 ]; then split -b 90000000 -d "$f" "$f.part"; rm "$f"; fi
+          done
+          ls -la $O
+          (cd $O && sha256sum * > SHA256SUMS.txt) || true
+      - name: Commit back to this temporary branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f out/desktop-$VER/${{ matrix.tag }}
+          git commit -m "RawRec Desktop $VER ${{ matrix.tag }} [skip ci]" || exit 0
+          for i in 1 2 3 4 5 6 7 8; do git pull --rebase -q && git push -q && exit 0; sleep $((5 * i)); done; exit 1
+
+  # The real phone-side server on a real Android (emulator), through the real adb, into the installed app.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Gradle 8.10.2
+        run: |
+          for i in 1 2 3 4 5; do
+            curl -fsSL --retry 5 --retry-delay 10 -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.10.2-bin.zip && break
+            sleep 20
+          done
+          unzip -q /tmp/gradle.zip -d /tmp && echo "/tmp/gradle-8.10.2/bin" >> "$GITHUB_PATH"
+      - name: What ships with the app
+        run: |
+          set -e
+          cd desktop
+          get() { for i in 1 2 3 4 5; do curl -fsSL --retry 5 --retry-delay 5 -o "$2" "$1" && return 0; sleep 10; done; return 1; }
+          mkdir -p appres/common/scrcpy appres/linux
+          get https://github.com/Genymobile/scrcpy/releases/download/v$SCRCPY/scrcpy-server-v$SCRCPY appres/common/scrcpy/scrcpy-server
+          printf "%s" "$SCRCPY" > appres/common/scrcpy/version
+          get https://dl.google.com/android/repository/platform-tools-latest-linux.zip /tmp/pt.zip
+          unzip -q /tmp/pt.zip -d appres/linux
+      - name: Build the app
+        run: |
+          cd desktop
+          for i in 1 2 3; do gradle createDistributable --no-daemon && break; [ $i = 3 ] && exit 1; sleep 30; done
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+      - name: Emulator (Android 14, x86_64)
+        timeout-minutes: 20
+        run: |
+          SDK=$ANDROID_HOME; SM=$SDK/cmdline-tools/latest/bin/sdkmanager; AM=$SDK/cmdline-tools/latest/bin/avdmanager
+          yes | $SM --licenses > /dev/null 2>&1 || true
+          $SM --install "emulator" "platform-tools" "system-images;android-34;google_apis;x86_64" > /tmp/sdk.log 2>&1 || (tail -20 /tmp/sdk.log; exit 1)
+          export ANDROID_AVD_HOME=$HOME/.android/avd; mkdir -p $ANDROID_AVD_HOME
+          echo no | $AM create avd -n e2e -k "system-images;android-34;google_apis;x86_64" -d pixel_tablet -p $ANDROID_AVD_HOME/e2e.avd --force
+          nohup $SDK/emulator/emulator -avd e2e -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -accel on > /tmp/emu.log 2>&1 &
+          A=$SDK/platform-tools/adb
+          timeout 600 $A wait-for-device || { tail -60 /tmp/emu.log; exit 1; }
+          for i in $(seq 1 120); do [ "$($A shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] && break; sleep 5; done
+          [ "$($A shell getprop sys.boot_completed | tr -d '\r')" = "1" ] || { tail -60 /tmp/emu.log; exit 1; }
+          $A shell input keyevent 82
+          # the app's own adb takes over from here (the same server version, so no restart)
+          $A kill-server || true
+      - name: The installed app records the real emulator screen over adb
+        timeout-minutes: 15
+        run: |
+          set -e
+          O=out/desktop-$VER/e2e; mkdir -p $O
+          APP="desktop/build/compose/binaries/main/app/RawRec Desktop"
+          AD="$APP/lib/app/resources/platform-tools/adb"; [ -x "$AD" ] || AD=$(find "$APP" -name adb -type f | head -1)
+          echo "bundled adb: $AD"; "$AD" devices -l
+          # something moving on the screen the whole time (scrcpy sends a picture when the screen changes)
+          "$AD" shell am start -a android.settings.SETTINGS >/dev/null
+          ( for i in $(seq 1 60); do "$AD" shell input swipe 800 2000 800 700 300; "$AD" shell input swipe 800 700 800 2000 300; done ) > /dev/null 2>&1 &
+          set +e
+          timeout 300 "$APP/bin/RawRec Desktop" --selftest 15 > $O/selftest.txt 2>&1; echo "exit $?" >> $O/selftest.txt
+          set -e
+          cat $O/selftest.txt
+          F=$(grep '^RESULT_FILE=' $O/selftest.txt | tail -1 | cut -d= -f2-)
+          [ -n "$F" ] && [ -f "$F" ]
+          ffprobe -v error -show_entries stream=codec_name,width,height,r_frame_rate,nb_read_frames,color_space,sample_rate,channels:format=duration,size -count_frames -of default=nw=1 "$F" | tee $O/ffprobe.txt
+          ffmpeg -v error -i "$F" -f null - 2>&1 | tee $O/decode-errors.txt
+          for s in 3 8 13; do ffmpeg -v error -ss $s -i "$F" -frames:v 1 -y $O/frame-${s}s.png; done
+          "$AD" exec-out screencap -p > $O/emulator-screen.png || true
+          grep -q 'exit 0' $O/selftest.txt
+      - name: Commit the evidence
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp /tmp/emu.log out/desktop-$VER/e2e/ 2>/dev/null || true
+          git add -f out/desktop-$VER/e2e || true
+          git commit -m "RawRec Desktop $VER e2e [skip ci]" || exit 0
+          for i in 1 2 3 4 5 6 7 8; do git pull --rebase -q && git push -q && exit 0; sleep $((5 * i)); done
