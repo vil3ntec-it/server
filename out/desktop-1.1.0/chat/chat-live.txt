@@ -1,22 +1,34 @@
-twitch channels: [kaicenat, caedrel, arrowwoods, rostikfacekid, buster]
-probe https://www.youtube.com/@LofiGirl/live -> 200 len 1638029 title= - YouTube canonical=undefined isLive=true videoDetails=null liveChat=true bot=true kick_livestream=null chatroom=null
+twitch channels: [kaicenat, auronplay, caedrel, rostikfacekid, anarabdullaev]
+probe https://www.youtube.com/@LofiGirl/live -> 200 len 1596949 title= - YouTube canonical=undefined isLive=true videoDetails=null liveChat=true bot=true kick_livestream=null chatroom=null
 probe https://kick.com/api/v2/channels/xqc -> 200 len 6385 title=null canonical=null isLive=false videoDetails=null liveChat=false bot=false kick_livestream=null chatroom=668
 kick live list -> 200
-kick live: [2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone, sxb, just-chatting, irl, bfa1a262-bigboss-watchpartyjoin-discord-support-scoutop, neyoo_gaming, 3f262e23-fat-camp-no-zempic-w-at-cuffem-at-n3on-day-2, adinross, special-events, d4d0e6b9-dunatofon-s-gundos-armani-500-rub-1-min-strima, mafanyatopeu, e726f3f0-albth-ln-yghlk-mn-hna-al-akhr-alsn, maherco, crack, games]
-t=10s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 29 (وصل) | Twitch/caedrel: 43 (وصل) | Twitch/arrowwoods: 26 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
-t=20s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 66 (وصل) | Twitch/caedrel: 133 (وصل) | Twitch/arrowwoods: 46 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
-t=30s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 98 (وصل) | Twitch/caedrel: 168 (وصل) | Twitch/arrowwoods: 64 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
-t=40s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 117 (وصل) | Twitch/caedrel: 210 (وصل) | Twitch/arrowwoods: 84 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
-t=50s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 130 (وصل) | Twitch/caedrel: 276 (وصل) | Twitch/arrowwoods: 95 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
-t=60s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 149 (وصل) | Twitch/caedrel: 310 (وصل) | Twitch/arrowwoods: 118 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
-t=70s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 159 (وصل) | Twitch/caedrel: 339 (وصل) | Twitch/arrowwoods: 143 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
-t=80s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 173 (وصل) | Twitch/caedrel: 361 (وصل) | Twitch/arrowwoods: 151 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
-t=90s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/kaicenat: 184 (وصل) | Twitch/caedrel: 378 (وصل) | Twitch/arrowwoods: 156 (وصل) | Kick/2a37325e-bth-30-yom-alyom-alaaashr-bda-alaan-sxbthone: 0 (کیک اجازه نداد (404): شمارهٔ چت‌روم را به جای نام بنویس) | Kick/sxb: 0 (وصل)
+kick live: [sxb, neyoo_gaming, adinross, mafanyatopeu, maherco]
+kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
+kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
+kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
+kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
+t=10s YouTube/@LofiGirl: 0 (پخش تمام شد یا قطع شد؛ دوباره می‌گردم…) | Twitch/kaicenat: 9 (وصل) | Twitch/auronplay: 34 (وصل) | Twitch/caedrel: 42 (وصل) | Kick/sxb: 0 (وصل) | Kick/neyoo_gaming: 0 (وصل)
+kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
+kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
+kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
+kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
+t=20s YouTube/@LofiGirl: 0 (پخش تمام شد یا قطع شد؛ دوباره می‌گردم…) | Twitch/kaicenat: 27 (وصل) | Twitch/auronplay: 103 (وصل) | Twitch/caedrel: 61 (وصل) | Kick/sxb: 0 (وصل) | Kick/neyoo_gaming: 0 (وصل)
+kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
+kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
+t=30s YouTube/@LofiGirl: 0 (پخش تمام شد یا قطع شد؛ دوباره می‌گردم…) | Twitch/kaicenat: 47 (وصل) | Twitch/auronplay: 169 (وصل) | Twitch/caedrel: 72 (وصل) | Kick/sxb: 0 (وصل) | Kick/neyoo_gaming: 0 (وصل)
+kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
+kick frame: {"event":"pusher:error","data":{"code":4001,"message":"App key 32cbd69e4b950bf97679 not in this cluster. Did you forget to specify the cluster?"}}
+t=40s YouTube/@LofiGirl: 0 (پخش تمام شد یا قطع شد؛ دوباره می‌گردم…) | Twitch/kaicenat: 65 (وصل) | Twitch/auronplay: 222 (وصل) | Twitch/caedrel: 85 (وصل) | Kick/sxb: 0 (وصل) | Kick/neyoo_gaming: 0 (وصل)
+t=50s YouTube/@LofiGirl: 0 (پخش تمام شد یا قطع شد؛ دوباره می‌گردم…) | Twitch/kaicenat: 87 (وصل) | Twitch/auronplay: 289 (وصل) | Twitch/caedrel: 97 (وصل) | Kick/sxb: 0 (وصل) | Kick/neyoo_gaming: 0 (وصل)
+t=60s YouTube/@LofiGirl: 0 (پخش تمام شد یا قطع شد؛ دوباره می‌گردم…) | Twitch/kaicenat: 103 (وصل) | Twitch/auronplay: 339 (وصل) | Twitch/caedrel: 116 (وصل) | Kick/sxb: 0 (وصل) | Kick/neyoo_gaming: 0 (وصل)
+t=70s YouTube/@LofiGirl: 0 (پخش تمام شد یا قطع شد؛ دوباره می‌گردم…) | Twitch/kaicenat: 118 (وصل) | Twitch/auronplay: 398 (وصل) | Twitch/caedrel: 128 (وصل) | Kick/sxb: 0 (وصل) | Kick/neyoo_gaming: 0 (وصل)
+t=80s YouTube/@LofiGirl: 0 (پخش تمام شد یا قطع شد؛ دوباره می‌گردم…) | Twitch/kaicenat: 130 (وصل) | Twitch/auronplay: 468 (وصل) | Twitch/caedrel: 138 (وصل) | Kick/sxb: 0 (وصل) | Kick/neyoo_gaming: 0 (وصل)
+t=90s YouTube/@LofiGirl: 0 (پخش تمام شد یا قطع شد؛ دوباره می‌گردم…) | Twitch/kaicenat: 154 (وصل) | Twitch/auronplay: 511 (وصل) | Twitch/caedrel: 170 (وصل) | Kick/sxb: 0 (وصل) | Kick/neyoo_gaming: 0 (وصل)
 RESULT YouTube: 0 messages; paid/gifts: 0
-RESULT Twitch: 718 messages; paid/gifts: 0
-   gla…: пиздец подчерк
-   xve…: w
-   M0k…: yui2dYes TeaTime 󠀀 󠀀 󠀀
-   2NM…: идиотина
+RESULT Twitch: 835 messages; paid/gifts: 7
+   sam…: auronHortttt auronLINDAA
+   mic…: LO
+   jim…: y metrika?
+   dan…: Cállate cállate 🤣
 RESULT Kick: 0 messages; paid/gifts: 0
 TRANSLATE en→fa: چه بازی خوبیه، فردا همه شما رو می‌بینم! 
