@@ -22,6 +22,13 @@ import path from 'node:path';
 const PANEL = Number(process.env.TEST_PORT || 4886);
 const PUBLIC = PANEL + 1;
 const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'acct-admin-'));
+/*  ⛔ فاز ۱ (۶-۵): نشستِ تازه (ورود یا رمزِ درخواستِ قبلی، ده دقیقه) بی رمز هم از `requireRecentAuth` می‌گذرد؛
+    «بی رمز ⇒ reauth_required» فقط روی نشستِ کهنه معنا دارد — همان روشِ `roles-logs` / `totp` / `security`. */
+const staleAll = async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const d = new DatabaseSync(path.join(tmp, 'data', 'panel.db'));
+  try { d.exec('PRAGMA busy_timeout = 5000'); d.exec('UPDATE sessions SET auth_at = 0'); } finally { d.close(); }
+};
 
 let pass = 0, fail = 0;
 const check = (name, ok, extra = '') => {
@@ -1983,6 +1990,7 @@ try {
   let k_mark = seen.length;
   const k_not = await api('POST', '/api/account-admin/console/service-key', { ...k_body, password: 'Admin2-1405-key' }, k_a2);
   const k_op = await api('POST', '/api/account-admin/console/service-key', k_body, c_oCon);
+  await staleAll();
   const k_noPw = await api('POST', '/api/account-admin/console/service-key', { reason: k_body.reason, confirm: true }, auth);
   const k_badPw = await api('POST', '/api/account-admin/console/service-key', { ...k_body, password: 'wrong-pass' }, auth);
   const k_noReason = await api('POST', '/api/account-admin/console/service-key', { ...k_body, reason: '' }, auth);

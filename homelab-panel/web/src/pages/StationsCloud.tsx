@@ -130,7 +130,7 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
   const [busy, setBusy] = useState(false);
   const [user, setUser] = useState('');
   const [pass, setPass] = useState('');
-  const { role } = useApp();
+  const { role, owner } = useApp();
   const canWrite = role === 'admin' || role === 'operator';
 
   //  ── تب‌ها، مثلِ بخشِ فروشگاه: نمای کلی · افراد · اشتراک‌ها · کدها · پمپ‌ها ──
@@ -196,7 +196,28 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
   //  خودِ سرورِ حساب — پنل بالا می‌آوردش (account/supervisor.js). این کارت
   //  می‌گوید نصب هست، روشن است، چه نسخه‌ای، و اگر افتاد چند بار برگشته.
   const [acct, setAcct] = useState<AccountServerInfo | null>(null);
-  const [showAdminPass, setShowAdminPass] = useState(false);
+  //  ⛔ رمزِ ارشدِ سرورِ حساب دیگر در وضعیت نیست (۶-۴): فقط مالک، با احرازِ
+  //  دوباره، یک بار و در همین پنجره — بسته شد، از حافظهٔ صفحه هم رفت.
+  const [revealed, setRevealed] = useState<{ username: string; password: string } | null>(null);
+  const [revealing, setRevealing] = useState(false);
+  useEffect(() => {
+    if (!revealed) return;
+    const tm = setTimeout(() => setRevealed(null), 60_000);
+    return () => clearTimeout(tm);
+  }, [revealed]);
+  const revealAdminPassword = async () => {
+    if (revealing) return;
+    setRevealing(true);
+    try {
+      const r = await api<{ username: string; password: string }>('/api/account-server/admin-password/reveal', { method: 'POST', body: {} });
+      setRevealed({ username: r.username, password: r.password });
+    } catch (e) {
+      const c = (e as { code?: string }).code;
+      toast(c === 'owner_only' ? 'فقط مالکِ اصلیِ پنل این رمز را می‌بیند.' : c === 'reauth_required' ? 'بی رمزِ تازه نشان داده نشد.' : (e as Error).message, 'bad');
+    } finally {
+      setRevealing(false);
+    }
+  };
   const loadAcct = useCallback(async () => {
     try { setAcct(await api<AccountServerInfo>('/api/account-server/status')); } catch { /* اختیاری */ }
   }, []);
@@ -477,13 +498,31 @@ export default function StationsCloud({ section = 'accounts' }: { section?: Clou
                   <span className="inline-flex items-center gap-2">{acct.admin.username}<CopyButton value={acct.admin.username} /></span>
                 </KV>
                 <KV label="رمز" mono>
-                  <span className="inline-flex items-center gap-2">
-                    {showAdminPass ? acct.admin.password : '••••••••••'}
-                    <button className="btn btn-sm" onClick={() => setShowAdminPass((v) => !v)}>{showAdminPass ? 'پنهان' : 'نشان بده'}</button>
-                    <CopyButton value={acct.admin.password} />
+                  <span className="inline-flex flex-wrap items-center gap-2">
+                    {acct.admin.passwordSet ? '••••••••••' : '—'}
+                    {acct.admin.passwordSet && owner && (
+                      <button className="btn btn-sm" disabled={revealing} onClick={revealAdminPassword}>
+                        {revealing ? '…' : 'نمایشِ یک‌باره'}
+                      </button>
+                    )}
+                    {acct.admin.passwordSet && !owner && <span className="text-[11px] text-ink-muted">فقط مالکِ اصلی می‌بیند</span>}
                   </span>
                 </KV>
               </div>
+              <Modal
+                open={Boolean(revealed)}
+                onClose={() => setRevealed(null)}
+                title="رمزِ مدیرِ سرورِ حساب"
+                footer={<button className="btn" onClick={() => setRevealed(null)}>بستن</button>}
+              >
+                <p className="mb-2 text-xs text-ink-muted">
+                  این نمایش در دفترِ رخدادها ثبت شد. پنجره پس از یک دقیقه خودش بسته می‌شود و رمز دیگر در این صفحه نمی‌ماند.
+                </p>
+                <div className="flex items-center gap-2 font-mono text-sm" dir="ltr">
+                  <span className="select-all break-all">{revealed?.password}</span>
+                  {revealed && <CopyButton value={revealed.password} />}
+                </div>
+              </Modal>
               <p className="mt-2 text-xs text-ink-muted">
                 {acct.admin.source === 'managed'
                   ? 'پنل خودش این را ساخته و در پوشهٔ داده (account-server/secrets.json) نگه می‌دارد؛ با همین در اپِ مدیریت و پنلِ مدیریتِ سرورِ حساب وارد شوید. با HLP_ACCOUNT_ADMIN_USER/PASSWORD در .env می‌شود عوضش کرد.'
@@ -863,7 +902,7 @@ type AccountServerInfo = {
   pid: number | null; port: number | null; version: string | null; driver: string;
   restarts: number; lastError: string | null; dataDir: string;
   bridge: null | { linked: boolean; auto?: boolean };
-  admin: null | { username: string; password: string; source: 'managed' | 'env' };
+  admin: null | { username: string; passwordSet: boolean; source: 'managed' | 'env' };
   mail: boolean;
 };
 

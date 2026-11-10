@@ -6,6 +6,8 @@
 // ---------------------------------------------------------------------------
 import { clientIp } from '../platform/security.js';
 import { db } from '../db.js';
+import { scrub } from '../control/audit.js';
+import { archiveAndPrune, archiveInfo } from './audit-archive.js';
 
 /* ⚠️ دستور را همان اول آماده نمی‌کنیم: ماژول‌ها پیش از اجرای مهاجرت‌ها
    بارگذاری می‌شوند، و آن موقع هنوز جدول ساخته نشده. پس تنبل و بارِ اول. */
@@ -47,9 +49,25 @@ export function audit(req, action, { target = null, ok = true, detail = null } =
       target ? String(target).slice(0, 400) : null,
       ip,
       ok ? 1 : 0,
-      detail ? String(detail).slice(0, 400) : null
+      detailText(detail)
     );
   } catch { /* دفتر نباید کار را بخواباند */ }
+}
+
+/*
+ *  ⛔ (فاز ۱ ِ ممیزی، ۶-۷ / S9) تا ۱.۵۰.۶۱ این‌جا `String(detail)` بود و هر
+ *  جزئیاتِ شیء — «چند کدِ بازیابی مانده»، «از چند دستگاه خارج شد»، «گامِ
+ *  دوعاملی» — در دفتر `"[object Object]"` می‌نشست. حالا شیء JSON می‌شود و
+ *  کلیدهای راز (`password`، `token`، `secret`، …) پوشانده؛ متن همان متن.
+ */
+export function detailText(detail) {
+  if (detail == null || detail === '') return null;
+  if (typeof detail === 'string') return detail.slice(0, 1000);
+  try {
+    return JSON.stringify(scrub(detail)).slice(0, 1000);
+  } catch {
+    return null;
+  }
 }
 
 export function recentAudit({ limit = 100, action = null } = {}) {
@@ -59,9 +77,14 @@ export function recentAudit({ limit = 100, action = null } = {}) {
   return rows.map((r) => ({ ...r, ok: Boolean(r.ok) }));
 }
 
-/** دفتر بی‌نهایت بزرگ نشود */
+/**
+ * دفتر بی‌نهایت بزرگ نشود — ولی ⛔ هیچ ردیفی بی ردِ پا نرود (۱.۵۰.۷۱): آن‌چه بیرون می‌رود اول در
+ * `data/audit-archive/` می‌نشیند و اگر نوشتن نشد چیزی پاک نمی‌شود (`lib/audit-archive.js`).
+ */
 export function pruneAudit(keep = 20000) {
   try {
-    db.exec(`DELETE FROM audit_log WHERE id NOT IN (SELECT id FROM audit_log ORDER BY id DESC LIMIT ${Number(keep)})`);
-  } catch { /* بی‌خیال */ }
+    archiveAndPrune(db, 'audit_log', keep);
+  } catch { /* بایگانی نشد ⇒ پاک هم نشد؛ دورِ بعد */ }
 }
+
+export { archiveInfo };

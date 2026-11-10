@@ -26,6 +26,8 @@ export default function Login() {
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.code === 'invalid_credentials') setError(t('wrongCredentials'));
+        //  رمزِ یک‌بارمصرفِ `vill3n owner-reset` از مهلتش گذشت (۱.۵۰.۷۱)
+        else if (err.code === 'recovery_expired') setError(t('recoveryExpired'));
         else if (err.code === 'password_too_short') setError(t('passwordTooShort'));
         else if (err.code === 'username_too_short') setError(t('usernameTooShort'));
         else setError(err.code);
@@ -73,6 +75,9 @@ export default function Login() {
                   if (err instanceof ApiError && err.code === 'ticket_invalid') {
                     setTicket(null);
                     setError(t('sessionExpired'));
+                  } else if (err instanceof ApiError && err.code === 'recovery_expired') {
+                    setTicket(null);
+                    setError(t('recoveryExpired'));
                   } else setError(err instanceof ApiError ? t('totpWrong') : t('connectionLost'));
                   setCodeReset((n) => n + 1);
                 } finally {

@@ -18,7 +18,12 @@ export const FEATURES: Record<FeatureKey, boolean> = {
   commandCenter: false,
   settings: false,
   files: false,
-  panelUsers: false,
+  /*
+   *  ⛔ روشن (۱۴۰۵/۰۸/۰۹، فاز ۱ ِ ممیزی، ۶-۲): پشتِ این صفحه فقط `/api/auth/users`
+   *  است و هر قاعده‌اش در سرور (فقط admin، مالک دست‌نخوردنی، خودت نه، آخرین مدیر،
+   *  احرازِ دوباره). پنهان کردنش امنیت نبود — API زنده بود؛ فقط مالک رابطی نداشت.
+   */
+  panelUsers: true,
 };
 
 /** آیا این بخش روشن است؟ */

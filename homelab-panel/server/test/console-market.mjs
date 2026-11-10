@@ -20,6 +20,13 @@ import path from 'node:path';
 const PANEL = Number(process.env.TEST_PORT || 4941);
 const PUBLIC = PANEL + 1;
 const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'console-market-'));
+/*  ⛔ فاز ۱ (۶-۵): نشستِ تازه (ورود یا رمزِ درخواستِ قبلی، ده دقیقه) بی رمز هم از `requireRecentAuth` می‌گذرد؛
+    «بی رمز ⇒ reauth_required» فقط روی نشستِ کهنه معنا دارد — همان روشِ `roles-logs` / `totp` / `security`. */
+const staleAll = async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const d = new DatabaseSync(path.join(tmp, 'data', 'panel.db'));
+  try { d.exec('PRAGMA busy_timeout = 5000'); d.exec('UPDATE sessions SET auth_at = 0'); } finally { d.close(); }
+};
 
 let pass = 0, fail = 0;
 const check = (name, ok, extra = '') => {
@@ -232,6 +239,7 @@ try {
     check(`${why} ⇒ ۴۰۰ ${code} و هیچ تصمیمی نرفت`, r.status === 400 && r.json?.error === code && up(n, '/api/admin/trust/cases/tc_1/decide').length === 0, `${r.status} ${JSON.stringify(r.json)}`);
   }
   n = seen.length;
+  await staleAll();
   const noPw = await api('POST', `${C}/market/trust/cases/tc_1/decide`, { ...good, password: undefined }, admin);
   check('بی رمز ⇒ ۴۰۳ reauth_required', noPw.status === 403 && noPw.json?.error === 'reauth_required' && since(n).length === 0, JSON.stringify(noPw.json));
   const ok = await api('POST', `${C}/market/trust/cases/tc_1/decide`, good, admin);

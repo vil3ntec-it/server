@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { totp, hotp, verifyTotp, base32Encode, normalizeDigits } from '../src/lib/totp.js';
 
 const PORT = Number(process.env.TEST_PORT || 4823);
@@ -69,6 +70,19 @@ try {
   check('دوعاملی پیش‌فرض خاموش است', st.json?.enabled === false);
 
   console.log('── روشن کردنِ دوعاملی ──');
+  /*
+   *  ⛔ (۱.۵۰.۶۲، ۶-۵) روشن کردن هم رمزِ تازه می‌خواهد: نشستِ دزدیده‌شده با اپِ
+   *  خودش دوعاملی را روی حسابِ مالک روشن می‌کرد و صاحبِ سامانه بیرون می‌ماند.
+   */
+  const staleAll = () => {
+    const d = new DatabaseSync(path.join(tmp, 'panel.db'));
+    try { d.exec('PRAGMA busy_timeout = 5000'); d.exec('UPDATE sessions SET auth_at = 0'); } finally { d.close(); }
+  };
+  staleAll();
+  const staleSetup = await call('POST', '/api/auth/totp/setup', {}, t1);
+  check('⛔ نشستِ کهنه دوعاملی را روشن نمی‌کند (۴۰۳ reauth_required)', staleSetup.status === 403 && staleSetup.json?.error === 'reauth_required', JSON.stringify(staleSetup.json));
+  const re1 = await call('POST', '/api/auth/reauth', { password: 'Passw0rd!xyz' }, t1);
+  check('با رمز دوباره تازه شد', re1.status === 200, JSON.stringify(re1.json));
   const s = await call('POST', '/api/auth/totp/setup', {}, t1);
   check('راز و QR و otpauth آمد', s.json?.secret && s.json?.qr?.startsWith('data:image/png') && s.json?.url?.startsWith('otpauth://totp/'), JSON.stringify(s.json).slice(0, 120));
   const secret = s.json.secret;
@@ -103,6 +117,17 @@ try {
   const rec2 = await call('POST', '/api/auth/login/totp', { ticket: s2.json.ticket, code: recovery[0] });
   check('همان کد بارِ دوم رد می‌شود (یک‌بارمصرف)', rec2.status === 401);
   check('۹ کدِ بازیابی مانده', (await call('GET', '/api/auth/totp', undefined, t2)).json?.recoveryLeft === 9);
+  const meRec = await call('GET', '/api/auth/me', undefined, rec.json.token);
+  check('ورود با کدِ بازیابی هم نشستِ «تازه» می‌سازد', meRec.json?.freshUntil > Date.now(), JSON.stringify(meRec.json).slice(0, 160));
+
+  console.log('── احرازِ دوباره با دوعاملیِ روشن: رمز + کد ──');
+  staleAll();
+  const reNoCode = await call('POST', '/api/auth/reauth', { password: 'Passw0rd!xyz' }, t2);
+  check('⛔ فقط رمز کافی نیست (۴۰۰ totp_invalid، totpRequired)', reNoCode.status === 400 && reNoCode.json?.error === 'totp_invalid' && reNoCode.json?.totpRequired === true, JSON.stringify(reNoCode.json));
+  const reBadPw = await call('POST', '/api/auth/reauth', { password: 'nope', code: totp(secret) }, t2);
+  check('⛔ کد بی رمزِ درست هم نه', reBadPw.status === 400 && reBadPw.json?.error === 'wrong_password', JSON.stringify(reBadPw.json));
+  const reBoth = await call('POST', '/api/auth/reauth', { password: 'Passw0rd!xyz', code: totp(secret) }, t2);
+  check('رمز + کد ⇒ تازه', reBoth.status === 200 && reBoth.json?.freshUntil > Date.now(), JSON.stringify(reBoth.json));
 
   console.log('── دستگاه‌های واردشده ──');
   const list = await call('GET', '/api/auth/sessions', undefined, t2);

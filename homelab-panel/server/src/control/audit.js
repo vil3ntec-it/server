@@ -4,6 +4,7 @@
 // ---------------------------------------------------------------------------
 import { clientIp } from '../platform/security.js';
 import { db } from '../db.js';
+import { archiveAndPrune } from '../lib/audit-archive.js';
 
 /** کلیدهایی که اگر در detail باشند، مقدارشان نوشته نمی‌شود */
 const SENSITIVE = /^(password|pass|pwd|otp|token|secret|api[_-]?key|authorization|cookie|private[_-]?key|value)$/i;
@@ -75,10 +76,9 @@ export function listAudit({ limit = 200, offset = 0, projectId = null, action = 
   return { rows, total };
 }
 
+//  ⛔ هرس با بایگانیِ پیشین — همان قاعدهٔ `lib/audit.js` (۱.۵۰.۷۱، S9)
 export function pruneAudit(keep = 20000) {
   try {
-    db.exec(
-      `DELETE FROM cc_audit WHERE id NOT IN (SELECT id FROM cc_audit ORDER BY id DESC LIMIT ${Number(keep)})`
-    );
-  } catch { /* بی‌خیال */ }
+    archiveAndPrune(db, 'cc_audit', keep);
+  } catch { /* بایگانی نشد ⇒ پاک هم نشد؛ دورِ بعد */ }
 }

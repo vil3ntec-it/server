@@ -80,23 +80,16 @@ const reauthLimit = rateLimit({
   skipSuccess: true, countIf: (_req, res) => res.locals?.reauthFailed === true,
 });
 
+//  ⛔ قاعده یکی است و در `auth.js` (`bodyStepUp`): رمز، و اگر دوعاملی روشن است کد هم (۱.۵۰.۷۱)
 function reauth(req, res, next) {
-  const password = typeof req.body?.password === 'string' ? req.body.password : '';
-  if (password) {
-    const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(Number(req.user?.id));
-    if (!row || !panelAuth.verifyPassword(password, row.password_hash)) {
-      res.locals.reauthFailed = true;
-      audit({ actor: actorOf(req), action: 'account.console.reauth_failed', entity: 'console', result: 'forbidden', detail: { path: req.path } });
-      return res.status(403).json({ error: 'reauth_failed', message: 'رمزِ پنل درست نیست' });
-    }
-    if (typeof panelAuth.markFresh === 'function' && req.user?.sessionId) panelAuth.markFresh(req.user.sessionId);
-    res.locals.reauthed = true;
-    return next();
+  const r = panelAuth.bodyStepUp(req);
+  if (r.pass) { res.locals.reauthed = true; return next(); }
+  if (r.failed) {
+    res.locals.reauthFailed = true;
+    audit({ actor: actorOf(req), action: 'account.console.reauth_failed', entity: 'console', result: 'forbidden', detail: { path: req.path, step: r.error } });
+    return res.status(403).json({ error: 'reauth_failed', message: 'رمزِ پنل یا کدِ دوعاملی درست نیست' });
   }
-  if (typeof panelAuth.requireRecentAuth === 'function') {
-    return panelAuth.requireRecentAuth(req, res, () => { res.locals.reauthed = true; next(); });
-  }
-  return res.status(403).json({ error: 'reauth_required', message: 'برای این کار رمزِ پنلِ خودتان را دوباره بزنید' });
+  return res.status(403).json({ error: 'reauth_required', totpRequired: r.totpRequired || undefined, message: 'برای این کار رمزِ پنلِ خودتان را دوباره بزنید' });
 }
 
 function ownerOnly(what) {

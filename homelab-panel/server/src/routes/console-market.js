@@ -28,7 +28,6 @@ import { cloudRaw } from '../stations/cloud.js';
 import * as panelRoles from '../control/roles.js';
 import * as panelAuth from '../auth.js';
 import { audit } from '../control/audit.js';
-import { db } from '../db.js';
 import { rateLimit } from '../platform/rate-limit.js';
 import { requireModule } from '../console/modules.js';
 
@@ -132,19 +131,15 @@ const reauthLimit = rateLimit({
 
 /** رمزِ پنلِ خودِ همین کاربر همراهِ درخواست — یا اگر فاز ۱ در پایه است، نشستِ تازه (`requireRecentAuth`). */
 function reauth(req, res, next) {
-  const password = typeof req.body?.password === 'string' ? req.body.password : '';
-  if (password) {
-    const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(Number(req.user?.id));
-    if (!row || !panelAuth.verifyPassword(password, row.password_hash)) {
-      res.locals.reauthFailed = true;
-      audit({ actor: actorOf(req), action: 'account.market.reauth_failed', entity: 'console', result: 'forbidden', detail: { path: req.path } });
-      return res.status(403).json({ error: 'reauth_failed', message: 'رمزِ پنل درست نیست' });
-    }
-    if (typeof panelAuth.markFresh === 'function' && req.user?.sessionId) panelAuth.markFresh(req.user.sessionId);
-    return next();
+  //  ⛔ قاعده یکی است و در `auth.js` (`bodyStepUp`): رمز، و اگر دوعاملی روشن است کد هم (۱.۵۰.۷۱)
+  const r = panelAuth.bodyStepUp(req);
+  if (r.pass) return next();
+  if (r.failed) {
+    res.locals.reauthFailed = true;
+    audit({ actor: actorOf(req), action: 'account.market.reauth_failed', entity: 'console', result: 'forbidden', detail: { path: req.path, step: r.error } });
+    return res.status(403).json({ error: 'reauth_failed', message: 'رمزِ پنل یا کدِ دوعاملی درست نیست' });
   }
-  if (typeof panelAuth.requireRecentAuth === 'function') return panelAuth.requireRecentAuth(req, res, next);
-  return res.status(403).json({ error: 'reauth_required', message: 'برای این کار رمزِ پنلِ خودتان را دوباره بزنید' });
+  return res.status(403).json({ error: 'reauth_required', totpRequired: r.totpRequired || undefined, message: 'برای این کار رمزِ پنلِ خودتان را دوباره بزنید' });
 }
 
 /* ───────────── CSV — فقط admin، با یک ردیفِ دفتر ───────────── */

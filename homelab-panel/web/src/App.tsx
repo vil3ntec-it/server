@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppProvider, useApp } from './app-context';
 import { featureOn } from './features';
 import { Loading, ToastHost } from './components/ui';
+import ReauthHost from './components/ReauthHost';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -9,6 +10,8 @@ import Sites from './pages/Sites';
 import Files from './pages/Files';
 import SiteServer from './pages/SiteServer';
 import Settings from './pages/Settings';
+import Account from './pages/Account';
+import ForceChangePassword from './pages/ForceChangePassword';
 import CodesPage from './pages/Codes';
 
 // ── مرکز فرمان ────────────────────────────────────────────────────────────
@@ -35,9 +38,11 @@ import SupportPage from './pages/account/Support';
 import SyncStatusPage from './pages/account/SyncStatus';
 
 function Shell() {
-  const { ready, authed } = useApp();
+  const { ready, authed, mustChangePassword } = useApp();
   if (!ready) return <Loading />;
   if (!authed) return <Login />;
+  //  ⛔ رمزِ یک‌بارمصرفِ بازیابی: سرور هر درِ دیگری را بسته است (۶-۳)
+  if (mustChangePassword) return <ForceChangePassword />;
 
   return (
     <Routes>
@@ -96,6 +101,11 @@ function Shell() {
         <Route path="/stations/:code" element={<StationProfile />} />
         <Route path="/codes" element={<CodesPage />} />
         {featureOn('settings') && <Route path="/settings" element={<Settings />} />}
+        {/*
+          ⛔ «حسابِ من» همیشه روشن است (۶-۲): رمز، دوعاملی و دستگاه‌های خودِ آدم.
+          بقیهٔ `Settings` (پوشهٔ سایت‌ها، دامنهٔ پایه…) هنوز پشتِ همان کلید است.
+        */}
+        <Route path="/account" element={<Account />} />
 
         {/* مرکز فرمان */}
         {featureOn('commandCenter') && <Route path="/control" element={<Command />} />}
@@ -121,6 +131,7 @@ export default function App() {
       <AppProvider>
         <Shell />
         <ToastHost />
+        <ReauthHost />
       </AppProvider>
     </BrowserRouter>
   );
