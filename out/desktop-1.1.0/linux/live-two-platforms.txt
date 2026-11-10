@@ -1,0 +1,26 @@
+t=1s engine 30 fps draw 29.6 ms; سرورِ ۱: LIVE 4371kbps 29fps lag 0ms | سرورِ ۲: LIVE 4371kbps 29fps lag 0ms dropped 0 error null
+t=2s engine 31 fps draw 29.6 ms; سرورِ ۱: LIVE 4690kbps 31fps lag 0ms | سرورِ ۲: LIVE 4690kbps 31fps lag 0ms dropped 0 error null
+t=3s engine 30 fps draw 29.3 ms; سرورِ ۱: LIVE 4690kbps 31fps lag 0ms | سرورِ ۲: LIVE 4690kbps 31fps lag 0ms dropped 0 error null
+t=4s engine 31 fps draw 28.9 ms; سرورِ ۱: LIVE 4503kbps 30fps lag 0ms | سرورِ ۲: LIVE 4503kbps 30fps lag 0ms dropped 0 error null
+t=5s engine 30 fps draw 31.8 ms; سرورِ ۱: LIVE 4622kbps 30fps lag 0ms | سرورِ ۲: LIVE 4622kbps 30fps lag 0ms dropped 0 error null
+t=6s engine 31 fps draw 29.6 ms; سرورِ ۱: LIVE 4460kbps 31fps lag 0ms | سرورِ ۲: LIVE 4460kbps 31fps lag 0ms dropped 0 error null
+t=7s engine 31 fps draw 28.8 ms; سرورِ ۱: LIVE 4801kbps 31fps lag 0ms | سرورِ ۲: LIVE 4648kbps 30fps lag 0ms dropped 0 error null
+t=8s engine 30 fps draw 29.0 ms; سرورِ ۱: LIVE 4475kbps 30fps lag 0ms | سرورِ ۲: LIVE 4628kbps 31fps lag 0ms dropped 0 error null
+t=9s engine 30 fps draw 29.8 ms; سرورِ ۱: LIVE 4452kbps 29fps lag 0ms | سرورِ ۲: LIVE 4577kbps 30fps lag 0ms dropped 0 error null
+t=10s engine 31 fps draw 31.5 ms; سرورِ ۱: LIVE 4469kbps 31fps lag 0ms | سرورِ ۲: LIVE 4344kbps 30fps lag 0ms dropped 0 error null
+t=11s engine 31 fps draw 28.9 ms; سرورِ ۱: LIVE 4792kbps 31fps lag 0ms | سرورِ ۲: LIVE 4792kbps 31fps lag 0ms dropped 0 error null
+t=12s engine 31 fps draw 30.0 ms; سرورِ ۱: LIVE 4476kbps 30fps lag 0ms | سرورِ ۲: LIVE 4476kbps 30fps lag 0ms dropped 0 error null
+t=13s engine 30 fps draw 28.9 ms; سرورِ ۱: LIVE 4631kbps 31fps lag 0ms | سرورِ ۲: LIVE 4631kbps 31fps lag 0ms dropped 0 error null
+t=14s engine 31 fps draw 30.2 ms; سرورِ ۱: LIVE 4568kbps 31fps lag 0ms | سرورِ ۲: LIVE 4568kbps 31fps lag 0ms dropped 0 error null
+t=15s engine 31 fps draw 28.7 ms; سرورِ ۱: LIVE 4597kbps 30fps lag 0ms | سرورِ ۲: LIVE 4597kbps 30fps lag 0ms dropped 0 error null
+LIVE_DONE
+== server a
+stream|codec_name=h264|width=1920|height=1080|avg_frame_rate=30/1|nb_read_frames=451
+stream|codec_name=aac|sample_rate=48000|avg_frame_rate=0/0|nb_read_frames=703
+format|duration=15.033000
+decode errors: 0
+== server b
+stream|codec_name=h264|width=1920|height=1080|avg_frame_rate=30/1|nb_read_frames=451
+stream|codec_name=aac|sample_rate=48000|avg_frame_rate=0/0|nb_read_frames=703
+format|duration=15.033000
+decode errors: 0
