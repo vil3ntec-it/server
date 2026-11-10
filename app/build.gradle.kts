@@ -13,8 +13,8 @@ android {
         targetSdk = 35
         // ML Kit's translator brings native code: phones only (no emulator ABIs), smaller APK.
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
-        versionCode = 67
-        versionName = "7.9"
+        versionCode = 68
+        versionName = "8.0"
     }
 
 

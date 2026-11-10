@@ -46,6 +46,15 @@ class E2EActivity : Activity() {
                 @Suppress("DEPRECATION")
                 startActivityForResult(getSystemService(MediaProjectionManager::class.java)!!.createScreenCaptureIntent(), 1)
             }
+            "translate" -> {
+                // the app's own translator, on the real internet: what each sentence becomes, and who translated it
+                LiveExtras.setTrTarget(this, "en")
+                val fa = listOf("هی چطوری امروز خوش گذشت", "بازی zero dum برو استارت کن", "اون مپ رو دوست دارم",
+                    "داداش میخام لول بعدی رو باهات بازی کنم", "نمیدونم چرا لگ داره", "اگه میتونی یه راند دیگه بریم")
+                val en = listOf("I want to see that map", "Hey bro, can you play the next round with me?", "I don't know what is going on")
+                for (t in fa) ChatTranslator.fromPersian(this, t) { Log.i("RAWREC_E2E", "fa>en [${ChatTranslator.engine}] $t => $it") }
+                for (t in en) ChatTranslator.toPersian(this, t) { Log.i("RAWREC_E2E", "en>fa [${ChatTranslator.engine}] $t => $it") }
+            }
             "land" -> requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
             "port" -> requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             "live" -> {

@@ -42,6 +42,12 @@ probe() {  # every recording in the gallery: size, length, decode errors, how mu
 
 adb shell $A --es do land
 sleep 3
+log "the app's own translator on the real internet"
+adb shell $A --es do translate
+sleep 25
+adb logcat -d -s RAWREC_E2E:I | grep -E "fa>en|en>fa" > $OUT/translate.txt
+adb shell run-as $PKG cat files/rec_log.txt | grep "translate:" >> $OUT/translate.txt 2>/dev/null
+cat $OUT/translate.txt
 log "start live (720p quality) to rtmp://10.0.2.2:1935/live"
 adb shell $A --es do live --es url rtmp://10.0.2.2:1935/live --es key test --es quality 0
 sleep 4

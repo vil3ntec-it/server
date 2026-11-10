@@ -140,6 +140,14 @@ object ChatTranslator {
     @Volatile internal var transport: ((String) -> String?)? = null
     @Volatile private var onlineOffUntil = 0L
 
+    /** 7.9: who translated last — "google" or "phone" — written to the report each time it changes. */
+    @Volatile var engine = ""; private set
+    private fun used(ctx: Context, e: String) {
+        if (e == engine) return
+        engine = e
+        RecLog.add(ctx, if (e == "google") "translate: by Google Translate" else "translate: by the phone (Google did not answer)")
+    }
+
     /**
      * [text] from [src] ("auto" = found by Google) into [dst]: the translation and the language it
      * was in; null when there is no internet or Google does not answer (then the phone's own
@@ -181,12 +189,14 @@ object ChatTranslator {
                 // 7.7: read as chat is spoken, not as a letter is written
                 val r = out.takeIf { from.substringBefore('-') != "fa" && it != text }?.let { PersianCasual.casual(it) }
                 if (r != null) synchronized(cache) { cache[key] = r }
+                used(ctx, "google")
                 done(r); return@execute
             }
             val src = detect(text)
             // The first message in a language waits for that language's one-time download.
             if (src == null || !ensurePair(src, "fa")) { done(null); return@execute }
             val out = try { Tasks.await(client(src, "fa").translate(text), 8, TimeUnit.SECONDS) } catch (_: Throwable) { null }
+            if (out != null) used(ctx, "phone")
             val r = out?.trim()?.takeIf { it.isNotEmpty() && it != text }?.let { PersianCasual.casual(it) }
             if (r != null) synchronized(cache) { cache[key] = r }
             done(r)
@@ -203,10 +213,12 @@ object ChatTranslator {
         exec.execute {
             online(src, "fa", target)?.let { (out, _) ->
                 synchronized(cache) { cache[key] = out }
+                used(ctx, "google")
                 done(out); return@execute
             }
             if (!ensureReady(target)) { done(null); return@execute }
             val out = try { Tasks.await(client("fa", target).translate(src), 10, TimeUnit.SECONDS) } catch (_: Throwable) { null }
+            if (out != null) used(ctx, "phone")
             val r = out?.trim()?.takeIf { it.isNotEmpty() }
             if (r != null) synchronized(cache) { cache[key] = r }
             done(r)
