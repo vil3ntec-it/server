@@ -28,10 +28,9 @@ class FakePhone(private val h264: File, private val portFile: File, private val 
         ServerSocket(port, 2, java.net.InetAddress.getByName("127.0.0.1")).use { ss ->
             val v = ss.accept()
             val vo = DataOutputStream(v.getOutputStream().buffered())
-            vo.writeByte(0)                                             // dummy byte
-            vo.write(name.toByteArray().copyOf(64))                      // device name
-            vo.flush()
-            val a = ss.accept()
+            vo.writeByte(0); vo.flush()                                  // dummy byte, at once
+            val a = ss.accept()                                          // as the real server: the name only
+            vo.write(name.toByteArray().copyOf(64)); vo.flush()          // once every connection is open
             Thread({ audio(DataOutputStream(a.getOutputStream().buffered())) }, "fake-audio").apply { isDaemon = true; start() }
             vo.writeInt(PhoneLink.CODEC_H264); vo.writeInt(0); vo.writeInt(0)
             val ic = AVFormatContext(null as Pointer?)

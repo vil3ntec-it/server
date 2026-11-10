@@ -128,7 +128,7 @@ jobs:
           F=$(grep '^RESULT_FILE=' $O/fake-phone-installed.txt | tail -1 | cut -d= -f2-)
           [ -n "$F" ] && [ -f "$F" ]
           ffprobe -v error -show_entries stream=codec_name,width,height,r_frame_rate,color_space,color_primaries,color_transfer,sample_rate,channels:format=duration -of default=nw=1 "$F" | tee $O/fake-phone-ffprobe.txt
-          ffmpeg -v error -i "$F" -f null - 2>&1 | tee $O/fake-phone-decode-errors.txt
+          ffmpeg -v error -i "$F" -fps_mode passthrough -f null - 2>&1 | tee $O/fake-phone-decode-errors.txt
           ffmpeg -v error -ss 1.5 -i "$F" -frames:v 1 -y $O/fake-phone-landscape.png
           ffmpeg -v error -ss 9.3 -i "$F" -frames:v 1 -y $O/fake-phone-portrait.png
           grep -q 'exit 0' $O/fake-phone-installed.txt
@@ -226,7 +226,7 @@ jobs:
           F=$(grep '^RESULT_FILE=' $O/selftest.txt | tail -1 | cut -d= -f2-)
           [ -n "$F" ] && [ -f "$F" ]
           ffprobe -v error -show_entries stream=codec_name,width,height,r_frame_rate,nb_read_frames,color_space,sample_rate,channels:format=duration,size -count_frames -of default=nw=1 "$F" | tee $O/ffprobe.txt
-          ffmpeg -v error -i "$F" -f null - 2>&1 | tee $O/decode-errors.txt
+          ffmpeg -v error -i "$F" -fps_mode passthrough -f null - 2>&1 | tee $O/decode-errors.txt
           for s in 3 8 13; do ffmpeg -v error -ss $s -i "$F" -frames:v 1 -y $O/frame-${s}s.png; done
           "$AD" exec-out screencap -p > $O/emulator-screen.png || true
           grep -q '^adb: .*rawrec/platform-tools/adb' $O/selftest.txt   # the app's own adb, made runnable

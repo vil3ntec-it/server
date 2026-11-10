@@ -78,12 +78,20 @@ class PhoneLink(private val adb: Adb, private val serial: String, private val op
             daemon("phone-server-log") { p.inputStream.bufferedReader().forEachLine { l -> serverLog(l) } }
         }
         // The server needs a moment to listen; until then adb accepts and closes the connection at once.
+        // The phone sends its name only once every connection it expects (picture, then sound) is open:
+        // asking for the name before opening the sound one would wait forever on both sides.
         val v = connect(first = true)
         videoSock = v
-        val vin = DataInputStream(v.getInputStream().buffered(1 shl 20))
-        deviceName = String(vin.readNBytes(64), Charsets.UTF_8).trimEnd('\u0000')
-        events.onDeviceName(deviceName)
         if (opt.audio) audioSock = connect(first = false)
+        val vin = DataInputStream(v.getInputStream().buffered(1 shl 20))
+        v.soTimeout = HANDSHAKE_MS                     // never hang on a phone that stopped answering
+        val name = try { vin.readNBytes(64) } catch (e: java.net.SocketTimeoutException) {
+            fail("the phone did not send its name: ${lastServerError ?: "no answer in ${HANDSHAKE_MS / 1000} s"}")
+        }
+        if (name.size < 64) fail("the phone closed the link: ${lastServerError ?: "before its name"}")
+        deviceName = String(name, Charsets.UTF_8).trimEnd('\u0000')
+        events.onDeviceName(deviceName)
+        v.soTimeout = 0
         daemon("phone-video") { readVideo(vin) }
         audioSock?.let { a -> daemon("phone-audio") { readAudio(DataInputStream(a.getInputStream().buffered(1 shl 16))) } }
     }
@@ -103,7 +111,9 @@ class PhoneLink(private val adb: Adb, private val serial: String, private val op
                 s.connect(InetSocketAddress("127.0.0.1", port), 2000)
                 if (first) {
                     // the dummy byte: the server is really there (EOF = not yet listening)
+                    s.soTimeout = HANDSHAKE_MS
                     if (s.getInputStream().read() < 0) { s.close(); throw EOFException("not ready") }
+                    s.soTimeout = 0
                 }
                 return s
             } catch (e: Exception) { lastErr = e; Thread.sleep(100) }
@@ -168,6 +178,7 @@ class PhoneLink(private val adb: Adb, private val serial: String, private val op
 
     companion object {
         const val REMOTE = "/data/local/tmp/scrcpy-server.jar"
+        private const val HANDSHAKE_MS = 15_000
         private const val FLAG_CONFIG = 1L shl 63
         private const val FLAG_KEY = 1L shl 62
         private const val PTS_MASK = (1L shl 62) - 1
