@@ -214,8 +214,22 @@ try {
   await vpage.fill('input[type="password"]', 'HolViewer!2026');
   await vpage.locator('form button').last().click();
   await vpage.waitForTimeout(1500);
+  //  ۱.۵۰.۷۹: صفِ پرِ بدنه‌های بزرگِ پل (‎503 account_server_busy‎، `stations/body-gate.js`) گذراست ⇒ کارت می‌گوید و خودش دوباره می‌خواند
+  let busyServed = 0;
+  await vpage.route('**/api/account-admin/console/calendar/holidays', (route) => {
+    if (busyServed++ > 0) return route.continue();
+    return route.fulfill({ status: 503, contentType: 'application/json',
+      body: JSON.stringify({ error: 'account_server_busy', message: 'پنل همین حالا پاسخ‌های بزرگِ زیادی از سرورِ حساب می‌خواند — چند ثانیهٔ دیگر دوباره بخوانید' }) });
+  });
   await vpage.goto(`${BASE}/shop?tab=settings`, { waitUntil: 'networkidle' });
-  await vpage.waitForSelector('[data-card="holidays"] table', { timeout: 15000 });
+  await vpage.waitForSelector('[data-card="holidays"]', { timeout: 15000 });
+  await vpage.waitForFunction(() => (document.querySelector('[data-card="holidays"]')?.textContent || '').includes('دوباره بخوانید'), null, { timeout: 5000 }).catch(() => {});
+  const busyText = await card(vpage).innerText();
+  const t503 = Date.now();
+  const back = await vpage.waitForSelector('[data-card="holidays"] table', { timeout: 15000 }).then(() => true, () => false);
+  check('⛔ ‎503 account_server_busy‎ ⇒ کارت پیام و «خودمان دوباره تلاش می‌کنیم» را می‌گوید و بی کلیک خودش دوباره می‌خواند (جدول برگشت)',
+    busyText.includes('چند ثانیهٔ دیگر دوباره بخوانید') && busyText.includes('خودمان دوباره تلاش می‌کنیم') && back && busyServed >= 2,
+    `${busyServed} ${Date.now() - t503}ms ${busyText.slice(0, 300)}`);
   const vtext = await card(vpage).innerText();
   check('viewer: جدول و «فقط مدیرِ پنل…»، بی دکمهٔ ویرایش؛ گوشی (۳۹۰px) افقی نمی‌لغزد',
     vtext.includes('نوروز') && vtext.includes('فقط مدیرِ پنل') && (await card(vpage).locator('[data-holidays-edit]').count()) === 0

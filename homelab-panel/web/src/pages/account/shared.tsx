@@ -154,6 +154,8 @@ const RETRY_CODES = new Set([
   'account_server_timeout',
   //  بدنهٔ بریده/خرابِ **خواندن** (۱.۵۰.۷۷) — گذراست؛ ‎account_server_too_large‎ عمداً نه (تکرار همان را می‌آورد)
   'account_server_bad_response',
+  //  صفِ پرِ بدنه‌های بزرگِ پل (۱.۵۰.۷۹، ‎stations/body-gate.js‎) — فقط خواندن، و با رها شدنِ جاها خودش باز می‌شود
+  'account_server_busy',
 ]);
 
 /** فاصلهٔ تلاش‌ها — فزاینده، با سقفِ یک دقیقه. */

@@ -42,6 +42,7 @@ import { config } from '../config.js';
 import { accountApiUrl, downPayload } from '../api/account-proxy.js';
 import { managedAdminCreds } from '../account/supervisor.js';
 import { readServiceKey, actorHeaders, SYSTEM_ACTOR, SERVICE_KEY_RE } from '../account/service-key.js';
+import { makeBodyGate, bodyGateConfig, BODY_FREE_BYTES } from './body-gate.js';
 
 /** نشانیِ عمومیِ سرورِ حساب — قفل، نه از تنظیمات. همان که برنامه‌ها می‌زنند. */
 export const CLOUD_BASE = 'https://api.vill3n.top';
@@ -166,28 +167,76 @@ function unreadableErr(ctx, why) {
   return Object.assign(err, { unreadable: why, method: ctx.method, path: ctx.path, timeoutMs: null });
 }
 
-/** بدنه تا سقف، تکه‌تکه — از سقف گذشت ⇒ بریدن و ‎too_large‎ (هیچ بایتِ بیشتری خوانده یا نگه داشته نمی‌شود). */
-async function readCapped(res, ctx) {
+/*
+ *  🚦 **سقفِ هم‌زمانیِ بدنه‌های بزرگ** (۱.۵۰.۷۹، `stations/body-gate.js`): تا ۱ مگابایت هر بدنه آزاد است؛ بیش از آن یک «جا»
+ *  می‌خواهد (۴ جا، هر کدام سهمِ کاملِ یک بدنه)، نبودِ جا ⇒ صف (تا ۱۲۸، با همان مهلتِ درخواست)، و فقط صفِ پر ⇒
+ *  ‎503 account_server_busy‎. جا تا پایانِ خواندنِ JSON نگه داشته می‌شود (`readBody`)، چون رونوشت و متنِ بازشده هم حافظه‌اند.
+ *  ⛔ دو دسته **هرگز** پشتِ این سقف نمی‌روند و جا هم نمی‌گیرند:
+ *     • نوشتن (‎!ctx.safe‎): کار شاید همین حالا انجام شده و پاسخ تنها شاهدِ آن است — صبر یا ‎503‎ ِ خودساخته آن را «نامعلوم» می‌کرد؛
+ *     • رسانهٔ یک‌بارمصرفِ پشتیبانی (‎ctx.once‎، `cloudRawBytes`): سرورِ حساب با رسیدنِ بدنه به سوکت آن را **پاک** می‌کند
+ *       (‎res.on('finish')‎ ⇒ ‎DELETE‎، shop ‎lib/station-chat.js‎) — هر ‎503‎ یا مهلتِ صف پس از سرآیند می‌توانست رسانهٔ مشتری را گم کند.
+ *       و تکرارپذیر هم نیست (یک بار، سپس از دیسکِ پنل)، پس هم‌زمانیِ آن را viewer نمی‌تواند چند برابر کند.
+ */
+let bodyGate = null;
+const gate = () => (bodyGate ??= makeBodyGate(bodyGateConfig()));
+
+let busyWarnAt = 0;
+function busyErr(ctx) {
+  const t = Date.now();
+  if (t - busyWarnAt > 60_000) {
+    busyWarnAt = t;
+    const s = gate().stats();
+    console.warn(`[bridge] صفِ بدنه‌های بزرگِ پل پر است (${s.inUse}/${s.slots} جا، ${s.waiting}/${s.queue} در صف) ⇒ 503 account_server_busy`);
+  }
+  const err = new Error('پنل همین حالا پاسخ‌های بزرگِ زیادی از سرورِ حساب می‌خواند — چند ثانیهٔ دیگر دوباره بخوانید');
+  return Object.assign(err, { code: 'account_server_busy', status: 503, busy: true, method: ctx.method, path: ctx.path, timeoutMs: null });
+}
+
+/** یک جا برای بدنهٔ بزرگ — صفِ پر ⇒ بریدنِ خواندن و ‎busy‎؛ مهلت در صف ⇒ بریدن و همان خطای ‎signal‎ (⇒ خطای مهلت). */
+async function admit(ctx, reader) {
+  try {
+    return await gate().acquire(ctx.signal);
+  } catch (e) {
+    await reader.cancel().catch(() => {});
+    throw e?.busy ? busyErr(ctx) : e;
+  }
+}
+
+/**
+ * بدنه تا سقف، تکه‌تکه — از سقف گذشت ⇒ بریدن و ‎too_large‎ (هیچ بایتِ بیشتری خوانده یا نگه داشته نمی‌شود).
+ * ‎hold.release‎: جای بدنهٔ بزرگ (بالا) — صداکننده پس از کارش با بایت‌ها رهایش می‌کند؛ خطا ⇒ همین‌جا رها می‌شود.
+ */
+async function readCapped(res, ctx, hold = {}) {
   const declared = Number(res.headers?.get?.('content-length'));
   if (Number.isFinite(declared) && declared > BRIDGE_MAX_BODY_BYTES) {
     await res.body?.cancel().catch(() => {});
     throw unreadableErr(ctx, 'too_large');
   }
   if (!res.body) return Buffer.alloc(0);
+  const gated = ctx.safe && !ctx.once;
   const reader = res.body.getReader();
   const parts = [];
   let n = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    n += value.byteLength;
-    if (n > BRIDGE_MAX_BODY_BYTES) {
-      await reader.cancel().catch(() => {});
-      throw unreadableErr(ctx, 'too_large');
+  try {
+    //  طولِ اعلام‌شده (اگر فشرده، اندازهٔ فشرده — بازشده معمولاً بزرگ‌تر) بیش از آزاد ⇒ جا پیش از نخستین بایت
+    if (gated && Number.isFinite(declared) && declared > BODY_FREE_BYTES) hold.release = await admit(ctx, reader);
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      n += value.byteLength;
+      if (n > BRIDGE_MAX_BODY_BYTES) {
+        await reader.cancel().catch(() => {});
+        throw unreadableErr(ctx, 'too_large');
+      }
+      parts.push(value);
+      if (gated && !hold.release && n > BODY_FREE_BYTES) hold.release = await admit(ctx, reader);
     }
-    parts.push(value);
+    return Buffer.concat(parts, n);
+  } catch (e) {
+    hold.release?.();
+    hold.release = null;
+    throw e;
   }
-  return Buffer.concat(parts, n);
 }
 
 /**
@@ -196,27 +245,34 @@ async function readCapped(res, ctx) {
  * @param {'json'|'text'|'bytes'} kind
  */
 async function readBody(res, kind = 'json') {
-  const ctx = DIALED.get(res) || { ms: 0, method: '', safe: true, signal: { aborted: false }, path: '' };
+  const ctx = DIALED.get(res) || { ms: 0, method: '', safe: true, signal: { aborted: false }, path: '', once: false };
+  const hold = { release: null };
   let buf;
   try {
-    buf = await readCapped(res, ctx);
+    buf = await readCapped(res, ctx, hold);
   } catch (e) {
     if (stalled(e, ctx)) throw timeoutErr(ctx);
+    //  صفِ پرِ بدنه‌های بزرگ (فقط خواندنِ تکرارپذیر می‌رسد این‌جا) ⇒ همان ‎503‎ — جز غیرِ ۲xx که وضعیتِ خودش را نگه می‌دارد
+    if (e?.busy && res.ok) throw e;
     //  ⛔ ۲xx: بدنهٔ گم‌شده یا بیش از سقف ⇒ خطای بدنه؛ غیرِ ۲xx: وضعیت خودش گفته رد شد (بیش از سقف هم)
     if (res.ok) throw e?.unreadable ? e : unreadableErr(ctx, 'cut');
     if (kind === 'json') return {};
     if (kind === 'text') return '';
-    throw e?.unreadable ? e : unreadableErr(ctx, 'cut');
+    throw e?.unreadable || e?.busy ? e : unreadableErr(ctx, 'cut');
   }
-  if (kind === 'bytes') return buf;
-  const text = new TextDecoder().decode(buf);
-  if (kind === 'text') return text;
-  if (!buf.length && (NO_BODY.has(res.status) || ctx.method === 'HEAD')) return {};
   try {
-    return JSON.parse(text);
-  } catch {
-    if (res.ok) throw unreadableErr(ctx, text ? 'invalid' : 'empty');
-    return {};
+    if (kind === 'bytes') return buf;
+    const text = new TextDecoder().decode(buf);
+    if (kind === 'text') return text;
+    if (!buf.length && (NO_BODY.has(res.status) || ctx.method === 'HEAD')) return {};
+    try {
+      return JSON.parse(text);
+    } catch {
+      if (res.ok) throw unreadableErr(ctx, text ? 'invalid' : 'empty');
+      return {};
+    }
+  } finally {
+    hold.release?.();
   }
 }
 
@@ -230,15 +286,16 @@ const loose = (res) => readBody(res).catch((e) => { if (e?.unreadable) return {}
  * نیست — و پیامش باید همان راهِ درست کردن را بگوید (‎downPayload‎)، نه
  * «fetch failed».
  *
- * @param {{ timeout?: 'normal'|'long', safe?: boolean, signal?: AbortSignal|null }} [opts]
+ * @param {{ timeout?: 'normal'|'long', safe?: boolean, signal?: AbortSignal|null, once?: boolean }} [opts]
  *        ‎safe‎: تکرارش بی‌اثر است (پیش‌فرض: فقط GET/HEAD) — ورود هم.
+ *        ‎once‎: بدنهٔ یک‌بارمصرف (سرورِ حساب پس از فرستادن پاکش می‌کند) ⇒ بیرون از سقفِ هم‌زمانیِ بدنه‌های بزرگ (`readCapped`).
  */
-async function dial(url, init = {}, { timeout = 'normal', safe = null, signal = null } = {}) {
+async function dial(url, init = {}, { timeout = 'normal', safe = null, signal = null, once = false } = {}) {
   const method = String(init.method || 'GET').toUpperCase();
   const ms = timeoutMsOf(timeout);
   const timer = AbortSignal.timeout(ms);
   const ctx = {
-    ms, method, safe: safe ?? SAFE_METHODS.has(method),
+    ms, method, safe: safe ?? SAFE_METHODS.has(method), once: once === true,
     signal: signal ? AbortSignal.any([timer, signal]) : timer,
     path: (() => { try { return new URL(url).pathname.slice(0, 200); } catch { return ''; } })(),
   };
@@ -855,6 +912,8 @@ export async function cloudRawBytes(method, path, { body = null, contentType = '
     throw err;
   }
   const url = `${cloudTarget()}${p}`;
+  //  ⛔ رسانهٔ پشتیبانی یک‌بارمصرف است (بالا) ⇒ هرگز پشتِ سقفِ هم‌زمانیِ بدنه‌ها (`readCapped`): نه صف، نه ‎503‎
+  const once = m === 'GET' && p.startsWith('/api/admin/support/media/');
   const send = (auth) => dial(url, {
     method: m,
     headers: {
@@ -862,7 +921,7 @@ export async function cloudRawBytes(method, path, { body = null, contentType = '
       ...(m === 'POST' ? { 'content-type': String(contentType || 'application/octet-stream') } : {}),
     },
     body: m === 'POST' ? body : undefined,
-  }, { timeout, signal });
+  }, { timeout, signal, once });
 
   const res = await sendAuthed(send, p);
   if (!res.ok || m === 'POST') {
