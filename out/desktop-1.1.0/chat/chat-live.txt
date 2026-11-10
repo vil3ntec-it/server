@@ -1,0 +1,18 @@
+twitch channels: [arrowwoods, kaicenat, caedrel, rostikfacekid, buster]
+t=10s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 53 (وصل) | Twitch/kaicenat: 21 (وصل) | Twitch/caedrel: 12 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
+t=20s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 72 (وصل) | Twitch/kaicenat: 38 (وصل) | Twitch/caedrel: 18 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
+t=30s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 81 (وصل) | Twitch/kaicenat: 80 (وصل) | Twitch/caedrel: 44 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
+t=40s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 101 (وصل) | Twitch/kaicenat: 116 (وصل) | Twitch/caedrel: 67 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
+t=50s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 111 (وصل) | Twitch/kaicenat: 136 (وصل) | Twitch/caedrel: 85 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
+t=60s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 120 (وصل) | Twitch/kaicenat: 151 (وصل) | Twitch/caedrel: 106 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
+t=70s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 129 (وصل) | Twitch/kaicenat: 180 (وصل) | Twitch/caedrel: 109 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
+t=80s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 150 (وصل) | Twitch/kaicenat: 208 (وصل) | Twitch/caedrel: 121 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
+t=90s YouTube/@LofiGirl: 0 (پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)) | Twitch/arrowwoods: 164 (وصل) | Twitch/kaicenat: 229 (وصل) | Twitch/caedrel: 220 (وصل) | Kick/xqc: 0 (وصل) | Kick/adinross: 0 (وصل)
+RESULT YouTube: 0 messages; paid/gifts: 0
+RESULT Twitch: 613 messages; paid/gifts: 0
+   ben…: WW
+   bum…: романтик Wowers
+   SoB…: Таже херня, брат. Ты у меня первый после школы
+   Tem…: Эй, привет, красотка! Я мечтаю жениться на тебе NeedHeal GiveHeal
+RESULT Kick: 0 messages; paid/gifts: 0
+TRANSLATE en→fa: چه بازی خوبی است، فردا همه شما رو می‌بینم! 
