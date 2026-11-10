@@ -49,4 +49,31 @@ class RecordingTest {
         assertEquals(30, v.avg_frame_rate().num() / maxOf(1, v.avg_frame_rate().den()), "file rate")
         dir.deleteRecursively()
     }
+
+    /**
+     * A phone whose picture clock runs slow (seen on the emulator: 3 s of picture stamps over 14 s),
+     * sound arriving all the time: the file still lasts as long as the recording, at the chosen rate.
+     */
+    @Test fun slowPictureClockStillGivesAFullLengthFile() {
+        val enc = Encoders.available().firstOrNull { !it.hardware && it.family == Encoders.Family.H264 } ?: return
+        val dir = kotlin.io.path.createTempDirectory("rec").toFile()
+        val r = Recording(enc, 360, 30, 1500, withAudio = true, dir = dir)
+        r.start()
+        val t0 = System.nanoTime()
+        val base = 9_000_000L
+        val pcm = ByteArray(960 * 4)
+        var nextPic = 0L; var k = 0L; var a = 0L
+        while (System.nanoTime() - t0 < 5_000_000_000L) {
+            val us = (System.nanoTime() - t0) / 1000
+            if (us >= nextPic) { r.video(picture(640, 360, base + us / 4, (k * 40 % 250).toInt())); k++; nextPic += 700_000 }
+            while (a * 20_000 <= us) { r.audio(pcm, base + a * 20_000); a++ }
+            Thread.sleep(5)
+        }
+        val res = r.stop()
+        println("slow clock: ${res.frames} frames, ${res.seconds} s, dropped ${res.dropped}, pictures $k")
+        assertNull(res.error)
+        assertTrue(res.seconds in 4.6..5.4, "seconds ${res.seconds}")
+        assertTrue(res.frames in 138..162, "frames ${res.frames}")
+        dir.deleteRecursively()
+    }
 }

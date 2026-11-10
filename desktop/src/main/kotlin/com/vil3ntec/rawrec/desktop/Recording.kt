@@ -47,6 +47,9 @@ class Recording(
     private var anchorNs = 0L                 // …and when it came, on this computer's clock
     @Volatile private var stopNs = 0L
     private val waiting = java.util.concurrent.atomic.AtomicInteger()   // pictures in the queue
+    @Volatile private var firstNs = 0L      // when the first picture came (this computer's clock)
+    private var wallClock = false           // the phone's picture clock proved wrong: arrival times instead
+    private var audioShift: Long? = null    // sound's phone µs → the file's µs
     private var outW = 0
     @Volatile var startedAtMs = 0L; private set
 
@@ -62,7 +65,7 @@ class Recording(
     /** A picture (copied now; the caller's buffer may be reused at once). */
     fun video(f: VideoFrame) {
         if (!running) return
-        if (baseUs == Long.MIN_VALUE) baseUs = f.ptsUs
+        if (baseUs == Long.MIN_VALUE) { firstNs = System.nanoTime(); baseUs = f.ptsUs }
         val need = f.width * f.height * 4
         var b = free.poll()
         if (b == null || b.capacity() < need) {
@@ -78,8 +81,8 @@ class Recording(
 
     /** The phone's sound (16-bit PCM, 48 kHz, stereo) at [ptsUs] on the phone's clock (the same as the pictures'). */
     fun audio(pcm: ByteArray, ptsUs: Long) {
-        if (!running || !withAudio || baseUs == Long.MIN_VALUE || ptsUs < baseUs) return
-        queue.offer(Item(null, 0, 0, ptsUs, pcm))
+        if (!running || !withAudio || baseUs == Long.MIN_VALUE) return
+        queue.offer(Item(null, 0, 0, ptsUs, pcm, System.nanoTime()))
     }
 
     private fun loop() {
@@ -115,7 +118,12 @@ class Recording(
             venc = v; aenc = a
             writer = FileWriter(mkv, v.ctx, a?.ctx)
         }
-        val t = it.ptsUs - baseUs
+        // the phone's own stamps keep its exact timing; a phone whose picture clock does not run like a
+        // real clock (an emulator: 3 s of stamps in 14 s) would give a short, jerky file — then arrival times
+        val phoneT = it.ptsUs - baseUs
+        val wallT = (it.atNs - firstNs) / 1000
+        if (!wallClock && wallT > 1_500_000 && kotlin.math.abs(phoneT - wallT) > wallT / 5) wallClock = true
+        val t = if (wallClock) wallT else phoneT
         if (t >= anchorUs || !haveFrame) { anchorUs = t; anchorNs = it.atNs }
         val slot = (t * fps + 500_000) / 1_000_000
         if (slot < nextSlot) return                     // this frame of the file already has its picture
@@ -142,7 +150,15 @@ class Recording(
 
     private fun audioItem(it: Item) {
         val a = aenc ?: return   // the sound starts with the first picture
-        val at = (it.ptsUs - baseUs) * AudioEncoder.RATE / 1_000_000
+        // the phone's clock when it agrees with when the sound came (it does on phones), else arrival times
+        val shift = audioShift ?: run {
+            val byPhone = it.ptsUs - baseUs
+            val byArrival = (it.atNs - firstNs) / 1000
+            (if (kotlin.math.abs(byPhone - byArrival) <= 300_000) -baseUs else byArrival - it.ptsUs).also { s -> audioShift = s }
+        }
+        val us = it.ptsUs + shift
+        if (us < 0) return
+        val at = us * AudioEncoder.RATE / 1_000_000
         a.encodePcm(it.pcm!!, at) { p -> writer?.writeAudio(p) }
     }
 
