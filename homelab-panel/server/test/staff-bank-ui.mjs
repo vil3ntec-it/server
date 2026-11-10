@@ -39,6 +39,9 @@ const fileHits = [];
 let bankOn = false;
 let slowDisable = false;
 const disabled = new Set();
+//  ۱.۵۰.۷۷: سرورِ حسابِ تازه (shop #1025) — برگرداندنِ دستگاه، صفحه‌بندی و کلیدِ یکتاییِ خودش
+let caps = ['actor.v1'];
+const enabled = [];
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8cfc0f01f0005000201a0f1b8a10000000049454e44ae426082', 'hex');
 const fake = http.createServer((req, res) => {
   let raw = '';
@@ -50,11 +53,13 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/health') return j(200, { ok: true, server: 'online', version: '2.14.5' });
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
     if (req.method !== 'GET') { let b = null; try { b = JSON.parse(raw || 'null'); } catch { /* */ } posted.push({ path: p, body: b }); }
-    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['actor.v1'], serverTime: NOW });
+    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: caps, serverTime: NOW });
     if (p === '/api/admin/shops') return j(200, { shops: [{ id: 'shp-1', name: 'دکانِ یک', owner_name: 'احمد', owner_email: 'a@b.af', status: 'active', created_at: NOW - 9e8, members: 2 }], total: 1 });
     if (p === '/api/admin/sync/status') return j(200, { app: 'shop', devices: [] });
     if (p === '/api/admin/shops/shp-1/staff-perms') {
-      return j(200, { shop: { id: 'shp-1', name: 'دکانِ یک' }, perms: { v: 1,
+      const off = Number(u.searchParams.get('offset')) || 0;
+      const page = caps.includes('staff-perms.v1') ? { limit: 50, offset: off, membersTotal: 60, devicesTotal: 2, nextOffset: off ? null : 50 } : undefined;
+      return j(200, { shop: { id: 'shp-1', name: 'دکانِ یک' }, ...(page ? { page } : {}), perms: { v: 1,
         catalog: [{ key: 'sales.discount', edit: 'restrict', caps: ['maxPct'], approvable: true, display: false, defaults: {} }],
         roles: { cashier: { 'sales.discount': { mode: 'approve' } } },
         members: [
@@ -68,6 +73,12 @@ const fake = http.createServer((req, res) => {
           { id: 'dev-b', name: 'تبلتِ دخل', platform: 'android', status: 'active', createdAt: NOW - 9e8, lastSeenAt: NOW - 6e4, disabledAt: null, blockedAttempts: 0,
             lastBlockedAt: null, member: { userId: 'u2', role: 'cashier', name: 'کریم' } },
         ] });
+    }
+    const en = /^\/api\/admin\/shops\/shp-1\/staff-perms\/devices\/([^/]+)\/enable$/.exec(p);
+    if (en && req.method === 'POST') {
+      enabled.push({ id: en[1], idem: String(req.headers['idempotency-key'] || '') });
+      disabled.delete(en[1]);
+      return j(200, { ok: true, id: en[1] });
     }
     const dm = /^\/api\/admin\/shops\/shp-1\/staff-perms\/devices\/([^/]+)\/disable$/.exec(p);
     if (dm) {
@@ -93,6 +104,22 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/image-bank/search') return j(200, { items: [], next_cursor: null, as_of: NOW });
     if (/^\/api\/admin\/image-bank\/file\//.test(p)) { fileHits.push(p); res.setHeader('content-type', 'image/png'); return res.end(PNG); }
     if (p === '/api/admin/image-bank/images/img_1/approve') return j(200, { id: 'img_1', space: 'central', status: 'APPROVED', version: 1 });
+    //  داشبورد (صفحهٔ نخستِ پس از ورود) — همان شکلِ ‎GET /api/admin/sales/summary|expiring‎ ِ shop (‎routes/admin-sales.js‎):
+    //  درآمد به تفکیکِ دوره/بخش/ارز، ۱۲ ماه، شمارِ اشتراک‌ها؛ و فهرستِ رو به پایان با ‎days‎ ِ همان پرسش
+    if (p === '/api/admin/sales/summary') {
+      const empty = { shop: {}, pump: {} };
+      const series = Array.from({ length: 12 }, (_, i) => {
+        const d = new Date(NOW); d.setUTCDate(1); d.setUTCHours(0, 0, 0, 0); d.setUTCMonth(d.getUTCMonth() - (11 - i));
+        const to = new Date(d); to.setUTCMonth(to.getUTCMonth() + 1);
+        return { month: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`, from: d.getTime(), to: to.getTime(), shop: {}, pump: {}, payments: 0 };
+      });
+      return j(200, { revenue: { today: empty, month: empty, year: empty }, series,
+        counts: { shop: { active: 1, expired: 0, suspended: 0, tenants: 1 }, pump: { active: 0, expired: 0, suspended: 0, tenants: 0 } }, serverTime: NOW });
+    }
+    if (p === '/api/admin/sales/expiring') {
+      const days = Math.min(90, Math.max(1, Number(u.searchParams.get('days')) || 7));
+      return j(200, { expiring: [], days, serverTime: NOW });
+    }
     if (p === '/api/admin/plans') return j(200, { plans: [], config: {} });
     if (p === '/api/admin/support/threads') return j(200, { threads: [], unread: 0 });
     return j(404, { error: { code: 'not_found', message: 'این مسیر وجود ندارد' } });
@@ -135,8 +162,21 @@ try {
   await page.goto(BASE, { waitUntil: 'networkidle' });
   await page.fill('input[autocomplete="username"]', 'admin');
   await page.fill('input[type="password"]', 'StaffBank!2026');
+  /*
+   *  ⛔ ۱.۵۰.۷۷ (ریشهٔ ناپایداریِ «۱ در ۴»): پس از ورود صفحهٔ نخست «داشبورد» است و همان لحظه ‎/sales/summary‎ و
+   *  ‎/sales/expiring‎ را می‌خواند (و سرِ وصل شدنِ سوکت یک بارِ دیگر، `useLive`). پیش‌تر آزمون بی‌درنگ به ‎/shop‎ می‌رفت:
+   *  اگر پاسخِ آن دو پیش از «جاافتادنِ» ناوبریِ تازه می‌رسید، خطای کنسولِ مرورگر ثبت می‌شد و اگر نه، درخواست بریده
+   *  (‎net::ERR_ABORTED‎) و بی‌صدا بود — یعنی نتیجه به زمان‌بندی بسته بود، نه به کد. حالا آزمون صبر می‌کند تا داشبورد
+   *  هر دو را بخواند، پس هر پاسخِ بدِ آن‌ها **همیشه** دیده می‌شود.
+   */
+  const dash = Promise.all(['/api/account-admin/sales/summary', '/api/account-admin/sales/expiring'].map((s) =>
+    page.waitForResponse((r) => r.url().startsWith(BASE + s), { timeout: 20000 })));
   await page.locator('form button').last().click();
   await page.waitForSelector('aside nav', { timeout: 20000 });
+  const [dSum, dExp] = await dash;
+  await page.waitForLoadState('networkidle');
+  check('داشبوردِ پس از ورود: فروش و «رو به پایان» از سرورِ حساب ۲۰۰ (شکلِ ‎admin-sales.js‎ ِ shop)',
+    dSum.status() === 200 && dExp.status() === 200, `${dSum.status()} ${dExp.status()}`);
 
   console.log('\n── پروندهٔ دکان: کارکنان و دستگاه‌ها ──');
   await page.goto(`${BASE}/shop?tab=shops&shop=shp-1`, { waitUntil: 'networkidle' });
@@ -171,6 +211,35 @@ try {
     (await page.locator('[data-outcome="unknown"]').count()) === 1 && dlg.includes('نتیجه معلوم نیست') && dlg.includes('outcome_unknown') && !/شکست|ناموفق/.test(dlg), dlg);
   await page.getByRole('button', { name: 'انصراف' }).click();
   slowDisable = false;
+
+  console.log('\n── سرورِ حسابِ تازه: برگرداندنِ دستگاه و صفحه‌بندی (۱.۵۰.۷۷) ──');
+  check('سرورِ کهنه: دستگاهِ از کار افتاده دکمهٔ «برگرداندن» ندارد', (await page.locator('[data-card="shop-staff"] button[data-enable]').count()) === 0);
+  caps = ['actor.v1', 'staff-perms.v1', 'idempotent-writes.v1'];
+  await page.goto(`${BASE}/shop?tab=shops&shop=shp-1`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(900);
+  card = await page.locator('[data-card="shop-staff"]').innerText();
+  check('با `staff-perms.v1`: «برگرداندن» برای دستگاهِ از کار افتاده، و یادداشتِ «پشتیبانی نمی‌شود» رفت',
+    (await page.locator('[data-card="shop-staff"] button[data-enable="dev-a"]').count()) === 1 && !card.includes('پشتیبانی نمی‌شود'), card.slice(0, 600));
+  check('صفحه‌بندی: «اعضا ۱–۲ / ۶۰»، «قبلی» بسته، «بعدی» باز', (await page.locator('[data-staff-page]').innerText()).includes('۶۰')
+    && await page.locator('[data-page="prev"]').isDisabled() && !(await page.locator('[data-page="next"]').isDisabled()), await page.locator('[data-staff-page]').innerText().catch(() => ''));
+  const u0 = urls.length;
+  await page.locator('[data-page="next"]').click();
+  await page.waitForTimeout(700);
+  check('«بعدی» ⇒ ‎?offset=50‎ و «قبلی» باز، «بعدی» بسته (‎nextOffset: null‎)', urls.slice(u0).some((x) => /\/staff\?offset=50$/.test(x))
+    && !(await page.locator('[data-page="prev"]').isDisabled()) && await page.locator('[data-page="next"]').isDisabled(), urls.slice(u0).join(' '));
+  await page.locator('[data-page="prev"]').click();
+  await page.waitForTimeout(700);
+  await page.locator('[data-card="shop-staff"] button[data-enable="dev-a"]').click();
+  await page.waitForTimeout(300);
+  const en = page.getByRole('button', { name: 'تأیید و فرستادن' });
+  check('برگرداندن: بی دلیل بسته، و اثر («دوباره وارد شود») پیش از تأیید گفته می‌شود', await en.isDisabled() && (await page.locator('text=باید دوباره وارد شود').count()) > 0);
+  await page.locator('textarea').fill('گوشی پیدا شد');
+  await en.dblclick();
+  await page.waitForTimeout(1200);
+  card = await page.locator('[data-card="shop-staff"]').innerText();
+  check('⛔ دوکلیک ⇒ یک درخواست با کلیدِ ‎u<کاربر>.‎ به سرورِ حساب، و «تأییدشده… برگشت»؛ دکمهٔ «از کار انداختن» برگشت',
+    enabled.length === 1 && /^u\d+\.[A-Za-z0-9_.:-]{8,}$/.test(enabled[0].idem) && card.includes('برگشت')
+      && (await page.locator('[data-card="shop-staff"] button[data-device="dev-a"]').count()) === 1, `${JSON.stringify(enabled)} ${card.slice(0, 400)}`);
 
   console.log('\n── بانکِ عکس ──');
   await page.goto(`${BASE}/shop?tab=imagebank`, { waitUntil: 'networkidle' });
@@ -215,8 +284,8 @@ try {
   await vpage.waitForTimeout(1500);
   await vpage.goto(`${BASE}/shop?tab=shops&shop=shp-1`, { waitUntil: 'networkidle' });
   await vpage.waitForTimeout(900);
-  check('viewer: کارکنان را می‌بیند، دکمهٔ «از کار انداختن» نه', (await vpage.locator('[data-card="shop-staff"]').innerText()).includes('کریم')
-    && (await vpage.locator('[data-card="shop-staff"] button[data-device]').count()) === 0);
+  check('viewer: کارکنان را می‌بیند، دکمهٔ «از کار انداختن» و «برگرداندن» نه', (await vpage.locator('[data-card="shop-staff"]').innerText()).includes('کریم')
+    && (await vpage.locator('[data-card="shop-staff"] button[data-device]').count()) === 0 && (await vpage.locator('[data-card="shop-staff"] button[data-enable]').count()) === 0);
   await vpage.goto(`${BASE}/shop?tab=imagebank`, { waitUntil: 'networkidle' });
   await vpage.waitForTimeout(900);
   await vpage.locator('[data-card="bank-review"] button[data-image="img_1"]').click();

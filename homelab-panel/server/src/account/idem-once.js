@@ -12,12 +12,66 @@
 //     همان «نامعلوم» را نگه می‌دارد تا دوباره‌زدنِ همان پنجره کارِ دوم نسازد.
 //   • یاد فقط در حافظه و ده دقیقه (مثلِ پشتیبان)، با سقفِ اندازه؛ راه‌اندازیِ دوباره فراموش می‌کند — پس سرورِ حساب
 //     باید روزی کلیدِ یکتاییِ خودش را بگیرد (گزارشِ ۱.۵۰.۷۵).
+//
+//  ۱.۵۰.۷۷ — آن روز رسید (shop #1025، `idempotent-writes.v1`): سرورِ حسابِ تازه کلید را **خودش** در پایگاه نگه می‌دارد
+//  (همان کلید ⇒ همان پاسخ با ‎Idempotent-Replayed‎؛ ‎409 idempotency_key_reused / idempotency_in_progress‎). آن‌جا
+//  `makeUpstreamOnce` جای یادِ حافظه می‌نشیند (پس از راه‌اندازیِ دوبارهٔ پنل هم، بی مرزِ ده دقیقه)؛ سرورِ کهنه ⇒ همین یاد.
 // ---------------------------------------------------------------------------
+import crypto from 'node:crypto';
+
 const IDEM_RE = /^[A-Za-z0-9_.:-]{8,128}$/;
 const TTL = 10 * 60_000;
 const MAX_SLOTS = 2000;
 
 const bad = (code, message, status = 400) => Object.assign(new Error(message), { code, status });
+
+/** کلیدِ رابط: هست و شکلش درست است — پیش از هر پرسش از سرورِ حساب. */
+export function checkIdemKey(key) {
+  const k = String(key ?? '').trim();
+  if (!k) throw bad('idempotency_key_required', 'کلیدِ یکتایی لازم است (رابطِ پنل خودش می‌فرستد)');
+  if (!IDEM_RE.test(k)) throw bad('bad_idempotency_key', 'کلیدِ یکتایی نامعتبر است');
+  return k;
+}
+
+/**
+ * کلیدِ بالادست = کلیدِ پنجره، بسته به کاربرِ پنل (`u<id>.`): با راهِ پیشین (رمزِ ارشد) همهٔ کاربرانِ پنل یک «مدیر» ِ
+ * سرورِ حساب‌اند، پس بی این پیشوند کلیدِ یک کاربر پاسخِ کاربرِ دیگر را بازپخش می‌کرد. (همان شکلِ بازگرداندنِ تعارض، ۱.۵۰.۷۵.)
+ */
+export function upstreamKey(req, key) {
+  const k = checkIdemKey(key);
+  return `u${req.user?.id ?? 'x'}.${k.length <= 110 ? k : crypto.createHash('sha256').update(k).digest('hex').slice(0, 64)}`;
+}
+
+/**
+ * «یک بار» از راهِ خودِ سرورِ حساب. `send(headers)` همان ‎cloudRaw(…, { headers, replayFlag: true })‎ است؛
+ * `finish(r, { record })` پاسخ را شکل می‌دهد و فقط وقتی `record` است ردیفِ دفترِ پنل می‌نویسد:
+ *   • پاسخِ تازه ⇒ ردیف؛ بازپخش (‎replayed‎) ⇒ بی ردیفِ دوم —
+ *   • **جز** بازپخشی که «نامعلوم» ِ همین پنل را روشن کرد (همان کلید پس از مهلت/افتادنِ اتصال): کار واقعاً انجام شده
+ *     بود و دفترِ پنل تا این لحظه فقط «نامعلوم» داشت.
+ *   • ‎409‎ ِ سرورِ حساب (کلیدِ تکراری برای کارِ دیگر، یا همان کار هنوز در راه) همان‌طور بالا می‌رود.
+ */
+export function makeUpstreamOnce({ ttl = TTL } = {}) {
+  const unknown = new Map();   // کلیدِ بالادست ⇒ زمانِ «نامعلوم»
+  return async function viaServer(req, key, send, finish) {
+    const upKey = upstreamKey(req, key);
+    let r;
+    try {
+      r = await send({ 'idempotency-key': upKey });
+    } catch (err) {
+      if (err?.outcome === 'unknown') {
+        const now = Date.now();
+        for (const [k, at] of unknown) if (now - at > ttl) unknown.delete(k);
+        while (unknown.size >= MAX_SLOTS) unknown.delete(unknown.keys().next().value);
+        unknown.set(upKey, now);
+      }
+      throw err;
+    }
+    const replayed = r?.replayed === true;
+    const resolved = replayed && unknown.delete(upKey);
+    const out = finish(r, { record: !replayed || resolved, resolved });
+    return replayed ? { ...out, replayed: true } : out;
+  };
+}
 
 export function makeIdemOnce({ ttl = TTL } = {}) {
   const slots = new Map();      // `${userId}:${key}` ⇒ { fp, at, done, promise }
@@ -37,9 +91,7 @@ export function makeIdemOnce({ ttl = TTL } = {}) {
    * @returns {Promise<object>} پاسخ؛ تکرار ⇒ با `replayed: true`
    */
   return async function once(req, key, fp, target, run) {
-    const k = String(key ?? '').trim();
-    if (!k) throw bad('idempotency_key_required', 'کلیدِ یکتایی لازم است (رابطِ پنل خودش می‌فرستد)');
-    if (!IDEM_RE.test(k)) throw bad('bad_idempotency_key', 'کلیدِ یکتایی نامعتبر است');
+    const k = checkIdemKey(key);
     const now = Date.now();
     prune(now);
     const slotKey = `${req.user?.id ?? 'x'}:${k}`;

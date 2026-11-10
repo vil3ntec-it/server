@@ -102,7 +102,8 @@ export const errCode = (e: unknown) => (e instanceof ApiError ? e.code : '');
  * قبلی‌اش را نمی‌داند (‎backup_outcome_unknown‎، و از ۱.۵۰.۷۶ ‎restore_outcome_unknown‎ ِ بازگرداندنِ تعارض): **نامعلوم** است،
  * نه شکست — شاید انجام شده. رابط باید بگوید «پیش از تکرار ببینید»، نه سرخِ «نشد».
  */
-export const outcomeUnknown = (e: unknown) => ['outcome_unknown', 'backup_outcome_unknown', 'restore_outcome_unknown'].includes(errCode(e));
+//  ۱.۵۰.۷۷: ‎409 idempotency_in_progress‎ ِ سرورِ حساب (همان کلید، همان کار هنوز در راه) هم نامعلوم است، نه «نشد»
+export const outcomeUnknown = (e: unknown) => ['outcome_unknown', 'backup_outcome_unknown', 'restore_outcome_unknown', 'idempotency_in_progress'].includes(errCode(e));
 
 export function fmtTime(ms: unknown): string {
   const n = Number(ms);

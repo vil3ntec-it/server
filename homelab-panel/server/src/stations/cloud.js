@@ -134,24 +134,94 @@ function droppedErr(ctx) {
   return Object.assign(err, { code: 'outcome_unknown', status: 502, outcome: 'unknown', method: ctx.method, path: ctx.path, timeoutMs: null });
 }
 
+/*
+ *  📦 **بدنهٔ پاسخِ پل** (۱.۵۰.۷۷، بازبینیِ ۱.۵۰.۷۶):
+ *  ⛔ سقف: بدنه جریانی و با شمارشِ بایت خوانده می‌شود، نه یک‌جا (‎res.json()/arrayBuffer()‎ تا هر اندازه در حافظه
+ *     جمع می‌کرد ⇒ یک viewer با بازکردنِ رسانه یا عکس پنل را به بافر کردنِ بدنهٔ بی‌سقف وامی‌داشت). سقف بالای
+ *     بزرگ‌ترین بارِ درست است (رسانهٔ پشتیبانی ۲۵ مگابایت، ‎MAX_MEDIA‎ ِ هر دو سو)؛ ‎content-length‎ ِ بیش از سقف ⇒ همان
+ *     دم، وگرنه همان بایتی که از سقف گذشت ⇒ خواندن بریده (‎reader.cancel‎، اتصال بسته) و ‎502 account_server_too_large‎.
+ *  ⛔ بدنهٔ **۲xx** که کامل نرسید (اتصال وسطِ بدنه افتاد) یا JSON ِ درست نبود (صفحهٔ HTML ِ واسط، بی‌بدنه) دیگر «‎{}‎ ِ
+ *     موفق» نیست: خواندن ⇒ ‎502 account_server_bad_response‎ (تکرارپذیر)؛ نوشتن ⇒ ‎502 outcome_unknown‎ — همان قاعدهٔ
+ *     مهلتِ پل (کار شاید انجام شده و پاسخش گم شد). ۲۰۴/۲۰۵/۳۰۴ و HEAD بی‌بدنهٔ قراردادی‌اند ⇒ ‎{}‎.
+ *  ⚠️ پاسخِ **غیرِ ۲xx** با بدنهٔ ناخوانا همان رفتارِ پیشین را دارد (‎{}‎ ⇒ خطا با وضعیتِ خودِ پاسخ): وضعیت خودش
+ *     گفته رد شد، و ۴۰۴ ِ HTML ِ مسیرِ نبوده «نامعلوم» نیست.
+ */
+export const BRIDGE_MAX_BODY_BYTES = 32 * 1024 * 1024;
+const NO_BODY = new Set([204, 205, 304]);
+
+/** خواندنِ بدنه نشد — ‎err.unreadable‎ تا درهای ورود/پرسشِ کلید رفتارِ نرمِ پیشین را نگه دارند (`loose`). */
+function unreadableErr(ctx, why) {
+  const big = why === 'too_large';
+  const mb = Math.round(BRIDGE_MAX_BODY_BYTES / (1024 * 1024));
+  const err = ctx.safe
+    ? new Error(big
+      ? `پاسخِ سرورِ حساب از سقفِ ${mb} مگابایت بزرگ‌تر بود و خوانده نشد`
+      : 'پاسخِ سرورِ حساب ناقص یا خراب رسید — دوباره بخوانید')
+    : new Error(big
+      ? `پاسخِ سرورِ حساب از سقفِ ${mb} مگابایت بزرگ‌تر بود و معلوم نیست این کار انجام شد یا نه — پیش از تکرار، نتیجه را در همان فهرست ببینید`
+      : 'پاسخِ سرورِ حساب ناقص یا خراب رسید و معلوم نیست این کار انجام شد یا نه — پیش از تکرار، نتیجه را در همان فهرست ببینید');
+  err.code = ctx.safe ? (big ? 'account_server_too_large' : 'account_server_bad_response') : 'outcome_unknown';
+  err.status = 502;
+  if (!ctx.safe) err.outcome = 'unknown';
+  return Object.assign(err, { unreadable: why, method: ctx.method, path: ctx.path, timeoutMs: null });
+}
+
+/** بدنه تا سقف، تکه‌تکه — از سقف گذشت ⇒ بریدن و ‎too_large‎ (هیچ بایتِ بیشتری خوانده یا نگه داشته نمی‌شود). */
+async function readCapped(res, ctx) {
+  const declared = Number(res.headers?.get?.('content-length'));
+  if (Number.isFinite(declared) && declared > BRIDGE_MAX_BODY_BYTES) {
+    await res.body?.cancel().catch(() => {});
+    throw unreadableErr(ctx, 'too_large');
+  }
+  if (!res.body) return Buffer.alloc(0);
+  const reader = res.body.getReader();
+  const parts = [];
+  let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    n += value.byteLength;
+    if (n > BRIDGE_MAX_BODY_BYTES) {
+      await reader.cancel().catch(() => {});
+      throw unreadableErr(ctx, 'too_large');
+    }
+    parts.push(value);
+  }
+  return Buffer.concat(parts, n);
+}
+
 /**
- * بدنهٔ پاسخ — با همان مهلتِ درخواست. بدنهٔ غیرِ JSON همان رفتارِ پیشین (‎{}‎ / ‎''‎)؛ ولی بدنه‌ای که مهلتش
- * سر رسید **خطای مهلت** است، نه پاسخِ خالیِ موفق.
+ * بدنهٔ پاسخ — با همان مهلتِ درخواست و سقفِ بالا. بدنه‌ای که مهلتش سر رسید **خطای مهلت** است؛ بدنهٔ ۲xx ِ بریده،
+ * خراب یا بیش از سقف **خطای بدنه** (بالا)، نه پاسخِ خالیِ موفق.
  * @param {'json'|'text'|'bytes'} kind
  */
 async function readBody(res, kind = 'json') {
+  const ctx = DIALED.get(res) || { ms: 0, method: '', safe: true, signal: { aborted: false }, path: '' };
+  let buf;
   try {
-    if (kind === 'text') return await res.text();
-    if (kind === 'bytes') return Buffer.from(await res.arrayBuffer());
-    return await res.json();
+    buf = await readCapped(res, ctx);
   } catch (e) {
-    const ctx = DIALED.get(res);
-    if (ctx && stalled(e, ctx)) throw timeoutErr(ctx);
+    if (stalled(e, ctx)) throw timeoutErr(ctx);
+    //  ⛔ ۲xx: بدنهٔ گم‌شده یا بیش از سقف ⇒ خطای بدنه؛ غیرِ ۲xx: وضعیت خودش گفته رد شد (بیش از سقف هم)
+    if (res.ok) throw e?.unreadable ? e : unreadableErr(ctx, 'cut');
     if (kind === 'json') return {};
     if (kind === 'text') return '';
-    throw e;
+    throw e?.unreadable ? e : unreadableErr(ctx, 'cut');
+  }
+  if (kind === 'bytes') return buf;
+  const text = new TextDecoder().decode(buf);
+  if (kind === 'text') return text;
+  if (!buf.length && (NO_BODY.has(res.status) || ctx.method === 'HEAD')) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (res.ok) throw unreadableErr(ctx, text ? 'invalid' : 'empty');
+    return {};
   }
 }
+
+/** درهای ورود و پرسشِ کلید: بدنهٔ ناخوانا همان «‎{}‎» ِ پیشین (⇒ «ورود نشد» با مهلتِ ۱۵ ثانیه‌اش، یا «کلید به کار نمی‌رود»). */
+const loose = (res) => readBody(res).catch((e) => { if (e?.unreadable) return {}; throw e; });
 
 /**
  * fetch که خطای شبکه را به خطای بادار برمی‌گرداند — و مهلت دارد (بالا).
@@ -306,7 +376,7 @@ async function doLogin(creds) {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(creds),
   }, { safe: true });
-  const body = await readBody(res);
+  const body = await loose(res);
   if (!res.ok || !body?.token) {
     const code = body?.error?.code === 'bad_credentials'
       ? 'auto_login_rejected'
@@ -325,7 +395,8 @@ async function doLogin(creds) {
       : ' — HLP_ACCOUNT_ADMIN_USER/PASSWORD را بسنجید';
     const err = new Error(`ورودِ خودکار به سرورِ حساب نشد${why}${hint}`);
     err.code = code;
-    err.status = res.status === 401 ? 409 : res.status;
+    //  ⛔ ۲۰۰ ِ بی توکن (یا بدنهٔ ناخوانا) «ورود نشد» است، نه پاسخِ ۲۰۰ ِ خطادار به مرورگر
+    err.status = res.status === 401 ? 409 : (res.ok ? 502 : res.status);
 
     const retryAfter = Number(res.headers?.get?.('retry-after'));
     const cool = coolFor(res.status, body?.error?.code, retryAfter);
@@ -431,12 +502,12 @@ export async function cloudLogin(username, password, actor = 'admin') {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ username, password }),
   }, { safe: true });
-  const body = await readBody(res);
+  const body = await loose(res);
 
   if (!res.ok || !body?.token) {
     const err = new Error(body?.error?.message || 'ورود به سرورِ حساب نشد');
     err.code = body?.error?.code || 'cloud_login_failed';
-    err.status = res.status;
+    err.status = res.ok ? 502 : res.status;
     throw err;
   }
 
@@ -561,7 +632,7 @@ async function probeKey(key, keyId) {
   const res = await dial(`${cloudTarget()}/api/admin/me`, {
     headers: { authorization: `Bearer ${key}`, ...actorHeaders(SYSTEM_ACTOR) },
   });
-  const body = await readBody(res);
+  const body = await loose(res);
   if (res.status !== 200) {
     return { keyId, at: Date.now(), ok: false, caps: [], code: String(body?.error?.code || `http_${res.status}`).slice(0, 60) };
   }
@@ -658,7 +729,7 @@ async function sendAuthed(send, path, { legacyOnly = false } = {}) {
     if (svc) {
       const res = await send({ authorization: `Bearer ${svc.key}`, ...actorHeaders() });
       if (res.status !== 401) return res;
-      await res.arrayBuffer().catch(() => null);
+      await res.body?.cancel().catch(() => {});   //  بدنهٔ دورریختنی خوانده نمی‌شود (سقفِ ۱.۵۰.۷۷)
       svcProbe = { keyId: svc.id, at: Date.now(), ok: false, caps: [], code: 'invalid_service_key' };
       if (!legacyAvailable()) throw rejectedErr();
     }
@@ -693,7 +764,7 @@ async function sendAuthed(send, path, { legacyOnly = false } = {}) {
 async function tokenAlive(bearer) {
   try {
     const r = await dial(`${cloudTarget()}/api/admin/me`, { headers: { authorization: `Bearer ${bearer}` } });
-    await r.arrayBuffer().catch(() => null);
+    await r.body?.cancel().catch(() => {});
     return r.status === 200;
   } catch { return false; }
 }

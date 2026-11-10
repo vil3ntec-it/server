@@ -30,6 +30,7 @@ import { versionInfo } from '../version.js';
 import { ACCOUNT_PREFIXES, accountApiUrl } from '../api/account-proxy.js';
 import { CONSOLE_ALERT_RULES, consoleAlertPrefs, setConsoleAlertPrefs } from '../support/telegram-console-alerts.js';
 import { requireModule } from '../console/modules.js';
+import { upstreamKey } from '../account/idem-once.js';
 
 const { requireRole } = panelRoles;
 const IDEM_RE = /^[A-Za-z0-9_.:-]{8,128}$/;
@@ -157,6 +158,10 @@ export function mountConsoleOps(router, d) {
    *  ⛔ پشتیبانِ دستی: admin (آن‌جا ارشد) + تأیید + دلیل + کلیدِ یکتایی. سرورِ حساب برای ‎POST /backups‎ کلیدِ یکتایی ندارد
    *     و هر بار یک pg_dump ِ تازه می‌دواند ⇒ پل: همان کلید (همان کاربر) ⇒ همان پاسخ با `replayed`؛ کلید با دلیلِ دیگر ⇒ ۴۰۹؛
    *     هر پشتیبانِ در حالِ ساخت ⇒ ۴۰۹ `backup_in_progress` (یکی در هر لحظه، برای همهٔ نشست‌ها). شکست در یاد نمی‌ماند.
+   *  ⛔ ۱.۵۰.۷۷ — سرورِ حسابِ با `idempotent-writes.v1` (shop #1025) کلید را خودش نگه می‌دارد: کلیدِ پنجره بسته به کاربرِ پنل
+   *     (`upstreamKey`) با ‎POST /backups‎ بالا می‌رود، و **همان کلید پس از «نامعلوم»** دیگر «نامعلوم» ِ یادِ پل را تکرار نمی‌کند
+   *     بلکه از خودِ سرورِ حساب می‌پرسد (بازپخش ⇒ «ساخته شده بود»، ردیفِ دفتر با `resolved`؛ هنوز در راه ⇒ ‎409
+   *     idempotency_in_progress‎ و یاد همان «نامعلوم» می‌ماند). یکی در هر لحظه و ته‌نشینیِ پس از نامعلوم (برای کلیدِ تازه) سرِ جایشان.
    */
   const baseName = (f) => String(f || '').split(/[\\/]/).pop().slice(0, 200);
   const numOr = (v) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Number(v) : null);
@@ -200,39 +205,53 @@ export function mountConsoleOps(router, d) {
     for (const [k, v] of backupSlots) if (v.done && now - v.at > BACKUP_TTL) backupSlots.delete(k);
     const slotKey = `${req.user?.id}:${key}`;
     const seen = backupSlots.get(slotKey);
+    //  پرسشِ ناموفقِ توانایی ⇒ «نیست» (همان یادِ پل)، نه شکستِ کار
+    const viaServer = await has('idempotent-writes.v1').catch(() => false);
+    //  همان کلید پس از «نامعلوم» + سرورِ حسابِ با کلید ⇒ از خودِ او بپرس (همان کلید ⇒ بی pg_dump ِ دوم)
+    const resolving = Boolean(seen && seen.unknown && viaServer);
     if (seen) {
       if (seen.reason !== reason) throw conflictErr('idempotency_key_reused', 'این کلیدِ یکتایی برای کارِ دیگری به کار رفته است');
-      return res.json({ ...(await seen.promise), replayed: true });
+      if (!resolving) return res.json({ ...(await seen.promise), replayed: true });
     }
     if (backupRunning) throw conflictErr('backup_in_progress', 'یک پشتیبانِ سرورِ حساب همین حالا در حالِ ساخت است');
     //  ⛔ نامعلومِ تازه: pg_dump ِ قبلی شاید هنوز در سرورِ حساب می‌دود ⇒ تا یک «مهلتِ بلند» دیگر پشتیبانِ تازه نه
-    if (backupUnknownUntil > now) {
+    if (!resolving && backupUnknownUntil > now) {
       throw Object.assign(conflictErr('backup_outcome_unknown',
         'نتیجهٔ پشتیبانِ قبلی معلوم نیست و شاید هنوز در حالِ ساخت باشد — اول فهرستِ پشتیبان‌ها را ببینید؛ پشتیبانِ تازه کمی بعد'),
         { retryAt: backupUnknownUntil });
     }
-    const slot = { reason, at: now, done: false, promise: null };
+    const slot = { reason, at: now, done: false, unknown: false, promise: null };
     backupRunning = slot;
     backupSlots.set(slotKey, slot);
     slot.promise = (async () => {
       try {
         //  ⏱️ تنها درِ پل با مهلتِ «بلند»: یک pg_dump ِ واقعی (‎stations/cloud.js‎ ⇒ ‎BRIDGE_LONG_TIMEOUT_MS‎)
-        const out = await cloudRaw('POST', '/api/admin/backups', { body: { kind: 'manual' }, timeout: 'long' });
+        const out = await cloudRaw('POST', '/api/admin/backups', { body: { kind: 'manual' }, timeout: 'long',
+          ...(viaServer ? { headers: { 'idempotency-key': upstreamKey(req, key) }, replayFlag: true } : {}) });
         const backup = backupRow(out);
-        audit({ actor: actorOf(req), action: 'account.backup.created', entity: 'account_server', entityId: 'backup',
-          detail: { file: backup.file, bytes: backup.bytes, encrypted: backup.encrypted, reason } });
+        const replayed = out?.replayed === true;
+        //  بازپخشِ سرورِ حساب ردیفِ دوم نمی‌سازد — جز وقتی «نامعلوم» ِ همین پنل را روشن کرد
+        if (!replayed || resolving) {
+          audit({ actor: actorOf(req), action: 'account.backup.created', entity: 'account_server', entityId: 'backup',
+            detail: { file: backup.file, bytes: backup.bytes, encrypted: backup.encrypted, reason, ...(viaServer ? { once: 'server' } : {}), ...(resolving ? { resolved: true } : {}) } });
+        }
+        if (resolving) backupUnknownUntil = 0;   //  نامعلوم روشن شد ⇒ پشتیبانِ تازه دوباره آزاد
         slot.done = true;
         slot.at = Date.now();
-        return { ok: true, backup, confirmedAt: slot.at };
+        return { ok: true, backup, confirmedAt: slot.at, ...(replayed ? { replayed: true } : {}) };
       } catch (err) {
-        if (err?.outcome === 'unknown') {
-          //  ⛔ «نامعلوم»، نه «شکست»: همان کلید ⇒ همان پاسخ (بی pg_dump ِ دوم)؛ ردیفِ دفتر با دلیل
+        if (err?.outcome === 'unknown' || (resolving && err?.code === 'idempotency_in_progress')) {
+          //  ⛔ «نامعلوم»، نه «شکست»: همان کلید ⇒ همان پاسخ (بی pg_dump ِ دوم)؛ ردیفِ دفتر با دلیل.
+          //     (همان کار هنوز در سرورِ حساب در راه است ⇒ هنوز نامعلوم، بی ردیفِ تازه.)
           slot.done = true;
+          slot.unknown = true;
           slot.at = Date.now();
-          backupUnknownUntil = Date.now() + bridgeTimeouts().longMs;
-          audit({ actor: actorOf(req), action: 'account.backup.unknown', entity: 'account_server', entityId: 'backup',
-            detail: { reason, timeoutMs: err.timeoutMs || null }, result: 'unknown' });
-          err.audited = true;
+          if (err?.outcome === 'unknown') {
+            backupUnknownUntil = Date.now() + bridgeTimeouts().longMs;
+            audit({ actor: actorOf(req), action: 'account.backup.unknown', entity: 'account_server', entityId: 'backup',
+              detail: { reason, timeoutMs: err.timeoutMs || null }, result: 'unknown' });
+            err.audited = true;
+          }
           throw err;
         }
         backupSlots.delete(slotKey);   //  شکست ⇒ همان کلید دوباره قابلِ تلاش است
