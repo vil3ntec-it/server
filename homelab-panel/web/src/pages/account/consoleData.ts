@@ -124,6 +124,8 @@ export type ReleaseBeta = {
   shops?: { ids?: string[]; updatedAt?: number | null; updatedBy?: string; truncated?: boolean };
   devices?: { ids?: string[]; updatedAt?: number | null; updatedBy?: string; truncated?: boolean };
   version?: number | null; fetchedAt?: number;
+  /** ۱.۵۰.۸۱: همین کاربر (مالکِ پنل یا نقشِ «فنی») می‌تواند بنویسد — همان قاعدهٔ انتشارِ مرحله‌ای؛ مرزِ واقعی در ‎PUT‎ است */
+  canChange?: boolean;
 };
 export type VersionHealth = { app?: string; version?: string; installs?: number; crashes?: number; fetchedAt?: number };
 export type LiveConfig = { scope?: string; version?: number; fetchedAt?: number;

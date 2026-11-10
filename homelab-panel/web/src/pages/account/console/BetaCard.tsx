@@ -1,11 +1,13 @@
 // ---------------------------------------------------------------------------
 //  🚩 کانالِ آزمایشیِ برنامهٔ دکان (F0-27) — خواندن و **نوشتن** (۱.۵۰.۸۰، S11 «هم‌ترازی با ‎/admin/‎»)
 //
-//  ⛔ فقط admin (سرورِ حساب حتی خواندنش را فقط به ارشد می‌دهد؛ مرز در سرور است — پل admin می‌خواهد).
+//  ⛔ خواندن فقط admin (سرورِ حساب حتی خواندنش را فقط به ارشد می‌دهد؛ مرز در سرور است — پل admin می‌خواهد)؛ نوشتن پایین‌تر.
 //  ⛔ نوشتن: «ویرایش» ⇒ دو فهرست (هر خط یک شناسه، همان قاعدهٔ ‎[A-Za-z0-9_-]{1,80}‎ و حدِ ۲۰۰ ِ سرورِ حساب) ⇒ «ذخیره…» ⇒
 //     `SensitiveDialog` (دلیل + تأیید + یک کلیدِ یکتایی برای همین پنجره) با **نسخهٔ** همان فهرستی که دیده شد. فقط فهرستِ عوض‌شده می‌رود.
 //  ⛔ ‎409 beta_version‎ ⇒ «کسِ دیگری در این میان عوضش کرد — دوباره بخوانید» (ویرایشِ شما نوشته نشد)، نه رونویسی.
 //  ⛔ هر عضوِ این فهرست هر مرجِ main را از به‌روزرسانیِ درون‌برنامه می‌گیرد ⇒ اثر پیش از تأیید گفته می‌شود.
+//  ⛔ (۱.۵۰.۸۱) نوشتن «انتشار» است ⇒ فقط مالکِ پنل (یا نقشِ «فنی») و با **رمزِ خودش** (احرازِ دوباره) — همان قاعدهٔ انتشارِ مرحله‌ای.
+//     دکمه فقط برای `canChange` ِ سرور؛ admin ِ دیگر فهرست را می‌بیند و «فقط مالک» را می‌خواند.
 // ---------------------------------------------------------------------------
 import { useState, type ReactNode } from 'react';
 import { Flag } from 'lucide-react';
@@ -52,6 +54,7 @@ export default function BetaCard({ load }: { load: Load<ReleaseBeta> }) {
   const shops = Array.isArray(d.shops?.ids) ? d.shops!.ids! : [];
   const devices = Array.isArray(d.devices?.ids) ? d.devices!.ids! : [];
   const version = typeof d.version === 'number' ? d.version : null;
+  const canChange = d.canChange === true;
   const truncated = Boolean(d.shops?.truncated || d.devices?.truncated);
   const next = draft ? { shops: idList(draft.shops), devices: idList(draft.devices) } : null;
   const bad = next ? [...next.shops, ...next.devices].filter((x) => !ID_RE.test(x)) : [];
@@ -109,7 +112,13 @@ export default function BetaCard({ load }: { load: Load<ReleaseBeta> }) {
           </Notice>
         </div>
       )}
-      {!draft ? (
+      {!canChange ? (
+        <p className="mt-2 text-[11px] text-ink-muted" data-beta-owner-only>
+          {tx('کانالِ آزمایشی را فقط مالکِ پنل (یا نقشِ فنی) عوض می‌کند — همان قاعدهٔ انتشارِ مرحله‌ای، با رمزِ خودش.',
+            'Only the panel owner (or the technical role) changes the beta channel — the same rule as staged releases, with their own password.',
+            'ازمایښتي چینل یوازې د پینل خاوند (یا تخنیکي رول) بدلوي — د پړاوي خپرونې همغه قاعده، له خپل پټنوم سره.')}
+        </p>
+      ) : !draft ? (
         <button className="btn btn-sm mt-2" data-beta-edit disabled={version === null || truncated}
                 onClick={() => { setDone(''); setStale(false); setDraft({ shops: shops.join('\n'), devices: devices.join('\n') }); }}>
           {tx('ویرایشِ فهرست‌ها', 'Edit lists', 'لړونه سمول')}
@@ -132,7 +141,7 @@ export default function BetaCard({ load }: { load: Load<ReleaseBeta> }) {
       )}
       <SourceLine source="/api/admin/release/beta" data={d} at={load.at} />
       {open && next && dShops && dDevices && (
-        <SensitiveDialog title={title} onClose={() => setOpen(false)} onSubmit={submit} onUnknown={() => { void load.reload(); }}
+        <SensitiveDialog title={title} needPassword onClose={() => setOpen(false)} onSubmit={submit} onUnknown={() => { void load.reload(); }}
                          effect={tx('دکان‌ها: {sa} افزوده، {sr} برداشته · دستگاه‌ها: {da} افزوده، {dr} برداشته (نسخهٔ {v}). عضوِ این فهرست هر نسخهٔ تازهٔ main را از به‌روزرسانیِ درون‌برنامه می‌گیرد — از همین لحظه.',
                            'Shops: {sa} added, {sr} removed · Devices: {da} added, {dr} removed (version {v}). Members get every new main build through in-app update — from now on.',
                            'هټۍ: {sa} زیاتې، {sr} لرې · وسیلې: {da} زیاتې، {dr} لرې ({v} نسخه). غړي هر نوی main له اپ دننه تازه کولو اخلي.',

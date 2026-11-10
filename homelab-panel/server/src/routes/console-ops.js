@@ -42,6 +42,18 @@ const VERSION_RE = /^\d{1,6}(\.\d{1,6}){1,3}$/;
 export const PANEL_LIMITS = Object.freeze({ bridgeWarnMs: 1500, bridgeDownMs: 8000 });
 
 /*
+ *  ⛔ چه کسی انتشار را عوض می‌کند (۴.۸): **مالکِ پنل**، یا نقشِ «فنی» اگر روزی در جدولِ نقش‌های پنل آمد (‎control/roles.js‎) —
+ *     نه هر admin. یک تعریف برای هر درِ «انتشار»: مرحله‌ای (همین پرونده) و، از ۱.۵۰.۸۱، کانالِ آزمایشی و نشانی/نسخهٔ دانلود
+ *     (‎routes/console-parity.js‎) — هر سه تعیین می‌کنند کدام کد به دستِ کدام مشتری برسد.
+ */
+const technicalRole = () => (Array.isArray(panelRoles.ROLES) && panelRoles.ROLES.includes('technical') ? 'technical' : null);
+/** @param {(req: object) => boolean} isPanelOwner */
+export function mayChangeRelease(req, isPanelOwner) {
+  const tech = technicalRole();
+  return isPanelOwner(req) || Boolean(tech && panelRoles.roleOf(req) === tech);
+}
+
+/*
  *  ⚠️ «زمانِ رفت‌وبرگشتِ پل» یک سنجهٔ واقعی است، نه حدس: ‎GET /api/admin/me‎ ِ سبک با همان راهِ پل (کلید یا
  *  رمزِ ارشد). شکست ⇒ «از کار افتاده» با کدِ خطای خودش؛ کندتر از آستانه ⇒ «هشدار».
  */
@@ -433,10 +445,8 @@ export function mountConsoleOps(router, d) {
    *  ⛔ «برگشت» (پایین آوردنِ نسخهٔ نصب‌شده) نیست و ساخته نمی‌شود: درصدِ ۰ می‌ایستاند، پایانِ مرحله برچسبِ
    *     روان را برای بقیه برمی‌گرداند؛ دستگاهی که گرفته پایین نمی‌آید — رابط همین را می‌گوید.
    */
-  const technicalRole = () => (Array.isArray(panelRoles.ROLES) && panelRoles.ROLES.includes('technical') ? 'technical' : null);
   function releaseActor(req, res, next) {
-    const tech = technicalRole();
-    if (isPanelOwner(req) || (tech && panelRoles.roleOf(req) === tech)) return next();
+    if (mayChangeRelease(req, isPanelOwner)) return next();
     audit({ actor: actorOf(req), action: 'account.release_stage.denied', entity: 'release_stage', result: 'forbidden', detail: { why: 'not_owner_or_technical' } });
     return res.status(403).json({ error: 'owner_only', message: 'انتشارِ مرحله‌ای را فقط مالکِ پنل (یا نقشِ فنی) تغییر می‌دهد' });
   }
@@ -457,8 +467,7 @@ export function mountConsoleOps(router, d) {
 
   router.get('/console/release/stage', requireRole('admin'), guard(async (req, res) => {
     //  `canChange`: همین کاربر (مالک یا «فنی») دکمه‌ها را ببیند؛ مرزِ واقعی همان ‎releaseActor‎ ِ نوشتن است
-    const tech = technicalRole();
-    const canChange = isPanelOwner(req) || Boolean(tech && panelRoles.roleOf(req) === tech);
+    const canChange = mayChangeRelease(req, isPanelOwner);
     if (!(await has('release-stage.v1'))) return res.json({ ...unavailable('release-stage.v1'), canChange });
     res.json({ available: true, canChange, ...stamped(await cloudRaw('GET', '/api/admin/release/stage')) });
   }));

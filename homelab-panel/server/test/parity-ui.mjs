@@ -9,6 +9,9 @@
 //    ⛔ مصرفِ پیام (سلامت): بازه به سرورِ حساب می‌رود؛ نامِ HTML متن
 //    ⛔ پشتیبان‌های دکان (پرونده): فهرست و «دانلود و حذف از پنل نیست»؛ برچسبِ HTML متن
 //    ⛔ viewer: می‌بیند، دکمهٔ نوشتن نه؛ گوشی (۳۹۰px) افقی نمی‌لغزد؛ هیچ ‎<img>‎ ِ تزریقی و هیچ خطای جاوااسکریپت
+//    ⛔ ۱.۵۰.۸۱: نوشتنِ کانالِ آزمایشی و دانلود فقط مالک (یا «فنی») و با رمزِ خودش — پنجره بی رمز «تأیید» نمی‌دهد؛ admin ِ دیگر
+//       فهرست را می‌بیند بی دکمه و «فقط مالکِ پنل» را می‌خواند؛ نشانیِ دوپهلو (‎\‎، راست‌به‌چپ)، آخرین نسخهٔ نادرست و حداقلِ بالاتر از
+//       آخرین ⇒ «ذخیره» بسته
 // ---------------------------------------------------------------------------
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -155,6 +158,9 @@ try {
   watch(page);
   await loginAs(page, 'admin', 'Parity!2026');
   const dialogText = () => page.locator('[role="dialog"]').innerText();
+  //  ۱.۵۰.۸۱: رمزِ خودِ مالک در همان پنجره (احرازِ دوباره)؛ پنجره‌ای که رمز نمی‌خواهد چیزی برای پر کردن ندارد
+  const pwField = () => page.locator('[role="dialog"] input[type="password"]');
+  const fillPw = async () => { if (await pwField().count()) await pwField().fill('Parity!2026'); };
 
   console.log('\n── کانالِ آزمایشی (نسخه‌ها و انتشار) ──');
   await page.goto(`${BASE}/shop?tab=versions`, { waitUntil: 'networkidle' });
@@ -179,6 +185,9 @@ try {
   check('پنجرهٔ حساس: اثر پیش از تأیید (یک افزوده، یک برداشته، «هر نسخهٔ تازهٔ main») و بی دلیل بسته',
     await send.isDisabled() && dt.includes('main') && /[۱1] افزوده/.test(dt) && /[۱1] برداشته/.test(dt), dt.slice(0, 300));
   await page.locator('[role="dialog"] textarea').fill('آزمونِ نسخهٔ بتا با دکانِ تازه');
+  await page.waitForTimeout(80);
+  check('⛔ ۱.۵۰.۸۱: دلیل بس نیست — بی رمزِ پنل «تأیید» بسته (کانالِ آزمایشی «انتشار» است)', (await pwField().count()) === 1 && await send.isDisabled());
+  await fillPw();
   await send.dblclick();
   await page.waitForTimeout(1500);
   text = await card(page, 'beta').innerText();
@@ -193,6 +202,7 @@ try {
   await card(page, 'beta').locator('[data-beta-save]').click();
   await page.waitForSelector('[role="dialog"]');
   await page.locator('[role="dialog"] textarea').fill('دستگاهِ آزمونِ تازه');
+  await fillPw();
   await page.getByRole('button', { name: 'تأیید و فرستادن' }).click();
   await page.waitForTimeout(1200);
   text = await card(page, 'beta').innerText();
@@ -216,8 +226,22 @@ try {
   await urlIn.fill('javascript:alert(1)');
   await page.waitForTimeout(80);
   check('⛔ نشانیِ تازهٔ نادرست (‎javascript:‎) ⇒ خطا و «ذخیره» بسته', (await card(page, 'downloads').locator('[data-dl-error]').count()) > 0 && await dlSave.isDisabled());
+  const dlErr = async () => (await card(page, 'downloads').locator('[data-dl-error]').count()) > 0 && await dlSave.isDisabled();
+  await urlIn.fill('https://dl.vill3n.top\\@evil.example/shop.apk');
+  await page.waitForTimeout(80);
+  const uBack = await dlErr();
+  await urlIn.fill('https://dl.vill3n.top/shop\u202Ekpa.exe');
+  await page.waitForTimeout(80);
+  check('⛔ ۱.۵۰.۸۱: نشانیِ دوپهلو (‎\\‎ که خواننده‌ای دیگر میزبانِ دیگری می‌خواند، نویسهٔ راست‌به‌چپ) ⇒ خطا و «ذخیره» بسته — همان سنجشِ پل', uBack && await dlErr());
   await urlIn.fill('https://dl.vill3n.top/shop-2.14.6.apk');
-  await card(page, 'downloads').locator('[data-dl-input="version"]').fill('2.14.6');
+  const verIn = card(page, 'downloads').locator('[data-dl-input="version"]');
+  await verIn.fill('abc');
+  await page.waitForTimeout(80);
+  const vBad = await dlErr();
+  await verIn.fill('2.9.0');   //  حداقلِ ذخیره‌شده ۲.۱۰.۰
+  await page.waitForTimeout(80);
+  check('⛔ ۱.۵۰.۸۱: آخرین نسخهٔ نادرست، و آخرینِ پایین‌تر از حداقل ⇒ خطا و «ذخیره» بسته', vBad && await dlErr());
+  await verIn.fill('2.14.6');
   await page.waitForTimeout(80);
   check('نشانی و نسخهٔ درست ⇒ «ذخیره» باز', !(await dlSave.isDisabled()));
   await dlSave.click();
@@ -225,6 +249,9 @@ try {
   const ddt = await dialogText();
   check('پنجرهٔ حساس: فیلدهای عوض‌شده، نشانیِ تازه و «به همهٔ مشتری‌ها» پیش از تأیید', ddt.includes('shop-2.14.6.apk') && ddt.includes('همهٔ مشتری‌ها') && ddt.includes('آخرین نسخه'), ddt.slice(0, 300));
   await page.locator('[role="dialog"] textarea').fill('انتشارِ ۲.۱۴.۶');
+  await page.waitForTimeout(80);
+  check('⛔ ۱.۵۰.۸۱: بی رمزِ پنل «تأیید» بسته (نشانیِ همهٔ مشتری‌ها)', (await pwField().count()) === 1 && await page.getByRole('button', { name: 'تأیید و فرستادن' }).isDisabled());
+  await fillPw();
   await page.getByRole('button', { name: 'تأیید و فرستادن' }).dblclick();
   await page.waitForTimeout(1200);
   text = await card(page, 'downloads').innerText();
@@ -269,7 +296,7 @@ try {
   const noScroll = async () => vpage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
   check('viewer (نسخه‌ها): کانالِ آزمایشی «فقط مدیرِ پنل»، دانلود دیده می‌شود بی دکمهٔ ویرایش؛ ۳۹۰px افقی نمی‌لغزد',
     vb.includes('فقط مدیرِ پنل') && (await card(vpage, 'beta').locator('[data-beta-edit]').count()) === 0 && (await card(vpage, 'downloads').locator('[data-dl-edit]').count()) === 0
-      && (await card(vpage, 'downloads').innerText()).includes('فقط مدیرِ پنل') && await noScroll(), vb.slice(0, 200));
+      && (await card(vpage, 'downloads').innerText()).includes('فقط مالکِ پنل') && await noScroll(), vb.slice(0, 200));
   await vpage.goto(`${BASE}/shop?tab=health`, { waitUntil: 'networkidle' });
   await vpage.waitForSelector('[data-card="notify-usage"] [data-usage-shop]', { timeout: 15000 });
   check('viewer (سلامت): مصرفِ پیام دیده می‌شود؛ ۳۹۰px افقی نمی‌لغزد', await noScroll());
@@ -277,6 +304,24 @@ try {
   await vpage.waitForSelector('[data-card="tenant-backups"] [data-backup-label]', { timeout: 15000 });
   check('viewer (پرونده): پشتیبان‌های دکان؛ ۳۹۰px افقی نمی‌لغزد', await noScroll());
   check('⛔ viewer هیچ نوشتنی نفرستاد', betaPuts.length === 1 && dlPuts.length === 1);
+
+  //  ۱.۵۰.۸۱: admin ِ دوم (نه مالک) — همان قاعدهٔ انتشارِ مرحله‌ای
+  await fetch(`${BASE}/api/auth/users`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${adminTok}` },
+    body: JSON.stringify({ username: 'adm2', password: 'ParAdmin2!2026', role: 'admin' }) });
+  const actx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+  const apage = await actx.newPage();
+  watch(apage);
+  await loginAs(apage, 'adm2', 'ParAdmin2!2026');
+  await apage.goto(`${BASE}/shop?tab=versions`, { waitUntil: 'networkidle' });
+  await apage.waitForSelector('[data-card="beta"] [data-beta-ids]', { timeout: 15000 });
+  await apage.waitForSelector('[data-card="downloads"] [data-dl-url]', { timeout: 15000 });
+  const ab = await card(apage, 'beta').innerText();
+  const ad = await card(apage, 'downloads').innerText();
+  check('⛔ ۱.۵۰.۸۱: admin ِ دیگر فهرست و نشانی را می‌بیند ولی دکمهٔ ویرایش نه — «فقط مالکِ پنل (یا نقشِ فنی)»',
+    ab.includes('shop-new') && (await card(apage, 'beta').locator('[data-beta-edit]').count()) === 0 && (await card(apage, 'beta').locator('[data-beta-owner-only]').count()) === 1
+      && ad.includes('shop-2.14.6.apk') && (await card(apage, 'downloads').locator('[data-dl-edit]').count()) === 0 && ad.includes('فقط مالکِ پنل'), `${ab.slice(0, 200)} | ${ad.slice(0, 200)}`);
+  await actx.close();
+  check('⛔ admin ِ دیگر هم هیچ نوشتنی نفرستاد', betaPuts.length === 1 && dlPuts.length === 1);
   const xssHit = [await page.evaluate(() => window.__xss), await vpage.evaluate(() => window.__xss)];
   await vctx.close();
 

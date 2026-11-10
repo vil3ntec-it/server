@@ -11,6 +11,10 @@
 //  بالادست، شماره، مسیرِ دیسک نمی‌رسند)، یک‌باره با کلیدِ پنجره (این دو درِ بالادست ‎Idempotency-Key‎ ندارند ⇒ یادِ پل، هیچ سرآیند)،
 //  نسخهٔ کهنهٔ فهرستِ آزمایشی ⇒ ‎409‎ بی نوشتن، «نامعلوم» ِ مهلت بی درخواستِ دوم و با ردیفِ دفتر، سقفِ نرخِ هر کاربر، و دفترِ پنل بی کلید.
 //  ⛔ ‎DELETE‎ ِ پشتیبانِ مشتری ساخته نمی‌شود (تصمیمِ مالک) — سنجیده می‌شود که «نیست» و به سرورِ حساب نمی‌رسد.
+//  ۱.۵۰.۸۱ (بازبینیِ خصمانهٔ ۱.۵۰.۸۰، بخشِ ۶): دو درِ نوشتنی «انتشار»اند ⇒ فقط مالک (یا «فنی») + احرازِ دوباره (رمز هرگز بالا نمی‌رود)؛
+//  نشانیِ دوپهلو (‎\‎، ‎https:host‎، ‎%‎ در میزبان، نویسهٔ نامرئی/راست‌به‌چپ، حرفِ غیرلاتین، ‎"‎) ⇒ ‎bad_url‎؛ آخرین نسخهٔ نادرست ⇒ ‎bad_version‎؛
+//  حداقل ≤ آخرین روی جفتِ نهایی. ⚠️ سقفِ ۳۰ نوشتن در ده دقیقهٔ هر کاربر حالا همه روی مالک است ⇒ پنل میانِ بخش‌ها دوباره راه می‌افتد
+//  (سطل در حافظه است؛ نشست‌ها و دفتر در پایگاه می‌مانند).
 // ---------------------------------------------------------------------------
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -157,17 +161,21 @@ const fake = http.createServer((req, res) => {
 await new Promise((r) => fake.listen(0, '127.0.0.1', r));
 
 /* ───────────── پنلِ واقعی ───────────── */
-const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'src/index.js'], {
-  env: { ...process.env, HLP_PORT: String(PANEL), HLP_HOST: '127.0.0.1',
-         HLP_DATA_DIR: path.join(tmp, 'data'), HLP_SITES_ROOT: path.join(tmp, 'sites'), HLP_SITESYNC: '0',
-         HLP_TUNNEL: '0', HLP_AI_ENABLED: '0', HLP_ACCOUNT_AUTOSTART: '0', HLP_AUTOMATION: '0', HLP_STATIONS: '0',
-         HLP_ACCOUNT_API: `http://127.0.0.1:${fake.address().port}`, HLP_ACCOUNT_ADMIN_USER: 'boss', HLP_ACCOUNT_ADMIN_PASSWORD: 'top-secret',
-         HLP_BRIDGE_TIMEOUT_MS: '800', HLP_AUTH_RATE_LIMIT: '100000', HLP_RATE_API: '100000', HLP_TG_WATCH_MS: '0', HLP_TG_LONGPOLL: '0' },
-  stdio: ['ignore', 'pipe', 'pipe'],
-});
+let server;
 let out = '';
-server.stdout.on('data', (d) => (out += d));
-server.stderr.on('data', (d) => (out += d));
+function startPanel() {
+  server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'src/index.js'], {
+    env: { ...process.env, HLP_PORT: String(PANEL), HLP_HOST: '127.0.0.1',
+           HLP_DATA_DIR: path.join(tmp, 'data'), HLP_SITES_ROOT: path.join(tmp, 'sites'), HLP_SITESYNC: '0',
+           HLP_TUNNEL: '0', HLP_AI_ENABLED: '0', HLP_ACCOUNT_AUTOSTART: '0', HLP_AUTOMATION: '0', HLP_STATIONS: '0',
+           HLP_ACCOUNT_API: `http://127.0.0.1:${fake.address().port}`, HLP_ACCOUNT_ADMIN_USER: 'boss', HLP_ACCOUNT_ADMIN_PASSWORD: 'top-secret',
+           HLP_BRIDGE_TIMEOUT_MS: '800', HLP_AUTH_RATE_LIMIT: '100000', HLP_RATE_API: '100000', HLP_TG_WATCH_MS: '0', HLP_TG_LONGPOLL: '0' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  server.stdout.on('data', (d) => (out += d));
+  server.stderr.on('data', (d) => (out += d));
+}
+startPanel();
 
 const BASE = `http://127.0.0.1:${PANEL}`;
 async function api(method, p, body, headers = {}) {
@@ -181,16 +189,35 @@ async function api(method, p, body, headers = {}) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const C = '/api/account-admin/console';
 const ups = (method, p) => seen.filter((s) => s.method === method && s.path === p);
+/** سقفِ نوشتنِ هر کاربر (۳۰ در ده دقیقه) و یادِ یک‌باره در حافظه‌اند؛ نشست، کاربر و دفتر در پایگاه می‌مانند */
+async function waitPanel() {
+  for (let i = 0; i < 120; i++) {
+    try { if ((await fetch(`${BASE}/health`)).ok) return; } catch { /* هنوز */ }
+    await sleep(250);
+  }
+}
+async function restartPanel() {
+  const gone = new Promise((r) => server.once('exit', r));
+  server.kill('SIGTERM');
+  await gone;
+  startPanel();
+  await waitPanel();
+}
+/*  ⛔ فاز ۱ (۶-۵): نشستِ تازه (ورود یا رمزِ درخواستِ قبلی، ده دقیقه) بی رمز هم از `reauth` می‌گذرد؛ «بی رمز ⇒ reauth_required»
+    فقط روی نشستِ کهنه معنا دارد — همان روشِ `console-ops.mjs`. */
+const staleAll = async () => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const d = new DatabaseSync(path.join(tmp, 'data', 'panel.db'));
+  try { d.exec('PRAGMA busy_timeout = 5000'); d.exec('UPDATE sessions SET auth_at = 0'); } finally { d.close(); }
+};
+const OWNER_PW = 'Par-1405-owner';
 const auditRows = async (tok, q) => ((await api('GET', `/api/control/audit?q=${encodeURIComponent(q)}&limit=100&offset=0`, undefined, { Authorization: `Bearer ${tok}` })).json?.rows || []);
 
 try {
-  for (let i = 0; i < 120; i++) {
-    try { if ((await fetch(`${BASE}/health`)).ok) break; } catch { /* هنوز */ }
-    await sleep(250);
-  }
-  await api('POST', '/api/auth/setup', { username: 'owner', password: 'Par-1405-owner' });
+  await waitPanel();
+  await api('POST', '/api/auth/setup', { username: 'owner', password: OWNER_PW });
   const login = async (u, pw) => (await api('POST', '/api/auth/login', { username: u, password: pw })).json?.token;
-  const owner = await login('owner', 'Par-1405-owner');
+  const owner = await login('owner', OWNER_PW);
   const H = (t) => ({ Authorization: `Bearer ${t}` });
   for (const [u, role] of [['adm1', 'admin'], ['adm2', 'admin'], ['op1', 'operator'], ['view1', 'viewer'], ['view2', 'viewer']]) {
     await api('POST', '/api/auth/users', { username: u, password: `Par-${role}-1405-${u}`, role }, H(owner));
@@ -209,7 +236,8 @@ try {
   const gv = await api('GET', BP, undefined, H(T.view));
   check('⛔ خواندن هم فقط admin (سرورِ حساب حتی خواندنش را فقط به ارشد می‌دهد)', gv.status === 403, String(gv.status));
 
-  const bb = (k, extra = {}) => ({ shops: ['s1', 'shop-new'], devices: ['dev-1'], version: 4, reason: 'آزمونِ نسخهٔ بتا با دو دکان', confirm: true, idempotencyKey: `beta-key-${k}-0001`, ...extra });
+  //  ۱.۵۰.۸۱: نوشتن فقط مالک با رمزِ خودش (احرازِ دوباره) — نوشتن‌های پایین همه با نشستِ مالک
+  const bb = (k, extra = {}) => ({ shops: ['s1', 'shop-new'], devices: ['dev-1'], version: 4, reason: 'آزمونِ نسخهٔ بتا با دو دکان', confirm: true, idempotencyKey: `beta-key-${k}-0001`, password: OWNER_PW, ...extra });
   const nPut0 = ups('PUT', '/api/admin/release/beta').length;
   const pv = await api('PUT', BP, bb('pv'), H(T.view));
   const po = await api('PUT', BP, bb('po'), H(T.op));
@@ -235,7 +263,7 @@ try {
   check(`⛔ ورودیِ بد ⇒ ۴۰۰ با کدِ درست، پیش از پل (${bBad.length} حالت: تأیید، دلیل، کلید، نسخه، شناسه، ۲۰۰، بدنه)`,
     bBad.every(([, , code], i) => bOut[i].status === 400 && bOut[i].json?.error === code) && ups('PUT', '/api/admin/release/beta').length === nPut0,
     bBad.map(([n, , code], i) => `${n}:${bOut[i].status}/${bOut[i].json?.error}≠${code}`).filter((_, i) => bOut[i].json?.error !== bBad[i][2]).join(' '));
-  const str = await api('PUT', BP, bb('st1', { shops: ' s1, shop-new ،s1\n', devices: undefined }), H(T.adm));
+  const str = await api('PUT', BP, bb('st1', { shops: ' s1, shop-new ،s1\n', devices: undefined }), H(T.owner));
   const stUp = ups('PUT', '/api/admin/release/beta').at(-1);
   check('رشته‌ای که با ویرگول/ویرگولِ فارسی/خط جدا شده ⇒ شناسه‌های بی‌تکرار (همان ‎parse‎ ِ سرورِ حساب)؛ فهرستِ نیامده دست نمی‌خورد',
     str.status === 200 && JSON.stringify(stUp?.body) === JSON.stringify({ shops: ['s1', 'shop-new'], reason: 'آزمونِ نسخهٔ بتا با دو دکان' })
@@ -243,44 +271,45 @@ try {
     `${str.status} ${str.text.slice(0, 200)} ${JSON.stringify(stUp?.body)}`);
 
   const nB = ups('PUT', '/api/admin/release/beta').length;
-  const w1 = await api('PUT', BP, bb('w1', { shops: ['s1', 'shop-new', 'shop-3'], devices: ['dev-1', 'dev-2'], version: 5 }), H(T.adm));
+  const w1 = await api('PUT', BP, bb('w1', { shops: ['s1', 'shop-new', 'shop-3'], devices: ['dev-1', 'dev-2'], version: 5 }), H(T.owner));
   const up1 = ups('PUT', '/api/admin/release/beta').at(-1);
-  check('admin ⇒ ‎200‎ ِ تأییدشده: بالادست فقط ‎{shops, devices, reason}‎ و **بی** ‎Idempotency-Key‎ (این در کلید ندارد)؛ «عوض‌شده‌ها» و نسخهٔ تازه از سرورِ حساب',
+  check('مالک ⇒ ‎200‎ ِ تأییدشده: بالادست فقط ‎{shops, devices, reason}‎ (نه رمز) و **بی** ‎Idempotency-Key‎ (این در کلید ندارد)؛ «عوض‌شده‌ها» و نسخهٔ تازه از سرورِ حساب',
     w1.status === 200 && w1.json?.ok === true && w1.json?.changed?.join(',') === 'shops,devices' && w1.json?.version === 7
       && JSON.stringify(up1?.body) === JSON.stringify({ shops: ['s1', 'shop-new', 'shop-3'], devices: ['dev-1', 'dev-2'], reason: 'آزمونِ نسخهٔ بتا با دو دکان' })
       && up1?.idem === '' && ups('PUT', '/api/admin/release/beta').length === nB + 1 && w1.json?.internal === undefined,
     `${w1.status} ${w1.text.slice(0, 260)} ${JSON.stringify(up1)}`);
-  const w2 = await api('PUT', BP, bb('w1', { shops: ['s1', 'shop-new', 'shop-3'], devices: ['dev-1', 'dev-2'], version: 5 }), H(T.adm));
+  const w2 = await api('PUT', BP, bb('w1', { shops: ['s1', 'shop-new', 'shop-3'], devices: ['dev-1', 'dev-2'], version: 5 }), H(T.owner));
   check('همان کلید ⇒ همان پاسخ (‎replayed‎) از یادِ پل، بی درخواستِ دوم (نه حتی خواندنِ نسخه)',
     w2.status === 200 && w2.json?.replayed === true && w2.json?.version === 7 && ups('PUT', '/api/admin/release/beta').length === nB + 1, `${w2.status} ${w2.text.slice(0, 160)}`);
-  const w3 = await api('PUT', BP, bb('w1', { shops: ['s1'], version: 5 }), H(T.adm));
+  const w3 = await api('PUT', BP, bb('w1', { shops: ['s1'], version: 5 }), H(T.owner));
   check('همان کلید برای کارِ دیگر ⇒ ‎409 idempotency_key_reused‎', w3.status === 409 && w3.json?.error === 'idempotency_key_reused', `${w3.status} ${w3.json?.error}`);
 
   const nS = ups('PUT', '/api/admin/release/beta').length;
-  const stale = await api('PUT', BP, bb('stale', { shops: ['s1'], version: 5 }), H(T.adm));
+  const stale = await api('PUT', BP, bb('stale', { shops: ['s1'], version: 5 }), H(T.owner));
   check('⛔ نسخهٔ کهنه (کسِ دیگری در این میان نوشت: ۵ ⇐ ۷) ⇒ ‎409 beta_version‎ و **هیچ** نوشتن — نه رونویسیِ بی‌صدای فهرستِ تازه',
     stale.status === 409 && stale.json?.error === 'beta_version' && ups('PUT', '/api/admin/release/beta').length === nS && beta.shops.length === 3,
     `${stale.status} ${stale.text.slice(0, 200)}`);
-  const same = await api('PUT', BP, bb('same', { shops: ['s1', 'shop-new', 'shop-3'], devices: ['dev-1', 'dev-2'], version: 7 }), H(T.adm));
+  const same = await api('PUT', BP, bb('same', { shops: ['s1', 'shop-new', 'shop-3'], devices: ['dev-1', 'dev-2'], version: 7 }), H(T.owner));
   check('همان فهرست ⇒ ‎changed: []‎ ِ سرورِ حساب، نسخه همان', same.status === 200 && Array.isArray(same.json?.changed) && same.json.changed.length === 0 && same.json?.version === 7,
     `${same.status} ${same.text.slice(0, 160)}`);
 
   hang.add('beta');
-  const h1 = await api('PUT', BP, bb('h1', { shops: ['s1'], version: 7 }), H(T.adm));
+  const h1 = await api('PUT', BP, bb('h1', { shops: ['s1'], version: 7 }), H(T.owner));
   const nH = ups('PUT', '/api/admin/release/beta').length;
-  const h2 = await api('PUT', BP, bb('h1', { shops: ['s1'], version: 7 }), H(T.adm));
+  const h2 = await api('PUT', BP, bb('h1', { shops: ['s1'], version: 7 }), H(T.owner));
   check('پاسخِ گم‌شده ⇒ ‎504 outcome_unknown‎؛ ⛔ همان کلید ⇒ همان «نامعلوم» بی درخواستِ دوم',
     h1.status === 504 && h1.json?.outcome === 'unknown' && h2.status === 504 && h2.json?.outcome === 'unknown' && ups('PUT', '/api/admin/release/beta').length === nH,
     `${h1.status} ${h2.status} ${h1.text.slice(0, 120)}`);
 
   const bRows = (await auditRows(T.owner, 'account.release_beta')).filter((r) => r.action === 'account.release_beta.updated');
   check('دفترِ پنل: یک ردیف برای هر نوشتنِ تأییدشده (۳: رشته، دو فهرست، همان فهرست) با دلیل، نسخه و «افزوده/برداشته» — نه برای رد، بازپخش، کهنه یا نامعلوم',
-    bRows.length === 3 && bRows.every((r) => r.actor === 'adm1') && bRows.some((r) => String(r.detail).includes('"version":7') && String(r.detail).includes('shop-3'))
+    bRows.length === 3 && bRows.every((r) => r.actor === 'owner') && bRows.some((r) => String(r.detail).includes('"version":7') && String(r.detail).includes('shop-3'))
       && bRows.every((r) => String(r.detail).includes('آزمونِ نسخهٔ بتا')), JSON.stringify(bRows.map((r) => r.detail)).slice(0, 500));
   const unk = (await auditRows(T.owner, 'outcome_unknown')).filter((r) => r.action === 'account.bridge.outcome_unknown' && String(r.detail).includes('/api/admin/release/beta'));
-  check('«نامعلوم» ردیفِ خودش را دارد (چه کسی، کدام در، با چه مهلتی)', unk.length === 1 && unk[0].actor === 'adm1' && unk[0].result === 'unknown', JSON.stringify(unk).slice(0, 300));
+  check('«نامعلوم» ردیفِ خودش را دارد (چه کسی، کدام در، با چه مهلتی)', unk.length === 1 && unk[0].actor === 'owner' && unk[0].result === 'unknown', JSON.stringify(unk).slice(0, 300));
 
   /* ═════════════ ۲) دانلودِ برنامه‌ها — ‎GET /console/downloads‎ · ‎PUT /console/downloads‎ ═════════════ */
+  await restartPanel();   //  سطلِ ۳۰ نوشتنِ مالک از نو (بالا: ۲۱)
   console.log('\n── نشانیِ دانلود و نسخه (‎GET /api/downloads‎ ِ عمومی · ‎PUT /api/admin/downloads‎، آن‌جا فقط ارشد) ──');
   const DP = `${C}/downloads`;
   const dg = await api('GET', DP, undefined, H(T.view));
@@ -289,7 +318,7 @@ try {
     dg.status === 200 && dg.json?.downloads?.length === 2 && dShop?.url === cfg.download_url_shop && dShop?.version === '2.14.5' && dShop?.minVersion === '2.10.0'
       && dShop?.notes === 'رفعِ خطا' && dShop?.internalKey === undefined && dg.json?.apps === undefined && ups('GET', '/api/downloads').length === 1,
     `${dg.status} ${dg.text.slice(0, 300)}`);
-  const db = (k, extra = {}) => ({ app: 'shop', url: 'https://dl.vill3n.top/shop-2.14.6.apk', version: '2.14.6', reason: 'انتشارِ ۲.۱۴.۶', confirm: true, idempotencyKey: `dl-key-${k}-0001`, ...extra });
+  const db = (k, extra = {}) => ({ app: 'shop', url: 'https://dl.vill3n.top/shop-2.14.6.apk', version: '2.14.6', reason: 'انتشارِ ۲.۱۴.۶', confirm: true, idempotencyKey: `dl-key-${k}-0001`, password: OWNER_PW, ...extra });
   const nD0 = ups('PUT', '/api/admin/downloads').length;
   const dv = await api('PUT', DP, db('dv'), H(T.view));
   const dop = await api('PUT', DP, db('do'), H(T.op));
@@ -308,35 +337,35 @@ try {
     ['نسخهٔ بلند', db('d11', { version: '1'.repeat(33) }), 'bad_field'],
     ['یادداشتِ بلند', db('d12', { notes: 'ن'.repeat(1001) }), 'bad_field'],
     ['حداقلِ نادرست', db('d13', { minVersion: '2.x' }), 'bad_version'],
-    ['هیچ فیلد', { app: 'shop', reason: 'هیچ چیز', confirm: true, idempotencyKey: 'dl-key-d14-0001' }, 'bad_body'],
+    ['هیچ فیلد', { app: 'shop', reason: 'هیچ چیز', confirm: true, idempotencyKey: 'dl-key-d14-0001', password: OWNER_PW }, 'bad_body'],
   ];
   const dOut = [];
   for (const [, body] of dBad) dOut.push(await api('PUT', DP, body, H(T.owner)));
   check(`⛔ ورودیِ بد ⇒ ۴۰۰ با کدِ درست، پیش از پل (${dBad.length} حالت؛ نشانی فقط ‎http(s)‎ ِ کامل — به دستِ همهٔ مشتری‌ها می‌رسد)`,
     dBad.every(([, , code], i) => dOut[i].status === 400 && dOut[i].json?.error === code) && ups('PUT', '/api/admin/downloads').length === nD0,
     dBad.map(([n, , code], i) => `${n}:${dOut[i].status}/${dOut[i].json?.error}≠${code}`).filter((_, i) => dOut[i].json?.error !== dBad[i][2]).join(' '));
-  const dw = await api('PUT', DP, db('w1', { notes: '  رفعِ خطای\nچاپ\u0007  ' }), H(T.adm));
+  const dw = await api('PUT', DP, db('w1', { notes: '  رفعِ خطای\nچاپ\u0007  ' }), H(T.owner));
   const dUp = ups('PUT', '/api/admin/downloads').at(-1);
-  check('admin ⇒ ‎200‎ ِ تأییدشده: بالادست فقط فیلدهای داده‌شده + ‎app‎ (یادداشت: خط و نویسهٔ کنترلی ⇒ فاصله، نه چسبیدنِ دو واژه)، بی کلید؛ پاسخ همان برنامه',
+  check('مالک ⇒ ‎200‎ ِ تأییدشده: بالادست فقط فیلدهای داده‌شده + ‎app‎ (نه رمز) (یادداشت: خط و نویسهٔ کنترلی ⇒ فاصله، نه چسبیدنِ دو واژه)، بی کلید؛ پاسخ همان برنامه',
     dw.status === 200 && dw.json?.ok === true && dw.json?.download?.version === '2.14.6' && dw.json?.download?.url === 'https://dl.vill3n.top/shop-2.14.6.apk'
       && JSON.stringify(dUp?.body) === JSON.stringify({ app: 'shop', url: 'https://dl.vill3n.top/shop-2.14.6.apk', version: '2.14.6', notes: 'رفعِ خطای چاپ' })
       && dUp?.idem === '' && dw.json?.download?.internalKey === undefined && dw.json?.apps === undefined,
     `${dw.status} ${dw.text.slice(0, 260)} ${JSON.stringify(dUp?.body)}`);
-  const dr = await api('PUT', DP, db('w1', { notes: '  رفعِ خطای\nچاپ\u0007  ' }), H(T.adm));
+  const dr = await api('PUT', DP, db('w1', { notes: '  رفعِ خطای\nچاپ\u0007  ' }), H(T.owner));
   check('همان کلید ⇒ ‎replayed‎ بی درخواستِ دوم', dr.status === 200 && dr.json?.replayed === true && ups('PUT', '/api/admin/downloads').length === nD0 + 1, `${dr.status}`);
-  const dMin = await api('PUT', DP, { app: 'shop', minVersion: '2.15.0', reason: 'حداقلِ تازه', confirm: true, idempotencyKey: 'dl-key-min1-0001' }, H(T.adm));
+  const dMin = await api('PUT', DP, { app: 'shop', minVersion: '2.15.0', reason: 'حداقلِ تازه', confirm: true, idempotencyKey: 'dl-key-min1-0001', password: OWNER_PW }, H(T.owner));
   check('حداقلِ بالاتر از آخرین نسخهٔ ذخیره‌شده ⇒ ‎400 min_above_latest‎ ِ خودِ سرورِ حساب همان‌طور (نه «انجام شد»)',
     dMin.status === 400 && dMin.json?.error === 'min_above_latest' && cfg.min_app_version_shop === '2.10.0', `${dMin.status} ${dMin.text.slice(0, 160)}`);
-  const dMin2 = await api('PUT', DP, { app: 'shop', minVersion: 'v2.12.0', reason: 'حداقلِ تازه', confirm: true, idempotencyKey: 'dl-key-min1-0001' }, H(T.adm));
+  const dMin2 = await api('PUT', DP, { app: 'shop', minVersion: 'v2.12.0', reason: 'حداقلِ تازه', confirm: true, idempotencyKey: 'dl-key-min1-0001', password: OWNER_PW }, H(T.owner));
   check('⛔ شکستِ روشن کلید را آزاد می‌کند: همان پنجره با حداقلِ درست ⇒ ‎200‎ (‎v‎ ِ پیشوند همان‌جا برداشته می‌شود)',
     dMin2.status === 200 && dMin2.json?.download?.minVersion === '2.12.0' && cfg.min_app_version_shop === '2.12.0', `${dMin2.status} ${dMin2.text.slice(0, 160)}`);
-  const dClear = await api('PUT', DP, { app: 'pump', url: '', notes: '', reason: 'پاک کردنِ نشانیِ کهنه', confirm: true, idempotencyKey: 'dl-key-clr1-0001' }, H(T.adm));
+  const dClear = await api('PUT', DP, { app: 'pump', url: '', notes: '', reason: 'پاک کردنِ نشانیِ کهنه', confirm: true, idempotencyKey: 'dl-key-clr1-0001', password: OWNER_PW }, H(T.owner));
   check('رشتهٔ خالی = پاک کردن (همان قراردادِ سرورِ حساب)؛ برنامهٔ دوم همان در', dClear.status === 200 && dClear.json?.download?.app === 'pump'
     && JSON.stringify(ups('PUT', '/api/admin/downloads').at(-1)?.body) === JSON.stringify({ app: 'pump', url: '', notes: '' }), `${dClear.status} ${dClear.text.slice(0, 160)}`);
   hang.add('downloads');
-  const dh = await api('PUT', DP, db('h1', { version: '2.14.7', url: undefined }), H(T.adm));
+  const dh = await api('PUT', DP, db('h1', { version: '2.14.7', url: undefined }), H(T.owner));
   const nDH = ups('PUT', '/api/admin/downloads').length;
-  const dh2 = await api('PUT', DP, db('h1', { version: '2.14.7', url: undefined }), H(T.adm));
+  const dh2 = await api('PUT', DP, db('h1', { version: '2.14.7', url: undefined }), H(T.owner));
   check('پاسخِ گم‌شده ⇒ ‎504 outcome_unknown‎؛ همان کلید ⇒ همان «نامعلوم» بی درخواستِ دوم',
     dh.status === 504 && dh.json?.outcome === 'unknown' && dh2.status === 504 && ups('PUT', '/api/admin/downloads').length === nDH, `${dh.status} ${dh2.status}`);
   const dRows = (await auditRows(T.owner, 'account.downloads')).filter((r) => r.action === 'account.downloads.updated');
@@ -402,6 +431,94 @@ try {
   check('⛔ هیچ کلیدِ یکتایی در دفترِ پنل نیست', !all.some((r) => /beta-key|dl-key/.test(String(r.detail))), '');
   check('⛔ ربات تلگرامِ پمپ (‎PUT /api/admin/telegram‎) از این پل نوشته نمی‌شود — بیرون از این کار (پمپ)',
     (await api('PUT', `${C}/telegram`, { token: '123:abc', confirm: true }, H(T.owner))).status === 404 && !seen.some((s) => s.path === '/api/admin/telegram'));
+
+  /* ═════════════ ۶) بازبینیِ خصمانهٔ ۱.۵۰.۸۰ (۱.۵۰.۸۱) ═════════════ */
+  await restartPanel();   //  سطلِ ۳۰ نوشتنِ مالک از نو (بالا: ۲۱)
+  console.log('\n── ۱.۵۰.۸۱: «انتشار» فقط مالک + احرازِ دوباره؛ نشانیِ یک‌معنا؛ آخرین نسخه و حداقل ──');
+  const ga = await api('GET', BP, undefined, H(T.adm));
+  const go = await api('GET', BP, undefined, H(T.owner));
+  const dga = await api('GET', DP, undefined, H(T.adm));
+  const dgo = await api('GET', DP, undefined, H(T.owner));
+  const dgv = await api('GET', DP, undefined, H(T.view));
+  check('خواندن می‌گوید چه کسی می‌نویسد (‎canChange‎): مالک بله؛ admin ِ دیگر و viewer نه — دکمهٔ رابط از همین',
+    ga.status === 200 && ga.json?.canChange === false && go.json?.canChange === true && dga.json?.canChange === false && dgo.json?.canChange === true && dgv.json?.canChange === false,
+    `${ga.json?.canChange} ${go.json?.canChange} ${dga.json?.canChange} ${dgo.json?.canChange} ${dgv.json?.canChange}`);
+
+  const vNow = beta.version;
+  const n6 = seen.length;
+  const ab = await api('PUT', BP, bb('own1', { version: vNow, shops: ['s1', 'by-adm'], password: 'Par-admin-1405-adm1' }), H(T.adm));
+  const ad = await api('PUT', DP, db('own1', { password: 'Par-admin-1405-adm1' }), H(T.adm));
+  check('⛔ admin ِ دیگر (نه مالک، نه «فنی») کانالِ آزمایشی و نشانیِ دانلود را **نمی‌نویسد** — ‎403 owner_only‎، حتی با رمزِ درستِ خودش، و هیچ درخواستی (نه حتی خواندنِ نسخه)',
+    ab.status === 403 && ab.json?.error === 'owner_only' && ad.status === 403 && ad.json?.error === 'owner_only' && seen.length === n6 && !beta.shops.includes('by-adm'),
+    `${ab.status}/${ab.json?.error} ${ad.status}/${ad.json?.error} ${seen.length - n6}`);
+
+  await staleAll();
+  const nb = await api('PUT', BP, bb('re1', { version: vNow, shops: ['s1', 'shop-re'], password: undefined }), H(T.owner));
+  const nd = await api('PUT', DP, db('re1', { password: undefined }), H(T.owner));
+  const wb = await api('PUT', BP, bb('re2', { version: vNow, shops: ['s1', 'shop-re'], password: 'not-the-password' }), H(T.owner));
+  const wd = await api('PUT', DP, db('re2', { password: 'not-the-password' }), H(T.owner));
+  check('⛔ مالک با نشستِ کهنه و بی رمز ⇒ ‎403 reauth_required‎؛ رمزِ غلط ⇒ ‎403 reauth_failed‎ — هر دو در، و هیچ درخواستی به سرورِ حساب',
+    nb.status === 403 && nb.json?.error === 'reauth_required' && nd.json?.error === 'reauth_required' && wb.json?.error === 'reauth_failed' && wd.json?.error === 'reauth_failed'
+      && seen.length === n6, `${nb.json?.error} ${nd.json?.error} ${wb.json?.error} ${wd.json?.error} ${seen.length - n6}`);
+  const okb = await api('PUT', BP, bb('re3', { version: vNow, shops: ['s1', 'shop-re'] }), H(T.owner));
+  const okUp = ups('PUT', '/api/admin/release/beta').at(-1);
+  check('مالک با رمزِ درست ⇒ ‎200‎؛ ⛔ رمز هرگز بالا نمی‌رود (بدنهٔ بالادست فقط فهرست و دلیل)',
+    okb.status === 200 && JSON.stringify(okUp?.body) === JSON.stringify({ shops: ['s1', 'shop-re'], devices: ['dev-1'], reason: 'آزمونِ نسخهٔ بتا با دو دکان' }),
+    `${okb.status} ${okb.text.slice(0, 160)} ${JSON.stringify(okUp?.body)}`);
+  const reRows = await auditRows(T.owner, 'account.');
+  const acts = reRows.map((r) => r.action);
+  check('دفترِ پنل: «رد شد» و «رمزِ غلط» با نامِ همین کار (‎release_beta‎ / ‎downloads‎)، نه ‎service_key‎',
+    ['account.release_beta.denied', 'account.downloads.denied', 'account.release_beta.reauth_failed', 'account.downloads.reauth_failed'].every((a) => acts.includes(a))
+      && reRows.filter((r) => r.action.endsWith('.denied') && /release_beta|downloads/.test(r.action)).every((r) => r.actor === 'adm1')
+      && !acts.includes('account.service_key.reauth_failed'), acts.filter((a) => /denied|reauth/.test(a)).join(' '));
+
+  //  نشانی: ‎new URL‎ (‎WHATWG‎) این‌ها را بی‌صدا «درست» می‌کند و پل تا ۱.۵۰.۸۰ می‌پذیرفت؛ ولی رشتهٔ خام به مشتری می‌رسد
+  const nU = seen.length;
+  const uBad = [
+    ['\\ ⇒ میزبانِ دیگر برای خوانندهٔ ‎RFC 3986‎', 'https://dl.vill3n.top\\@evil.example/shop.apk'],
+    ['بی ‎//‎', 'https:evil.example/shop.apk'],
+    ['سه ‎/‎', 'https:///evil.example/shop.apk'],
+    ['‎%‎ در میزبان', 'https://evil%2Eexample/shop.apk'],
+    ['راست‌به‌چپ (‎U+202E‎)', 'https://dl.vill3n.top/shop‮kpa.exe'],
+    ['نویسهٔ نامرئی در میزبان', 'https://dl.vill​3n.top/shop.apk'],
+    ['حرفِ غیرلاتین (هم‌شکل) در میزبان', 'https://dl.vill3n.тop/shop.apk'],
+    ['‎"‎ (بیرون زدن از ‎href="…"‎)', 'https://dl.vill3n.top/a"onmouseover=alert(1)'],
+  ];
+  const uOut = [];
+  for (const [, url] of uBad) uOut.push(await api('PUT', DP, db(`u${uOut.length}`, { url, version: undefined }), H(T.owner)));
+  check(`⛔ نشانیِ دوپهلو ⇒ ‎400 bad_url‎ پیش از پل (${uBad.length} حالت: ‎\\‎، ‎//‎، ‎%‎، نامرئی، راست‌به‌چپ، هم‌شکل، ‎"‎)`,
+    uOut.every((r) => r.status === 400 && r.json?.error === 'bad_url') && seen.length === nU,
+    uBad.map(([n], i) => `${n}:${uOut[i].status}/${uOut[i].json?.error}`).filter((_, i) => uOut[i].json?.error !== 'bad_url').join(' '));
+  const uOk = await api('PUT', DP, db('uok', { url: 'http://dl.vill3n.top:8080/shop.apk?v=2.14.6#x', version: undefined }), H(T.owner));
+  check('نشانیِ درست با درگاه، پرس‌وجو و ‎#‎ همان‌طور می‌رود', uOk.status === 200 && ups('PUT', '/api/admin/downloads').at(-1)?.body?.url === 'http://dl.vill3n.top:8080/shop.apk?v=2.14.6#x',
+    `${uOk.status} ${uOk.text.slice(0, 160)}`);
+
+  //  آخرین نسخه: نادرست ⇒ آن‌جا ‎compat.valid‎ = '' ⇒ سنجشِ ‎min_above_latest‎ خاموش ⇒ هر حداقلی پذیرفته (همه «پشتیبانی نمی‌شود»)
+  const nV = ups('PUT', '/api/admin/downloads').length;
+  const vb1 = await api('PUT', DP, db('v1', { url: undefined, version: 'abc', minVersion: '9.0.0' }), H(T.owner));
+  const vb2 = await api('PUT', DP, db('v2', { url: undefined, version: '2.x' }), H(T.owner));
+  check('⛔ آخرین نسخهٔ نادرست ⇒ ‎400 bad_version‎ پیش از پل — نه «آخرین = abc» که سنجشِ حداقل را آن‌جا خاموش می‌کرد و حداقلِ ۹.۰.۰ را به همه می‌داد',
+    vb1.status === 400 && vb1.json?.error === 'bad_version' && vb2.json?.error === 'bad_version' && ups('PUT', '/api/admin/downloads').length === nV && cfg.min_app_version_shop !== '9.0.0',
+    `${vb1.status}/${vb1.json?.error} ${vb2.json?.error} ${cfg.min_app_version_shop}`);
+  const vv = await api('PUT', DP, db('v3', { url: undefined, version: 'v2.14.8' }), H(T.owner));
+  check('‎v‎ ِ پیشِ نسخه برداشته می‌شود (همان حداقل)', vv.status === 200 && ups('PUT', '/api/admin/downloads').at(-1)?.body?.version === '2.14.8' && cfg.latest_version_shop === '2.14.8',
+    `${vv.status} ${JSON.stringify(ups('PUT', '/api/admin/downloads').at(-1)?.body)}`);
+
+  //  حداقل ≤ آخرین روی جفتِ نهایی: آن‌جا فقط وقتی حداقل می‌آید سنجیده می‌شود
+  const minNow = cfg.min_app_version_shop;   //  ۲.۱۲.۰ از بخشِ ۲
+  const nL = ups('PUT', '/api/admin/downloads').length;
+  const nLg = ups('GET', '/api/downloads').length;
+  const low = await api('PUT', DP, db('l1', { url: undefined, version: '2.11.0' }), H(T.owner));
+  check(`⛔ پایین آوردنِ آخرین نسخه به زیرِ حداقلِ ذخیره‌شده (${minNow}) ⇒ ‎400 min_above_latest‎ و **هیچ** نوشتن (یک خواندنِ ‎/api/downloads‎) — آن‌جا پذیرفته می‌شد`,
+    minNow === '2.12.0' && low.status === 400 && low.json?.error === 'min_above_latest' && ups('PUT', '/api/admin/downloads').length === nL
+      && ups('GET', '/api/downloads').length === nLg + 1 && cfg.latest_version_shop === '2.14.8', `${low.status} ${low.text.slice(0, 200)}`);
+  const both = await api('PUT', DP, db('l2', { url: undefined, version: '2.11.0', minVersion: '2.12.5' }), H(T.owner));
+  check('هر دو با هم و حداقل بالاتر ⇒ همان ‎400‎ پیش از پل (بی هیچ درخواست)', both.status === 400 && both.json?.error === 'min_above_latest'
+    && ups('PUT', '/api/admin/downloads').length === nL && ups('GET', '/api/downloads').length === nLg + 1, `${both.status} ${both.json?.error}`);
+  const lowOk = await api('PUT', DP, db('l3', { url: undefined, version: '2.11.0', minVersion: '2.11.0' }), H(T.owner));
+  check('هر دو با هم پایین ⇒ ‎200‎ (راهِ درستِ برگرداندنِ آخرین نسخه)', lowOk.status === 200 && cfg.latest_version_shop === '2.11.0' && cfg.min_app_version_shop === '2.11.0',
+    `${lowOk.status} ${lowOk.text.slice(0, 160)}`);
+  check('⛔ رمزِ هیچ کاربری در هیچ درخواستِ بالادست نیست', !seen.some((x) => /Par-1405-owner|Par-admin-1405|not-the-password/.test(JSON.stringify(x.body ?? ''))), '');
 } catch (e) {
   check('خطای غیرمنتظره', false, e.stack || e.message);
 } finally {

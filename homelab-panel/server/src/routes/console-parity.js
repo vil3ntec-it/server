@@ -24,6 +24,17 @@
 //  ⛔ خواندن: viewer به بالا، **فقط** فیلدهای شناخته — نه شماره و متنِ پیام، نه مسیرِ دیسکِ سرورِ حساب، نه فیلدِ تازهٔ بی‌نام.
 //  ⛔ نیست، عمداً: ‎DELETE …/backups/:id‎ (حذفِ دائمیِ پشتیبانِ مشتری ⇐ تصمیمِ مالک، «بایگانی به‌جای حذف») و دانلودِ همان پشتیبان
 //     (خروجیِ دادهٔ خصوصی)؛ و ‎PUT /api/admin/telegram‎ (رازِ رباتِ **پمپ** — بیرون از این کار).
+//
+//  ⛔ (۱.۵۰.۸۱، بازبینیِ خصمانهٔ ۱.۵۰.۸۰) دو درِ نوشتنی «انتشار»اند — تعیین می‌کنند کدام کد به دستِ کدام مشتری برسد: کانالِ آزمایشی
+//     (هر نسخهٔ main به دکان/دستگاهِ فهرست) و نشانی/نسخه/حداقل (پورتال و SDK به **همهٔ** مشتری‌ها؛ نشانیِ بد = برنامهٔ دیگری برای همه).
+//     ۱.۵۰.۸۰ آن‌ها را به هر admin و با نشستِ ۱۲ساعتهٔ تنها داده بود، در حالی که انتشارِ مرحله‌ای ِ همین ماژول «فقط مالک (یا فنی) +
+//     احرازِ دوباره» است ⇒ همان قاعده (`mayChangeRelease` ِ ‎console-ops.js‎ + `reauthLimit` + `reauth`)؛ رمز هرگز بالا نمی‌رود.
+//  ⛔ (۱.۵۰.۸۱) نشانی **رشتهٔ خام** به مشتری می‌رسد، نه شکلِ پاک‌شدهٔ ‎new URL‎: ‎\‎، ‎https:host‎، ‎https:///host‎، ‎%‎ در نامِ میزبان، نویسهٔ
+//     نامرئی/راست‌به‌چپ (‎U+202E‎)، حرفِ غیرلاتین در میزبان و ‎"‎ را ‎WHATWG‎ بی‌صدا درست می‌کرد و پل می‌پذیرفت، در حالی که خواننده‌ای که آن را
+//     خودش می‌شکافد یا در ‎href="…"‎ می‌چسباند چیزِ دیگری می‌بیند ⇒ فقط نویسه‌های نشانیِ لاتین و ‎http(s)://میزبان[:درگاه]‎ ِ صریح.
+//  ⛔ (۱.۵۰.۸۱) «آخرین نسخه» هم مثلِ حداقل سنجیده می‌شود: نسخهٔ نادرست سنجشِ ‎min_above_latest‎ ِ سرورِ حساب را خاموش می‌کرد (آن‌جا
+//     ‎compat.valid‎ ِ نادرست ⇒ «بی آخرین» ⇒ هر حداقلی پذیرفته)، و پایین آوردنِ آخرین نسخه به زیرِ حداقلِ ذخیره‌شده آن‌جا اصلاً سنجیده
+//     نمی‌شود ⇒ پل جفتِ نهایی را می‌سنجد (اگر فقط یکی آمده، دیگری را از همان ‎GET /api/downloads‎ می‌خواند).
 // ---------------------------------------------------------------------------
 import * as panelRoles from '../control/roles.js';
 import { audit } from '../control/audit.js';
@@ -31,6 +42,7 @@ import { cloudRaw, cloudCall } from '../stations/cloud.js';
 import { rateLimit } from '../platform/rate-limit.js';
 import { requireModule } from '../console/modules.js';
 import { checkIdemKey, makeIdemOnce } from '../account/idem-once.js';
+import { mayChangeRelease } from './console-ops.js';
 
 const { requireRole } = panelRoles;
 
@@ -86,14 +98,30 @@ function shapeDownload(d) {
 }
 const shapeDownloads = (out) => (Array.isArray(out?.downloads) ? out.downloads : []).map(shapeDownload).filter((d) => d.app);
 
-/** نشانیِ دانلود: خالی (پاک کردن) یا ‎http(s)‎ ِ کامل بی فاصله و بی نام/رمز، تا ۳۰۰ */
-function downloadUrlOk(s) {
+/** نویسه‌های مجازِ نشانی (‎RFC 3986‎: حرفِ لاتین، رقم، ‎-._~‎، جداکننده‌ها و ‎%‎) — بی ‎'‎ تا ‎href='…'‎ ِ چسبانده‌شده هم شکسته نشود */
+const URL_CHARS = /^[A-Za-z0-9\-._~:/?#[\]@!$&()*+,;=%]+$/;
+/** ‎http(s)://‎ ِ صریح و بی‌فاصله پشتِ آن میزبان (فقط حرف/رقم/‎.-‎) و درگاهِ اختیاری — نه نام/رمز، نه ‎%‎، نه ‎///‎ */
+const URL_HEAD = /^https?:\/\/([A-Za-z0-9.-]+)(?::\d{1,5})?(?=[/?#]|$)/i;
+
+/** نشانیِ دانلود: خالی (پاک کردن) یا ‎http(s)‎ ِ کامل و یک‌معنا (همان رشته برای هر خواننده)، تا ۳۰۰ */
+export function downloadUrlOk(s) {
   if (s === '') return true;
-  if (s.length > 300 || /\s/.test(s)) return false;
+  if (typeof s !== 'string' || s.length > 300 || !URL_CHARS.test(s)) return false;
+  const head = URL_HEAD.exec(s);
+  if (!head || !/[A-Za-z0-9]/.test(head[1])) return false;
   try {
     const u = new URL(s);
     return (u.protocol === 'https:' || u.protocol === 'http:') && Boolean(u.hostname) && !u.username && !u.password;
   } catch { return false; }
+}
+/** ‎compare‎ ِ ‎lib/app-compat.js‎ ِ shop: ۲٫۱۰ تازه‌تر از ۲٫۹ */
+function cmpVersion(a, b) {
+  const x = a.split('.').map(Number), y = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] || 0) - (y[i] || 0);
+    if (d) return d > 0 ? 1 : -1;
+  }
+  return 0;
 }
 
 /* ───────────────────────── مصرف و هزینهٔ پیام ───────────────────────── */
@@ -153,10 +181,17 @@ export function shapeTenantBackups(out, app) {
 
 /**
  * @param {import('express').Router} router  همان روترِ ‎account-admin.js‎ (همان «انجام‌دهنده»، فهرستِ سفید و ‎bridge-roles.mjs‎)
- * @param {{ guard: Function, badInput: Function, actorOf: Function }} d
+ * @param {{ guard: Function, badInput: Function, actorOf: Function, isPanelOwner: Function, reauthLimit: Function, reauth: Function }} d
  */
-export function mountConsoleParity(router, { guard, badInput, actorOf }) {
+export function mountConsoleParity(router, { guard, badInput, actorOf, isPanelOwner, reauthLimit, reauth }) {
   const once = makeIdemOnce();
+  /** ⛔ همان «چه کسی» ِ انتشارِ مرحله‌ای (مالک یا «فنی»)، با ردیفِ دفترِ همین کار */
+  const releaseActor = (entity, what) => (req, res, next) => {
+    if (mayChangeRelease(req, isPanelOwner)) return next();
+    audit({ actor: actorOf(req), action: `account.${entity}.denied`, entity, result: 'forbidden', detail: { why: 'not_owner_or_technical' } });
+    return res.status(403).json({ error: 'owner_only', message: `${what} را فقط مالکِ پنل (یا نقشِ فنی) عوض می‌کند — همان قاعدهٔ انتشارِ مرحله‌ای` });
+  };
+  const releaseGate = (entity, what) => [requireRole('admin'), releaseActor(entity, what), reauthLimit, reauth];
   const perUser = (req) => `u${req.user?.id ?? 'x'}`;
   //  ⛔ سقفِ هر کاربر روی کارِ حساس (سطلِ عمومیِ IP ِ ‎/api‎ پیش از ورود هم هست)
   const writeLimit = rateLimit({ name: 'console-parity-write', max: 30, windowMs: 10 * 60_000, key: perUser });
@@ -171,7 +206,7 @@ export function mountConsoleParity(router, { guard, badInput, actorOf }) {
     return { reason, key: checkIdemKey(req.body?.idempotencyKey) };
   };
 
-  router.put('/console/release/beta', requireRole('admin'), writeLimit, guard(async (req, res) => {
+  router.put('/console/release/beta', ...releaseGate('release_beta', 'کانالِ آزمایشی'), writeLimit, guard(async (req, res) => {
     const { reason, key } = sensitive(req);
     const version = req.body?.version;
     if (!Number.isSafeInteger(version) || version < 0) throw badInput('bad_version', 'نسخهٔ همان فهرستی که دیدید لازم است');
@@ -204,10 +239,10 @@ export function mountConsoleParity(router, { guard, badInput, actorOf }) {
   router.get('/console/downloads', requireModule('versions'), guard(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     const out = await cloudCall('downloads');
-    res.json({ fetchedAt: Date.now(), serverTime: ts(out?.serverTime), downloads: shapeDownloads(out) });
+    res.json({ fetchedAt: Date.now(), serverTime: ts(out?.serverTime), downloads: shapeDownloads(out), canChange: mayChangeRelease(req, isPanelOwner) });
   }));
 
-  router.put('/console/downloads', requireRole('admin'), writeLimit, guard(async (req, res) => {
+  router.put('/console/downloads', ...releaseGate('downloads', 'نشانی و نسخهٔ دانلود'), writeLimit, guard(async (req, res) => {
     const { reason, key } = sensitive(req);
     const app = String(req.body?.app ?? '');
     if (!DL_APPS.includes(app)) throw badInput('bad_app', 'برنامه دکان (shop) یا پمپ (pump) است');
@@ -217,11 +252,15 @@ export function mountConsoleParity(router, { guard, badInput, actorOf }) {
       const v = req.body?.[k];
       if (v === undefined) continue;
       if (typeof v !== 'string') throw badInput('bad_field', `«${k}» باید متن باشد`);
-      const s = v.replace(CONTROL, ' ').trim();
+      let s = v.replace(CONTROL, ' ').trim();
       if (k === 'url' ? !downloadUrlOk(s) : s.length > max) {
         throw badInput(k === 'url' ? 'bad_url' : 'bad_field', k === 'url'
-          ? 'نشانیِ دانلود باید نشانیِ کاملِ http یا https باشد (بی فاصله، تا ۳۰۰ نویسه) — یا خالی برای پاک کردن'
+          ? 'نشانیِ دانلود باید نشانیِ کاملِ http یا https باشد (‎https://میزبان/…‎، تا ۳۰۰ نویسه، بی نام/رمز) و فقط با نویسه‌های لاتینِ نشانی — حرفِ فارسی، فاصله و ‎\\‎ را به شکلِ ‎%..‎ بنویسید (از نوارِ نشانیِ مرورگر کپی کنید)؛ یا خالی برای پاک کردن'
           : `«${k}» بلندتر از ${max} نویسه است`);
+      }
+      if (k === 'version' && s) {
+        s = s.replace(/^v/i, '');
+        if (!VERSION_RE.test(s)) throw badInput('bad_version', 'آخرین نسخه باید مثلِ 2.14.6 باشد — یا خالی');
       }
       body[k] = s;
       fields.push(k);
@@ -236,6 +275,16 @@ export function mountConsoleParity(router, { guard, badInput, actorOf }) {
     }
     if (!fields.length) throw badInput('bad_body', 'دست‌کم یکی از نشانی، نسخه، یادداشت یا حداقل نسخه لازم است');
     const out = await once(req, key, `downloads|${reason}|${JSON.stringify(body)}`, `downloads:${app}`, async () => {
+      //  ⛔ حداقل ≤ آخرین (قاعدهٔ خودِ سرورِ حساب: «نسخه‌ای که منتشر نشده را نمی‌شود از کسی خواست»)، روی جفتِ **پس از** این نوشتن.
+      //     فقط حداقل آمده ⇒ خودِ آن‌جا با آخرینِ ذخیره‌شده می‌سنجد؛ آخرین آمده و حداقل نه ⇒ آن‌جا نمی‌سنجد ⇒ همین‌جا.
+      if (body.version && body.minVersion === undefined) {
+        const now = shapeDownloads(await cloudCall('downloads')).find((d) => d.app === app);
+        if (now?.minVersion && cmpVersion(now.minVersion, body.version) > 0) {
+          throw badInput('min_above_latest', `حداقل نسخهٔ همین حالا (${now.minVersion}) از آخرین نسخهٔ تازه (${body.version}) بالاتر می‌شد — اول حداقل را پایین بیاورید یا هر دو را با هم بفرستید`);
+        }
+      } else if (body.version && body.minVersion && cmpVersion(body.minVersion, body.version) > 0) {
+        throw badInput('min_above_latest', 'حداقل نسخه از آخرین نسخه بالاتر است');
+      }
       const r = await cloudRaw('PUT', '/api/admin/downloads', { body });
       const download = shapeDownloads(r).find((d) => d.app === app) || null;
       audit({ actor: actorOf(req), action: 'account.downloads.updated', entity: 'downloads', entityId: app,
