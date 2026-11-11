@@ -108,7 +108,7 @@ try {
   const apps2 = await fetch(`${BASE}/api/codes-admin/apps`, { headers: admin }).then((r) => r.json());
   check('برنامهٔ دوم هم ثبت شد', (apps2.apps || []).some((a) => a.slug === 'after-backup'));
 
-  console.log('\n── احرازِ دوباره: نشستِ کهنهٔ مدیرِ دوم بازگردانی نمی‌کند (۱.۵۰.۸۲) ──');
+  console.log('\n── فقط مالک (۱.۵۰.۸۶، ۲-۲۶ پرسشِ ۱ «ب») و احرازِ دوباره (۱.۵۰.۸۲) ──');
   /*
    *  ⛔ بازگردانی کلِ panel.db — کاربران، نقش‌ها، نشست‌ها — را جای‌گزین می‌کند، پس
    *  مدیرِ دوم می‌توانست با نسخهٔ کهنه مرزهای «فقط مالک» را دور بزند؛ تا ۱.۵۰.۸۱ بی
@@ -126,8 +126,29 @@ try {
   const stale = await fetch(`${BK}/${encodeURIComponent(file)}/restore`,
     { method: 'POST', headers: J({ authorization: `Bearer ${t2}` }) });
   const staleBody = await stale.json().catch(() => ({}));
-  check('⛔ نشستِ کهنه بازگردانی را ۴۰۳ reauth_required می‌گیرد', stale.status === 403 && staleBody.error === 'reauth_required', `status ${stale.status} ${JSON.stringify(staleBody).slice(0, 120)}`);
+  check('⛔ مدیرِ دوم بازگردانی نمی‌کند — پیش از رمزِ دوباره، ۴۰۳ owner_only (رمزِ خودش را دارد، پس رمز جلویش را نمی‌گرفت)',
+    stale.status === 403 && staleBody.error === 'owner_only', `status ${stale.status} ${JSON.stringify(staleBody).slice(0, 120)}`);
+  {
+    const fdb = new DatabaseSync(path.join(dataDir, 'panel.db'));
+    fdb.exec(`UPDATE sessions SET auth_at = 1 WHERE user_id = ${Number(uid2)}`);
+    fdb.close();
+    await fetch(`${BASE}/api/auth/reauth`, { method: 'POST', headers: J({ authorization: `Bearer ${t2}` }), body: JSON.stringify({ password: 'Second-Pass-2026!' }) });
+    const fresh2 = await fetch(`${BK}/${encodeURIComponent(file)}/restore`, { method: 'POST', headers: J({ authorization: `Bearer ${t2}` }) });
+    check('⛔ با رمزِ تازه هم نه (همیشه فقط مالک، بی کلید)', fresh2.status === 403 && (await fresh2.json().catch(() => ({}))).error === 'owner_only', `status ${fresh2.status}`);
+  }
+  //  نشستِ کهنهٔ **مالک** ⇒ همان ۴۰۳ reauth_required ِ ۱.۵۰.۸۲ (مرزِ رمز سر جایش است)
+  const uid1 = (await fetch(`${BASE}/api/auth/users`, { headers: admin }).then((r) => r.json())).users?.find((u) => u.username === 'admin')?.id;
+  {
+    const odb = new DatabaseSync(path.join(dataDir, 'panel.db'));
+    odb.exec(`UPDATE sessions SET auth_at = 1 WHERE user_id = ${Number(uid1)}`);
+    odb.close();
+  }
+  const staleO = await fetch(`${BK}/${encodeURIComponent(file)}/restore`, { method: 'POST', headers: J(admin) });
+  const staleOBody = await staleO.json().catch(() => ({}));
+  check('⛔ نشستِ کهنهٔ مالک بازگردانی را ۴۰۳ reauth_required می‌گیرد', staleO.status === 403 && staleOBody.error === 'reauth_required', `status ${staleO.status} ${JSON.stringify(staleOBody).slice(0, 120)}`);
   check('⛔ و هیچ فایلِ در انتظاری ساخته نشد', !fs.existsSync(path.join(dataDir, 'panel.db.restore')));
+  const re = await fetch(`${BASE}/api/auth/reauth`, { method: 'POST', headers: J(admin), body: JSON.stringify({ password: 'ControlCenter!2026' }) });
+  check('مالک رمزِ دوباره می‌زند', re.status === 200, `status ${re.status}`);
 
   console.log('\n── بازگردانی ──');
   const restore = await fetch(`${BK}/${encodeURIComponent(file)}/restore`,

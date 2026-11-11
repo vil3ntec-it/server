@@ -232,7 +232,12 @@ const PHASE3 = ['GET /api/admin/shops/:id/health', 'GET /api/admin/shops/:id/hol
   //  ۱.۵۰.۷۷ (shop ‎claude/acct-console-2‎، #1025، پشتِ `staff-perms.v1`): برگرداندنِ دستگاه برای مدیر
   'POST /api/admin/shops/:id/staff-perms/devices/:did/enable',
   //  ۱.۵۰.۷۸ (shop ‎claude/loc-04‎، LOC-04، پشتِ `holidays.v1`): جدولِ تعطیلاتِ رسمی
-  'GET /api/admin/calendar/holidays', 'PUT /api/admin/calendar/holidays']
+  'GET /api/admin/calendar/holidays', 'PUT /api/admin/calendar/holidays',
+  //  ۱.۵۰.۸۹ (۴-۱ «ب»، پشتِ `synonyms.v1`): فهرستِ مرکزیِ مترادف — هنوز روی shop نیست
+  'GET /api/admin/search/synonyms', 'PUT /api/admin/search/synonyms',
+  //  ۱.۵۰.۹۰ (۲-۹، G1، پشتِ `support-access.v1`): اجازهٔ موقتِ پشتیبانی — هنوز روی shop نیست
+  'GET /api/admin/shops/:id/access-grants', 'POST /api/admin/shops/:id/access-grants', 'POST /api/admin/shops/:id/access-grants/break-glass',
+  'POST /api/admin/shops/:id/access-grants/:gid/revoke']
   .map((x) => { const [method, p] = x.split(' '); return { method, re: toRe(p), id: x }; });
 const phase3Of = (method, p) => PHASE3.find((x) => x.method === method && x.re.test(p)) || null;
 
@@ -277,7 +282,7 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
     if (!BACKGROUND.test(p)) calls.push({ method: req.method, path: p });
     //  همهٔ تواناییِ فاز ۳ اعلام می‌شود تا مقصدِ آن مسیرها هم دیده و سنجیده شود
-    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1', 'admin-sessions.v1', 'search.v1', 'market-admin.v1', 'delivery-watch.v1', 'ops.v1', 'release-stage.v1', 'finance.v1', 'sync-restore-once.v1', 'subscription-period.v1', 'admin-contract.v1', 'staff-perms.v1', 'image-bank.v1', 'idempotent-writes.v1', 'holidays.v1'], serverTime: NOW });
+    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1', 'admin-sessions.v1', 'search.v1', 'market-admin.v1', 'delivery-watch.v1', 'ops.v1', 'release-stage.v1', 'finance.v1', 'sync-restore-once.v1', 'subscription-period.v1', 'admin-contract.v1', 'staff-perms.v1', 'image-bank.v1', 'idempotent-writes.v1', 'holidays.v1', 'synonyms.v1', 'support-access.v1'], serverTime: NOW });
     //  ۱.۵۰.۸۰: نوشتنِ کانالِ آزمایشی نسخهٔ دیده‌شده را با همین می‌سنجد (‎sample‎ نسخه ندارد) تا ‎PUT‎ ِ «فقط ارشد» هم دیده شود
     if (p === '/api/admin/release/beta' && req.method === 'GET') return j(200, { ...sample, version: 7 });
     if (/\/receipt$/.test(p)) { res.setHeader('content-type', 'text/html; charset=utf-8'); return res.end('<html>رسید</html>'); }
@@ -367,6 +372,12 @@ const SPECIAL = {
   //  ۱.۵۰.۷۸: جدولِ تعطیلات (پشتِ `holidays.v1`) — دلیل + تأیید + کلید + نسخه و جدولِ درست
   'PUT /api/account-admin/console/calendar/holidays': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-hol-0001', version: 0,
     holidays: [{ date: '2026-03-21', name: { fa: 'نوروز' } }] } },
+  //  ۱.۵۰.۸۹ (۴-۱ «ب»): فهرستِ مترادف (پشتِ `synonyms.v1`) — دلیل + تأیید + کلید + نسخه و گروه‌های درست
+  'PUT /api/account-admin/console/search/synonyms': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-syn-0001', version: 0, groups: [['بوره', 'شکر']] } },
+  //  ۱.۵۰.۹۰ (۲-۹): اجازهٔ موقتِ پشتیبانی — دلیل + تأیید + کلید؛ شکستنِ شیشه با رمزِ مالک و دلیلِ ۱۰+ نویسه
+  'POST /api/account-admin/console/shops/:id/access-grants': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-acc-0001' } },
+  'POST /api/account-admin/console/shops/:id/access-grants/break-glass': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-acc-0002', password: 'Bridge-1405-roles' } },
+  'POST /api/account-admin/console/shops/:id/access-grants/:gid/revoke': { params: { gid: 'g1' }, body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-acc-0003' } },
   //  ۱.۵۰.۸۰ (S11): کانالِ آزمایشی (نسخهٔ همان ‎GET‎ ِ بالا) و نشانیِ دانلود — دلیل + تأیید + کلید
   'PUT /api/account-admin/console/release/beta': { body: { shops: ['x1'], version: 7, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-beta-0001' } },
   'PUT /api/account-admin/console/downloads': { body: { app: 'shop', version: '2.14.6', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-dl-0001' } },
@@ -375,6 +386,14 @@ const SPECIAL = {
   'POST /api/account-admin/console/image-bank/images/:id/archive': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-img-0003' } },
   'POST /api/account-admin/console/image-bank/images/:id/search': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, enabled: false, idempotencyKey: 'bridge-roles-img-0004' } },
   'GET /api/account-admin/console/image-bank/file/:id/:version/:size': { params: { version: '1', size: 'thumb' } },
+  //  ۱.۵۰.۸۸ (۳-۹): بارگذاری، ورودِ گروهی و ویرایشِ کالای بانک — هر در کلیدِ خودش و بدنهٔ معتبرِ خودش (عکسِ PNG ِ خام برای دو درِ بایت)
+  'POST /api/account-admin/console/image-bank/products': { body: { name: 'سنجهٔ نقش', idempotencyKey: 'bridge-roles-ibp-0001' } },
+  'POST /api/account-admin/console/image-bank/images': { body: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82]), type: 'image/png', query: '&idempotencyKey=bridge-roles-ibi-0001' },
+  'PATCH /api/account-admin/console/image-bank/images/:id': { body: { role: 'main' } },
+  'POST /api/account-admin/console/image-bank/batches': { body: { note: 'سنجهٔ نقش', idempotencyKey: 'bridge-roles-ibb-0001' } },
+  'PUT /api/account-admin/console/image-bank/batches/:id/files/:name': { params: { name: 'a.png' }, body: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82]), type: 'image/png' },
+  'POST /api/account-admin/console/image-bank/batches/:id/rows': { body: { csv: 'name,image_path\nسنجه,a.png', dryRun: true } },
+  'POST /api/account-admin/console/image-bank/batches/:id/status': { body: { status: 'paused', confirm: true } },
   //  سندِ اصلاحیِ مالی: بدنهٔ کامل و رمزِ درستِ مالک تا از احرازِ دوبارهٔ پنل بگذرد (بی کلیدِ سرویس ۴۰۹ می‌گیرد؛
   //  مقصدِ بالادستش را `account-finance.mjs` با کلیدِ سرویس می‌سنجد)
   'POST /api/account-admin/console/finance/adjustments': {

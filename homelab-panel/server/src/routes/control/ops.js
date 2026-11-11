@@ -232,22 +232,25 @@ router.post(
 );
 
 /*
- *  ⛔ S19 (۱.۵۰.۸۳): عوض کردنِ منبعِ به‌روزرسانی (`cc_update_repo`/شاخه/توکن) و خودِ نصب/برگشت یعنی
- *  انتخاب و اجرای کدی که روی همین کامپیوتر می‌دود — دقیقاً هم‌ردهٔ ترمینال و «فرمانِ اجرا». پس با
- *  `HLP_SHELL_OWNER_ONLY=1` فقط مالک (یا کلیدِ محلی). وگرنه مدیرِ دومِ پنل می‌توانست `cc_update_repo` را به
- *  مخزنِ خودش ببرد و با نصبش کدِ دلخواه را روی میزبان اجرا کند — همان مرزی که گزینهٔ «فقط مالک» می‌بندد،
- *  و این در بیرونش مانده بود (روی نمایهٔ `vps` که ترمینال خاموش است ولی `update` روشن، تنها راهِ اجرای کد).
- *  پیش‌فرض خاموش ⇒ رفتارِ پیشین بی کم و زیاد؛ مالک هرگز بیرون نمی‌ماند.
+ *  ⛔ S19 (۱.۵۰.۸۳): تنظیمِ به‌روزرسانی (شاخه/توکن) و خودِ نصب/برگشت یعنی انتخاب و اجرای کدی که روی همین
+ *  کامپیوتر می‌دود — دقیقاً هم‌ردهٔ ترمینال و «فرمانِ اجرا». پس فقط مالک (یا کلیدِ محلی)؛ از ۱.۵۰.۸۶ **همیشه**
+ *  (تصمیمِ ۲-۲۶ پرسشِ ۲)، نه فقط با کلیدِ `HLP_SHELL_OWNER_ONLY`.
+ *  ⛔ (۱.۵۰.۸۶، ۲-۲۶ پرسشِ ۳) منبع (`repo`) دیگر از پنل عوض نمی‌شود: فقط مخزنِ رسمی، یا ‎HLP_UPDATE_REPO‎ در ‎.env‎
+ *  ِ همین ماشین (`update/github.js` ‎repoSlug‎). همان مقدارِ امروز ⇒ بی اثر؛ هر مقدارِ دیگر ⇒ ‎400 repo_locked‎
+ *  و هیچ چیزِ دیگری از همان درخواست نمی‌نشیند. مالک هرگز بیرون نمی‌ماند.
  */
 router.post(
   '/update/settings',
   requireRole('admin'),
   guard(async (req, res) => {
     if (!denyUnlessShellAllowed(req, res, 'update')) return;
-    if (req.body?.repo !== undefined) {
+    if (req.body?.repo !== undefined && req.body.repo !== null && req.body.repo !== '') {
       const repo = str(req.body.repo, 120);
-      if (repo && !/^[\w.-]+\/[\w.-]+$/.test(repo)) return fail(res, 400, 'invalid_repo');
-      setSetting('cc_update_repo', repo);
+      if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return fail(res, 400, 'invalid_repo');
+      if (repo !== updater.repoSlug()) {
+        auditFromReq(req, 'update.settings', { entity: 'panel', result: 'denied', detail: { repo, reason: 'repo_locked' } });
+        return fail(res, 400, 'repo_locked', 'منبعِ به‌روزرسانی فقط مخزنِ رسمی است؛ برای مخزنِ دیگر یک خطِ HLP_UPDATE_REPO در ‎.env‎ ِ همین کامپیوتر بگذارید');
+      }
     }
     if (req.body?.channel !== undefined) setSetting('cc_update_channel', req.body.channel === 'branch' ? 'branch' : 'release');
     if (req.body?.branch !== undefined) setSetting('cc_update_branch', str(req.body.branch, 80) || 'main');

@@ -85,7 +85,7 @@ export function attachRealtime(httpServer) {
     socket.on('term:open', (_payload, ack) => {
       if (!alive()) return ack?.({ ok: false, error: 'unauthorized' });
       if (!isAdmin()) return ack?.({ ok: false, error: 'forbidden' });
-      //  ⛔ S19: `HLP_SHELL_OWNER_ONLY=1` ⇒ پوسته فقط مالک (lib/shell-owner.js)؛ خاموش ⇒ همان «هر admin»
+      //  ⛔ S19 (۱.۵۰.۸۶، همیشه): پوسته فقط مالک یا کلیدِ محلی (lib/shell-owner.js)
       if (!shellAllowed(socket.data.user)) {
         audit({ user: socket.data.user, ip: socket.handshake.address }, 'panel.shell.owner_only', { target: 'terminal', ok: false });
         return ack?.({ ok: false, error: 'owner_only', message: OWNER_ONLY_MESSAGE });

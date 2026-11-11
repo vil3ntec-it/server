@@ -205,6 +205,14 @@ try {
   check('مدل به کاربر گفت منتظرِ تأیید است', /تأیید/.test(q2.text), q2.text);
   const pend = await api('GET', '/api/agent/actions?status=pending', undefined, auth);
   check('در فهرستِ منتظرها هست', pend.json?.actions?.some((a) => a.id === prop?.id));
+  //  ⛔ ۱.۵۰.۸۶ (۲-۱۱ «الف»): روشن/دوباره‌روشن کردنِ سایت فقط مالک — کارگزار با تأییدِ پیشنهادِ دستیار هم نه
+  await api('POST', '/api/auth/users', { username: 'oper1', password: 'Oper1-1405-x', role: 'operator' }, auth);
+  const op = await api('POST', '/api/auth/login', { username: 'oper1', password: 'Oper1-1405-x' });
+  const opConfirm = await api('POST', `/api/agent/actions/${prop?.id}/confirm`, {}, { Authorization: `Bearer ${op.json?.token}` });
+  const stillPending = await api('GET', '/api/agent/actions?status=pending', undefined, auth);
+  check('⛔ کارگزار پیشنهادِ ری‌استارتِ سایت را تأیید نمی‌کند (۴۰۳ owner_only) و اقدام منتظر می‌ماند',
+    opConfirm.status === 403 && opConfirm.json?.error === 'owner_only' && stillPending.json?.actions?.some((a) => a.id === prop?.id),
+    `${opConfirm.status} ${JSON.stringify(opConfirm.json).slice(0, 160)}`);
   const rej = await api('POST', `/api/agent/actions/${prop?.id}/reject`, {}, auth);
   check('رد شد', rej.status === 200 && rej.json?.action?.status === 'rejected');
   const again = await api('POST', `/api/agent/actions/${prop?.id}/confirm`, {}, auth);

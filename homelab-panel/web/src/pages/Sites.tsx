@@ -680,17 +680,21 @@ function SiteSettingsModal({
   const [startCommand, setStartCommand] = useState(site.startCommand || '');
   const [autostart, setAutostart] = useState(site.autostart);
   const [envText, setEnvText] = useState('');
+  //  ۱.۵۰.۸۶ (۲-۲۶ پرسشِ ۵): زیرِ admin فقط نامِ متغیرها می‌آید ⇒ کادر فقط‌خواندنی و env پس فرستاده نمی‌شود
+  const [envMasked, setEnvMasked] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api<{ config: { env?: Record<string, string> } }>(`/api/sites/${site.id}`)
-      .then((r) =>
+    api<{ config: { env?: Record<string, string>; envMasked?: boolean } }>(`/api/sites/${site.id}`)
+      .then((r) => {
+        const masked = r.config?.envMasked === true;
+        setEnvMasked(masked);
         setEnvText(
           Object.entries(r.config?.env || {})
-            .map(([k, v]) => `${k}=${v}`)
+            .map(([k, v]) => (masked ? `${k}=••••` : `${k}=${v}`))
             .join('\n')
-        )
-      )
+        );
+      })
       .catch(() => setEnvText(''));
   }, [site.id]);
 
@@ -701,12 +705,14 @@ function SiteSettingsModal({
         method: 'PUT',
         body: { name, port: port ? Number(port) : null, startCommand, autostart },
       });
-      const env: Record<string, string> = {};
-      for (const line of envText.split('\n')) {
-        const idx = line.indexOf('=');
-        if (idx > 0) env[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+      if (!envMasked) {
+        const env: Record<string, string> = {};
+        for (const line of envText.split('\n')) {
+          const idx = line.indexOf('=');
+          if (idx > 0) env[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+        }
+        await api(`/api/sites/${site.id}/config`, { method: 'PUT', body: { env } });
       }
-      await api(`/api/sites/${site.id}/config`, { method: 'PUT', body: { env } });
       await onDone();
       onClose();
       toast(t('saved'));
@@ -752,11 +758,13 @@ function SiteSettingsModal({
       <Field label={t('startCommand')} hint="${PORT}">
         <input className="input font-mono text-xs" value={startCommand} onChange={(e) => setStartCommand(e.target.value)} />
       </Field>
-      <Field label={t('envVars')} hint={t('onePerLine')}>
+      <Field label={t('envVars')} hint={envMasked ? t('envValuesHidden') : t('onePerLine')}>
         <textarea
           className="input h-24 font-mono text-xs"
           value={envText}
           onChange={(e) => setEnvText(e.target.value)}
+          readOnly={envMasked}
+          aria-readonly={envMasked}
           dir="ltr"
         />
       </Field>

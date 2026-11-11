@@ -45,11 +45,23 @@ router.get('/', async (req, res) => {
   res.json({ sites: await listSites(), sitesRoot: sitesRoot() });
 });
 
+/*
+ *  ⛔ (۱.۵۰.۸۶، تصمیمِ ۲-۲۶ پرسشِ ۵ «الف») متغیرهای محیطیِ سایت اغلب رمزِ پایگاه‌داده یا کلیدِ سرویس دارند ⇒
+ *  زیرِ admin (viewer و operator) فقط **نام**‌ها را می‌بینند؛ مقدار برای admin و کلیدِ محلی. همان قاعدهٔ رازهای
+ *  دیگرِ پنل. ‎envMasked‎ به رابط می‌گوید کادر را فقط‌خواندنی کند و env را پس نفرستد.
+ */
+function siteConfigFor(req, slug) {
+  const cfg = readSiteConfig(slug);
+  if (req.user?.local || (req.user?.id != null && userRole(req.user.id) === 'admin')) return cfg;
+  const names = Object.keys(cfg?.env && typeof cfg.env === 'object' ? cfg.env : {});
+  return { ...cfg, env: Object.fromEntries(names.map((k) => [k, ''])), envMasked: true };
+}
+
 router.get('/:id', async (req, res) => {
   const site = getSite(req.params.id);
   if (!site) return res.status(404).json({ error: 'not_found' });
   const info = await describeSite(site);
-  res.json({ site: info, config: readSiteConfig(site.slug), workspace: workspacePaths(site.slug) });
+  res.json({ site: info, config: siteConfigFor(req, site.slug), workspace: workspacePaths(site.slug) });
 });
 
 /*
@@ -115,7 +127,7 @@ function guardSite(req, res, before = null, body = req.body || {}) {
       res.status(403).json({ ok: false, error: 'forbidden', needed: 'admin' });
       return false;
     }
-    //  ⛔ S19: `HLP_SHELL_OWNER_ONLY=1` ⇒ فرمانِ اجرا و ریشهٔ بیرونی فقط مالک (خاموش ⇒ همان «هر admin»)
+    //  ⛔ S19 (۱.۵۰.۸۶: همیشه) ⇒ فرمانِ اجرا و ریشهٔ بیرونی فقط مالک
     const what = effectiveStartCommand(body) ? 'site.command' : 'site.root';
     if (!denyUnlessShellAllowed(req, res, what)) return false;
   }
@@ -200,9 +212,14 @@ async function action(req, res, fn, label) {
   }
 }
 
-router.post('/:id/start', (req, res) => action(req, res, startSite, 'اجرای'));
+/*
+ *  ⛔ (۱.۵۰.۸۶، تصمیمِ ۲-۱۱ «الف») روشن و دوباره‌روشن کردنِ سایت یعنی اجرای کدِ پوشه‌اش روی همین کامپیوتر — همراهِ
+ *  نوشتنِ فایل در آن پوشه (فایل‌منیجر) عملاً همان «فرمانِ اجرا» ⇒ فقط مالک (و کلیدِ محلی). خاموش کردن آزاد ماند.
+ */
+const ownerStart = (req, res, next) => (denyUnlessShellAllowed(req, res, 'site.start') ? next() : undefined);
+router.post('/:id/start', ownerStart, (req, res) => action(req, res, startSite, 'اجرای'));
 router.post('/:id/stop', (req, res) => action(req, res, stopSite, 'توقف'));
-router.post('/:id/restart', (req, res) => action(req, res, restartSite, 'راه‌اندازی مجدد'));
+router.post('/:id/restart', ownerStart, (req, res) => action(req, res, restartSite, 'راه‌اندازی مجدد'));
 
 router.get('/:id/logs', (req, res) => {
   const site = getSite(req.params.id);
@@ -232,7 +249,7 @@ router.put('/:id/config', (req, res) => {
   const current = readSiteConfig(site.slug);
   const env = req.body?.env && typeof req.body.env === 'object' ? req.body.env : current.env;
   //  ⛔ S19 (۱.۵۰.۸۳): متغیرِ محیطی همان «فرمانِ اجرا» است (‎NODE_OPTIONS=--import data:…‎، ‎PATH‎) ⇒ همان نقشِ
-  //  فرمانِ اجرا: دستِ‌کم admin (نه operator)، و با `HLP_SHELL_OWNER_ONLY=1` فقط مالک. تا امروز فقط سوئیچ سنجیده
+  //  فرمانِ اجرا: دستِ‌کم admin (نه operator)، و فقط مالک (۱.۵۰.۸۶: همیشه). تا ۱.۵۰.۸۳ فقط سوئیچ سنجیده
   //  می‌شد، پس operator با سوئیچِ خاموش ‎NODE_OPTIONS‎ می‌گذاشت و کد اجرا می‌کرد.
   if (!req.user?.local && JSON.stringify(env || {}) !== JSON.stringify(current.env || {})) {
     if (userRole(req.user.id) !== 'admin') return res.status(403).json({ ok: false, error: 'forbidden', needed: 'admin' });

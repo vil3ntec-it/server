@@ -84,7 +84,7 @@ export default function Settings() {
       const code = e instanceof ApiError ? e.code : '';
       toast(
         code === 'invalid_domain' ? t('invalidDomain') : code === 'cannot_create' ? t('folderNotCreated')
-          //  S19: ریشه‌های فایل‌منیجر با `HLP_SHELL_OWNER_ONLY=1` فقط مالک — پیامِ خودِ سرور
+          //  S19: ریشه‌های فایل‌منیجر فقط مالک (۱.۵۰.۸۶: همیشه) — پیامِ خودِ سرور
           : code === 'owner_only' ? (e as Error).message : t('error'),
         'bad'
       );

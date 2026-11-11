@@ -26,6 +26,7 @@ import { ActionButton, Cell, KV, Notice, Row, Stat, Table } from '../../control/
 import { CloudProblem, useLoad, type Load } from './shared';
 import ShopFinance from './ShopFinance';
 import StaffCard from './console/StaffCard';
+import SupportAccessCard from './console/SupportAccessCard';
 import BetaCard from './console/BetaCard';
 import TenantBackupsCard from './console/TenantBackupsCard';
 import ContractCard from './console/ContractCard';
@@ -367,6 +368,8 @@ function ShopDetail({ id, onClose }: { id: string; onClose: () => void }) {
 
       {/* ممیزی §۳-۴ (۱.۵۰.۷۵): کارکنان، مجوزها و دستگاه‌های همین دکان — تا امروز فقط در ‎/admin/‎ ِ سرورِ حساب */}
       <div className="mt-4"><StaffCard shopId={id} /></div>
+      {/* ۱.۵۰.۹۰ (۲-۹، G1): اجازهٔ موقتِ دسترسیِ پشتیبانی به دادهٔ همین دکان (ACP-D1/D2) */}
+      <div className="mt-4"><SupportAccessCard shopId={id} /></div>
       {/* ۱.۵۰.۸۰ (S11): پشتیبان‌های خودِ همین دکان (فهرست و سهم) — تا امروز فقط در ‎/admin/‎ ِ سرورِ حساب */}
       <div className="mt-4"><TenantBackupsCard app="shop" tenantId={id} /></div>
 

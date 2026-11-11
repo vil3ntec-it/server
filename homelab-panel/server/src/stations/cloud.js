@@ -128,6 +128,37 @@ function timeoutErr(ctx) {
   return err;
 }
 
+/*
+ *  🚇 **پاسخِ تونل روی نوشتن** (۱.۵۰.۸۷، تصمیمِ ۳-۱۵ پرسشِ ۱ «الف»؛ ممیزی §۹ «۱.۵۰.۷۷ (شکافِ شناخته)»):
+ *  نوشتنی که به‌جای پاسخِ خودِ سرورِ حساب (JSON با ‎error‎) صفحهٔ خطای تونل/واسط را گرفت:
+ *    • **رسیده یا مبهم** — ‎502‎ (cloudflared: هر دو)، ‎504‎، ‎520‎ و ‎524‎ (Cloudflare: سرورِ حساب گرفت، جوابش نیامد/دیر شد)
+ *      ⇒ «نامعلوم» (‎outcome: 'unknown'‎، ‎502 outcome_unknown‎ با ‎upstreamStatus‎) — شاید انجام شده؛ همان پنجره تا ده دقیقه
+ *      دوباره نمی‌فرستد (`account/idem-once.js`) تا آدم نتیجه را ببیند، و یک ردیفِ دفتر (`bridge-fail.js`).
+ *    • **نرسیدهٔ روشن** — ‎521‎ (خاموش)، ‎522‎/‎523‎ (اتصال نشد)، ‎525‎/‎526‎ (TLS) ⇒ «شکست» (‎502 tunnel_not_delivered‎) — کار
+ *      انجام نشده و دوباره زدن بی‌خطر است، پس کلید بی‌دلیل قفل نمی‌شود.
+ *  ⛔ پاسخِ JSON ِ خودِ سرورِ حساب (‎{ error: { code } }‎) با هر وضعیتی همان‌طور که آمد می‌ماند؛ خواندن‌ها (‎GET/HEAD‎) هم دست
+ *     نخوردند (همیشه تکرارپذیرند). تا ۱.۵۰.۸۶ همهٔ این‌ها «‎cloud_error‎ با همان وضعیت» = شکست بودند، حتی ‎524‎.
+ */
+const TUNNEL_REACHED = new Set([502, 504, 520, 524]);
+const TUNNEL_NOT_DELIVERED = new Set([521, 522, 523, 525, 526]);
+/** ‎'unknown'‎ | ‎'failed'‎ | ‎null‎ (پاسخِ خودِ سرورِ حساب یا نه‌تونل) — فقط برای نوشتن */
+export function tunnelVerdict(status, out) {
+  if (out && typeof out === 'object' && out.error) return null;
+  if (TUNNEL_REACHED.has(status)) return 'unknown';
+  if (TUNNEL_NOT_DELIVERED.has(status)) return 'failed';
+  return null;
+}
+function tunnelErr(method, path, status, verdict) {
+  const unknown = verdict === 'unknown';
+  const err = new Error(unknown
+    ? `تونل به‌جای پاسخِ سرورِ حساب خطای ${status} داد و معلوم نیست این کار انجام شد یا نه — پیش از تکرار، نتیجه را در همان فهرست ببینید`
+    : `تونل به سرورِ حساب نرسید (${status}) — این کار انجام نشد؛ کمی بعد دوباره بکوشید`);
+  return Object.assign(err, {
+    code: unknown ? 'outcome_unknown' : 'tunnel_not_delivered', status: 502, upstreamStatus: status,
+    ...(unknown ? { outcome: 'unknown' } : {}), method, path, timeoutMs: null,
+  });
+}
+
 /** خطاهایی که یعنی درخواست اصلاً به سرورِ حساب نرسید ⇒ تکرارش بی‌خطر است. */
 const NEVER_SENT = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH', 'UND_ERR_CONNECT_TIMEOUT']);
 function droppedErr(ctx) {
@@ -882,6 +913,8 @@ async function authedSend(method, path, { query = {}, body = null, headers = {},
       && String(res.headers.get('idempotent-replayed') || '').toLowerCase() === 'true') out.replayed = true;
 
   if (!res.ok) {
+    const verdict = SAFE_METHODS.has(method) ? null : tunnelVerdict(res.status, out);
+    if (verdict) throw tunnelErr(method, path, res.status, verdict);
     const err = new Error(out?.error?.message || 'سرورِ حساب جواب نداد');
     err.code = out?.error?.code || 'cloud_error';
     err.status = res.status;
@@ -904,32 +937,43 @@ async function authedSend(method, path, { query = {}, body = null, headers = {},
  * @returns برای POST همان JSON؛ برای GET ‎{ buffer, contentType }‎
  */
 //  ⏱️ بایت (رسانهٔ پشتیبانی تا ۲۵ مگابایت) با سرورِ حسابِ دور (راهِ تونل) واقعاً طول می‌کشد ⇒ پیش‌فرض «بلند»
-export async function cloudRawBytes(method, path, { body = null, contentType = '', timeout = 'long', signal = null } = {}) {
+//  ⛔ (۱.۵۰.۸۸، ۳-۹) بانکِ عکس: ‎PUT‎ (فایلِ دسته)، ‎query‎ ِ بارگذاری و ‎sha256‎ ⇒ ‎X-Content-SHA256‎ (سرورِ حساب درستیِ بایت‌ها را
+//  پس از تونل می‌سنجد، IMG-14). تکهٔ آخرِ مسیر می‌تواند نامِ فایلِ ‎encodeURIComponent‎ شده باشد (‎.‎ و ‎%XX‎)؛ ‎..‎ هنوز نه.
+export async function cloudRawBytes(method, path, { body = null, contentType = '', timeout = 'long', signal = null, query = {}, sha256 = '' } = {}) {
   const m = String(method || 'GET').toUpperCase();
   const p = String(path || '');
-  if (!['GET', 'POST'].includes(m) || (m === 'POST' && !Buffer.isBuffer(body))
-      || !/^\/api\/admin\/[A-Za-z0-9_\-/]+$/.test(p) || p.includes('..')) {
+  const write = m === 'POST' || m === 'PUT';
+  if (!['GET', 'POST', 'PUT'].includes(m) || (write && !Buffer.isBuffer(body))
+      || !/^\/api\/admin\/[A-Za-z0-9_\-/]+(?:\/[A-Za-z0-9_.%-]+)?$/.test(p) || p.includes('..')
+      || (sha256 && !/^[0-9a-f]{64}$/.test(String(sha256)))) {
     const err = new Error('این مسیر از پنل باز نیست');
     err.code = 'path_not_allowed';
     err.status = 400;
     throw err;
   }
-  const url = `${cloudTarget()}${p}`;
+  const qs = new URLSearchParams(
+    Object.entries(query || {}).filter(([, v]) => v !== undefined && v !== null && v !== '')
+  ).toString();
+  const url = `${cloudTarget()}${p}${qs ? `?${qs}` : ''}`;
   //  ⛔ رسانهٔ پشتیبانی یک‌بارمصرف است (بالا) ⇒ هرگز پشتِ سقفِ هم‌زمانیِ بدنه‌ها (`readCapped`): نه صف، نه ‎503‎
   const once = m === 'GET' && p.startsWith('/api/admin/support/media/');
   const send = (auth) => dial(url, {
     method: m,
     headers: {
       ...auth,
-      ...(m === 'POST' ? { 'content-type': String(contentType || 'application/octet-stream') } : {}),
+      ...(write ? { 'content-type': String(contentType || 'application/octet-stream') } : {}),
+      ...(write && sha256 ? { 'x-content-sha256': String(sha256) } : {}),
     },
-    body: m === 'POST' ? body : undefined,
+    body: write ? body : undefined,
   }, { timeout, signal, once });
 
   const res = await sendAuthed(send, p);
-  if (!res.ok || m === 'POST') {
+  if (!res.ok || write) {
     const out = await readBody(res);
     if (!res.ok) {
+      //  ۱.۵۰.۸۷ (۳-۱۵): بارگذاریِ بایت هم نوشتن است — همان قاعدهٔ پاسخِ تونل
+      const verdict = write ? tunnelVerdict(res.status, out) : null;
+      if (verdict) throw tunnelErr(m, p, res.status, verdict);
       const err = new Error(out?.error?.message || 'سرورِ حساب جواب نداد');
       err.code = out?.error?.code || 'cloud_error';
       err.status = res.status;

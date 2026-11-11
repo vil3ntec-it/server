@@ -305,11 +305,13 @@ try {
   await post('/api/auth/reauth', { password: 'Second-Admin-2026' }, auth2);
   const so2 = await sock(a2.token);
   const t2 = so2 ? await ack(so2, 'term:open') : null;
-  check('مدیرِ دوم با نشستِ تازه ترمینال دارد', t2?.ok === true, JSON.stringify(t2));
+  //  ۱.۵۰.۸۶ (۲-۲۶ پرسشِ ۲): ترمینال همیشه فقط مالک — مدیرِ دوم با نشستِ تازه هم نه؛ وب‌سوکتش ولی وصل است
+  check('⛔ مدیرِ دوم با نشستِ تازه هم ترمینال ندارد (owner_only)، ولی وب‌سوکتش وصل است', t2?.ok === false && t2?.error === 'owner_only' && Boolean(so2?.connected), JSON.stringify(t2));
   const dis = await fetch(`${BASE}/api/auth/users/${a2Id}`, { method: 'PATCH', headers: auth, body: JSON.stringify({ disabled: true }) });
   check('مالک حسابِ مدیرِ دوم را می‌بندد', dis.status === 200, String(dis.status));
   const run2 = so2 ? await ack(so2, 'term:run', { command: 'echo still-here' }) : null;
-  check('⛔ حسابِ بسته با وب‌سوکتِ بازِ پیشین هم فرمانی اجرا نمی‌کند', run2?.ok !== true, JSON.stringify(run2));
+  //  ⛔ «نشستِ مرده» پیش از هر مرزِ نقش سنجیده می‌شود ⇒ ‎unauthorized‎ (نه owner_only) — همان بازبینیِ نشست در هر کارِ ترمینال
+  check('⛔ حسابِ بسته با وب‌سوکتِ بازِ پیشین هم فرمانی اجرا نمی‌کند (نشستِ مرده اول سنجیده می‌شود)', run2?.ok !== true && run2?.error === 'unauthorized', JSON.stringify(run2));
   await wait(900);
   check('⛔ و وب‌سوکتش بسته شد', !so2?.connected);
   so2?.close();

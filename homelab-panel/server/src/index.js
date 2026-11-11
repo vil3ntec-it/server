@@ -339,6 +339,8 @@ app.use((req, res, next) => {
   if (req.path === '/api/files/upload' || req.path === '/api/settings/logo') return next();
   // رسانهٔ پشتیبانیِ پمپ (عکس/ویدیو/صدا) خام است — مسیرِ خودش ‎express.raw‎ دارد
   if (/^\/api\/account-admin\/support\/threads\/[^/]+\/media$/.test(req.path)) return next();
+  // بارگذاریِ بانکِ عکس (۱.۵۰.۸۸، ۳-۹) هم بایتِ خام است — مسیرِ خودش ‎express.raw‎ با سقفِ ۲ مگابایت دارد
+  if (/^\/api\/account-admin\/console\/image-bank\/(images|batches\/[^/]+\/files\/[^/]+)$/.test(req.path)) return next();
   // پشتیبانِ پمپ فایلِ خامِ SQLite است، نه JSON — مسیرِ خودش ‎express.raw‎ دارد
   if (/^\/api\/stations\/[^/]+\/backup$/.test(req.path)) return next();
   // رسانهٔ گروهِ پمپ هم خام است — مسیرِ خودش ‎express.raw‎ دارد

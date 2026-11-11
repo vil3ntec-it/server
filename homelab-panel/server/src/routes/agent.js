@@ -25,6 +25,9 @@ import { runDailyReport, collectDaily, renderDaily } from '../agent/reports.js';
 import { installOllama, installStatus } from '../agent/installer.js';
 import { knowledgeIndex, searchKnowledge } from '../agent/kb.js';
 import { disabledPayload } from '../lib/feature-gate.js';
+import { denyUnlessShellAllowed } from '../lib/shell-owner.js';
+
+const SITE_START_TOOLS = new Set(['restart_site', 'start_site']);
 
 const router = Router();
 /*
@@ -200,6 +203,9 @@ router.post('/actions/:id/confirm', async (req, res) => {
   const action = memory.getAction(req.params.id);
   if (!action) return res.status(404).json({ error: 'not_found' });
   if (action.status !== 'pending') return res.status(409).json({ error: 'not_pending', message: 'این اقدام قبلاً تصمیمش گرفته شده' });
+  //  ⛔ (۱.۵۰.۸۶، ۲-۱۱ «الف») روشن/دوباره‌روشن کردنِ سایت فقط مالک — همان مرزِ ‎POST /api/sites/:id/(start|restart)‎؛
+  //  وگرنه کارگزار با تأییدِ پیشنهادِ دستیار همان کار را می‌کرد. اقدام «منتظر» می‌ماند تا مالک تصمیم بگیرد.
+  if (SITE_START_TOOLS.has(action.tool) && !denyUnlessShellAllowed(req, res, 'site.start')) return;
   try {
     const result = await executeAction(action, { decidedBy: actorOf(req) });
     const out = memory.decideAction(action.id, { status: 'done', decidedBy: actorOf(req), result });
