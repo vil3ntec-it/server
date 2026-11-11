@@ -74,7 +74,7 @@ router.post('/check', async (req, res) => {
 
 router.post('/setup', async (req, res) => {
   const target = String(req.body?.root || '').trim() || libraryRoot();
-  //  ⛔ S19: کتابخانه یکی از ریشه‌های فایل‌منیجر است ⇒ با `HLP_SHELL_OWNER_ONLY=1` گذاشتن یا جابه‌جاییش فقط مالک
+  //  ⛔ S19: کتابخانه یکی از ریشه‌های فایل‌منیجر است ⇒ گذاشتن یا جابه‌جاییش فقط مالک (۱.۵۰.۸۶: همیشه)
   //  (همان ریشهٔ ازپیش‌گذاشته = «تعمیر»، آزاد)
   const same = isConfigured() && path.resolve(target) === path.resolve(libraryRoot());
   if (!same && !denyUnlessShellAllowed(req, res, 'library')) return;
@@ -125,7 +125,7 @@ router.post('/organize/preview', async (req, res) => {
 });
 
 router.post('/organize/apply', async (req, res) => {
-  //  ⛔ (۱.۵۰.۸۳) S19: جابه‌جایی کارِ نوشتن روی دیسکِ میزبان است ⇒ با `HLP_SHELL_OWNER_ONLY=1` فقط مالک (کلیدِ محلی مستثنا)
+  //  ⛔ (۱.۵۰.۸۳) S19: جابه‌جایی کارِ نوشتن روی دیسکِ میزبان است ⇒ فقط مالک (کلیدِ محلی مستثنا؛ ۱.۵۰.۸۶: همیشه)
   if (!denyUnlessShellAllowed(req, res, 'library')) return;
   const items = req.body?.items || [];
   if (!Array.isArray(items) || items.length === 0) {
@@ -173,8 +173,10 @@ router.post('/backups/prune', async (req, res) => {
 });
 
 /* بازگرداندن — پیش از هر چیز از وضعِ فعلی پشتیبان می‌گیرد. احرازِ دوباره مثلِ
- *  درِ `panel.db` (نشستِ وب؛ کلیدِ محلی مستثنا). */
-router.post('/backups/restore', reauthUnlessLocal, async (req, res) => {
+ *  درِ `panel.db` (نشستِ وب؛ کلیدِ محلی مستثنا).
+ *  ⛔ (۱.۵۰.۸۶، ۲-۲۶ پرسشِ ۱ «ب») همان `panel.db` را جای‌گزین می‌کند ⇒ همیشه فقط مالک (یا کلیدِ محلی). */
+const ownerOnlyRestore = (req, res, next) => (denyUnlessShellAllowed(req, res, 'panel.backup.restore') ? next() : undefined);
+router.post('/backups/restore', ownerOnlyRestore, reauthUnlessLocal, async (req, res) => {
   const target = String(req.body?.path || '').trim();
   if (!target) return res.status(400).json({ ok: false, error: 'no_path' });
   const result = await restoreBackup(target);

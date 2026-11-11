@@ -282,8 +282,8 @@ function Settings({ open, onClose, status, onSaved }: { open: boolean; onClose: 
             className="btn btn-primary"
             onClick={async () => {
               try {
+                //  ۱.۵۰.۸۶ (۲-۲۶ پرسشِ ۳): منبع از پنل عوض نمی‌شود ⇒ پس فرستاده نمی‌شود
                 await cc.updateSettings({
-                  repo: form.repo,
                   channel: form.channel,
                   branch: form.branch,
                   autoCheck: form.autoCheck,
@@ -302,8 +302,8 @@ function Settings({ open, onClose, status, onSaved }: { open: boolean; onClose: 
         </>
       }
     >
-      <Field label={t('ccRepository')} hint="owner/repo">
-        <input dir="ltr" className="input font-mono text-xs" value={form.repo} onChange={(e) => setForm({ ...form, repo: e.target.value })} />
+      <Field label={t('ccRepository')} hint={t('ccRepoLocked')}>
+        <input dir="ltr" className="input font-mono text-xs" value={form.repo} readOnly aria-readonly />
       </Field>
       <Field label={t('ccUpdateChannelRelease')}>
         <Select

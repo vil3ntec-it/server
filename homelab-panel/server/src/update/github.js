@@ -48,19 +48,21 @@ const API = (process.env.HLP_GITHUB_API || 'https://api.github.com').replace(/\/
 
 /* ------------------------- کدام مخزن؟ ---------------------------------- */
 
-/** از تنظیمات، وگرنه از خودِ .git، وگرنه پیش‌فرضِ همین پروژه */
+/*
+ *  ⛔ منبعِ به‌روزرسانی فقط مخزنِ رسمی (تصمیمِ ۲-۲۶ پرسشِ ۳ «الف»، ۱.۵۰.۸۶). مخزنِ دیگر **فقط** با یک خطِ
+ *  ‎HLP_UPDATE_REPO=owner/repo‎ در ‎.env‎ ِ خودِ همین کامپیوتر — یعنی دسترسیِ ماشین، نه یک درخواستِ پنل.
+ *  تا ۱.۵۰.۸۵ تنظیمِ ذخیره‌شدهٔ ‎cc_update_repo‎ (از ‎POST /api/control/update/settings‎) و ‎.git/config‎ ِ نصب
+ *  جلوتر از هر چیز بودند: یک نشستِ مالکِ دزدیده‌شده (یا مدیرِ دومِ پیش از ۲-۱۰) منبع را به مخزنِ جعلی می‌برد و
+ *  نصبِ بعدی کدِ دلخواه را روی میزبان می‌نشاند. ردیفِ کهنهٔ ‎cc_update_repo‎ دیگر خوانده نمی‌شود.
+ */
+export const OFFICIAL_REPO = 'vil3ntec-it/server';
+const REPO_RE = /^[\w.-]+\/[\w.-]+$/;
+
+/** ‎HLP_UPDATE_REPO‎ ِ همین ماشین، وگرنه مخزنِ رسمی */
 export function repoSlug() {
-  const saved = getSetting('cc_update_repo', null);
-  if (saved && /^[\w.-]+\/[\w.-]+$/.test(saved)) return saved;
-  if (process.env.HLP_UPDATE_REPO && /^[\w.-]+\/[\w.-]+$/.test(process.env.HLP_UPDATE_REPO)) {
-    return process.env.HLP_UPDATE_REPO;
-  }
-  try {
-    const cfg = fs.readFileSync(path.join(INSTALL_ROOT, '.git', 'config'), 'utf8');
-    const m = cfg.match(/url\s*=\s*.*github\.com[:/]([\w.-]+\/[\w.-]+?)(?:\.git)?\s*$/m);
-    if (m) return m[1];
-  } catch { /* مخزن گیت نیست */ }
-  return 'vil3ntec-it/server';
+  const fromEnv = String(process.env.HLP_UPDATE_REPO || '').trim();
+  if (fromEnv && REPO_RE.test(fromEnv)) return fromEnv;
+  return OFFICIAL_REPO;
 }
 
 export function updateChannel() {
@@ -628,6 +630,9 @@ export async function rollback({ actor = 'admin' } = {}) {
 export function updateStatus() {
   return {
     repo: repoSlug(),
+    //  ۲-۲۶ پرسشِ ۳: منبع از پنل عوض نمی‌شود؛ رابط همین را برای «فقط‌خواندن» کردنِ کادر می‌خواند
+    repoLocked: true,
+    repoFromEnv: repoSlug() !== OFFICIAL_REPO,
     channel: updateChannel(),
     branch: updateBranch(),
     current: versionInfo.version,

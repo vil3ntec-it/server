@@ -11,6 +11,7 @@ import { config } from '../config.js';
 import { createBackup, listBackups, pruneBackups, restoreBackup } from '../backup/index.js';
 import { audit } from '../lib/audit.js';
 import { v } from '../platform/validate.js';
+import { denyUnlessShellAllowed } from '../lib/shell-owner.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('operator'));
@@ -46,7 +47,10 @@ router.post('/', (req, res, next) => {
 //  بستنِ خودش را خنثی کند یا رمزِ کهنهٔ مالک را برگرداند و مرزهای «فقط مالک» را
 //  دور بزند. حالا مثلِ هر کارِ حساس (S7) احرازِ دوباره می‌خواهد و یک ردیفِ دفترِ
 //  یکپارچه می‌نویسد؛ تا ۱.۵۰.۸۱ هیچ‌کدام نبود (فقط یک خطِ لاگِ ساده).
-router.post('/:file/restore', requireRole('admin'), requireRecentAuth, (req, res) => {
+//  ⛔ (۱.۵۰.۸۶، تصمیمِ ۲-۲۶ پرسشِ ۱ «ب») همیشه فقط مالک، بی کلید: رمزِ دوباره جلوی مدیرِ دوم را نمی‌گرفت
+//  (رمزِ خودش را دارد). مالک پیش از احرازِ دوباره سنجیده می‌شود تا مدیرِ دوم «رمز بزن» نبیند.
+const ownerOnlyRestore = (req, res, next) => (denyUnlessShellAllowed(req, res, 'panel.backup.restore') ? next() : undefined);
+router.post('/:file/restore', requireRole('admin'), ownerOnlyRestore, requireRecentAuth, (req, res) => {
   const result = restoreBackup(req.params.file);
   if (!result.ok) {
     audit(req, 'panel.backup.restore', { target: String(req.params.file).slice(0, 200), ok: false, detail: { error: result.error } });

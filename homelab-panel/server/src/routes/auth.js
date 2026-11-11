@@ -223,7 +223,7 @@ router.get('/me', requireAuth, (req, res) => {
     //  تا کِی این نشست برای کارِ حساس تازه است (میلی‌ثانیه؛ صفر = نیست)
     freshUntil: freshUntil(req.user.sessionId),
     abilities: ROLE_ABILITIES[role] || [],
-    //  S19: `HLP_SHELL_OWNER_ONLY=1` ⇒ ترمینال/فرمانِ اجرا/ریشه‌ها فقط مالک — رابط با این پیامِ درست نشان می‌دهد؛ مجوز در سرور است
+    //  S19 (۱.۵۰.۸۶: همیشه true) ⇒ ترمینال/فرمانِ اجرا/ریشه‌ها فقط مالک — رابط با این پیامِ درست نشان می‌دهد؛ مجوز در سرور است
     shellOwnerOnly: shellOwnerOnly(),
     sessions: listSessions(req.user.id),
     //  کدام بخش‌ها روی این میزبان هستند (src/deploy.js) — رابط همان‌ها را نشان می‌دهد
