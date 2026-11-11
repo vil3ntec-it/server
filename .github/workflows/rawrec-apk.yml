@@ -4,6 +4,8 @@ on:
     paths-ignore:
       - "desktop/**"
       - ".github/workflows/rawrec-desktop.yml"
+      - ".github/workflows/rawrec-download.yml"
+      - "out/**"
 permissions:
   contents: write
 jobs:
