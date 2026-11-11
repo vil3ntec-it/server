@@ -66,7 +66,11 @@ class FileWriter(val file: File, video: AVCodecContext, audio: AVCodecContext?) 
 
     companion object {
         /** The MKV copied stream by stream into [mp4] (fast start: plays while still downloading). True when done. */
+        /** What went wrong in the last copy to MP4 (for the check and the log); null when it went through. */
+        @Volatile var lastRemuxError: String? = null
+
         fun remux(mkv: File, mp4: File): Boolean {
+            lastRemuxError = null
             val ic = AVFormatContext(null as Pointer?)
             if (avformat_open_input(ic, mkv.absolutePath, null, null) < 0) return false
             val oc = AVFormatContext(null as Pointer?)
@@ -90,8 +94,13 @@ class FileWriter(val file: File, video: AVCodecContext, audio: AVCodecContext?) 
                 av_dict_free(opts)
                 if (h < 0) return false
                 val pkt = av_packet_alloc()
+                var videoIn = 0; var videoOut = 0
                 while (av_read_frame(ic, pkt) >= 0) {
                     val si = pkt.stream_index()
+                    val isVideo = ic.streams(si).codecpar().codec_type() == org.bytedeco.ffmpeg.global.avutil.AVMEDIA_TYPE_VIDEO
+                    if (isVideo) videoIn++
+                    // a picture without a decode time takes its show time (a still screen's repeats can come that way)
+                    if (pkt.dts() == org.bytedeco.ffmpeg.global.avutil.AV_NOPTS_VALUE) pkt.dts(pkt.pts())
                     av_packet_rescale_ts(pkt, ic.streams(si).time_base(), oc.streams(si).time_base())
                     // a picture with no length gets one frame's length (the last sample of a file would otherwise last 0)
                     val fr = oc.streams(si).avg_frame_rate()
@@ -100,12 +109,16 @@ class FileWriter(val file: File, video: AVCodecContext, audio: AVCodecContext?) 
                         pkt.duration(org.bytedeco.ffmpeg.global.avutil.av_rescale_q(1, org.bytedeco.ffmpeg.global.avutil.av_make_q(fr.den(), fr.num()), tb))
                     }
                     pkt.pos(-1)
-                    av_interleaved_write_frame(oc, pkt)
+                    val w = av_interleaved_write_frame(oc, pkt)
+                    if (w >= 0) { if (isVideo) videoOut++ }
+                    else if (lastRemuxError == null) lastRemuxError = "write ${if (isVideo) "video" else "audio"} pts=${pkt.pts()} dts=${pkt.dts()}: ${VideoDecoder.err(w)}"
                     av_packet_unref(pkt)
                 }
                 av_packet_free(pkt)
                 av_write_trailer(oc)
                 avio_closep(oc.pb())
+                // the MP4 only replaces the MKV when every picture went across
+                if (videoOut < videoIn || videoIn == 0) { if (lastRemuxError == null) lastRemuxError = "pictures $videoOut of $videoIn"; return false }
                 return mp4.length() > 0
             } catch (_: Throwable) {
                 return false

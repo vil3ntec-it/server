@@ -34,6 +34,7 @@ class RecordingTest {
         val wall = (System.nanoTime() - t0) / 1e9
         println("still screen: ${res.frames} frames, ${res.seconds} s, dropped ${res.dropped}, wall ${"%.2f".format(wall)} s, ${res.encoder}")
         assertNull(res.error)
+        assertTrue(res.file.name.endsWith(".mp4"), "an MP4 (remux: ${FileWriter.lastRemuxError})")
         // ~3 s at 30 frames a second, not 2 pictures
         assertTrue(res.frames in 85..95, "frames ${res.frames} in ${"%.2f".format(wall)} s")
         assertTrue(res.seconds in 2.8..3.3, "seconds ${res.seconds}")
@@ -47,7 +48,7 @@ class RecordingTest {
         avformat_close_input(ic)
         assertTrue(dur in 2.8..3.4, "file lasts $dur s")
         assertEquals(30, v.avg_frame_rate().num() / maxOf(1, v.avg_frame_rate().den()),
-            "file rate (${res.file.name}: avg ${v.avg_frame_rate().num()}/${v.avg_frame_rate().den()} r ${v.r_frame_rate().num()}/${v.r_frame_rate().den()} frames ${v.nb_frames()} ${dur} s)")
+            "file rate (${res.file.name}, remux: ${FileWriter.lastRemuxError}: avg ${v.avg_frame_rate().num()}/${v.avg_frame_rate().den()} r ${v.r_frame_rate().num()}/${v.r_frame_rate().den()} frames ${v.nb_frames()} ${dur} s)")
         dir.deleteRecursively()
     }
 
