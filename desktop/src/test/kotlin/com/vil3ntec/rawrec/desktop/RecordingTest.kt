@@ -51,10 +51,12 @@ class RecordingTest {
         while (av_read_frame(ic, pk) >= 0) { if (ic.streams(pk.stream_index()).codecpar().codec_type() == AVMEDIA_TYPE_VIDEO) vpk++; org.bytedeco.ffmpeg.global.avcodec.av_packet_unref(pk) }
         org.bytedeco.ffmpeg.global.avcodec.av_packet_free(pk)
         println("file: $streams; video packets read $vpk")
+        // read everything needed before the file is closed (its stream memory is freed with it)
+        val rate = v.avg_frame_rate().num() / maxOf(1, v.avg_frame_rate().den())
+        val rateText = "avg ${v.avg_frame_rate().num()}/${v.avg_frame_rate().den()} r ${v.r_frame_rate().num()}/${v.r_frame_rate().den()} frames ${v.nb_frames()}"
         avformat_close_input(ic)
         assertTrue(dur in 2.8..3.4, "file lasts $dur s")
-        assertEquals(30, v.avg_frame_rate().num() / maxOf(1, v.avg_frame_rate().den()),
-            "file rate (${res.file.name}, remux: ${FileWriter.lastRemuxError}; $streams; video packets read $vpk: avg ${v.avg_frame_rate().num()}/${v.avg_frame_rate().den()} r ${v.r_frame_rate().num()}/${v.r_frame_rate().den()} frames ${v.nb_frames()} ${dur} s)")
+        assertEquals(30, rate, "file rate (${res.file.name}, remux: ${FileWriter.lastRemuxError}; $streams; video packets read $vpk: $rateText ${dur} s)")
         dir.deleteRecursively()
     }
 

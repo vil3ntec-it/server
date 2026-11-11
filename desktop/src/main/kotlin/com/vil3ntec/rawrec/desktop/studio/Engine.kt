@@ -369,8 +369,20 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
  */
 internal fun bgraSurface(w: Int, h: Int): Surface = Surface.makeRasterN32Premul(w, h)
 
-/** The byte order of the studio's pictures: B,G,R,A on Windows and Linux, R,G,B,A on macOS (Skia's native order). */
+/**
+ * The byte order of the studio's pictures: B,G,R,A on Windows and Linux, R,G,B,A on macOS. Measured, not asked: the
+ * library reports BGRA on macOS while its surfaces hold RGBA (a recording there came out with red as blue) — so one red
+ * pixel is drawn and its first byte looked at.
+ */
 object SurfacePixels {
-    val rgba: Boolean by lazy { ImageInfo.makeN32Premul(1, 1).colorType == ColorType.RGBA_8888 }
+    val rgba: Boolean by lazy {
+        try {
+            bgraSurface(1, 1).use { s ->
+                s.canvas.clear(0xFFFF0000.toInt())
+                val pm = Pixmap()
+                try { if (s.peekPixels(pm)) BufferUtil.getByteBufferFromPointer(pm.addr, 4).get(0).toInt() and 0xFF == 0xFF else false } finally { pm.close() }
+            }
+        } catch (_: Throwable) { false }
+    }
     val avFormat: Int get() = if (rgba) org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_RGBA else org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_BGRA
 }
