@@ -2,11 +2,11 @@ Picked up JAVA_TOOL_OPTIONS: -Drawrec.selftestOut=/home/runner/work/_temp/selfte
 rawrec-desktop selftest: os Linux amd64, java 17.0.21
 capture: unavailable — ضبطِ صفحه، وب‌کم و صدای کامپیوتر به کتابخانه‌های سیستم نیاز دارند: sudo apt install libpulse0 libasound2 libxcb1 libxcb-shm0 libdrm2
 noise model: 297646 bytes
-[hevc_nvenc @ 0x7ca694661240] Cannot load libcuda.so.1
-[h264_nvenc @ 0x7ca694661240] Cannot load libcuda.so.1
-[av1_nvenc @ 0x7ca694661240] Cannot load libcuda.so.1
-[libopenh264 @ 0x7ca694661240] [OpenH264] this = 0x0x7ca694662dd0, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
-[libopenh264 @ 0x7ca694661240] [OpenH264] this = 0x0x7ca694662dd0, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[hevc_nvenc @ 0x7040fc674280] Cannot load libcuda.so.1
+[h264_nvenc @ 0x7040fc674280] Cannot load libcuda.so.1
+[av1_nvenc @ 0x7040fc674280] Cannot load libcuda.so.1
+[libopenh264 @ 0x7040fc674280] [OpenH264] this = 0x0x7040fc691290, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0x7040fc674280] [OpenH264] this = 0x0x7040fc691290, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
 Svt[info]: -------------------------------------------
 Svt[info]: SVT [version]:	SVT-AV1 Encoder Lib v2.2.0
 Svt[info]: SVT [build]  :	GCC 9.4.0	 64 bit
@@ -14,7 +14,7 @@ Svt[info]: LIB Build date: Nov 16 2024 01:13:32
 Svt[info]: -------------------------------------------
 Svt[info]: Number of logical cores available: 4
 Svt[info]: Number of PPCS 59
-Svt[info]: [asm level on system : up to avx2]
+Svt[info]: [asm level on system : up to avx512]
 Svt[info]: [asm level selected : up to avx2]
 Svt[info]: -------------------------------------------
 Svt[info]: SVT [config]: main profile	tier (auto)	level (auto)
