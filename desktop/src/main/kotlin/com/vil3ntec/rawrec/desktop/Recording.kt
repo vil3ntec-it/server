@@ -24,11 +24,13 @@ class Recording(
     private val bitrateKbps: Int,
     private val withAudio: Boolean,
     dir: File = AppPaths.videos,
+    /** Added to the file name ("vertical" → «RawRec … vertical.mp4»). */
+    suffix: String = "",
 ) {
     class Result(val file: File, val seconds: Double, val frames: Long, val dropped: Long, val bytes: Long, val encoder: String, val width: Int, val height: Int, val error: String?)
 
     private val stamp = SimpleDateFormat("yyyy-MM-dd HH-mm-ss").format(Date())
-    private val mkv = File(dir, "RawRec $stamp.mkv")
+    private val mkv = File(dir, "RawRec $stamp${if (suffix.isNotEmpty()) " $suffix" else ""}.mkv")
     private val free = ArrayBlockingQueue<ByteBuffer>(POOL)
     private val queue = ArrayBlockingQueue<Item>(POOL + 64)
     private class Item(val buf: ByteBuffer?, val w: Int, val h: Int, val ptsUs: Long, val pcm: ByteArray?, val atNs: Long = 0)

@@ -51,15 +51,18 @@ fun ScenesPanel(studio: Studio, onEdit: (Studio) -> Unit, locked: Boolean) {
     val studioMode = studio.preview != null
     var renaming by remember { mutableStateOf<String?>(null) }
     Section("صحنه‌ها", trailing = {
-        Btn("+ صحنه", { onEdit(studio.addScene("صحنهٔ ${studio.scenes.size + 1}", studio.editing)) }, height = 24.dp)
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Btn("+ عمودی ۹:۱۶", { onEdit(studio.addVerticalScene("عمودی (شورت)")) }, height = 24.dp)
+            Btn("+ صحنه", { onEdit(studio.addScene("صحنهٔ ${studio.scenes.size + 1}", studio.editing)) }, height = 24.dp)
+        }
     }) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             for ((idx, s) in studio.scenes.withIndex()) {
-                val cur = s.id == (if (studioMode) studio.preview else studio.current)
-                val air = studioMode && s.id == studio.current
+                val cur = s.id == studio.editing.id
+                val air = (studioMode && s.id == studio.current) || (s.vertical && s.id == studio.vertical)
                 Row(Modifier.fillMaxWidth().height(32.dp).clip(RoundedCornerShape(6.dp))
                     .background(if (cur) K.AccentDim else K.Raised).border(1.dp, if (cur) K.Accent else K.Line, RoundedCornerShape(6.dp))
-                    .clickable { onEdit(if (studioMode) studio.copy(preview = s.id) else studio.copy(current = s.id)) }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    .clickable { onEdit(studio.open(s.id)) }.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (renaming == s.id) {
                         var name by remember(s.id) { mutableStateOf(s.name) }
                         Field(name, { name = it; onEdit(studio.copy(scenes = studio.scenes.map { x -> if (x.id == s.id) x.copy(name = it) else x })) }, Modifier.weight(1f))
@@ -67,16 +70,21 @@ fun ScenesPanel(studio: Studio, onEdit: (Studio) -> Unit, locked: Boolean) {
                     } else {
                         if (idx < 9) T("${idx + 1}", 11, K.Faint, modifier = Modifier.width(14.dp))
                         T(s.name, 13, if (cur) K.Accent else K.Text, bold = cur, modifier = Modifier.weight(1f), maxLines = 1)
-                        if (air) { Pill("روی آنتن", K.Live, K.Live); Spacer(Modifier.width(6.dp)) }
+                        // a vertical scene: one small mark, red while it is the one on the upright output
+                        if (s.vertical) { Pill("۹:۱۶", if (air) K.Live else K.Accent, if (air) K.Live else K.Accent); Spacer(Modifier.width(6.dp)) }
+                        else if (air) { Pill("روی آنتن", K.Live, K.Live); Spacer(Modifier.width(6.dp)) }
                         T("${s.layers.size} لایه", 11, K.Faint)
                         Spacer(Modifier.width(6.dp))
                         T("✎", 13, K.Dim, modifier = Modifier.clickable { renaming = s.id })
-                        if (studio.scenes.size > 1) {
+                        if (studio.scenes.count { !it.vertical } > 1 || s.vertical) {
                             Spacer(Modifier.width(8.dp))
                             T("✕", 12, K.Dim, modifier = Modifier.clickable {
                                 val rest = studio.scenes.filter { it.id != s.id }
-                                onEdit(studio.copy(scenes = rest, current = if (s.id == studio.current) rest.first().id else studio.current,
-                                    preview = studio.preview?.let { p -> if (p == s.id) rest.first().id else p }))
+                                val firstMain = rest.first { !it.vertical }.id
+                                onEdit(studio.copy(scenes = rest, current = if (s.id == studio.current) firstMain else studio.current,
+                                    preview = studio.preview?.let { p -> if (p == s.id) firstMain else p },
+                                    vertical = studio.vertical?.takeIf { it != s.id } ?: rest.firstOrNull { it.vertical }?.id,
+                                    focus = studio.focus?.takeIf { it != s.id }))
                             })
                         }
                     }
@@ -117,7 +125,8 @@ fun LayersPanel(studio: Studio, selected: String?, onSelect: (String?) -> Unit, 
                         if (studio.editing.layers.none { studio.source(it.sourceId)?.kind == SourceKind.PHONE }) {
                             Row(Modifier.fillMaxWidth().clickable {
                                 val src = studio.sources.first { it.kind == SourceKind.PHONE }
-                                val l = Layer(Studio.newId(), src.id, 0f, 0f, studio.width.toFloat(), studio.height.toFloat())
+                                val (cw, ch) = studio.canvasOf(studio.editing)
+                                val l = Layer(Studio.newId(), src.id, 0f, 0f, cw.toFloat(), ch.toFloat())
                                 onEdit(studio.withScene(studio.editing.copy(layers = listOf(l) + studio.editing.layers))); onSelect(l.id); adding = false
                             }.padding(6.dp)) { T("${kindMark(k)}   ${kindLabel(k)}") }
                         }
@@ -193,14 +202,15 @@ fun Inspector(app: StudioApp, studio: Studio, selected: String?, onEdit: (Studio
         }
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Btn("تمامِ تصویر", { set(l.copy(x = 0f, y = 0f, w = studio.width.toFloat(), h = studio.height.toFloat(), rot = 0f)) }, Modifier.weight(1f))
-            Btn("وسط", { set(l.copy(x = (studio.width - l.w) / 2, y = (studio.height - l.h) / 2)) }, Modifier.weight(1f))
+            val (cw, ch) = studio.canvasOf(studio.editing)
+            Btn("تمامِ تصویر", { set(l.copy(x = 0f, y = 0f, w = cw.toFloat(), h = ch.toFloat(), rot = 0f)) }, Modifier.weight(1f))
+            Btn("وسط", { set(l.copy(x = (cw - l.w) / 2, y = (ch - l.h) / 2)) }, Modifier.weight(1f))
             Btn("تکثیر", { studio.duplicate(l.id)?.let { (s2, _) -> onEdit(s2) } }, Modifier.weight(1f))
         }
         Spacer(Modifier.height(6.dp))
         // alignment to the canvas edges (as OBS's «Transform → Align»)
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            val W = studio.width.toFloat(); val H = studio.height.toFloat()
+            val W = studio.canvasOf(studio.editing).first.toFloat(); val H = studio.canvasOf(studio.editing).second.toFloat()
             Btn("⇥ راست", { set(l.copy(x = W - l.w)) }, Modifier.weight(1f), height = 26.dp)
             Btn("↔ وسط", { set(l.copy(x = (W - l.w) / 2)) }, Modifier.weight(1f), height = 26.dp)
             Btn("⇤ چپ", { set(l.copy(x = 0f)) }, Modifier.weight(1f), height = 26.dp)

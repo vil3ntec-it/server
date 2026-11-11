@@ -28,7 +28,9 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
         set(v) { field = if (outputs.isNotEmpty() && (v.width != field.width || v.height != field.height || v.fps != field.fps)) v.copy(width = field.width, height = field.height, fps = field.fps) else v }
 
     val outputs = CopyOnWriteArrayList<Output>()
-    val mixer = AudioMixer { pcm, pts -> for (o in outputs) o.audio(pcm, pts) }
+    /** What takes the upright (9:16) picture: its live stream and recording; same clock and sound as the main ones. */
+    val vOutputs = CopyOnWriteArrayList<Output>()
+    val mixer = AudioMixer { pcm, pts -> for (o in outputs) o.audio(pcm, pts); for (o in vOutputs) o.audio(pcm, pts) }
 
     /** The newest finished picture for the window (at most [PREVIEW_FPS] a second); see [usePreview]. */
     private var preview: Image? = null
@@ -42,6 +44,13 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
     private var next: Image? = null
     @Volatile var nextSeq = 0L; private set
     fun <T> useNext(f: (Image) -> T): T? = synchronized(previewLock) { next?.let(f) }
+
+    /** The upright picture for the window, while a vertical scene exists. */
+    private var vpreview: Image? = null
+    @Volatile var vpreviewSeq = 0L; private set
+    fun <T> useVertical(f: (Image) -> T): T? = synchronized(previewLock) { vpreview?.let(f) }
+    private var vSurface: Surface? = null
+    @Volatile var vDrawMs = 0.0; private set
 
     // the transition between the last scene on air and the new one
     private var onAir: String? = null
@@ -105,6 +114,28 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
                     }
                     pm.close()
                 }
+                // the upright canvas, from the same tick: its outputs get every picture, the window a few a second
+                val vs = st.verticalScene
+                if (vs != null) {
+                    val va = System.nanoTime()
+                    if (vSurface == null || vSurface!!.width != st.vWidth || vSurface!!.height != st.vHeight) { vSurface?.close(); vSurface = Surface.makeRasterN32Premul(st.vWidth, st.vHeight) }
+                    val vsf = vSurface!!
+                    vsf.canvas.clear(0xFF000000.toInt()); drawScene(vsf.canvas, st, vs, secondary = true)
+                    if (vOutputs.isNotEmpty()) {
+                        val pm = Pixmap()
+                        if (vsf.peekPixels(pm)) {
+                            val f = VideoFrame(st.vWidth, st.vHeight, BufferUtil.getByteBufferFromPointer(pm.addr, pm.rowBytes * st.vHeight), pts)
+                            for (o in vOutputs) o.video(f)
+                        }
+                        pm.close()
+                    }
+                    if (a - lastPreviewNs >= 1_000_000_000L / PREVIEW_FPS) {
+                        val snap = vsf.makeImageSnapshot()
+                        synchronized(previewLock) { vpreview?.close(); vpreview = snap }
+                        vpreviewSeq++
+                    }
+                    vDrawMs = (System.nanoTime() - va) / 1e6
+                } else if (vpreview != null) synchronized(previewLock) { vpreview?.close(); vpreview = null }
                 if (a - lastPreviewNs >= 1_000_000_000L / PREVIEW_FPS) {
                     val snap = surface.makeImageSnapshot()
                     synchronized(previewLock) { preview?.close(); preview = snap }
@@ -133,7 +164,7 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
                 count = 0; drawSum = 0.0; countAt = System.nanoTime()
             }
         }
-        surface?.close(); nextSurface?.close()
+        surface?.close(); nextSurface?.close(); vSurface?.close()
         runtimes.values.forEach { it.second.close() }
     }
 
@@ -148,7 +179,7 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
         val from = leaving?.let { st.sceneById(it) }
         val t = if (from == null) 1f else ((nowNs - transStartNs) / 1e6f / st.transitionMs).coerceIn(0f, 1f)
         if (t >= 1f) leaving = null
-        syncRuntimes(st, listOfNotNull(st.scene, from, st.preview?.let { st.sceneById(it) }))
+        syncRuntimes(st, listOfNotNull(st.scene, from, st.preview?.let { st.sceneById(it) }, st.verticalScene))
         c.clear(0xFF000000.toInt())
         if (from == null || t >= 1f) { drawScene(c, st, st.scene); return }
         val e = smooth(t)
@@ -175,8 +206,13 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
 
     private fun smooth(t: Float) = t * t * (3 - 2 * t)
 
-    /** One picture of a scene: layers bottom to top, each placed, turned, cut, faded and treated as set. */
-    fun drawScene(c: Canvas, st: Studio, scene: Scene) {
+    /**
+     * One picture of a scene: layers bottom to top, each placed, turned, cut, faded and treated as set. [secondary]: the
+     * upright canvas — a source shown on the main canvas too keeps the main canvas's size and treatment (one conversion per
+     * picture, never two fighting each other).
+     */
+    fun drawScene(c: Canvas, st: Studio, scene: Scene, secondary: Boolean = false) {
+        val onMain = if (secondary) st.scene.layers.mapTo(HashSet()) { it.sourceId } else emptySet<String>()
         for (l in scene.layers) {
             if (!l.visible || l.opacity <= 0f || l.w < 1f || l.h < 1f) continue
             val rt = runtimes[l.sourceId]?.second ?: continue
@@ -187,8 +223,10 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
             if (l.radius > 0f) c.clipRRect(RRect.makeXYWH(0f, 0f, l.w, l.h, l.radius), ClipMode.INTERSECT, true)
             when (rt) {
                 is PictureSource -> {
-                    rt.want(if (l.rot == 0f && l.crop == Crop() && scene.id == st.scene.id) shownSize(l) else null)
-                    rt.fx(l.fx)
+                    if (l.sourceId !in onMain) {
+                        rt.want(if (l.rot == 0f && l.crop == Crop() && (scene.id == st.scene.id || secondary)) shownSize(l) else null)
+                        rt.fx(l.fx)
+                    }
                     rt.image()?.let { drawPicture(c, it, l) }
                 }
                 is DrawnSource -> {

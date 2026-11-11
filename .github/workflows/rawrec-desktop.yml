@@ -25,6 +25,7 @@ jobs:
         include:
           - { os: ubuntu-latest, tag: linux, pt: linux, py: python3 }
           - { os: windows-latest, tag: windows, pt: windows, py: python }
+          - { os: macos-latest, tag: macos, pt: darwin, py: python3 }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     defaults:
@@ -65,7 +66,7 @@ jobs:
               n.sort(key=len); open("src/main/resources/fonts/" + want, "wb").write(z.read(n[0])); print(want, "<-", n[0])
           PY
           ls -la appres/common/scrcpy appres/${{ matrix.tag }}/platform-tools | head -20
-          sha256sum appres/common/scrcpy/scrcpy-server
+          ${{ matrix.py }} -c "import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" appres/common/scrcpy/scrcpy-server
       - name: Unit tests
         run: |
           cd desktop
@@ -93,7 +94,9 @@ jobs:
         run: |
           cd desktop
           APP="build/compose/binaries/main/app/RawRec Desktop"
-          if [ "${{ matrix.tag }}" = windows ]; then EXE="$APP/RawRec Desktop.exe"; else EXE="$APP/bin/RawRec Desktop"; fi
+          if [ "${{ matrix.tag }}" = windows ]; then EXE="$APP/RawRec Desktop.exe"
+          elif [ "${{ matrix.tag }}" = macos ]; then APP="build/compose/binaries/main/app/RawRec Desktop.app"; EXE="$APP/Contents/MacOS/RawRec Desktop"
+          else EXE="$APP/bin/RawRec Desktop"; fi
           ls -la "$APP" "$(dirname "$EXE")" | head -30
           O=$(cd .. && pwd)/out/desktop-$VER/${{ matrix.tag }}
           L="$RUNNER_TEMP/selftest.log"; [ "${{ matrix.tag }}" = windows ] && L=$(cygpath -w "$L")
@@ -148,8 +151,11 @@ jobs:
             ffprobe -v error -count_frames -show_entries stream=codec_name,width,height,avg_frame_rate,nb_read_frames,sample_rate:format=duration -of compact $T/$f.flv >> $O/live-two-platforms.txt
             echo "decode errors: $(ffmpeg -v error -i $T/$f.flv -fps_mode passthrough -f null - 2>&1 | wc -l)" >> $O/live-two-platforms.txt; done
           ffmpeg -v error -y -ss 7 -i $T/a.flv -frames:v 1 $O/live-server-a.png
+          ffmpeg -v error -y -ss 7 -i $T/b.flv -frames:v 1 $O/live-server-b-vertical.png
           cat $O/live-two-platforms.txt
           grep -q LIVE_DONE $O/live-two-platforms.txt
+          # the second server got the upright picture
+          ffprobe -v error -select_streams v -show_entries stream=width,height -of csv=p=0 $T/b.flv | grep -q '^1080,1920$'
       - name: Edit — cut, join, enhance to 1440p (and the same without the treatment, to compare)
         if: matrix.tag == 'linux'
         run: |
@@ -172,15 +178,27 @@ jobs:
           mkdir -p $O
           B=desktop/build/compose/binaries/main
           for f in $B/msi/*.msi $B/exe/*.exe $B/deb/*.deb $B/dmg/*.dmg; do [ -f "$f" ] && cp "$f" $O/; done
-          (cd "$B/app" && ${{ matrix.py }} -c "import shutil; shutil.make_archive('portable', 'zip', '.', 'RawRec Desktop')") && mv "$B/app/portable.zip" "$O/RawRec-Desktop-$VER-${{ matrix.tag }}-portable.zip"
+          D="RawRec Desktop"; [ "${{ matrix.tag }}" = macos ] && D="RawRec Desktop.app"
+          (cd "$B/app" && ${{ matrix.py }} -c "import shutil,sys; shutil.make_archive('portable', 'zip', '.', sys.argv[1])" "$D") && mv "$B/app/portable.zip" "$O/RawRec-Desktop-$VER-${{ matrix.tag }}-portable.zip"
           cp desktop/build/compose/tmp/suggestRuntimeModules*.txt $O/ 2>/dev/null || true
-          # GitHub takes files under 100 MB: bigger ones go in 90 MB parts (joined again when delivered)
-          for f in $O/*; do
-            s=$(stat -c %s "$f" 2>/dev/null || stat -f %z "$f")
-            if [ "$s" -gt 94000000 ]; then split -b 90000000 -d "$f" "$f.part"; rm "$f"; fi
-          done
+          # GitHub takes files under 100 MB: bigger ones go in 90 MB parts (joined again when delivered); the same on every system
+          ${{ matrix.py }} - $O <<'PY'
+          import os, sys, hashlib
+          d = sys.argv[1]
+          for n in sorted(os.listdir(d)):
+              p = os.path.join(d, n)
+              if os.path.getsize(p) > 94_000_000:
+                  with open(p, 'rb') as f:
+                      i = 0
+                      while True:
+                          b = f.read(90_000_000)
+                          if not b: break
+                          open(f"{p}.part{i:02d}", 'wb').write(b); i += 1
+                  os.remove(p)
+          lines = [f"{hashlib.sha256(open(os.path.join(d, n), 'rb').read()).hexdigest()}  {n}" for n in sorted(os.listdir(d)) if n != "SHA256SUMS.txt"]
+          open(os.path.join(d, "SHA256SUMS.txt"), "w").write("\n".join(lines) + "\n")
+          PY
           ls -la $O
-          (cd $O && sha256sum * > SHA256SUMS.txt) || true
       - name: Commit back to this temporary branch
         run: |
           git config user.name "github-actions[bot]"

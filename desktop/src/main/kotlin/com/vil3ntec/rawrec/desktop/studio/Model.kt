@@ -46,8 +46,8 @@ data class Layer(
     val radius: Float = 0f, val fit: Fit = Fit.CONTAIN, val fx: Fx = Fx(),
 )
 
-/** [layers] bottom to top. */
-data class Scene(val id: String, val name: String, val layers: List<Layer>)
+/** [layers] bottom to top. [vertical]: drawn on the upright (9:16) canvas for Shorts / Reels / TikTok, beside the main program. */
+data class Scene(val id: String, val name: String, val layers: List<Layer>, val vertical: Boolean = false)
 
 data class Studio(
     val width: Int = 1920, val height: Int = 1080, val fps: Int = 60,
@@ -56,10 +56,19 @@ data class Studio(
     val transition: Transition = Transition.FADE, val transitionMs: Int = 400,
     /** Studio mode: the scene being prepared (shown beside the program, not sent until «go»); null = off. */
     val preview: String? = null,
+    /** The upright canvas (Shorts): its size and the vertical scene on air there; null = no vertical output. */
+    val vWidth: Int = 1080, val vHeight: Int = 1920, val vertical: String? = null,
+    /** A vertical scene opened for editing (the main canvas is edited otherwise). */
+    val focus: String? = null,
 ) {
-    val scene: Scene get() = scenes.firstOrNull { it.id == current } ?: scenes.first()
-    /** The scene the owner edits: the prepared one in studio mode, else the one on air. */
-    val editing: Scene get() = preview?.let { p -> scenes.firstOrNull { it.id == p } } ?: scene
+    val scene: Scene get() = scenes.firstOrNull { it.id == current && !it.vertical } ?: scenes.firstOrNull { !it.vertical } ?: scenes.first()
+    /** The vertical scene on air on the upright canvas, if any. */
+    val verticalScene: Scene? get() = scenes.firstOrNull { it.id == vertical && it.vertical }
+    /** The scene the owner edits: an opened vertical scene, the prepared one in studio mode, else the one on air. */
+    val editing: Scene get() = focus?.let { f -> scenes.firstOrNull { it.id == f && it.vertical } }
+        ?: preview?.let { p -> scenes.firstOrNull { it.id == p } } ?: scene
+    /** The canvas a scene is drawn on. */
+    fun canvasOf(sc: Scene): Pair<Int, Int> = if (sc.vertical) vWidth to vHeight else width to height
     fun sceneById(id: String?) = scenes.firstOrNull { it.id == id }
     fun source(id: String) = sources.firstOrNull { it.id == id }
 
@@ -70,6 +79,7 @@ data class Studio(
     /** A new source on the current scene, on top, in a sensible place for its kind. */
     fun add(kind: SourceKind, name: String, props: Map<String, String> = emptyMap()): Pair<Studio, Layer> {
         val src = SourceDef(newId(), kind, name, props)
+        val (width, height) = canvasOf(editing)
         val (w, h) = when (kind) {
             SourceKind.PHONE, SourceKind.VIDEO, SourceKind.COLOR, SourceKind.SCREEN, SourceKind.SLIDESHOW -> width.toFloat() to height.toFloat()
             SourceKind.COUNTER -> width * 0.16f to height * 0.07f
@@ -126,14 +136,77 @@ data class Studio(
     }
 
     fun addScene(name: String, copyOf: Scene? = null): Studio {
-        val sc = Scene(newId(), name, copyOf?.layers?.map { it.copy(id = newId()) } ?: emptyList())
-        return if (preview != null) copy(scenes = scenes + sc, preview = sc.id) else copy(scenes = scenes + sc, current = sc.id)
+        val sc = Scene(newId(), name, copyOf?.layers?.map { it.copy(id = newId()) } ?: emptyList(), vertical = copyOf?.vertical ?: false)
+        if (sc.vertical) return copy(scenes = scenes + sc, focus = sc.id, vertical = vertical ?: sc.id)
+        return if (preview != null) copy(scenes = scenes + sc, preview = sc.id, focus = null) else copy(scenes = scenes + sc, current = sc.id, focus = null)
+    }
+
+    /**
+     * A ready upright scene from the main one: the game (the biggest picture) across the top half, everything else on
+     * the main scene kept in the same place relative to the canvas, the chat filling the lower part when there is one.
+     */
+    fun addVerticalScene(name: String): Studio {
+        val main = scene
+        fun kind(l: Layer) = source(l.sourceId)?.kind
+        val big = main.layers.filter { kind(it) in setOf(SourceKind.PHONE, SourceKind.VIDEO, SourceKind.SCREEN) }.maxByOrNull { it.w * it.h }
+        val W = vWidth.toFloat(); val H = vHeight.toFloat()
+        val k = W / width                    // a main-canvas size on the narrower canvas
+        val ls = ArrayList<Layer>()
+        // backgrounds fill the upright canvas
+        main.layers.filter { kind(it) == SourceKind.COLOR || (kind(it) in setOf(SourceKind.IMAGE, SourceKind.SLIDESHOW) && it.w >= width * 0.9f) }
+            .forEach { ls.add(it.copy(id = newId(), x = 0f, y = 0f, w = W, h = H, fit = Fit.COVER)) }
+        val used = ls.size
+        // the top band: title, then goal and counters side by side
+        var top = H * 0.015f
+        main.layers.filter { kind(it) == SourceKind.TEXT }.forEach { l ->
+            val h = (l.h * k * 1.4f).coerceAtMost(H * 0.06f); ls.add(l.copy(id = newId(), x = W * 0.03f, y = top, w = W * 0.94f, h = h)); top += h + H * 0.005f
+        }
+        val small = main.layers.filter { kind(it) in setOf(SourceKind.GOAL, SourceKind.COUNTER) }
+        if (small.isNotEmpty()) {
+            val cw = W * 0.94f / small.size
+            var x = W * 0.03f
+            var hh = 0f
+            small.forEach { l -> val h = (cw * l.h / l.w.coerceAtLeast(1f)).coerceAtMost(H * 0.05f); hh = maxOf(hh, h); ls.add(l.copy(id = newId(), x = x + 4f, y = top, w = cw - 8f, h = h)); x += cw }
+            top += hh + H * 0.005f
+        }
+        // the game across the width
+        val gameY = maxOf(top + H * 0.01f, H * 0.08f)
+        val gameH = W * height / width
+        if (big != null) ls.add(big.copy(id = newId(), x = 0f, y = gameY, w = W, h = gameH, fit = Fit.CONTAIN))
+        var below = gameY + gameH + H * 0.01f
+        // the face: a webcam, or a smaller video (a keyed camera clip), centred under the game
+        main.layers.filter { it !== big && (kind(it) == SourceKind.WEBCAM || (kind(it) == SourceKind.VIDEO && it.w < width * 0.6f)) }.forEach { l ->
+            val h = H * 0.2f; val w = (h * l.w / l.h.coerceAtLeast(1f)).coerceAtMost(W * 0.94f)
+            ls.add(l.copy(id = newId(), x = (W - w) / 2, y = below, w = w, h = h)); below += h + H * 0.01f
+        }
+        // the chat fills what is left; alerts over the game
+        main.layers.filter { kind(it) == SourceKind.CHAT }.forEach { l ->
+            ls.add(l.copy(id = newId(), x = W * 0.03f, y = below, w = W * 0.94f, h = (H - below - H * 0.02f).coerceAtLeast(H * 0.15f)))
+        }
+        main.layers.filter { kind(it) == SourceKind.ALERTS }.forEach { l ->
+            val w = W * 0.9f; ls.add(l.copy(id = newId(), x = W * 0.05f, y = gameY + gameH * 0.1f, w = w, h = w * l.h / l.w.coerceAtLeast(1f)))
+        }
+        // anything else: same place relative to the canvas, sized for the narrower canvas
+        val done = ls.drop(used).map { it.sourceId }.toSet() + ls.take(used).map { it.sourceId } + listOfNotNull(big?.sourceId)
+        main.layers.filter { it.sourceId !in done && it !== big }.forEach { l -> ls.add(l.copy(id = newId(), x = l.x * k, y = l.y / height * H, w = l.w * k, h = l.h * k)) }
+        // drawing order as on the main scene (bottom to top)
+        val order = main.layers.map { it.sourceId }
+        val sorted = ls.sortedBy { order.indexOf(it.sourceId).let { i -> if (i < 0) Int.MAX_VALUE else i } }
+        val sc = Scene(newId(), name, sorted, vertical = true)
+        return copy(scenes = scenes + sc, focus = sc.id, vertical = vertical ?: sc.id)
+    }
+
+    /** Open a scene: a vertical one goes on the upright canvas and is edited there; a main one as before. */
+    fun open(id: String): Studio {
+        val sc = sceneById(id) ?: return this
+        if (sc.vertical) return copy(focus = id, vertical = id)
+        return if (preview != null) copy(preview = id, focus = null) else copy(current = id, focus = null)
     }
 
     /** Another canvas size: every layer keeps its place and size relative to the canvas. */
     fun resized(w: Int, h: Int): Studio {
         val sx = w / width.toFloat(); val sy = h / height.toFloat()
-        return copy(width = w, height = h, scenes = scenes.map { s ->
+        return copy(width = w, height = h, scenes = scenes.map { s -> if (s.vertical) s else
             s.copy(layers = s.layers.map { it.copy(x = it.x * sx, y = it.y * sy, w = it.w * sx, h = it.h * sy) })
         })
     }
@@ -154,11 +227,12 @@ data class Studio(
         fun toJson(s: Studio): String = JSONObject().apply {
             put("v", 2); put("width", s.width); put("height", s.height); put("fps", s.fps); put("current", s.current)
             put("transition", s.transition.name); put("transitionMs", s.transitionMs); s.preview?.let { put("preview", it) }
+            put("vWidth", s.vWidth); put("vHeight", s.vHeight); s.vertical?.let { put("vertical", it) }; s.focus?.let { put("focus", it) }
             put("sources", JSONArray(s.sources.map { src ->
                 JSONObject().put("id", src.id).put("kind", src.kind.name).put("name", src.name).put("props", JSONObject(src.props))
             }))
             put("scenes", JSONArray(s.scenes.map { sc ->
-                JSONObject().put("id", sc.id).put("name", sc.name).put("layers", JSONArray(sc.layers.map { l ->
+                JSONObject().put("id", sc.id).put("name", sc.name).put("vertical", sc.vertical).put("layers", JSONArray(sc.layers.map { l ->
                     JSONObject().put("id", l.id).put("source", l.sourceId).put("x", l.x).put("y", l.y).put("w", l.w).put("h", l.h)
                         .put("rot", l.rot).put("opacity", l.opacity).put("visible", l.visible).put("locked", l.locked)
                         .put("radius", l.radius).put("fit", l.fit.name)
@@ -194,7 +268,7 @@ data class Studio(
                                 l.optDouble("opacity", 1.0).toFloat(), l.optBoolean("visible", true), l.optBoolean("locked", false),
                                 l.optDouble("radius", 0.0).toFloat(), runCatching { Fit.valueOf(l.optString("fit")) }.getOrDefault(Fit.CONTAIN),
                                 l.optJSONObject("fx")?.let(::fxFrom) ?: Fx())
-                        })
+                        }, sc.optBoolean("vertical", false))
                 }
             }
             require(scenes.isNotEmpty()) { "no scenes" }
@@ -205,7 +279,10 @@ data class Studio(
                 o.optString("current", scenes.first().id).takeIf { it in ids2 } ?: scenes.first().id,
                 runCatching { Transition.valueOf(o.optString("transition")) }.getOrDefault(Transition.FADE),
                 o.optInt("transitionMs", 400).coerceIn(0, 5000),
-                o.optString("preview").takeIf { it.isNotBlank() && it in ids2 })
+                o.optString("preview").takeIf { it.isNotBlank() && it in ids2 },
+                o.optInt("vWidth", 1080).coerceIn(320, 7680) and 1.inv(), o.optInt("vHeight", 1920).coerceIn(320, 7680) and 1.inv(),
+                o.optString("vertical").takeIf { v -> v.isNotBlank() && scenes.any { it.id == v && it.vertical } },
+                o.optString("focus").takeIf { v -> v.isNotBlank() && scenes.any { it.id == v && it.vertical } })
         }
 
         fun fxJson(f: Fx) = JSONObject().put("key", f.key).put("keyColor", f.keyColor).put("similarity", f.similarity).put("smoothness", f.smoothness)

@@ -28,6 +28,8 @@ dependencies {
     implementation("org.bytedeco:ffmpeg:7.1-1.5.11")
     implementation("org.bytedeco:ffmpeg:7.1-1.5.11:$nativePlatform")
     implementation("org.json:json:20240303")
+    // global hotkeys (record, live, scenes) while a game has the focus — LGPL-3.0, natives for Windows, macOS and Linux inside
+    implementation("com.github.kwhat:jnativehook:2.2.2")
     testImplementation(kotlin("test"))
 }
 
@@ -65,7 +67,7 @@ compose.desktop {
             description = "Phone screen over USB, recording and live streaming"
             vendor = "VIL3NTEC"
             appResourcesRootDir.set(layout.projectDirectory.dir("appres"))
-            modules("java.prefs", "java.desktop", "jdk.unsupported", "java.net.http", "java.management", "jdk.management", "jdk.crypto.ec", "jdk.localedata")
+            modules("java.prefs", "java.logging", "java.desktop", "jdk.unsupported", "java.net.http", "java.management", "jdk.management", "jdk.crypto.ec", "jdk.localedata")
             windows { menu = true; shortcut = true; dirChooser = true; perUserInstall = true; upgradeUuid = "6f5d2c3e-8a1b-4c7e-9f3a-2b1d0e7c4a55" }
             linux { packageName = "rawrec-desktop"; debMaintainer = "rawrec@vil3ntec.invalid"; shortcut = true; menuGroup = "AudioVideo" }
             macOS { bundleID = "com.vil3ntec.rawrec.desktop" }

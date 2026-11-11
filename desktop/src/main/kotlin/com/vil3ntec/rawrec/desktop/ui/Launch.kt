@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,9 +75,9 @@ fun Studio(app: StudioApp) {
             ctrl && e.key == Key.D -> { sel?.let { l -> studio.duplicate(l.id)?.let { (s2, c) -> edit(s2); selected = c.id } }; true }
             ctrl && e.key == Key.C -> { clipboard = sel; sel != null }
             ctrl && e.key == Key.V -> { clipboard?.let { l -> studio.paste(l)?.let { (s2, c) -> edit(s2); selected = c.id } }; clipboard != null }
-            ctrl && e.key.keyCode in Key.One.keyCode..Key.Nine.keyCode -> {
+            ctrl && !e.isAltPressed && e.key.keyCode in Key.One.keyCode..Key.Nine.keyCode -> {
                 val i = (e.key.keyCode - Key.One.keyCode).toInt()
-                studio.scenes.getOrNull(i)?.let { sc -> edit(if (studio.preview != null) studio.copy(preview = sc.id) else studio.copy(current = sc.id)) }; true
+                studio.scenes.getOrNull(i)?.let { sc -> edit(studio.open(sc.id)) }; true
             }
             e.key == Key.Delete || e.key == Key.Backspace -> { sel?.let { l -> edit(studio.removeLayer(l.id)); selected = null }; sel != null }
             e.key == Key.Escape -> { selected = null; true }
@@ -85,7 +86,7 @@ fun Studio(app: StudioApp) {
             e.key == Key.DirectionUp -> nudge(0f, -1f)
             e.key == Key.DirectionDown -> nudge(0f, 1f)
             e.key == Key.F9 -> { if (app.recording != null) Thread { app.stopRecording() }.start() else message = app.startRecording(); true }
-            e.key == Key.F10 -> { if (app.live != null) app.stopLive() else message = app.startLive(); true }
+            e.key == Key.F10 -> { if (app.onAir) app.stopLive() else message = app.startLive(); true }
             e.key == Key.F8 -> { app.pauseRecording(); true }
             e.key == Key.F11 -> { Thread { app.saveReplay() }.start(); true }
             e.key == Key.F12 -> { app.screenshot(); true }
@@ -93,6 +94,24 @@ fun Studio(app: StudioApp) {
         }
     }
 
+    // the same actions from anywhere on the computer (Ctrl+Alt+…), handed to the window's thread
+    val scope = rememberCoroutineScope()
+    DisposableEffect(app.settings.globalKeys) {
+        if (app.settings.globalKeys) {
+            GlobalKeys.onAction = { a -> scope.launch {
+                when (a) {
+                    GlobalKeys.Action.RECORD -> if (app.recording != null) Thread { app.stopRecording() }.start() else message = app.startRecording()
+                    GlobalKeys.Action.LIVE -> if (app.onAir) app.stopLive() else message = app.startLive()
+                    GlobalKeys.Action.PAUSE -> app.pauseRecording()
+                    GlobalKeys.Action.REPLAY -> Thread { app.saveReplay() }.start()
+                    GlobalKeys.Action.SCREENSHOT -> app.screenshot()
+                }
+            } }
+            GlobalKeys.onScene = { i -> scope.launch { studio.scenes.getOrNull(i)?.let { sc -> edit(studio.open(sc.id)) } } }
+            Thread { GlobalKeys.start() }.apply { isDaemon = true; start() }
+        } else GlobalKeys.stop()
+        onDispose { GlobalKeys.onAction = null; GlobalKeys.onScene = null }
+    }
     LaunchedEffect(Unit) { Thread { encoders = Encoders.available() }.apply { isDaemon = true; start() } }
     LaunchedEffect(Unit) { while (true) { delay(200); tick++ } }
     LaunchedEffect(Unit) {
@@ -104,7 +123,7 @@ fun Studio(app: StudioApp) {
     }
     val st = remember(tick) { app.session?.state ?: Session.State() }
     val recording = app.recording != null
-    val onAir = app.live != null
+    val onAir = app.onAir
 
     Column(Modifier.fillMaxSize()) {
         TopBar(app, st, recording, onAir, tick, editing, { editing = it },
@@ -123,8 +142,20 @@ fun Studio(app: StudioApp) {
             // the program and the big buttons
             Column(Modifier.weight(1f).fillMaxHeight().padding(12.dp)) {
                 val box = Modifier.clip(RoundedCornerShape(8.dp)).border(1.dp, K.Line, RoundedCornerShape(8.dp))
-                if (studio.preview == null) ProgramView(app, studio, selected, { selected = it; if (it != null) tab = Tab.PROPS }, ::edit, st.phase == Session.Phase.LIVE,
-                    Modifier.weight(1f).fillMaxWidth().then(box))
+                if (studio.preview == null) Row(Modifier.weight(1f).fillMaxWidth()) {
+                    ProgramView(app, studio, selected, { selected = it; if (it != null) tab = Tab.PROPS }, ::edit, st.phase == Session.Phase.LIVE,
+                        Modifier.weight(1f).fillMaxHeight().then(box))
+                    // the upright output beside the main one (as a second canvas); a click opens it for editing
+                    val vs = studio.verticalScene
+                    if (vs != null && !studio.editing.vertical) {
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.width(170.dp).fillMaxHeight()) {
+                            T("عمودی ۹:۱۶: ${vs.name}", 11, K.Accent, bold = true, maxLines = 1)
+                            VerticalMini(app, Modifier.fillMaxWidth().aspectRatio(studio.vWidth / studio.vHeight.toFloat()).then(box).clickable { edit(studio.open(vs.id)) })
+                            T("برای ویرایش کلیک کن", 10, K.Faint)
+                        }
+                    }
+                }
                 else Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     // studio mode, as OBS: the scene being prepared (editable) beside what is on air
                     Column(Modifier.weight(1f)) {

@@ -1,6 +1,8 @@
 package com.vil3ntec.rawrec.desktop.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -37,11 +39,16 @@ fun ProgramView(app: StudioApp, studio: Studio, selected: String?, onSelect: (St
                 /** Studio mode: show the scene being prepared (editable) instead of the program. */
                 prepared: Boolean = false, interactive: Boolean = true) {
     var bmp by remember { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(prepared) {
+    // a vertical scene opened for editing is shown on its own upright canvas
+    val vert = interactive && !prepared && studio.editing.vertical
+    LaunchedEffect(prepared, vert) {
         var seen = -1L
         while (true) {
-            val s = if (prepared) app.engine.nextSeq else app.engine.previewSeq
-            if (s != seen) { seen = s; bmp = (if (prepared) app.engine.useNext { it.toComposeImageBitmap() } else app.engine.usePreview { it.toComposeImageBitmap() }) }
+            val s = when { vert -> app.engine.vpreviewSeq; prepared -> app.engine.nextSeq; else -> app.engine.previewSeq }
+            if (s != seen) {
+                seen = s
+                bmp = when { vert -> app.engine.useVertical { it.toComposeImageBitmap() }; prepared -> app.engine.useNext { it.toComposeImageBitmap() }; else -> app.engine.usePreview { it.toComposeImageBitmap() } }
+            }
             delay(15)
         }
     }
@@ -52,9 +59,12 @@ fun ProgramView(app: StudioApp, studio: Studio, selected: String?, onSelect: (St
     val tm = rememberTextMeasurer()
 
     fun sceneOf(): Scene = if (interactive) cur.editing else cur.scene
+    // the canvas being shown: the upright one for a vertical scene
+    fun cW(): Int = if (interactive && !prepared && cur.editing.vertical) cur.vWidth else cur.width
+    fun cH(): Int = if (interactive && !prepared && cur.editing.vertical) cur.vHeight else cur.height
     fun fit(): Pair<Float, Offset> {
-        val k = min(box.width / cur.width.toFloat(), box.height / cur.height.toFloat())
-        return k to Offset((box.width - cur.width * k) / 2, (box.height - cur.height * k) / 2)
+        val k = min(box.width / cW().toFloat(), box.height / cH().toFloat())
+        return k to Offset((box.width - cW() * k) / 2, (box.height - cH() * k) / 2)
     }
     fun toCanvas(p: Offset): Offset { val (k, o) = fit(); return Offset((p.x - o.x) / k, (p.y - o.y) / k) }
     fun hitLayer(c: Offset): Layer? = sceneOf().layers.lastOrNull { l -> l.visible && c.x in l.x..(l.x + l.w) && c.y in l.y..(l.y + l.h) }
@@ -80,7 +90,7 @@ fun ProgramView(app: StudioApp, studio: Studio, selected: String?, onSelect: (St
                     val g = s?.let { l -> grips(l).firstOrNull { (_, o) -> abs(o.x - c.x) < reach && abs(o.y - c.y) < reach } }
                     val hit = if (g != null) s else hitLayer(c)
                     // a layer covering the whole picture (the game) moves only once chosen: never by a stray drag
-                    val l = hit?.takeIf { it.id == sel || !(it.x <= 1f && it.y <= 1f && it.w >= cur.width - 1f && it.h >= cur.height - 1f) }
+                    val l = hit?.takeIf { it.id == sel || !(it.x <= 1f && it.y <= 1f && it.w >= cW() - 1f && it.h >= cH() - 1f) }
                     if (hit != null && l == null) onSelect(hit.id)
                     if (l != null && !l.locked) { drag = Triple(l.id, g?.first ?: Grip.MOVE, l); acc = Offset.Zero; onSelect(l.id) } else drag = null
                 },
@@ -115,9 +125,9 @@ fun ProgramView(app: StudioApp, studio: Studio, selected: String?, onSelect: (St
                     val snap = 10f / k
                     val g = ArrayList<Pair<Boolean, Float>>()
                     if (d.second == Grip.MOVE) {
-                        for ((cx, edge) in listOf(0f to x, cur.width / 2f to x + w / 2, cur.width.toFloat() to x + w))
+                        for ((cx, edge) in listOf(0f to x, cW() / 2f to x + w / 2, cW().toFloat() to x + w))
                             if (abs(edge - cx) < snap) { x += cx - edge; g.add(true to cx); break }
-                        for ((cy, edge) in listOf(0f to y, cur.height / 2f to y + h / 2, cur.height.toFloat() to y + h))
+                        for ((cy, edge) in listOf(0f to y, cH() / 2f to y + h / 2, cH().toFloat() to y + h))
                             if (abs(edge - cy) < snap) { y += cy - edge; g.add(false to cy); break }
                     }
                     guides = g
@@ -127,7 +137,7 @@ fun ProgramView(app: StudioApp, studio: Studio, selected: String?, onSelect: (St
         }) {
         Canvas(Modifier.fillMaxSize()) {
             val (k, o) = fit()
-            val cw = cur.width * k; val ch = cur.height * k
+            val cw = cW() * k; val ch = cH() * k
             drawRect(Color.Black, o, Size(cw, ch))
             bmp?.let { drawImage(it, dstOffset = androidx.compose.ui.unit.IntOffset(o.x.toInt(), o.y.toInt()), dstSize = IntSize(cw.toInt(), ch.toInt()), filterQuality = FilterQuality.Medium) }
             // a phone layer with no phone yet: say so here (never in the program itself)
@@ -156,4 +166,19 @@ fun ProgramView(app: StudioApp, studio: Studio, selected: String?, onSelect: (St
             }
         }
     }
+}
+
+/** The upright output as it goes out, small (not editable here). */
+@Composable
+fun VerticalMini(app: StudioApp, modifier: Modifier) {
+    var bmp by remember { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(Unit) {
+        var seen = -1L
+        while (true) {
+            val s = app.engine.vpreviewSeq
+            if (s != seen) { seen = s; bmp = app.engine.useVertical { it.toComposeImageBitmap() } }
+            delay(30)
+        }
+    }
+    Box(modifier.background(Color.Black)) { bmp?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Fit) } }
 }

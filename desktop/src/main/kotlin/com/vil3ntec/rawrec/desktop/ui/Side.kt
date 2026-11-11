@@ -86,10 +86,17 @@ fun OutputPanel(app: StudioApp, encoders: List<Encoders.Encoder>?, studio: Studi
         T("تقسیمِ خودکارِ ضبط‌های بلند", 11, K.Dim)
         Seg(listOf(0 to "نه", 15 to "۱۵ دقیقه", 30 to "۳۰", 60 to "۶۰"), s.splitMinutes, { v -> app.update { it.copy(splitMinutes = v) } })
         Spacer(Modifier.height(6.dp))
+        T("ضبطِ عمودی (۹:۱۶) کنارِ ضبطِ اصلی — فایلِ جدا برای شورت، از صحنهٔ عمودی", 11, K.Dim)
+        Seg(listOf(false to "نه", true to "بله"), s.recVertical, { v -> app.update { it.copy(recVertical = v) } }, enabled = app.recording == null)
+        Spacer(Modifier.height(6.dp))
         T("بافرِ بازپخش: چند ثانیهٔ آخر همیشه آماده است؛ F11 یا «ذخیرهٔ بازپخش» آن را فایل می‌کند", 11, K.Dim)
         Seg(listOf(15 to "۱۵ ث", 30 to "۳۰ ث", 60 to "۶۰ ث", 120 to "۲ دقیقه"), s.replaySeconds.takeIf { it > 0 } ?: 30, { v -> app.update { it.copy(replaySeconds = v) } }, enabled = app.replay == null)
         Spacer(Modifier.height(6.dp))
         T("میان‌بُرها: F9 ضبط • F8 مکث • F10 پخش • F11 ذخیرهٔ بازپخش • F12 عکس • Ctrl+1..9 صحنه • Ctrl+Z/Y برگرداندن • Ctrl+D تکثیر • Ctrl+C/V کپی • Delete حذف • جهت‌ها جابه‌جایی (با Shift ده‌تایی)", 11, K.Faint)
+        Spacer(Modifier.height(6.dp))
+        T("میان‌بُرهای سراسری (حتی وقتی بازی یا پنجرهٔ دیگری جلوست): Ctrl+Alt+R ضبط • Ctrl+Alt+P مکث • Ctrl+Alt+L پخش • Ctrl+Alt+S ذخیرهٔ بازپخش • Ctrl+Alt+K عکس • Ctrl+Alt+1..9 صحنه", 11, K.Dim)
+        Seg(listOf(true to "روشن", false to "خاموش"), s.globalKeys, { v -> app.update { it.copy(globalKeys = v) } })
+        GlobalKeys.error?.takeIf { s.globalKeys }?.let { T(it, 11, K.Live) }
     }
     HLine()
     LivePanel(app, encoders, onAir)
@@ -124,15 +131,16 @@ fun LivePanel(app: StudioApp, encoders: List<Encoders.Encoder>?, onAir: Boolean)
         }, height = 24.dp, enabled = !onAir)
     }) {
         if (s.dests.isEmpty() && editing == null) T("پلتفرمی اضافه نشده. یوتیوب، توییچ، کیک یا هر سرورِ RTMP — همه با هم.", 12, K.Faint)
-        val per = app.live?.perDest
+        val per = app.live?.perDest; val vPer = app.vLive?.perDest
+        val ready = s.dests.filter { it.enabled && it.url.isNotBlank() && it.key.isNotBlank() }
         for ((i, d) in s.dests.withIndex()) {
-            val stt = per?.getOrNull(s.dests.filter { it.enabled && it.url.isNotBlank() && it.key.isNotBlank() }.indexOf(d))?.status
+            val stt = (if (d.vertical) vPer?.getOrNull(ready.filter { it.vertical }.indexOf(d)) else per?.getOrNull(ready.filter { !it.vertical }.indexOf(d)))?.status
             Row(Modifier.fillMaxWidth().padding(bottom = 4.dp).clip(RoundedCornerShape(6.dp)).background(K.Raised).border(1.dp, K.Line, RoundedCornerShape(6.dp)).padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(Color(d.platform.color)))
                 Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
-                    T(d.name.ifBlank { d.platform.label }, 13, if (d.enabled) K.Text else K.Faint, maxLines = 1)
+                    T(d.name.ifBlank { d.platform.label } + if (d.vertical) "  • عمودی ۹:۱۶" else "", 13, if (d.enabled) K.Text else K.Faint, maxLines = 1)
                     T(if (stt != null) destState(stt) else "کلید: ${d.keyHint}", 11, if (stt?.state == RtmpSink.State.LIVE) K.Good else K.Dim, maxLines = 1)
                 }
                 Btn(if (d.enabled) "روشن" else "خاموش", { app.update { it.copy(dests = it.dests.map { x -> if (x.id == d.id) x.copy(enabled = !x.enabled) else x }) } }, on = d.enabled, height = 24.dp, enabled = !onAir)
@@ -146,6 +154,7 @@ fun LivePanel(app: StudioApp, encoders: List<Encoders.Encoder>?, onAir: Boolean)
                 Seg(listOf(Platform.YOUTUBE to "YouTube", Platform.TWITCH to "Twitch", Platform.KICK to "Kick", Platform.TEST to "دیگر"), d.platform,
                     { p -> editing = d.copy(platform = p, url = Destination.defaultUrl(p)) })
                 Field(d.name, { editing = d.copy(name = it) }, Modifier.fillMaxWidth(), hint = "نام (دلخواه)")
+                Seg(listOf(false to "تصویرِ اصلی (افقی)", true to "تصویرِ عمودی ۹:۱۶ (شورت)"), d.vertical, { v -> editing = d.copy(vertical = v) })
                 Field(d.url, { editing = d.copy(url = it.trim()) }, Modifier.fillMaxWidth(), hint = "نشانیِ سرور (rtmp:// یا rtmps://)", ltr = true)
                 Field(keyText, { keyText = it.trim() }, Modifier.fillMaxWidth(), hint = if (d.key.isBlank()) "کلیدِ پخش (Stream key)" else "کلیدِ فعلی: ${d.keyHint} — برای عوض کردن بنویس", ltr = true, password = true)
                 T("کلید رمزگذاری‌شده روی همین کامپیوتر می‌ماند و هیچ‌جا کامل نشان داده نمی‌شود.", 11, K.Faint)
@@ -168,6 +177,11 @@ fun LivePanel(app: StudioApp, encoders: List<Encoders.Encoder>?, onAir: Boolean)
         Spacer(Modifier.height(4.dp))
         Seg(listOf(3000 to "3", 4500 to "4.5", 6000 to "6", 8000 to "8", 12000 to "12"), s.liveKbps, { v -> app.update { it.copy(liveKbps = v) } }, enabled = !onAir)
         T("یوتیوب 1080p60: ۶ تا ۱۲؛ توییچ: حداکثر ۶ تا ۸.", 11, K.Faint, modifier = Modifier.padding(top = 4.dp))
+        if (s.dests.any { it.vertical }) {
+            Spacer(Modifier.height(6.dp))
+            T("کیفیتِ پخشِ عمودی (مگابیت)", 11, K.Dim)
+            Seg(listOf(3000 to "3", 4500 to "4.5", 6000 to "6", 8000 to "8"), s.vKbps, { v -> app.update { it.copy(vKbps = v) } }, enabled = !onAir)
+        }
     }
 }
 

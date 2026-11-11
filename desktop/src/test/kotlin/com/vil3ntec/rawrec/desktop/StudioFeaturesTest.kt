@@ -226,4 +226,47 @@ class StudioFeaturesTest {
         assertEquals(987L, PlatformStats.parseShort("987 subscribers"))
         assertEquals("12.3K", PlatformStats.fmt(12_345))
     }
+
+    @Test fun verticalSceneIsLaidOutSavedAndDeliveredOnItsOwnCanvas() {
+        // the main scene: a colour background, the game, a chat on the side
+        var s = Studio.default().copy(fps = 30)
+        s = s.add(SourceKind.COLOR, "bg", mapOf("color" to "#FF0000FF")).first
+        s = s.withScene(s.scene.copy(layers = listOf(s.scene.layers.last()) + s.scene.layers.dropLast(1)))
+        s = s.add(SourceKind.CHAT, "chat").first
+        s = s.addVerticalScene("عمودی")
+        val v = assertNotNull(s.verticalScene)
+        assertTrue(v.vertical && s.editing.id == v.id && s.scene.id != v.id, "vertical opened for editing, main program unchanged")
+        val chat = v.layers.first { s.source(it.sourceId)?.kind == SourceKind.CHAT }
+        val game = v.layers.first { s.source(it.sourceId)?.kind == SourceKind.PHONE }
+        assertTrue(game.w == 1080f && chat.y >= game.y + game.h && chat.y + chat.h <= 1920f, "game across the top, chat below: $game / $chat")
+        // a main scene opened again: the vertical one stays on its output
+        val s2 = s.open(s.scene.id)
+        assertEquals(v.id, s2.vertical); assertTrue(!s2.editing.vertical)
+        assertEquals(s, Studio.fromJson(Studio.toJson(s)))
+        // a new source added while the vertical scene is edited lands inside the upright canvas
+        val (s3, l3) = s.add(SourceKind.TEXT, "t")
+        assertTrue(l3.x + l3.w <= 1080f && s3.verticalScene!!.layers.any { it.id == l3.id })
+        // the engine: every tick a 1080×1920 picture to the vertical outputs, the same ticks as the main picture
+        val got = java.util.concurrent.CopyOnWriteArrayList<Triple<Int, Int, Long>>(); val main = java.util.concurrent.CopyOnWriteArrayList<Long>()
+        var blue = 0
+        Engine(s2, { null }).use { e ->
+            e.vOutputs.add(object : Output {
+                override fun video(f: com.vil3ntec.rawrec.desktop.VideoFrame) {
+                    got.add(Triple(f.width, f.height, f.ptsUs))
+                    if (got.size == 10) { val b = f.bgra.duplicate(); b.position((960 * f.width + 540) * 4); blue = b.get().toInt() and 0xFF }
+                }
+                override fun audio(pcm: ByteArray, ptsUs: Long) {}
+            })
+            e.outputs.add(object : Output {
+                override fun video(f: com.vil3ntec.rawrec.desktop.VideoFrame) { main.add(f.ptsUs) }
+                override fun audio(pcm: ByteArray, ptsUs: Long) {}
+            })
+            Thread.sleep(1500)
+        }
+        println("vertical: ${got.size} pictures in 1.5 s, first ${got.firstOrNull()}")
+        assertTrue(got.size >= 35, "vertical frames ${got.size}")
+        assertTrue(got.all { it.first == 1080 && it.second == 1920 })
+        assertTrue(got.map { it.third }.toSet().intersect(main.toSet()).size >= got.size - 2, "same clock as the main picture")
+        assertTrue(blue > 200, "the background drawn on the upright canvas (blue=$blue)")
+    }
 }

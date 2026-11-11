@@ -123,10 +123,23 @@ class StudioApp(val adb: Adb?, private val studioFile: File = File(AppPaths.data
         r.start()
         recording = r; recOut = o
         engine.outputs.add(o)
+        // the upright picture too, as its own file, when chosen and there is a vertical scene
+        if (settings.recVertical && st.verticalScene != null) {
+            val vr = Recording(enc, st.vHeight, st.fps, settings.recKbps, withAudio = true, suffix = "vertical")
+            val vo = object : Output {
+                override fun video(f: VideoFrame) = vr.video(f)
+                override fun audio(pcm: ByteArray, ptsUs: Long) = vr.audio(pcm, ptsUs)
+            }
+            vr.start(); vRecording = vr; vRecOut = vo; engine.vOutputs.add(vo)
+        }
         return null
     }
+    @Volatile var vRecording: Recording? = null; private set
+    private var vRecOut: Output? = null
 
-    fun pauseRecording() { recording?.let { if (it.paused) it.resume() else it.pause() } }
+    fun pauseRecording() {
+        recording?.let { r -> val p = r.paused; if (p) r.resume() else r.pause(); vRecording?.let { if (p) it.resume() else it.pause() } }
+    }
 
     // ------------------------------------------------------------------ replay buffer, screenshots
 
@@ -170,29 +183,47 @@ class StudioApp(val adb: Adb?, private val studioFile: File = File(AppPaths.data
         val r = recording ?: return null
         recOut?.let { engine.outputs.remove(it) }
         recording = null; recOut = null
+        vRecOut?.let { engine.vOutputs.remove(it) }
+        vRecording?.let { vr -> vRecording = null; vRecOut = null; Thread { vr.stop() }.start() }
         return r.stop().also { lastRecording = it }
     }
 
     // ------------------------------------------------------------------ live
 
+    /**
+     * Live on every chosen platform: the main picture to the usual ones, the upright picture (its own encoder, same
+     * sound and clock) to those marked vertical — both at once from one studio.
+     */
     fun startLive(): String? {
-        if (live != null) return null
-        val dests = settings.dests.filter { it.enabled && it.url.isNotBlank() && it.key.isNotBlank() }
-        if (dests.isEmpty()) return "هیچ پلتفرمی با کلیدِ پخش روشن نیست"
-        val enc = pickEncoder(settings.liveEncoder, Encoders.Family.H264) ?: return "هیچ انکودرِ H.264 کار نمی‌کند"
+        if (live != null || vLive != null) return null
+        val all = settings.dests.filter { it.enabled && it.url.isNotBlank() && it.key.isNotBlank() }
         val st = studio
-        val l = LiveOutput(enc, st.width, st.height, st.fps, settings.liveKbps,
-            dests.mapIndexed { i, d -> LiveSettings.Dest(i, d.name.ifBlank { d.platform.label }, d.url, d.key) }) { s -> liveStatus = s }
-        live = l; liveStartedMs = System.currentTimeMillis(); liveStatus = null
-        engine.outputs.add(l)
-        return null
+        val dests = all.filter { !it.vertical }
+        val vDests = all.filter { it.vertical }
+        if (dests.isEmpty() && vDests.isEmpty()) return "هیچ پلتفرمی با کلیدِ پخش روشن نیست"
+        if (dests.isEmpty() && st.verticalScene == null) return "برای پخشِ عمودی اول یک صحنهٔ عمودی بساز (+ عمودی ۹:۱۶)"
+        val enc = pickEncoder(settings.liveEncoder, Encoders.Family.H264) ?: return "هیچ انکودرِ H.264 کار نمی‌کند"
+        liveStartedMs = System.currentTimeMillis(); liveStatus = null
+        if (dests.isNotEmpty()) {
+            val l = LiveOutput(enc, st.width, st.height, st.fps, settings.liveKbps,
+                dests.mapIndexed { i, d -> LiveSettings.Dest(i, d.name.ifBlank { d.platform.label }, d.url, d.key) }) { s -> liveStatus = s }
+            live = l; engine.outputs.add(l)
+        }
+        if (vDests.isNotEmpty() && st.verticalScene != null) {
+            val v = LiveOutput(enc, st.vWidth, st.vHeight, st.fps, settings.vKbps,
+                vDests.mapIndexed { i, d -> LiveSettings.Dest(100 + i, (d.name.ifBlank { d.platform.label }) + " (عمودی)", d.url, d.key) }) { s -> vLiveStatus = s }
+            vLive = v; engine.vOutputs.add(v)
+        }
+        return if (vDests.isNotEmpty() && st.verticalScene == null) "پخشِ عمودی شروع نشد: صحنهٔ عمودی نداری" else null
     }
+    @Volatile var vLive: LiveOutput? = null; private set
+    /** Anything live: the main picture, the upright one, or both. */
+    val onAir: Boolean get() = live != null || vLive != null
+    @Volatile var vLiveStatus: com.vil3ntec.rawrec.RtmpSink.Status? = null
 
     fun stopLive() {
-        val l = live ?: return
-        engine.outputs.remove(l)
-        live = null
-        Thread { l.stop() }.start()
+        live?.let { l -> engine.outputs.remove(l); live = null; Thread { l.stop() }.start() }
+        vLive?.let { v -> engine.vOutputs.remove(v); vLive = null; Thread { v.stop() }.start() }
     }
 
     private fun pickEncoder(name: String, family: Encoders.Family? = null): Encoders.Encoder? =

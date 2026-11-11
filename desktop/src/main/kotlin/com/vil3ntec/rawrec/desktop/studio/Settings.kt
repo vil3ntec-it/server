@@ -16,6 +16,8 @@ import javax.crypto.spec.SecretKeySpec
 data class Destination(
     val id: String, val platform: Platform, val name: String, val url: String,
     val keyEnc: String, val enabled: Boolean = true,
+    /** Gets the upright (9:16) picture instead of the main one — e.g. a YouTube Shorts / TikTok / Instagram key. */
+    val vertical: Boolean = false,
 ) {
     val key: String get() = Secrets.open(keyEnc) ?: ""
     /** "abcd••••wxyz": enough to recognise, never enough to use. */
@@ -51,13 +53,17 @@ data class Settings(
     val monitor: Boolean = false, val limiter: Boolean = true,
     // recording, more
     val replaySeconds: Int = 0, val splitMinutes: Int = 0,
+    // the upright picture: its live rate, and whether «record» also records it
+    val vKbps: Int = 6000, val recVertical: Boolean = false,
+    // Ctrl+Alt shortcuts from any window
+    val globalKeys: Boolean = true,
 ) {
     fun toJson(): String = JSONObject().apply {
         put("phoneCodec", phoneCodec); put("phoneMbps", phoneMbps); put("phoneSize", phoneSize); put("phoneFps", phoneFps); put("phoneAudio", phoneAudio)
         put("recEncoder", recEncoder); put("recHeight", recHeight); put("recKbps", recKbps); put("recEnhance", recEnhance)
         put("liveEncoder", liveEncoder); put("liveKbps", liveKbps)
         put("dests", JSONArray(dests.map { d ->
-            JSONObject().put("id", d.id).put("platform", d.platform.name).put("name", d.name).put("url", d.url).put("key", d.keyEnc).put("enabled", d.enabled)
+            JSONObject().put("id", d.id).put("platform", d.platform.name).put("name", d.name).put("url", d.url).put("key", d.keyEnc).put("enabled", d.enabled).put("vertical", d.vertical)
         }))
         put("mic", mic); put("micGain", micGain.toDouble()); put("phoneGain", phoneGain.toDouble())
         put("youtubeChannel", youtubeChannel); put("twitchChannel", twitchChannel); put("kickChannel", kickChannel)
@@ -65,6 +71,7 @@ data class Settings(
         put("desktopDevice", desktopDevice); put("desktopGain", desktopGain.toDouble())
         put("phoneFx", fxJ(phoneFx)); put("micFx", fxJ(micFx)); put("desktopFx", fxJ(desktopFx))
         put("monitor", monitor); put("limiter", limiter); put("replaySeconds", replaySeconds); put("splitMinutes", splitMinutes)
+        put("vKbps", vKbps); put("recVertical", recVertical); put("globalKeys", globalKeys)
     }.toString(2)
 
     companion object {
@@ -84,7 +91,7 @@ data class Settings(
                 (0 until ds.length()).mapNotNull { i ->
                     val x = ds.getJSONObject(i)
                     val p = runCatching { Platform.valueOf(x.getString("platform")) }.getOrNull() ?: return@mapNotNull null
-                    Destination(x.getString("id"), p, x.optString("name"), x.optString("url"), x.optString("key"), x.optBoolean("enabled", true))
+                    Destination(x.getString("id"), p, x.optString("name"), x.optString("url"), x.optString("key"), x.optBoolean("enabled", true), x.optBoolean("vertical", false))
                 },
                 o.optString("mic", d.mic), o.optDouble("micGain", 1.0).toFloat(), o.optDouble("phoneGain", 1.0).toFloat(),
                 o.optString("youtubeChannel"), o.optString("twitchChannel"), o.optString("kickChannel"),
@@ -92,6 +99,7 @@ data class Settings(
                 o.optString("desktopDevice"), o.optDouble("desktopGain", 1.0).toFloat(),
                 fxF(o.optJSONObject("phoneFx"), d.phoneFx), fxF(o.optJSONObject("micFx"), d.micFx), fxF(o.optJSONObject("desktopFx"), d.desktopFx),
                 o.optBoolean("monitor", false), o.optBoolean("limiter", true), o.optInt("replaySeconds", 0), o.optInt("splitMinutes", 0),
+                o.optInt("vKbps", 6000).coerceIn(500, 50000), o.optBoolean("recVertical", false), o.optBoolean("globalKeys", true),
             )
         }
         val file: File get() = File(AppPaths.data, "settings.json")
