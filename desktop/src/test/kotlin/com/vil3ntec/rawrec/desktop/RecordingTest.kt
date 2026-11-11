@@ -45,10 +45,16 @@ class RecordingTest {
         avformat_find_stream_info(ic, null as org.bytedeco.javacpp.PointerPointer<*>?)
         val v = (0 until ic.nb_streams()).map { ic.streams(it) }.first { it.codecpar().codec_type() == AVMEDIA_TYPE_VIDEO }
         val dur = ic.duration() / 1e6
+        // what the file really holds: every stream and how many video packets can be read back
+        val streams = (0 until ic.nb_streams()).joinToString { i -> val st = ic.streams(i); "#$i type ${st.codecpar().codec_type()} codec ${st.codecpar().codec_id()} tb ${st.time_base().num()}/${st.time_base().den()} n ${st.nb_frames()}" }
+        val pk = org.bytedeco.ffmpeg.global.avcodec.av_packet_alloc(); var vpk = 0
+        while (av_read_frame(ic, pk) >= 0) { if (ic.streams(pk.stream_index()).codecpar().codec_type() == AVMEDIA_TYPE_VIDEO) vpk++; org.bytedeco.ffmpeg.global.avcodec.av_packet_unref(pk) }
+        org.bytedeco.ffmpeg.global.avcodec.av_packet_free(pk)
+        println("file: $streams; video packets read $vpk")
         avformat_close_input(ic)
         assertTrue(dur in 2.8..3.4, "file lasts $dur s")
         assertEquals(30, v.avg_frame_rate().num() / maxOf(1, v.avg_frame_rate().den()),
-            "file rate (${res.file.name}, remux: ${FileWriter.lastRemuxError}: avg ${v.avg_frame_rate().num()}/${v.avg_frame_rate().den()} r ${v.r_frame_rate().num()}/${v.r_frame_rate().den()} frames ${v.nb_frames()} ${dur} s)")
+            "file rate (${res.file.name}, remux: ${FileWriter.lastRemuxError}; $streams; video packets read $vpk: avg ${v.avg_frame_rate().num()}/${v.avg_frame_rate().den()} r ${v.r_frame_rate().num()}/${v.r_frame_rate().den()} frames ${v.nb_frames()} ${dur} s)")
         dir.deleteRecursively()
     }
 
