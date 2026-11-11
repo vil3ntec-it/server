@@ -1,22 +1,22 @@
-t=1s engine 30 fps draw 5.9 ms (vertical 4.5 ms); سرورِ ۱: LIVE 4287kbps 29fps lag 0ms | سرورِ ۲ (عمودی): LIVE 5812kbps 30fps lag 0ms dropped 0/0 error null/null
-t=2s engine 31 fps draw 6.7 ms (vertical 4.3 ms); سرورِ ۱: LIVE 4621kbps 30fps lag 0ms | سرورِ ۲ (عمودی): LIVE 5812kbps 30fps lag 0ms dropped 0/0 error null/null
-t=3s engine 31 fps draw 5.3 ms (vertical 2.7 ms); سرورِ ۱: LIVE 4621kbps 30fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6125kbps 30fps lag 0ms dropped 0/0 error null/null
-t=4s engine 30 fps draw 5.9 ms (vertical 2.6 ms); سرورِ ۱: LIVE 4712kbps 31fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6268kbps 31fps lag 0ms dropped 0/0 error null/null
-t=5s engine 31 fps draw 5.5 ms (vertical 4.4 ms); سرورِ ۱: LIVE 4439kbps 30fps lag 0ms | سرورِ ۲ (عمودی): LIVE 5948kbps 30fps lag 0ms dropped 0/0 error null/null
-t=6s engine 30 fps draw 6.4 ms (vertical 4.2 ms); سرورِ ۱: LIVE 4411kbps 30fps lag 0ms | سرورِ ۲ (عمودی): LIVE 5959kbps 30fps lag 0ms dropped 0/0 error null/null
-t=7s engine 30 fps draw 6.4 ms (vertical 2.7 ms); سرورِ ۱: LIVE 4758kbps 31fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6180kbps 30fps lag 0ms dropped 0/0 error null/null
-t=8s engine 31 fps draw 5.6 ms (vertical 4.4 ms); سرورِ ۱: LIVE 4642kbps 31fps lag 0ms | سرورِ ۲ (عمودی): LIVE 5877kbps 30fps lag 0ms dropped 0/0 error null/null
-t=9s engine 30 fps draw 6.4 ms (vertical 4.2 ms); سرورِ ۱: LIVE 4418kbps 30fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6135kbps 31fps lag 0ms dropped 0/0 error null/null
-t=10s engine 31 fps draw 6.0 ms (vertical 2.5 ms); سرورِ ۱: LIVE 4468kbps 30fps lag 0ms | سرورِ ۲ (عمودی): LIVE 5981kbps 30fps lag 0ms dropped 0/0 error null/null
-t=11s engine 30 fps draw 5.4 ms (vertical 4.4 ms); سرورِ ۱: LIVE 4693kbps 30fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6182kbps 30fps lag 0ms dropped 0/0 error null/null
-t=12s engine 31 fps draw 6.4 ms (vertical 4.2 ms); سرورِ ۱: LIVE 4597kbps 31fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6203kbps 31fps lag 0ms dropped 0/0 error null/null
-t=13s engine 30 fps draw 6.4 ms (vertical 2.7 ms); سرورِ ۱: LIVE 4608kbps 31fps lag 0ms | سرورِ ۲ (عمودی): LIVE 5896kbps 30fps lag 0ms dropped 0/0 error null/null
-t=14s engine 31 fps draw 5.7 ms (vertical 4.4 ms); سرورِ ۱: LIVE 4580kbps 31fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6173kbps 31fps lag 0ms dropped 0/0 error null/null
-t=15s engine 31 fps draw 5.7 ms (vertical 2.5 ms); سرورِ ۱: LIVE 4557kbps 30fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6039kbps 30fps lag 0ms dropped 0/0 error null/null
+t=1s engine 30 fps draw 7.8 ms (vertical 3.4 ms); سرورِ ۱: LIVE 4289kbps 29fps lag 0ms | سرورِ ۲ (عمودی): LIVE 5890kbps 30fps lag 0ms dropped 0/0 error null/null
+t=2s engine 31 fps draw 7.8 ms (vertical 4.9 ms); سرورِ ۱: LIVE 4602kbps 30fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6105kbps 30fps lag 0ms dropped 0/0 error null/null
+t=3s engine 31 fps draw 7.5 ms (vertical 3.6 ms); سرورِ ۱: LIVE 4602kbps 30fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6105kbps 30fps lag 0ms dropped 0/0 error null/null
+t=4s engine 31 fps draw 7.6 ms (vertical 4.7 ms); سرورِ ۱: LIVE 4723kbps 31fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6093kbps 30fps lag 0ms dropped 0/0 error null/null
+t=5s engine 30 fps draw 7.3 ms (vertical 4.7 ms); سرورِ ۱: LIVE 4458kbps 30fps lag 0ms | سرورِ ۲ (عمودی): LIVE 5913kbps 30fps lag 0ms dropped 0/0 error null/null
+t=6s engine 30 fps draw 7.6 ms (vertical 3.1 ms); سرورِ ۱: LIVE 4398kbps 30fps lag 0ms | سرورِ ۲ (عمودی): LIVE 5972kbps 30fps lag 0ms dropped 0/0 error null/null
+t=7s engine 31 fps draw 7.1 ms (vertical 4.6 ms); سرورِ ۱: LIVE 4607kbps 30fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6182kbps 30fps lag 0ms dropped 0/0 error null/null
+t=8s engine 31 fps draw 7.1 ms (vertical 3.3 ms); سرورِ ۱: LIVE 4684kbps 31fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6077kbps 31fps lag 0ms dropped 0/0 error null/null
+t=9s engine 31 fps draw 6.9 ms (vertical 4.7 ms); سرورِ ۱: LIVE 4388kbps 30fps lag 0ms | سرورِ ۲ (عمودی): LIVE 5944kbps 30fps lag 0ms dropped 0/0 error null/null
+t=10s engine 31 fps draw 7.1 ms (vertical 3.5 ms); سرورِ ۱: LIVE 4607kbps 31fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6025kbps 30fps lag 0ms dropped 0/0 error null/null
+t=11s engine 30 fps draw 7.1 ms (vertical 4.6 ms); سرورِ ۱: LIVE 4819kbps 31fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6329kbps 31fps lag 0ms dropped 0/0 error null/null
+t=12s engine 30 fps draw 7.5 ms (vertical 4.5 ms); سرورِ ۱: LIVE 4471kbps 30fps lag 0ms | سرورِ ۲ (عمودی): LIVE 5981kbps 30fps lag 0ms dropped 0/0 error null/null
+t=13s engine 31 fps draw 7.0 ms (vertical 4.5 ms); سرورِ ۱: LIVE 4608kbps 31fps lag 0ms | سرورِ ۲ (عمودی): LIVE 5930kbps 30fps lag 0ms dropped 0/0 error null/null
+t=14s engine 31 fps draw 7.4 ms (vertical 3.9 ms); سرورِ ۱: LIVE 4436kbps 30fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6143kbps 31fps lag 0ms dropped 0/0 error null/null
+t=15s engine 31 fps draw 6.8 ms (vertical 2.8 ms); سرورِ ۱: LIVE 4701kbps 31fps lag 0ms | سرورِ ۲ (عمودی): LIVE 6100kbps 30fps lag 0ms dropped 0/0 error null/null
 LIVE_DONE
 == server a
 stream|codec_name=h264|width=1920|height=1080|avg_frame_rate=30/1|nb_read_frames=451
-stream|codec_name=aac|sample_rate=48000|avg_frame_rate=0/0|nb_read_frames=701
+stream|codec_name=aac|sample_rate=48000|avg_frame_rate=0/0|nb_read_frames=702
 format|duration=15.033000
 decode errors: 0
 == server b
