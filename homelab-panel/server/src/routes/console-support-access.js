@@ -141,7 +141,8 @@ export function mountConsoleSupportAccess(router, { guard, badInput, actorOf, ca
     if (!(await capListed(CAP))) throw missingErr(CAP);
     const body = { scope, minutes, reason, consent: 'break_glass', notify_owner: true };
     res.json(await once(req, key, `break|${id}|${JSON.stringify(body)}`, `access:${id}`, async () => {
-      const r = await cloudRaw('POST', `/api/admin/shops/${id}/access-grants/break-glass`, { body });
+      //  SR49-1 ِ shop: زمانِ همین احرازِ دوبارهٔ پنل (رمزِ همین درخواست) ‎X-Actor-Reauth-At‎ — بی آن سرورِ حساب ‎403 reauth_required‎
+      const r = await cloudRaw('POST', `/api/admin/shops/${id}/access-grants/break-glass`, { body, headers: { 'x-actor-reauth-at': String(Date.now()) } });
       const grant = shapeGrant(r?.grant ?? r);
       //  ⛔ ACP-D2: خبرِ فوری به صاحبِ دکان کارِ سرورِ حساب است؛ پنل فقط آن‌چه را آن‌جا تأیید شد می‌گوید
       const notified = r?.notified === true;

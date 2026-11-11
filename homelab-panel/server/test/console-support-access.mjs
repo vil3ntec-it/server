@@ -42,7 +42,7 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/health') return j(200, { ok: true, version: '9.9.9' });
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
     if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: caps, serverTime: NOW });
-    seen.push({ method: req.method, path: p, body });
+    seen.push({ method: req.method, path: p, body, reauthAt: req.headers['x-actor-reauth-at'] || '' });
     if (!caps.includes('support-access.v1')) return j(401, { error: { code: 'invalid_token', message: 'نشست' } });
     if (p === '/api/admin/shops/s1/access-grants' && req.method === 'GET') return j(200, { grants });
     if (p === '/api/admin/shops/s1/access-grants' && req.method === 'POST') {
@@ -152,6 +152,8 @@ try {
   const bgUp = lastPost(/break-glass$/);
   check('مالک + رمز + دلیل ⇒ ‎consent: break_glass‎، ‎notify_owner: true‎، و «خبر رفت» همان که سرورِ حساب گفت', bg.status === 200 && bg.json?.notified === true && bg.json.grant?.consent === 'break_glass'
     && bgUp?.body?.consent === 'break_glass' && bgUp.body.notify_owner === true && bgUp.body.minutes === 30 && !('password' in (bgUp.body || {})), `${bg.text.slice(0, 200)} ${JSON.stringify(bgUp?.body)}`);
+  check('SR49-1: زمانِ همین احرازِ دوباره در ‎X-Actor-Reauth-At‎ (تازه، فقط عدد) می‌رود؛ درِ «با رضایت» بی آن',
+    /^\d{13}$/.test(bgUp?.reauthAt || '') && Math.abs(Number(bgUp.reauthAt) - Date.now()) < 60_000 && !lastPost(/access-grants$/)?.reauthAt, String(bgUp?.reauthAt));
   notifyOk = false;
   const bgN = await api('POST', `${AG}/break-glass`, R({ reason: 'خرابیِ فوری در همگام‌سازی ۲', password: 'Acc-1405-owner' }), owner);
   notifyOk = true;

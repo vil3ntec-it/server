@@ -1494,7 +1494,8 @@ node test/bridge-roles.mjs     + ‎synonyms.v1‎ در فهرستِ «فاز ۳
 - ⛔ **قرارداد با سرورِ حساب پشتِ ‎support-access.v1‎ — هنوز در shop ساخته نشده** (`docs/spec/ADMIN-CONTROL-PLANE.md` §۸.۱ ِ shop،
   مهاجرتِ رزروِ ‎079‎): ‎GET /api/admin/shops/:id/access-grants‎ ⇒ ‎{ grants }‎؛ ‎POST …/access-grants‎ ‎{scope, minutes, reason,
   consent:'tenant', ticket_id?}‎ ⇒ ‎{ grant }‎ (منتظرِ پذیرشِ دکان در برنامه‌اش)؛ ‎POST …/access-grants/break-glass‎ ‎{scope, minutes,
-  reason, consent:'break_glass', notify_owner:true}‎ ⇒ ‎{ grant, notified }‎؛ ‎POST …/access-grants/:gid/revoke‎ ‎{reason}‎. آن‌جا: زمان فقط از
+  reason, consent:'break_glass', notify_owner:true}‎ + سرآیندِ ‎X-Actor-Reauth-At‎ (زمانِ رمزِ همین درخواست؛ از ۱.۵۰.۹۱، SR49-1 ِ shop —
+  بی آن ‎403 reauth_required‎) ⇒ ‎{ grant, notified }‎؛ ‎POST …/access-grants/:gid/revoke‎ ‎{reason}‎. آن‌جا: زمان فقط از
   ساعتِ سرور، `requireGrant(scope)` روی هر محتوای خصوصی، نوارِ «پشتیبانی در حالِ مشاهده» و خبرِ همان دم. بی آن ⇒ «در دسترس نیست»
   و هر نوشتن ‎501‎.
 - ⛔ پنل پیش از پل: مدت عددِ صحیحِ ۵ تا ۱۴۴۰ (پیش‌فرض ۶۰؛ بیشتر ⇒ ‎400 bad_minutes‎، نه بریدن)؛ دامنه ‎read_private|export|restore|view_as‎؛
