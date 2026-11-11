@@ -34,6 +34,7 @@ class FileWriter(val file: File, video: AVCodecContext, audio: AVCodecContext?) 
         vst = avformat_new_stream(oc, null)
         check(avcodec_parameters_from_context(vst.codecpar(), video) >= 0)
         vst.time_base(video.time_base())
+        if (video.framerate().num() > 0) { vst.avg_frame_rate(video.framerate()); vst.r_frame_rate(video.framerate()) }
         ast = audio?.let { a -> avformat_new_stream(oc, null).also { s -> check(avcodec_parameters_from_context(s.codecpar(), a) >= 0); s.time_base(a.time_base()) } }
         val pb = AVIOContext(null as Pointer?)
         val r = avio_open(pb, file.absolutePath, AVIO_FLAG_WRITE)
@@ -77,6 +78,8 @@ class FileWriter(val file: File, video: AVCodecContext, audio: AVCodecContext?) 
                     avcodec_parameters_copy(s.codecpar(), ic.streams(i).codecpar())
                     s.codecpar().codec_tag(0)
                     s.time_base(ic.streams(i).time_base())
+                    // the picture rate carried across, so every player (and ffprobe) reads it from the MP4
+                    s.avg_frame_rate(ic.streams(i).avg_frame_rate()); s.r_frame_rate(ic.streams(i).r_frame_rate())
                 }
                 val pb = AVIOContext(null as Pointer?)
                 if (avio_open(pb, mp4.absolutePath, AVIO_FLAG_WRITE) < 0) return false
@@ -90,6 +93,12 @@ class FileWriter(val file: File, video: AVCodecContext, audio: AVCodecContext?) 
                 while (av_read_frame(ic, pkt) >= 0) {
                     val si = pkt.stream_index()
                     av_packet_rescale_ts(pkt, ic.streams(si).time_base(), oc.streams(si).time_base())
+                    // a picture with no length gets one frame's length (the last sample of a file would otherwise last 0)
+                    val fr = oc.streams(si).avg_frame_rate()
+                    if (pkt.duration() <= 0 && oc.streams(si).codecpar().codec_type() == org.bytedeco.ffmpeg.global.avutil.AVMEDIA_TYPE_VIDEO && fr.num() > 0) {
+                        val tb = oc.streams(si).time_base()
+                        pkt.duration(org.bytedeco.ffmpeg.global.avutil.av_rescale_q(1, org.bytedeco.ffmpeg.global.avutil.av_make_q(fr.den(), fr.num()), tb))
+                    }
                     pkt.pos(-1)
                     av_interleaved_write_frame(oc, pkt)
                     av_packet_unref(pkt)

@@ -46,7 +46,8 @@ class RecordingTest {
         val dur = ic.duration() / 1e6
         avformat_close_input(ic)
         assertTrue(dur in 2.8..3.4, "file lasts $dur s")
-        assertEquals(30, v.avg_frame_rate().num() / maxOf(1, v.avg_frame_rate().den()), "file rate")
+        assertEquals(30, v.avg_frame_rate().num() / maxOf(1, v.avg_frame_rate().den()),
+            "file rate (${res.file.name}: avg ${v.avg_frame_rate().num()}/${v.avg_frame_rate().den()} r ${v.r_frame_rate().num()}/${v.r_frame_rate().den()} frames ${v.nb_frames()} ${dur} s)")
         dir.deleteRecursively()
     }
 

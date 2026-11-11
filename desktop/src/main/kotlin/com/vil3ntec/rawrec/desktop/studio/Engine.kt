@@ -93,7 +93,7 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
             val period = 1_000_000_000L / st.fps
             if (surface == null || surface.width != st.width || surface.height != st.height) {
                 surface?.close()
-                surface = Surface.makeRasterN32Premul(st.width, st.height)
+                surface = bgraSurface(st.width, st.height)
                 tick = (System.nanoTime() - t0) / period + 1
             }
             // the next tick on the clock; a tick missed (the computer was busy) is skipped, never squeezed in late
@@ -118,7 +118,7 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
                 val vs = st.verticalScene
                 if (vs != null) {
                     val va = System.nanoTime()
-                    if (vSurface == null || vSurface!!.width != st.vWidth || vSurface!!.height != st.vHeight) { vSurface?.close(); vSurface = Surface.makeRasterN32Premul(st.vWidth, st.vHeight) }
+                    if (vSurface == null || vSurface!!.width != st.vWidth || vSurface!!.height != st.vHeight) { vSurface?.close(); vSurface = bgraSurface(st.vWidth, st.vHeight) }
                     val vsf = vSurface!!
                     vsf.canvas.clear(0xFF000000.toInt()); drawScene(vsf.canvas, st, vs, secondary = true)
                     if (vOutputs.isNotEmpty()) {
@@ -146,7 +146,7 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
                     if (pv != null && previewSeq % 2 == 0L) {
                         val k = min(1f, 1280f / st.width)
                         val w = (st.width * k).toInt(); val h = (st.height * k).toInt()
-                        if (nextSurface == null || nextSurface!!.width != w || nextSurface!!.height != h) { nextSurface?.close(); nextSurface = Surface.makeRasterN32Premul(w, h) }
+                        if (nextSurface == null || nextSurface!!.width != w || nextSurface!!.height != h) { nextSurface?.close(); nextSurface = bgraSurface(w, h) }
                         val c = nextSurface!!.canvas
                         c.save(); c.scale(k, k); c.clear(0xFF000000.toInt()); drawScene(c, st, pv); c.restore()
                         val img = nextSurface!!.makeImageSnapshot()
@@ -253,7 +253,7 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
         drawnCache[key]?.let { if (it.stamp == stamp) return it.img }
         val w = Math.ceil(l.w.toDouble()).toInt(); val h = Math.ceil(l.h.toDouble()).toInt()
         if (w < 1 || h < 1 || w * h > 8_300_000) return null
-        val img = Surface.makeRasterN32Premul(w, h).use { s -> s.canvas.clear(0); rt.draw(s.canvas, l.w, l.h); s.makeImageSnapshot() }
+        val img = bgraSurface(w, h).use { s -> s.canvas.clear(0); rt.draw(s.canvas, l.w, l.h); s.makeImageSnapshot() }
         drawnCache.put(key, Cached(stamp, img))?.img?.close()
         return img
     }
@@ -362,3 +362,9 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
 
     }
 }
+
+/**
+ * A drawing surface whose bytes are B, G, R, A in that order on every system — what the encoders are told they get.
+ * (Skia's «native» order is RGBA on macOS: a recording made there would have red and blue swapped.)
+ */
+internal fun bgraSurface(w: Int, h: Int): Surface = Surface.makeRaster(ImageInfo(w, h, ColorType.BGRA_8888, ColorAlphaType.PREMUL))

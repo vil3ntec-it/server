@@ -100,7 +100,7 @@ class ImageFileSource(path: String) : PictureSource {
         val k = listOf(System.identityHashCode(base), want)
         if (k != scaledFor) {
             scaled?.close(); scaledFor = k
-            scaled = Surface.makeRasterN32Premul(want.first.coerceAtLeast(1), want.second.coerceAtLeast(1)).use { s ->
+            scaled = bgraSurface(want.first.coerceAtLeast(1), want.second.coerceAtLeast(1)).use { s ->
                 s.canvas.drawImageRect(base, Rect.makeWH(base.width.toFloat(), base.height.toFloat()), Rect.makeWH(want.first.toFloat(), want.second.toFloat()),
                     if (want.first < base.width) FilterMipmap(FilterMode.LINEAR, MipmapMode.LINEAR) else CubicResampler(1 / 3f, 1 / 3f), null, true)
                 s.makeImageSnapshot()
