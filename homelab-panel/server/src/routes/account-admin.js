@@ -55,6 +55,7 @@ import { mountConsoleMarket, MARKET_CAPABILITIES } from './console-market.js';
 import { mountConsoleStaff } from './console-staff.js';
 import { mountConsoleImageBank } from './console-image-bank.js';
 import { mountConsoleHolidays } from './console-holidays.js';
+import { mountConsoleSynonyms } from './console-synonyms.js';
 import { mountConsoleParity, shapeBeta } from './console-parity.js';
 
 const { requireRole } = panelRoles;
@@ -2205,6 +2206,8 @@ export const PHASE3 = Object.freeze({
   'idempotent-writes.v1': 'Idempotency-Key روی دستگاه (disable/enable)، بازبینیِ بانکِ عکس و POST /api/admin/backups',
   //  ۱.۵۰.۷۸ (shop ‎claude/loc-04‎، LOC-04): جدولِ تعطیلاتِ رسمی — ‎routes/console-holidays.js‎
   'holidays.v1': 'GET|PUT /api/admin/calendar/holidays (ارشد + دلیل + نسخه؛ ۴۰۹ holiday_version)',
+  //  ۱.۵۰.۸۹ (۴-۱ «ب»، POS-04/WEB-05): فهرستِ مرکزیِ مترادف — ‎routes/console-synonyms.js‎ (هنوز روی shop نیست)
+  'synonyms.v1': 'GET|PUT /api/admin/search/synonyms ({version, updatedAt, groups: string[][]}؛ ارشد + دلیل + نسخه؛ ۴۰۹ synonyms_version)',
   ...MARKET_CAPABILITIES,
 });
 const CAP_RE = /^[a-z][a-z0-9-]{0,40}\.v\d{1,3}$/;
@@ -2569,6 +2572,8 @@ mountConsoleStaff(router, { guard, badInput, actorOf, capListed, missingErr });
 mountConsoleImageBank(router, { guard, badInput, actorOf, capListed });
 /* ۱.۵۰.۷۸ (LOC-04): جدولِ تعطیلاتِ رسمی در «تنظیماتِ مرکزی» — ‎routes/console-holidays.js‎، روی **همین** روتر */
 mountConsoleHolidays(router, { guard, badInput, actorOf, capListed, missingErr, unavailable });
+/* ۱.۵۰.۸۹ (۴-۱ «ب»): فهرستِ مرکزیِ مترادف در «تنظیماتِ مرکزی» — ‎routes/console-synonyms.js‎، روی **همین** روتر */
+mountConsoleSynonyms(router, { guard, badInput, actorOf, capListed, missingErr, unavailable });
 /*
  *  ۱.۵۰.۸۰ (S11، ممیزی §۹ «هم‌ترازی»): نوشتنِ کانالِ آزمایشی، نشانیِ دانلود، مصرفِ پیام و پشتیبان‌های هر حساب — تا امروز
  *  فقط در ‎/admin/‎ ِ سرورِ حساب. ‎routes/console-parity.js‎، روی **همین** روتر.

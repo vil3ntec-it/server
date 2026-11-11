@@ -232,7 +232,9 @@ const PHASE3 = ['GET /api/admin/shops/:id/health', 'GET /api/admin/shops/:id/hol
   //  ۱.۵۰.۷۷ (shop ‎claude/acct-console-2‎، #1025، پشتِ `staff-perms.v1`): برگرداندنِ دستگاه برای مدیر
   'POST /api/admin/shops/:id/staff-perms/devices/:did/enable',
   //  ۱.۵۰.۷۸ (shop ‎claude/loc-04‎، LOC-04، پشتِ `holidays.v1`): جدولِ تعطیلاتِ رسمی
-  'GET /api/admin/calendar/holidays', 'PUT /api/admin/calendar/holidays']
+  'GET /api/admin/calendar/holidays', 'PUT /api/admin/calendar/holidays',
+  //  ۱.۵۰.۸۹ (۴-۱ «ب»، پشتِ `synonyms.v1`): فهرستِ مرکزیِ مترادف — هنوز روی shop نیست
+  'GET /api/admin/search/synonyms', 'PUT /api/admin/search/synonyms']
   .map((x) => { const [method, p] = x.split(' '); return { method, re: toRe(p), id: x }; });
 const phase3Of = (method, p) => PHASE3.find((x) => x.method === method && x.re.test(p)) || null;
 
@@ -277,7 +279,7 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
     if (!BACKGROUND.test(p)) calls.push({ method: req.method, path: p });
     //  همهٔ تواناییِ فاز ۳ اعلام می‌شود تا مقصدِ آن مسیرها هم دیده و سنجیده شود
-    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1', 'admin-sessions.v1', 'search.v1', 'market-admin.v1', 'delivery-watch.v1', 'ops.v1', 'release-stage.v1', 'finance.v1', 'sync-restore-once.v1', 'subscription-period.v1', 'admin-contract.v1', 'staff-perms.v1', 'image-bank.v1', 'idempotent-writes.v1', 'holidays.v1'], serverTime: NOW });
+    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1', 'admin-sessions.v1', 'search.v1', 'market-admin.v1', 'delivery-watch.v1', 'ops.v1', 'release-stage.v1', 'finance.v1', 'sync-restore-once.v1', 'subscription-period.v1', 'admin-contract.v1', 'staff-perms.v1', 'image-bank.v1', 'idempotent-writes.v1', 'holidays.v1', 'synonyms.v1'], serverTime: NOW });
     //  ۱.۵۰.۸۰: نوشتنِ کانالِ آزمایشی نسخهٔ دیده‌شده را با همین می‌سنجد (‎sample‎ نسخه ندارد) تا ‎PUT‎ ِ «فقط ارشد» هم دیده شود
     if (p === '/api/admin/release/beta' && req.method === 'GET') return j(200, { ...sample, version: 7 });
     if (/\/receipt$/.test(p)) { res.setHeader('content-type', 'text/html; charset=utf-8'); return res.end('<html>رسید</html>'); }
@@ -367,6 +369,8 @@ const SPECIAL = {
   //  ۱.۵۰.۷۸: جدولِ تعطیلات (پشتِ `holidays.v1`) — دلیل + تأیید + کلید + نسخه و جدولِ درست
   'PUT /api/account-admin/console/calendar/holidays': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-hol-0001', version: 0,
     holidays: [{ date: '2026-03-21', name: { fa: 'نوروز' } }] } },
+  //  ۱.۵۰.۸۹ (۴-۱ «ب»): فهرستِ مترادف (پشتِ `synonyms.v1`) — دلیل + تأیید + کلید + نسخه و گروه‌های درست
+  'PUT /api/account-admin/console/search/synonyms': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-syn-0001', version: 0, groups: [['بوره', 'شکر']] } },
   //  ۱.۵۰.۸۰ (S11): کانالِ آزمایشی (نسخهٔ همان ‎GET‎ ِ بالا) و نشانیِ دانلود — دلیل + تأیید + کلید
   'PUT /api/account-admin/console/release/beta': { body: { shops: ['x1'], version: 7, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-beta-0001' } },
   'PUT /api/account-admin/console/downloads': { body: { app: 'shop', version: '2.14.6', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-dl-0001' } },
