@@ -1,0 +1,53 @@
+Picked up JAVA_TOOL_OPTIONS: -Drawrec.dumpVideo=/home/runner/work/_temp/phone.h264
+rawrec-desktop selftest: os Linux amd64, java 17.0.21
+capture: x11grab, v4l2, pulse
+noise model: 297646 bytes
+[hevc_nvenc @ 0x7370d0622f00] Cannot load libcuda.so.1
+[h264_nvenc @ 0x7370d0622f00] Cannot load libcuda.so.1
+[av1_nvenc @ 0x7370d0622f00] Cannot load libcuda.so.1
+[libopenh264 @ 0x7370d0622f00] [OpenH264] this = 0x0x7370d0624ad0, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0x7370d0622f00] [OpenH264] this = 0x0x7370d0624ad0, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+Svt[info]: -------------------------------------------
+Svt[info]: SVT [version]:	SVT-AV1 Encoder Lib v2.2.0
+Svt[info]: SVT [build]  :	GCC 9.4.0	 64 bit
+Svt[info]: LIB Build date: Nov 16 2024 01:13:32
+Svt[info]: -------------------------------------------
+Svt[info]: Number of logical cores available: 4
+Svt[info]: Number of PPCS 59
+Svt[info]: [asm level on system : up to avx512]
+Svt[info]: [asm level selected : up to avx2]
+Svt[info]: -------------------------------------------
+Svt[info]: SVT [config]: main profile	tier (auto)	level (auto)
+Svt[info]: SVT [config]: width / height / fps numerator / fps denominator 		: 640 / 360 / 30 / 1
+Svt[info]: SVT [config]: bit-depth / color format 					: 8 / YUV420
+Svt[info]: SVT [config]: preset / tune / pred struct 					: 10 / PSNR / random access
+Svt[info]: SVT [config]: gop size / mini-gop size / key-frame type 			: 161 / 16 / key frame
+Svt[info]: SVT [config]: BRC mode / target bitrate (kbps)				: VBR / 2000 
+Svt[info]: SVT [config]: AQ mode / variance boost 					: 2 / 0
+Svt[info]: -------------------------------------------
+encoders: libopenh264(cpu), libsvtav1(cpu)
+adb: /home/runner/.config/rawrec/platform-tools/adb
+phone: sdk gphone64 x86 64 (emulator-5554), Android SDK 34
+live: sdk_gphone64_x86_64 h264 2560x1600
+[libopenh264 @ 0x73705c006f80] [OpenH264] this = 0x0x73705c006e90, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0x73705c006f80] [OpenH264] this = 0x0x73705c006e90, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+t=1s in: 3 fps 0.0 Mbps 2560x1600 audio=on studio: 30 fps draw 3.1 ms late 0 rec: 6942 bytes dropped 0
+t=2s in: 0 fps 0.0 Mbps 2560x1600 audio=on studio: 31 fps draw 3.2 ms late 0 rec: 7732 bytes dropped 0
+t=3s in: 0 fps 0.0 Mbps 2560x1600 audio=on studio: 31 fps draw 2.7 ms late 0 rec: 15402 bytes dropped 0
+t=4s in: 0 fps 0.0 Mbps 2560x1600 audio=on studio: 30 fps draw 4.2 ms late 0 rec: 16142 bytes dropped 0
+t=5s in: 0 fps 0.0 Mbps 2560x1600 audio=on studio: 31 fps draw 2.9 ms late 0 rec: 23862 bytes dropped 0
+t=6s in: 0 fps 0.1 Mbps 2560x1600 audio=on studio: 31 fps draw 3.5 ms late 0 rec: 24641 bytes dropped 0
+t=7s in: 0 fps 0.0 Mbps 2560x1600 audio=on studio: 31 fps draw 3.4 ms late 0 rec: 32240 bytes dropped 0
+t=8s in: 0 fps 0.0 Mbps 2560x1600 audio=on studio: 30 fps draw 3.8 ms late 0 rec: 39600 bytes dropped 0
+t=9s in: 0 fps 0.0 Mbps 2560x1600 audio=on studio: 31 fps draw 3.7 ms late 0 rec: 40571 bytes dropped 0
+t=10s in: 0 fps 0.0 Mbps 2560x1600 audio=on studio: 30 fps draw 3.1 ms late 0 rec: 41311 bytes dropped 0
+t=11s in: 1 fps 0.0 Mbps 2560x1600 audio=on studio: 30 fps draw 2.9 ms late 0 rec: 48932 bytes dropped 0
+t=12s in: 0 fps 0.0 Mbps 2560x1600 audio=on studio: 30 fps draw 2.3 ms late 0 rec: 56293 bytes dropped 0
+t=13s in: 1 fps 0.0 Mbps 2560x1600 audio=on studio: 31 fps draw 3.0 ms late 0 rec: 57277 bytes dropped 0
+t=14s in: 0 fps 0.0 Mbps 2560x1600 audio=on studio: 31 fps draw 2.7 ms late 0 rec: 64643 bytes dropped 0
+t=15s in: 0 fps 0.0 Mbps 2560x1600 audio=on studio: 31 fps draw 2.6 ms late 0 rec: 65618 bytes dropped 0
+[aac @ 0x73705cd28880] Qavg: 65536.000
+[mp4 @ 0x7370d0593980] Starting second pass: moving the moov atom to the beginning of the file
+result: /home/runner/Videos/RawRec/RawRec 2026-11-11 00-32-05.mp4 1280x720 15.07s frames=452 dropped=0 bytes=86211 encoder=libopenh264 error=null
+RESULT_FILE=/home/runner/Videos/RawRec/RawRec 2026-11-11 00-32-05.mp4
+exit 0
