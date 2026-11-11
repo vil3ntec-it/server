@@ -1,6 +1,8 @@
 rawrec-desktop selftest: os Windows Server 2025 amd64, java 17.0.21
+screen capture: desktop duplication (ddagrab); monitors: مانیتورِ 1 — 1024×768 (اصلی)
 capture: gdigrab, dshow
 noise model: 297646 bytes
+browser: ok
 encoders: h264_mf(gpu), libopenh264(cpu), libsvtav1(cpu)
 adb: D:\a\server\server\desktop\build\compose\binaries\main\app\RawRec Desktop\app\resources\platform-tools\adb.exe
 FAIL: no usable phone: []

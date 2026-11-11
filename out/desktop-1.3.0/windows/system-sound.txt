@@ -1,0 +1,15 @@
+t=1s captured 36000 frames, level -16.9 dBFS, peak 7999 error null
+t=2s captured 84960 frames, level -15.3 dBFS, peak 7999 error null
+t=3s captured 132960 frames, level -15.3 dBFS, peak 7999 error null
+t=4s captured 180960 frames, level -15.3 dBFS, peak 7999 error null
+t=5s captured 228960 frames, level -15.3 dBFS, peak 7999 error null
+t=6s captured 276960 frames, level -15.3 dBFS, peak 7999 error null
+t=7s captured 324960 frames, level -15.3 dBFS, peak 7999 error null
+t=8s captured 372960 frames, level -15.3 dBFS, peak 7999 error null
+t=9s captured 420960 frames, level -15.3 dBFS, peak 7999 error null
+t=10s captured 468960 frames, level -15.3 dBFS, peak 7999 error null
+t=11s captured 516960 frames, level -15.3 dBFS, peak 7999 error null
+t=12s captured 565440 frames, level -15.3 dBFS, peak 7999 error null
+t=13s captured 613440 frames, level -15.3 dBFS, peak 7999 error null
+t=14s captured 661440 frames, level -15.3 dBFS, peak 7999 error null
+SYSTEM_SOUND_OK
