@@ -1,4 +1,4 @@
-tests 27, failed 0
+tests 28, failed 0
 pass com.vil3ntec.rawrec.desktop.ChatTest.youtubeMessagesEmojiSuperChatsAndNextPage()
 pass com.vil3ntec.rawrec.desktop.ChatTest.translationIsCasualPersianAndSameLanguageIsLeftAlone()
 pass com.vil3ntec.rawrec.desktop.ChatTest.kickMessagesKeepEmoteNames()
@@ -25,4 +25,5 @@ pass com.vil3ntec.rawrec.desktop.StudioFeaturesTest.greenScreenIsFastEnoughForLi
 pass com.vil3ntec.rawrec.desktop.StudioFeaturesTest.undoAndRedoAndOneStepForADrag()
 pass com.vil3ntec.rawrec.desktop.StudioFeaturesTest.limiterKeepsTheMixUnderMinusOneDb()
 pass com.vil3ntec.rawrec.desktop.StudioFeaturesTest.everythingNewIsSavedAndReadBack()
+pass com.vil3ntec.rawrec.desktop.StudioFeaturesTest.verticalSceneIsLaidOutSavedAndDeliveredOnItsOwnCanvas()
 pass com.vil3ntec.rawrec.desktop.StudioFeaturesTest.roundedCountsAreRead()

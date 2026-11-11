@@ -5,20 +5,20 @@ noise model: 297646 bytes
 encoders: h264_mf(gpu), libopenh264(cpu), libsvtav1(cpu)
 adb: D:\a\server\server\desktop\build\compose\binaries\main\app\RawRec Desktop\app\resources\platform-tools\adb.exe
 FAIL: no usable phone: []
-[hevc_nvenc @ 00000222b256e2c0] Cannot load nvcuda.dll
-[h264_nvenc @ 00000222b256e2c0] Cannot load nvcuda.dll
-[av1_nvenc @ 00000222b256e2c0] Cannot load nvcuda.dll
-[hevc_qsv @ 00000222b256e2c0] Error initializing a MFX session: unsupported (-3)
-[hevc_qsv @ 00000222b256e2c0] The current mfx implementation is not supported, try next mfx implementation.
-[hevc_qsv @ 00000222b256e2c0] Error initializing a MFX session: unsupported (-3)
-[h264_qsv @ 00000222cdb14980] Error initializing a MFX session: unsupported (-3)
-[h264_qsv @ 00000222cdb14980] The current mfx implementation is not supported, try next mfx implementation.
-[h264_qsv @ 00000222cdb14980] Error initializing a MFX session: unsupported (-3)
-[hevc_mf @ 00000222cdb14b80] could not find any MFT for the given media type
-[hevc_mf @ 00000222cdb14b80] could not create MFT
-[h264_mf @ 00000222cdb14b80] MFT name: 'H264 Encoder MFT'
-[libopenh264 @ 00000222cdb14b80] [OpenH264] this = 0x00000222cdb14f00, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
-[libopenh264 @ 00000222cdb14b80] [OpenH264] this = 0x00000222cdb14f00, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[hevc_nvenc @ 000001f9a801e2c0] Cannot load nvcuda.dll
+[h264_nvenc @ 000001f9a801e2c0] Cannot load nvcuda.dll
+[av1_nvenc @ 000001f9a801e2c0] Cannot load nvcuda.dll
+[hevc_qsv @ 000001f9a801e2c0] Error initializing a MFX session: unsupported (-3)
+[hevc_qsv @ 000001f9a801e2c0] The current mfx implementation is not supported, try next mfx implementation.
+[hevc_qsv @ 000001f9a801e2c0] Error initializing a MFX session: unsupported (-3)
+[h264_qsv @ 000001f9c3e34980] Error initializing a MFX session: unsupported (-3)
+[h264_qsv @ 000001f9c3e34980] The current mfx implementation is not supported, try next mfx implementation.
+[h264_qsv @ 000001f9c3e34980] Error initializing a MFX session: unsupported (-3)
+[hevc_mf @ 000001f9c3e34b80] could not find any MFT for the given media type
+[hevc_mf @ 000001f9c3e34b80] could not create MFT
+[h264_mf @ 000001f9c3e34b80] MFT name: 'H264 Encoder MFT'
+[libopenh264 @ 000001f9c3e34b80] [OpenH264] this = 0x000001f9c3e34f00, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 000001f9c3e34b80] [OpenH264] this = 0x000001f9c3e34f00, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
 Svt[info]: -------------------------------------------
 Svt[info]: SVT [version]:	SVT-AV1 Encoder Lib v2.2.0
 Svt[info]: SVT [build]  :	GCC 12.2.0	 64 bit
