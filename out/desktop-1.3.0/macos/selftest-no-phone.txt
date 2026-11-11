@@ -1,0 +1,9 @@
+rawrec-desktop selftest: os Mac OS X aarch64, java 17.0.21
+screen capture: standard; monitors: مانیتورِ 1 — 1024×768 (اصلی)
+capture: avfoundation
+noise model: 297646 bytes
+browser: ok
+app nap: off while the app runs
+encoders: hevc_videotoolbox(gpu), h264_videotoolbox(gpu), libopenh264(cpu), libsvtav1(cpu)
+adb: /Users/runner/Library/Application Support/RawRec/platform-tools/adb
+FAIL: no usable phone: []
