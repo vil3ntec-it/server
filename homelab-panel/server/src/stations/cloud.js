@@ -128,6 +128,37 @@ function timeoutErr(ctx) {
   return err;
 }
 
+/*
+ *  🚇 **پاسخِ تونل روی نوشتن** (۱.۵۰.۸۷، تصمیمِ ۳-۱۵ پرسشِ ۱ «الف»؛ ممیزی §۹ «۱.۵۰.۷۷ (شکافِ شناخته)»):
+ *  نوشتنی که به‌جای پاسخِ خودِ سرورِ حساب (JSON با ‎error‎) صفحهٔ خطای تونل/واسط را گرفت:
+ *    • **رسیده یا مبهم** — ‎502‎ (cloudflared: هر دو)، ‎504‎، ‎520‎ و ‎524‎ (Cloudflare: سرورِ حساب گرفت، جوابش نیامد/دیر شد)
+ *      ⇒ «نامعلوم» (‎outcome: 'unknown'‎، ‎502 outcome_unknown‎ با ‎upstreamStatus‎) — شاید انجام شده؛ همان پنجره تا ده دقیقه
+ *      دوباره نمی‌فرستد (`account/idem-once.js`) تا آدم نتیجه را ببیند، و یک ردیفِ دفتر (`bridge-fail.js`).
+ *    • **نرسیدهٔ روشن** — ‎521‎ (خاموش)، ‎522‎/‎523‎ (اتصال نشد)، ‎525‎/‎526‎ (TLS) ⇒ «شکست» (‎502 tunnel_not_delivered‎) — کار
+ *      انجام نشده و دوباره زدن بی‌خطر است، پس کلید بی‌دلیل قفل نمی‌شود.
+ *  ⛔ پاسخِ JSON ِ خودِ سرورِ حساب (‎{ error: { code } }‎) با هر وضعیتی همان‌طور که آمد می‌ماند؛ خواندن‌ها (‎GET/HEAD‎) هم دست
+ *     نخوردند (همیشه تکرارپذیرند). تا ۱.۵۰.۸۶ همهٔ این‌ها «‎cloud_error‎ با همان وضعیت» = شکست بودند، حتی ‎524‎.
+ */
+const TUNNEL_REACHED = new Set([502, 504, 520, 524]);
+const TUNNEL_NOT_DELIVERED = new Set([521, 522, 523, 525, 526]);
+/** ‎'unknown'‎ | ‎'failed'‎ | ‎null‎ (پاسخِ خودِ سرورِ حساب یا نه‌تونل) — فقط برای نوشتن */
+export function tunnelVerdict(status, out) {
+  if (out && typeof out === 'object' && out.error) return null;
+  if (TUNNEL_REACHED.has(status)) return 'unknown';
+  if (TUNNEL_NOT_DELIVERED.has(status)) return 'failed';
+  return null;
+}
+function tunnelErr(method, path, status, verdict) {
+  const unknown = verdict === 'unknown';
+  const err = new Error(unknown
+    ? `تونل به‌جای پاسخِ سرورِ حساب خطای ${status} داد و معلوم نیست این کار انجام شد یا نه — پیش از تکرار، نتیجه را در همان فهرست ببینید`
+    : `تونل به سرورِ حساب نرسید (${status}) — این کار انجام نشد؛ کمی بعد دوباره بکوشید`);
+  return Object.assign(err, {
+    code: unknown ? 'outcome_unknown' : 'tunnel_not_delivered', status: 502, upstreamStatus: status,
+    ...(unknown ? { outcome: 'unknown' } : {}), method, path, timeoutMs: null,
+  });
+}
+
 /** خطاهایی که یعنی درخواست اصلاً به سرورِ حساب نرسید ⇒ تکرارش بی‌خطر است. */
 const NEVER_SENT = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH', 'UND_ERR_CONNECT_TIMEOUT']);
 function droppedErr(ctx) {
@@ -882,6 +913,8 @@ async function authedSend(method, path, { query = {}, body = null, headers = {},
       && String(res.headers.get('idempotent-replayed') || '').toLowerCase() === 'true') out.replayed = true;
 
   if (!res.ok) {
+    const verdict = SAFE_METHODS.has(method) ? null : tunnelVerdict(res.status, out);
+    if (verdict) throw tunnelErr(method, path, res.status, verdict);
     const err = new Error(out?.error?.message || 'سرورِ حساب جواب نداد');
     err.code = out?.error?.code || 'cloud_error';
     err.status = res.status;
@@ -930,6 +963,9 @@ export async function cloudRawBytes(method, path, { body = null, contentType = '
   if (!res.ok || m === 'POST') {
     const out = await readBody(res);
     if (!res.ok) {
+      //  ۱.۵۰.۸۷ (۳-۱۵): بارگذاریِ بایت هم نوشتن است — همان قاعدهٔ پاسخِ تونل
+      const verdict = m === 'POST' ? tunnelVerdict(res.status, out) : null;
+      if (verdict) throw tunnelErr(m, p, res.status, verdict);
       const err = new Error(out?.error?.message || 'سرورِ حساب جواب نداد');
       err.code = out?.error?.code || 'cloud_error';
       err.status = res.status;
