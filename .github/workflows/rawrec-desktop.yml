@@ -106,6 +106,33 @@ jobs:
           cp "$RUNNER_TEMP/selftest.log" $O/selftest-no-phone.txt
           cat $O/selftest-no-phone.txt $O/selftest-no-phone-exit.txt
           grep -q '^encoders: ' $O/selftest-no-phone.txt
+      - name: A sound card for the computer-sound check (Windows has none on CI)
+        if: matrix.tag == 'windows'
+        continue-on-error: true
+        uses: LABSN/sound-ci-helpers@v1
+      - name: The computer's own sound without Stereo Mix (a tone played, captured as the app does)
+        if: matrix.tag != 'macos'
+        run: |
+          O=$(pwd)/out/desktop-$VER/${{ matrix.tag }}
+          ${{ matrix.py }} - "$RUNNER_TEMP/tone.wav" <<'PY'
+          import math, struct, sys, wave
+          w = wave.open(sys.argv[1], 'wb'); w.setnchannels(2); w.setsampwidth(2); w.setframerate(48000)
+          w.writeframes(b''.join(struct.pack('<hh', int(8000 * math.sin(2 * math.pi * 440 * i / 48000)), int(8000 * math.sin(2 * math.pi * 440 * i / 48000))) for i in range(48000 * 20)))
+          PY
+          if [ "${{ matrix.tag }}" = linux ]; then
+            sudo apt-get install -y -qq pulseaudio pulseaudio-utils >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq pulseaudio pulseaudio-utils >/dev/null)
+            pulseaudio -D --exit-idle-time=-1 -n --load="module-null-sink sink_name=speakers" --load="module-native-protocol-unix"; sleep 2; pactl set-default-sink speakers
+            (sleep 4; timeout 6 paplay "$RUNNER_TEMP/tone.wav") &
+          else
+            powershell -Command "Get-CimInstance Win32_SoundDevice | Select-Object Name, Status | Format-Table -AutoSize" | tee $O/sound-devices.txt
+            W=$(cygpath -w "$RUNNER_TEMP/tone.wav")
+            (sleep 4; powershell -Command "\$p = New-Object Media.SoundPlayer '$W'; \$p.PlaySync()") &
+          fi
+          cd desktop
+          gradle pipelineCheck --no-daemon -q -PcheckMain=com.vil3ntec.rawrec.desktop.SystemSoundCheckKt -PcheckArgs=14 2>&1 | grep -av JAVA_TOOL | tee $O/system-sound.txt
+          grep -q SYSTEM_SOUND_OK $O/system-sound.txt
+          # the tone must be there (louder than -50 dBFS at some second), not just silence
+          grep -E 'level -[1-4][0-9]\.[0-9] dBFS|level -[0-9]\.[0-9] dBFS' $O/system-sound.txt
       - name: Whole path with a fake phone (Linux)
         if: matrix.tag == 'linux'
         run: |

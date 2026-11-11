@@ -126,6 +126,8 @@ class AudioMixer(private val out: (ByteArray, Long) -> Unit) : AutoCloseable {
     @Volatile var monitor = false
         set(v) { field = v; if (!v) { monLine?.close(); monLine = null } }
     private var monLine: javax.sound.sampled.SourceDataLine? = null
+    /** Inputs left out of what is heard here (the computer's own sound: hearing it again would echo for ever); still in the mix that goes out. */
+    @Volatile var notMonitored: Set<String> = emptySet()
     @Volatile private var running = false
     private var thread: Thread? = null
 
@@ -140,6 +142,8 @@ class AudioMixer(private val out: (ByteArray, Long) -> Unit) : AutoCloseable {
         val frames = AudioInput.RATE / 100            // 10 ms
         val mix = IntArray(frames * 2)
         val pcm = ByteArray(frames * 4)
+        val skipped = IntArray(frames * 2)
+        val monPcm = ByteArray(frames * 4)
         var chunk = (System.nanoTime() - t0) / 10_000_000L
         while (running) {
             val due = t0 + chunk * 10_000_000L
@@ -147,7 +151,14 @@ class AudioMixer(private val out: (ByteArray, Long) -> Unit) : AutoCloseable {
             if (wait > 0) Thread.sleep(wait / 1_000_000, (wait % 1_000_000).toInt())
             else if (-wait > 200_000_000L) { chunk = (System.nanoTime() - t0) / 10_000_000L; continue }   // the computer slept
             mix.fill(0)
-            for (i in inputs.values) i.mixInto(mix, frames)
+            val skip = if (monitor) notMonitored else emptySet()
+            if (skip.isEmpty()) for (i in inputs.values) i.mixInto(mix, frames)
+            else {
+                // what is heard here first (without the skipped inputs), then the rest added for the outgoing mix
+                skipped.fill(0)
+                for (i in inputs.values) i.mixInto(if (i.id in skip) skipped else mix, frames)
+                for (k in mix.indices) { val v = (mix[k] * master).toInt().coerceIn(-32768, 32767); monPcm[k * 2] = v.toByte(); monPcm[k * 2 + 1] = (v shr 8).toByte(); mix[k] += skipped[k] }
+            }
             var peak = 0
             val m = master
             val ceil = 32768 * 0.891f       // -1 dBFS
@@ -168,7 +179,8 @@ class AudioMixer(private val out: (ByteArray, Long) -> Unit) : AutoCloseable {
             if (monitor) try {
                 val line = monLine ?: (javax.sound.sampled.AudioSystem.getSourceDataLine(javax.sound.sampled.AudioFormat(48_000f, 16, 2, true, false)).also {
                     it.open(javax.sound.sampled.AudioFormat(48_000f, 16, 2, true, false), 48_000 * 4 / 5); it.start(); monLine = it })
-                if (line.available() >= pcm.size) line.write(pcm, 0, pcm.size)
+                val heard = if (skip.isEmpty()) pcm else monPcm
+                if (line.available() >= heard.size) line.write(heard, 0, heard.size)
             } catch (_: Exception) { monitor = false }
             try { out(pcm, chunk * 10_000) } catch (t: Throwable) { System.err.println("mixer out: ${t.message}") }
             chunk++

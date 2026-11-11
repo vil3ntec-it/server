@@ -206,7 +206,7 @@ fun MixerBar(app: StudioApp, tick: Int) {
                 { g -> app.update { it.copy(phoneGain = g) } }) { f -> app.update { it.copy(phoneFx = f) } }
             Channel("میکروفون", app.engine.mixer.input("mic"), s.micGain, s.micFx, tick, Modifier.weight(1f), s.mic, devs,
                 { d -> app.update { it.copy(mic = d) } }, { g -> app.update { it.copy(micGain = g) } }) { f -> app.update { it.copy(micFx = f) } }
-            Channel("صدای کامپیوتر", app.engine.mixer.input("desktop"), s.desktopGain, s.desktopFx, tick, Modifier.weight(1f), s.desktopDevice, devs,
+            Channel("صدای کامپیوتر", app.engine.mixer.input("desktop"), s.desktopGain, s.desktopFx, tick, Modifier.weight(1f), s.desktopDevice, listOf(SystemSound.NAME) + devs,
                 { d -> app.update { it.copy(desktopDevice = d) } }, { g -> app.update { it.copy(desktopGain = g) } }) { f -> app.update { it.copy(desktopFx = f) } }
             Column(Modifier.width(170.dp)) {
                 Meter("خروجی", app.engine.mixer.level, tick, Modifier.fillMaxWidth())

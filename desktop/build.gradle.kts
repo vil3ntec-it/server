@@ -30,6 +30,8 @@ dependencies {
     implementation("org.json:json:20240303")
     // global hotkeys (record, live, scenes) while a game has the focus — LGPL-3.0, natives for Windows, macOS and Linux inside
     implementation("com.github.kwhat:jnativehook:2.2.2")
+    // Windows: the speakers' own sound (WASAPI loopback) without «Stereo Mix» — Apache-2.0/LGPL
+    implementation("net.java.dev.jna:jna-platform:5.15.0")
     testImplementation(kotlin("test"))
 }
 

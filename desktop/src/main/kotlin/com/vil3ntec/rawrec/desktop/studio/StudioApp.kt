@@ -18,7 +18,7 @@ class StudioApp(val adb: Adb?, private val studioFile: File = File(AppPaths.data
     private val micIn = engine.mixer.input("mic")
     private val desktopIn = engine.mixer.input("desktop")
     private var mic: MicCapture? = null
-    private var desktop: MicCapture? = null
+    private var desktop: AutoCloseable? = null
     val history = History()
 
     @Volatile var recording: Recording? = null; private set
@@ -83,9 +83,11 @@ class StudioApp(val adb: Adb?, private val studioFile: File = File(AppPaths.data
 
     private fun restartDesktop() {
         desktop?.close(); desktop = null
-        if (settings.desktopDevice.isNotBlank()) desktop = MicCapture(settings.desktopDevice, desktopIn)
+        val d = settings.desktopDevice
+        if (d.isNotBlank()) desktop = if (d == SystemSound.NAME) SystemSound(desktopIn) else MicCapture(d, desktopIn)
+        engine.mixer.notMonitored = if (d == SystemSound.NAME) setOf("desktop") else emptySet()
     }
-    val desktopError: String? get() = desktop?.error
+    val desktopError: String? get() = (desktop as? MicCapture)?.error ?: (desktop as? SystemSound)?.error
 
     /** Viewers, followers and subscribers of the channels set in the chat panel (for counters and the goal bar). */
     fun watchStats() {
