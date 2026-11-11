@@ -3,26 +3,26 @@ rawrec-desktop selftest: os Windows Server 2025 amd64, java 17.0.21
 screen capture: desktop duplication (ddagrab); monitors: مانیتورِ 1 — 1024×768 (اصلی)
 capture: gdigrab, dshow
 noise model: 297646 bytes
-Nov 11, 2026 3:01:11 AM com.sun.javafx.application.PlatformImpl startup
+Nov 11, 2026 3:21:31 AM com.sun.javafx.application.PlatformImpl startup
 WARNING: Unsupported JavaFX configuration: classes were loaded from 'unnamed module @64bfbc86'
 browser: ok
 encoders: h264_mf(gpu), libopenh264(cpu), libsvtav1(cpu)
 adb: D:\a\server\server\desktop\build\compose\binaries\main\app\RawRec Desktop\app\resources\platform-tools\adb.exe
 FAIL: no usable phone: []
-[hevc_nvenc @ 00000257bec00a00] Cannot load nvcuda.dll
-[h264_nvenc @ 00000257bec00a00] Cannot load nvcuda.dll
-[av1_nvenc @ 00000257bec00a00] Cannot load nvcuda.dll
-[hevc_qsv @ 00000257bec00a00] Error initializing a MFX session: unsupported (-3)
-[hevc_qsv @ 00000257bec00a00] The current mfx implementation is not supported, try next mfx implementation.
-[hevc_qsv @ 00000257bec00a00] Error initializing a MFX session: unsupported (-3)
-[h264_qsv @ 00000257bec00a00] Error initializing a MFX session: unsupported (-3)
-[h264_qsv @ 00000257bec00a00] The current mfx implementation is not supported, try next mfx implementation.
-[h264_qsv @ 00000257bec00a00] Error initializing a MFX session: unsupported (-3)
-[hevc_mf @ 00000257bec00a00] could not find any MFT for the given media type
-[hevc_mf @ 00000257bec00a00] could not create MFT
-[h264_mf @ 00000257bec00a00] MFT name: 'H264 Encoder MFT'
-[libopenh264 @ 00000257bec00a00] [OpenH264] this = 0x00000257bec00710, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
-[libopenh264 @ 00000257bec00a00] [OpenH264] this = 0x00000257bec00710, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[hevc_nvenc @ 000001f30ca90a00] Cannot load nvcuda.dll
+[h264_nvenc @ 000001f30ca90a00] Cannot load nvcuda.dll
+[av1_nvenc @ 000001f30ca90a00] Cannot load nvcuda.dll
+[hevc_qsv @ 000001f30ca90a00] Error initializing a MFX session: unsupported (-3)
+[hevc_qsv @ 000001f30ca90a00] The current mfx implementation is not supported, try next mfx implementation.
+[hevc_qsv @ 000001f30ca90a00] Error initializing a MFX session: unsupported (-3)
+[h264_qsv @ 000001f30ca90a00] Error initializing a MFX session: unsupported (-3)
+[h264_qsv @ 000001f30ca90a00] The current mfx implementation is not supported, try next mfx implementation.
+[h264_qsv @ 000001f30ca90a00] Error initializing a MFX session: unsupported (-3)
+[hevc_mf @ 000001f30ca90a00] could not find any MFT for the given media type
+[hevc_mf @ 000001f30ca90a00] could not create MFT
+[h264_mf @ 000001f30ca90a00] MFT name: 'H264 Encoder MFT'
+[libopenh264 @ 000001f30ca90a00] [OpenH264] this = 0x000001f30ca90710, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 000001f30ca90a00] [OpenH264] this = 0x000001f30ca90710, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
 Svt[info]: -------------------------------------------
 Svt[info]: SVT [version]:	SVT-AV1 Encoder Lib v2.2.0
 Svt[info]: SVT [build]  :	GCC 12.2.0	 64 bit
@@ -30,7 +30,7 @@ Svt[info]: LIB Build date: Nov 16 2024 01:40:57
 Svt[info]: -------------------------------------------
 Svt[info]: Number of logical cores available: 4
 Svt[info]: Number of PPCS 59
-Svt[info]: [asm level on system : up to avx512]
+Svt[info]: [asm level on system : up to avx2]
 Svt[info]: [asm level selected : up to avx2]
 Svt[info]: -------------------------------------------
 Svt[info]: SVT [config]: main profile	tier (auto)	level (auto)
