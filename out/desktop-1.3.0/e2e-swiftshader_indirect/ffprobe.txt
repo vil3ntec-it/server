@@ -10,4 +10,4 @@ channels=2
 r_frame_rate=0/0
 nb_read_frames=707
 duration=15.099000
-size=110183
+size=87563
