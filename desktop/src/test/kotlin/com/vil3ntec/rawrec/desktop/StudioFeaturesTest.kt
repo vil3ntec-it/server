@@ -180,8 +180,9 @@ class StudioFeaturesTest {
         val enc = Encoders.available().first { !it.hardware && it.family == Encoders.Family.H264 }
         val r = Recording(enc, 180, 30, 800, withAudio = false, dir = tmp)
         r.start()
-        var pts = 0L
-        fun run(ms: Int) { repeat(ms / 33) { r.video(frame(320, 180, pts, 40)); pts += 33_333; Thread.sleep(33) } }
+        // stamped with the real clock, as the studio's pictures are (a slow machine's sleeps then cannot bend the timing)
+        val t0 = System.nanoTime()
+        fun run(ms: Int) { val end = System.nanoTime() + ms * 1_000_000L; while (System.nanoTime() < end) { r.video(frame(320, 180, (System.nanoTime() - t0) / 1000, 40)); Thread.sleep(33) } }
         run(1000); r.pause(); run(1500); r.resume(); run(1000)
         val res = r.stop()
         println("pause: ${res.seconds} s, ${res.frames} frames, file ${duration(res.file)} s")
@@ -264,7 +265,8 @@ class StudioFeaturesTest {
             Thread.sleep(1500)
         }
         println("vertical: ${got.size} pictures in 1.5 s, first ${got.firstOrNull()}")
-        assertTrue(got.size >= 35, "vertical frames ${got.size}")
+        // every picture the main canvas gets, the upright one gets too (how many a second is the machine's speed, not this feature)
+        assertTrue(got.size >= 20 && got.size >= main.size - 2, "vertical frames ${got.size}, main ${main.size}")
         assertTrue(got.all { it.first == 1080 && it.second == 1920 })
         assertTrue(got.map { it.third }.toSet().intersect(main.toSet()).size >= got.size - 2, "same clock as the main picture")
         assertTrue(blue > 200, "the background drawn on the upright canvas (blue=$blue)")
