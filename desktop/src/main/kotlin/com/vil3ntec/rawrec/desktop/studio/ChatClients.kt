@@ -55,7 +55,10 @@ class YouTubeChat(channel: String) : ChatClient(Platform.YOUTUBE, channel) {
                 val chanPage = if (videoId(channel) == null) get(watchUrl(channel)) else null
                 val vid = videoId(channel) ?: chanPage?.let(::liveVideoOf)
                 if (vid == null && chanPage?.contains("liveChatRenderer") != true) { status = "پخشِ زنده‌ای در این کانال پیدا نشد (هنوز شروع نشده؟)"; connected = false; sleep(20_000); continue }
-                val page = vid?.let { get("https://www.youtube.com/live_chat?is_popout=1&v=$it") }?.takeIf { it.contains("INNERTUBE_API_KEY") } ?: chanPage!!
+                val popout = vid?.let { get("https://www.youtube.com/live_chat?is_popout=1&v=$it") }?.takeIf { it.contains("INNERTUBE_API_KEY") }
+                val page = popout ?: chanPage
+                if (page == null) { status = "صفحهٔ چتِ این پخش باز نشد"; connected = false; sleep(20_000); continue }
+                if (System.getProperty("rawrec.debugChat") == "1") println("youtube: video=$vid chat page=${if (popout != null) "popout" else "channel live page"}")
                 val key = Regex("\"INNERTUBE_API_KEY\":\"([^\"]+)\"").find(page)?.groupValues?.get(1)
                 val ver = Regex("\"INNERTUBE_CLIENT_VERSION\":\"([^\"]+)\"").find(page)?.groupValues?.get(1) ?: "2.20240101.00.00"
                 val visitor = Regex("\"VISITOR_DATA\":\"([^\"]+)\"").find(page)?.groupValues?.get(1)
@@ -110,7 +113,9 @@ class YouTubeChat(channel: String) : ChatClient(Platform.YOUTUBE, channel) {
         fun liveVideoOf(page: String): String? {
             val id = Regex("<link rel=\"canonical\" href=\"https://www\\.youtube\\.com/watch\\?v=([A-Za-z0-9_-]{11})\"").find(page)?.groupValues?.get(1)
                 ?: Regex("\"videoDetails\":\\{\"videoId\":\"([A-Za-z0-9_-]{11})\"").find(page)?.groupValues?.get(1)
-                ?: Regex("\"currentVideoEndpoint\":\\{[^}]*?\"watchEndpoint\":\\{\"videoId\":\"([A-Za-z0-9_-]{11})\"").find(page)?.groupValues?.get(1)
+                // the endpoint nests other objects ({"commandMetadata":{…}}) before its watchEndpoint, so look ahead a bounded stretch
+                ?: Regex("\"currentVideoEndpoint\":\\{[\\s\\S]{0,1500}?\"videoId\":\"([A-Za-z0-9_-]{11})\"").find(page)?.groupValues?.get(1)
+                ?: Regex("\"currentVideoEndpoint\":\\{[\\s\\S]{0,1500}?/watch\\?v=([A-Za-z0-9_-]{11})").find(page)?.groupValues?.get(1)
                 ?: Regex("<meta itemprop=\"(?:videoId|identifier)\" content=\"([A-Za-z0-9_-]{11})\"").find(page)?.groupValues?.get(1)
                 ?: return null
             return id.takeIf { page.contains("\"isLive\":true") || page.contains("\"isLiveNow\":true") || page.contains("liveChatRenderer") }
@@ -299,28 +304,21 @@ class TwitchChat(channel: String) : ChatClient(Platform.TWITCH, channel.trim().r
 
 // =====================================================================================  Kick
 
-/** Kick's chat through its public push service (the one kick.com itself uses): messages and gifted subs. */
-class KickChat(channel: String) : ChatClient(Platform.KICK, channel.trim().removePrefix("https://").removePrefix("www.").removePrefix("kick.com/").trim('/').lowercase()) {
-    private var ws: WebSocket? = null
+/**
+ * Kick's chat as kick.com itself reads it, no login. Kick names its realtime service at connect time
+ * (web.kick.com/api/v1/realtime/connection): since October 2026 that is Centrifugo with a guest token, before it a Pusher
+ * key that Kick rotates. Both are spoken here; the key is never hard-wired to one value.
+ */
+class KickChat(channel: String) : ChatClient(Platform.KICK, channel.trim().removePrefix("https://").removePrefix("www.").removePrefix("kick.com/").trim('/').lowercase().replace('_', '-')) {
+    @Volatile private var ws: WebSocket? = null
     private var debugFrames = 0
+    private val debug get() = System.getProperty("rawrec.debugChat") == "1"
     override fun start() { Thread({ loop() }, "chat-kick").apply { isDaemon = true; start() } }
 
-    /** The push service's (key, cluster) pairs to try: what kick.com's own pages name first, then known ones. */
-    private val pusher: List<Pair<String, String>> by lazy {
-        val found = ArrayList<Pair<String, String>>()
-        try {
-            val home = http.send(HttpRequest.newBuilder(URI("https://kick.com/")).header("User-Agent", UA).timeout(Duration.ofSeconds(15)).GET().build(), HttpResponse.BodyHandlers.ofString()).body()
-            val scripts = Regex("src=\"(https://[^\"]+\\.js)\"").findAll(home).map { it.groupValues[1] }.take(25).toList()
-            val texts = listOf(home) + scripts.mapNotNull { u -> try { http.send(HttpRequest.newBuilder(URI(u)).header("User-Agent", UA).timeout(Duration.ofSeconds(15)).GET().build(), HttpResponse.BodyHandlers.ofString()).body() } catch (_: Exception) { null } }
-            for (t in texts) {
-                for (m in Regex("(?i)pusher[\\s\\S]{0,200}?[\"']([a-f0-9]{20})[\"'][\\s\\S]{0,200}?cluster[\"']?\\s*[:=]\\s*[\"']([a-z0-9-]+)[\"']").findAll(t))
-                    found.add(m.groupValues[1] to m.groupValues[2])
-            }
-        } catch (_: Exception) {}
-        if (System.getProperty("rawrec.debugChat") == "1") println("kick pusher candidates from site: $found")
-        (found + listOf("32cbd69e4b950bf97679" to "us2", "eb1d5f283081a78b932c" to "us2", "32cbd69e4b950bf97679" to "mt1")).distinct()
-    }
-    @Volatile private var pusherIdx = 0
+    private fun post(url: String, body: JSONObject): HttpResponse<String> = http.send(HttpRequest.newBuilder(URI(url))
+        .header("User-Agent", UA).header("Accept", "application/json").header("Content-Type", "application/json")
+        .header("Origin", "https://kick.com").header("Referer", "https://kick.com/").timeout(Duration.ofSeconds(15))
+        .POST(HttpRequest.BodyPublishers.ofString(body.toString())).build(), HttpResponse.BodyHandlers.ofString())
 
     private fun chatroomId(): Long? {
         channel.toLongOrNull()?.let { return it }   // a chatroom number typed directly
@@ -330,54 +328,146 @@ class KickChat(channel: String) : ChatClient(Platform.KICK, channel.trim().remov
         return JSONObject(r.body()).optJSONObject("chatroom")?.optLong("id")
     }
 
+    /** What Kick names for this client: ("centrifugo", url) or ("pusher", "key|cluster"); known fallbacks after. */
+    private fun services(clientId: String): List<Pair<String, String>> {
+        val out = ArrayList<Pair<String, String>>()
+        try {
+            val r = post("https://web.kick.com/api/v1/realtime/connection", JSONObject()
+                .put("client", JSONObject().put("id", clientId).put("type", "web"))
+                .put("capabilities", JSONObject().put("accepted_providers", JSONArray().put(JSONObject().put("provider", "centrifugo")).put(JSONObject().put("provider", "pusher")))))
+            if (debug) println("kick realtime/connection ${r.statusCode()}: ${r.body().take(400)}")
+            if (r.statusCode() == 200) {
+                val conns = JSONObject(r.body()).optJSONObject("data")?.optJSONArray("connections") ?: JSONArray()
+                for (i in 0 until conns.length()) {
+                    val c = conns.getJSONObject(i); val cr = c.optJSONObject("credentials") ?: continue
+                    when (c.optString("provider")) {
+                        "centrifugo" -> cr.optString("url").takeIf { it.startsWith("wss://") }?.let { out.add("centrifugo" to it) }
+                        "pusher" -> cr.optString("app_key").takeIf { it.isNotBlank() }?.let { out.add("pusher" to "$it|${cr.optString("cluster", "us2")}") }
+                    }
+                }
+            }
+        } catch (e: Exception) { if (debug) println("kick realtime/connection: ${e.message}") }
+        out.add("centrifugo" to "wss://realtime.us-west-2.platform.kick.com")
+        out.add("pusher" to "34bf7a0ff419a2a775b9|us2")
+        return out.distinct()
+    }
+
+    private fun guestToken(clientId: String): Pair<String, Long>? {
+        val r = post("https://web.kick.com/api/v1/realtime/auth/connection", JSONObject().put("client_id", clientId))
+        if (debug) println("kick realtime/auth ${r.statusCode()}: ${r.body().take(120)}")
+        if (r.statusCode() != 200) return null
+        val d = JSONObject(r.body()).optJSONObject("data") ?: return null
+        val t = d.optString("token").takeIf { it.isNotBlank() } ?: return null
+        return t to d.optLong("ttl", 2700)
+    }
+
     private fun loop() {
+        var failures = 0
         while (running.get()) {
             try {
-                if (pusherIdx >= pusher.size) {
-                    // every known address of Kick's chat service was refused: say so plainly, try again much later
-                    connected = false
-                    status = "کیک سرویسِ چتش را عوض کرده؛ خواندنِ چتِ کیک فعلاً کار نمی‌کند (یوتیوب و توییچ کار می‌کنند)"
-                    Thread.sleep(30 * 60_000L); pusherIdx = 0; continue
-                }
                 val room = chatroomId()
                 if (room == null) { Thread.sleep(30_000); continue }
-                val (key, cluster) = pusher.getOrNull(pusherIdx % pusher.size.coerceAtLeast(1)) ?: ("32cbd69e4b950bf97679" to "us2")
-                val done = java.util.concurrent.CompletableFuture<Unit>()
-                val sb = StringBuilder()
-                ws = http.newWebSocketBuilder().buildAsync(URI("wss://ws-$cluster.pusher.com/app/$key?protocol=7&client=js&version=8.4.0&flash=false"), object : WebSocket.Listener {
-                    override fun onOpen(w: WebSocket) {
-                        w.sendText(JSONObject().put("event", "pusher:subscribe").put("data", JSONObject().put("auth", "").put("channel", "chatrooms.$room.v2")).toString(), true)
-                        status = "وصل"; connected = true; w.request(1)
-                    }
-                    override fun onText(w: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? {
-                        sb.append(data)
-                        if (last) {
-                            val t = sb.toString(); sb.setLength(0)
-                            if (System.getProperty("rawrec.debugChat") == "1" && debugFrames++ < 6) println("kick frame: ${t.take(300)}")
-                            if (t.contains("\"code\":4001") || t.contains("not in this cluster")) { pusherIdx++; status = "کیک: کلیدِ دیگری را امتحان می‌کنم…"; w.sendClose(WebSocket.NORMAL_CLOSURE, "next"); done.complete(Unit) }
-                            if (t.contains("pusher:ping")) w.sendText("{\"event\":\"pusher:pong\",\"data\":{}}", true)
-                            else parse(t)?.let(::emit)
-                        }
-                        w.request(1); return null
-                    }
-                    override fun onClose(w: WebSocket, code: Int, reason: String): CompletionStage<*>? { done.complete(Unit); return null }
-                    override fun onError(w: WebSocket, error: Throwable) { status = "کیک: ${error.message}"; done.complete(Unit) }
-                }).get()
-                done.get()
-            } catch (_: InterruptedException) { return } catch (e: Exception) { status = "کیک: ${e.message}" }
-            connected = false
-            if (running.get()) Thread.sleep(5000)
+                val clientId = java.util.UUID.randomUUID().toString()
+                var ok = false
+                for ((kind, where) in services(clientId)) {
+                    if (!running.get()) return
+                    ok = if (kind == "centrifugo") centrifugo(where, clientId, room) else pusher(where.substringBefore('|'), where.substringAfter('|'), room)
+                    if (ok) break
+                }
+                failures = if (ok) 0 else failures + 1
+                connected = false
+                if (!ok) status = "کیک وصل نشد؛ دوباره امتحان می‌کنم…"
+                if (running.get()) Thread.sleep(if (failures > 3) 120_000L else 5000L)
+            } catch (_: InterruptedException) { return } catch (e: Exception) { connected = false; status = "کیک: ${e.message}"; Thread.sleep(10_000) }
         }
+    }
+
+    /** One Centrifugo session; true when it carried the chat (it ends when the connection does). */
+    private fun centrifugo(url: String, clientId: String, room: Long): Boolean {
+        val (token, ttl) = guestToken(clientId) ?: return false
+        val done = java.util.concurrent.CompletableFuture<Boolean>()
+        val sb = StringBuilder()
+        var subscribed = false
+        val refresher = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "kick-refresh").apply { isDaemon = true } }
+        try {
+            ws = http.newWebSocketBuilder().header("Origin", "https://kick.com").header("User-Agent", UA).buildAsync(URI(url), object : WebSocket.Listener {
+                override fun onOpen(w: WebSocket) {
+                    w.sendText(JSONObject().put("connect", JSONObject().put("token", token).put("name", "js")).put("id", 1).toString(), true)
+                    w.sendText(JSONObject().put("subscribe", JSONObject().put("channel", "chatrooms.$room.v2")).put("id", 2).toString(), true)
+                    w.request(1)
+                }
+                override fun onText(w: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? {
+                    sb.append(data)
+                    if (last) {
+                        val all = sb.toString(); sb.setLength(0)
+                        for (line in all.split('\n')) {
+                            val t = line.trim(); if (t.isEmpty()) continue
+                            if (debug && debugFrames++ < 10) println("kick frame: ${t.take(400)}")
+                            if (t == "{}") { w.sendText("{}", true); continue }      // the server's ping
+                            val o = try { JSONObject(t) } catch (_: Exception) { continue }
+                            o.optJSONObject("error")?.let { status = "کیک: ${it.optString("message")}"; if (!subscribed) { w.sendClose(WebSocket.NORMAL_CLOSURE, "error"); done.complete(false) } }
+                            if (o.optInt("id") == 2 && o.has("subscribe")) { subscribed = true; status = "وصل"; connected = true }
+                            if (o.optInt("id") == 1 && o.has("connect")) {
+                                // a fresh guest token before this one runs out, on the same connection
+                                val life = o.optJSONObject("connect")?.optLong("ttl", ttl)?.takeIf { it > 60 } ?: ttl
+                                refresher.scheduleAtFixedRate({
+                                    guestToken(clientId)?.let { (nt, _) -> ws?.sendText(JSONObject().put("refresh", JSONObject().put("token", nt)).put("id", 3).toString(), true) }
+                                }, life * 3 / 4, life * 3 / 4, java.util.concurrent.TimeUnit.SECONDS)
+                            }
+                            val pub = o.optJSONObject("push")?.optJSONObject("pub")?.optJSONObject("data") ?: o.optJSONObject("pub")?.optJSONObject("data")
+                            if (pub != null) parse(pub.toString())?.let(::emit)
+                        }
+                    }
+                    w.request(1); return null
+                }
+                override fun onClose(w: WebSocket, code: Int, reason: String): CompletionStage<*>? { if (debug) println("kick closed $code $reason"); done.complete(subscribed); return null }
+                override fun onError(w: WebSocket, error: Throwable) { status = "کیک: ${error.message}"; done.complete(subscribed) }
+            }).get(20, java.util.concurrent.TimeUnit.SECONDS)
+            return done.get()
+        } catch (e: java.util.concurrent.ExecutionException) { if (debug) println("kick centrifugo: ${e.cause?.message}"); return false
+        } finally { refresher.shutdownNow() }
+    }
+
+    /** One Pusher session with the key Kick named; false when the key is refused. */
+    private fun pusher(key: String, cluster: String, room: Long): Boolean {
+        val done = java.util.concurrent.CompletableFuture<Boolean>()
+        val sb = StringBuilder()
+        var good = false
+        ws = http.newWebSocketBuilder().buildAsync(URI("wss://ws-$cluster.pusher.com/app/$key?protocol=7&client=js&version=8.4.0&flash=false"), object : WebSocket.Listener {
+            override fun onOpen(w: WebSocket) {
+                w.sendText(JSONObject().put("event", "pusher:subscribe").put("data", JSONObject().put("auth", "").put("channel", "chatrooms.$room.v2")).toString(), true)
+                w.request(1)
+            }
+            override fun onText(w: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? {
+                sb.append(data)
+                if (last) {
+                    val t = sb.toString(); sb.setLength(0)
+                    if (debug && debugFrames++ < 10) println("kick frame: ${t.take(300)}")
+                    when {
+                        t.contains("\"code\":4001") || t.contains("not in this cluster") -> { w.sendClose(WebSocket.NORMAL_CLOSURE, "next"); done.complete(false) }
+                        t.contains("pusher_internal:subscription_succeeded") -> { good = true; status = "وصل"; connected = true }
+                        t.contains("pusher:ping") -> w.sendText("{\"event\":\"pusher:pong\",\"data\":{}}", true)
+                        else -> parse(t)?.let(::emit)
+                    }
+                }
+                w.request(1); return null
+            }
+            override fun onClose(w: WebSocket, code: Int, reason: String): CompletionStage<*>? { done.complete(good); return null }
+            override fun onError(w: WebSocket, error: Throwable) { status = "کیک: ${error.message}"; done.complete(good) }
+        }).get(20, java.util.concurrent.TimeUnit.SECONDS)
+        return done.get()
     }
 
     override fun close() { super.close(); ws?.sendClose(WebSocket.NORMAL_CLOSURE, "bye") }
 
     companion object {
-        /** A push frame → a chat message or a gift (the event's data is itself JSON in a string). */
+        /** A push frame → a chat message, gift or new subscriber (the event's data is JSON, often itself in a string). */
         fun parse(frame: String): ChatMessage? = try {
             val o = JSONObject(frame)
             val ev = o.optString("event")
-            val d = JSONObject(o.optString("data"))
+            val d = o.optJSONObject("data") ?: JSONObject(o.optString("data"))
+            fun user(x: JSONObject?) = x?.optJSONObject("sender")?.optString("username")?.takeIf { it.isNotBlank() }
+                ?: x?.optString("username")?.takeIf { it.isNotBlank() } ?: x?.optJSONObject("user")?.optString("username")?.takeIf { it.isNotBlank() }
             when {
                 ev.endsWith("ChatMessageEvent") -> {
                     val s = d.optJSONObject("sender")
@@ -387,7 +477,15 @@ class KickChat(channel: String) : ChatClient(Platform.KICK, channel.trim().remov
                     ChatMessage(d.optString("id"), Platform.KICK, s?.optString("username") ?: "?", content, authorColor = col)
                 }
                 ev.endsWith("GiftedSubscriptionsEvent") -> ChatMessage(d.optString("chatroom_id") + System.nanoTime(), Platform.KICK,
-                    d.optString("gifter_username"), "${d.optJSONArray("gifted_usernames")?.length() ?: 1} اشتراکِ هدیه", ChatMessage.Kind.GIFT)
+                    d.optString("gifter_username").ifBlank { user(d) ?: "?" }, "${d.optJSONArray("gifted_usernames")?.length() ?: 1} اشتراکِ هدیه", ChatMessage.Kind.GIFT)
+                ev.endsWith("SubscriptionEvent") -> ChatMessage("sub" + System.nanoTime(), Platform.KICK, user(d) ?: "?",
+                    d.optInt("months", 1).let { if (it > 1) "$it ماه اشتراک" else "اشتراکِ تازه" }, ChatMessage.Kind.MEMBER)
+                ev.contains("KicksGifted") -> {
+                    val g = d.optJSONObject("gift")
+                    val n = g?.optInt("amount") ?: d.optInt("amount")
+                    ChatMessage("kicks" + System.nanoTime(), Platform.KICK, user(d) ?: "?", d.optString("message").ifBlank { g?.optString("name") ?: "" },
+                        ChatMessage.Kind.GIFT, amount = if (n > 0) "$n Kicks" else null)
+                }
                 else -> null
             }
         } catch (_: Exception) { null }
