@@ -21,6 +21,28 @@ object Devices {
     }
     val captureReady get() = captureError == null
 
+    /** A monitor in real pixels (Windows scales what Java reports; the capture needs the true size). */
+    data class Monitor(val index: Int, val x: Int, val y: Int, val w: Int, val h: Int, val primary: Boolean) {
+        val label get() = "مانیتورِ ${index + 1} — ${w}×${h}" + if (primary) " (اصلی)" else ""
+    }
+
+    /** The monitors, the main one first. */
+    fun monitors(): List<Monitor> = try {
+        val ge = java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
+        if (java.awt.GraphicsEnvironment.isHeadless()) emptyList() else {
+            val main = ge.defaultScreenDevice
+            ge.screenDevices.sortedBy { if (it == main) 0 else 1 }.mapIndexed { i, d ->
+                val c = d.defaultConfiguration; val b = c.bounds; val t = c.defaultTransform
+                Monitor(i, (b.x * t.scaleX).toInt(), (b.y * t.scaleY).toInt(), (b.width * t.scaleX).toInt() and 1.inv(), (b.height * t.scaleY).toInt() and 1.inv(), d == main)
+            }
+        }
+    } catch (_: Throwable) { emptyList() }
+
+    /** Windows' Desktop Duplication capture is in this FFmpeg (the fast way, games included). */
+    val hasDda: Boolean by lazy {
+        captureReady && try { org.bytedeco.ffmpeg.global.avfilter.avfilter_get_by_name("ddagrab") != null } catch (_: Throwable) { false }
+    }
+
     fun webcams(): List<String> {
         val os = System.getProperty("os.name").lowercase()
         return try {

@@ -101,7 +101,7 @@ fun ScenesPanel(studio: Studio, onEdit: (Studio) -> Unit, locked: Boolean) {
         if (studio.transition != Transition.CUT) SliderRow("مدت", studio.transitionMs.toFloat(), 100f..2000f, "${studio.transitionMs} ms") { onEdit(studio.copy(transitionMs = (it / 50).toInt() * 50)) }
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Btn("ذخیرهٔ همهٔ صحنه‌ها…", {
+            Btn("ذخیرهٔ صحنه‌ها…", {
                 saveFile("ذخیرهٔ مجموعهٔ صحنه‌ها", "RawRec scenes.json")?.let { java.io.File(it).writeText(Studio.toJson(studio)) }
             }, Modifier.weight(1f), height = 26.dp)
             Btn("باز کردن…", {
@@ -295,14 +295,7 @@ fun Inspector(app: StudioApp, studio: Studio, selected: String?, onEdit: (Studio
                 Btn("سوپرچتِ آزمایشی", { ChatHub.add(ChatMessage(Studio.newId(), Platform.TEST, "بیننده", "عالی بود! ادامه بده 🔥", ChatMessage.Kind.SUPERCHAT, "$5.00")) }, Modifier.fillMaxWidth())
             }
             SourceKind.PHONE -> T("کیفیتِ گرفتن از گوشی در پنلِ «گوشی» است.", 12, K.Dim)
-            SourceKind.SCREEN -> {
-                val win = System.getProperty("os.name").lowercase().contains("win")
-                T(if (win) "تمامِ صفحه، یا فقط یک پنجره با نوشتنِ عنوانش (همان که بالای پنجره نوشته):" else "شمارهٔ صفحه (برای چند مانیتور): خالی = اولی", 11, K.Dim)
-                Spacer(Modifier.height(4.dp))
-                if (win) Field(src.prop("window"), { setSrc(src.with("window", it)) }, Modifier.fillMaxWidth(), hint = "عنوانِ پنجره (خالی = کلِ صفحه)")
-                else Field(src.prop("display"), { setSrc(src.with("display", it)) }, Modifier.fillMaxWidth(), hint = "0", ltr = true)
-                app.engine.sourceError(src.id)?.let { T("گرفتنِ صفحه نشد: $it", 12, K.Live) }
-            }
+            SourceKind.SCREEN -> ScreenSettings(app, src) { setSrc(it) }
             SourceKind.BROWSER -> {
                 T("نشانیِ ویجت (StreamElements، Streamlabs…) یا هر صفحه، یا یک فایلِ HTML روی همین کامپیوتر:", 11, K.Dim)
                 Spacer(Modifier.height(4.dp))

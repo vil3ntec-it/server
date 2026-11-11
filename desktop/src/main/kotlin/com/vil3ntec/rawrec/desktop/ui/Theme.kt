@@ -35,6 +35,8 @@ object K {
     val Bg = Color(0xFF0B0E13)
     val Panel = Color(0xFF11151C)
     val Raised = Color(0xFF171C25)
+    /** A card inside a panel: a step lighter than the panel. */
+    val Card = Color(0xFF141922)
     val Hover = Color(0xFF1E2430)
     val Line = Color(0xFF242B37)
     val LineHi = Color(0xFF333C4B)
@@ -61,15 +63,64 @@ object K {
 fun T(text: String, size: Int = 13, color: Color = K.Text, bold: Boolean = false, modifier: Modifier = Modifier, align: TextAlign? = null, maxLines: Int = Int.MAX_VALUE) =
     Text(text, modifier, color = color, fontSize = size.sp, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal, fontFamily = K.font, textAlign = align, maxLines = maxLines, lineHeight = (size * 1.45).sp)
 
-/** A section of a side panel: a small capital-like title and its content. */
+/**
+ * A section of a side panel, as a card: a title (with an optional short explanation under it), then its content.
+ * Cards keep each group of settings visibly together, so a long panel still reads at a glance.
+ */
 @Composable
-fun Section(title: String, modifier: Modifier = Modifier, trailing: @Composable RowScope.() -> Unit = {}, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp)) {
-        Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            T(title, 12, K.Dim, bold = true, modifier = Modifier.weight(1f))
+fun Section(title: String, modifier: Modifier = Modifier, subtitle: String? = null, trailing: @Composable RowScope.() -> Unit = {}, content: @Composable ColumnScope.() -> Unit) {
+    Column(modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 5.dp)
+        .clip(RoundedCornerShape(10.dp)).background(K.Card).border(1.dp, K.Line, RoundedCornerShape(10.dp)).padding(12.dp)) {
+        Row(Modifier.fillMaxWidth().padding(bottom = if (subtitle == null) 10.dp else 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(width = 3.dp, height = 14.dp).clip(RoundedCornerShape(2.dp)).background(K.Accent))
+            Spacer(Modifier.width(8.dp))
+            T(title, 13, K.Text, bold = true, modifier = Modifier.weight(1f))
             trailing()
         }
+        if (subtitle != null) T(subtitle, 11, K.Faint, modifier = Modifier.padding(bottom = 10.dp))
         content()
+    }
+}
+
+/** A small label above a control. */
+@Composable
+fun Label(text: String, modifier: Modifier = Modifier) = T(text, 11, K.Dim, modifier = modifier.padding(top = 8.dp, bottom = 4.dp))
+
+/** A quiet explanation under a control. */
+@Composable
+fun Hint(text: String, color: Color = K.Faint) = T(text, 11, color, modifier = Modifier.padding(top = 4.dp))
+
+/** A big choice: a mark, a title and one line of explanation; lit with the accent when chosen. */
+@Composable
+fun Tile(mark: String, title: String, subtitle: String, on: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    val src = remember { MutableInteractionSource() }
+    val hover by src.collectIsHoveredAsState()
+    Column(modifier.clip(RoundedCornerShape(10.dp))
+        .background(if (on) K.AccentDim else if (hover && enabled) K.Hover else K.Raised)
+        .border(if (on) 1.5.dp else 1.dp, if (on) K.Accent else K.Line, RoundedCornerShape(10.dp))
+        .hoverable(src).clickable(enabled = enabled, interactionSource = src, indication = null) { onClick() }.padding(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally) {
+        T(mark, 22, if (on) K.Accent else K.Dim)
+        T(title, 12, if (on) K.Accent else K.Text, bold = true, maxLines = 1)
+        T(subtitle, 10, K.Faint, align = TextAlign.Center, maxLines = 2)
+    }
+}
+
+/** The side panel's tabs: a mark over a short name, the chosen one underlined with the accent. */
+@Composable
+fun <V> TabBar(tabs: List<Triple<V, String, String>>, value: V, onPick: (V) -> Unit, modifier: Modifier = Modifier) {
+    Row(modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        for ((v, mark, label) in tabs) {
+            val sel = v == value
+            val src = remember { MutableInteractionSource() }
+            val hover by src.collectIsHoveredAsState()
+            Column(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).background(if (sel) K.AccentDim else if (hover) K.Hover else Color.Transparent)
+                .hoverable(src).clickable(interactionSource = src, indication = null) { onPick(v) }.padding(vertical = 5.dp),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                T(mark, 15, if (sel) K.Accent else K.Dim)
+                T(label, 10, if (sel) K.Accent else K.Dim, bold = sel, maxLines = 1)
+            }
+        }
     }
 }
 

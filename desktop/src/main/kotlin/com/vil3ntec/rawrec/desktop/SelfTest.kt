@@ -36,6 +36,8 @@ object SelfTest {
         val codec = args.getOrNull(1) ?: "h264"
         println("rawrec-desktop selftest: os ${System.getProperty("os.name")} ${System.getProperty("os.arch")}, java ${System.getProperty("java.version")}")
         val capErr = com.vil3ntec.rawrec.desktop.studio.Devices.captureError
+        if (capErr == null) println("screen capture: " + (if (com.vil3ntec.rawrec.desktop.studio.Devices.hasDda) "desktop duplication (ddagrab)" else "standard") +
+            "; monitors: " + com.vil3ntec.rawrec.desktop.studio.Devices.monitors().joinToString { it.label })
         if (capErr != null) println("capture: unavailable — $capErr") else println("capture: " + listOf("gdigrab", "dshow", "avfoundation", "x11grab", "v4l2", "pulse").filter { org.bytedeco.ffmpeg.global.avformat.av_find_input_format(it) != null }.joinToString())
         println("noise model: ${com.vil3ntec.rawrec.desktop.studio.Denoiser.model()?.length() ?: "missing"} bytes")
         browserCheck()

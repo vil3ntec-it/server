@@ -269,4 +269,22 @@ class StudioFeaturesTest {
         assertTrue(got.map { it.third }.toSet().intersect(main.toSet()).size >= got.size - 2, "same clock as the main picture")
         assertTrue(blue > 200, "the background drawn on the upright canvas (blue=$blue)")
     }
+
+    @Test fun mainPictureFromPhoneComputerOrBoth() {
+        var s = Studio.default()
+        s = s.add(SourceKind.COLOR, "bg").first.let { st -> st.withScene(st.scene.copy(layers = listOf(st.scene.layers.last()) + st.scene.layers.dropLast(1))) }
+        s = s.add(SourceKind.TEXT, "title", mapOf("text" to "سلام")).first
+        assertEquals(Studio.MainFrom.PHONE, s.mainFrom)
+        val pc = s.useMain(Studio.MainFrom.COMPUTER)
+        assertEquals(Studio.MainFrom.COMPUTER, pc.mainFrom)
+        val kinds = pc.scene.layers.map { pc.source(it.sourceId)!!.kind }
+        assertEquals(listOf(SourceKind.COLOR, SourceKind.SCREEN, SourceKind.TEXT), kinds, "background under, the screen in the middle, the title on top")
+        val both = pc.useMain(Studio.MainFrom.BOTH)
+        assertEquals(Studio.MainFrom.BOTH, both.mainFrom)
+        assertEquals(1, both.sources.count { it.kind == SourceKind.SCREEN }, "the same screen source reused, never a second capture")
+        val phone = both.scene.layers.first { both.source(it.sourceId)!!.kind == SourceKind.PHONE }
+        assertTrue(phone.w < both.width * 0.5f && phone.x < both.width / 2f && phone.y > both.height / 2f, "phone small in the lower-left corner")
+        assertEquals(Studio.MainFrom.PHONE, both.useMain(Studio.MainFrom.PHONE).mainFrom)
+        assertEquals(both, Studio.fromJson(Studio.toJson(both)))
+    }
 }

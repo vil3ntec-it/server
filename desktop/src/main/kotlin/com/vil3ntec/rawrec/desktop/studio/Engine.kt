@@ -321,7 +321,7 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
         SourceKind.WEBCAM -> a.prop("device") != b.prop("device")
         SourceKind.VIDEO -> a.prop("path") != b.prop("path") || a.prop("audio", "1") != b.prop("audio", "1")
         SourceKind.IMAGE -> a.prop("path") != b.prop("path")
-        SourceKind.SCREEN -> a.prop("display") != b.prop("display") || a.prop("window") != b.prop("window")
+        SourceKind.SCREEN -> listOf("display", "window", "fps", "cursor", "method").any { a.prop(it) != b.prop(it) }
         SourceKind.BROWSER -> listOf("url", "w", "h", "fps", "css", "reload").any { a.prop(it) != b.prop(it) }
         else -> false
     }
@@ -330,7 +330,8 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
         SourceKind.PHONE -> PhoneSource(session)
         SourceKind.WEBCAM -> MediaSource.webcam(d.prop("device"))
         SourceKind.VIDEO -> MediaSource(null, d.prop("path"), loop = true, sound = if (d.prop("audio", "1") == "1") mixer.input("media-${d.id}") else null)
-        SourceKind.SCREEN -> MediaSource.screen(d.prop("display"), d.prop("window"), studio.fps)
+        SourceKind.SCREEN -> MediaSource.screen(d.prop("display"), d.prop("window"), d.prop("fps").toIntOrNull() ?: studio.fps,
+            d.prop("cursor", "1") == "1", d.prop("method", "auto"))
         SourceKind.SLIDESHOW -> SlideshowSource { studio.source(d.id) }
         SourceKind.COUNTER -> CounterSource { studio.source(d.id) }
         SourceKind.GOAL -> GoalSource { studio.source(d.id) }

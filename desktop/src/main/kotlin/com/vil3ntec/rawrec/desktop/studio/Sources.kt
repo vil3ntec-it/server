@@ -243,16 +243,31 @@ class MediaSource(
 
     companion object {
         /**
-         * This computer's screen (or, on Windows, one window by its title): the system's own capture
-         * (GDI on Windows, AVFoundation on macOS, X11 on Linux), with the mouse pointer.
+         * This computer's screen — one monitor, or on Windows one window by its title — with or without the mouse.
+         * Windows: Desktop Duplication (ddagrab: the graphics card copies the screen, games included, little CPU) when
+         * this FFmpeg has it and [method] is not "gdi"; GDI otherwise and for a single window. macOS: AVFoundation.
+         * Linux: X11, the chosen monitor's rectangle.
          */
-        fun screen(display: String, window: String, fps: Int): MediaSource {
+        fun screen(display: String, window: String, fps: Int, cursor: Boolean = true, method: String = "auto"): MediaSource {
             val os = System.getProperty("os.name").lowercase()
-            val r = fps.coerceIn(10, 60).toString()
+            val r = fps.coerceIn(10, 120).toString()
+            val mouse = if (cursor) "1" else "0"
+            val mon = Devices.monitors().let { ms -> ms.getOrNull(display.toIntOrNull() ?: 0) ?: ms.firstOrNull() }
             return when {
-                os.contains("win") -> MediaSource("gdigrab", if (window.isNotBlank()) "title=$window" else "desktop", true, mapOf("framerate" to r, "draw_mouse" to "1"))
-                os.contains("mac") -> MediaSource("avfoundation", "Capture screen ${display.ifBlank { "0" }}:none", true, mapOf("framerate" to r, "capture_cursor" to "1", "pixel_format" to "bgr0"))
-                else -> MediaSource("x11grab", display.ifBlank { System.getenv("DISPLAY") ?: ":0" }, true, mapOf("framerate" to r, "draw_mouse" to "1"))
+                os.contains("win") && window.isNotBlank() -> MediaSource("gdigrab", "title=$window", true, mapOf("framerate" to r, "draw_mouse" to mouse))
+                os.contains("win") && method != "gdi" && Devices.hasDda ->
+                    MediaSource("lavfi", "ddagrab=output_idx=${mon?.index ?: 0}:framerate=$r:draw_mouse=$mouse,hwdownload,format=bgra", true)
+                os.contains("win") -> MediaSource("gdigrab", "desktop", true, buildMap {
+                    put("framerate", r); put("draw_mouse", mouse)
+                    if (mon != null) { put("offset_x", mon.x.toString()); put("offset_y", mon.y.toString()); put("video_size", "${mon.w}x${mon.h}") }
+                })
+                os.contains("mac") -> MediaSource("avfoundation", "Capture screen ${mon?.index ?: 0}:none", true, mapOf("framerate" to r, "capture_cursor" to mouse, "pixel_format" to "bgr0"))
+                else -> {
+                    val d = System.getenv("DISPLAY") ?: ":0"
+                    MediaSource("x11grab", if (mon != null) "$d+${mon.x},${mon.y}" else d, true, buildMap {
+                        put("framerate", r); put("draw_mouse", mouse); if (mon != null) put("video_size", "${mon.w}x${mon.h}")
+                    })
+                }
             }
         }
 

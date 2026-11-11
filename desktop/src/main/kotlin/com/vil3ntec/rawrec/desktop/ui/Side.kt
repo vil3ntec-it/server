@@ -17,19 +17,76 @@ import com.vil3ntec.rawrec.desktop.Encoders
 import com.vil3ntec.rawrec.desktop.Session
 import com.vil3ntec.rawrec.desktop.studio.*
 
+/**
+ * Where the picture comes from: the first question is answered with one click (the phone, this computer, or both), then
+ * each one's own settings. Changing it rebuilds only the main scene's picture layer; titles, chat, cameras stay.
+ */
 @Composable
-fun PhonePanel(app: StudioApp, devices: List<Adb.Device>, st: Session.State, locked: Boolean) {
+fun SourcePanel(app: StudioApp, devices: List<Adb.Device>, st: Session.State, studio: Studio, onEdit: (Studio) -> Unit, locked: Boolean) {
+    val from = studio.mainFrom
+    Section("تصویرِ اصلی از کجا بیاید؟", subtitle = "یکی را بزن؛ بقیهٔ صحنه (متن، چت، وب‌کم) سرِ جایش می‌ماند.") {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Tile("▯", "گوشی", "با کابل، کیفیتِ بالا", from == Studio.MainFrom.PHONE, { onEdit(studio.useMain(Studio.MainFrom.PHONE)) }, Modifier.weight(1f))
+            Tile("▭", "همین کامپیوتر", "صفحه، بازی یا پنجره", from == Studio.MainFrom.COMPUTER, { onEdit(studio.useMain(Studio.MainFrom.COMPUTER)) }, Modifier.weight(1f))
+            Tile("⧉", "هر دو", "صفحه + گوشی در گوشه", from == Studio.MainFrom.BOTH, { onEdit(studio.useMain(Studio.MainFrom.BOTH)) }, Modifier.weight(1f))
+        }
+        if (from == null) Hint("صحنهٔ فعلی را خودت چیده‌ای؛ با زدنِ یکی از این‌ها فقط تصویرِ اصلی‌اش عوض می‌شود.")
+    }
+    val usesScreen = from == Studio.MainFrom.COMPUTER || from == Studio.MainFrom.BOTH || studio.scene.layers.any { studio.source(it.sourceId)?.kind == SourceKind.SCREEN }
+    val usesPhone = from != Studio.MainFrom.COMPUTER
+    if (usesScreen) studio.sources.firstOrNull { it.kind == SourceKind.SCREEN }?.let { src ->
+        Section("صفحهٔ کامپیوتر") { ScreenSettings(app, src) { ns -> onEdit(studio.withSource(ns)) } }
+    }
+    if (usesPhone) PhoneSettings(app, devices, st, locked)
+    else Section("گوشی") { T("الان از گوشی استفاده نمی‌شود. برای پخشِ بازیِ گوشی «گوشی» یا «هر دو» را بزن.", 12, K.Dim) }
+}
+
+/** One screen source's settings: which monitor (or window), frame rate, the mouse, and on Windows how it is captured. */
+@Composable
+fun ScreenSettings(app: StudioApp, src: SourceDef, set: (SourceDef) -> Unit) {
+    val win = System.getProperty("os.name").lowercase().contains("win")
+    val mons = remember { Devices.monitors() }
+    if (mons.size > 1) {
+        Label("کدام مانیتور")
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (m in mons) Btn(m.label, { set(src.with("display", m.index.toString()).with("window", "")) }, Modifier.fillMaxWidth(),
+                on = src.prop("window").isBlank() && (src.prop("display").toIntOrNull() ?: 0) == m.index, height = 28.dp)
+        }
+    } else if (mons.size == 1) T(mons[0].label, 12, K.Dim)
+    if (win) {
+        Label("فقط یک پنجره (اختیاری) — عنوانِ همان پنجره را بنویس")
+        var w by remember(src.id) { mutableStateOf(src.prop("window")) }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Field(w, { w = it }, Modifier.weight(1f), hint = "خالی = کلِ مانیتور")
+            Btn("اعمال", { set(src.with("window", w.trim())) }, height = 30.dp)
+        }
+    }
+    Label("فریم در ثانیه")
+    Seg(listOf("" to "مثلِ استودیو", "30" to "30", "60" to "60"), src.prop("fps"), { set(src.with("fps", it)) })
+    Label("نشانگرِ ماوس")
+    Seg(listOf("1" to "نشان بده", "0" to "پنهان"), src.prop("cursor", "1"), { set(src.with("cursor", it)) })
+    if (win) {
+        Label("روشِ گرفتن")
+        Seg(listOf("auto" to "سریع (کارتِ گرافیک)", "gdi" to "سازگار"), src.prop("method", "auto"), { set(src.with("method", it)) })
+        Hint(if (Devices.hasDda) "«سریع» صفحه را با کارتِ گرافیک می‌گیرد: بازی‌های تمام‌صفحه هم، با کمترین بار روی پردازنده."
+             else "روشِ سریع در این ویندوز در دسترس نیست؛ روشِ سازگار به کار می‌رود.")
+    }
+    app.engine.sourceError(src.id)?.let { Hint("گرفتنِ صفحه نشد: $it", K.Live) }
+}
+
+@Composable
+fun PhoneSettings(app: StudioApp, devices: List<Adb.Device>, st: Session.State, locked: Boolean) {
     val s = app.settings
     var serial by remember { mutableStateOf<String?>(null) }
     if (serial == null || devices.none { it.serial == serial }) serial = devices.firstOrNull { it.usable }?.serial
     val live = st.phase != Session.Phase.IDLE
-    Section("گوشی با کابل") {
+    Section("گوشی با کابل", subtitle = "گوشی را وصل کن و در «گزینه‌های توسعه‌دهنده» «اشکال‌زدایی USB» را روشن کن.") {
         if (app.adb == null) T("adb پیدا نشد؛ برنامه را دوباره نصب کن.", 12, K.Live)
-        else if (devices.isEmpty()) T("گوشی را با کابل وصل کن و در «گزینه‌های توسعه‌دهنده» «اشکال‌زدایی USB» را روشن کن.", 12, K.Dim)
+        else if (devices.isEmpty()) T("گوشی‌ای پیدا نشد.", 12, K.Dim)
         for (d in devices) {
             val on = d.serial == serial
-            Row(Modifier.fillMaxWidth().padding(bottom = 4.dp).clip(RoundedCornerShape(6.dp)).background(if (on) K.AccentDim else K.Raised)
-                .border(1.dp, if (on) K.Accent else K.Line, RoundedCornerShape(6.dp)).clickable(enabled = d.usable && !live) { serial = d.serial }.padding(8.dp),
+            Row(Modifier.fillMaxWidth().padding(bottom = 4.dp).clip(RoundedCornerShape(8.dp)).background(if (on) K.AccentDim else K.Raised)
+                .border(1.dp, if (on) K.Accent else K.Line, RoundedCornerShape(8.dp)).clickable(enabled = d.usable && !live) { serial = d.serial }.padding(8.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(8.dp).clip(RoundedCornerShape(50)).background(if (d.usable) K.Good else K.Warn))
                 Spacer(Modifier.width(8.dp))
@@ -41,65 +98,89 @@ fun PhonePanel(app: StudioApp, devices: List<Adb.Device>, st: Session.State, loc
         }
         Spacer(Modifier.height(4.dp))
         Btn(if (live) "قطعِ اتصال" else "وصل شو", { if (live) app.disconnect() else serial?.let { app.connect(it) } },
-            Modifier.fillMaxWidth(), on = live, enabled = live || serial != null, height = 34.dp, bold = true)
-        if (st.phase == Session.Phase.CONNECTING) T("در حالِ وصل شدن…", 12, K.Dim, modifier = Modifier.padding(top = 6.dp))
-        if (st.phase == Session.Phase.LIVE) T("${st.device} • ${st.codec.uppercase()} ${st.width}×${st.height} • ${st.fps} فریم • ${"%.1f".format(st.mbps)} مگابیت", 12, K.Accent, modifier = Modifier.padding(top = 6.dp))
-        st.error?.let { T(it, 12, K.Live, modifier = Modifier.padding(top = 6.dp)) }
+            Modifier.fillMaxWidth(), on = live, enabled = live || serial != null, height = 36.dp, bold = true)
+        if (st.phase == Session.Phase.CONNECTING) Hint("در حالِ وصل شدن…", K.Dim)
+        if (st.phase == Session.Phase.LIVE) Hint("${st.device} • ${st.codec.uppercase()} ${st.width}×${st.height} • ${st.fps} فریم • ${"%.1f".format(st.mbps)} مگابیت", K.Accent)
+        st.error?.let { Hint(it, K.Live) }
     }
-    HLine()
-    Section("کیفیتِ گرفتن از گوشی") {
-        T("گوشی خودش تصویر را می‌سازد و از کابل می‌فرستد؛ هر چه بیشتر، نزدیک‌تر به صفحهٔ گوشی. تغییرها از اتصالِ بعدی اثر دارند.", 11, K.Faint)
-        Spacer(Modifier.height(6.dp))
+    Section("کیفیتِ تصویرِ گوشی", subtitle = "هر چه بیشتر، نزدیک‌تر به خودِ صفحهٔ گوشی. از اتصالِ بعدی اثر دارد.") {
+        Label("کدک")
         Seg(listOf("h265" to "HEVC", "h264" to "H.264", "av1" to "AV1"), s.phoneCodec, { v -> app.update { it.copy(phoneCodec = v) } }, enabled = !live)
-        Spacer(Modifier.height(6.dp))
-        Seg(listOf(20 to "20", 40 to "40", 60 to "60", 80 to "80", 100 to "100 Mb"), s.phoneMbps, { v -> app.update { it.copy(phoneMbps = v) } }, enabled = !live)
-        Spacer(Modifier.height(6.dp))
+        Label("حجمِ داده (مگابیت در ثانیه)")
+        Seg(listOf(20 to "20", 40 to "40", 60 to "60", 80 to "80", 100 to "100"), s.phoneMbps, { v -> app.update { it.copy(phoneMbps = v) } }, enabled = !live)
+        Label("اندازه")
         Seg(listOf(0 to "اصلی", 2560 to "1440p", 1920 to "1080p"), s.phoneSize, { v -> app.update { it.copy(phoneSize = v) } }, enabled = !live)
+        Label("فریم در ثانیه")
+        Seg(listOf(30 to "30", 60 to "60", 90 to "90", 120 to "120"), s.phoneFps, { v -> app.update { it.copy(phoneFps = v) } }, enabled = !live)
+    }
+}
+
+/** Recording: encoder, file size and quality, long recordings, the upright file, the replay buffer. */
+@Composable
+fun RecordPanel(app: StudioApp, encoders: List<Encoders.Encoder>?, studio: Studio, recording: Boolean) {
+    val s = app.settings
+    Section("انکودر", subtitle = "کارتِ گرافیکِ همین کامپیوتر اول می‌آید: سریع‌تر و بی‌فشار روی بازی.") {
+        EncoderPick(encoders, s.recEncoder, null, enabled = !recording) { v -> app.update { it.copy(recEncoder = v) } }
+    }
+    Section("کیفیتِ فایل") {
+        Label("اندازه")
+        Seg(listOf(0 to "همان تصویر", 1440 to "1440p", 2160 to "4K"), if (s.recHeight == studio.height) 0 else s.recHeight, { v -> app.update { it.copy(recHeight = if (v == 0) studio.height else v) } }, enabled = !recording)
+        Hint("1440p و 4K در یوتیوب کیفیتِ بهتری می‌گیرند (یوتیوب به ویدیوهای بزرگ‌تر کدکِ بهتر می‌دهد).")
+        Label("کیفیت (مگابیت در ثانیه)")
+        Seg(listOf(8000 to "8", 16000 to "16", 30000 to "30", 50000 to "50", 80000 to "80"), s.recKbps, { v -> app.update { it.copy(recKbps = v) } }, enabled = !recording)
+        Hint(adviceRec(s.recHeight, studio.fps, s.recKbps), K.Accent)
+    }
+    Section("ضبط‌های بلند و عمودی") {
+        Label("یک فایلِ تازه هر…")
+        Seg(listOf(0 to "نه", 15 to "۱۵ دقیقه", 30 to "۳۰", 60 to "۶۰"), s.splitMinutes, { v -> app.update { it.copy(splitMinutes = v) } })
+        Label("فایلِ عمودی (۹:۱۶) کنارِ فایلِ اصلی، از صحنهٔ عمودی")
+        Seg(listOf(false to "نه", true to "بله"), s.recVertical, { v -> app.update { it.copy(recVertical = v) } }, enabled = !recording)
+        if (s.recVertical && studio.verticalScene == null) Hint("اول یک صحنهٔ عمودی بساز (+ عمودی ۹:۱۶ در فهرستِ صحنه‌ها).", K.Warn)
+    }
+    Section("بافرِ بازپخش", subtitle = "چند ثانیهٔ آخر همیشه آماده است؛ F11 یا Ctrl+Alt+S آن را فایل می‌کند.") {
+        Seg(listOf(15 to "۱۵ ث", 30 to "۳۰ ث", 60 to "۶۰ ث", 120 to "۲ دقیقه"), s.replaySeconds.takeIf { it > 0 } ?: 30, { v -> app.update { it.copy(replaySeconds = v) } }, enabled = app.replay == null)
+    }
+}
+
+/** The studio itself: canvas, shortcuts, and where things are kept. */
+@Composable
+fun SettingsPanel(app: StudioApp, studio: Studio, onEdit: (Studio) -> Unit, busy: Boolean) {
+    val s = app.settings
+    Section("تصویرِ استودیو", subtitle = "همان که ضبط و پخش می‌شود.") {
+        Label("اندازه")
+        Seg(listOf((1920 to 1080) to "1080p", (2560 to 1440) to "1440p", (1280 to 720) to "720p", (1080 to 1920) to "عمودی"),
+            studio.width to studio.height, { (w, h) -> onEdit(studio.resized(w, h)) }, enabled = !busy)
+        Label("فریم در ثانیه")
+        Seg(listOf(30 to "30", 60 to "60"), studio.fps, { onEdit(studio.copy(fps = it)) }, enabled = !busy)
+        if (busy) Hint("حینِ ضبط یا پخش اندازه و فریم ثابت می‌مانند تا تصویر وسطِ کار جابه‌جا نشود.")
+    }
+    Section("میان‌بُرهای سراسری", subtitle = "حتی وقتی بازی یا پنجرهٔ دیگری جلوست.") {
+        Seg(listOf(true to "روشن", false to "خاموش"), s.globalKeys, { v -> app.update { it.copy(globalKeys = v) } })
+        GlobalKeys.error?.takeIf { s.globalKeys }?.let { Hint(it, K.Live) }
         Spacer(Modifier.height(6.dp))
-        Seg(listOf(30 to "30", 60 to "60", 90 to "90", 120 to "120 فریم"), s.phoneFps, { v -> app.update { it.copy(phoneFps = v) } }, enabled = !live)
+        for ((k, v) in listOf("Ctrl+Alt+R" to "ضبط / پایان", "Ctrl+Alt+P" to "مکث", "Ctrl+Alt+L" to "پخشِ زنده", "Ctrl+Alt+S" to "ذخیرهٔ بازپخش", "Ctrl+Alt+K" to "عکس", "Ctrl+Alt+1…9" to "صحنه"))
+            KeyRow(k, v)
+    }
+    Section("میان‌بُرهای داخلِ برنامه") {
+        for ((k, v) in listOf("F9" to "ضبط", "F8" to "مکث", "F10" to "پخش", "F11" to "ذخیرهٔ بازپخش", "F12" to "عکس", "Ctrl+1…9" to "صحنه",
+            "Ctrl+Z / Ctrl+Y" to "برگرداندن / دوباره", "Ctrl+D" to "تکثیرِ لایه", "Ctrl+C / Ctrl+V" to "کپی / چسباندن", "Delete" to "حذفِ لایه", "جهت‌ها (+Shift)" to "جابه‌جایی ۱ (۱۰) پیکسل"))
+            KeyRow(k, v)
+    }
+    Section("فایل‌ها") {
+        KeyRow("ضبط‌ها و عکس‌ها", com.vil3ntec.rawrec.desktop.AppPaths.videos.absolutePath)
+        KeyRow("تنظیمات", com.vil3ntec.rawrec.desktop.AppPaths.data.absolutePath)
+        Hint("کلیدهای پخش رمزگذاری‌شده فقط روی همین کامپیوتر می‌مانند.")
     }
 }
 
 @Composable
-fun OutputPanel(app: StudioApp, encoders: List<Encoders.Encoder>?, studio: Studio, onEdit: (Studio) -> Unit, recording: Boolean, onAir: Boolean) {
-    val s = app.settings
-    val busy = recording || onAir
-    Section("تصویرِ خروجی (برای ضبط و پخش)") {
-        Seg(listOf((1920 to 1080) to "1080p افقی", (2560 to 1440) to "1440p افقی", (1080 to 1920) to "عمودی 1080×1920", (1280 to 720) to "720p"),
-            studio.width to studio.height, { (w, h) -> onEdit(studio.resized(w, h)) }, enabled = !busy)
-        Spacer(Modifier.height(6.dp))
-        Seg(listOf(30 to "30 فریم", 60 to "60 فریم"), studio.fps, { onEdit(studio.copy(fps = it)) }, enabled = !busy)
-        if (busy) T("حینِ ضبط یا پخش اندازه و فریم ثابت می‌مانند (تصویر هیچ‌وقت وسطِ کار کوچک یا جابه‌جا نمی‌شود).", 11, K.Faint, modifier = Modifier.padding(top = 4.dp))
+private fun KeyRow(key: String, what: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        T(what, 12, K.Text, modifier = Modifier.weight(1f), maxLines = 2)
+        Box(Modifier.clip(RoundedCornerShape(5.dp)).background(K.Bg).border(1.dp, K.Line, RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
+            T(key, 11, K.Dim, maxLines = 1)
+        }
     }
-    HLine()
-    Section("ضبط") {
-        EncoderPick(encoders, s.recEncoder, null, enabled = !recording) { v -> app.update { it.copy(recEncoder = v) } }
-        Spacer(Modifier.height(6.dp))
-        T("اندازهٔ فایل", 11, K.Dim)
-        Seg(listOf(0 to "همان تصویر", 1440 to "1440p", 2160 to "4K"), if (s.recHeight == studio.height) 0 else s.recHeight, { v -> app.update { it.copy(recHeight = if (v == 0) studio.height else v) } }, enabled = !recording)
-        T("1440p و 4K در یوتیوب کیفیتِ بهتری می‌گیرند (یوتیوب به ویدیوهای بزرگ‌تر کدکِ بهتر می‌دهد).", 11, K.Faint, modifier = Modifier.padding(top = 4.dp))
-        Spacer(Modifier.height(6.dp))
-        T("کیفیت (مگابیت در ثانیه)", 11, K.Dim)
-        Seg(listOf(8000 to "8", 16000 to "16", 30000 to "30", 50000 to "50", 80000 to "80"), s.recKbps, { v -> app.update { it.copy(recKbps = v) } }, enabled = !recording)
-        T(adviceRec(s.recHeight, studio.fps, s.recKbps), 11, K.Accent, modifier = Modifier.padding(top = 4.dp))
-        Spacer(Modifier.height(6.dp))
-        T("تقسیمِ خودکارِ ضبط‌های بلند", 11, K.Dim)
-        Seg(listOf(0 to "نه", 15 to "۱۵ دقیقه", 30 to "۳۰", 60 to "۶۰"), s.splitMinutes, { v -> app.update { it.copy(splitMinutes = v) } })
-        Spacer(Modifier.height(6.dp))
-        T("ضبطِ عمودی (۹:۱۶) کنارِ ضبطِ اصلی — فایلِ جدا برای شورت، از صحنهٔ عمودی", 11, K.Dim)
-        Seg(listOf(false to "نه", true to "بله"), s.recVertical, { v -> app.update { it.copy(recVertical = v) } }, enabled = app.recording == null)
-        Spacer(Modifier.height(6.dp))
-        T("بافرِ بازپخش: چند ثانیهٔ آخر همیشه آماده است؛ F11 یا «ذخیرهٔ بازپخش» آن را فایل می‌کند", 11, K.Dim)
-        Seg(listOf(15 to "۱۵ ث", 30 to "۳۰ ث", 60 to "۶۰ ث", 120 to "۲ دقیقه"), s.replaySeconds.takeIf { it > 0 } ?: 30, { v -> app.update { it.copy(replaySeconds = v) } }, enabled = app.replay == null)
-        Spacer(Modifier.height(6.dp))
-        T("میان‌بُرها: F9 ضبط • F8 مکث • F10 پخش • F11 ذخیرهٔ بازپخش • F12 عکس • Ctrl+1..9 صحنه • Ctrl+Z/Y برگرداندن • Ctrl+D تکثیر • Ctrl+C/V کپی • Delete حذف • جهت‌ها جابه‌جایی (با Shift ده‌تایی)", 11, K.Faint)
-        Spacer(Modifier.height(6.dp))
-        T("میان‌بُرهای سراسری (حتی وقتی بازی یا پنجرهٔ دیگری جلوست): Ctrl+Alt+R ضبط • Ctrl+Alt+P مکث • Ctrl+Alt+L پخش • Ctrl+Alt+S ذخیرهٔ بازپخش • Ctrl+Alt+K عکس • Ctrl+Alt+1..9 صحنه", 11, K.Dim)
-        Seg(listOf(true to "روشن", false to "خاموش"), s.globalKeys, { v -> app.update { it.copy(globalKeys = v) } })
-        GlobalKeys.error?.takeIf { s.globalKeys }?.let { T(it, 11, K.Live) }
-    }
-    HLine()
-    LivePanel(app, encoders, onAir)
 }
 
 private fun adviceRec(h: Int, fps: Int, kbps: Int): String {
@@ -124,13 +205,14 @@ fun LivePanel(app: StudioApp, encoders: List<Encoders.Encoder>?, onAir: Boolean)
     val s = app.settings
     var editing by remember { mutableStateOf<Destination?>(null) }
     var keyText by remember { mutableStateOf("") }
-    Section("پخشِ زنده — همهٔ پلتفرم‌ها با هم", trailing = {
+    var vcMsg by remember { mutableStateOf<String?>(null) }
+    Section("پلتفرم‌ها", subtitle = "همه با هم: یوتیوب، توییچ، کیک یا هر سرورِ RTMP — افقی یا عمودی (شورت).", trailing = {
         Btn("+ پلتفرم", {
             val d = Destination(Studio.newId(), Platform.YOUTUBE, "", Destination.defaultUrl(Platform.YOUTUBE), Secrets.seal(""))
             editing = d; keyText = ""
         }, height = 24.dp, enabled = !onAir)
     }) {
-        if (s.dests.isEmpty() && editing == null) T("پلتفرمی اضافه نشده. یوتیوب، توییچ، کیک یا هر سرورِ RTMP — همه با هم.", 12, K.Faint)
+        if (s.dests.isEmpty() && editing == null) T("هنوز پلتفرمی نیست — «+ پلتفرم» را بزن و کلیدِ پخش را بگذار.", 12, K.Dim)
         val per = app.live?.perDest; val vPer = app.vLive?.perDest
         val ready = s.dests.filter { it.enabled && it.url.isNotBlank() && it.key.isNotBlank() }
         for ((i, d) in s.dests.withIndex()) {
@@ -170,17 +252,26 @@ fun LivePanel(app: StudioApp, encoders: List<Encoders.Encoder>?, onAir: Boolean)
             }
             Spacer(Modifier.height(6.dp))
         }
-        Spacer(Modifier.height(6.dp))
+    }
+    Section("کیفیتِ پخش", subtitle = "اگر اینترنت نکشد خودکار پایین می‌آید و بعد دوباره بالا می‌رود؛ پخش قطع نمی‌شود.") {
         EncoderPick(encoders, s.liveEncoder, Encoders.Family.H264, enabled = !onAir) { v -> app.update { it.copy(liveEncoder = v) } }
-        Spacer(Modifier.height(6.dp))
-        T("بیشترین کیفیت (مگابیت در ثانیه) — اگر اینترنت نکشد خودکار پایین می‌آید و دوباره بالا می‌رود", 11, K.Dim)
-        Spacer(Modifier.height(4.dp))
+        Label("بیشترین کیفیت (مگابیت در ثانیه)")
         Seg(listOf(3000 to "3", 4500 to "4.5", 6000 to "6", 8000 to "8", 12000 to "12"), s.liveKbps, { v -> app.update { it.copy(liveKbps = v) } }, enabled = !onAir)
-        T("یوتیوب 1080p60: ۶ تا ۱۲؛ توییچ: حداکثر ۶ تا ۸.", 11, K.Faint, modifier = Modifier.padding(top = 4.dp))
+        Hint("یوتیوب 1080p60: ۶ تا ۱۲؛ توییچ: حداکثر ۶ تا ۸.")
         if (s.dests.any { it.vertical }) {
-            Spacer(Modifier.height(6.dp))
-            T("کیفیتِ پخشِ عمودی (مگابیت)", 11, K.Dim)
+            Label("کیفیتِ پخشِ عمودی (مگابیت)")
             Seg(listOf(3000 to "3", 4500 to "4.5", 6000 to "6", 8000 to "8"), s.vKbps, { v -> app.update { it.copy(vKbps = v) } }, enabled = !onAir)
+        }
+    }
+    Section("دوربینِ مجازی", subtitle = "تصویرِ استودیو به‌عنوانِ دوربین در Zoom، Meet، Discord و مرورگر.") {
+        val vc = app.vcam
+        Btn(if (vc != null) "خاموش کن" else "روشن کن", { if (vc != null) app.stopVirtualCamera() else app.startVirtualCamera()?.let { vcMsg = it } },
+            Modifier.fillMaxWidth(), on = vc != null, height = 32.dp, bold = true)
+        when {
+            vc?.error != null -> Hint(vc.error!!, K.Live)
+            vc != null && vc.watched -> Hint("برنامه‌ای آن را نشان می‌دهد.", K.Good)
+            vc != null -> Hint("در برنامهٔ دیگر دوربینِ «${VirtualCamera.NAME}» را انتخاب کن.")
+            vcMsg != null -> Hint(vcMsg!!, K.Warn)
         }
     }
 }

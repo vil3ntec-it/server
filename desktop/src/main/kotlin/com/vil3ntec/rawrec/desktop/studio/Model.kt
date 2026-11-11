@@ -197,6 +197,45 @@ data class Studio(
         return copy(scenes = scenes + sc, focus = sc.id, vertical = vertical ?: sc.id)
     }
 
+    /** Where the main picture comes from (the first question of the Source tab); null when the owner arranged it by hand. */
+    enum class MainFrom { PHONE, COMPUTER, BOTH }
+
+    val mainFrom: MainFrom?
+        get() {
+            val sc = scene
+            fun full(l: Layer) = l.visible && l.w >= width * 0.9f && l.h >= height * 0.9f
+            val screenFull = sc.layers.any { source(it.sourceId)?.kind == SourceKind.SCREEN && full(it) }
+            val phones = sc.layers.filter { source(it.sourceId)?.kind == SourceKind.PHONE && it.visible }
+            return when {
+                screenFull && phones.isEmpty() -> MainFrom.COMPUTER
+                screenFull && phones.all { !full(it) } -> MainFrom.BOTH
+                !screenFull && phones.any { full(it) } -> MainFrom.PHONE
+                else -> null
+            }
+        }
+
+    /** The main scene's picture from the phone, this computer's screen, or the screen with the phone small in the lower-left corner. */
+    fun useMain(from: MainFrom): Studio {
+        var srcs = sources
+        val phone = srcs.firstOrNull { it.kind == SourceKind.PHONE } ?: SourceDef("phone", SourceKind.PHONE, "گوشی").also { srcs = srcs + it }
+        val screen = srcs.firstOrNull { it.kind == SourceKind.SCREEN }
+            ?: SourceDef(newId(), SourceKind.SCREEN, "صفحهٔ کامپیوتر", mapOf("display" to "0", "window" to "", "cursor" to "1", "method" to "auto")).also { srcs = srcs + it }
+        val sc = scene
+        val kept = sc.layers.filter { l -> srcs.firstOrNull { it.id == l.sourceId }?.kind !in setOf(SourceKind.PHONE, SourceKind.SCREEN) }
+        // the picture goes right above the backgrounds (colours), under everything drawn on top
+        val bgCount = kept.takeWhile { l -> srcs.firstOrNull { it.id == l.sourceId }?.kind == SourceKind.COLOR }.size
+        val W = width.toFloat(); val H = height.toFloat()
+        val main = when (from) {
+            MainFrom.PHONE -> listOf(Layer(newId(), phone.id, 0f, 0f, W, H))
+            MainFrom.COMPUTER -> listOf(Layer(newId(), screen.id, 0f, 0f, W, H))
+            MainFrom.BOTH -> listOf(Layer(newId(), screen.id, 0f, 0f, W, H),
+                // bottom-left: the bottom-right corner is where a webcam usually goes
+                Layer(newId(), phone.id, W * 0.02f, H - H * 0.3f - H * 0.03f, W * 0.3f, H * 0.3f, radius = 16f))
+        }
+        val layers = kept.take(bgCount) + main + kept.drop(bgCount)
+        return copy(sources = srcs).withScene(sc.copy(layers = layers))
+    }
+
     /** Open a scene: a vertical one goes on the upright canvas and is edited there; a main one as before. */
     fun open(id: String): Studio {
         val sc = sceneById(id) ?: return this

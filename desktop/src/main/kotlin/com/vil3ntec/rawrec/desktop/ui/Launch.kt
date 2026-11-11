@@ -47,13 +47,15 @@ fun launch() = application {
     }
 }
 
-private enum class Tab(val label: String) { PROPS("ویژگی‌ها"), OUTPUT("خروجی"), PHONE("گوشی"), CHAT("چت"), STATS("آمار") }
+private enum class Tab(val mark: String, val label: String) {
+    PROPS("◧", "لایه"), SOURCE("▣", "منبع"), REC("●", "ضبط"), LIVE("◉", "پخش"), CHAT("☰", "چت"), SETTINGS("⚙", "تنظیمات"), STATS("▤", "آمار")
+}
 
 @Composable
 fun Studio(app: StudioApp) {
     var studio by remember { mutableStateOf(app.studio) }
     var selected by remember { mutableStateOf<String?>(null) }
-    var tab by remember { mutableStateOf(Tab.PROPS) }
+    var tab by remember { mutableStateOf(Tab.SOURCE) }
     var tick by remember { mutableStateOf(0) }
     var devices by remember { mutableStateOf<List<Adb.Device>>(emptyList()) }
     var encoders by remember { mutableStateOf<List<Encoders.Encoder>?>(null) }
@@ -135,7 +137,6 @@ fun Studio(app: StudioApp) {
             // start side (right in Persian): scenes and layers
             Column(Modifier.width(300.dp).fillMaxHeight().background(K.Panel).verticalScroll(rememberScrollState())) {
                 ScenesPanel(studio, ::edit, recording || onAir)
-                HLine()
                 LayersPanel(studio, selected, { selected = it; if (it != null) tab = Tab.PROPS }, ::edit, { webcams.value })
             }
             Box(Modifier.width(1.dp).fillMaxHeight().background(K.Line))
@@ -179,16 +180,16 @@ fun Studio(app: StudioApp) {
             }
             Box(Modifier.width(1.dp).fillMaxHeight().background(K.Line))
             // end side: the inspector with its tabs
-            Column(Modifier.width(360.dp).fillMaxHeight().background(K.Panel)) {
-                Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    for (t in Tab.entries) Btn(t.label, { tab = t }, Modifier.weight(1f), on = tab == t, height = 28.dp)
-                }
+            Column(Modifier.width(380.dp).fillMaxHeight().background(K.Panel)) {
+                TabBar(Tab.entries.map { Triple(it, it.mark, it.label) }, tab, { tab = it })
                 HLine()
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 5.dp)) {
                     when (tab) {
                         Tab.PROPS -> Inspector(app, studio, selected, ::edit) { webcams.value }
-                        Tab.OUTPUT -> OutputPanel(app, encoders, studio, ::edit, recording, onAir)
-                        Tab.PHONE -> PhonePanel(app, devices, st, recording || onAir)
+                        Tab.SOURCE -> SourcePanel(app, devices, st, studio, ::edit, recording || onAir)
+                        Tab.REC -> RecordPanel(app, encoders, studio, recording)
+                        Tab.LIVE -> LivePanel(app, encoders, onAir)
+                        Tab.SETTINGS -> SettingsPanel(app, studio, ::edit, recording || onAir)
                         Tab.CHAT -> ChatPanel(app)
                         Tab.STATS -> StatsPanel(app, tick)
                     }
@@ -220,7 +221,11 @@ private fun TopBar(app: StudioApp, st: Session.State, recording: Boolean, onAir:
         Pill("${s.width}×${s.height} • ${s.fps} فریم")
         Pill("موتور ${app.engine.fps} فریم • ${"%.1f".format(app.engine.drawMs)} ms" + if (app.engine.late > 0) " • جامانده ${app.engine.late}" else "",
             dot = if (app.engine.fps >= s.fps - 2) K.Good else K.Warn)
-        Pill(when (st.phase) { Session.Phase.LIVE -> "گوشی: ${st.device}"; Session.Phase.CONNECTING -> "گوشی: وصل می‌شود…"; else -> "گوشی وصل نیست" },
+        // what the picture comes from now
+        val usesPhone = s.scene.layers.any { l -> l.visible && s.source(l.sourceId)?.kind == SourceKind.PHONE }
+        val usesScreen = s.scene.layers.any { l -> l.visible && s.source(l.sourceId)?.kind == SourceKind.SCREEN }
+        if (usesScreen) Pill("کامپیوتر: در حالِ گرفتن", dot = K.Good)
+        if (usesPhone || !usesScreen) Pill(when (st.phase) { Session.Phase.LIVE -> "گوشی: ${st.device}"; Session.Phase.CONNECTING -> "گوشی: وصل می‌شود…"; else -> "گوشی وصل نیست" },
             dot = when (st.phase) { Session.Phase.LIVE -> K.Good; Session.Phase.CONNECTING -> K.Warn; else -> K.Faint })
         if (app.replay != null) Pill("بازپخش ${"%.0f".format(app.replay?.heldSeconds ?: 0.0)} ث", K.Amber, K.Amber)
         if (recording) Pill((if (app.recording?.paused == true) "❚❚ مکث " else "● ضبط ") + clock((System.currentTimeMillis() - (app.recording?.startedAtMs ?: 0)) / 1000), K.Live, K.Live)

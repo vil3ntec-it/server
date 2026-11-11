@@ -147,7 +147,9 @@ fun ProgramView(app: StudioApp, studio: Studio, selected: String?, onSelect: (St
                 if (src.kind == SourceKind.PHONE && !phoneLive) {
                     val tl = Offset(o.x + l.x * k, o.y + l.y * k)
                     drawRect(K.Line, tl, Size(l.w * k, l.h * k), style = Stroke(1.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f))))
-                    val m = tm.measure("گوشی وصل نیست — از پنلِ «گوشی» وصلش کن", TextStyle(color = K.Dim, fontSize = 13.sp, fontFamily = K.font))
+                    val long = "گوشی وصل نیست — از زبانهٔ «منبع» وصلش کن یا «همین کامپیوتر» را بزن"
+                    val style = TextStyle(color = K.Dim, fontSize = 13.sp, fontFamily = K.font)
+                    val m = tm.measure(long, style).takeIf { it.size.width < l.w * k - 16 } ?: tm.measure("گوشی وصل نیست", style.copy(fontSize = 11.sp))
                     drawText(m, topLeft = Offset(tl.x + (l.w * k - m.size.width) / 2, tl.y + (l.h * k - m.size.height) / 2))
                 }
             }
