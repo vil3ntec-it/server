@@ -218,6 +218,20 @@ class StudioApp(val adb: Adb?, private val studioFile: File = File(AppPaths.data
         }
         return if (vDests.isNotEmpty() && st.verticalScene == null) "پخشِ عمودی شروع نشد: صحنهٔ عمودی نداری" else null
     }
+    // ------------------------------------------------------------------ virtual camera
+
+    @Volatile var vcam: VirtualCamera? = null; private set
+
+    /** The program as a camera for other programs; on Windows it is registered first (once, with Windows' own permission prompt). */
+    fun startVirtualCamera(): String? {
+        if (vcam != null) return null
+        if (!VirtualCamera.installed) VirtualCamera.install()?.let { return it }
+        val v = VirtualCamera()
+        vcam = v; engine.outputs.add(v)
+        return null
+    }
+    fun stopVirtualCamera() { val v = vcam ?: return; engine.outputs.remove(v); vcam = null; Thread { v.close() }.start() }
+
     @Volatile var vLive: LiveOutput? = null; private set
     /** Anything live: the main picture, the upright one, or both. */
     val onAir: Boolean get() = live != null || vLive != null
@@ -251,6 +265,7 @@ class StudioApp(val adb: Adb?, private val studioFile: File = File(AppPaths.data
         ChatHub.listeners.remove(translateHook)
         stopRecording()
         stopLive()
+        stopVirtualCamera()
         Studio.save(engine.studio, studioFile)
         session?.disconnect()
         mic?.close()

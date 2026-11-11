@@ -25,9 +25,11 @@ object Devices {
         val os = System.getProperty("os.name").lowercase()
         return try {
             when {
-                os.contains("win") -> listed("dshow")
+                os.contains("win") -> listed("dshow").filter { !VirtualCamera.isOwn(it) }
                 os.contains("mac") -> listOf("0", "1", "2")          // AVFoundation names cameras by number
-                else -> File("/dev").listFiles { f -> f.name.matches(Regex("video\\d+")) }?.map { it.absolutePath }?.sorted() ?: emptyList()
+                else -> File("/dev").listFiles { f -> f.name.matches(Regex("video\\d+")) }
+                    ?.filter { f -> File("/sys/class/video4linux/${f.name}/name").let { n -> !n.isFile || !VirtualCamera.isOwn(n.readText().trim()) } }
+                    ?.map { it.absolutePath }?.sorted() ?: emptyList()
             }
         } catch (_: Throwable) { emptyList() }
     }

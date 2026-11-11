@@ -248,6 +248,19 @@ private fun Transport(app: StudioApp, recording: Boolean, onAir: Boolean, tick: 
                 Btn("عکس", { app.screenshot() }, height = 21.dp)
             }
         }
+        // the studio as a camera for Zoom, Meet, Discord…
+        Column {
+            Btn(if (app.vcam != null) "دوربینِ مجازی: روشن" else "دوربینِ مجازی", { onMessage(if (app.vcam != null) { app.stopVirtualCamera(); null } else app.startVirtualCamera()) },
+                on = app.vcam != null, tint = K.Accent, height = 21.dp)
+            Spacer(Modifier.height(2.dp))
+            val vc = app.vcam
+            T(when {
+                vc?.error != null -> vc.error!!
+                vc != null && vc.watched -> "برنامه‌ای آن را نشان می‌دهد"
+                vc != null -> "در Zoom/Meet/Discord «${VirtualCamera.NAME}» را انتخاب کن"
+                else -> ""
+            }, 10, if (vc?.error != null) K.Live else K.Faint, maxLines = 1)
+        }
         Column(Modifier.weight(1f)) {
             app.lastSaved?.let { T("ذخیره شد: $it", 12, K.Good, maxLines = 1) }
             app.recording?.let { r -> T("ضبط: ${r.bytes / 1_048_576} مگابایت • فریمِ جامانده ${r.dropped}", 12, K.Dim) }
