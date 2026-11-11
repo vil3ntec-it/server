@@ -1,60 +1,60 @@
-twitch channels: [rainbow6, kaicenat, theburntpeanut, zackrawrr, jynxzi]
-probe https://www.youtube.com/@LofiGirl/live -> 200 len 1609665 title= - YouTube canonical=undefined isLive=true videoDetails=null liveChat=true bot=true kick_livestream=null chatroom=null
+twitch channels: [rainbow6, kaicenat, theburntpeanut, amazonmusic, zackrawrr]
+probe https://www.youtube.com/@LofiGirl/live -> 200 len 1602402 title= - YouTube canonical=undefined isLive=true videoDetails=null liveChat=true bot=true kick_livestream=null chatroom=null
 probe https://kick.com/api/v2/channels/xqc -> 200 len 6385 title=null canonical=null isLive=false videoDetails=null liveChat=false bot=false kick_livestream=null chatroom=668
 kick live list -> 200
-kick live: [westcol, coringa, sxb, n3on, adinross]
-kick realtime/connection 200: {"data":{"connections":[{"credentials":{"url":"wss://realtime.sa-east-1.platform.kick.com/connection/websocket"},"provider":"centrifugo"}],"mode":"websocket"},"message":"success"}
-
-kick realtime/auth 200: {"data":{"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJndWVzdDozZmVhMDcwZi1lN2FjLTRiY2UtOGE4OC00N2ZhOTFhMWE2N
+kick live: [westcol, n3on, coringa, adinross, paulinholokobr]
 kick realtime/connection 200: {"data":{"connections":[{"credentials":{"url":"wss://realtime.us-east-1.platform.kick.com/connection/websocket"},"provider":"centrifugo"}],"mode":"websocket"},"message":"success"}
 
-kick realtime/auth 200: {"data":{"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJndWVzdDplZTQyZTQ1MC1jYzk5LTRiZjMtYWY5ZC04ZGE3MWE4Y2EyZ
-kick frame: {"id":1,"connect":{"client":"fa84e135-9f8c-45de-86ea-2b80d3528f46","version":"6.9.7 PRO","expires":true,"ttl":2699,"ping":25,"pong":true}}
+kick realtime/connection 200: {"data":{"connections":[{"credentials":{"url":"wss://realtime.us-west-2.platform.kick.com/connection/websocket"},"provider":"centrifugo"}],"mode":"websocket"},"message":"success"}
+
+kick realtime/auth 200: {"data":{"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJndWVzdDphMTJiYTA0YS1kOTI3LTRhNDMtYjU0OS00ODEwZTFjOWVlY
+kick realtime/auth 200: {"data":{"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJndWVzdDowOWY3ZmE1OS00NDA0LTQwODctOTU2YS1jNDY5NjhhNzk3N
+kick frame: {"id":1,"connect":{"client":"b006252a-df53-443c-a856-79398b4ffe01","version":"6.9.7 PRO","expires":true,"ttl":2699,"ping":25,"pong":true}}
 kick frame: {"id":2,"subscribe":{}}
-kick frame: {"push":{"channel":"chatrooms.4113274.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"55c0c0a9-4dc9-462e-aaf7-0c4dcdfdba97\",\"chatroom_id\":4113274,\"content\":\"KKĶKKKKKKK\",\"type\":\"message\",\"created_at\":\"2026-11-11T01:58:32+00:00\",\"sender\":{\"id\":10930624,\"username\":\"xtrap_7\",\"slug\":\"xtrap-7\",\"identity\":{\"color\":\"#E26EFF\",\"badges\":[],\"bad
-kick frame: {"push":{"channel":"chatrooms.4113274.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"85883249-24e2-4e1e-812f-3dfccb25eede\",\"chatroom_id\":4113274,\"content\":\"[emote:37226:KEKW]\",\"type\":\"message\",\"created_at\":\"2026-11-11T01:58:33+00:00\",\"sender\":{\"id\":119987564,\"username\":\"llevv077\",\"slug\":\"llevv077\",\"identity\":{\"color\":\"#BDFF28\",\"badges
-kick frame: {"push":{"channel":"chatrooms.4113274.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"fde4a60b-0d9a-45f4-9642-6124133d5540\",\"chatroom_id\":4113274,\"content\":\"[emote:37226:KEKW][emote:37226:KEKW][emote:37226:KEKW]\",\"type\":\"message\",\"created_at\":\"2026-11-11T01:58:33+00:00\",\"sender\":{\"id\":120872363,\"username\":\"vinijjose\",\"slug\":\"vinijjose\",\"iden
-kick frame: {"id":1,"connect":{"client":"34ef5ce1-bac0-4d65-a955-fa6b53fcb9d0","version":"6.9.7 PRO","expires":true,"ttl":2699,"ping":25,"pong":true}}
+kick frame: {"push":{"channel":"chatrooms.669512.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"f4789100-abea-47d4-b5ea-7db9d2916c05\",\"chatroom_id\":669512,\"content\":\"no porfavotr\",\"type\":\"message\",\"created_at\":\"2026-11-11T02:41:26+00:00\",\"sender\":{\"id\":703324,\"username\":\"SZ598s\",\"slug\":\"sz598s\",\"identity\":{\"color\":\"#00CCB3\",\"badges\":[{\"type\":\
+kick frame: {"id":1,"connect":{"client":"b4e13808-e392-469f-a625-c28b7d80cab8","version":"6.9.7 PRO","expires":true,"ttl":2699,"ping":25,"pong":true}}
 kick frame: {"id":2,"subscribe":{}}
-kick frame: {"push":{"channel":"chatrooms.4113274.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"2592e080-9e10-44f4-b370-aed9359925c1\",\"chatroom_id\":4113274,\"content\":\"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\",\"type\":\"message\",\"created_at\":\"2026-11-11T01:58:33+00:00\",\"sender\":{\"id\":79640306,\"username\":\"bieLzNxfhhx\",\"slug\":\"bielznxfhhx\",\"identity\":{\"col
 youtube: video=4t4AQ15yj1M chat page=popout
-kick frame: {"push":{"channel":"chatrooms.4113274.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"8793345a-e709-4119-9e5d-314c22af3eee\",\"chatroom_id\":4113274,\"content\":\"kkkkkkk\",\"type\":\"message\",\"created_at\":\"2026-11-11T01:58:33+00:00\",\"sender\":{\"id\":110917823,\"username\":\"gopilha\",\"slug\":\"gopilha\",\"identity\":{\"color\":\"#E26EFF\",\"badges\":[],\"badge
-kick frame: {"push":{"channel":"chatrooms.4113274.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"e5c3b7e6-c7f4-4e29-9771-4afce73a4834\",\"chatroom_id\":4113274,\"content\":\"kkkkkkkkkkkkk\",\"type\":\"message\",\"created_at\":\"2026-11-11T01:58:33+00:00\",\"sender\":{\"id\":50208196,\"username\":\"slaqualquernome\",\"slug\":\"slaqualquernome\",\"identity\":{\"color\":\"#6F87FF\",
-kick frame: {"push":{"channel":"chatrooms.4113274.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"05c96d14-253e-46e8-bd9a-1b31c878e5d5\",\"chatroom_id\":4113274,\"content\":\"Kkkkkkkkkk\",\"type\":\"message\",\"created_at\":\"2026-11-11T01:58:33+00:00\",\"sender\":{\"id\":1000319276,\"username\":\"Vinni_s\",\"slug\":\"vinni-s\",\"identity\":{\"color\":\"#FEA0CF\",\"badges\":[],\"b
-kick frame: {"push":{"channel":"chatrooms.4113274.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"2062988b-699e-46ee-896e-df173464c8d9\",\"chatroom_id\":4113274,\"content\":\"kkkkkkkkkkkkkkk\",\"type\":\"message\",\"created_at\":\"2026-11-11T01:58:33+00:00\",\"sender\":{\"id\":132626295,\"username\":\"sosiavinijr\",\"slug\":\"sosiavinijr\",\"identity\":{\"color\":\"#FF2C56\",\"bad
-kick frame: {"push":{"channel":"chatrooms.669512.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"fc233891-769a-49b0-8b99-d3fe85fdfc0c\",\"chatroom_id\":669512,\"content\":\"[emote:5748077:collectiblesNAILSING]\",\"type\":\"message\",\"created_at\":\"2026-11-11T01:58:33+00:00\",\"sender\":{\"id\":20072705,\"username\":\"1CamiloX7\",\"slug\":\"1camilox7\",\"identity\":{\"color\":\"#
-kick frame: {"push":{"channel":"chatrooms.669512.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"85279fa5-10d6-460b-a1e6-be9594ec1eba\",\"chatroom_id\":669512,\"content\":\"compreeeeee\",\"type\":\"message\",\"created_at\":\"2026-11-11T01:58:33+00:00\",\"sender\":{\"id\":100551170,\"username\":\"vgil205\",\"slug\":\"vgil205\",\"identity\":{\"color\":\"#FF4117\",\"badges\":[{\"type
-kick frame: {"push":{"channel":"chatrooms.669512.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"de369a43-e0c7-4b04-ac7d-71173869b11d\",\"chatroom_id\":669512,\"content\":\"pero eso te baja el daño\",\"type\":\"message\",\"created_at\":\"2026-11-11T01:58:36+00:00\",\"sender\":{\"id\":33494890,\"username\":\"YzSebaas\",\"slug\":\"yzsebaas\",\"identity\":{\"color\":\"#75FD46\",\"bad
-kick frame: {"push":{"channel":"chatrooms.669512.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"40c283e3-c5d5-4654-9490-f9f142c41054\",\"chatroom_id\":669512,\"content\":\"compreeeee\",\"type\":\"message\",\"created_at\":\"2026-11-11T01:58:36+00:00\",\"sender\":{\"id\":100551170,\"username\":\"vgil205\",\"slug\":\"vgil205\",\"identity\":{\"color\":\"#FF4117\",\"badges\":[{\"type\
-t=10s YouTube/@LofiGirl: 33 (وصل) | Twitch/rainbow6: 6 (وصل) | Twitch/kaicenat: 15 (وصل) | Twitch/theburntpeanut: 10 (وصل) | Kick/westcol: 4 (وصل) | Kick/coringa: 38 (وصل)
-kick frame: {"push":{"channel":"chatrooms.669512.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"65cad29f-5dc6-4d15-8e97-33499b869acd\",\"chatroom_id\":669512,\"content\":\"la querés doble ? [emote:37229:OOOO][emote:37229:OOOO]\",\"type\":\"message\",\"created_at\":\"2026-11-11T01:58:42+00:00\",\"sender\":{\"id\":62648505,\"username\":\"jimm_Ksr\",\"slug\":\"jimm-ksr\",\"identity\
-kick frame: {"push":{"channel":"chatrooms.669512.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"444def8a-71fd-42b3-a0f7-79eeb674a015\",\"chatroom_id\":669512,\"content\":\"ahorra west que se viene lo más difícil\",\"type\":\"message\",\"created_at\":\"2026-11-11T01:58:42+00:00\",\"sender\":{\"id\":47075814,\"username\":\"chiapaneco3000\",\"slug\":\"chiapaneco3000\",\"identity\":{
-kick frame: {"push":{"channel":"chatrooms.669512.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"17ec2f5c-519a-45c8-86b1-e34aeaefd4e5\",\"chatroom_id\":669512,\"content\":\"[emote:37226:KEKW]\",\"type\":\"message\",\"created_at\":\"2026-11-11T01:58:44+00:00\",\"sender\":{\"id\":702402,\"username\":\"AlejoECDG\",\"slug\":\"alejoecdg\",\"identity\":{\"color\":\"#FFFFFF\",\"badges\":
-kick frame: {"push":{"channel":"chatrooms.669512.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"4edcb0b1-427e-477b-8483-ec598d4fe083\",\"chatroom_id\":669512,\"content\":\"Ese globero tira unas bolas azules y tiene que cogerlas para hacer un poder recargado que tiene bastante daño\",\"type\":\"message\",\"created_at\":\"2026-11-11T01:58:45+00:00\",\"sender\":{\"id\":34621350,\"us
-t=20s YouTube/@LofiGirl: 35 (وصل) | Twitch/rainbow6: 10 (وصل) | Twitch/kaicenat: 28 (وصل) | Twitch/theburntpeanut: 24 (وصل) | Kick/westcol: 9 (وصل) | Kick/coringa: 55 (وصل)
-t=30s YouTube/@LofiGirl: 37 (وصل) | Twitch/rainbow6: 13 (وصل) | Twitch/kaicenat: 41 (وصل) | Twitch/theburntpeanut: 71 (وصل) | Kick/westcol: 16 (وصل) | Kick/coringa: 68 (وصل)
-t=40s YouTube/@LofiGirl: 38 (وصل) | Twitch/rainbow6: 13 (وصل) | Twitch/kaicenat: 48 (وصل) | Twitch/theburntpeanut: 130 (وصل) | Kick/westcol: 18 (وصل) | Kick/coringa: 85 (وصل)
-t=50s YouTube/@LofiGirl: 43 (وصل) | Twitch/rainbow6: 16 (وصل) | Twitch/kaicenat: 60 (وصل) | Twitch/theburntpeanut: 164 (وصل) | Kick/westcol: 67 (وصل) | Kick/coringa: 108 (وصل)
-t=60s YouTube/@LofiGirl: 45 (وصل) | Twitch/rainbow6: 19 (وصل) | Twitch/kaicenat: 74 (وصل) | Twitch/theburntpeanut: 195 (وصل) | Kick/westcol: 84 (وصل) | Kick/coringa: 126 (وصل)
-t=70s YouTube/@LofiGirl: 45 (وصل) | Twitch/rainbow6: 26 (وصل) | Twitch/kaicenat: 89 (وصل) | Twitch/theburntpeanut: 237 (وصل) | Kick/westcol: 90 (وصل) | Kick/coringa: 136 (وصل)
-t=80s YouTube/@LofiGirl: 47 (وصل) | Twitch/rainbow6: 30 (وصل) | Twitch/kaicenat: 105 (وصل) | Twitch/theburntpeanut: 300 (وصل) | Kick/westcol: 103 (وصل) | Kick/coringa: 148 (وصل)
-t=90s YouTube/@LofiGirl: 50 (وصل) | Twitch/rainbow6: 33 (وصل) | Twitch/kaicenat: 115 (وصل) | Twitch/theburntpeanut: 329 (وصل) | Kick/westcol: 116 (وصل) | Kick/coringa: 159 (وصل)
+kick frame: {"push":{"channel":"chatrooms.669512.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"af122fe4-6f02-40f1-9672-bbac595edc16\",\"chatroom_id\":669512,\"content\":\"[emote:37226:KEKW]\",\"type\":\"message\",\"created_at\":\"2026-11-11T02:41:26+00:00\",\"sender\":{\"id\":31729242,\"username\":\"EdgarGriff\",\"slug\":\"edgargriff\",\"identity\":{\"color\":\"#00F1FF\",\"badge
+kick frame: {"push":{"channel":"chatrooms.1220770.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"dcc84989-3028-4cb3-85de-1168b88b78eb\",\"chatroom_id\":1220770,\"content\":\"[emote:1730761:emojiCry]\",\"type\":\"message\",\"created_at\":\"2026-11-11T02:41:26+00:00\",\"sender\":{\"id\":98243563,\"username\":\"morganstephen360\",\"slug\":\"morganstephen360\",\"identity\":{\"color\"
+kick frame: {"push":{"channel":"chatrooms.1220770.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"1bdc95fc-9440-4935-bb29-53087ee3c44a\",\"chatroom_id\":1220770,\"content\":\"GIVE YOUR TEAM A BONUS\",\"type\":\"message\",\"created_at\":\"2026-11-11T02:41:27+00:00\",\"sender\":{\"id\":5481965,\"username\":\"Moraltechnique\",\"slug\":\"moraltechnique\",\"identity\":{\"color\":\"#4CF
+kick frame: {"push":{"channel":"chatrooms.1220770.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"deeeee81-c349-44d5-b12e-77ffb1762d0a\",\"chatroom_id\":1220770,\"content\":\"CUFFEM HAS 3\",\"type\":\"message\",\"created_at\":\"2026-11-11T02:41:27+00:00\",\"sender\":{\"id\":127958836,\"username\":\"millyyjay\",\"slug\":\"millyyjay\",\"identity\":{\"color\":\"#55FFC7\",\"badges\":[
+kick frame: {"push":{"channel":"chatrooms.669512.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"f7173aca-f217-415b-92f4-2c7459eba3e7\",\"chatroom_id\":669512,\"content\":\"Estaba modo normal\",\"type\":\"message\",\"created_at\":\"2026-11-11T02:41:27+00:00\",\"sender\":{\"id\":114702292,\"username\":\"Jxshuaap\",\"slug\":\"jxshuaap\",\"identity\":{\"color\":\"#75FD46\",\"badges\"
+kick frame: {"push":{"channel":"chatrooms.669512.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"00c86d44-bc81-41bd-b9af-f13aa3f90c0f\",\"chatroom_id\":669512,\"content\":\"west ya la tiene sino que Sami es muy cacorro\",\"type\":\"message\",\"created_at\":\"2026-11-11T02:41:27+00:00\",\"sender\":{\"id\":127194157,\"username\":\"Cesar_007N\",\"slug\":\"cesar-007n\",\"identity\":{\
+kick frame: {"push":{"channel":"chatrooms.1220770.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"b33dbed6-26ce-4857-8b59-041a2c6cb7df\",\"chatroom_id\":1220770,\"content\":\"TUNAK TUNAKTUNAK TUNAK\",\"type\":\"message\",\"created_at\":\"2026-11-11T02:41:27+00:00\",\"sender\":{\"id\":98279802,\"username\":\"reasoni\",\"slug\":\"reasoni\",\"identity\":{\"color\":\"#B9D6F6\",\"badge
+kick frame: {"push":{"channel":"chatrooms.669512.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"dc59b59e-6f01-4ee0-b953-0bba48099c42\",\"chatroom_id\":669512,\"content\":\"usen la súper alonsos\",\"type\":\"message\",\"created_at\":\"2026-11-11T02:41:28+00:00\",\"sender\":{\"id\":93164010,\"username\":\"pollo_optimo8\",\"slug\":\"pollo-optimo8\",\"identity\":{\"color\":\"#31D6C2\
+kick frame: {"push":{"channel":"chatrooms.1220770.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"dc8c095d-87a2-486d-a9e8-fa742eca977e\",\"chatroom_id\":1220770,\"content\":\"[emote:110438:n3onW]\",\"type\":\"message\",\"created_at\":\"2026-11-11T02:41:28+00:00\",\"sender\":{\"id\":60015110,\"username\":\"bobthgoat2028\",\"slug\":\"bobthgoat2028\",\"identity\":{\"color\":\"#E9113C
+kick frame: {"push":{"channel":"chatrooms.1220770.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"51bcd345-e8f6-403d-8ece-e38585d12edc\",\"chatroom_id\":1220770,\"content\":\"[emote:110438:n3onW]\",\"type\":\"message\",\"created_at\":\"2026-11-11T02:41:28+00:00\",\"sender\":{\"id\":60015110,\"username\":\"bobthgoat2028\",\"slug\":\"bobthgoat2028\",\"identity\":{\"color\":\"#E9113C
+kick frame: {"push":{"channel":"chatrooms.1220770.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"fb4244ed-fbdc-4fdd-ae0a-ae9601cbd7f4\",\"chatroom_id\":1220770,\"content\":\"[emote:110438:n3onW]\",\"type\":\"message\",\"created_at\":\"2026-11-11T02:41:28+00:00\",\"sender\":{\"id\":60015110,\"username\":\"bobthgoat2028\",\"slug\":\"bobthgoat2028\",\"identity\":{\"color\":\"#E9113C
+kick frame: {"push":{"channel":"chatrooms.1220770.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"adbdb0ca-8d03-46aa-b219-f302bfa58913\",\"chatroom_id\":1220770,\"content\":\"[emote:110438:n3onW]\",\"type\":\"message\",\"created_at\":\"2026-11-11T02:41:28+00:00\",\"sender\":{\"id\":60015110,\"username\":\"bobthgoat2028\",\"slug\":\"bobthgoat2028\",\"identity\":{\"color\":\"#E9113C
+kick frame: {"push":{"channel":"chatrooms.669512.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"2359f252-49a1-4298-a9d5-6324b9cfef61\",\"chatroom_id\":669512,\"content\":\"ey no estaba en sub o si? yo podia comentar\",\"type\":\"message\",\"created_at\":\"2026-11-11T02:41:29+00:00\",\"sender\":{\"id\":5582780,\"username\":\"Morenistik\",\"slug\":\"morenistik\",\"identity\":{\"col
+kick frame: {"push":{"channel":"chatrooms.669512.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"2eb1d2e8-5beb-4219-9f32-741784596f6b\",\"chatroom_id\":669512,\"content\":\"ESTA ES EN MODO LENTO\",\"type\":\"message\",\"created_at\":\"2026-11-11T02:41:29+00:00\",\"sender\":{\"id\":44279781,\"username\":\"KROMPUZ\",\"slug\":\"krompuz\",\"identity\":{\"color\":\"#E9113C\",\"badges\"
+kick frame: {"push":{"channel":"chatrooms.669512.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"562178c2-021b-4290-8f20-c6906379dce5\",\"chatroom_id\":669512,\"content\":\"está en modo normal cabron\",\"type\":\"message\",\"created_at\":\"2026-11-11T02:41:30+00:00\",\"sender\":{\"id\":79880529,\"username\":\"manuelpenudo30cm\",\"slug\":\"manuelpenudo30cm\",\"identity\":{\"color\"
+t=10s YouTube/@LofiGirl: 76 (وصل) | Twitch/rainbow6: 1 (وصل) | Twitch/kaicenat: 29 (وصل) | Twitch/theburntpeanut: 17 (وصل) | Kick/westcol: 20 (وصل) | Kick/n3on: 26 (وصل)
+t=20s YouTube/@LofiGirl: 77 (وصل) | Twitch/rainbow6: 2 (وصل) | Twitch/kaicenat: 66 (وصل) | Twitch/theburntpeanut: 35 (وصل) | Kick/westcol: 44 (وصل) | Kick/n3on: 60 (وصل)
+t=30s YouTube/@LofiGirl: 77 (وصل) | Twitch/rainbow6: 6 (وصل) | Twitch/kaicenat: 112 (وصل) | Twitch/theburntpeanut: 51 (وصل) | Kick/westcol: 55 (وصل) | Kick/n3on: 109 (وصل)
+t=40s YouTube/@LofiGirl: 77 (وصل) | Twitch/rainbow6: 11 (وصل) | Twitch/kaicenat: 141 (وصل) | Twitch/theburntpeanut: 74 (وصل) | Kick/westcol: 69 (وصل) | Kick/n3on: 140 (وصل)
+t=50s YouTube/@LofiGirl: 83 (وصل) | Twitch/rainbow6: 17 (وصل) | Twitch/kaicenat: 197 (وصل) | Twitch/theburntpeanut: 87 (وصل) | Kick/westcol: 85 (وصل) | Kick/n3on: 168 (وصل)
+t=60s YouTube/@LofiGirl: 88 (وصل) | Twitch/rainbow6: 23 (وصل) | Twitch/kaicenat: 256 (وصل) | Twitch/theburntpeanut: 104 (وصل) | Kick/westcol: 145 (وصل) | Kick/n3on: 187 (وصل)
+t=70s YouTube/@LofiGirl: 91 (وصل) | Twitch/rainbow6: 30 (وصل) | Twitch/kaicenat: 315 (وصل) | Twitch/theburntpeanut: 120 (وصل) | Kick/westcol: 221 (وصل) | Kick/n3on: 206 (وصل)
+t=80s YouTube/@LofiGirl: 95 (وصل) | Twitch/rainbow6: 30 (وصل) | Twitch/kaicenat: 342 (وصل) | Twitch/theburntpeanut: 140 (وصل) | Kick/westcol: 274 (وصل) | Kick/n3on: 217 (وصل)
+t=90s YouTube/@LofiGirl: 103 (وصل) | Twitch/rainbow6: 39 (وصل) | Twitch/kaicenat: 361 (وصل) | Twitch/theburntpeanut: 154 (وصل) | Kick/westcol: 334 (وصل) | Kick/n3on: 225 (وصل)
 youtube last http 200: null
-RESULT YouTube: 50 messages; paid/gifts: 0
-   @Ho…: sigh
-   @la…: ngl I don't see it either
-   @h4…: Ohh I see, let’s take a look at it
-   @le…: I want be streamer
-RESULT Twitch: 477 messages; paid/gifts: 2
-   glw…: What's solid Snake doing??
-   dyl…: THAT MF FAST
-   Rod…: Bro knocked the sh outta him💀
-   Nit…: Buff TCSG ..........
-RESULT Kick: 275 messages; paid/gifts: 0
-   xtr…: KKĶKKKKKKK
-   lle…: :KEKW:
-   vin…: :KEKW::KEKW::KEKW:
-   bie…: kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
+RESULT YouTube: 103 messages; paid/gifts: 0
+   @Ar…: How can I help?
+   @h4…: Hey IA, tell me what is the purpose of life?
+   @h4…: Ohh really, Sara? That’s amazing!
+   @Ar…: There is no single universal purpose of life.
+RESULT Twitch: 554 messages; paid/gifts: 0
+   Mik…: shower tomorrow? wont u be done tonight @KaiCenat ??/
+   its…: LOL
+   hea…: lol'
+   mvp…: ENHANCED VERSION SO FIRE
+RESULT Kick: 559 messages; paid/gifts: 0
+   SZ5…: no porfavotr
+   Edg…: :KEKW:
+   mor…: :emojiCry:
+   Mor…: GIVE YOUR TEAM A BONUS
 kick closed 1000 
 kick closed 1000 
 TRANSLATE en→fa: چه بازی خوبیه، فردا همه شما رو می‌بینم! 
