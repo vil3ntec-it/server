@@ -1,0 +1,59 @@
+twitch channels: [kaicenat, hasanabi, zackrawrr, jynxzi, loltyler1]
+probe https://www.youtube.com/@LofiGirl/live -> 200 len 1603249 title= - YouTube canonical=undefined isLive=true videoDetails=null liveChat=true bot=true kick_livestream=null chatroom=null
+probe https://kick.com/api/v2/channels/xqc -> 200 len 6385 title=null canonical=null isLive=false videoDetails=null liveChat=false bot=false kick_livestream=null chatroom=668
+kick live list -> 200
+kick live: [samulx, sxb, westcol, adinross, spreen]
+kick realtime/connection 200: {"data":{"connections":[{"credentials":{"url":"wss://realtime.us-west-2.platform.kick.com/connection/websocket"},"provider":"centrifugo"}],"mode":"websocket"},"message":"success"}
+
+kick realtime/auth 200: {"data":{"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJndWVzdDphY2RhZTMyOC04Zjc4LTQyM2QtYjk2OS00NzU0ODNiNjc2Z
+kick frame: {"id":1,"connect":{"client":"1ec6687d-6f34-4543-93a8-02d551cc43ee","version":"6.9.7 PRO","expires":true,"ttl":2700,"ping":25,"pong":true}}
+kick frame: {"id":2,"subscribe":{}}
+kick realtime/connection 200: {"data":{"connections":[{"credentials":{"url":"wss://realtime.sa-east-1.platform.kick.com/connection/websocket"},"provider":"centrifugo"}],"mode":"websocket"},"message":"success"}
+
+kick realtime/auth 200: {"data":{"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJndWVzdDo4NTk2MmRhZC1lOThmLTRmZmMtYjQ3Zi1hMDIyNTZjMTQyN
+kick frame: {"push":{"channel":"chatrooms.1719888.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"9e308ee0-cd4b-44ec-8dce-9c3fd3b49576\",\"chatroom_id\":1719888,\"content\":\"[emote:5756627:politeCat]\",\"type\":\"message\",\"created_at\":\"2026-11-11T00:28:45+00:00\",\"sender\":{\"id\":125861140,\"username\":\"kyenner\",\"slug\":\"kyenner\",\"identity\":{\"color\":\"#FFAE76\",\"b
+youtube: video=4t4AQ15yj1M chat page=popout
+kick frame: {"id":1,"connect":{"client":"8d711b5c-aae2-454c-b8b4-c901c7da4562","version":"6.9.7 PRO","expires":true,"ttl":2699,"ping":25,"pong":true}}
+kick frame: {"id":2,"subscribe":{}}
+kick frame: {"push":{"channel":"chatrooms.17627848.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"2c12cd6a-bd10-42dd-903f-b85504548b7d\",\"chatroom_id\":17627848,\"content\":\"ههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههه\",\"type\":\"message\",\"created_at\":\"2026-11-11T00:28:45+00:00\",\"sender\":{\"id\":6363956,\"username\":\"wsn71\",\"slug\"
+kick frame: {"push":{"channel":"chatrooms.17627848.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"f1a15521-5c0c-4e32-9b71-d568b58122ac\",\"chatroom_id\":17627848,\"content\":\"[emote:37226:KEKW]\",\"type\":\"message\",\"created_at\":\"2026-11-11T00:28:45+00:00\",\"sender\":{\"id\":41146416,\"username\":\"1Shix\",\"slug\":\"1shix\",\"identity\":{\"color\":\"#6F87FF\",\"badges\":[{
+kick frame: {"push":{"channel":"chatrooms.1719888.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"3349713a-23c3-4abf-81c3-2bf97dcb333d\",\"chatroom_id\":1719888,\"content\":\"callate que son reales\",\"type\":\"reply\",\"created_at\":\"2026-11-11T00:28:46+00:00\",\"sender\":{\"id\":20088902,\"username\":\"Abra101129\",\"slug\":\"abra101129\",\"identity\":{\"color\":\"#31D6C2\",\"b
+kick frame: {"push":{"channel":"chatrooms.17627848.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"d8a95852-3160-4824-ae0a-ebd0470674f3\",\"chatroom_id\":17627848,\"content\":\"ههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههه\",\"type\":\"message\",\"created_at\":\"2026-11-11T00:28:45+00:00\",\"sender\":{\"id\":99347652,\"username\":\"1REMASS\",\"slug\
+kick frame: {"push":{"channel":"chatrooms.17627848.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"66c0b861-3026-4935-a67c-6b48f77cfcf7\",\"chatroom_id\":17627848,\"content\":\"ههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههه\",\"type\":\"message\",\"created_at\":\"2026-11-11T00:28:45+00:00\",\"sender\":{\"id\":106469236,\"username\":\"Leen_416\",\"slug\":\"leen
+kick frame: {"push":{"channel":"chatrooms.1719888.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"7df72974-f9ca-4e59-a9bf-7ca529b29330\",\"chatroom_id\":1719888,\"content\":\"[emote:37226:KEKW]\",\"type\":\"message\",\"created_at\":\"2026-11-11T00:28:46+00:00\",\"sender\":{\"id\":30908673,\"username\":\"Danieljb24\",\"slug\":\"danieljb24\",\"identity\":{\"color\":\"#00F1FF\",\"bad
+kick frame: {"push":{"channel":"chatrooms.17627848.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"c50c0f8d-7563-4af8-8606-12218c0fad88\",\"chatroom_id\":17627848,\"content\":\"[emote:2936007:SXBhahaha]\",\"type\":\"message\",\"created_at\":\"2026-11-11T00:28:46+00:00\",\"sender\":{\"id\":16844537,\"username\":\"IAnkara\",\"slug\":\"iankara\",\"identity\":{\"color\":\"#1475E1\",\"
+kick frame: {"push":{"channel":"chatrooms.17627848.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"f1840fd5-2d71-49b3-b988-fc22163a7d4b\",\"chatroom_id\":17627848,\"content\":\"ههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههه\",\"type\":\"message\",\"created_at\":\"2026-11-11T00:28:46+00:00\",\"sender\":{\"id\":3
+kick frame: {"push":{"channel":"chatrooms.1719888.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"a328a688-4bf2-4869-a90f-54afff2867a1\",\"chatroom_id\":1719888,\"content\":\"[emote:37226:KEKW]\",\"type\":\"message\",\"created_at\":\"2026-11-11T00:28:48+00:00\",\"sender\":{\"id\":30908673,\"username\":\"Danieljb24\",\"slug\":\"danieljb24\",\"identity\":{\"color\":\"#00F1FF\",\"bad
+kick frame: {"push":{"channel":"chatrooms.1719888.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"8ae81f3e-0f3a-4f76-b624-e90dc2a6b3af\",\"chatroom_id\":1719888,\"content\":\"[emote:37226:KEKW]\",\"type\":\"message\",\"created_at\":\"2026-11-11T00:28:48+00:00\",\"sender\":{\"id\":30908673,\"username\":\"Danieljb24\",\"slug\":\"danieljb24\",\"identity\":{\"color\":\"#00F1FF\",\"bad
+kick frame: {"push":{"channel":"chatrooms.17627848.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"b1092537-9e60-4aa0-9a99-16bd6bc6070e\",\"chatroom_id\":17627848,\"content\":\"هههههههههههههههههههههههههههههههههههههه\",\"type\":\"message\",\"created_at\":\"2026-11-11T00:28:47+00:00\",\"sender\":{\"id\":19028625,\"username\":\"0G_l\",\"slug\":\"0g-l\",\"identity\":{\"color\":\"#FFFF
+kick frame: {"push":{"channel":"chatrooms.17627848.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"cf780400-9652-4ac9-9726-87112ae15113\",\"chatroom_id\":17627848,\"content\":\"[emote:1786910:SXBlaugh]\",\"type\":\"message\",\"created_at\":\"2026-11-11T00:28:47+00:00\",\"sender\":{\"id\":56510331,\"username\":\"Jonem1\",\"slug\":\"jonem1\",\"identity\":{\"color\":\"#00F1FF\",\"bad
+kick frame: {"push":{"channel":"chatrooms.1719888.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"9d59a82f-de9f-49b7-9ef3-d8a03cbc7c48\",\"chatroom_id\":1719888,\"content\":\"[emote:37226:KEKW]\",\"type\":\"message\",\"created_at\":\"2026-11-11T00:28:49+00:00\",\"sender\":{\"id\":30908673,\"username\":\"Danieljb24\",\"slug\":\"danieljb24\",\"identity\":{\"color\":\"#00F1FF\",\"bad
+kick frame: {"push":{"channel":"chatrooms.1719888.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"c0ba0b48-39b6-43b3-b402-1ccd118c2073\",\"chatroom_id\":1719888,\"content\":\"[emote:6315952:collectibleskickskull][emote:6315952:collectibleskickskull][emote:6315952:collectibleskickskull][emote:6315952:collectibleskickskull]\",\"type\":\"message\",\"created_at\":\"2026-11-11T00:28:49
+kick frame: {"push":{"channel":"chatrooms.1719888.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"5faeef40-7859-4a18-ae86-4ecdbbeef4f8\",\"chatroom_id\":1719888,\"content\":\"[emote:37226:KEKW]\",\"type\":\"message\",\"created_at\":\"2026-11-11T00:28:49+00:00\",\"sender\":{\"id\":30908673,\"username\":\"Danieljb24\",\"slug\":\"danieljb24\",\"identity\":{\"color\":\"#00F1FF\",\"bad
+t=10s YouTube/@LofiGirl: 78 (وصل) | Twitch/kaicenat: 18 (وصل) | Twitch/hasanabi: 20 (وصل) | Twitch/zackrawrr: 15 (وصل) | Kick/samulx: 28 (وصل) | Kick/sxb: 20 (وصل)
+t=20s YouTube/@LofiGirl: 79 (وصل) | Twitch/kaicenat: 30 (وصل) | Twitch/hasanabi: 43 (وصل) | Twitch/zackrawrr: 33 (وصل) | Kick/samulx: 51 (وصل) | Kick/sxb: 36 (وصل)
+t=30s YouTube/@LofiGirl: 80 (وصل) | Twitch/kaicenat: 44 (وصل) | Twitch/hasanabi: 65 (وصل) | Twitch/zackrawrr: 48 (وصل) | Kick/samulx: 86 (وصل) | Kick/sxb: 54 (وصل)
+t=40s YouTube/@LofiGirl: 80 (وصل) | Twitch/kaicenat: 55 (وصل) | Twitch/hasanabi: 87 (وصل) | Twitch/zackrawrr: 66 (وصل) | Kick/samulx: 147 (وصل) | Kick/sxb: 77 (وصل)
+t=50s YouTube/@LofiGirl: 84 (وصل) | Twitch/kaicenat: 61 (وصل) | Twitch/hasanabi: 110 (وصل) | Twitch/zackrawrr: 79 (وصل) | Kick/samulx: 162 (وصل) | Kick/sxb: 107 (وصل)
+t=60s YouTube/@LofiGirl: 84 (وصل) | Twitch/kaicenat: 70 (وصل) | Twitch/hasanabi: 128 (وصل) | Twitch/zackrawrr: 89 (وصل) | Kick/samulx: 168 (وصل) | Kick/sxb: 198 (وصل)
+t=70s YouTube/@LofiGirl: 86 (وصل) | Twitch/kaicenat: 89 (وصل) | Twitch/hasanabi: 149 (وصل) | Twitch/zackrawrr: 101 (وصل) | Kick/samulx: 181 (وصل) | Kick/sxb: 236 (وصل)
+t=80s YouTube/@LofiGirl: 86 (وصل) | Twitch/kaicenat: 101 (وصل) | Twitch/hasanabi: 180 (وصل) | Twitch/zackrawrr: 116 (وصل) | Kick/samulx: 191 (وصل) | Kick/sxb: 261 (وصل)
+t=90s YouTube/@LofiGirl: 87 (وصل) | Twitch/kaicenat: 111 (وصل) | Twitch/hasanabi: 219 (وصل) | Twitch/zackrawrr: 126 (وصل) | Kick/samulx: 193 (وصل) | Kick/sxb: 273 (وصل)
+youtube last http 200: null
+RESULT YouTube: 87 messages; paid/gifts: 0
+   @Ay…: :face-purple-rain-drops::face-purple-rain-drops::face-purple-rain-drops::face-pu
+   @Ha…: bende memnun oldum aynur"
+   @رو…: امممم تمام دورك
+   @رو…: ها
+RESULT Twitch: 456 messages; paid/gifts: 2
+   kai…: kaithebiggestt subscribed with Prime. They've subscribed for 7 months!
+   ele…: time to get those numbers up
+   Ara…: Why bother to retire?!! @hasanabi
+   dre…: he made it seem like yall shot at him
+RESULT Kick: 466 messages; paid/gifts: 0
+   kye…: :politeCat:
+   wsn…: ههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههههه
+   1Sh…: :KEKW:
+   Abr…: callate que son reales
+kick closed 1000 
+TRANSLATE en→fa: چه بازی خوبیه، فردا همه شما رو می‌بینم! 
