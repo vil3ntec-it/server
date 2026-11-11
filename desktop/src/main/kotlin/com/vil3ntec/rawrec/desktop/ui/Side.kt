@@ -154,15 +154,21 @@ fun SettingsPanel(app: StudioApp, studio: Studio, onEdit: (Studio) -> Unit, busy
         Seg(listOf(30 to "30", 60 to "60"), studio.fps, { onEdit(studio.copy(fps = it)) }, enabled = !busy)
         if (busy) Hint("حینِ ضبط یا پخش اندازه و فریم ثابت می‌مانند تا تصویر وسطِ کار جابه‌جا نشود.")
     }
+    Section("اسپیکر یا هدفون", subtitle = "جایی که «🎧 گوش دادن» صدای خروجی را پخش می‌کند.") {
+        val outs = remember { MicCapture.outputs() }
+        Btn("پیش‌فرضِ سیستم", { app.update { it.copy(monitorDevice = "") } }, Modifier.fillMaxWidth().padding(bottom = 4.dp), on = s.monitorDevice.isBlank(), height = 28.dp)
+        for (o in outs) Btn(o, { app.update { it.copy(monitorDevice = o) } }, Modifier.fillMaxWidth().padding(bottom = 4.dp), on = s.monitorDevice == o, height = 28.dp)
+        Hint("صدای خودِ کامپیوتر هیچ‌وقت دوباره در گوش دادن پخش نمی‌شود، پس پژواک ساخته نمی‌شود.")
+    }
     Section("میان‌بُرهای سراسری", subtitle = "حتی وقتی بازی یا پنجرهٔ دیگری جلوست.") {
         Seg(listOf(true to "روشن", false to "خاموش"), s.globalKeys, { v -> app.update { it.copy(globalKeys = v) } })
         GlobalKeys.error?.takeIf { s.globalKeys }?.let { Hint(it, K.Live) }
         Spacer(Modifier.height(6.dp))
-        for ((k, v) in listOf("Ctrl+Alt+R" to "ضبط / پایان", "Ctrl+Alt+P" to "مکث", "Ctrl+Alt+L" to "پخشِ زنده", "Ctrl+Alt+S" to "ذخیرهٔ بازپخش", "Ctrl+Alt+K" to "عکس", "Ctrl+Alt+1…9" to "صحنه"))
+        for ((k, v) in listOf("Ctrl+Alt+R" to "ضبط / پایان", "Ctrl+Alt+P" to "مکث", "Ctrl+Alt+L" to "پخشِ زنده", "Ctrl+Alt+S" to "ذخیرهٔ بازپخش", "Ctrl+Alt+K" to "عکس", "Ctrl+Alt+M" to "میکروفون قطع / وصل", "Ctrl+Alt+W" to "وب‌کم خاموش / روشن", "Ctrl+Alt+1…9" to "صحنه"))
             KeyRow(k, v)
     }
     Section("میان‌بُرهای داخلِ برنامه") {
-        for ((k, v) in listOf("F9" to "ضبط", "F8" to "مکث", "F10" to "پخش", "F11" to "ذخیرهٔ بازپخش", "F12" to "عکس", "Ctrl+1…9" to "صحنه",
+        for ((k, v) in listOf("F9" to "ضبط", "F8" to "مکث", "F10" to "پخش", "F11" to "ذخیرهٔ بازپخش", "F12" to "عکس", "Ctrl+M" to "میکروفون قطع / وصل", "Ctrl+1…9" to "صحنه",
             "Ctrl+Z / Ctrl+Y" to "برگرداندن / دوباره", "Ctrl+D" to "تکثیرِ لایه", "Ctrl+C / Ctrl+V" to "کپی / چسباندن", "Delete" to "حذفِ لایه", "جهت‌ها (+Shift)" to "جابه‌جایی ۱ (۱۰) پیکسل"))
             KeyRow(k, v)
     }

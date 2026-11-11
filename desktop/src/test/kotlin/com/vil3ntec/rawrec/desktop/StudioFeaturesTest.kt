@@ -287,4 +287,20 @@ class StudioFeaturesTest {
         assertEquals(Studio.MainFrom.PHONE, both.useMain(Studio.MainFrom.PHONE).mainFrom)
         assertEquals(both, Studio.fromJson(Studio.toJson(both)))
     }
+
+    @Test fun aHiddenLayerReleasesItsSourceAndWebcamsSwitchTogether() {
+        val path = greenWithRed().absolutePath
+        var s = studioWith(Fx(), path)
+        Engine(s, { null }, autostart = false).use { e ->
+            render(s, e); assertTrue("img" in e.runningSources(), "shown: open")
+            s = s.withLayer(s.scene.layers.first().copy(visible = false))
+            render(s, e); assertTrue("img" !in e.runningSources(), "hidden: closed (a webcam's light goes off)")
+        }
+        var w = Studio.default().add(SourceKind.WEBCAM, "cam", mapOf("device" to "x")).first
+        w = w.addScene("دوم", w.scene)
+        assertTrue(w.webcamOn)
+        val off = w.webcams(false)
+        assertTrue(!off.webcamOn && off.scenes.all { sc -> sc.layers.filter { off.source(it.sourceId)?.kind == SourceKind.WEBCAM }.none { it.visible } })
+        assertTrue(off.webcams(true).webcamOn)
+    }
 }

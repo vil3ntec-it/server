@@ -197,6 +197,14 @@ data class Studio(
         return copy(scenes = scenes + sc, focus = sc.id, vertical = vertical ?: sc.id)
     }
 
+    /** Any webcam showing on the main scene. */
+    val webcamOn: Boolean get() = scene.layers.any { it.visible && source(it.sourceId)?.kind == SourceKind.WEBCAM }
+
+    /** Every webcam layer in every scene hidden (the camera itself turns off) or shown again. */
+    fun webcams(on: Boolean): Studio = copy(scenes = scenes.map { sc ->
+        sc.copy(layers = sc.layers.map { l -> if (source(l.sourceId)?.kind == SourceKind.WEBCAM) l.copy(visible = on) else l })
+    })
+
     /** Where the main picture comes from (the first question of the Source tab); null when the owner arranged it by hand. */
     enum class MainFrom { PHONE, COMPUTER, BOTH }
 

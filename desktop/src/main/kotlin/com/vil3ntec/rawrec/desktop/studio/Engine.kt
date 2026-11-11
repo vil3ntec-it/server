@@ -302,7 +302,7 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
 
     /** Make, keep or drop each source's live part as the studio changes (a webcam opens once, not each picture). */
     private fun syncRuntimes(st: Studio, scenes: List<Scene>) {
-        val used = scenes.flatMap { it.layers }.map { it.sourceId }.toSet()
+        val used = scenes.flatMap { it.layers }.filter { it.visible }.map { it.sourceId }.toSet()
         val keys = scenes.flatMap { it.layers }.map { "${it.id}|${it.sourceId}" }.toSet()
         drawnCache.keys.filter { it !in keys }.forEach { drawnCache.remove(it)?.img?.close() }
         val it = runtimes.entries.iterator()
@@ -318,7 +318,7 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
     }
 
     private fun needsRestart(a: SourceDef, b: SourceDef) = when (a.kind) {
-        SourceKind.WEBCAM -> a.prop("device") != b.prop("device")
+        SourceKind.WEBCAM -> listOf("device", "size", "fps").any { a.prop(it) != b.prop(it) }
         SourceKind.VIDEO -> a.prop("path") != b.prop("path") || a.prop("audio", "1") != b.prop("audio", "1")
         SourceKind.IMAGE -> a.prop("path") != b.prop("path")
         SourceKind.SCREEN -> listOf("display", "window", "fps", "cursor", "method").any { a.prop(it) != b.prop(it) }
@@ -328,7 +328,7 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
 
     private fun make(d: SourceDef): SourceRuntime = when (d.kind) {
         SourceKind.PHONE -> PhoneSource(session)
-        SourceKind.WEBCAM -> MediaSource.webcam(d.prop("device"))
+        SourceKind.WEBCAM -> MediaSource.webcam(d.prop("device"), d.prop("size"), d.prop("fps"))
         SourceKind.VIDEO -> MediaSource(null, d.prop("path"), loop = true, sound = if (d.prop("audio", "1") == "1") mixer.input("media-${d.id}") else null)
         SourceKind.SCREEN -> MediaSource.screen(d.prop("display"), d.prop("window"), d.prop("fps").toIntOrNull() ?: studio.fps,
             d.prop("cursor", "1") == "1", d.prop("method", "auto"))
@@ -343,6 +343,9 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
         SourceKind.BROWSER -> BrowserSource(d.prop("url"), d.prop("w", "800").toIntOrNull()?.coerceIn(16, 3840) ?: 800,
             d.prop("h", "600").toIntOrNull()?.coerceIn(16, 2160) ?: 600, d.prop("fps", "30").toIntOrNull() ?: 30, d.prop("css"))
     }
+
+    /** The sources running now (opened devices, decoders, captures). */
+    fun runningSources(): Set<String> = runtimes.keys.toSet()
 
     /** A source's problem to show in the window (a webcam that will not open…). */
     fun sourceError(id: String): String? = when (val r = runtimes[id]?.second) { is MediaSource -> r.error; is BrowserSource -> r.error; else -> null }

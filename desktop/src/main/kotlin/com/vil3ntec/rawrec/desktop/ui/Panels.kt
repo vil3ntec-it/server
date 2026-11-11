@@ -267,7 +267,12 @@ fun Inspector(app: StudioApp, studio: Studio, selected: String?, onEdit: (Studio
                 val list = remember { webcams() }
                 if (list.isEmpty()) T("دوربینی پیدا نشد. وب‌کم را وصل کن و برنامه را دوباره باز کن.", 12, K.Warn)
                 for (d in list) Btn(d, { setSrc(src.with("device", d)) }, Modifier.fillMaxWidth().padding(bottom = 4.dp), on = d == src.prop("device"))
-                app.engine.sourceError(src.id)?.let { T("دوربین باز نشد: $it", 12, K.Live) }
+                Label("کیفیتِ دوربین")
+                Seg(listOf("" to "خودکار", "1280x720" to "720p", "1920x1080" to "1080p", "3840x2160" to "4K"), src.prop("size"), { setSrc(src.with("size", it)) })
+                Label("فریم در ثانیه")
+                Seg(listOf("" to "خودکار", "30" to "30", "60" to "60"), src.prop("fps"), { setSrc(src.with("fps", it)) })
+                Hint("اگر دوربین آن اندازه یا فریم را نداشته باشد، همین‌جا می‌گوید؛ «خودکار» همیشه کار می‌کند. پنهان کردنِ لایه دوربین را واقعاً خاموش می‌کند.")
+                app.engine.sourceError(src.id)?.let { Hint("دوربین باز نشد: $it", K.Live) }
             }
             SourceKind.IMAGE, SourceKind.VIDEO -> {
                 T(src.prop("path"), 11, K.Dim, maxLines = 2)

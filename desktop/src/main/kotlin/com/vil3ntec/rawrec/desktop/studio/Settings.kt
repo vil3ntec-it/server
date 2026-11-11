@@ -57,6 +57,8 @@ data class Settings(
     val vKbps: Int = 6000, val recVertical: Boolean = false,
     // Ctrl+Alt shortcuts from any window
     val globalKeys: Boolean = true,
+    // where «listen» plays (empty = the system's default output)
+    val monitorDevice: String = "",
 ) {
     fun toJson(): String = JSONObject().apply {
         put("phoneCodec", phoneCodec); put("phoneMbps", phoneMbps); put("phoneSize", phoneSize); put("phoneFps", phoneFps); put("phoneAudio", phoneAudio)
@@ -71,7 +73,7 @@ data class Settings(
         put("desktopDevice", desktopDevice); put("desktopGain", desktopGain.toDouble())
         put("phoneFx", fxJ(phoneFx)); put("micFx", fxJ(micFx)); put("desktopFx", fxJ(desktopFx))
         put("monitor", monitor); put("limiter", limiter); put("replaySeconds", replaySeconds); put("splitMinutes", splitMinutes)
-        put("vKbps", vKbps); put("recVertical", recVertical); put("globalKeys", globalKeys)
+        put("vKbps", vKbps); put("recVertical", recVertical); put("globalKeys", globalKeys); put("monitorDevice", monitorDevice)
     }.toString(2)
 
     companion object {
@@ -99,7 +101,7 @@ data class Settings(
                 o.optString("desktopDevice"), o.optDouble("desktopGain", 1.0).toFloat(),
                 fxF(o.optJSONObject("phoneFx"), d.phoneFx), fxF(o.optJSONObject("micFx"), d.micFx), fxF(o.optJSONObject("desktopFx"), d.desktopFx),
                 o.optBoolean("monitor", false), o.optBoolean("limiter", true), o.optInt("replaySeconds", 0), o.optInt("splitMinutes", 0),
-                o.optInt("vKbps", 6000).coerceIn(500, 50000), o.optBoolean("recVertical", false), o.optBoolean("globalKeys", true),
+                o.optInt("vKbps", 6000).coerceIn(500, 50000), o.optBoolean("recVertical", false), o.optBoolean("globalKeys", true), o.optString("monitorDevice"),
             )
         }
         val file: File get() = File(AppPaths.data, "settings.json")

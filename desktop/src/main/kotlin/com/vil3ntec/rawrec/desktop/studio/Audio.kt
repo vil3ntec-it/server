@@ -126,6 +126,9 @@ class AudioMixer(private val out: (ByteArray, Long) -> Unit) : AutoCloseable {
     @Volatile var monitor = false
         set(v) { field = v; if (!v) { monLine?.close(); monLine = null } }
     private var monLine: javax.sound.sampled.SourceDataLine? = null
+    /** The speakers or headphones to listen on (a system output's name); empty = the system's default. */
+    @Volatile var monitorDevice: String = ""
+        set(v) { if (v != field) { field = v; monLine?.close(); monLine = null } }
     /** Inputs left out of what is heard here (the computer's own sound: hearing it again would echo for ever); still in the mix that goes out. */
     @Volatile var notMonitored: Set<String> = emptySet()
     @Volatile private var running = false
@@ -177,7 +180,9 @@ class AudioMixer(private val out: (ByteArray, Long) -> Unit) : AutoCloseable {
             }
             level = max(level * 0.8f, peak / 32768f)
             if (monitor) try {
-                val line = monLine ?: (javax.sound.sampled.AudioSystem.getSourceDataLine(javax.sound.sampled.AudioFormat(48_000f, 16, 2, true, false)).also {
+                val fmt = javax.sound.sampled.AudioFormat(48_000f, 16, 2, true, false)
+                val mi = monitorDevice.takeIf { it.isNotBlank() }?.let { n -> javax.sound.sampled.AudioSystem.getMixerInfo().firstOrNull { it.name == n } }
+                val line = monLine ?: ((if (mi != null) javax.sound.sampled.AudioSystem.getSourceDataLine(fmt, mi) else javax.sound.sampled.AudioSystem.getSourceDataLine(fmt)).also {
                     it.open(javax.sound.sampled.AudioFormat(48_000f, 16, 2, true, false), 48_000 * 4 / 5); it.start(); monLine = it })
                 val heard = if (skip.isEmpty()) pcm else monPcm
                 if (line.available() >= heard.size) line.write(heard, 0, heard.size)
@@ -241,6 +246,11 @@ class MicCapture(private val mixerName: String?, private val into: AudioInput) :
         fun devices(): List<String> = AudioSystem.getMixerInfo().filter { mi ->
             try { AudioSystem.getMixer(mi).targetLineInfo.any { it.lineClass == TargetDataLine::class.java } } catch (_: Exception) { false }
         }.map { it.name }
+
+        /** The system's sound outputs (speakers, headphones, HDMI…). */
+        fun outputs(): List<String> = AudioSystem.getMixerInfo().filter { mi ->
+            try { AudioSystem.getMixer(mi).sourceLineInfo.any { it.lineClass == javax.sound.sampled.SourceDataLine::class.java } } catch (_: Exception) { false }
+        }.map { it.name }.filter { !it.startsWith("Port ") }
     }
 }
 

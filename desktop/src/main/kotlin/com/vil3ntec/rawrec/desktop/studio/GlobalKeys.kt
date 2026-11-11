@@ -13,6 +13,7 @@ object GlobalKeys {
     enum class Action(val key: Int, val label: String) {
         RECORD(NativeKeyEvent.VC_R, "R ضبط"), PAUSE(NativeKeyEvent.VC_P, "P مکث"), LIVE(NativeKeyEvent.VC_L, "L پخش"),
         REPLAY(NativeKeyEvent.VC_S, "S ذخیرهٔ بازپخش"), SCREENSHOT(NativeKeyEvent.VC_K, "K عکس"),
+        MIC(NativeKeyEvent.VC_M, "M میکروفون"), CAMERA(NativeKeyEvent.VC_W, "W وب‌کم"),
     }
 
     @Volatile var onAction: ((Action) -> Unit)? = null

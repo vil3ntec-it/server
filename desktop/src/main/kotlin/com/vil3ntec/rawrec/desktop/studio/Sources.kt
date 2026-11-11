@@ -272,12 +272,14 @@ class MediaSource(
         }
 
         /** The system's camera input, by name as the system lists it. */
-        fun webcam(device: String): MediaSource {
+        fun webcam(device: String, size: String = "", fps: String = ""): MediaSource {
             val os = System.getProperty("os.name").lowercase()
+            // the camera's own mode: a size and rate it offers (empty = what the camera gives by itself)
+            val mode = buildMap { if (size.isNotBlank()) put("video_size", size); if (fps.isNotBlank()) put("framerate", fps) }
             return when {
-                os.contains("win") -> MediaSource("dshow", "video=$device", true, mapOf("rtbufsize" to "64M"))
-                os.contains("mac") -> MediaSource("avfoundation", device, true, mapOf("framerate" to "30"))
-                else -> MediaSource("v4l2", device, true)
+                os.contains("win") -> MediaSource("dshow", "video=$device", true, mapOf("rtbufsize" to "128M") + mode)
+                os.contains("mac") -> MediaSource("avfoundation", device, true, mapOf("framerate" to fps.ifBlank { "30" }) + mode)
+                else -> MediaSource("v4l2", device, true, mode + (if (size.isNotBlank()) mapOf("input_format" to "mjpeg") else emptyMap()))
             }
         }
     }

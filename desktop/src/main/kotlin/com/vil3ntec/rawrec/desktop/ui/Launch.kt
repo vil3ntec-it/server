@@ -92,6 +92,7 @@ fun Studio(app: StudioApp) {
             e.key == Key.F8 -> { app.pauseRecording(); true }
             e.key == Key.F11 -> { Thread { app.saveReplay() }.start(); true }
             e.key == Key.F12 -> { app.screenshot(); true }
+            ctrl && e.key == Key.M -> { app.toggleMic(); true }
             else -> false
         }
     }
@@ -107,6 +108,8 @@ fun Studio(app: StudioApp) {
                     GlobalKeys.Action.PAUSE -> app.pauseRecording()
                     GlobalKeys.Action.REPLAY -> Thread { app.saveReplay() }.start()
                     GlobalKeys.Action.SCREENSHOT -> app.screenshot()
+                    GlobalKeys.Action.MIC -> app.toggleMic()
+                    GlobalKeys.Action.CAMERA -> edit(studio.webcams(!studio.webcamOn))
                 }
             } }
             GlobalKeys.onScene = { i -> scope.launch { studio.scenes.getOrNull(i)?.let { sc -> edit(studio.open(sc.id)) } } }
@@ -175,7 +178,7 @@ fun Studio(app: StudioApp) {
                     }
                 }
                 Spacer(Modifier.height(10.dp))
-                Transport(app, recording, onAir, tick, { message = it })
+                Transport(app, recording, onAir, tick, { message = it }, studio) { edit(it) }
                 message?.let { T(it, 12, K.Live, modifier = Modifier.padding(top = 6.dp).clickable { message = null }) }
             }
             Box(Modifier.width(1.dp).fillMaxHeight().background(K.Line))
@@ -234,9 +237,17 @@ private fun TopBar(app: StudioApp, st: Session.State, recording: Boolean, onAir:
 }
 
 @Composable
-private fun Transport(app: StudioApp, recording: Boolean, onAir: Boolean, tick: Int, onMessage: (String?) -> Unit) {
+private fun Transport(app: StudioApp, recording: Boolean, onAir: Boolean, tick: Int, onMessage: (String?) -> Unit, studio: Studio, onEdit: (Studio) -> Unit) {
     @Suppress("UNUSED_VARIABLE") val refresh = tick
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // the two switches a streamer reaches for most: the microphone and the camera, each one click (and Ctrl+Alt+M / W)
+        Column {
+            Btn(if (app.micMuted) "🎙 میکروفون قطع" else "🎙 میکروفون", { app.toggleMic() }, on = app.micMuted, tint = K.Live, height = 21.dp)
+            Spacer(Modifier.height(2.dp))
+            val cams = studio.sources.any { it.kind == SourceKind.WEBCAM }
+            Btn(if (!cams) "📷 وب‌کم ندارد" else if (studio.webcamOn) "📷 وب‌کم" else "📷 وب‌کم خاموش", { onEdit(studio.webcams(!studio.webcamOn)) },
+                on = cams && !studio.webcamOn, tint = K.Live, enabled = cams, height = 21.dp)
+        }
         BigButton(if (recording) "■  پایانِ ضبط  ${clock((System.currentTimeMillis() - (app.recording?.startedAtMs ?: 0)) / 1000)}" else "●  ضبط", recording) {
             if (recording) Thread { app.stopRecording() }.start() else onMessage(app.startRecording())
         }

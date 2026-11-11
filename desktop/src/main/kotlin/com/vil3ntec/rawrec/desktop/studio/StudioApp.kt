@@ -76,7 +76,7 @@ class StudioApp(val adb: Adb?, private val studioFile: File = File(AppPaths.data
         phoneIn.gain = s.phoneGain; phoneIn.fx = s.phoneFx
         micIn.gain = s.micGain; micIn.fx = s.micFx
         desktopIn.gain = s.desktopGain; desktopIn.fx = s.desktopFx
-        engine.mixer.monitor = s.monitor; engine.mixer.limiter = s.limiter
+        engine.mixer.monitor = s.monitor; engine.mixer.limiter = s.limiter; engine.mixer.monitorDevice = s.monitorDevice
         if (mic == null && s.mic.isNotBlank()) restartMic()
         if (desktop == null && s.desktopDevice.isNotBlank()) restartDesktop()
     }
@@ -218,6 +218,12 @@ class StudioApp(val adb: Adb?, private val studioFile: File = File(AppPaths.data
         }
         return if (vDests.isNotEmpty() && st.verticalScene == null) "پخشِ عمودی شروع نشد: صحنهٔ عمودی نداری" else null
     }
+    // ------------------------------------------------------------------ quick switches
+
+    /** The microphone silenced (or back), at once, in everything that goes out. */
+    val micMuted: Boolean get() = engine.mixer.input("mic").muted
+    fun toggleMic() { val i = engine.mixer.input("mic"); i.muted = !i.muted }
+
     // ------------------------------------------------------------------ virtual camera
 
     @Volatile var vcam: VirtualCamera? = null; private set
