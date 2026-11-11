@@ -286,7 +286,7 @@ private fun Transport(app: StudioApp, recording: Boolean, onAir: Boolean, tick: 
                     12, if (r.error != null) K.Live else K.Dim, maxLines = 1)
             }
         }
-        Btn("پوشهٔ ضبط‌ها", { runCatching { Desktop.getDesktop().open(AppPaths.videos) } }, height = 40.dp)
+        Btn("📁 ضبط‌ها", { runCatching { Desktop.getDesktop().open(AppPaths.videos) } }, height = 40.dp)
     }
 }
 

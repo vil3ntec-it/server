@@ -123,7 +123,7 @@ class VideoEncoder(
         val ox = ((width - fw) / 2) and 1.inv()
         val oy = ((height - fh) / 2) and 1.inv()
         if (fw != width || fh != height) blacken()
-        sws = sws_getCachedContext(sws, src.width, src.height, AV_PIX_FMT_BGRA, fw, fh, ctx.pix_fmt(), SWS_BICUBIC, null, null, null as DoublePointer?)
+        sws = sws_getCachedContext(sws, src.width, src.height, com.vil3ntec.rawrec.desktop.studio.SurfacePixels.avFormat, fw, fh, ctx.pix_fmt(), SWS_BICUBIC, null, null, null as DoublePointer?)
         if (src.width != lastSrcW || src.height != lastSrcH) {
             lastSrcW = src.width; lastSrcH = src.height
             // RGB → BT.709 limited range, as said in the stream

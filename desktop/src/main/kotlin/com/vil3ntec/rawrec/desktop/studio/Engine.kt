@@ -364,7 +364,13 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
 }
 
 /**
- * A drawing surface whose bytes are B, G, R, A in that order on every system — what the encoders are told they get.
- * (Skia's «native» order is RGBA on macOS: a recording made there would have red and blue swapped.)
+ * A drawing surface in Skia's native order — the fast one (an explicit BGRA surface drew 5× slower on Linux). Its byte
+ * order is [SurfacePixels.rgba]: what the encoders and the virtual camera are told when they read the studio's pictures.
  */
-internal fun bgraSurface(w: Int, h: Int): Surface = Surface.makeRaster(ImageInfo(w, h, ColorType.BGRA_8888, ColorAlphaType.PREMUL))
+internal fun bgraSurface(w: Int, h: Int): Surface = Surface.makeRasterN32Premul(w, h)
+
+/** The byte order of the studio's pictures: B,G,R,A on Windows and Linux, R,G,B,A on macOS (Skia's native order). */
+object SurfacePixels {
+    val rgba: Boolean by lazy { ImageInfo.makeN32Premul(1, 1).colorType == ColorType.RGBA_8888 }
+    val avFormat: Int get() = if (rgba) org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_RGBA else org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_BGRA
+}

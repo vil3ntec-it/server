@@ -137,12 +137,13 @@ class VirtualCamera : Output, AutoCloseable {
                 p.setInt(16, 0)                                            // 8-bit RGBA
                 p.setInt(20, 1)                                            // scaled to whatever size the program asks for
                 p.setInt(24, 0); p.setInt(28, 1000)                        // not mirrored; «no signal» after 1 s without pictures
-                // RGBA, bottom row first (the camera's picture is bottom-up)
+                // RGBA, bottom row first (the camera's picture is bottom-up); the studio's own order may already be RGBA
+                val r0 = if (SurfacePixels.rgba) 0 else 2; val b0 = 2 - r0
                 for (y in 0 until h) {
                     val s = (h - 1 - y) * w * 4
                     var i = 0
                     while (i < w * 4) {
-                        row[i] = bgra[s + i + 2]; row[i + 1] = bgra[s + i + 1]; row[i + 2] = bgra[s + i]; row[i + 3] = -1
+                        row[i] = bgra[s + i + r0]; row[i + 1] = bgra[s + i + 1]; row[i + 2] = bgra[s + i + b0]; row[i + 3] = -1
                         i += 4
                     }
                     p.write(32L + y.toLong() * w * 4, row, 0, w * 4)
@@ -180,7 +181,7 @@ class VirtualCamera : Output, AutoCloseable {
             val r = avformat_write_header(c, null as PointerPointer<*>?)
             check(r >= 0) { "دوربینِ مجازی باز نشد ($dev): ${com.vil3ntec.rawrec.desktop.VideoDecoder.err(r)}" }
             ctx = c; cw = w; ch = h
-            sws = sws_getContext(w, h, AV_PIX_FMT_BGRA, w, h, AV_PIX_FMT_YUV420P, SWS_BILINEAR, null, null, null as DoublePointer?)
+            sws = sws_getContext(w, h, SurfacePixels.avFormat, w, h, AV_PIX_FMT_YUV420P, SWS_BILINEAR, null, null, null as DoublePointer?)
             watched = true
         }
 

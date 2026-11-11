@@ -254,7 +254,7 @@ class StudioFeaturesTest {
             e.vOutputs.add(object : Output {
                 override fun video(f: com.vil3ntec.rawrec.desktop.VideoFrame) {
                     got.add(Triple(f.width, f.height, f.ptsUs))
-                    if (got.size == 10) { val b = f.bgra.duplicate(); b.position((960 * f.width + 540) * 4); blue = b.get().toInt() and 0xFF }
+                    if (got.size == 10) { val b = f.bgra.duplicate(); b.position((960 * f.width + 540) * 4 + (if (SurfacePixels.rgba) 2 else 0)); blue = b.get().toInt() and 0xFF }
                 }
                 override fun audio(pcm: ByteArray, ptsUs: Long) {}
             })
@@ -304,5 +304,26 @@ class StudioFeaturesTest {
         val off = w.webcams(false)
         assertTrue(!off.webcamOn && off.scenes.all { sc -> sc.layers.filter { off.source(it.sourceId)?.kind == SourceKind.WEBCAM }.none { it.visible } })
         assertTrue(off.webcams(true).webcamOn)
+    }
+
+    @Test fun aRedSceneIsRedInTheRecordedFile() {
+        // the studio's own pictures through the real encoder into a file, then read back: red must stay red on every
+        // system (Skia's byte order differs between Windows/Linux and macOS)
+        val st = Studio.default().copy(width = 640, height = 360, fps = 30).add(SourceKind.COLOR, "red", mapOf("color" to "#FFFF0000")).first
+        val enc = Encoders.available().first { !it.hardware && it.family == Encoders.Family.H264 }
+        val r = Recording(enc, 360, 30, 4000, withAudio = false, dir = tmp)
+        Engine(st, { null }).use { e ->
+            val o = object : Output { override fun video(f: com.vil3ntec.rawrec.desktop.VideoFrame) = r.video(f); override fun audio(pcm: ByteArray, ptsUs: Long) {} }
+            r.start(); e.outputs.add(o); Thread.sleep(1500); e.outputs.remove(o)
+        }
+        val res = r.stop()
+        val src = MediaSource(null, res.file.absolutePath, loop = false)
+        var c = 0
+        for (i in 1..40) { Thread.sleep(100); val img = src.image() ?: continue
+            val b = Bitmap(); b.allocPixels(img.imageInfo); img.readPixels(b, 0, 0); c = b.getColor(img.width / 2, img.height / 2); break }
+        src.close()
+        val (rr, g, bb) = rgb(c)
+        println("recorded red: $rr $g $bb (${res.file.name})")
+        assertTrue(rr > 200 && g < 60 && bb < 60, "red stayed red in the file: $rr $g $bb")
     }
 }
