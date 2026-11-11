@@ -102,6 +102,27 @@ class RecordingLogicTest {
 
     // ---- bit rates and codec levels
 
+    @Test fun youtubePresetIs4kAt60WithTheCleanestQualityAndKeepsTheRest() {
+        val base = RecordConfig(audioMode = RecordConfig.AUDIO_BOTH, facecam = 2).withLook(1)
+        val yt = RecordConfig.withPreset(base, RecordConfig.PRESET_YOUTUBE)
+        assertEquals(RecordConfig.PRESET_YOUTUBE, yt.preset)
+        assertEquals(RecordConfig.RES_4K, yt.resShort)
+        assertEquals(60, yt.fps)
+        assertEquals(RecordConfig.BR_MAX, yt.bitrate)
+        assertEquals(RecordConfig.MODE_VBR, yt.mode)
+        // what the owner chose besides the video stays as it was
+        assertEquals(base.audioMode, yt.audioMode); assertEquals(base.facecam, yt.facecam); assertEquals(base.lookPreset, yt.lookPreset)
+        // a 20:9 phone in landscape: the long side to 3840 (YouTube's 2160p), the shape unchanged, nothing cut
+        val (w, h) = Planner.targetSize(yt.copy(orient = RecordConfig.ORIENT_LANDSCAPE), DisplayInfo(1080, 2400, 420, 120))
+        assertEquals(3840, w); assertEquals(1728, h)
+        // never more than the screen shows: a 60 Hz screen stays 60, a 120 Hz one is capped at YouTube's 60
+        assertEquals(60, Planner.wantFps(yt, DisplayInfo(1080, 2400, 420, 120)))
+        assertEquals(30, Planner.wantFps(yt, DisplayInfo(1080, 2400, 420, 30)))
+        // every preset has a chip, «سفارشی» last
+        assertEquals(5, RecordConfig.PRESET_ORDER.size); assertEquals(RecordConfig.PRESET_CUSTOM, RecordConfig.PRESET_ORDER.last())
+        assertEquals((0..4).toSet(), RecordConfig.PRESET_ORDER.toSet())
+    }
+
     @Test fun bitrateIsFidelityFirstButLightStaysSmall() {
         val tablet = Planner.autoBitrate(1504, 2400, 120, Encoders.HEVC, RecordConfig.BR_AUTO_HIGH)
         assertTrue("60–72 Mbps, was ${tablet / 1_000_000}", tablet in 60_000_000..72_000_000)

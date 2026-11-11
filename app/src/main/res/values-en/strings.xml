@@ -36,6 +36,8 @@
     <string name="preset_screen_desc">Native resolution at the highest frame rate the phone\'s encoder supports (120 or 165): smoother, but bigger files and a warmer phone in busy games.</string>
     <string name="preset_60">60 fps</string>
     <string name="preset_60_desc">Recommended for games: native resolution at 60 fps; every frame sharp, no blocks in busy scenes, cooler and smaller; good for YouTube.</string>
+    <string name="preset_youtube">For YouTube (upload)</string>
+    <string name="preset_youtube_desc">YouTube re-encodes every video and gives a 1080p upload its lowest quality; a 4K upload gets a better codec and several times the bit rate. This records the screen\'s own pixels, untouched, at 4K, 60 fps (YouTube\'s ceiling) and the highest quality, so YouTube makes its 4K version. Bigger files. If the phone cannot hold 60 fps at 4K, the screen\'s own size at 60 fps.</string>
     <string name="preset_light">Light</string>
     <string name="preset_light_desc">Native resolution, 30 fps and a lower bitrate; the smallest files.</string>
     <string name="preset_custom">Custom</string>

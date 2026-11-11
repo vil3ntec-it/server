@@ -490,6 +490,16 @@ object Planner {
     }
 
     fun plan(cfg: RecordConfig, d: DisplayInfo): CapturePlan? {
+        // «برای یوتیوب»: 4K only if it keeps the frame rate; a slower 4K would be a worse upload than 60 fps at the screen's size.
+        if (cfg.preset == RecordConfig.PRESET_YOUTUBE && cfg.resShort == RecordConfig.RES_4K) {
+            val big = planAt(cfg, d)
+            if (big != null && big.fps >= big.requestedFps) return big
+            return planAt(cfg.copy(resShort = 0), d) ?: big
+        }
+        return planAt(cfg, d)
+    }
+
+    private fun planAt(cfg: RecordConfig, d: DisplayInfo): CapturePlan? {
         val (w, h) = targetSize(cfg, d)
         // Automatic: HEVC → hardware AV1 (Android 14+, MediaMuxer) → AVC.
         val av1 = if (Build.VERSION.SDK_INT >= 34 && Encoders.av1MuxOk) listOf(Encoders.AV1) else emptyList()
@@ -531,7 +541,12 @@ object Planner {
     fun replan(cfg: RecordConfig, d: DisplayInfo, cur: CapturePlan): CapturePlan? {
         val info = Encoders.find(cur.encoder, cur.mime) ?: return null
         val (w, h) = targetSize(cfg, d)
-        return build(cfg, d, w, h, cur.mime, info, cur.codecFallback)
+        val p = build(cfg, d, w, h, cur.mime, info, cur.codecFallback)
+        if (cfg.preset == RecordConfig.PRESET_YOUTUBE && cfg.resShort == RecordConfig.RES_4K && p.fps < p.requestedFps) {
+            val (w0, h0) = targetSize(cfg.copy(resShort = 0), d)
+            return build(cfg.copy(resShort = 0), d, w0, h0, cur.mime, info, cur.codecFallback)
+        }
+        return p
     }
 
     private fun build(cfg: RecordConfig, d: DisplayInfo, w0: Int, h0: Int, mime: String, info: MediaCodecInfo, fallback: Boolean): CapturePlan {

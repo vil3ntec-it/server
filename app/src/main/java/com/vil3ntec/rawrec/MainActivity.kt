@@ -169,7 +169,7 @@ class MainActivity : Activity() {
     private val gains = floatArrayOf(0.5f, 0.75f, 1f, 1.5f, 2f, 3f)
     private val countdowns = intArrayOf(0, 3, 5, 10)
 
-    private val presetIcons = listOf(R.drawable.ic_bolt, R.drawable.ic_speed, R.drawable.ic_leaf, R.drawable.ic_tune)
+    private val presetIcons = listOf(R.drawable.ic_bolt, R.drawable.ic_speed, R.drawable.ic_share, R.drawable.ic_leaf, R.drawable.ic_tune)   // in RecordConfig.PRESET_ORDER
     private val orientIcons = listOf(R.drawable.ic_rotate, R.drawable.ic_portrait, R.drawable.ic_gamepad)
     private val audioIcons = listOf(R.drawable.ic_volume_off, R.drawable.ic_gamepad, R.drawable.ic_mic, R.drawable.ic_headset)
 
@@ -1116,10 +1116,8 @@ class MainActivity : Activity() {
         val chips = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPaddingRelative(dp(4), 0, dp(4), 0) }
         s.addView(chips)
         rows["homePreset"] = Row(chips, str(R.string.opt_preset_title), str(R.string.home_preset_desc),
-            listOf(str(R.string.preset_screen), str(R.string.preset_60), str(R.string.preset_light), str(R.string.preset_custom)),
-            ic = R.drawable.ic_quality, chipIcons = presetIcons, top = 16) { i ->
-            if (i == RecordConfig.PRESET_CUSTOM) change(false) { it.copy(preset = i) } else change(false) { RecordConfig.withPreset(it, i) }
-        }
+            listOf(str(R.string.preset_screen), str(R.string.preset_60), str(R.string.preset_youtube), str(R.string.preset_light), str(R.string.preset_custom)),
+            ic = R.drawable.ic_quality, chipIcons = presetIcons, top = 16) { pickPreset(it) }
         rows["homeOrient"] = Row(chips, str(R.string.opt_orient_title), str(R.string.home_orient_desc),
             listOf(str(R.string.orient_auto), str(R.string.orient_portrait), str(R.string.orient_landscape_game)),
             ic = R.drawable.ic_rotate, chipIcons = orientIcons) { i -> change(false) { it.copy(orient = i) } }
@@ -2292,9 +2290,7 @@ class MainActivity : Activity() {
         qc.addView(text(str(R.string.preset_desc), R.style.Text_Caption), lp(6))
         val presets = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         qc.addView(presets, lp(12))
-        rows["preset"] = Row(presets, "", "", listOf("", "", "", ""), vertical = true, chipIcons = presetIcons) { i ->
-            if (i == RecordConfig.PRESET_CUSTOM) change(false) { it.copy(preset = i) } else change(false) { RecordConfig.withPreset(it, i) }
-        }
+        rows["preset"] = Row(presets, "", "", RecordConfig.PRESET_ORDER.map { "" }, vertical = true, chipIcons = presetIcons) { pickPreset(it) }
         qc.addView(text(str(R.string.plan_title), R.style.Text_Overline).apply { startIcon(R.drawable.ic_info, 16, tint(R.color.text_tertiary), 6) }, lp(8))
         planText = text("", R.style.Text_Body).apply {
             setBackgroundResource(R.drawable.bg_inset)
@@ -2828,6 +2824,12 @@ class MainActivity : Activity() {
 
     // ------------------------------------------------------------ refresh
 
+    /** A preset chip at position [pos] (in RecordConfig.PRESET_ORDER) was chosen. */
+    private fun pickPreset(pos: Int) {
+        val id = RecordConfig.PRESET_ORDER.getOrNull(pos) ?: return
+        if (id == RecordConfig.PRESET_CUSTOM) change(false) { it.copy(preset = id) } else change(false) { RecordConfig.withPreset(it, id) }
+    }
+
     /** Title in bold, explanation, then what the preset would really apply on this phone. */
     private fun presetLabel(title: Int, desc: Int, p: CapturePlan?): CharSequence {
         val sb = SpannableStringBuilder()
@@ -2851,20 +2853,20 @@ class MainActivity : Activity() {
     private fun refreshAll() {
         val c = cfg
         rows["preset"]?.let { r ->
-            val titles = intArrayOf(R.string.preset_screen, R.string.preset_60, R.string.preset_light, R.string.preset_custom)
-            val descs = intArrayOf(R.string.preset_screen_desc, R.string.preset_60_desc, R.string.preset_light_desc, R.string.preset_custom_desc)
-            for (i in 0..3) {
+            val titles = intArrayOf(R.string.preset_screen, R.string.preset_60, R.string.preset_youtube, R.string.preset_light, R.string.preset_custom)
+            val descs = intArrayOf(R.string.preset_screen_desc, R.string.preset_60_desc, R.string.preset_youtube_desc, R.string.preset_light_desc, R.string.preset_custom_desc)
+            for ((i, id) in RecordConfig.PRESET_ORDER.withIndex()) {
                 val p = runCatching {
-                    if (i == RecordConfig.PRESET_CUSTOM) (if (c.preset == i) Planner.plan(c, disp) else null)
-                    else Planner.plan(RecordConfig.withPreset(c, i), disp)
+                    if (id == RecordConfig.PRESET_CUSTOM) (if (c.preset == id) Planner.plan(c, disp) else null)
+                    else Planner.plan(RecordConfig.withPreset(c, id), disp)
                 }.getOrNull()
                 r.buttons[i].text = presetLabel(titles[i], descs[i], p)
             }
-            r.select(c.preset)
+            r.select(RecordConfig.PRESET_ORDER.indexOf(c.preset))
         }
         rows["orient"]?.select(c.orient)
         rows["homeOrient"]?.select(c.orient)
-        rows["homePreset"]?.select(c.preset)
+        rows["homePreset"]?.select(RecordConfig.PRESET_ORDER.indexOf(c.preset))
         if (::camToggle.isInitialized) { camToggle.set(c.facecam > 0); micToggle.set(c.usesMic) }
         toggles["smart"]?.set(c.smartStart)
         toggles["rotnew"]?.set(c.rotateNewFile)

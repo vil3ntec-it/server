@@ -85,6 +85,9 @@ data class RecordConfig(
         const val PRESET_60 = 1       // «۶۰ فریم»
         const val PRESET_LIGHT = 2    // «سبک»: native size @30, smaller files
         const val PRESET_CUSTOM = 3
+        const val PRESET_YOUTUBE = 4  // «برای یوتیوب»: 4K (بزرگ‌نمایی) × 60 fps × «بی‌افت»
+        /** The order the presets are shown in (ids above); «سفارشی» stays last. */
+        val PRESET_ORDER = intArrayOf(PRESET_SCREEN, PRESET_60, PRESET_YOUTUBE, PRESET_LIGHT, PRESET_CUSTOM)
 
         const val ORIENT_AUTO = 0
         const val ORIENT_PORTRAIT = 1
@@ -149,7 +152,7 @@ data class RecordConfig(
         fun fromPrefs(p: android.content.SharedPreferences): RecordConfig {
             val i = { k: String, d: Int -> SafePrefs.int(p, k, d) }
             return RecordConfig(
-                preset = i("c_preset", RecordConfig.PRESET_60).coerceIn(0, 3),
+                preset = i("c_preset", RecordConfig.PRESET_60).coerceIn(0, 4),
                 resShort = i("c_res", 0).coerceAtLeast(0),
                 orient = i("c_orient", RecordConfig.ORIENT_AUTO).coerceIn(0, 2),
                 fps = i("c_fps", 0).coerceAtLeast(0),
@@ -190,6 +193,13 @@ data class RecordConfig(
             PRESET_SCREEN -> base.copy(preset = preset, resShort = 0, fps = 0, codec = CODEC_AUTO, bitrate = BR_AUTO_HIGH, mode = MODE_VBR)
             PRESET_60 -> base.copy(preset = preset, resShort = 0, fps = 60, codec = CODEC_AUTO, bitrate = BR_AUTO_HIGH, mode = MODE_VBR)
             PRESET_LIGHT -> base.copy(preset = preset, resShort = 0, fps = 30, codec = CODEC_AUTO, bitrate = BR_AUTO_BALANCED, mode = MODE_VBR)
+            // YouTube re-encodes every upload; what it gives back depends on the upload's size: 1080p gets
+            // its smallest bit rate (games turn to mush), 1440p/2160p get VP9/AV1 at several times that.
+            // So the screen's own pixels, scaled up by the compositor to 3840 (nothing removed, no second
+            // encode), at 60 fps (YouTube's ceiling: above it YouTube drops frames itself) and the
+            // cleanest quality range, so YouTube's encoder starts from a clean picture. The look is kept
+            // as chosen. Where 4K can't hold 60 fps, the planner keeps the screen's own size at 60.
+            PRESET_YOUTUBE -> base.copy(preset = preset, resShort = RES_4K, fps = 60, codec = CODEC_AUTO, bitrate = BR_MAX, mode = MODE_VBR)
             else -> base.copy(preset = PRESET_CUSTOM)
         }
     }
