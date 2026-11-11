@@ -1,0 +1,15 @@
+t=1s captured 34566 frames, level -17.0 dBFS, peak 8000 error null
+t=2s captured 83536 frames, level -15.3 dBFS, peak 8000 error null
+t=3s captured 132487 frames, level -15.3 dBFS, peak 8000 error null
+t=4s captured 180496 frames, level -15.3 dBFS, peak 8000 error null
+t=5s captured 192019 frames, level -20.3 dBFS, peak 8000 error null
+t=6s captured 192019 frames, level -120.0 dBFS, peak 0 error صدای کامپیوتر باز نشد (PulseAudio/PipeWire): No such process (-3)
+t=7s captured 192019 frames, level -120.0 dBFS, peak 0 error صدای کامپیوتر باز نشد (PulseAudio/PipeWire): No such process (-3)
+t=8s captured 192019 frames, level -120.0 dBFS, peak 0 error صدای کامپیوتر باز نشد (PulseAudio/PipeWire): No such process (-3)
+t=9s captured 192019 frames, level -120.0 dBFS, peak 0 error صدای کامپیوتر باز نشد (PulseAudio/PipeWire): No such process (-3)
+t=10s captured 192019 frames, level -120.0 dBFS, peak 0 error صدای کامپیوتر باز نشد (PulseAudio/PipeWire): No such process (-3)
+t=11s captured 192019 frames, level -120.0 dBFS, peak 0 error صدای کامپیوتر باز نشد (PulseAudio/PipeWire): No such process (-3)
+t=12s captured 192019 frames, level -120.0 dBFS, peak 0 error صدای کامپیوتر باز نشد (PulseAudio/PipeWire): No such process (-3)
+t=13s captured 192019 frames, level -120.0 dBFS, peak 0 error صدای کامپیوتر باز نشد (PulseAudio/PipeWire): No such process (-3)
+t=14s captured 192019 frames, level -120.0 dBFS, peak 0 error صدای کامپیوتر باز نشد (PulseAudio/PipeWire): No such process (-3)
+SYSTEM_SOUND_OK

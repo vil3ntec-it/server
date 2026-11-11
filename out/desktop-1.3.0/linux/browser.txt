@@ -1,0 +1,2 @@
+BROWSER 800x600 loaded=true corner alpha=0 centre=#63e86240 error=null
+BROWSER moving=true
