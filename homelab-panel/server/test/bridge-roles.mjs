@@ -375,6 +375,14 @@ const SPECIAL = {
   'POST /api/account-admin/console/image-bank/images/:id/archive': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-img-0003' } },
   'POST /api/account-admin/console/image-bank/images/:id/search': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, enabled: false, idempotencyKey: 'bridge-roles-img-0004' } },
   'GET /api/account-admin/console/image-bank/file/:id/:version/:size': { params: { version: '1', size: 'thumb' } },
+  //  ۱.۵۰.۸۸ (۳-۹): بارگذاری، ورودِ گروهی و ویرایشِ کالای بانک — هر در کلیدِ خودش و بدنهٔ معتبرِ خودش (عکسِ PNG ِ خام برای دو درِ بایت)
+  'POST /api/account-admin/console/image-bank/products': { body: { name: 'سنجهٔ نقش', idempotencyKey: 'bridge-roles-ibp-0001' } },
+  'POST /api/account-admin/console/image-bank/images': { body: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82]), type: 'image/png', query: '&idempotencyKey=bridge-roles-ibi-0001' },
+  'PATCH /api/account-admin/console/image-bank/images/:id': { body: { role: 'main' } },
+  'POST /api/account-admin/console/image-bank/batches': { body: { note: 'سنجهٔ نقش', idempotencyKey: 'bridge-roles-ibb-0001' } },
+  'PUT /api/account-admin/console/image-bank/batches/:id/files/:name': { params: { name: 'a.png' }, body: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82]), type: 'image/png' },
+  'POST /api/account-admin/console/image-bank/batches/:id/rows': { body: { csv: 'name,image_path\nسنجه,a.png', dryRun: true } },
+  'POST /api/account-admin/console/image-bank/batches/:id/status': { body: { status: 'paused', confirm: true } },
   //  سندِ اصلاحیِ مالی: بدنهٔ کامل و رمزِ درستِ مالک تا از احرازِ دوبارهٔ پنل بگذرد (بی کلیدِ سرویس ۴۰۹ می‌گیرد؛
   //  مقصدِ بالادستش را `account-finance.mjs` با کلیدِ سرویس می‌سنجد)
   'POST /api/account-admin/console/finance/adjustments': {

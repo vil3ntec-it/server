@@ -937,34 +937,42 @@ async function authedSend(method, path, { query = {}, body = null, headers = {},
  * @returns برای POST همان JSON؛ برای GET ‎{ buffer, contentType }‎
  */
 //  ⏱️ بایت (رسانهٔ پشتیبانی تا ۲۵ مگابایت) با سرورِ حسابِ دور (راهِ تونل) واقعاً طول می‌کشد ⇒ پیش‌فرض «بلند»
-export async function cloudRawBytes(method, path, { body = null, contentType = '', timeout = 'long', signal = null } = {}) {
+//  ⛔ (۱.۵۰.۸۸، ۳-۹) بانکِ عکس: ‎PUT‎ (فایلِ دسته)، ‎query‎ ِ بارگذاری و ‎sha256‎ ⇒ ‎X-Content-SHA256‎ (سرورِ حساب درستیِ بایت‌ها را
+//  پس از تونل می‌سنجد، IMG-14). تکهٔ آخرِ مسیر می‌تواند نامِ فایلِ ‎encodeURIComponent‎ شده باشد (‎.‎ و ‎%XX‎)؛ ‎..‎ هنوز نه.
+export async function cloudRawBytes(method, path, { body = null, contentType = '', timeout = 'long', signal = null, query = {}, sha256 = '' } = {}) {
   const m = String(method || 'GET').toUpperCase();
   const p = String(path || '');
-  if (!['GET', 'POST'].includes(m) || (m === 'POST' && !Buffer.isBuffer(body))
-      || !/^\/api\/admin\/[A-Za-z0-9_\-/]+$/.test(p) || p.includes('..')) {
+  const write = m === 'POST' || m === 'PUT';
+  if (!['GET', 'POST', 'PUT'].includes(m) || (write && !Buffer.isBuffer(body))
+      || !/^\/api\/admin\/[A-Za-z0-9_\-/]+(?:\/[A-Za-z0-9_.%-]+)?$/.test(p) || p.includes('..')
+      || (sha256 && !/^[0-9a-f]{64}$/.test(String(sha256)))) {
     const err = new Error('این مسیر از پنل باز نیست');
     err.code = 'path_not_allowed';
     err.status = 400;
     throw err;
   }
-  const url = `${cloudTarget()}${p}`;
+  const qs = new URLSearchParams(
+    Object.entries(query || {}).filter(([, v]) => v !== undefined && v !== null && v !== '')
+  ).toString();
+  const url = `${cloudTarget()}${p}${qs ? `?${qs}` : ''}`;
   //  ⛔ رسانهٔ پشتیبانی یک‌بارمصرف است (بالا) ⇒ هرگز پشتِ سقفِ هم‌زمانیِ بدنه‌ها (`readCapped`): نه صف، نه ‎503‎
   const once = m === 'GET' && p.startsWith('/api/admin/support/media/');
   const send = (auth) => dial(url, {
     method: m,
     headers: {
       ...auth,
-      ...(m === 'POST' ? { 'content-type': String(contentType || 'application/octet-stream') } : {}),
+      ...(write ? { 'content-type': String(contentType || 'application/octet-stream') } : {}),
+      ...(write && sha256 ? { 'x-content-sha256': String(sha256) } : {}),
     },
-    body: m === 'POST' ? body : undefined,
+    body: write ? body : undefined,
   }, { timeout, signal, once });
 
   const res = await sendAuthed(send, p);
-  if (!res.ok || m === 'POST') {
+  if (!res.ok || write) {
     const out = await readBody(res);
     if (!res.ok) {
       //  ۱.۵۰.۸۷ (۳-۱۵): بارگذاریِ بایت هم نوشتن است — همان قاعدهٔ پاسخِ تونل
-      const verdict = m === 'POST' ? tunnelVerdict(res.status, out) : null;
+      const verdict = write ? tunnelVerdict(res.status, out) : null;
       if (verdict) throw tunnelErr(m, p, res.status, verdict);
       const err = new Error(out?.error?.message || 'سرورِ حساب جواب نداد');
       err.code = out?.error?.code || 'cloud_error';

@@ -5,6 +5,7 @@
 //     «بانک روشن نیست»، نه فهرستِ خالی. عکس با سرآیندِ نشست (`fetchBlobUrl`)، نه توکن در نشانی.
 //  ⛔ بازبینی (تأیید/رد/بایگانی/جست‌وجو): فقط admin (مرز در سرور) + دلیل + تأیید + یک کلیدِ یکتایی برای همان پنجره؛
 //     قاعده‌های انتشار (مجوزِ تجاری، کالای وصل، تطبیقِ قطعی) را **سرورِ حساب** می‌سنجد و خطایش با کدِ خودش دیده می‌شود.
+//  ⛔ (۱.۵۰.۸۸، ۳-۹) بارگذاری، کالای بانک و ورودِ گروهی برای admin: `ImageBankTools.tsx`.
 // ---------------------------------------------------------------------------
 import { useEffect, useState, type FormEvent } from 'react';
 import { Images } from 'lucide-react';
@@ -18,6 +19,7 @@ import { Problem, SourceLine } from '../ShopConsole';
 import { shown } from '../consoleData';
 import { SensitiveDialog, StateEmpty, fmtTime } from './parts';
 import { useTx, type Tx } from './text';
+import ImageBankTools from './ImageBankTools';
 
 const IB = '/api/account-admin/console/image-bank';
 type Product = { id: string; gtin: string; sku: string; name: string; brand: string; status: string; missing?: boolean } | null;
@@ -220,6 +222,7 @@ function Reports() {
 
 export default function ImageBankModule() {
   const tx = useTx();
+  const { can } = useApp();
   const status = useLoad<{ enabled: boolean }>(`${IB}/status`);
   const [open, setOpen] = useState('');
   return (
@@ -233,6 +236,7 @@ export default function ImageBankModule() {
           </Notice>
         ) : (
           <div className="space-y-4">
+            {can('admin') && <ImageBankTools onOpen={setOpen} />}
             <ReviewList onOpen={setOpen} />
             <div><p className="mb-1 text-xs font-semibold">{tx('جست‌وجو در بانک', 'Search the bank', 'په بانک کې لټون')}</p><SearchBox onOpen={setOpen} /></div>
             <div><p className="mb-1 text-xs font-semibold">{tx('گزارش‌های باز', 'Open reports', 'پرانیستي راپورونه')}</p><Reports /></div>
