@@ -61,6 +61,11 @@ tasks.test { useJUnitPlatform() }
 
 /** The whole path against a fake phone (no phone needed): see src/test/.../PipelineCheck.kt. */
 // -PcheckMain=<class> -PcheckArgs="a b c" and -Prawrec.<name>=<value> (passed on as system properties)
+tasks.withType<Test> {
+    // a failure says what was measured, in the build's own output
+    testLogging { events("failed"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL; showStandardStreams = false }
+}
+
 tasks.register<JavaExec>("pipelineCheck") {
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass.set((findProperty("checkMain") as String?) ?: "com.vil3ntec.rawrec.desktop.PipelineCheckKt")

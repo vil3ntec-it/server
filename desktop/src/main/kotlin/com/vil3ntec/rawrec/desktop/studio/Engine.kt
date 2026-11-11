@@ -76,7 +76,7 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
     /** [autostart] false: no picture thread (tests draw by hand). */
     private val thread = Thread({ loop() }, "studio-engine").apply { priority = Thread.MAX_PRIORITY - 1; isDaemon = true; if (autostart) start() }
 
-    init { mixer.start(t0) }
+    init { com.vil3ntec.rawrec.desktop.Awake.keep(); mixer.start(t0) }
 
     /** Microseconds on the engine's clock (shared by pictures and sound). */
     fun nowUs() = (System.nanoTime() - t0) / 1000

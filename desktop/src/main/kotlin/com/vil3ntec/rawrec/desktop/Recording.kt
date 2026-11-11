@@ -70,6 +70,7 @@ class Recording(
     val bytes get() = writer?.bytes ?: 0L
 
     fun start() {
+        Awake.keep()
         running = true
         startedAtMs = System.currentTimeMillis()
         thread = Thread({ loop() }, "rawrec-record").apply { priority = Thread.MAX_PRIORITY - 1; start() }

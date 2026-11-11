@@ -39,6 +39,7 @@ object SelfTest {
         if (capErr != null) println("capture: unavailable — $capErr") else println("capture: " + listOf("gdigrab", "dshow", "avfoundation", "x11grab", "v4l2", "pulse").filter { org.bytedeco.ffmpeg.global.avformat.av_find_input_format(it) != null }.joinToString())
         println("noise model: ${com.vil3ntec.rawrec.desktop.studio.Denoiser.model()?.length() ?: "missing"} bytes")
         browserCheck()
+        if (System.getProperty("os.name").lowercase().contains("mac")) { Awake.keep(); println("app nap: " + if (Awake.active) "off while the app runs" else "could not be turned off") }
         val encs = Encoders.available()
         println("encoders: " + encs.joinToString { it.name + if (it.hardware) "(gpu)" else "(cpu)" })
         val enc = Encoders.best() ?: return fail("no working video encoder")
