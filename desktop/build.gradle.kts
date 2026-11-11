@@ -10,6 +10,15 @@ group = "com.vil3ntec.rawrec"
 version = "1.3.0"
 
 /** FFmpeg's native libraries for the system this build runs on (each system builds its own installer). */
+val fxPlatform: String = run {
+    val os = System.getProperty("os.name").lowercase()
+    val arch = System.getProperty("os.arch").lowercase()
+    when {
+        os.contains("win") -> "win"
+        os.contains("mac") -> if (arch.contains("aarch64") || arch.contains("arm")) "mac-aarch64" else "mac"
+        else -> "linux"
+    }
+}
 val nativePlatform: String = run {
     val os = System.getProperty("os.name").lowercase()
     val arch = System.getProperty("os.arch").lowercase()
@@ -32,6 +41,8 @@ dependencies {
     implementation("com.github.kwhat:jnativehook:2.2.2")
     // Windows: the speakers' own sound (WASAPI loopback) without «Stereo Mix» — Apache-2.0/LGPL
     implementation("net.java.dev.jna:jna-platform:5.15.0")
+    // the browser source (web pages and stream widgets on the picture): WebKit from OpenJFX — GPL-2.0 with the Classpath Exception
+    for (m in listOf("base", "graphics", "controls", "media", "web", "swing")) implementation("org.openjfx:javafx-$m:21.0.5:$fxPlatform")
     testImplementation(kotlin("test"))
 }
 
@@ -69,7 +80,7 @@ compose.desktop {
             description = "Phone screen over USB, recording and live streaming"
             vendor = "VIL3NTEC"
             appResourcesRootDir.set(layout.projectDirectory.dir("appres"))
-            modules("java.prefs", "java.logging", "java.desktop", "jdk.unsupported", "java.net.http", "java.management", "jdk.management", "jdk.crypto.ec", "jdk.localedata")
+            modules("java.prefs", "java.logging", "jdk.jsobject", "jdk.xml.dom", "java.xml", "java.scripting", "java.desktop", "jdk.unsupported", "java.net.http", "java.management", "jdk.management", "jdk.crypto.ec", "jdk.localedata")
             windows { menu = true; shortcut = true; dirChooser = true; perUserInstall = true; upgradeUuid = "6f5d2c3e-8a1b-4c7e-9f3a-2b1d0e7c4a55" }
             linux { packageName = "rawrec-desktop"; debMaintainer = "rawrec@vil3ntec.invalid"; shortcut = true; menuGroup = "AudioVideo" }
             macOS { bundleID = "com.vil3ntec.rawrec.desktop" }

@@ -106,6 +106,8 @@ jobs:
           cp "$RUNNER_TEMP/selftest.log" $O/selftest-no-phone.txt
           cat $O/selftest-no-phone.txt $O/selftest-no-phone-exit.txt
           grep -q '^encoders: ' $O/selftest-no-phone.txt
+          # web pages (the browser source) drawn inside the installed app's own runtime
+          grep -E '^browser: (ok|skipped)' $O/selftest-no-phone.txt
       - name: A sound card for the computer-sound check (Windows has none on CI)
         if: matrix.tag == 'windows'
         continue-on-error: true
@@ -133,6 +135,22 @@ jobs:
           grep -q SYSTEM_SOUND_OK $O/system-sound.txt
           # the tone must be there (louder than -50 dBFS at some second), not just silence
           grep -E 'level -[1-4][0-9]\.[0-9] dBFS|level -[0-9]\.[0-9] dBFS' $O/system-sound.txt
+      - name: The browser source draws a live widget (script, animation, see-through background)
+        if: matrix.tag == 'linux'
+        run: |
+          O=$(pwd)/out/desktop-$VER/linux
+          cat > $RUNNER_TEMP/widget.html <<'HTML'
+          <!doctype html><html><head><meta charset="utf-8"><style>
+          @keyframes pop { 0% { transform: translateY(40px) scale(.9); opacity:.2 } 100% { transform: translateY(0) scale(1); opacity:1 } }
+          .alert { position:absolute; left:150px; top:200px; width:500px; padding:24px; border-radius:18px; color:#fff; font: bold 34px sans-serif;
+            background: linear-gradient(135deg,#f59e0b,#db2777); animation: pop .8s ease-in-out infinite alternate; text-align:center; }
+          </style></head><body><div class="alert" id="a">New follower!</div>
+          <script>let n=0; setInterval(()=>{ document.getElementById('a').textContent = 'New follower #' + (++n) }, 300)</script></body></html>
+          HTML
+          sudo apt-get install -y -qq xvfb >/dev/null || true
+          cd desktop
+          xvfb-run -a gradle pipelineCheck --no-daemon -q -PcheckMain=com.vil3ntec.rawrec.desktop.BrowserCheckKt -PcheckArgs="$RUNNER_TEMP/widget.html $O/browser-widget.png" 2>&1 | grep -a BROWSER | tee $O/browser.txt
+          grep -q 'loaded=true corner alpha=0' $O/browser.txt && grep -q 'moving=true' $O/browser.txt
       - name: Whole path with a fake phone (Linux)
         if: matrix.tag == 'linux'
         run: |

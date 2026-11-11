@@ -21,12 +21,14 @@ fun kindLabel(k: SourceKind) = when (k) {
     SourceKind.PHONE -> "گوشی"; SourceKind.WEBCAM -> "وب‌کم"; SourceKind.VIDEO -> "فایلِ ویدیو"; SourceKind.IMAGE -> "عکس"
     SourceKind.SCREEN -> "صفحهٔ کامپیوتر / پنجره"; SourceKind.SLIDESHOW -> "اسلایدشو"; SourceKind.COUNTER -> "شمارندهٔ بیننده/مشترک"; SourceKind.GOAL -> "نوارِ هدف"
     SourceKind.TEXT -> "متن"; SourceKind.COLOR -> "رنگ / پس‌زمینه"; SourceKind.CHAT -> "چت"; SourceKind.ALERTS -> "سوپرچت و هدیه"
+    SourceKind.BROWSER -> "صفحهٔ وب / ویجت"
 }
 
 private fun kindMark(k: SourceKind) = when (k) {
     SourceKind.PHONE -> "▯"; SourceKind.WEBCAM -> "◉"; SourceKind.VIDEO -> "▶"; SourceKind.IMAGE -> "▣"
     SourceKind.SCREEN -> "▭"; SourceKind.SLIDESHOW -> "◫"; SourceKind.COUNTER -> "#"; SourceKind.GOAL -> "▰"
     SourceKind.TEXT -> "T"; SourceKind.COLOR -> "■"; SourceKind.CHAT -> "☰"; SourceKind.ALERTS -> "★"
+    SourceKind.BROWSER -> "◎"
 }
 
 fun pickFolder(title: String): String? {
@@ -146,6 +148,7 @@ fun LayersPanel(studio: Studio, selected: String?, onSelect: (String?) -> Unit, 
                             SourceKind.SLIDESHOW -> pickFolder("پوشهٔ عکس‌ها")?.let { add(k, mapOf("folder" to it, "every" to "5", "fit" to "cover"), java.io.File(it).name) }
                             SourceKind.COUNTER -> add(k, mapOf("platform" to "ALL", "metric" to "VIEWERS"))
                             SourceKind.GOAL -> add(k, mapOf("platform" to "ALL", "metric" to "SUBSCRIBERS", "target" to "100", "start" to "0"))
+                            SourceKind.BROWSER -> add(k, mapOf("url" to "", "w" to "800", "h" to "600", "fps" to "30"))
                         }
                     }.padding(6.dp)) { T("${kindMark(k)}   ${kindLabel(k)}") }
                 }
@@ -299,6 +302,29 @@ fun Inspector(app: StudioApp, studio: Studio, selected: String?, onEdit: (Studio
                 if (win) Field(src.prop("window"), { setSrc(src.with("window", it)) }, Modifier.fillMaxWidth(), hint = "عنوانِ پنجره (خالی = کلِ صفحه)")
                 else Field(src.prop("display"), { setSrc(src.with("display", it)) }, Modifier.fillMaxWidth(), hint = "0", ltr = true)
                 app.engine.sourceError(src.id)?.let { T("گرفتنِ صفحه نشد: $it", 12, K.Live) }
+            }
+            SourceKind.BROWSER -> {
+                T("نشانیِ ویجت (StreamElements، Streamlabs…) یا هر صفحه، یا یک فایلِ HTML روی همین کامپیوتر:", 11, K.Dim)
+                Spacer(Modifier.height(4.dp))
+                var u by remember(src.id) { mutableStateOf(src.prop("url")) }
+                Field(u, { u = it }, Modifier.fillMaxWidth(), hint = "https://…", ltr = true)
+                Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Btn("باز کن", { setSrc(src.with("url", u.trim())) }, Modifier.weight(1f), on = true, height = 28.dp)
+                    Btn("فایلِ HTML…", { pickFile("صفحهٔ HTML", listOf(".html", ".htm"))?.let { u = it; setSrc(src.with("url", it)) } }, Modifier.weight(1f), height = 28.dp)
+                    Btn("↻ از نو", { setSrc(src.with("reload", ((src.prop("reload", "0").toIntOrNull() ?: 0) + 1).toString())) }, Modifier.weight(1f), height = 28.dp)
+                }
+                Spacer(Modifier.height(6.dp))
+                T("اندازهٔ صفحه (پیکسل) — همان که سازندهٔ ویجت گفته", 11, K.Dim)
+                Seg(listOf("800x600" to "800×600", "1280x720" to "1280×720", "1920x1080" to "1920×1080"), "${src.prop("w", "800")}x${src.prop("h", "600")}", { v ->
+                    val (w, h) = v.split('x'); setSrc(src.with("w", w).with("h", h))
+                })
+                Seg(listOf("30" to "۳۰ فریم", "60" to "۶۰ فریم"), src.prop("fps", "30"), { setSrc(src.with("fps", it)) })
+                Spacer(Modifier.height(6.dp))
+                T("CSSِ دلخواه (مثلِ OBS)", 11, K.Dim)
+                var c by remember(src.id) { mutableStateOf(src.prop("css")) }
+                Field(c, { c = it }, Modifier.fillMaxWidth().heightIn(min = 50.dp), ltr = true, singleLine = false)
+                Btn("اعمالِ CSS", { setSrc(src.with("css", c)) }, Modifier.fillMaxWidth().padding(top = 4.dp), height = 26.dp)
+                app.engine.sourceError(src.id)?.let { T(it, 12, K.Live) }
             }
             SourceKind.SLIDESHOW -> {
                 T(src.prop("folder"), 11, K.Dim, maxLines = 2)

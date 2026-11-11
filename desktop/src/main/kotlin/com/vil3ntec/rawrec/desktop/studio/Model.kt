@@ -10,7 +10,7 @@ import java.util.UUID
  * size mid-way), the sources (what can be shown) and the scenes (which source where). Immutable: the
  * window changes it by making a new one, the picture thread reads whichever is current.
  */
-enum class SourceKind { PHONE, WEBCAM, SCREEN, VIDEO, IMAGE, SLIDESHOW, TEXT, COLOR, CHAT, ALERTS, COUNTER, GOAL }
+enum class SourceKind { PHONE, WEBCAM, SCREEN, VIDEO, IMAGE, SLIDESHOW, TEXT, COLOR, CHAT, ALERTS, COUNTER, GOAL, BROWSER }
 
 /** How a picture fills its box when their shapes differ (the phone turns): whole inside, filling, or stretched. */
 enum class Fit { CONTAIN, COVER, STRETCH }
@@ -89,6 +89,7 @@ data class Studio(
             SourceKind.ALERTS -> width * 0.4f to height * 0.18f
             SourceKind.TEXT -> width * 0.4f to height * 0.1f
             SourceKind.IMAGE -> width * 0.3f to height * 0.3f
+            SourceKind.BROWSER -> (props["w"]?.toFloatOrNull() ?: 800f).coerceAtMost(width.toFloat()) to (props["h"]?.toFloatOrNull() ?: 600f).coerceAtMost(height.toFloat())
         }
         val (x, y) = when (kind) {
             SourceKind.WEBCAM -> width - w - width * 0.02f to height - h - height * 0.03f

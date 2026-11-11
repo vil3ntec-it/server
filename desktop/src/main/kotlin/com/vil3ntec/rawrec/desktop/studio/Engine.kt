@@ -322,6 +322,7 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
         SourceKind.VIDEO -> a.prop("path") != b.prop("path") || a.prop("audio", "1") != b.prop("audio", "1")
         SourceKind.IMAGE -> a.prop("path") != b.prop("path")
         SourceKind.SCREEN -> a.prop("display") != b.prop("display") || a.prop("window") != b.prop("window")
+        SourceKind.BROWSER -> listOf("url", "w", "h", "fps", "css", "reload").any { a.prop(it) != b.prop(it) }
         else -> false
     }
 
@@ -338,10 +339,12 @@ class Engine(initial: Studio, private val session: () -> Session?, autostart: Bo
         SourceKind.COLOR -> ColorSource { studio.source(d.id) }
         SourceKind.CHAT -> ChatSource { studio.source(d.id) }
         SourceKind.ALERTS -> AlertSource { studio.source(d.id) }
+        SourceKind.BROWSER -> BrowserSource(d.prop("url"), d.prop("w", "800").toIntOrNull()?.coerceIn(16, 3840) ?: 800,
+            d.prop("h", "600").toIntOrNull()?.coerceIn(16, 2160) ?: 600, d.prop("fps", "30").toIntOrNull() ?: 30, d.prop("css"))
     }
 
     /** A source's problem to show in the window (a webcam that will not open…). */
-    fun sourceError(id: String): String? = (runtimes[id]?.second as? MediaSource)?.error
+    fun sourceError(id: String): String? = when (val r = runtimes[id]?.second) { is MediaSource -> r.error; is BrowserSource -> r.error; else -> null }
 
     override fun close() {
         running = false

@@ -14,6 +14,23 @@ object SelfTest {
 
     fun run(args: List<String>): Int = try { runIt(args) } catch (e: Throwable) { println("FAIL: ${e.javaClass.simpleName}: ${e.message}"); 3 } finally { log?.flush() }
 
+    /** The browser source inside the installed app's own runtime: a red box drawn by WebKit (skipped on a Linux with no screen). */
+    private fun browserCheck() {
+        if (System.getProperty("os.name").lowercase().contains("linux") && System.getenv("DISPLAY") == null) { println("browser: skipped (no screen)"); return }
+        try {
+            val b = com.vil3ntec.rawrec.desktop.studio.BrowserSource("data:text/html,<div style='position:absolute;left:0;top:0;width:64px;height:64px;background:%23ff0000'></div>", 64, 64, 30, "")
+            var red = false
+            for (i in 0 until 100) {
+                Thread.sleep(100)
+                val img = b.image() ?: continue
+                val bmp = org.jetbrains.skia.Bitmap(); bmp.allocPixels(img.imageInfo); img.readPixels(bmp, 0, 0)
+                if (bmp.getColor(32, 32) == 0xFFFF0000.toInt()) { red = true; break }
+            }
+            println("browser: " + if (red) "ok" else "no picture (${b.error})")
+            b.close()
+        } catch (t: Throwable) { println("browser: failed ${t.javaClass.simpleName}: ${t.message}") }
+    }
+
     private fun runIt(args: List<String>): Int {
         val seconds = args.getOrNull(0)?.toIntOrNull() ?: 10
         val codec = args.getOrNull(1) ?: "h264"
@@ -21,6 +38,7 @@ object SelfTest {
         val capErr = com.vil3ntec.rawrec.desktop.studio.Devices.captureError
         if (capErr != null) println("capture: unavailable — $capErr") else println("capture: " + listOf("gdigrab", "dshow", "avfoundation", "x11grab", "v4l2", "pulse").filter { org.bytedeco.ffmpeg.global.avformat.av_find_input_format(it) != null }.joinToString())
         println("noise model: ${com.vil3ntec.rawrec.desktop.studio.Denoiser.model()?.length() ?: "missing"} bytes")
+        browserCheck()
         val encs = Encoders.available()
         println("encoders: " + encs.joinToString { it.name + if (it.hardware) "(gpu)" else "(cpu)" })
         val enc = Encoders.best() ?: return fail("no working video encoder")

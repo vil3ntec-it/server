@@ -48,7 +48,7 @@ interface DrawnSource : SourceRuntime {
 class Pixels(val w: Int, val h: Int, val bgra: ByteArray, val seq: Long, val alpha: Boolean = false)
 
 /** Turns the newest [Pixels] into a Skia image, only when they changed. */
-private class LatestImage {
+internal class LatestImage {
     private var seq = -1L
     private var img: Image? = null
     fun from(p: Pixels?): Image? {
