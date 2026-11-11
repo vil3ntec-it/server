@@ -56,6 +56,7 @@ import { mountConsoleStaff } from './console-staff.js';
 import { mountConsoleImageBank } from './console-image-bank.js';
 import { mountConsoleHolidays } from './console-holidays.js';
 import { mountConsoleSynonyms } from './console-synonyms.js';
+import { mountConsoleSupportAccess } from './console-support-access.js';
 import { mountConsoleParity, shapeBeta } from './console-parity.js';
 
 const { requireRole } = panelRoles;
@@ -2208,6 +2209,8 @@ export const PHASE3 = Object.freeze({
   'holidays.v1': 'GET|PUT /api/admin/calendar/holidays (ارشد + دلیل + نسخه؛ ۴۰۹ holiday_version)',
   //  ۱.۵۰.۸۹ (۴-۱ «ب»، POS-04/WEB-05): فهرستِ مرکزیِ مترادف — ‎routes/console-synonyms.js‎ (هنوز روی shop نیست)
   'synonyms.v1': 'GET|PUT /api/admin/search/synonyms ({version, updatedAt, groups: string[][]}؛ ارشد + دلیل + نسخه؛ ۴۰۹ synonyms_version)',
+  //  ۱.۵۰.۹۰ (۲-۹، G1، ACP-D1/D2): اجازهٔ موقتِ پشتیبانی — ‎routes/console-support-access.js‎ (هنوز روی shop نیست)
+  'support-access.v1': 'GET|POST /api/admin/shops/:id/access-grants · POST …/access-grants/break-glass · POST …/access-grants/:gid/revoke (۶۰ دقیقه، سقفِ ۲۴ ساعت؛ شکستنِ شیشه با دلیل و خبرِ فوری به صاحبِ دکان)',
   ...MARKET_CAPABILITIES,
 });
 const CAP_RE = /^[a-z][a-z0-9-]{0,40}\.v\d{1,3}$/;
@@ -2431,7 +2434,7 @@ function reauth(req, res, next) {
     //  — ردیفِ دفتر نامِ همان کار را می‌گیرد
     const p = String(req.path || '');
     const what = p.includes('/release/stage') ? 'release_stage' : p.includes('/release/beta') ? 'release_beta'
-      : p.includes('/console/downloads') ? 'downloads' : 'service_key';
+      : p.includes('/console/downloads') ? 'downloads' : p.includes('/access-grants') ? 'support_access' : 'service_key';
     audit({ actor: actorOf(req), action: `account.${what}.reauth_failed`, entity: what, result: 'forbidden', detail: { step: r.error } });
     return res.status(403).json({ error: 'reauth_failed', message: 'رمزِ پنل یا کدِ دوعاملی درست نیست' });
   }
@@ -2535,6 +2538,9 @@ router.post('/console/service-key/revoke', requireRole('admin'), ownerOnly, reau
 mountConsoleOps(router, {
   guard, capabilities, unavailable, missingErr, badInput, stamped, actorOf, isPanelOwner, reauthLimit, reauth,
 });
+
+/* ═══ 🔐 ۱.۵۰.۹۰ (۲-۹، G1): اجازهٔ موقتِ دسترسیِ پشتیبانی به دادهٔ یک دکان — ‎routes/console-support-access.js‎، روی همین روتر ═══ */
+mountConsoleSupportAccess(router, { guard, badInput, actorOf, capListed, missingErr, unavailable, isPanelOwner, reauthLimit, reauth });
 
 /* --------------------------- خواندنی‌های دیگر -------------------------- */
 
