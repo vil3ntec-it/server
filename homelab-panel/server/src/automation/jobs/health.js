@@ -22,6 +22,7 @@ import { getLatest as latestMetrics, collectorStatus } from '../../metrics/index
 import * as guard from '../../agent/guard.js';
 import { raiseAlert, clearAlert } from '../../control/alerts.js';
 import { getIo } from '../../state.js';
+import { maintenanceActive } from '../../fleet/maintenance.js';
 
 /** آستانهٔ دیسک (درصد) — HLP_DISK_HIGH */
 export const DISK_HIGH_PERCENT = Math.min(99, Math.max(50, Number(process.env.HLP_DISK_HIGH) || 80));
@@ -42,6 +43,8 @@ export const healthCheck = defineJob({
   async run(ctx) {
     //  ⛔ اجرای سایت‌ها روی این میزبان خاموش است ⇒ «افتاده» هم نیست (وگرنه هر دقیقه هشدارِ دروغ)
     if (!deploy.features.sites) return { skipped: 'feature_disabled' };
+    //  ⛔ (۱.۵۰.۹۴) حالتِ نگه‌داری («سرورهای من»): سایت‌ها عمداً ایستاده‌اند ⇒ «افتاده» نیستند و دوباره روشن نمی‌شوند
+    if (maintenanceActive()) return { skipped: 'maintenance' };
     const should = listSitesRaw().filter((s) => s.autostart && s.enabled);
     const down = should.filter((s) => !isRunning(s.slug));
     for (const s of down) {
@@ -157,6 +160,7 @@ export const restartOnDown = defineJob({
   attempts: 1,
   async run(ctx) {
     const slug = ctx.payload?.slug;
+    if (slug && maintenanceActive()) return { skipped: true, reason: 'حالتِ نگه‌داری روشن است (سرورهای من)' };
     if (!slug) return { skipped: true, reason: `چیزی برای ری‌استارت نیست (${ctx.payload?.kind || ctx.payload?.key || 'هدفِ پایش'})` };
     const site = getSiteBySlug(slug);
     if (!site) return { skipped: true, reason: `سایتِ «${slug}» دیگر ثبت نیست` };

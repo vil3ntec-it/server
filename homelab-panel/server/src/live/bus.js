@@ -39,6 +39,8 @@ export const TOPICS = Object.freeze([
   'messenger', 'notify',
   //  دادهٔ سرورِ حساب (از راهِ pushِ خودش یا دیدبانِ مشترک)
   'codes', 'logins', 'support', 'customers', 'plans', 'notices', 'sales', 'sync',
+  //  «سرورهای من» (۱.۵۰.۹۴): وصل/جدا شدن، نگه‌داری، و تپشی که چیزی را عوض کرد (نه هر تپش) — src/fleet/*
+  'fleet',
 ]);
 
 const KNOWN = new Set(TOPICS);

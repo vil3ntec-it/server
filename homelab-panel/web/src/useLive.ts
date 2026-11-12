@@ -18,7 +18,9 @@ export type LiveTopic =
   | 'sites' | 'automation' | 'logs' | 'stations' | 'agent' | 'backups' | 'cron' | 'settings'
   //  بندِ ۱.۵-الف — دفترِ پیام‌رسان و اعلان‌ها هم به گذرگاه وصل شد
   | 'messenger' | 'notify'
-  | 'codes' | 'logins' | 'support' | 'customers' | 'plans' | 'notices' | 'sales' | 'sync';
+  | 'codes' | 'logins' | 'support' | 'customers' | 'plans' | 'notices' | 'sales' | 'sync'
+  //  «سرورهای من» (۱.۵۰.۹۴)
+  | 'fleet';
 
 /**
  *  «هر وقت این موضوع عوض شد، این را دوباره بخوان.»
