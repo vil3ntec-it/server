@@ -158,6 +158,13 @@ console.log('\n── ۷) ⛔ ورک‌فلوی بسته خودش را نمی‌
   const wf = fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', '..', '.github', 'workflows', 'account-server.yml'), 'utf8');
   const code = wf.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
   check('⇒ هیچ «| grep -q»ی زیرِ pipefail نیست', !/\|\s*grep\s+-q/.test(code));
+  //  ۱۴۰۵/۰۸/۲۲: shop ماه‌ها روی 2.14.5 ماند ⇒ بستهٔ تازه هرگز «تازه‌تر» نبود و هیچ دسته‌ای به مشتری نرسید
+  check('⇒ نسخهٔ بسته = نسخهٔ shop + ساعتِ کامیت (UTC) و در package.json ِ بسته نوشته می‌شود',
+    /STAMP=\$\(TZ=UTC git -C \/tmp\/shop log -1 --format=%cd --date=format-local:%Y%m%d%H%M\)/.test(code)
+    && code.includes('VER="$BASE.$STAMP"') && /p\.version=process\.argv\[1\]/.test(code));
+  check('⇒ همان نسخهٔ shop با کامیتِ تازه «تازه‌تر» است و همان کامیت نه',
+    newer('2.14.5.202611120140', '2.14.5') && newer('2.14.5.202611120140', '2.14.5.202611111123')
+    && !newer('2.14.5.202611120140', '2.14.5.202611120140') && newer('2.14.6', '2.14.5.202611120140'));
   check('⇒ فهرستِ بسته اول در فایل نوشته می‌شود', /tar -tzf "\$ASSET" > /.test(code));
   check('⇒ و همان دو سنجه سرِ جایشان‌اند (node_modules و src/index.js)',
     code.includes("'^account-server/node_modules/'") && code.includes("'^account-server/src/index.js$'"));
