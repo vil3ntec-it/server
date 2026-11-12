@@ -192,6 +192,7 @@ let N2 = null;
 const tBeat = { on: true };
 let tLoopDone = Promise.resolve();
 const keysSeen = [];
+const oldLogs = [];
 try {
   /* ══════════════ قراردادِ «عوض شدنِ مسیر» با ورودیِ ساختگی ══════════════ */
   console.log('── قراردادِ مسیر (route-plan.js) ──');
@@ -408,6 +409,30 @@ http.createServer((q, s) => {
   check('… جدولِ جا بی تغییر (هیچ ردیفی)', readDb(DATA_C, 'SELECT COUNT(*) AS n FROM fleet_placement')[0].n === 0);
   check('… و هیچ‌جای کار باز نمانده (قفل آزاد)', readDb(DATA_C, 'SELECT COUNT(*) AS n FROM fleet_moves WHERE active = 1')[0].n === 0);
 
+  /* ══════════════ مرکز وسطِ کار دوباره بالا می‌آید ══════════════ */
+  console.log('── مرکز وسطِ کار دوباره بالا می‌آید ⇒ کلید (فقط در حافظه) رفته ⇒ برگشت ──');
+  tState.gate = new Promise((r) => { tState.open = r; });
+  const seenBefore = tState.seen.length;
+  const mR = await C.call('POST', '/api/fleet/moves', body(idT), owner);
+  const gotImport = await until(() => tState.seen.length > seenBefore && tState.seen[tState.seen.length - 1] === 'import', 30000);
+  check('کار آغاز شد و بسته به T رسید (T هنوز جواب نداده)', mR.status === 200 && Boolean(gotImport), JSON.stringify(mR) + JSON.stringify(tState.seen));
+  await C.stop();
+  oldLogs.push(C.out());
+  C = await boot(C_PORT, DATA_C, C_ENV);
+  tState.open();
+  check('مرکز دوباره بالا آمد', C.up, C.out().slice(-400));
+  const mRdone = await until(async () => {
+    const r = await C.call('GET', `/api/fleet/moves/${mR.json?.move?.id}`, undefined, owner);
+    return r.json?.move && !r.json.move.active ? r.json.move : null;
+  }, 40000, 300);
+  check('… کارِ نیمه‌کاره برگشت خورد (center_restarted)، نه رها', mRdone?.state === 'failed' && /center_restarted/.test(mRdone.error || '')
+    && mRdone.steps.some((s) => s.op === 'rollback:unfreeze' && s.state === 'done'), JSON.stringify(mRdone).slice(0, 600));
+  const backR = await until(async () => (await portOpen(SITE_PORT)) ? (await peek()) : null, 15000);
+  check('… سایت روی N1 دوباره روشن، همان داده؛ جدول بی ردیف؛ قفل آزاد', backR?.n === 7 && String(backR.dataDir).startsWith(DATA_1)
+    && readDb(DATA_C, 'SELECT COUNT(*) AS n FROM fleet_placement')[0].n === 0 && readDb(DATA_C, 'SELECT COUNT(*) AS n FROM fleet_moves WHERE active = 1')[0].n === 0, JSON.stringify(backR));
+  check('… و بستهٔ رمزشدهٔ نیمه‌کاره در کارگاهِ مرکز نماند', !fs.existsSync(path.join(DATA_C, '.vmove-panel', 'fleet')) || fs.readdirSync(path.join(DATA_C, '.vmove-panel', 'fleet')).length === 0);
+  if (tState.key) keysSeen.push(tState.key);
+
   /* ══════════════ نگه‌داری ══════════════ */
   console.log('── مقصدِ در نگه‌داری ⇒ رد ──');
   await C.call('POST', `/api/fleet/nodes/${id2}/maintenance`, { on: true }, owner);
@@ -539,12 +564,12 @@ http.createServer((q, s) => {
   /* ══════════════ رازها ══════════════ */
   console.log('── هیچ کلیدِ بسته‌ای در دیتابیس، دفتر، لاگ یا پاسخ ──');
   const keyForms = keysSeen.filter(Boolean).flatMap((k) => [k, Buffer.from(k, 'base64url').toString('hex'), Buffer.from(k, 'base64url').toString('base64')]);
-  check('کلیدِ کارِ T گرفته شد (برای جست‌وجو)', keyForms.length === 3);
+  check('کلیدِ هر دو کارِ T گرفته شد (برای جست‌وجو) و دو کار دو کلیدِ جدا داشتند', keyForms.length === 6 && keysSeen[0] !== keysSeen[1]);
   const hitsC = filesContain(DATA_C, keyForms);
   const hits1 = filesContain(DATA_1, keyForms);
   check('کلید هیچ‌جای پوشهٔ دادهٔ مرکز نیست (دیتابیس، WAL، دفتر)', hitsC.length === 0, hitsC.join(' '));
   check('… و هیچ‌جای پوشهٔ دادهٔ مبدأ (N1)', hits1.length === 0, hits1.join(' '));
-  check('… و در لاگِ هیچ‌کدام از سه پنل', !keyForms.some((k) => C.out().includes(k) || N1.out().includes(k) || N2.out().includes(k)));
+  check('… و در لاگِ هیچ‌کدام از سه پنل (مرکزِ پیش از راه‌اندازیِ دوباره هم)', !keyForms.some((k) => [C.out(), N1.out(), N2.out(), ...oldLogs].some((l) => l.includes(k))));
   const allMoves = await C.call('GET', '/api/fleet', undefined, owner);
   check('… و در پاسخِ مالک (فهرستِ کارها)', !keyForms.some((k) => JSON.stringify(allMoves.json).includes(k)));
   const audits = readDb(DATA_C, "SELECT action, ok, detail FROM audit_log WHERE action = 'panel.fleet.move'");

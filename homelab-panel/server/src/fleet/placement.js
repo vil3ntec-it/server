@@ -126,7 +126,9 @@ function dispatch(job, { op, node, args = {}, key = false, timeout = 0, phase })
   }
   persist(job);
   if (node === 'self') {
-    execute(cmd, { self: true, pass: key ? job.pass : null }).then((res) => onResult(job.id, 'self', res));
+    execute(cmd, { self: true, pass: key ? job.pass : null })
+      .then((res) => onResult(job.id, 'self', res))
+      .catch((e) => logEvent('error', 'fleet', `جابه‌جایی (گامِ «${op}» روی همین مرکز): ${e?.message || e}`));
   } else {
     wake(node);
   }
@@ -198,6 +200,16 @@ function finish(job, state) {
 function onResult(moveId, nodeId, res) {
   const job = jobs.get(String(moveId || ''));
   if (!job) return;
+  try {
+    handleResult(job, nodeId, res);
+  } catch (e) {
+    //  خطای خودِ مرکز (دیتابیس…) هرگز کار را نیمه‌باز رها نمی‌کند
+    logEvent('error', 'fleet', `جابه‌جاییِ «${job.appName}»: ${e?.message || e}`);
+    if (job.state === 'running') { try { beginRollback(job, { code: 'center_error', message: String(e?.message || e) }); } catch { /* همان دفتر */ } }
+  }
+}
+
+function handleResult(job, nodeId, res) {
   const o = job.outstanding;
   if (!o || o.node !== nodeId || o.cmd.seq !== res?.seq) return; //  کهنه/تکراری
   job.outstanding = null;
