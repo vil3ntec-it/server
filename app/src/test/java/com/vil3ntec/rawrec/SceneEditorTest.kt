@@ -310,16 +310,16 @@ class SceneEditorTest {
         v.draw(Canvas(out))
         assertEquals("the counter as before", Color.RED, out.getPixel((0.25f * real.x).toInt(), real.y / 2))
         assertEquals("the translated chat is not in the shared window", 0, Color.alpha(out.getPixel((0.75f * real.x).toInt(), real.y / 2)))
-        val views = org.robolectric.Shadows.shadowOf(wm as android.view.WindowManagerImpl).views
-        val mine = views.filter { (it.layoutParams as? android.view.WindowManager.LayoutParams)?.let { p -> p.flags and android.view.WindowManager.LayoutParams.FLAG_SECURE != 0 } == true }
-        assertEquals("one window of its own, left out of screen capture", 1, mine.size)
-        val p = mine[0].layoutParams as android.view.WindowManager.LayoutParams
+        val mine = m.secureForTests
+        assertEquals("one window of its own", 1, mine.size)
+        val p = mine[0]
+        assertTrue("left out of screen capture", p.flags and android.view.WindowManager.LayoutParams.FLAG_SECURE != 0)
         val half = 50f * minOf(real.x, real.y) / 1080f
         assertEquals("over the chat's place", (0.75f * real.x - half).toDouble(), p.x.toDouble(), 8.0)
         assertTrue("touches go to the game", p.flags and android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0)
         // no translation any more: back into the shared window, the window of its own goes
         m.set(listOf(OwnerMirror.Item(Scenes.Kind.CHAT, blue, 0.75f, 0.5f, 0f, 1f, 0f, full, 1f, 0f, false))); idle()
-        assertEquals(0, org.robolectric.Shadows.shadowOf(wm as android.view.WindowManagerImpl).views.count { (it.layoutParams as? android.view.WindowManager.LayoutParams)?.let { q -> q.flags and android.view.WindowManager.LayoutParams.FLAG_SECURE != 0 } == true })
+        assertEquals(0, m.secureForTests.size)
         m.hide(); idle()
     }
 

@@ -203,6 +203,7 @@ class OwnerMirror(private val ctx: Context) {
     val count: Int get() = items.size
 
     internal val viewForTests: View get() = view
+    internal val secureForTests: List<WindowManager.LayoutParams> get() = secureViews.map { it.second }
 
     /**
      * From the stream's picture to this screen: a point at ([fx], [fy]) of the picture (y from the
