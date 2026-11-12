@@ -71,7 +71,17 @@ jobs:
         id: pack
         run: |
           set -euo pipefail
-          VER=$(node -p "require('/tmp/shop/server/package.json').version")
+          #  ⛔ نسخهٔ بسته = نسخهٔ shop + «ساعتِ کامیتِ main ِ shop» (UTC، YYYYMMDDHHMM)، مثلاً 2.14.5.202611120140.
+          #  تا ۱۴۰۵/۰۸/۲۲ فقط `package.json` بود و shop ماه‌ها روی 2.14.5 ماند ⇒ `newer()` ِ پنل هیچ بستهٔ تازه‌ای را
+          #  «تازه‌تر» نمی‌دید و هیچ دسته‌ای به سرورِ حسابِ مشتری نرسید (کلیدهای تازه هم در پنل نیامدند). همان کامیت ⇒
+          #  همان نسخه، پس اجرای شبانهٔ بی‌تغییر به‌روزرسانیِ بی‌دلیل نمی‌سازد. همین عدد در `package.json` ِ بسته
+          #  نوشته می‌شود تا پنل (`versionAt`) و `/api/health` همان را ببینند.
+          BASE=$(node -p "require('/tmp/shop/server/package.json').version")
+          STAMP=$(TZ=UTC git -C /tmp/shop log -1 --format=%cd --date=format-local:%Y%m%d%H%M)
+          case "$STAMP" in ''|*[!0-9]*) echo "::error::ساعتِ کامیتِ shop خوانده نشد: «$STAMP»"; exit 1 ;; esac
+          VER="$BASE.$STAMP"
+          node -e "const f='/tmp/shop/server/package.json';const p=require(f);p.version=process.argv[1];require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')" "$VER"
+          test "$(node -p "require('/tmp/shop/server/package.json').version")" = "$VER"
           echo "version=$VER" >> "$GITHUB_OUTPUT"
 
           #  پوشه‌های کاریِ سرورِ حساب هیچ‌وقت در بسته نمی‌روند: دیتابیس و
