@@ -1,0 +1,26 @@
+2026-11-12 15:00:32  start: c2.android.avc.encoder 1152x720@60 7 Mbps level 3.2 • Android 34
+2026-11-12 15:00:33  screen sources: metrics 2560x1600, rotation 0, display context 2560x1600, config 2
+2026-11-12 15:00:33  captured app on screen
+2026-11-12 15:00:35  rtmp: CONNECTING
+2026-11-12 15:00:35  rtmp: LIVE via=direct 10.0.2.2
+2026-11-12 15:00:35  rate: sent 0 kbps, target 6000, behind 0 ms, lost 0 frames, 0 pictures a second sent, picture 1152×720 at 60
+2026-11-12 15:00:38  chat panel: whole screen captured
+2026-11-12 15:00:39  mirror: on the screen, 1 pictures
+2026-11-12 15:00:40  screen: 18 pictures, 18 drawn
+2026-11-12 15:00:40  mirror: on the screen, 1 pictures
+2026-11-12 15:00:52  screen: 30 pictures, 30 drawn
+2026-11-12 15:00:52  mirror: on the screen, 1 pictures
+2026-11-12 15:01:04  screen: 54 pictures, 53 drawn
+2026-11-12 15:01:04  mirror: on the screen, 1 pictures
+2026-11-12 15:01:05  rate: sent 667 kbps, target 3000, behind 0 ms, lost 0 frames, 9 pictures a second sent, picture 1152×720 at 60
+2026-11-12 15:01:36  rate: sent 326 kbps, target 3000, behind 1 ms, lost 0 frames, 4 pictures a second sent, picture 1152×720 at 60
+2026-11-12 15:02:07  rate: sent 512 kbps, target 3000, behind 0 ms, lost 0 frames, 4 pictures a second sent, picture 1152×720 at 60
+2026-11-12 15:02:37  rate: sent 448 kbps, target 3000, behind 0 ms, lost 0 frames, 6 pictures a second sent, picture 1152×720 at 60
+2026-11-12 15:03:07  rate: sent 246 kbps, target 3000, behind 0 ms, lost 0 frames, 4 pictures a second sent, picture 1152×720 at 60
+2026-11-12 15:03:38  rate: sent 392 kbps, target 3000, behind 0 ms, lost 0 frames, 6 pictures a second sent, picture 1152×720 at 60
+2026-11-12 15:03:57  record: started beside the stream
+2026-11-12 15:03:57  notice: record: H.264 1712x1072 33 fps 12 Mbps beside the stream
+2026-11-12 15:04:08  rate: sent 245 kbps, target 3000, behind 0 ms, lost 0 frames, 5 pictures a second sent, picture 1152×720 at 60
+2026-11-12 15:04:18  record: closed and kept
+2026-11-12 15:04:21  stop: APP
+2026-11-12 15:04:25  rtmp: ENDED via=direct 10.0.2.2
