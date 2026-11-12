@@ -133,7 +133,11 @@ export async function fetchBlobUrl(url: string, signal?: AbortSignal): Promise<s
     onUnauthorized?.();
     throw new ApiError(401, 'unauthorized');
   }
-  if (!res.ok) throw new ApiError(res.status, 'request_failed');
+  if (!res.ok) {
+    //  کدِ خودِ خطا (مثلاً ‎evidence_not_image‎، ‎media_gone‎) — نه فقط «نشد»
+    const json = await res.json().catch(() => null);
+    throw new ApiError(res.status, typeof json?.error === 'string' ? json.error : 'request_failed', typeof json?.message === 'string' ? json.message : undefined);
+  }
   return URL.createObjectURL(await res.blob());
 }
 

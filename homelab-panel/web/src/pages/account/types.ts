@@ -2,6 +2,7 @@
 // ⛔ این‌جا چیزی «حساب» نمی‌شود؛ فقط نامِ فیلدها نوشته شده تا TypeScript
 //    بتواند بگوید کدام فیلد واقعاً هست و کدام را حدس زده‌ایم.
 import type { AppId } from './shared';
+import type { Restricted } from './console/GrantNeeded';
 
 export type SubRow = {
   id: string | number;
@@ -57,6 +58,8 @@ export type ShopProfile = {
   devices: DeviceRow[];
   members: { id: string; role: string; status: string; name?: string }[];
   counts: Record<string, number>;
+  /** TEN-04 (۱.۵۰.۹۸): بی اجازهٔ زندهٔ پشتیبانی، جای دکان و دستگاه‌های صاحبش پنهان‌اند (نه خالی) */
+  restricted?: Restricted | null;
 };
 
 export type PumpProfile = {
@@ -71,6 +74,8 @@ export type PumpProfile = {
   /** کامپیوترهای ثبت‌شده به همین پمپ — نه دستگاه‌های ورودِ صاحب حساب. */
   computers?: PumpComputer[];
   deviceLimit?: number;
+  /** TEN-04: صاحبِ پمپ عضوِ دکانی است و دستگاه‌هایش فقط با اجازهٔ یکی از آن دکان‌ها دیده می‌شوند */
+  restricted?: Restricted | null;
 };
 
 export type PumpComputer = {

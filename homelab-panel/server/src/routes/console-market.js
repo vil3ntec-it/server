@@ -6,10 +6,12 @@
 //    پنل ‎/console/…‎                              ⇐ سرورِ حساب                               نقشِ پنل   نقشِ آن‌جا
 //    market/overview|sellers|orders|commission|history ⇐ ‎/api/admin/market/*‎ (`market-admin.v1`)   viewer     مدیر/فقط‌خواندن
 //    market/orders.csv                            ⇐ همان ‎orders‎، صفحه‌به‌صفحه (سقفِ ۵۰۰۰)      admin      —
-//    market/trust/cases · cases/:id · sanctions    ⇐ ‎/api/admin/trust/*‎ (از پیش)                  admin      ارشد
-//    market/trust/cases/:id/assign (POST)         ⇐ همان                                           admin      ارشد
+//    market/trust/cases · cases/:id · sanctions    ⇐ ‎/api/admin/trust/*‎ (از پیش، ABUSE-01)        admin      ارشد
+//                                                   (+ ‎trust-read.v1‎: operator/viewer با نمای کم‌تر)  viewer     هر خواننده
+//    market/trust/cases/:id/evidence/:eid         ⇐ ‎…/cases/:id/evidence/:evidenceId‎ (بایتِ عکس، ۱.۵۰.۹۸)  admin      ارشد
+//    market/trust/cases/:id/assign (POST)         ⇐ همان، تأیید + کلید                              admin      ارشد
 //    market/trust/cases/:id/decide · appeal-decision · sanctions/:id/lift (POST)
-//                                                 ⇐ همان، با دلیل + تأیید + احرازِ دوباره            admin      ارشد + دلیل
+//                                                 ⇐ همان، با دلیل + تأیید + کلید + احرازِ دوباره     admin      ارشد + دلیل
 //    market/regions                               ⇐ ‎/api/admin/market/regions‎ (`market-regions.v1`، S109)  viewer     مدیر
 //    market/census/:id (PUT)                      ⇐ ‎/api/admin/shops/:id/census‎ (همان)، دلیل + تأیید    admin      مدیر + دلیل
 //    delivery/overview|queue|events|connectivity|report|thresholds ⇐ ‎/api/admin/delivery/*‎ (`delivery-watch.v1`) viewer مدیر
@@ -25,14 +27,20 @@
 //     (رمزِ پنل همراهِ همان درخواست، یا `requireRecentAuth` ِ فاز ۱ اگر در پایه هست)؛ ۵ رمزِ غلط در ربع ساعت ⇒ ۴۲۹.
 //     تکرار بی‌اثر است: پرونده ماشینِ وضعیت دارد (تصمیمِ دوم ⇒ ‎409 already_decided‎ ِ همان سرور)، آستانه مقدارِ
 //     مطلق است (همان مقدار ⇒ `unchanged`)، و برداشتنِ جریمهٔ برداشته ⇒ ۴۰۹ ِ همان‌جا.
+//  ⛔ ۱.۵۰.۹۷ (ABUSE-01): نوشتن‌های پرونده/جریمه کلیدِ پنجره هم می‌خواهند (همان کلید ⇒ همان پاسخ با ‎replayed‎ و بی درخواست و
+//     ردیفِ دوم؛ همان پرونده هم‌زمان ⇒ ‎409 action_in_progress‎) و سقفِ ‎TRUST_WRITES_MAX‎ در ده دقیقه برای هر کاربر.
+//  ⛔ ۱.۵۰.۹۸: سرورِ حسابِ `idempotent-writes.v1` کلید را روی همین چهار نوشتن خودش نگه می‌دارد ⇒ کلیدِ پنجره (بسته به کاربرِ
+//     پنل) در ‎Idempotency-Key‎ (`makeUpstreamOnce`)؛ سرورِ کهنه ⇒ همان یادِ پل. مدرکِ پیوست (بایتِ عکس) فقط admin، سنجیده و ‎no-store‎.
 // ---------------------------------------------------------------------------
-import { cloudRaw } from '../stations/cloud.js';
+import { cloudRaw, cloudRawBytes } from '../stations/cloud.js';
 import { bridgeFail } from '../account/bridge-fail.js';
 import * as panelRoles from '../control/roles.js';
 import * as panelAuth from '../auth.js';
 import { audit } from '../control/audit.js';
 import { rateLimit } from '../platform/rate-limit.js';
 import { requireModule } from '../console/modules.js';
+import { checkIdemKey, makeIdemOnce, makeUpstreamOnce, serverPathFor } from '../account/idem-once.js';
+import { db } from '../db.js';
 
 const { requireRole } = panelRoles;
 const actorOf = (req) => req.user?.username || 'admin';
@@ -145,6 +153,76 @@ function reauth(req, res, next) {
   return res.status(403).json({ error: 'reauth_required', totpRequired: r.totpRequired || undefined, message: 'برای این کار رمزِ پنلِ خودتان را دوباره بزنید' });
 }
 
+/* ───────────── ABUSE-01: «مسئول» به نامِ کاربرِ پنل ───────────── */
+
+/** سقفِ نوشتنِ پرونده‌ها/جریمه‌ها برای هر کاربرِ پنل در ده دقیقه (ردِ ۴۰۰ هم شمرده می‌شود) */
+export const TRUST_WRITES_MAX = 30;
+
+/**
+ * «مسئول» ِ سرورِ حساب از راهِ پل همان شناسهٔ کلیدِ سرویس (یا ارشدِ مشترکِ راهِ پیشین) است — برای همهٔ کاربرانِ پنل یکی.
+ * پس نامِ کاربرِ پنل از ردیفِ دفترِ **همین پنل** (آخرین ‎account.market.case_assigned‎ ِ همان پرونده) کنارش می‌نشیند:
+ * `panelAssignee: {by, at}` — **فقط** وقتی مسئولِ امروزِ سرورِ حساب همان مقداری است که سرور آن روز برگرداند؛ مسئولِ دیگری
+ * (کنسولِ خودِ سرورِ حساب، یا ردیفِ کهنهٔ بی مقدار) ⇒ هیچ، نه نامِ کهنه. ⛔ فیلدهای بالادست دست نمی‌خورند.
+ */
+export function withPanelAssignee(cases) {
+  const list = Array.isArray(cases) ? cases : [];
+  const ids = [...new Set(list.map((c) => (typeof c?.id === 'string' && ID_RE.test(c.id) ? c.id : '')).filter(Boolean))].slice(0, 500);
+  if (!ids.length) return list;
+  let rows = [];
+  try {
+    rows = db.prepare(`SELECT actor, entity_id, detail, at FROM cc_audit
+                        WHERE action = 'account.market.case_assigned' AND entity = 'trust_case' AND entity_id IN (${ids.map(() => '?').join(',')})
+                        ORDER BY at DESC, id DESC`).all(...ids);
+  } catch { return list; }
+  const last = new Map();
+  for (const r of rows) {
+    if (last.has(r.entity_id)) continue;
+    let d = null;
+    try { d = JSON.parse(r.detail || 'null'); } catch { d = null; }
+    last.set(r.entity_id, { by: String(r.actor), at: Number(r.at), assignee: typeof d?.assignee === 'string' ? d.assignee : '' });
+  }
+  return list.map((c) => {
+    const m = typeof c?.id === 'string' ? last.get(c.id) : null;
+    return m && m.assignee && m.assignee === c.assignee ? { ...c, panelAssignee: { by: m.by, at: m.at } } : c;
+  });
+}
+
+/**
+ * `trust-read.v1` (shop ‎claude/e-rows-25s‎): سرورِ حساب صف، پرونده و جریمه‌ها را به نقشِ زیرِ ارشد هم می‌دهد — با نمای کم‌تر.
+ * پنل همان را **خودش هم** برای نقشِ زیرِ admin ِ پنل می‌بُرد: راهِ پیشینِ پل (رمزِ ارشدِ مشترک، بی «انجام‌دهنده») نمای کامل
+ * می‌گیرد و نباید به بیننده برسد. همان فهرستِ ‎lib/trust-admin-view.js‎ ِ shop.
+ */
+export const TRUST_READ = 'trust-read.v1';
+const omit = (o, keys) => (o && typeof o === 'object' && !Array.isArray(o) ? Object.fromEntries(Object.entries(o).filter(([k]) => !keys.includes(k))) : o);
+export const trustSanctionLess = (s) => omit(s, ['createdBy', 'liftedBy']);
+export function trustCaseLess(c) {
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return c;
+  const out = omit(c, ['reporterHint', 'reporterStats', 'sameText', 'evidence']);
+  if (c.decision) out.decision = omit(c.decision, ['by']);
+  if (c.appeal) out.appeal = omit(c.appeal, ['by', 'decidedBy']);
+  if (Array.isArray(c.sanctions)) out.sanctions = c.sanctions.map(trustSanctionLess);
+  if (Array.isArray(c.history)) out.history = c.history.map((e) => ({ ...omit(e, ['actorId']), ...(e?.data ? { data: omit(e.data, ['assignee']) } : {}) }));
+  return out;
+}
+
+/* ───────────── ABUSE-01: مدرکِ پیوستِ پرونده (بایتِ عکس) — ۱.۵۰.۹۸ ───────────── */
+
+/**
+ * سقفِ پاسخِ مدرک در پل. سرورِ حساب هنگامِ بارگذاری فقط عکس و تا ‎TRUST_IMAGE_MAX_KB‎ (پیش‌فرض ۱٫۵ مگابایت) می‌پذیرد؛
+ * پل تا چهار مگابایت را می‌خواند و بیش از آن را پیش از نگه داشتن می‌بُرد (‎cloudRawBytes({ maxBytes })‎) — نه ۳۲ ِ پل.
+ */
+export const EVIDENCE_MAX_BYTES = 4 * 1024 * 1024;
+export const EVIDENCE_MIMES = Object.freeze(['image/jpeg', 'image/png', 'image/webp']);
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+/** نوعِ عکس فقط از روی بایت‌های آغاز (همان سه نوعِ ‎chat-media.sniff‎ ِ shop) — وگرنه ''. */
+export function evidenceMime(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 12) return '';
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf.subarray(0, 8).equals(PNG_MAGIC)) return 'image/png';
+  if (buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP') return 'image/webp';
+  return '';
+}
+
 /* ───────────── CSV — فقط admin، با یک ردیفِ دفتر ───────────── */
 
 const CSV_CAP = 5000;
@@ -185,7 +263,12 @@ const issuesText = (i) => (i ? [...(i.stuck || []), ...(i.mismatch || []), ...(i
 
 /* ───────────────────────────── درها ───────────────────────────── */
 
-export function mountConsoleMarket(router) {
+/**
+ * @param {import('express').Router} router  همان روترِ ‎account-admin.js‎
+ * @param {{ capListed?: (cap: string) => Promise<boolean> }} [deps]  «توانایی هست؟» ِ همان روتر (پرسشِ ناموفق ⇒ «نه»)
+ */
+export function mountConsoleMarket(router, { capListed } = {}) {
+  const capOk = capListed || ((cap) => hasCap(cap).catch(() => false));
   const MARKET = 'market-admin.v1';
   const DELIVERY = 'delivery-watch.v1';
   const REGIONS = 'market-regions.v1';
@@ -245,29 +328,121 @@ export function mountConsoleMarket(router) {
       { truncated });
   }));
 
-  //  پرونده‌های اعتماد (کالای گزارش‌شده، شکایت) — درهای از پیشِ سرورِ حساب، فقط ارشد ⇒ این‌جا فقط admin
-  router.get('/console/market/trust/cases', requireRole('admin'), guard(async (req, res) => {
+  /*  ABUSE-01 — پرونده‌های اعتماد (گزارشِ کالا، شکایت) و جریمه‌ها: درهای از پیشِ سرورِ حساب (‎routes/admin-trust.js‎)، **فقط
+   *  ارشد** — حتی خواندن (متنِ شاکی، شمارهٔ پوشیده، سابقهٔ گزارش‌دهنده) ⇒ این‌جا فقط admin؛ viewer/operator ۴۰۳ پیش از پل.
+   *  ۱.۵۰.۹۷: هر نوشتن (مسئول، تصمیم، رأیِ اعتراض، برداشتنِ جریمه) «یک پنجره = یک کار» با کلیدِ رابط (`makeIdemOnce` روی سرورِ
+   *  کهنه؛ ۱.۵۰.۹۸: با `idempotent-writes.v1` همان کلید در ‎Idempotency-Key‎ به خودِ سرورِ حساب. پشتِ این، ماشینِ وضعیتِ سرورِ حساب
+   *  است: تصمیمِ دوم ⇒ ‎409 already_decided‎) +
+   *  سقفِ نرخِ هر کاربر + یک ردیفِ دفتر برای هر کارِ تأییدشده (بازپخش ⇒ بی ردیفِ دوم؛ کلید در دفتر نیست). */
+  const once = makeIdemOnce();
+  //  ۱.۵۰.۹۸: `idempotent-writes.v1` ⇒ «یک بار» را خودِ سرورِ حساب نگه می‌دارد (پس از راه‌اندازیِ دوبارهٔ پنل هم)؛ راهِ هر کلید
+  //  عوض نمی‌شود (`serverPathFor`). قفلِ «همان پرونده هم‌زمان» ِ پل روی همین راه هم می‌ماند (`busy`).
+  const viaServer = makeUpstreamOnce();
+  const busy = new Set();
+  /**
+   * یک نوشتنِ پرونده/جریمه. `post(opts)` همان ‎cloudRaw('POST', '/api/admin/trust/…', opts)‎ ِ نوشته‌شدهٔ هر در است (تا
+   * «فهرستِ سفید» ِ ‎bridge-contract.js‎ بشماردش)؛ `finish(r, { record, resolved })` پاسخ را می‌سازد و ردیفِ دفتر را فقط با ‎record‎.
+   */
+  const trustAct = async (req, key, fp, target, body, post, finish) => {
+    if (await serverPathFor(req, key, { once, viaServer, capable: () => capOk('idempotent-writes.v1') })) {
+      if (busy.has(target)) throw fail('action_in_progress', 409, 'همین کار روی همین مورد همین حالا در راه است');
+      busy.add(target);
+      try {
+        return await viaServer(req, key, (headers) => post({ body, headers, replayFlag: true }), finish);
+      } finally { busy.delete(target); }
+    }
+    return once(req, key, fp, target, async () => finish(await post({ body }), { record: true }));
+  };
+  const trustWriteLimit = rateLimit({ name: 'console-trust-write', max: TRUST_WRITES_MAX, windowMs: 10 * 60_000, key: (req) => `u${req.user?.id ?? 'x'}` });
+  const caseIdOf = (v) => idOf(v, 'شناسهٔ پرونده');
+  const noStore = (res) => res.setHeader('Cache-Control', 'no-store');
+  const fullTrust = (req) => panelRoles.atLeast(panelRoles.roleOf(req), 'admin');
+  /*  خواندن: admin ِ پنل مثلِ پیش؛ operator و viewer فقط وقتی سرورِ حساب `trust-read.v1` دارد (آن‌جا نقشِ خودشان نمای کم‌تر
+   *  می‌گیرد) — وگرنه ۴۰۳ پیش از هر درِ پرونده (تنها پرسش همان ‎GET /api/admin/me‎ ِ توانایی است). */
+  const trustRead = (req, res, next) => {
+    if (fullTrust(req)) return next();
+    capOk(TRUST_READ).then((ok) => {
+      if (ok) return next();
+      audit({ actor: actorOf(req), action: 'access.denied', entity: req.baseUrl + req.path, result: 'forbidden', detail: { capability: TRUST_READ } });
+      return res.status(403).json({ error: 'forbidden', reason: 'capability_missing', capability: TRUST_READ,
+        message: 'پرونده‌های شکایت برای این نقش فقط با سرورِ حسابِ تازه (trust-read.v1) دیده می‌شوند؛ تا آن روز فقط admin ِ پنل' });
+    });
+  };
+
+  router.get('/console/market/trust/cases', requireModule('market'), trustRead, guard(async (req, res) => {
     const q = req.query || {};
     const query = clean({ status: oneOf(q.status, CASE_STATUSES, 'وضعیت'), shopId: optId(q.shopId), limit: intOf(q.limit, 1, 200, 'تعداد') });
-    res.json(stamped(await cloudRaw('GET', '/api/admin/trust/cases', { query })));
+    noStore(res);
+    const out = await cloudRaw('GET', '/api/admin/trust/cases', { query });
+    res.json(stamped({ ...(out && typeof out === 'object' ? out : {}), cases: withPanelAssignee(out?.cases) }));
   }));
-  router.get('/console/market/trust/cases/:id', requireRole('admin'), guard(async (req, res) => {
-    res.json(stamped(await cloudRaw('GET', `/api/admin/trust/cases/${idOf(req.params.id, 'شناسهٔ پرونده')}`)));
+  router.get('/console/market/trust/cases/:id', requireModule('market'), trustRead, guard(async (req, res) => {
+    const id = caseIdOf(req.params.id);
+    noStore(res);
+    const out = await cloudRaw('GET', `/api/admin/trust/cases/${id}`);
+    let c = out?.case && typeof out.case === 'object' && !Array.isArray(out.case) ? withPanelAssignee([out.case])[0] : out?.case;
+    if (!fullTrust(req)) c = trustCaseLess(c);
+    res.json(stamped({ ...(out && typeof out === 'object' ? out : {}), case: c }));
   }));
-  router.get('/console/market/trust/sanctions', requireRole('admin'), guard(async (req, res) => {
+  router.get('/console/market/trust/sanctions', requireModule('market'), trustRead, guard(async (req, res) => {
     const q = req.query || {};
     const query = clean({ shopId: optId(q.shopId), active: q.active === '1' || q.active === 'true' ? '1' : '', limit: intOf(q.limit, 1, 500, 'تعداد') });
-    res.json(stamped(await cloudRaw('GET', '/api/admin/trust/sanctions', { query })));
+    noStore(res);
+    const out = await cloudRaw('GET', '/api/admin/trust/sanctions', { query });
+    const list = Array.isArray(out?.sanctions) ? out.sanctions : [];
+    res.json(stamped({ ...(out && typeof out === 'object' ? out : {}), sanctions: fullTrust(req) ? list : list.map(trustSanctionLess) }));
   }));
-  router.post('/console/market/trust/cases/:id/assign', requireRole('admin'), guard(async (req, res) => {
-    const id = idOf(req.params.id, 'شناسهٔ پرونده');
+  /*  ۱.۵۰.۹۸ — مدرکِ پیوست (عکسِ شاکی): همان قاعدهٔ «مدرک فقط ارشد» ِ shop (حتی با `trust-read.v1`) ⇒ فقط admin ِ پنل، ۴۰۳ ِ
+   *  viewer/operator پیش از هر درخواست. پاسخ سنجیده می‌شود (نوع از روی بایت = نوعِ اعلام‌شده و یکی از سه عکس؛ اندازه تا
+   *  ‎EVIDENCE_MAX_BYTES‎) و هر چیزِ دیگر هیچ بایتی به مرورگر نمی‌دهد؛ ‎no-store‎ + ‎nosniff‎ + CSP ِ بسته؛ هر دیدن یک ردیفِ دفتر. */
+  const evidenceLimit = rateLimit({ name: 'console-trust-evidence', max: 120, windowMs: 10 * 60_000, key: (req) => `u${req.user?.id ?? 'x'}` });
+  router.get('/console/market/trust/cases/:id/evidence/:eid', requireModule('market'), requireRole('admin'), evidenceLimit, guard(async (req, res) => {
+    const id = caseIdOf(req.params.id);
+    const eid = idOf(req.params.eid, 'شناسهٔ مدرک');
+    noStore(res);
+    const reject = (code, why, message) => {
+      audit({ actor: actorOf(req), action: 'account.market.evidence_rejected', entity: 'trust_case', entityId: id, result: 'rejected', detail: { evidence: eid, why } });
+      return fail(code, 502, message);
+    };
+    let got;
+    try {
+      got = await cloudRawBytes('GET', `/api/admin/trust/cases/${id}/evidence/${eid}`, { timeout: 'normal', maxBytes: EVIDENCE_MAX_BYTES });
+    } catch (err) {
+      if (err?.unreadable === 'too_large') throw reject('evidence_too_large', 'too_large', `مدرک از سقفِ ${EVIDENCE_MAX_BYTES / (1024 * 1024)} مگابایتِ پل بزرگ‌تر بود و نشان داده نشد`);
+      throw err;
+    }
+    const buf = got?.buffer;
+    const declared = String(got?.contentType || '').split(';')[0].trim().toLowerCase();
+    const mime = evidenceMime(buf);
+    if (!Buffer.isBuffer(buf) || buf.length > EVIDENCE_MAX_BYTES) throw reject('evidence_too_large', 'too_large', 'مدرک از سقفِ پل بزرگ‌تر بود و نشان داده نشد');
+    if (!mime || !EVIDENCE_MIMES.includes(declared) || declared !== mime) {
+      throw reject('evidence_not_image', declared ? `type:${declared.slice(0, 40)}` : 'type:none',
+        'پاسخِ سرورِ حساب عکسِ شناخته (JPG، PNG، WebP) نبود — نشان داده نشد');
+    }
+    audit({ actor: actorOf(req), action: 'account.market.evidence_viewed', entity: 'trust_case', entityId: id, detail: { evidence: eid, mime, bytes: buf.length } });
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Length', String(buf.length));
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    res.setHeader('Content-Disposition', 'inline');
+    res.end(buf);
+  }));
+  router.post('/console/market/trust/cases/:id/assign', requireRole('admin'), trustWriteLimit, guard(async (req, res) => {
+    const id = caseIdOf(req.params.id);
     requireConfirm(req);
-    const out = await cloudRaw('POST', `/api/admin/trust/cases/${id}/assign`, { body: {} });
-    audit({ actor: actorOf(req), action: 'account.market.case_assigned', entity: 'trust_case', entityId: id, detail: { status: out?.status || null } });
-    res.json(stamped(out));
+    const key = checkIdemKey(req.body?.idempotencyKey);
+    res.json(await trustAct(req, key, `assign|${id}`, `trust:${id}`, {}, (o) => cloudRaw('POST', `/api/admin/trust/cases/${id}/assign`, o),
+      (out, { record, resolved }) => {
+        if (record) {
+          audit({ actor: actorOf(req), action: 'account.market.case_assigned', entity: 'trust_case', entityId: id,
+            detail: { status: out?.status || null, assignee: typeof out?.assignee === 'string' ? out.assignee.slice(0, 80) : null, ...(resolved ? { resolved: true } : {}) } });
+        }
+        return stamped(out);
+      }));
   }));
-  router.post('/console/market/trust/cases/:id/decide', requireRole('admin'), reauthLimit, reauth, guard(async (req, res) => {
-    const id = idOf(req.params.id, 'شناسهٔ پرونده');
+  router.post('/console/market/trust/cases/:id/decide', requireRole('admin'), trustWriteLimit, reauthLimit, reauth, guard(async (req, res) => {
+    const id = caseIdOf(req.params.id);
     const reason = reasonOf(req);
     requireConfirm(req);
     const b = req.body || {};
@@ -283,33 +458,50 @@ export function mountConsoleMarket(router) {
       if (productId && !/^[A-Za-z0-9_.:-]{1,80}$/.test(productId)) throw fail('bad_product', 400, 'شناسهٔ کالا معتبر نیست');
       sanction = { kind, ...(productId ? { productId } : {}) };
     }
-    //  ⚠️ بدنهٔ بالادست فقط همین فیلدها — رمز و تأییدِ رابط به سرورِ حساب نمی‌روند
-    const out = await cloudRaw('POST', `/api/admin/trust/cases/${id}/decide`, {
-      body: { outcome, ...(severity ? { severity } : {}), ...(sanction ? { sanction } : {}), reason },
-    });
-    audit({
-      actor: actorOf(req), action: 'account.market.case_decided', entity: 'trust_case', entityId: id,
-      detail: { outcome, severity: severity || null, sanction, reason, sanctionId: out?.sanction?.id || null },
-    });
-    res.json(stamped(out));
+    const key = checkIdemKey(b.idempotencyKey);
+    //  ⚠️ بدنهٔ بالادست فقط همین فیلدها — رمز، تأیید و کلیدِ رابط به سرورِ حساب نمی‌روند
+    const body = { outcome, ...(severity ? { severity } : {}), ...(sanction ? { sanction } : {}), reason };
+    res.json(await trustAct(req, key, `decide|${id}|${JSON.stringify(body)}`, `trust:${id}`, body, (o) => cloudRaw('POST', `/api/admin/trust/cases/${id}/decide`, o),
+      (out, { record, resolved }) => {
+        if (record) {
+          audit({
+            actor: actorOf(req), action: 'account.market.case_decided', entity: 'trust_case', entityId: id,
+            detail: { outcome, severity: severity || null, sanction, reason, sanctionId: out?.sanction?.id || null, ...(resolved ? { resolved: true } : {}) },
+          });
+        }
+        return stamped(out);
+      }));
   }));
-  router.post('/console/market/trust/cases/:id/appeal-decision', requireRole('admin'), reauthLimit, reauth, guard(async (req, res) => {
-    const id = idOf(req.params.id, 'شناسهٔ پرونده');
+  router.post('/console/market/trust/cases/:id/appeal-decision', requireRole('admin'), trustWriteLimit, reauthLimit, reauth, guard(async (req, res) => {
+    const id = caseIdOf(req.params.id);
     const reason = reasonOf(req);
     requireConfirm(req);
     const outcome = oneOf(req.body?.outcome, APPEAL_OUTCOMES, 'نتیجهٔ اعتراض');
     if (!outcome) throw fail('bad_outcome', 400, 'نتیجهٔ اعتراض: «تصمیم می‌ماند» یا «برگشت»');
-    const out = await cloudRaw('POST', `/api/admin/trust/cases/${id}/appeal-decision`, { body: { outcome, reason } });
-    audit({ actor: actorOf(req), action: 'account.market.appeal_decided', entity: 'trust_case', entityId: id, detail: { outcome, reason, lifted: out?.lifted ?? null } });
-    res.json(stamped(out));
+    const key = checkIdemKey(req.body?.idempotencyKey);
+    res.json(await trustAct(req, key, `appeal|${id}|${outcome}|${reason}`, `trust:${id}`, { outcome, reason },
+      (o) => cloudRaw('POST', `/api/admin/trust/cases/${id}/appeal-decision`, o),
+      (out, { record, resolved }) => {
+        if (record) {
+          audit({ actor: actorOf(req), action: 'account.market.appeal_decided', entity: 'trust_case', entityId: id,
+            detail: { outcome, reason, lifted: out?.lifted ?? null, ...(resolved ? { resolved: true } : {}) } });
+        }
+        return stamped(out);
+      }));
   }));
-  router.post('/console/market/trust/sanctions/:id/lift', requireRole('admin'), reauthLimit, reauth, guard(async (req, res) => {
+  router.post('/console/market/trust/sanctions/:id/lift', requireRole('admin'), trustWriteLimit, reauthLimit, reauth, guard(async (req, res) => {
     const id = idOf(req.params.id, 'شناسهٔ جریمه');
     const reason = reasonOf(req);
     requireConfirm(req);
-    const out = await cloudRaw('POST', `/api/admin/trust/sanctions/${id}/lift`, { body: { reason } });
-    audit({ actor: actorOf(req), action: 'account.market.sanction_lifted', entity: 'trust_sanction', entityId: id, detail: { reason, kind: out?.kind || null, shopId: out?.shopId || null } });
-    res.json(stamped(out));
+    const key = checkIdemKey(req.body?.idempotencyKey);
+    res.json(await trustAct(req, key, `lift|${id}|${reason}`, `trust-sanction:${id}`, { reason }, (o) => cloudRaw('POST', `/api/admin/trust/sanctions/${id}/lift`, o),
+      (out, { record, resolved }) => {
+        if (record) {
+          audit({ actor: actorOf(req), action: 'account.market.sanction_lifted', entity: 'trust_sanction', entityId: id,
+            detail: { reason, kind: out?.kind || null, shopId: out?.shopId || null, ...(resolved ? { resolved: true } : {}) } });
+        }
+        return stamped(out);
+      }));
   }));
 
   /* ── ۴.۷ پیک ── */

@@ -125,7 +125,8 @@ for (const [method, p, want] of [
   ['POST', '/api/admin/email/test', false],
   ['GET', '/api/admin/shops/x/staff-codes', false],
   ['POST', '/api/admin/shops/x/staff-codes/reveal', true],
-  ['GET', '/api/admin/trust/cases', true],
+  //  ABUSE-01: خواندنِ پرونده از shop ‎claude/e-rows-25s‎ (‎trust-read.v1‎) برای هر نقشِ خواننده است ⇒ لنگر همان نوشتنِ همیشه‌ارشد
+  ['POST', '/api/admin/trust/cases/x/decide', true],
   //  ۱.۵۰.۷۵ (ممیزی §۳-۴): کارکنان/دستگاه و بانکِ عکس
   ['GET', '/api/admin/shops/x/staff-perms', false],
   ['POST', '/api/admin/shops/x/staff-perms/devices/d1/disable', true],
@@ -355,10 +356,10 @@ const SPECIAL = {
   'PUT /api/account-admin/console/flags': { body: { scope: 'all', key: 'shop.receipt_v2', value: true, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, confirmKey: 'shop.receipt_v2', idempotencyKey: 'bridge-roles-flag-0001', password: 'Bridge-1405-roles' } },
   'POST /api/account-admin/console/flags/reset': { body: { scope: 'all', key: 'shop.receipt_v2', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, confirmKey: 'shop.receipt_v2', idempotencyKey: 'bridge-roles-flag-0002', password: 'Bridge-1405-roles' } },
   //  ۴.۶ و ۴.۷: کارِ حساس با رمزِ همان admin (احرازِ دوباره) تا مقصدِ «فقط ارشد» واقعاً دیده و سنجیده شود
-  'POST /api/account-admin/console/market/trust/cases/:id/assign': { body: { confirm: true } },
-  'POST /api/account-admin/console/market/trust/cases/:id/decide': { body: { outcome: 'upheld', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
-  'POST /api/account-admin/console/market/trust/cases/:id/appeal-decision': { body: { outcome: 'upheld', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
-  'POST /api/account-admin/console/market/trust/sanctions/:id/lift': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
+  'POST /api/account-admin/console/market/trust/cases/:id/assign': { body: { confirm: true, idempotencyKey: 'bridge-roles-trust-0001' } },
+  'POST /api/account-admin/console/market/trust/cases/:id/decide': { body: { outcome: 'upheld', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles', idempotencyKey: 'bridge-roles-trust-0002' } },
+  'POST /api/account-admin/console/market/trust/cases/:id/appeal-decision': { body: { outcome: 'upheld', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles', idempotencyKey: 'bridge-roles-trust-0003' } },
+  'POST /api/account-admin/console/market/trust/sanctions/:id/lift': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles', idempotencyKey: 'bridge-roles-trust-0004' } },
   //  S109: نشانِ «آزمایشی/تکراری» (۱.۵۰.۹۲) — بدنهٔ همگانی ‎kind‎ ِ معتبر ندارد
   'PUT /api/account-admin/console/market/census/:id': { body: { kind: 'test', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true } },
   'PUT /api/account-admin/console/delivery/thresholds': { body: { thresholds: { dispatchMin: 45 }, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
@@ -475,7 +476,10 @@ try {
 
     for (const role of ['operator', 'viewer']) {
       for (const app of ['shop', 'pump']) {
-        const { status, up } = await run(r, role, app);
+        const { status, up: upRaw } = await run(r, role, app);
+        //  ‎GET /api/admin/me‎ فقط پرسشِ «توانایی» است (بی دادهٔ دکان): درِ پنل برای نقشِ پایین‌تر گاهی پیش از ۴۰۳ می‌پرسد سرورِ
+        //  حساب نمای کم‌ترِ همان نقش را دارد یا نه (مثلاً ‎trust-read.v1‎) — هر درخواستِ دیگر همچنان نشت است
+        const up = upRaw.filter((c) => !(c.method === 'GET' && c.path === '/api/admin/me'));
         if (needsAdmin && (status !== 403 || up.length)) {
           failures.superLeak.push(`${role} ${id} (${app}) ⇒ ${status} ${up.map((c) => `${c.method} ${c.path}`).join(', ')}`);
         }

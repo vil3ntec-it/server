@@ -242,14 +242,17 @@ try {
     for (const [who, t] of [['operator', op], ['viewer', viewer]]) {
       n = seen.length;
       const r = await api(method, `${C}/${pth}`, body, t);
-      check(`${who}: ${method} ${pth} ⇒ ۴۰۳ و هیچ درخواستی به سرورِ حساب`, r.status === 403 && since(n).length === 0, `${r.status} ${since(n).map((c) => c.path).join(',')}`);
+      //  ۱.۵۰.۹۷: خواندنِ پرونده برای operator/viewer فقط با ‎trust-read.v1‎ ِ سرورِ حساب ⇒ تنها پرسش همان ‎GET /api/admin/me‎ ِ توانایی است
+      //  (این‌جا نیست ⇒ ۴۰۳)؛ هیچ درِ پرونده/جریمه/نوشتن پرسیده نمی‌شود (‎console-trust.mjs‎ با توانایی)
+      const upNoProbe = since(n).filter((c) => !(c.method === 'GET' && c.path === '/api/admin/me'));
+      check(`${who}: ${method} ${pth} ⇒ ۴۰۳ و هیچ درخواستی به سرورِ حساب`, r.status === 403 && upNoProbe.length === 0, `${r.status} ${since(n).map((c) => c.path).join(',')}`);
     }
   }
   const noAuth = await api('GET', `${C}/market/overview`);
   check('بی نشست ⇒ ۴۰۱', noAuth.status === 401);
 
   console.log('\n── ۴) کارِ حساس: تأیید، دلیل، احرازِ دوباره ──');
-  const good = { outcome: 'upheld', severity: 'high', sanction: { kind: 'hide_listing', productId: 'rice' }, reason: 'کالای تقلبی', confirm: true, password: 'Market-1405-test' };
+  const good = { outcome: 'upheld', severity: 'high', sanction: { kind: 'hide_listing', productId: 'rice' }, reason: 'کالای تقلبی', confirm: true, password: 'Market-1405-test', idempotencyKey: 'mkt-decide-0001' };
   for (const [why, b, code] of [
     ['بی تأیید', { ...good, confirm: false }, 'confirm_required'],
     ['بی دلیل', { ...good, reason: 'ab' }, 'reason_required'],
@@ -268,15 +271,15 @@ try {
   const ok = await api('POST', `${C}/market/trust/cases/tc_1/decide`, good, admin);
   const dUp = up(n, '/api/admin/trust/cases/tc_1/decide')[0];
   check('با رمز ⇒ ۲۰۰ و تصمیم با دلیل به سرورِ حساب رفت', ok.status === 200 && ok.json?.sanction?.id === 'tsn_1' && dUp?.body?.reason === 'کالای تقلبی' && dUp?.body?.sanction?.kind === 'hide_listing', JSON.stringify(dUp));
-  check('⛔ رمز، «تأیید» و فیلدِ ناشناخته به سرورِ حساب نرفتند', dUp && !('password' in dUp.body) && !('confirm' in dUp.body)
+  check('⛔ رمز، «تأیید»، کلیدِ رابط و فیلدِ ناشناخته به سرورِ حساب نرفتند', dUp && !('password' in dUp.body) && !('confirm' in dUp.body) && !('idempotencyKey' in dUp.body)
     && Object.keys(dUp.body).sort().join() === 'outcome,reason,sanction,severity', JSON.stringify(dUp?.body));
-  const again = await api('POST', `${C}/market/trust/cases/tc_1/decide`, good, admin);
+  const again = await api('POST', `${C}/market/trust/cases/tc_1/decide`, { ...good, idempotencyKey: 'mkt-decide-0002' }, admin);
   check('⛔ تکرار ⇒ ۴۰۹ already_decided ِ همان سرورِ حساب (کدِ خودش، نه ۵۰۲)', again.status === 409 && again.json?.error === 'already_decided', JSON.stringify(again.json));
-  const ap = await api('POST', `${C}/market/trust/cases/tc_1/appeal-decision`, { outcome: 'reversed', reason: 'مدرکِ تازه', confirm: true, password: 'Market-1405-test' }, admin);
+  const ap = await api('POST', `${C}/market/trust/cases/tc_1/appeal-decision`, { outcome: 'reversed', reason: 'مدرکِ تازه', confirm: true, password: 'Market-1405-test', idempotencyKey: 'mkt-appeal-0001' }, admin);
   check('رأیِ اعتراض ۲۰۰', ap.status === 200 && ap.json?.outcome === 'reversed');
-  const lf = await api('POST', `${C}/market/trust/sanctions/tsn_1/lift`, { reason: 'اشتباه بود', confirm: true, password: 'Market-1405-test' }, admin);
+  const lf = await api('POST', `${C}/market/trust/sanctions/tsn_1/lift`, { reason: 'اشتباه بود', confirm: true, password: 'Market-1405-test', idempotencyKey: 'mkt-lift-0001' }, admin);
   check('برداشتنِ جریمه ۲۰۰', lf.status === 200 && lf.json?.kind === 'hide_listing');
-  const asg = await api('POST', `${C}/market/trust/cases/tc_1/assign`, { confirm: true }, admin);
+  const asg = await api('POST', `${C}/market/trust/cases/tc_1/assign`, { confirm: true, idempotencyKey: 'mkt-assign-0001' }, admin);
   check('مسئولِ پرونده ۲۰۰', asg.status === 200 && asg.json?.status === 'in_review');
   n = seen.length;
   const th = await api('PUT', `${C}/delivery/thresholds`, { thresholds: { dispatchMin: 45, inDeliveryMin: 180 }, reason: 'شبِ شلوغ', confirm: true, password: 'Market-1405-test' }, admin);

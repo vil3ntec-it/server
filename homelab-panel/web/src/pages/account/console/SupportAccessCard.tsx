@@ -7,8 +7,10 @@
 //     «منتظر» است. «شکستنِ شیشه» (بی رضایت، ACP-D2) فقط برای مالکِ پنل، با رمزِ دوباره و دلیلِ نوشته (۱۰ نویسه به بالا)؛ صاحبِ دکان
 //     همان دم خبر می‌گیرد — این را **سرورِ حساب** تأیید می‌کند (`notified`)، نه این صفحه.
 //  ⛔ هر کار از `SensitiveDialog` (دلیل + تأیید + یک کلیدِ یکتایی برای همان پنجره). متن‌ها فقط متن‌اند.
+//  ۱.۵۰.۹۸ (TEN-04): لنگرِ ‎#support-access‎ — پیامِ «اجازهٔ دسترسیِ پشتیبانی لازم است» (`GrantNeeded`) از هر جای پنل به همین کارت می‌آورد.
 // ---------------------------------------------------------------------------
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
 import { KeyRound } from 'lucide-react';
 
 import { api } from '../../../api';
@@ -19,6 +21,7 @@ import { useLoad, type Load } from '../shared';
 import { Problem, SourceLine } from '../ShopConsole';
 import { isUnavailable, shown, type Unavailable } from '../consoleData';
 import { NotSupported, SensitiveDialog, StateEmpty, fmtTime, type SensitiveSubmit } from './parts';
+import { SUPPORT_ACCESS_ANCHOR } from './GrantNeeded';
 import { useTx, type Tx } from './text';
 
 type Grant = { id: string; scope: string; consent: string; status: string; reason: string; requestedBy: string; grantedBy: string; startsAt: number | null; expiresAt: number | null; revokedAt: number | null; notifiedAt: number | null; uses: number };
@@ -46,7 +49,20 @@ export default function SupportAccessCard({ shopId }: { shopId: string }) {
   const [password, setPassword] = useState('');
   const [done, setDone] = useState<{ tone: 'good' | 'warn'; text: string } | null>(null);
   const title = tx('دسترسیِ پشتیبانی', 'Support access', 'د ملاتړ لاسرسی');
-  const wrap = (body: ReactNode) => <div data-card="support-access"><Card title={title} icon={<KeyRound size={15} />}>{body}</Card></div>;
+  const { hash } = useLocation();
+  const anchor = useRef<HTMLDivElement>(null);
+  const ready = Boolean(load.data || load.error);
+  //  آمده از «اجازه لازم است» (‎…#support-access‎) ⇒ همین کارت، پس از رسیدنِ داده (تا جایش جابه‌جا نشود)
+  useEffect(() => {
+    if (hash !== `#${SUPPORT_ACCESS_ANCHOR}` || !ready) return;
+    anchor.current?.scrollIntoView({ block: 'start' });
+    anchor.current?.focus({ preventScroll: true });
+  }, [hash, ready]);
+  const wrap = (body: ReactNode) => (
+    <div ref={anchor} id={SUPPORT_ACCESS_ANCHOR} data-card="support-access" data-shop={shopId} tabIndex={-1} className="scroll-mt-4 outline-none">
+      <Card title={title} icon={<KeyRound size={15} />}>{body}</Card>
+    </div>
+  );
 
   if (load.error) return wrap(<Problem load={load as Load<unknown>} />);
   if (!load.data) return wrap(<Loading />);

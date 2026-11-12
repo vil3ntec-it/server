@@ -23,6 +23,7 @@ import {
 import GrantSub from './GrantSub';
 import type { Addon, Payment, PumpProfile, ShopProfile, SubRow } from './types';
 import DeleteAccount from './DeleteAccount';
+import GrantNeeded from './console/GrantNeeded';
 
 type ListOut = { subscriptions: SubRow[]; serverTime: number };
 
@@ -579,6 +580,8 @@ function Profile({
   const history = useLoad<{ history: Record<string, unknown>[] }>(`/api/account-admin/customers/${app}/${row.tenantId}/history`);
 
   const devices = (app === 'shop' ? shop.data?.devices : pump.data?.devices) || [];
+  //  TEN-04 (۱.۵۰.۹۸): دستگاه‌ها پنهان‌اند، نه «ثبت نشده»
+  const restricted = (app === 'shop' ? shop.data?.restricted : pump.data?.restricted) || null;
   const computers = pump.data?.computers || [];
   const owner = app === 'shop'
     ? { name: shop.data?.account.ownerName || row.ownerName, email: shop.data?.account.email || row.ownerEmail, phone: shop.data?.account.phone || row.ownerPhone }
@@ -616,7 +619,7 @@ function Profile({
         tabs={[
           { id: 'overview', label: 'اشتراک' },
           ...(app === 'pump' ? [{ id: 'computers', label: 'کامپیوترهای پمپ', badge: computers.length }] : []),
-          { id: 'devices', label: 'دستگاه‌ها', badge: devices.length },
+          { id: 'devices', label: 'دستگاه‌ها', badge: restricted ? undefined : devices.length },
           { id: 'payments', label: 'پرداخت‌ها', badge: pays.data?.payments.length },
           { id: 'notes', label: 'یادداشت و تاریخچه' },
         ]}
@@ -732,7 +735,9 @@ function Profile({
             دستگاه‌هایی که صاحبِ حساب با آن‌ها <b>وارد شده</b> (ورود با ایمیل). خودِ مشتری از «حسابِ من» در
             برنامه یا از پورتالش آزادشان می‌کند.{app === 'pump' ? ' کامپیوترهای ثبت‌شده به پمپ در زبانهٔ «کامپیوترهای پمپ» هستند.' : ''}
           </Notice>
-          {devices.length === 0 ? (
+          {restricted ? (
+            <GrantNeeded shops={restricted.shops || []} what={app === 'shop' ? 'دستگاه‌ها و جای دقیقِ این دکان و صاحبش' : 'دستگاه‌ها و جای دقیقِ صاحبِ این حساب (او عضوِ دکان است)'} />
+          ) : devices.length === 0 ? (
             <Empty icon={<Smartphone className="h-6 w-6" />} title="هیچ دستگاهی ثبت نشده" />
           ) : (
             <Table head={['دستگاه', 'شناسه', 'آخرین اتصال', 'حال']}>

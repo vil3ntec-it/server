@@ -61,7 +61,10 @@ function Detail({ shop, id, onClose, onChanged }: { shop: string; id: string; on
       {body}
     </div>
   );
-  if (load.error) return wrap(<Problem load={load as Load<unknown>} />);
+  if (load.error) {
+    return wrap(<Problem load={load as Load<unknown>} shopId={shop}
+      grantWhat={tx('جزئیاتِ این دسته (کالاها و عکسِ پیش و پس)', 'This batch’s details (products and before/after images)', 'د دې ډلې جزییات')} />);
+  }
   if (!load.data) return wrap(<Loading />);
   if (isUnavailable(load.data)) return wrap(<NotSupported needs={load.data.needs}>{tx('سرورِ حساب هنوز این را ندارد.', 'The account server does not have this yet.', 'د حساب سرور دا لا نه لري.')}</NotSupported>);
   const c = load.data.change;

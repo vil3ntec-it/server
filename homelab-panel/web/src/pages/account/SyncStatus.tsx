@@ -18,6 +18,7 @@ import { useApp } from '../../app-context';
 import { Badge, Card, Empty, Skeleton, toast } from '../../components/ui';
 import { Cell, Notice, Row, Table, Tabs } from '../../control/ui';
 import { SensitiveDialog } from './console/parts';
+import GrantNeeded, { GRANT_REQUIRED } from './console/GrantNeeded';
 import { AppPicker, CloudProblem, PageHead, fa, moment, useLoad, type AppId, type Scope } from './shared';
 import type { ClientError, SyncConflict, SyncDevice } from './types';
 
@@ -106,6 +107,11 @@ export default function SyncStatus() {
         <Card title="تعارض‌ها" icon={<GitMerge className="h-4 w-4" />}>
           {!account.trim() ? (
             <Empty title="شناسهٔ حساب را بنویسید" hint="تعارض‌ها همیشه مالِ یک حسابِ مشخص‌اند؛ سرورِ حساب بی شناسه فهرست نمی‌دهد." />
+          ) : conflicts.error && !conflicts.busy ? (
+            //  ⛔ خطا «تعارضی نیست» نیست (۱.۵۰.۹۸)؛ و ‎403 grant_required‎ (TEN-04) ⇒ «اجازه لازم است» با پیوند به کارتِ همان دکان
+            conflicts.code === GRANT_REQUIRED
+              ? <GrantNeeded shops={app === 'shop' ? [{ id: account.trim() }] : []} what="تعارض‌های همگام‌سازیِ این دکان (مقدارِ خودِ ردیف‌ها)" />
+              : <CloudProblem code={conflicts.code} message={conflicts.error} onRetry={conflicts.reload} />
           ) : conflicts.busy && !conflicts.data ? <Skeleton rows={4} /> : (
             (conflicts.data?.conflicts.length || 0) === 0
               ? <Empty title="تعارضی نیست" />

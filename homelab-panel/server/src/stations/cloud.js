@@ -180,11 +180,13 @@ function droppedErr(ctx) {
  */
 export const BRIDGE_MAX_BODY_BYTES = 32 * 1024 * 1024;
 const NO_BODY = new Set([204, 205, 304]);
+/** سقفِ بدنهٔ همین درخواست: تنگ‌ترِ خودِ یک در (‎cloudRawBytes({ maxBytes })‎، مثلاً مدرکِ پرونده) — هرگز گشادتر از سقفِ پل */
+const capOf = (ctx) => (ctx.max > 0 && ctx.max < BRIDGE_MAX_BODY_BYTES ? ctx.max : BRIDGE_MAX_BODY_BYTES);
 
 /** خواندنِ بدنه نشد — ‎err.unreadable‎ تا درهای ورود/پرسشِ کلید رفتارِ نرمِ پیشین را نگه دارند (`loose`). */
 function unreadableErr(ctx, why) {
   const big = why === 'too_large';
-  const mb = Math.round(BRIDGE_MAX_BODY_BYTES / (1024 * 1024));
+  const mb = Math.round(capOf(ctx) / (1024 * 1024));
   const err = ctx.safe
     ? new Error(big
       ? `پاسخِ سرورِ حساب از سقفِ ${mb} مگابایت بزرگ‌تر بود و خوانده نشد`
@@ -238,8 +240,9 @@ async function admit(ctx, reader) {
  * ‎hold.release‎: جای بدنهٔ بزرگ (بالا) — صداکننده پس از کارش با بایت‌ها رهایش می‌کند؛ خطا ⇒ همین‌جا رها می‌شود.
  */
 async function readCapped(res, ctx, hold = {}) {
+  const cap = capOf(ctx);
   const declared = Number(res.headers?.get?.('content-length'));
-  if (Number.isFinite(declared) && declared > BRIDGE_MAX_BODY_BYTES) {
+  if (Number.isFinite(declared) && declared > cap) {
     await res.body?.cancel().catch(() => {});
     throw unreadableErr(ctx, 'too_large');
   }
@@ -255,7 +258,7 @@ async function readCapped(res, ctx, hold = {}) {
       const { done, value } = await reader.read();
       if (done) break;
       n += value.byteLength;
-      if (n > BRIDGE_MAX_BODY_BYTES) {
+      if (n > cap) {
         await reader.cancel().catch(() => {});
         throw unreadableErr(ctx, 'too_large');
       }
@@ -317,16 +320,17 @@ const loose = (res) => readBody(res).catch((e) => { if (e?.unreadable) return {}
  * نیست — و پیامش باید همان راهِ درست کردن را بگوید (‎downPayload‎)، نه
  * «fetch failed».
  *
- * @param {{ timeout?: 'normal'|'long', safe?: boolean, signal?: AbortSignal|null, once?: boolean }} [opts]
+ * @param {{ timeout?: 'normal'|'long', safe?: boolean, signal?: AbortSignal|null, once?: boolean, max?: number }} [opts]
  *        ‎safe‎: تکرارش بی‌اثر است (پیش‌فرض: فقط GET/HEAD) — ورود هم.
  *        ‎once‎: بدنهٔ یک‌بارمصرف (سرورِ حساب پس از فرستادن پاکش می‌کند) ⇒ بیرون از سقفِ هم‌زمانیِ بدنه‌های بزرگ (`readCapped`).
+ *        ‎max‎: سقفِ تنگ‌ترِ بدنه برای همین در (بایت) — بیش از آن ⇒ بریدن و ‎too_large‎ پیش از نگه داشتنِ بایتِ بیشتر.
  */
-async function dial(url, init = {}, { timeout = 'normal', safe = null, signal = null, once = false } = {}) {
+async function dial(url, init = {}, { timeout = 'normal', safe = null, signal = null, once = false, max = 0 } = {}) {
   const method = String(init.method || 'GET').toUpperCase();
   const ms = timeoutMsOf(timeout);
   const timer = AbortSignal.timeout(ms);
   const ctx = {
-    ms, method, safe: safe ?? SAFE_METHODS.has(method), once: once === true,
+    ms, method, safe: safe ?? SAFE_METHODS.has(method), once: once === true, max: Number.isSafeInteger(max) && max > 0 ? max : 0,
     signal: signal ? AbortSignal.any([timer, signal]) : timer,
     path: (() => { try { return new URL(url).pathname.slice(0, 200); } catch { return ''; } })(),
   };
@@ -937,12 +941,15 @@ async function authedSend(method, path, { query = {}, body = null, headers = {},
  * ⚠️ سرورِ حساب رسانه را پس از رسیدن به گیرنده **پاک** می‌کند، پس هر
  * ‎GET‎ یک بار مصرف است — صداکننده باید همان لحظه روی دیسک نگهش دارد.
  *
+ * ‎maxBytes‎ (فقط GET، ۱.۵۰.۹۸): سقفِ تنگ‌ترِ پاسخ برای همین در — مدرکِ پروندهٔ شکایت چند مگابایت است و پاسخِ بزرگ‌تر همان‌جا
+ * بریده می‌شود، نه پس از ۳۲ مگابایتِ پل (‎502 account_server_too_large‎، `err.unreadable === 'too_large'`).
+ *
  * @returns برای POST همان JSON؛ برای GET ‎{ buffer, contentType }‎
  */
 //  ⏱️ بایت (رسانهٔ پشتیبانی تا ۲۵ مگابایت) با سرورِ حسابِ دور (راهِ تونل) واقعاً طول می‌کشد ⇒ پیش‌فرض «بلند»
 //  ⛔ (۱.۵۰.۸۸، ۳-۹) بانکِ عکس: ‎PUT‎ (فایلِ دسته)، ‎query‎ ِ بارگذاری و ‎sha256‎ ⇒ ‎X-Content-SHA256‎ (سرورِ حساب درستیِ بایت‌ها را
 //  پس از تونل می‌سنجد، IMG-14). تکهٔ آخرِ مسیر می‌تواند نامِ فایلِ ‎encodeURIComponent‎ شده باشد (‎.‎ و ‎%XX‎)؛ ‎..‎ هنوز نه.
-export async function cloudRawBytes(method, path, { body = null, contentType = '', timeout = 'long', signal = null, query = {}, sha256 = '' } = {}) {
+export async function cloudRawBytes(method, path, { body = null, contentType = '', timeout = 'long', signal = null, query = {}, sha256 = '', maxBytes = 0 } = {}) {
   const m = String(method || 'GET').toUpperCase();
   const p = String(path || '');
   const write = m === 'POST' || m === 'PUT';
@@ -968,7 +975,7 @@ export async function cloudRawBytes(method, path, { body = null, contentType = '
       ...(write && sha256 ? { 'x-content-sha256': String(sha256) } : {}),
     },
     body: write ? body : undefined,
-  }, { timeout, signal, once });
+  }, { timeout, signal, once, max: m === 'GET' ? maxBytes : 0 });
 
   const res = await sendAuthed(send, p);
   if (!res.ok || write) {
