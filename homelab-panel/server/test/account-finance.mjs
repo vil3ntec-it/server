@@ -72,7 +72,11 @@ const fake = http.createServer((req, res) => {
     }
     if (p === '/api/admin/system/reconciliation') {
       if (reconMissing) return j(404, { error: { code: 'route_not_found', message: 'این مسیرِ مدیر روی این سرور نیست' } });
-      return j(200, { window: { from: 1, to: 2 }, currency: 'AFN', checkedAt: NOW, shopsTotal: 1, totals: { netMinor: 12345 }, shops: [] });
+      const money = u.searchParams.get('money') === '1'
+        ? { money: { currency: 'AFN', testShopsExcluded: 1, gmvMinor: 30000, posSalesMinor: 20000, onlineSalesMinor: 10000, refundsMinor: 500,
+          netMinor: 29500, collectedMinor: 7000, handedOverMinor: 6000, unsettledMinor: 1000,
+          platformRevenue: { app: 'shop', currencies: ['AFN'], totals: { AFN: { net: 900 } } } } } : {};
+      return j(200, { window: { from: 1, to: 2 }, currency: 'AFN', checkedAt: NOW, shopsTotal: 1, totals: { netMinor: 12345 }, shops: [], ...money });
     }
     if (p.startsWith('/api/admin/finance/')) {
       if (!caps.includes('finance.v1')) return j(404, { error: { code: 'route_not_found', message: 'نیست' } });
@@ -213,6 +217,16 @@ try {
   const rc = await api('GET', `${F}/online-reconciliation?fromDate=2026-10-01&toDate=2026-10-31`, undefined, admin);
   check('admin ⇒ پاسخِ ‎/api/admin/system/reconciliation‎', rc.status === 200 && rc.json?.available === true && rc.json?.totals?.netMinor === 12345
     && seen.at(-1)?.path === '/api/admin/system/reconciliation' && seen.at(-1)?.query?.fromDate === '2026-10-01');
+  const rcm = await api('GET', `${F}/online-reconciliation?money=1&fromDate=2026-10-01`, undefined, admin);
+  check('S124: ‎money=1‎ به سرورِ حساب می‌رود و بلوکِ ‎money‎ (GMV، صندوق، آنلاین، وصول، تسویه‌نشده) همان‌طور برمی‌گردد',
+    rcm.status === 200 && seen.at(-1)?.query?.money === '1' && seen.at(-1)?.query?.fromDate === '2026-10-01'
+      && rcm.json?.money?.gmvMinor === 30000 && rcm.json?.money?.unsettledMinor === 1000 && rcm.json?.money?.platformRevenue?.totals?.AFN?.net === 900,
+    `${rcm.status} ${JSON.stringify(seen.at(-1)?.query)} ${JSON.stringify(rcm.json?.money)}`);
+  await api('GET', `${F}/online-reconciliation?money=yes`, undefined, admin);
+  const noMoney = seen.at(-1)?.query || {};
+  await api('GET', `${F}/online-reconciliation`, undefined, admin);
+  check('S124: ‎money‎ ِ جز «1» و درخواستِ بی ‎money‎ ⇒ پارامتر نمی‌رود (پاسخ همان پیشین)', !('money' in noMoney) && !('money' in (seen.at(-1)?.query || {})),
+    `${JSON.stringify(noMoney)} ${JSON.stringify(seen.at(-1)?.query)}`);
   reconMissing = true;
   const rc2 = await api('GET', `${F}/online-reconciliation`, undefined, admin);
   check('سرورِ حسابِ بی #411 ⇒ ۲۰۰ «در دسترس نیست» (route_missing)، نه خطای گنگ',

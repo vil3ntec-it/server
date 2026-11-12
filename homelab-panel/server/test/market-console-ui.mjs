@@ -34,7 +34,8 @@ const check = (name, ok, extra = '') => {
 };
 
 const NOW = Date.now();
-let caps = ['market-admin.v1', 'delivery-watch.v1', 'shop-holds.v1'];
+const ALL_CAPS = ['market-admin.v1', 'delivery-watch.v1', 'shop-holds.v1', 'flags.v1', 'market-regions.v1'];
+let caps = [...ALL_CAPS];
 const sent = [];
 let thresholds = { dispatchMin: 30, acceptMin: 30 };
 const fake = http.createServer((req, res) => {
@@ -66,10 +67,21 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/market/sellers') {
       return j(200, { serverTime: NOW, total: 1, sellers: [{
         shopId: 'shop1', name: 'دکانِ بازار', shopStatus: 'active', kind: 'vill3n_shop', slug: 'bazar-1', category: 'grocery',
-        gates: { directory: false, marketFlag: true, listed: true }, blockedBy: ['directory'], holds: [], sanctions: [],
+        gates: { directory: false, marketFlag: true, listed: true, storefrontFlag: false }, blockedBy: ['directory'], holds: [], sanctions: [],
         casesPending: 0, orders30d: 4, delivery: { flag: true, couriersActive: 1, couriersTotal: 2 }, lastSeenAt: null,
       }] });
     }
+    if (p === '/api/admin/flags' && req.method === 'GET') {
+      return j(200, { scope: 'all', items: [], known: [{ key: 'shop.storefront', scope: 'shop', default: false, what: 'ویترین' }] });
+    }
+    if (p === '/api/admin/flags' && req.method === 'PUT') return j(200, { scope: body?.scope, key: body?.key, value: body?.value });
+    if (p === '/api/admin/market/regions') {
+      const z = (a, b, c) => ({ registered: a, accepting: b, temporarilyClosed: c });
+      return j(200, { generatedAt: NOW, provinces: [{ code: 'AF-BAL', name: 'بلخ', ...z(0, 0, 0), districts: [] },
+        { code: 'AF-KAB', name: 'کابل', ...z(2, 1, 1), districts: [{ name: 'ناحیهٔ ۴', ...z(2, 1, 1) }] }],
+        unknownProvince: z(1, 1, 0), totals: z(3, 2, 1), excluded: { test: 1, duplicate: 0, suspended: 2, notPublic: 0 }, onlineNow: null });
+    }
+    if (p === '/api/admin/shops/shop1/census' && req.method === 'PUT') return j(200, { shopId: 'shop1', mark: { kind: body?.kind, reason: body?.reason } });
     if (p === '/api/admin/shops/shop1/holds' && req.method === 'POST') {
       return j(201, { hold: { id: 'h1', kind: body?.kind, service: body?.service, reason: body?.reason }, state: {}, replayed: false });
     }
@@ -170,13 +182,46 @@ try {
     JSON.stringify(hold));
   check('و «تأییدِ سرورِ حساب» دیده می‌شود', (await main()).includes('سرورِ حساب تأیید کرد'));
 
+  //  OPS-09: پرچمِ ویترینِ همین دکان از همان درِ «پرچم‌های شناخته» — نامِ کلید + رمزِ پنل
+  body = await open('tab=market&view=sellers');
+  await page.locator('main button', { hasText: 'روشن کردنِ پرچمِ ویترین' }).first().click();
+  await page.waitForTimeout(300);
+  const flagBtn = page.getByRole('button', { name: 'تأیید و فرستادن' });
+  await page.locator('textarea').last().fill('شروعِ فروشِ آنلاین');
+  await page.locator('input[type="password"]').last().fill('MarketUi!2026');
+  check('OPS-09: ⛔ بی نوشتنِ نامِ کلید دکمهٔ فرستادن خاموش', await flagBtn.isDisabled());
+  await page.locator('input.font-mono').last().fill('shop.storefront');
+  await flagBtn.click();
+  await page.waitForTimeout(800);
+  const flagPut = sent.find((x) => x.method === 'PUT' && x.path === '/api/admin/flags');
+  check('OPS-09: «روشن کردنِ پرچمِ ویترین» ⇒ PUT ِ ‎/api/admin/flags‎ با scope همین دکان، value: true و دلیل؛ رمز به سرورِ حساب نرفت',
+    flagPut && JSON.stringify(flagPut.body) === JSON.stringify({ scope: 'shop1', key: 'shop.storefront', value: true, reason: 'شروعِ فروشِ آنلاین' }),
+    JSON.stringify(flagPut));
+  check('OPS-09: و «تأییدِ سرورِ حساب» دیده می‌شود', (await main()).includes('سرورِ حساب تأیید کرد'));
+
+  //  S109: شمارشِ منطقه‌ای + نشانِ «آزمایشی/تکراری»
+  body = await open('tab=market&view=regions');
+  check('S109: زبانهٔ «شمارشِ منطقه‌ای»: کابل اول با ولسوالی، سه وضعیتِ جدا و «ولایتِ نامعلوم»',
+    body.includes('شمارشِ منطقه‌ای') && body.indexOf('کابل') > -1 && body.indexOf('کابل') < body.indexOf('بلخ') && body.includes('ناحیهٔ ۴: ۲/۱/۱')
+      && body.includes('سفارش‌پذیر') && body.includes('موقتاً بسته') && body.includes('ولایتِ نامعلوم'), body.slice(0, 900));
+  check('S109: ⛔ «آنلاینِ همین لحظه» در مدل نیست، بیرون‌مانده‌ها و منبع زیرِ کارت',
+    body.includes('آنلاینِ همین لحظه» در مدل نیست') && body.includes('آزمایشی: ۱') && body.includes('/api/admin/market/regions'), body.slice(0, 1500));
+  await page.locator('input[aria-label="census-shop"]').fill('shop1');
+  await page.locator('input[aria-label="census-reason"]').fill('دکانِ آزمون');
+  await page.locator('main button', { hasText: 'ثبتِ نشان' }).click();
+  await page.waitForTimeout(700);
+  const census = sent.find((x) => x.method === 'PUT' && x.path === '/api/admin/shops/shop1/census');
+  check('S109: نشانِ «آزمایشی» ⇒ PUT ِ ‎/api/admin/shops/shop1/census‎ با kind و دلیل؛ «تأییدِ سرور»',
+    census && JSON.stringify(census.body) === JSON.stringify({ kind: 'test', reason: 'دکانِ آزمون' }) && (await main()).includes('سرورِ حساب تأیید کرد'),
+    JSON.stringify(census));
+
   body = await open('tab=market&view=commission');
   check('⛔ کمیسیون: تصمیمِ صاحب محصول و «هیچ مبلغی نشان داده نمی‌شود»', body.includes('1405/08/08') && body.includes('نشان داده نمی‌شود') && !/AFN/.test(body), body.slice(0, 700));
 
   caps = ['delivery-watch.v1'];
   body = await open('tab=market&view=sellers');
   check('⛔ بی market-admin.v1: «داده در دسترس نیست» با نامِ توانایی', body.includes('داده در دسترس نیست') && body.includes('market-admin.v1'), body.slice(0, 600));
-  caps = ['market-admin.v1', 'delivery-watch.v1', 'shop-holds.v1'];
+  caps = [...ALL_CAPS];
 
   console.log('\n── ۴.۷ پیک ──');
   body = await open('tab=courier');

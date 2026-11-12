@@ -282,7 +282,7 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
     if (!BACKGROUND.test(p)) calls.push({ method: req.method, path: p });
     //  همهٔ تواناییِ فاز ۳ اعلام می‌شود تا مقصدِ آن مسیرها هم دیده و سنجیده شود
-    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1', 'admin-sessions.v1', 'search.v1', 'market-admin.v1', 'delivery-watch.v1', 'ops.v1', 'release-stage.v1', 'finance.v1', 'sync-restore-once.v1', 'subscription-period.v1', 'admin-contract.v1', 'staff-perms.v1', 'image-bank.v1', 'idempotent-writes.v1', 'holidays.v1', 'synonyms.v1', 'support-access.v1'], serverTime: NOW });
+    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1', 'admin-sessions.v1', 'search.v1', 'market-admin.v1', 'delivery-watch.v1', 'ops.v1', 'release-stage.v1', 'finance.v1', 'sync-restore-once.v1', 'subscription-period.v1', 'admin-contract.v1', 'staff-perms.v1', 'image-bank.v1', 'idempotent-writes.v1', 'holidays.v1', 'synonyms.v1', 'support-access.v1', 'market-regions.v1'], serverTime: NOW });
     //  ۱.۵۰.۸۰: نوشتنِ کانالِ آزمایشی نسخهٔ دیده‌شده را با همین می‌سنجد (‎sample‎ نسخه ندارد) تا ‎PUT‎ ِ «فقط ارشد» هم دیده شود
     if (p === '/api/admin/release/beta' && req.method === 'GET') return j(200, { ...sample, version: 7 });
     if (/\/receipt$/.test(p)) { res.setHeader('content-type', 'text/html; charset=utf-8'); return res.end('<html>رسید</html>'); }
@@ -354,6 +354,8 @@ const SPECIAL = {
   'POST /api/account-admin/console/market/trust/cases/:id/decide': { body: { outcome: 'upheld', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
   'POST /api/account-admin/console/market/trust/cases/:id/appeal-decision': { body: { outcome: 'upheld', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
   'POST /api/account-admin/console/market/trust/sanctions/:id/lift': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
+  //  S109: نشانِ «آزمایشی/تکراری» (۱.۵۰.۹۲) — بدنهٔ همگانی ‎kind‎ ِ معتبر ندارد
+  'PUT /api/account-admin/console/market/census/:id': { body: { kind: 'test', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true } },
   'PUT /api/account-admin/console/delivery/thresholds': { body: { thresholds: { dispatchMin: 45 }, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
   //  ماژول‌های عملیات: مقدارِ معتبرِ هر در (بدنهٔ همگانی `status: 'active'` دارد)
   'POST /api/account-admin/console/ops/incidents/:id/status': { body: { status: 'investigating', note: 'سنجه' } },

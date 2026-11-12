@@ -154,6 +154,8 @@ export const MC = {
   dConnectivity: `${C}/delivery/connectivity`,
   dReport: (days: number) => `${C}/delivery/report${qs({ days })}`,
   dThresholds: `${C}/delivery/thresholds`,
+  regions: `${C}/market/regions`,
+  census: (id: string) => `${C}/market/census/${encodeURIComponent(id)}`,
   shopHolds: (id: string) => `${C}/shops/${encodeURIComponent(id)}/holds`,
   liftHold: (id: string, holdId: string) => `${C}/shops/${encodeURIComponent(id)}/holds/${encodeURIComponent(holdId)}/lift`,
 };
@@ -182,6 +184,35 @@ export type Seller = {
   holds?: SellerHold[]; sanctions?: { id: string; kind: string; productId?: string; at?: number | null }[];
   casesPending?: number; orders30d?: number; delivery?: { flag?: boolean; couriersActive?: number; couriersTotal?: number };
 };
+/* ── S109: شمارشِ منطقه‌ای (‎shop/server/src/lib/market-regions.js‎) — سه وضعیتِ جدا، «آنلاینِ همین لحظه» نه ── */
+export type RegionCount = { registered?: number; accepting?: number; temporarilyClosed?: number };
+export type Province = RegionCount & { code: string; name: string; districts?: (RegionCount & { name: string })[] };
+export type Regions = Stamped & {
+  generatedAt?: number; provinces?: Province[]; unknownProvince?: RegionCount; totals?: RegionCount;
+  excluded?: { test?: number; duplicate?: number; suspended?: number; notPublic?: number }; onlineNow?: null;
+};
+export const REGION_KEYS = ['registered', 'accepting', 'temporarilyClosed'] as const;
+export const CENSUS_KINDS = ['test', 'duplicate', 'none'] as const;
+/** ولایتِ دکان‌دار اول (بیشترین ثبت‌شده)، هم‌شمارها به ترتیبِ خودِ سرور؛ هیچ عددی ساخته نمی‌شود. */
+export function regionRows(r: Regions | null | undefined): Province[] {
+  const list: Province[] = Array.isArray(r?.provinces) ? (r?.provinces as Province[]) : [];
+  return [...list].sort((a, b) => (num(b.registered) ?? 0) - (num(a.registered) ?? 0));
+}
+/** جمعِ ولایت‌ها + «ولایتِ نامعلوم» باید همان `totals` باشد؛ ناهم‌خوان ⇒ نامِ ستون (همان `sumMismatches`). */
+export function regionMismatches(r: Regions | null | undefined): string[] {
+  const rows = [...(r?.provinces || []), ...(r?.unknownProvince ? [r.unknownProvince] : [])] as Record<string, unknown>[];
+  const totals = r?.totals ? Object.fromEntries(REGION_KEYS.map((k) => [k, r.totals?.[k]])) : undefined;
+  return sumMismatches(rows, totals);
+}
+
+/** OPS-09: روشن/خاموش کردنِ پرچمِ ویترینِ **یک** دکان (‎shop.storefront‎، scope = همان دکان) — حالتِ نیامده ⇒ null (دکمه نیست). */
+export const STOREFRONT_FLAG = 'shop.storefront';
+export function storefrontFlagEdit(s: Pick<Seller, 'shopId' | 'gates'> | null | undefined): { scope: string; key: string; from: boolean; to: boolean } | null {
+  const v = s?.gates?.storefrontFlag;
+  if (typeof v !== 'boolean' || !s?.shopId) return null;
+  return { scope: s.shopId, key: STOREFRONT_FLAG, from: v, to: !v };
+}
+
 export type Sellers = Stamped & { total?: number; limit?: number; offset?: number; sellers?: Seller[]; categories?: { key: string; label: string }[] };
 export type Mission = { id: string; status: string; mode?: string; attemptNo?: number | null; courierId?: string | null;
   courierName?: string | null; updatedAt?: number | null; cashReview?: boolean; recall?: string | null;

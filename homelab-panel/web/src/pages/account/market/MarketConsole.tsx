@@ -9,16 +9,19 @@
 //  ⛔ مجوز در سرور است؛ پنهان کردنِ دکمه برای غیرِ admin فقط برای این است که درخواستِ بی‌نتیجه نزند.
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
-import { AlertTriangle, BadgePercent, FileClock, Flag, ShoppingBag, Store } from 'lucide-react';
+import { AlertTriangle, BadgePercent, FileClock, Flag, MapPin, ShoppingBag, Store } from 'lucide-react';
 
 import { api } from '../../../api';
 import { useApp } from '../../../app-context';
+import { Card } from '../../../components/ui';
 import { Cell, KV, Notice, Row, Stat, Table, Tabs } from '../../../control/ui';
-import { isUnavailable } from '../consoleData';
+import { isUnavailable, reasonOk } from '../consoleData';
+import { SHELL_API } from '../console/contract';
+import { SensitiveDialog as KeyDialog, type SensitiveSubmit } from '../console/parts';
 import { useLoad } from '../shared';
 import {
-  GATE_LABEL, MC, ORDER_GROUPS, SANCTION_LABEL, SELLER_STATES, money, shownNum,
-  type Commission, type History, type MarketOrders, type MarketOverview, type Sanction, type Seller, type Sellers,
+  CENSUS_KINDS, GATE_LABEL, MC, ORDER_GROUPS, SANCTION_LABEL, SELLER_STATES, STOREFRONT_FLAG, money, regionMismatches, regionRows, shownNum,
+  storefrontFlagEdit, type Commission, type Regions, type History, type MarketOrders, type MarketOverview, type Sanction, type Seller, type Sellers,
   type TrustCase, type TrustCaseFull,
 } from './marketData';
 import { Box, Chip, CsvButton, IssueChips, Pager, SensitiveDialog, ServiceHoldDialog, errText, moment } from './parts';
@@ -26,7 +29,8 @@ import { useTx } from './tx';
 
 export type ModuleProps = { params: URLSearchParams; setParams: (next: Record<string, string>) => void };
 
-const VIEWS = ['overview', 'sellers', 'orders', 'reports', 'commission', 'history'] as const;
+const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;   //  همان مرزِ شناسهٔ پل (‎console-market.js‎)
+const VIEWS = ['overview', 'sellers', 'regions', 'orders', 'reports', 'commission', 'history'] as const;
 type View = (typeof VIEWS)[number];
 
 /* ───────────────────────────── نمای کلی ───────────────────────────── */
@@ -128,6 +132,7 @@ function Sellers() {
   const [state, setState] = useState('');
   const [offset, setOffset] = useState(0);
   const [dialog, setDialog] = useState<{ s: Seller; service: string; hold?: { id: string } | null } | null>(null);
+  const [flagEdit, setFlagEdit] = useState<{ s: Seller; e: NonNullable<ReturnType<typeof storefrontFlagEdit>> } | null>(null);
   const [done, setDone] = useState('');
   const load = useLoad<Sellers>(MC.sellers(query, state, SELLER_PAGE, offset), [query, state, offset]);
   const d = load.data && !isUnavailable(load.data) ? load.data : null;
@@ -187,6 +192,16 @@ function Sellers() {
                           <button className="btn btn-sm" onClick={() => { setDone(''); setDialog({ s, service: 'shop.storefront', hold: sfHold || null }); }}>
                             {sfHold ? tx('روشن کردنِ ویترین', 'Re-enable storefront', 'ننداریز فعالول') : tx('خاموش کردنِ ویترین', 'Disable storefront', 'ننداریز بندول')}
                           </button>
+                          {(() => {
+                            //  OPS-09: پرچمِ ویترینِ همین دکان — حالتِ نیامده ⇒ دکمه نیست (نه حدس)
+                            const e = storefrontFlagEdit(s);
+                            return e && (
+                              <button className="btn btn-sm" onClick={() => { setDone(''); setFlagEdit({ s, e }); }}>
+                                {e.to ? tx('روشن کردنِ پرچمِ ویترین', 'Turn storefront flag on', 'د ننداریز بیرغ روښانول')
+                                  : tx('خاموش کردنِ پرچمِ ویترین', 'Turn storefront flag off', 'د ننداریز بیرغ بندول')}
+                              </button>
+                            );
+                          })()}
                         </span>
                       )}
                     </Cell>
@@ -208,6 +223,140 @@ function Sellers() {
                            onClose={() => setDialog(null)}
                            onDone={() => { setDialog(null); setDone(tx('سرورِ حساب تأیید کرد.', 'Confirmed by the account server.', 'د حساب سرور تایید کړ.')); void load.reload(); }} />
       )}
+      {flagEdit && (
+        //  ⛔ همان درِ «پرچم‌های شناخته» (‎PUT /console/flags‎، scope = همین دکان): پرخطر ⇒ نامِ کلید + رمزِ پنل، کلیدِ یکتایی
+        <KeyDialog danger needPassword confirmKey={STOREFRONT_FLAG}
+                   title={tx('پرچمِ ویترینِ «{n}»', 'Storefront flag of “{n}”', 'د «{n}» د ننداریز بیرغ', { n: flagEdit.s.name })}
+                   onClose={() => setFlagEdit(null)} onUnknown={() => void load.reload()}
+                   onSubmit={async (x: SensitiveSubmit) => {
+                     await api(SHELL_API.flags, { method: 'PUT', body: { scope: flagEdit.e.scope, key: flagEdit.e.key, value: flagEdit.e.to, ...x, confirm: true } });
+                     setFlagEdit(null);
+                     setDone(tx('سرورِ حساب تأیید کرد.', 'Confirmed by the account server.', 'د حساب سرور تایید کړ.'));
+                     void load.reload();
+                   }}
+                   effect={<>
+                     <code dir="ltr">{flagEdit.e.scope} · {STOREFRONT_FLAG}</code>: {flagEdit.e.from ? tx('روشن', 'On', 'روښانه') : tx('خاموش', 'Off', 'بند')} ⇒ {flagEdit.e.to ? tx('روشن', 'On', 'روښانه') : tx('خاموش', 'Off', 'بند')}
+                     <span className="block">{tx('فقط همین یک دکان. ویترین وقتی باز است که پرچمِ سفارش و اشتراک هم باشد؛ «خاموش کردنِ ویترین» (حالتِ دکان) جداست.',
+                       'This one shop only. The storefront opens only with the orders flag and an entitlement too; “Disable storefront” (shop hold) is separate.',
+                       'یوازې همدا هټۍ. ننداریز هغه وخت خلاص دی چې د فرمایش بیرغ او ګډون هم وي.')}</span>
+                   </>} />
+      )}
+    </div>
+  );
+}
+
+/* ───────────────────────────── S109: شمارشِ منطقه‌ای ───────────────────────────── */
+
+function CensusCard({ onDone }: { onDone: () => void }) {
+  const { tx } = useTx();
+  const [shopId, setShopId] = useState('');
+  const [kind, setKind] = useState<string>('test');
+  const [dup, setDup] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ tone: 'good' | 'bad'; text: string } | null>(null);
+  const id = shopId.trim();
+  const of = dup.trim();
+  const ok = ID_RE.test(id) && reasonOk(reason) && (kind !== 'duplicate' || (ID_RE.test(of) && of !== id)) && !busy;
+  const kindLabel: Record<string, string> = {
+    test: tx('آزمایشی', 'Test', 'ازمایښتي'), duplicate: tx('تکراری', 'Duplicate', 'تکراري'), none: tx('برداشتنِ نشان', 'Remove mark', 'نښه لرې کول'),
+  };
+  const send = async () => {
+    if (!ok) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api(MC.census(id), { method: 'PUT', body: { kind, ...(kind === 'duplicate' ? { duplicateOf: of } : {}), reason: reason.trim(), confirm: true } });
+      setMsg({ tone: 'good', text: tx('سرورِ حساب تأیید کرد.', 'Confirmed by the account server.', 'د حساب سرور تایید کړ.') });
+      setReason('');
+      onDone();
+    } catch (e) { setMsg({ tone: 'bad', text: errText(e) }); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Card title={tx('نشانِ «آزمایشی/تکراری» ِ دکان', 'Mark a shop as test/duplicate', 'د هټۍ «ازمایښتي/تکراري» نښه')} icon={<Flag size={16} />}>
+      <p className="mb-2 text-[11px] text-ink-muted">{tx('دکانِ نشان‌دار در این شمارش و در گزارشِ پولِ مدیر نیست؛ دلیل و سابقه در سرورِ حساب می‌ماند و برداشتنی است.',
+        'A marked shop is left out of this count and of the admin money report; the reason and history stay on the account server, and it can be removed.',
+        'نښه شوې هټۍ په دې شمېرنه کې نه راځي؛ لامل او تاریخچه پاتې کېږي.')}</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <input className="input w-48" dir="ltr" aria-label="census-shop" value={shopId} onChange={(e) => setShopId(e.target.value)} placeholder={tx('شناسهٔ دکان', 'Shop id', 'د هټۍ پېژند')} />
+        <select className="input w-auto" aria-label="census-kind" value={kind} onChange={(e) => setKind(e.target.value)}>
+          {CENSUS_KINDS.map((k) => <option key={k} value={k}>{kindLabel[k]}</option>)}
+        </select>
+        {kind === 'duplicate' && (
+          <input className="input w-48" dir="ltr" aria-label="census-of" value={dup} onChange={(e) => setDup(e.target.value)} placeholder={tx('دکانِ اصل', 'Original shop', 'اصلي هټۍ')} />
+        )}
+        <input className="input w-64" aria-label="census-reason" maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={tx('دلیل (۳ تا ۲۰۰ نویسه)', 'Reason (3–200 chars)', 'لامل')} />
+        <button className="btn btn-sm" disabled={!ok} onClick={send}>{busy ? '…' : tx('ثبتِ نشان', 'Save mark', 'نښه ثبتول')}</button>
+      </div>
+      {msg && <div className="mt-2"><Notice tone={msg.tone}>{msg.text}</Notice></div>}
+    </Card>
+  );
+}
+
+function RegionsView() {
+  const { tx } = useTx();
+  const { can } = useApp();
+  const load = useLoad<Regions>(MC.regions);
+  const d = load.data && !isUnavailable(load.data) ? load.data : null;
+  const rows = regionRows(d);
+  const bad = regionMismatches(d);
+  const three = (x: { registered?: number; accepting?: number; temporarilyClosed?: number } | undefined) => [
+    <Cell key="r">{shownNum(x?.registered)}</Cell>, <Cell key="a">{shownNum(x?.accepting)}</Cell>, <Cell key="c">{shownNum(x?.temporarilyClosed)}</Cell>,
+  ];
+  return (
+    <div className="space-y-3">
+      <Box title={tx('شمارشِ منطقه‌ایِ فروشگاه‌های عمومی', 'Public shops by region', 'عامې هټۍ د سیمې له مخې')} icon={<MapPin size={16} />}
+           source="/api/admin/market/regions" load={load}>
+        {() => d && (
+          <>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Stat label={tx('ثبت‌شده (عمومی)', 'Registered (public)', 'ثبت شوې (عامې)')} value={shownNum(d.totals?.registered)} />
+              <Stat label={tx('سفارش‌پذیر', 'Accepting orders', 'فرمایش مني')} value={shownNum(d.totals?.accepting)} />
+              <Stat label={tx('موقتاً بسته', 'Temporarily closed', 'لنډمهاله بندې')} value={shownNum(d.totals?.temporarilyClosed)} />
+            </div>
+            <div className="mt-2">
+              <Notice>{tx('«آنلاینِ همین لحظه» در مدل نیست (‎onlineNow: null‎) — این سه عدد وضعیتِ ثبت‌شده‌اند، نه حضورِ زنده.',
+                '“Online right now” is not in the model (onlineNow: null) — these three are recorded states, not live presence.',
+                '«همدا اوس آنلاین» په ماډل کې نشته — دا درې شمېرې ثبت شوي حالتونه دي.')}</Notice>
+            </div>
+            {bad.length > 0 && <div className="mt-2"><Notice tone="bad">{tx('جمعِ ولایت‌ها با جمعِ کل نمی‌خواند: {k}', 'Provinces do not add up to the total: {k}', 'د ولایتونو جمع له ټول سره نه سمون خوري: {k}', { k: bad.join('، ') })}</Notice></div>}
+            <div className="mt-3">
+              <Table head={[tx('ولایت', 'Province', 'ولایت'), tx('ثبت‌شده', 'Registered', 'ثبت شوې'), tx('سفارش‌پذیر', 'Accepting', 'فرمایش مني'),
+                tx('موقتاً بسته', 'Temporarily closed', 'لنډمهاله بندې'), tx('ولسوالی‌ها (ثبت‌شده/سفارش‌پذیر/بسته)', 'Districts (registered/accepting/closed)', 'ولسوالۍ')]}
+                     empty={rows.length === 0}>
+                {rows.map((p) => (
+                  <Row key={p.code}>
+                    <Cell><div className="font-medium">{p.name}</div><div className="text-[11px] text-ink-muted" dir="ltr">{p.code}</div></Cell>
+                    {three(p)}
+                    <Cell>
+                      {(p.districts || []).length ? (
+                        <span className="flex flex-wrap gap-1">
+                          {(p.districts || []).map((x, i) => (
+                            <Chip key={`${x.name}-${i}`}>{x.name || tx('بی ولسوالی', 'No district', 'بې ولسوالۍ')}: {shownNum(x.registered)}/{shownNum(x.accepting)}/{shownNum(x.temporarilyClosed)}</Chip>
+                          ))}
+                        </span>
+                      ) : '—'}
+                    </Cell>
+                  </Row>
+                ))}
+                <Row>
+                  <Cell>{tx('ولایتِ نامعلوم', 'Unknown province', 'ناڅرګند ولایت')}</Cell>
+                  {three(d.unknownProvince)}
+                  <Cell>—</Cell>
+                </Row>
+              </Table>
+            </div>
+            <p className="mt-2 text-[11px] text-ink-muted">
+              {tx('بیرون از شمارش — آزمایشی: {t} · تکراری: {d} · تعلیق یا غیرفعال: {s} · بی وضعیتِ عمومی: {n}',
+                'Left out — test: {t} · duplicate: {d} · suspended or inactive: {s} · not public: {n}',
+                'بهر — ازمایښتي: {t} · تکراري: {d} · ځنډول شوې: {s} · نا عامې: {n}',
+                { t: shownNum(d.excluded?.test), d: shownNum(d.excluded?.duplicate), s: shownNum(d.excluded?.suspended), n: shownNum(d.excluded?.notPublic) })}
+            </p>
+          </>
+        )}
+      </Box>
+      {can('admin') && <CensusCard onDone={() => void load.reload()} />}
     </div>
   );
 }
@@ -534,6 +683,7 @@ export default function MarketModule({ params, setParams }: ModuleProps) {
   const go = (v: View, extra: Record<string, string> = {}) => setParams(v === 'overview' ? {} : { view: v, ...extra });
   const label: Record<View, string> = {
     overview: tx('نمای کلی', 'Overview', 'عمومي'), sellers: tx('فروشنده‌ها', 'Sellers', 'پلورونکي'),
+    regions: tx('شمارشِ منطقه‌ای', 'By region', 'د سیمې شمېرنه'),
     orders: tx('سفارش‌ها', 'Orders', 'فرمایشونه'), reports: tx('گزارش‌ها و جریمه‌ها', 'Reports & sanctions', 'راپورونه او جریمې'),
     commission: tx('کمیسیون', 'Commission', 'کمیشن'), history: tx('سابقه', 'History', 'تاریخچه'),
   };
@@ -542,6 +692,7 @@ export default function MarketModule({ params, setParams }: ModuleProps) {
       <Tabs tabs={VIEWS.map((id) => ({ id, label: label[id] }))} active={view} onChange={(id) => go(id as View)} />
       {view === 'overview' && <Overview go={go} />}
       {view === 'sellers' && <Sellers />}
+      {view === 'regions' && <RegionsView />}
       {view === 'orders' && <Orders params={params} setParams={setParams} />}
       {view === 'reports' && <Reports />}
       {view === 'commission' && <CommissionView />}
