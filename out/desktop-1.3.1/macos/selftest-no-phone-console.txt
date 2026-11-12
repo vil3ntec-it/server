@@ -1,0 +1,34 @@
+Picked up JAVA_TOOL_OPTIONS: -Drawrec.selftestOut=/Users/runner/work/_temp/selftest.log
+rawrec-desktop selftest: os Mac OS X aarch64, java 17.0.21
+WARNING: GL pipe is running in software mode (Renderer ID=0x1020400)
+screen capture: standard; monitors: مانیتورِ 1 — 1024×768 (اصلی)
+capture: avfoundation
+noise model: 297646 bytes
+Nov 12, 2026 12:38:28 PM com.sun.javafx.application.PlatformImpl startup
+WARNING: Unsupported JavaFX configuration: classes were loaded from 'unnamed module @13805618'
+2026-11-12 12:38:29.624 RawRec Desktop[10730:35956] CGLChoosePixelFormat: No matching pixel format exists for the requested attributes, trying again with limited capabilities
+browser: ok
+app nap: off while the app runs
+[libopenh264 @ 0xbce548000] [OpenH264] this = 0x0xbcea5cb10, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0xbce548000] [OpenH264] this = 0x0xbcea5cb10, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+Svt[info]: -------------------------------------------
+Svt[info]: SVT [version]:	SVT-AV1 Encoder Lib v2.2.0
+Svt[info]: SVT [build]  :	Apple LLVM 14.0.0 (clang-1400.0.29.202)	 64 bit
+Svt[info]: LIB Build date: Nov 16 2024 01:14:21
+Svt[info]: -------------------------------------------
+Svt[info]: Number of logical cores available: 5
+Svt[info]: Number of PPCS 59
+Svt[info]: [asm level on system : up to c]
+Svt[info]: [asm level selected : up to c]
+Svt[info]: -------------------------------------------
+Svt[info]: SVT [config]: main profile	tier (auto)	level (auto)
+Svt[info]: SVT [config]: width / height / fps numerator / fps denominator 		: 640 / 360 / 30 / 1
+Svt[info]: SVT [config]: bit-depth / color format 					: 8 / YUV420
+Svt[info]: SVT [config]: preset / tune / pred struct 					: 10 / PSNR / random access
+Svt[info]: SVT [config]: gop size / mini-gop size / key-frame type 			: 161 / 16 / key frame
+Svt[info]: SVT [config]: BRC mode / target bitrate (kbps)				: VBR / 2000 
+Svt[info]: SVT [config]: AQ mode / variance boost 					: 2 / 0
+Svt[info]: -------------------------------------------
+encoders: hevc_videotoolbox(gpu), h264_videotoolbox(gpu), libopenh264(cpu), libsvtav1(cpu)
+adb: /Users/runner/Library/Application Support/RawRec/platform-tools/adb
+FAIL: no usable phone: []

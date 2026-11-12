@@ -1,0 +1,8 @@
+30d5125cad3e9eb68fccbbbef48e0554466e5aa0f298f5791262c4804e3a7642  RawRec Desktop-1.3.1.dmg.part00
+8ec3bd2f87c8c2347b5876c53458a25f574d46b931051cbd33fd6c7693eb4e57  RawRec Desktop-1.3.1.dmg.part01
+8dd35470d7196377bbee56a5da079e4261311588ae386d2dc941554f850b0ac3  RawRec-Desktop-1.3.1-macos-portable.zip.part00
+5a2aaeb1d27592c4962f911a929d4ada1570c93cf8fa31b9c0c4ffc9dec16487  RawRec-Desktop-1.3.1-macos-portable.zip.part01
+e4799a8c61d55940712d6ca39b2793c8f05ef77492054a8f1f362911fc33de6e  selftest-no-phone-console.txt
+5362fb632b157f283b9135804a517da6491d939d8635435911a91f389c9e4aff  selftest-no-phone-exit.txt
+9992eb3c46d6d3bc4cb261cc7e5e4c309794801fdc2c64be840eb37d12c015f1  selftest-no-phone.txt
+e280dcec4d73d460ac647bbba41098323d90bd7d81490bf1de1a237f45fe6677  tests.txt
