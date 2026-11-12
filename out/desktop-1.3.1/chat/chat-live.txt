@@ -1,0 +1,60 @@
+twitch channels: [kato_junichi0817, blastpremier, shadowkekw, chopperinho, fps_shaka]
+probe https://www.youtube.com/@LofiGirl/live -> 200 len 1599235 title= - YouTube canonical=undefined isLive=true videoDetails=null liveChat=true bot=true kick_livestream=null chatroom=null
+probe https://kick.com/api/v2/channels/xqc -> 200 len 6384 title=null canonical=null isLive=false videoDetails=null liveChat=false bot=false kick_livestream=null chatroom=668
+kick live list -> 200
+kick live: [sxb, maherco, absi, 3mr, baran]
+kick realtime/connection 200: {"data":{"connections":[{"credentials":{"url":"wss://realtime.us-east-1.platform.kick.com/connection/websocket"},"provider":"centrifugo"}],"mode":"websocket"},"message":"success"}
+
+kick realtime/auth 200: {"data":{"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJndWVzdDo1ODBhZjMzNS1jYzFkLTQ2ZDktOGFiNi02Mjg3ZjE1MjVlN
+kick realtime/connection 200: {"data":{"connections":[{"credentials":{"url":"wss://realtime.us-east-1.platform.kick.com/connection/websocket"},"provider":"centrifugo"}],"mode":"websocket"},"message":"success"}
+
+kick realtime/auth 200: {"data":{"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJndWVzdDo0ZDhhMmRiYS0wODQ1LTRmOWItOGMxMC1jZDRmNzkzNDkyM
+kick frame: {"id":1,"connect":{"client":"07839cab-8891-4b41-8e91-7be0c8c324e0","version":"6.9.7 PRO","expires":true,"ttl":2700,"ping":25,"pong":true}}
+kick frame: {"id":2,"subscribe":{}}
+kick frame: {"id":1,"connect":{"client":"5f570152-f76f-4fcc-904e-cea9ea6e8091","version":"6.9.7 PRO","expires":true,"ttl":2700,"ping":25,"pong":true}}
+kick frame: {"id":2,"subscribe":{}}
+kick frame: {"push":{"channel":"chatrooms.17627848.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"8fc5a4c7-bc66-4f0d-90a6-3550d726f218\",\"chatroom_id\":17627848,\"content\":\"كولومبي\",\"type\":\"message\",\"created_at\":\"2026-11-12T12:38:14+00:00\",\"sender\":{\"id\":105522087,\"username\":\"11Kody\",\"slug\":\"11kody\",\"identity\":{\"color\":\"#FF2C56\",\"badges\":[{\"type\"
+kick frame: {"push":{"channel":"chatrooms.17627848.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"8b4d17ba-e559-4a25-b540-823e6490854e\",\"chatroom_id\":17627848,\"content\":\"أثيوبي\",\"type\":\"message\",\"created_at\":\"2026-11-12T12:38:14+00:00\",\"sender\":{\"id\":85998787,\"username\":\"onllymeaad\",\"slug\":\"onllymeaad\",\"identity\":{\"color\":\"#FF55B3\",\"badges\":[{\"
+youtube: video=4t4AQ15yj1M chat page=popout
+kick frame: {"push":{"channel":"chatrooms.17627848.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"bd51e160-3a44-411d-a9bb-f70995c97577\",\"chatroom_id\":17627848,\"content\":\"برازيلي\",\"type\":\"message\",\"created_at\":\"2026-11-12T12:38:15+00:00\",\"sender\":{\"id\":91530275,\"username\":\"xABRAR\",\"slug\":\"xabrar\",\"identity\":{\"color\":\"#FEA0CF\",\"badges\":[{\"type\":
+kick frame: {"push":{"channel":"chatrooms.17627848.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"26e449f5-a970-48e6-b9b6-1c9d3389695a\",\"chatroom_id\":17627848,\"content\":\"أثيوبي أكيد\",\"type\":\"message\",\"created_at\":\"2026-11-12T12:38:15+00:00\",\"sender\":{\"id\":86658387,\"username\":\"iSara_511\",\"slug\":\"isara-511\",\"identity\":{\"color\":\"#FEA0CF\",\"badges\":[
+kick frame: {"push":{"channel":"chatrooms.17627848.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"ba609b57-8677-4515-8d3c-3ecdc0f93c5b\",\"chatroom_id\":17627848,\"content\":\"والله برازيلي وبس\",\"type\":\"message\",\"created_at\":\"2026-11-12T12:38:15+00:00\",\"sender\":{\"id\":5973586,\"username\":\"1SAMAxx\",\"slug\":\"1samaxx\",\"identity\":{\"color\":\"#FFFFFF\",\"badges\":
+kick frame: {"push":{"channel":"chatrooms.17627848.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"b4392e06-39de-4e57-8aef-9a3c906c9fed\",\"chatroom_id\":17627848,\"content\":\"اثيوبي\",\"type\":\"message\",\"created_at\":\"2026-11-12T12:38:16+00:00\",\"sender\":{\"id\":119566375,\"username\":\"Omarswi\",\"slug\":\"omarswi\",\"identity\":{\"color\":\"#FF2C56\",\"badges\":[{\"type\
+kick frame: {"push":{"channel":"chatrooms.17627848.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"0918f5e7-eb2f-49b1-9e64-01be6da9b948\",\"chatroom_id\":17627848,\"content\":\"اثيوبيه\",\"type\":\"message\",\"created_at\":\"2026-11-12T12:38:16+00:00\",\"sender\":{\"id\":137062219,\"username\":\"itsanonymouss\",\"slug\":\"itsanonymouss\",\"identity\":{\"color\":\"#BDFF28\",\"badge
+kick frame: {"push":{"channel":"chatrooms.17627848.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"d79741ca-e3c0-471c-819d-047d2d83f6f2\",\"chatroom_id\":17627848,\"content\":\"اثيوبي\",\"type\":\"message\",\"created_at\":\"2026-11-12T12:38:16+00:00\",\"sender\":{\"id\":6250415,\"username\":\"Joud_JD\",\"slug\":\"joud-jd\",\"identity\":{\"color\":\"#6F87FF\",\"badges\":[{\"type\":
+kick frame: {"push":{"channel":"chatrooms.11677377.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"a593d125-3520-4768-8c65-3366847521db\",\"chatroom_id\":11677377,\"content\":\"يلا\",\"type\":\"reply\",\"created_at\":\"2026-11-12T12:38:18+00:00\",\"sender\":{\"id\":19032763,\"username\":\"1ruzex\",\"slug\":\"1ruzex\",\"identity\":{\"color\":\"#E5FFAB\",\"badges\":[],\"badges_v2\":
+kick frame: {"push":{"channel":"chatrooms.11677377.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"ee3a5dbf-6481-4f94-9979-7c53d17c4613\",\"chatroom_id\":11677377,\"content\":\"😂\",\"type\":\"message\",\"created_at\":\"2026-11-12T12:38:19+00:00\",\"sender\":{\"id\":29567543,\"username\":\"Khaloo_Yousef\",\"slug\":\"khaloo-yousef\",\"identity\":{\"color\":\"#E26EFF\",\"badges\":[{
+kick frame: {"push":{"channel":"chatrooms.11677377.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"6aea2e61-2263-47e7-9b3b-ee5210af0ae1\",\"chatroom_id\":11677377,\"content\":\"ماعر\",\"type\":\"message\",\"created_at\":\"2026-11-12T12:38:20+00:00\",\"sender\":{\"id\":17750893,\"username\":\"3n_jz\",\"slug\":\"3n-jz\",\"identity\":{\"color\":\"#E9113C\",\"badges\":[{\"type\":\"sub
+kick frame: {"push":{"channel":"chatrooms.11677377.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"6950dff7-1c0c-406d-af1e-feeb70e80bcc\",\"chatroom_id\":11677377,\"content\":\"ليش ياجواد\",\"type\":\"message\",\"created_at\":\"2026-11-12T12:38:22+00:00\",\"sender\":{\"id\":85655755,\"username\":\"HUSSEN_CO\",\"slug\":\"hussen-co\",\"identity\":{\"color\":\"#00F1FF\",\"badges\":[{
+kick frame: {"push":{"channel":"chatrooms.11677377.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"18774eb4-2473-4eac-b84e-a9279bd6e348\",\"chatroom_id\":11677377,\"content\":\"@JawadElsory بندو\",\"type\":\"message\",\"created_at\":\"2026-11-12T12:38:22+00:00\",\"sender\":{\"id\":55489455,\"username\":\"asar1a\",\"slug\":\"asar1a\",\"identity\":{\"color\":\"#BDFF28\",\"badges\":[
+kick frame: {"push":{"channel":"chatrooms.11677377.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"63c32d1f-c15d-440c-8aa2-0307ae85907e\",\"chatroom_id\":11677377,\"content\":\"[emote:5748031:collectibleswideKEKW]\",\"type\":\"message\",\"created_at\":\"2026-11-12T12:38:22+00:00\",\"sender\":{\"id\":91848126,\"username\":\"JawadElsory\",\"slug\":\"jawadelsory\",\"identity\":{\"col
+kick frame: {"push":{"channel":"chatrooms.11677377.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"1f4f2eab-e318-4491-895c-aaffc96d5e69\",\"chatroom_id\":11677377,\"content\":\"جميل\",\"type\":\"message\",\"created_at\":\"2026-11-12T12:38:23+00:00\",\"sender\":{\"id\":123321032,\"username\":\"GODSTONEe\",\"slug\":\"godstonee\",\"identity\":{\"color\":\"#FF2C56\",\"badges\":[{\"typ
+kick frame: {"push":{"channel":"chatrooms.11677377.v2","pub":{"data":{"event":"App\\Events\\ChatMessageEvent","data":"{\"id\":\"ab32be26-06f7-4a91-a637-28b0ca6ab527\",\"chatroom_id\":11677377,\"content\":\"[emote:6406303:collectiblesSlay][emote:6406303:collectiblesSlay]\",\"type\":\"message\",\"created_at\":\"2026-11-12T12:38:23+00:00\",\"sender\":{\"id\":13996536,\"username\":\"Amgad30\",\"slug\":\"amgad30\"
+t=10s YouTube/@LofiGirl: 71 (وصل) | Twitch/kato_junichi0817: 63 (وصل) | Twitch/blastpremier: 4 (وصل) | Twitch/shadowkekw: 52 (وصل) | Kick/sxb: 43 (وصل) | Kick/maherco: 8 (وصل)
+t=20s YouTube/@LofiGirl: 72 (وصل) | Twitch/kato_junichi0817: 114 (وصل) | Twitch/blastpremier: 17 (وصل) | Twitch/shadowkekw: 125 (وصل) | Kick/sxb: 74 (وصل) | Kick/maherco: 15 (وصل)
+t=30s YouTube/@LofiGirl: 76 (وصل) | Twitch/kato_junichi0817: 232 (وصل) | Twitch/blastpremier: 26 (وصل) | Twitch/shadowkekw: 182 (وصل) | Kick/sxb: 88 (وصل) | Kick/maherco: 23 (وصل)
+t=40s YouTube/@LofiGirl: 77 (وصل) | Twitch/kato_junichi0817: 349 (وصل) | Twitch/blastpremier: 34 (وصل) | Twitch/shadowkekw: 268 (وصل) | Kick/sxb: 104 (وصل) | Kick/maherco: 29 (وصل)
+t=50s YouTube/@LofiGirl: 83 (وصل) | Twitch/kato_junichi0817: 453 (وصل) | Twitch/blastpremier: 38 (وصل) | Twitch/shadowkekw: 363 (وصل) | Kick/sxb: 130 (وصل) | Kick/maherco: 45 (وصل)
+t=60s YouTube/@LofiGirl: 83 (وصل) | Twitch/kato_junichi0817: 539 (وصل) | Twitch/blastpremier: 42 (وصل) | Twitch/shadowkekw: 470 (وصل) | Kick/sxb: 145 (وصل) | Kick/maherco: 62 (وصل)
+t=70s YouTube/@LofiGirl: 85 (وصل) | Twitch/kato_junichi0817: 604 (وصل) | Twitch/blastpremier: 52 (وصل) | Twitch/shadowkekw: 557 (وصل) | Kick/sxb: 165 (وصل) | Kick/maherco: 73 (وصل)
+t=80s YouTube/@LofiGirl: 87 (وصل) | Twitch/kato_junichi0817: 635 (وصل) | Twitch/blastpremier: 63 (وصل) | Twitch/shadowkekw: 654 (وصل) | Kick/sxb: 179 (وصل) | Kick/maherco: 79 (وصل)
+t=90s YouTube/@LofiGirl: 89 (وصل) | Twitch/kato_junichi0817: 704 (وصل) | Twitch/blastpremier: 66 (وصل) | Twitch/shadowkekw: 717 (وصل) | Kick/sxb: 193 (وصل) | Kick/maherco: 83 (وصل)
+youtube last http 200: null
+RESULT YouTube: 89 messages; paid/gifts: 0
+   @la…: I don't rlly need help
+   @It…: not a minute early or late
+   @Mo…: true
+   @sc…: u need sasha 😊
+RESULT Twitch: 1487 messages; paid/gifts: 0
+   khu…: !бык
+   D0l…: !бык
+   fil…: !бык
+   pan…: 足コキ！？
+RESULT Kick: 276 messages; paid/gifts: 0
+   11K…: كولومبي
+   onl…: أثيوبي
+   xAB…: برازيلي
+   iSa…: أثيوبي أكيد
+kick closed 1000 
+kick closed 1000 
+TRANSLATE en→fa: چه بازی خوبیه، فردا همه شما رو می‌بینم! 
