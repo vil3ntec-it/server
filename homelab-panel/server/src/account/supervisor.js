@@ -31,6 +31,7 @@ import { codeSettings } from '../codes/settings.js';
 import { mailReady } from '../codes/mail.js';
 import { livePushSecret } from '../routes/live.js';
 import { pickDir } from './bundle.js';
+import { holdOf, HOLD_MESSAGE } from '../fleet/hold.js';
 
 const RING = 200;
 const ring = [];
@@ -288,6 +289,9 @@ function adminInfo() {
 
 export function startAccountServer() {
   if (child) return { ok: true, reason: 'از قبل در حال اجراست' };
+  //  ⛔ (۱.۵۰.۹۵) در میانهٔ جابه‌جایی یا رفته به سرورِ دیگر («سرورهای من»): روشن کردنش این‌جا «دو دفتر» است (src/fleet/hold.js)
+  const held = holdOf('account-server');
+  if (held) return { ok: false, reason: HOLD_MESSAGE[held.reason], held: held.reason };
   if (!config.accountApi?.enabled) return { ok: false, reason: 'درگاهِ سرورِ حساب خاموش است (HLP_ACCOUNT_API=0)' };
   if (!config.accountApi?.autostart) return { ok: false, reason: 'راه‌اندازیِ خودکار خاموش است (HLP_ACCOUNT_AUTOSTART=0)' };
   const url = accountApiUrl();

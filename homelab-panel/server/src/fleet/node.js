@@ -11,14 +11,18 @@
 //  ⛔ پاسخی که امضای مرکزِ سنجاق‌شده را ندارد یا nonce ِ همین درخواست را برنمی‌گرداند نادیده است — فرمانِ «نگه‌داری»
 //     را فقط مرکزِ واقعی می‌دهد.
 // ---------------------------------------------------------------------------
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { db, logEvent } from '../db.js';
 import { bumpSoon } from '../live/bus.js';
-import { generateKeys, signEnvelope, readEnvelope, verifyEnvelope, parsePublicKey } from './crypto.js';
+import { generateKeys, signEnvelope, readEnvelope, verifyEnvelope, parsePublicKey, ephemeralKey, unwrapSecret } from './crypto.js';
 import { writeNodeKey, readNodeKey } from './keys.js';
 import { buildReport, defaultName, defaultKind, NODE_KINDS } from './report.js';
 import { maintenanceState, enterMaintenance, exitMaintenance } from './maintenance.js';
 import { FleetError, activeNodeCount } from './hub.js';
 import { versionInfo } from '../version.js';
+import { execute } from './mover.js';
 
 export const heartbeatMs = () => {
   const n = Number(process.env.HLP_FLEET_HEARTBEAT_MS);
@@ -230,7 +234,9 @@ export async function tick() {
     const m = maintenanceState();
     if (body.maintenance === true && !m.active) await enterMaintenance('center');
     else if (body.maintenance === false && m.active && m.source === 'center') await exitMaintenance('center');
-    return { ok: true, maintenance: body.maintenance === true };
+    //  (۱.۵۰.۹۵) مرکز برای این گره کارِ جابه‌جایی دارد ⇒ سراغِ ‎/hub/task‎ (باز هم فقط بیرون‌رو)
+    if (body.tasks === true) startTaskLoop();
+    return { ok: true, maintenance: body.maintenance === true, tasks: body.tasks === true };
   } finally {
     inflight = false;
   }
@@ -247,3 +253,147 @@ export function stopFleetNode() {
   clearInterval(timer);
   timer = null;
 }
+
+/* ─────────────── کارهای جابه‌جایی (۱.۵۰.۹۵، گامِ ۳) — باز هم فقط بیرون‌رو ───────────────
+ *  پاسخِ تپش که بگوید «کار داری»، گره پشتِ سرِ هم ‎POST /api/fleet/hub/task‎ می‌زند (مرکز تا ۸ ثانیه نگه می‌دارد اگر
+ *  فرمانی نیست): هر درخواست نتیجه‌های پیشین را می‌برد و یک کلیدِ X25519 ِ یک‌بارمصرف، و فرمانِ بعدی را می‌گیرد.
+ *  ⛔ پاسخِ بی امضای مرکزِ سنجاق‌شده نادیده؛ کلیدِ بسته فقط با کلیدِ خصوصیِ یک‌بارمصرفِ **همان** درخواست باز می‌شود و
+ *     فقط در حافظهٔ همان فرمان می‌ماند. بستهٔ رمزشده تکه‌تکه به مرکز می‌رود و از مرکز می‌آید — هرگز گره‌به‌گره.
+ */
+let looping = false;
+const pendingResults = [];
+const resultCache = new Map();
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const codedErr = (code, message) => Object.assign(new Error(message), { code });
+
+async function fetchTimed(url, init, timeoutMs) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  t.unref?.();
+  try { return await fetch(url, { ...init, signal: ctrl.signal, redirect: 'manual' }); } finally { clearTimeout(t); }
+}
+
+async function uploadBundle(link, key, move, file, meta) {
+  const fd = fs.openSync(file, 'r');
+  try {
+    let offset = 0;
+    for (let index = 0; index < meta.chunks.length; index++) {
+      const c = meta.chunks[index];
+      const buf = Buffer.alloc(c.size);
+      fs.readSync(fd, buf, 0, c.size, offset);
+      let ok = false;
+      let last = '';
+      for (let attempt = 0; attempt < 3 && !ok; attempt++) {
+        const env = signEnvelope({ purpose: 'chunk', node: link.node_id, payload: { job: move, index, offset, size: c.size, sha256: c.sha256 }, privateKey: key });
+        try {
+          const r = await fetchTimed(`${link.center_url}/api/fleet/hub/chunk`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream', 'X-Fleet-Envelope': Buffer.from(JSON.stringify(env)).toString('base64url') },
+            body: buf,
+          }, 120000);
+          if (r.status === 200) { ok = true; break; }
+          let j = null;
+          try { j = await r.json(); } catch { /* نه JSON */ }
+          last = `${r.status} ${j?.error || ''}`;
+          if (r.status < 500) break; //  ردِ صریح: تلاشِ دوباره معنا ندارد
+        } catch (e) { last = e?.name === 'AbortError' ? 'timeout' : (e?.cause?.code || e?.message || 'network'); }
+        await sleep(1000 * (attempt + 1));
+      }
+      if (!ok) throw codedErr('upload_failed', `تکهٔ ${index + 1} از ${meta.chunks.length} به مرکز نرسید (${last}).`);
+      offset += c.size;
+    }
+  } finally { fs.closeSync(fd); }
+}
+
+async function downloadBundle(link, key, move, args, dest) {
+  const chunks = Array.isArray(args?.chunks) ? args.chunks : [];
+  if (!chunks.length || !Number.isSafeInteger(args.size)) throw codedErr('bad_command', 'فهرستِ تکه‌ها نیامد.');
+  try {
+    const st = fs.statfsSync(path.dirname(dest));
+    if (Number(st.bavail) * Number(st.bsize) < args.size * 2 + 256 * 1024 * 1024) throw codedErr('disk_full', 'جای خالیِ دیسکِ این سرور برای این بسته کم است.');
+  } catch (e) { if (e.code === 'disk_full') throw e; }
+  fs.rmSync(dest, { force: true });
+  const fd = fs.openSync(dest, 'w', 0o600);
+  try {
+    for (let index = 0; index < chunks.length; index++) {
+      let buf = null;
+      let last = '';
+      for (let attempt = 0; attempt < 3 && !buf; attempt++) {
+        const env = signEnvelope({ purpose: 'chunk-get', node: link.node_id, payload: { job: move, index }, privateKey: key });
+        try {
+          const r = await fetchTimed(`${link.center_url}/api/fleet/hub/chunk/get`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(env),
+          }, 120000);
+          if (r.status === 200) buf = Buffer.from(await r.arrayBuffer());
+          else { last = String(r.status); if (r.status < 500) break; }
+        } catch (e) { last = e?.name === 'AbortError' ? 'timeout' : (e?.cause?.code || e?.message || 'network'); }
+        if (!buf) await sleep(1000 * (attempt + 1));
+      }
+      if (!buf) throw codedErr('download_failed', `تکهٔ ${index + 1} از ${chunks.length} از مرکز نرسید (${last}).`);
+      //  ⛔ هر تکه با sha256 ِ فهرستِ امضاشدهٔ فرمان (همان که مبدأ گزارش داد)
+      const sha = crypto.createHash('sha256').update(buf).digest('hex');
+      if (buf.length !== chunks[index].size || sha !== chunks[index].sha256) throw codedErr('chunk_mismatch', `تکهٔ ${index + 1} با sha256 ِ مبدأ نمی‌خواند — هیچ چیزی جابه‌جا نشد.`);
+      fs.writeSync(fd, buf);
+    }
+  } finally { fs.closeSync(fd); }
+}
+
+async function taskLoop() {
+  let idle = 0;
+  while (idle < 3) {
+    const link = activeLink();
+    if (!link) return;
+    const key = readNodeKey(link.node_id);
+    if (!key) return;
+    const eph = ephemeralKey();
+    const results = pendingResults.splice(0);
+    const env = signEnvelope({ purpose: 'task', node: link.node_id, payload: { results, eph: eph.publicKey, wait: 8000 }, privateKey: key });
+    let res = null;
+    try { res = await post(`${link.center_url}/api/fleet/hub/task`, env, 20000); } catch { res = null; }
+    const body = res?.status === 200 ? readReply(res.json?.reply, link.center_key, link.node_id, env.nonce) : null;
+    if (!body?.ok) {
+      pendingResults.unshift(...results);
+      idle++;
+      await sleep(2000);
+      continue;
+    }
+    const cmd = body.command && typeof body.command === 'object' ? body.command : null;
+    if (cmd) {
+      idle = 0;
+      const k = `${cmd.move}:${cmd.seq}`;
+      let result = resultCache.get(k);
+      if (!result) {
+        let pass = null;
+        if (cmd.key) {
+          const raw = unwrapSecret(cmd.key, eph.privateKey, `${cmd.move}|${link.node_id}`);
+          if (raw) { pass = raw.toString('base64url'); raw.fill(0); }
+          else result = { move: cmd.move, seq: cmd.seq, ok: false, error: { code: 'bad_key', message: 'کلیدِ این کار باز نشد.' } };
+        }
+        if (!result) {
+          result = await execute({ move: cmd.move, seq: cmd.seq, op: cmd.op, app: cmd.app, args: cmd.args || {} }, {
+            self: false, pass,
+            upload: (file, meta) => uploadBundle(link, key, cmd.move, file, meta),
+            download: (args, dest) => downloadBundle(link, key, cmd.move, args, dest),
+          });
+        }
+        pass = null;
+        resultCache.set(k, result);
+        for (const old of [...resultCache.keys()].slice(0, -50)) resultCache.delete(old);
+      }
+      pendingResults.push(result);
+      continue;
+    }
+    if (body.active) { idle = 0; continue; }
+    idle++;
+    await sleep(pendingResults.length ? 0 : 500);
+  }
+}
+
+export function startTaskLoop() {
+  if (looping) return;
+  looping = true;
+  taskLoop()
+    .catch((e) => logEvent('warn', 'fleet', `کارِ جابه‌جایی: ${e?.message || e}`))
+    .finally(() => { looping = false; });
+}
+

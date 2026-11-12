@@ -35,6 +35,14 @@ export const codeTtlMs = () => clampEnv('HLP_FLEET_CODE_TTL_MS', 10 * 60 * 1000,
 /** بی تپش بیش از این ⇒ «آفلاین» — ۹۰ ثانیه؛ آزمون کوتاهش می‌کند */
 export const offlineAfterMs = () => clampEnv('HLP_FLEET_OFFLINE_MS', 90 * 1000, 1000, 60 * 60 * 1000);
 
+/**
+ *  (۱.۵۰.۹۵) قلاب‌های گامِ ۳ (`placement.js` هنگامِ بالا آمدن پر می‌کند) — تا این فایل به آن import نداشته باشد:
+ *    tasksFor(nodeId)  این گره کارِ جابه‌جاییِ باز دارد؟ ⇒ پاسخِ تپش می‌گوید «کار داری» و گره سراغِ ‎/hub/task‎ می‌رود
+ *    busyNode(nodeId)  همان؛ نگه‌داریِ سرورِ درگیر تا پایانِ کار بسته است
+ *    nodeGone(nodeId)  گره جدا شد/رفت ⇒ فرمان‌های مانده برایش رها
+ */
+export const hooks = { tasksFor: () => false, busyNode: () => false, nodeGone: () => {} };
+
 export class FleetError extends Error {
   constructor(status, code, message, extra = {}) {
     super(message || code);
@@ -187,7 +195,7 @@ function pruneNonces() {
  * سنجشِ مشترکِ پیامِ گره: پاکت ⇒ گرهٔ شناخته ⇒ امضا ⇒ (باطل؟) ⇒ ‎ts‎ ⇒ nonce.
  * @returns {{ env, node }} یا FleetError
  */
-function authenticate(raw, purpose) {
+export function authenticate(raw, purpose) {
   const r = readEnvelope(raw, purpose);
   if (!r.ok) throw new FleetError(400, r.error, 'پیامِ بدشکل.');
   const env = r.env;
@@ -223,20 +231,26 @@ export function heartbeat(raw, { ip = null } = {}) {
   try { before = node.last_report ? JSON.parse(node.last_report) : null; } catch { before = null; }
   const wasOffline = !node.last_seen_at || now() - node.last_seen_at > offlineAfterMs();
   if (wasOffline || summaryOf(before) !== summaryOf(stored)) bumpSoon('fleet', 1000);
-  return { reply: reply(node.id, env.nonce, { ok: true, maintenance: Boolean(node.maintenance) }) };
+  return { reply: reply(node.id, env.nonce, { ok: true, maintenance: Boolean(node.maintenance), tasks: Boolean(hooks.tasksFor(node.id)) }) };
+}
+
+/** پاسخِ امضاشدهٔ مرکز به یک پیامِ گره (برای درهای گامِ ۳: کار و تکه) */
+export function signedReply(node, nonce, payload) {
+  return reply(node, nonce, payload);
 }
 
 /** آن‌چه در صفحه جز درصدها دیده می‌شود */
 function summaryOf(r) {
   if (!r) return '';
   return JSON.stringify([r.name, r.kind, r.version, r.tunnel?.running, r.maintenance?.active,
-    (r.apps || []).map((a) => `${a.id}:${a.running ? 1 : 0}:${a.dataful ? 1 : 0}`)]);
+    (r.apps || []).map((a) => `${a.id}:${a.running ? 1 : 0}:${a.dataful ? 1 : 0}`), r.tunnel?.mode, r.tunnel?.auto]);
 }
 
 /** گره خودش جدا می‌شود (امضاشده) ⇒ همان «جدا کردن» ِ مالک */
 export function leave(raw) {
   const { env, node } = authenticate(raw, 'leave');
   db.prepare("UPDATE fleet_nodes SET status = 'revoked', revoked_at = ?, revoked_by = 'node' WHERE id = ?").run(now(), node.id);
+  hooks.nodeGone(node.id);
   logEvent('info', 'fleet', `سرورِ «${node.name}» خودش از این مرکز جدا شد`);
   bumpSoon('fleet', 300);
   return { reply: reply(node.id, env.nonce, { ok: true, revoked: true }) };
@@ -253,6 +267,7 @@ function getNode(id) {
 export function setNodeMaintenance(id, on, by) {
   const n = getNode(id);
   if (n.status !== 'active') throw new FleetError(409, 'node_revoked', 'این سرور جدا شده است.');
+  if (hooks.busyNode(n.id)) throw new FleetError(409, 'move_in_progress', `«${n.name}» در یک کارِ جابه‌جایی است — تا پایانش روشن/خاموش نمی‌شود.`);
   db.prepare('UPDATE fleet_nodes SET maintenance = ?, maintenance_at = ?, maintenance_by = ? WHERE id = ?')
     .run(on ? 1 : 0, now(), by ? String(by).slice(0, 80) : null, n.id);
   logEvent('info', 'fleet', `حالتِ نگه‌داریِ «${n.name}» ${on ? 'روشن' : 'خاموش'} شد — با تپشِ بعدی اعمال می‌شود`);
@@ -264,6 +279,7 @@ export function revokeNode(id, by) {
   const n = getNode(id);
   if (n.status === 'revoked') return { id: n.id, name: n.name, already: true };
   db.prepare("UPDATE fleet_nodes SET status = 'revoked', revoked_at = ?, revoked_by = ? WHERE id = ?").run(now(), by ? String(by).slice(0, 80) : null, n.id);
+  hooks.nodeGone(n.id);
   logEvent('warn', 'fleet', `سرورِ «${n.name}» از این مرکز جدا شد — کلیدش باطل است`);
   bumpSoon('fleet', 300);
   return { id: n.id, name: n.name };

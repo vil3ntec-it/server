@@ -12,7 +12,8 @@
 import crypto from 'node:crypto';
 
 export const PROTO = 'vill3n-fleet-v1';
-export const PURPOSES = Object.freeze(['join', 'heartbeat', 'leave', 'reply']);
+//  ۱.۵۰.۹۵: ‎task‎ (گره کار می‌گیرد و نتیجه می‌دهد)، ‎chunk‎ (تکهٔ بسته ⇒ مرکز)، ‎chunk-get‎ (مرکز ⇒ تکه) — گامِ ۳
+export const PURPOSES = Object.freeze(['join', 'heartbeat', 'leave', 'reply', 'task', 'chunk', 'chunk-get']);
 export const MAX_PAYLOAD = 256 * 1024;
 const NONCE_RE = /^[A-Za-z0-9_-]{16,64}$/;
 
@@ -86,4 +87,55 @@ export function verifyEnvelope(env, publicKey) {
   } catch {
     return false;
   }
+}
+
+/* ───────────── کلیدِ بستهٔ هر کارِ جابه‌جایی: X25519 ⇒ HKDF ⇒ AES-256-GCM (۱.۵۰.۹۵) ─────────────
+ *  ⛔ کلیدِ تصادفیِ هر کار هرگز بی‌رمز از سیم نمی‌گذرد (حتی روی http ِ شبکهٔ خانه): گره در هر درخواستِ «کار» یک کلیدِ
+ *     عمومیِ X25519 ِ یک‌بارمصرف می‌فرستد (خصوصی‌اش فقط در حافظهٔ همان درخواست)، مرکز کلید را برای همان می‌پیچد.
+ *     `info` (شناسهٔ کار و گره) در AAD است ⇒ پیچیدهٔ یک کار/گره جای دیگری باز نمی‌شود. هیچ‌جا ذخیره نمی‌شود.
+ */
+const WRAP_INFO = 'vill3n-fleet-wrap-v1';
+
+export function ephemeralKey() {
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('x25519');
+  return { publicKey: publicKey.export({ type: 'spki', format: 'der' }).toString('base64'), privateKey };
+}
+
+function x25519Public(b64) {
+  if (typeof b64 !== 'string' || b64.length > 200) return null;
+  try {
+    const k = crypto.createPublicKey({ key: Buffer.from(b64, 'base64'), format: 'der', type: 'spki' });
+    return k.asymmetricKeyType === 'x25519' ? k : null;
+  } catch { return null; }
+}
+
+const wrapKey = (shared, info) => Buffer.from(crypto.hkdfSync('sha256', shared, Buffer.alloc(0), Buffer.from(`${WRAP_INFO}|${info}`), 32));
+
+/** `secret` (Buffer) برای کلیدِ عمومیِ X25519 ِ گره ⇒ ‎{ epk, iv, ct, tag }‎ (همه base64)؛ کلیدِ نادرست ⇒ null */
+export function wrapSecret(secret, peerPublicKey, info) {
+  const peer = x25519Public(peerPublicKey);
+  if (!peer) return null;
+  const eph = crypto.generateKeyPairSync('x25519');
+  const k = wrapKey(crypto.diffieHellman({ privateKey: eph.privateKey, publicKey: peer }), info);
+  const iv = crypto.randomBytes(12);
+  const c = crypto.createCipheriv('aes-256-gcm', k, iv);
+  c.setAAD(Buffer.from(info));
+  const ct = Buffer.concat([c.update(secret), c.final()]);
+  k.fill(0);
+  return { epk: eph.publicKey.export({ type: 'spki', format: 'der' }).toString('base64'), iv: iv.toString('base64'), ct: ct.toString('base64'), tag: c.getAuthTag().toString('base64') };
+}
+
+/** باز کردن با کلیدِ خصوصیِ یک‌بارمصرفِ همان درخواست ⇒ Buffer، یا null اگر دست خورده/مالِ دیگری است */
+export function unwrapSecret(w, privateKey, info) {
+  try {
+    const epk = x25519Public(w?.epk);
+    if (!epk) return null;
+    const k = wrapKey(crypto.diffieHellman({ privateKey, publicKey: epk }), info);
+    const d = crypto.createDecipheriv('aes-256-gcm', k, Buffer.from(w.iv, 'base64'));
+    d.setAAD(Buffer.from(info));
+    d.setAuthTag(Buffer.from(w.tag, 'base64'));
+    const out = Buffer.concat([d.update(Buffer.from(w.ct, 'base64')), d.final()]);
+    k.fill(0);
+    return out;
+  } catch { return null; }
 }

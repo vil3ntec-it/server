@@ -9,13 +9,13 @@
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Boxes, Link2, Plus, Power, RefreshCw, Unlink } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, Boxes, Link2, Plus, Power, RefreshCw, Unlink } from 'lucide-react';
 import { api, ApiError } from '../api';
 import { useLive } from '../useLive';
 import { useApp } from '../app-context';
 import { bytes, percent, relative } from '../format';
 import type { Dict } from '../i18n';
-import { Badge, Card, ConfirmDialog, CopyButton, Field, Loading, StatusDot, toast } from '../components/ui';
+import { Badge, Card, ConfirmDialog, CopyButton, Field, Loading, Modal, StatusDot, toast } from '../components/ui';
 import { Cell, Notice, Row, Select, Table } from '../control/ui';
 import { MoveServerCard } from '../components/MoveServer';
 
@@ -33,6 +33,54 @@ type Entry = {
   version: string | null;
   metrics: { cpu: number | null; memory: { usage: number | null; total: number | null }; disk: { usage: number | null; total: number | null } } | null;
   apps: App[];
+  tunnel?: { running?: boolean; mode?: string | null; auto?: boolean } | null;
+};
+type Holder = { id: string; name: string; self: boolean; running: boolean; online: boolean };
+type MoveStep = { op: string; state: 'running' | 'done' | 'failed' | 'skipped'; at: number; endedAt?: number; info?: Record<string, unknown> };
+type RouteStep = {
+  hostname: string | null;
+  how: 'auto' | 'cname' | 'public-hostname' | 'a-record' | 'no-hostname';
+  done: boolean;
+  tunnel?: string | null;
+  server?: string | null;
+  command?: string;
+  port?: number | null;
+  fromServer?: string | null;
+  url?: string | null;
+  detail?: string | null;
+};
+type MoveView = {
+  id: string;
+  app: string;
+  appType: string;
+  appName: string;
+  from: { id: string; name: string };
+  to: { id: string; name: string };
+  state: 'running' | 'rolling_back' | 'done' | 'failed';
+  active: boolean;
+  step: string | null;
+  steps: MoveStep[];
+  route: { steps: RouteStep[]; manual: number; auto: boolean; guarded?: string[] } | null;
+  error: string | null;
+  bytes: number | null;
+  waitingFor: string | null;
+  delivered: boolean | null;
+  createdAt: number;
+  finishedAt: number | null;
+};
+type Placed = {
+  id: string;
+  type: 'account' | 'pump' | 'site';
+  name: string;
+  kind: string | null;
+  dataful: boolean;
+  holders: Holder[];
+  node: { id: string; name: string | null } | null;
+  source: 'table' | 'observed' | 'unknown';
+  mismatch: boolean;
+  movable: boolean;
+  why: string | null;
+  move: MoveView | null;
 };
 type Conflict = { id: string; name: string; type: string; holders: { id: string; name: string; online: boolean; self: boolean }[] };
 type LinkView = {
@@ -57,6 +105,8 @@ type Overview = {
   codeTtlMs: number;
   node: { linked: boolean; link: LinkView | null };
   maintenance: { active: boolean; source: 'center' | 'self' | null; since: number | null };
+  placement?: Placed[];
+  moves?: MoveView[];
 };
 
 const KIND_KEY: Record<string, keyof Dict> = { home: 'fsKindHome', vps: 'fsKindVps', foreign: 'fsKindForeign', hosting: 'fsKindHosting' };
@@ -314,6 +364,10 @@ export default function MyServers() {
         <p className="mt-3 text-[11px] text-ink-muted">{t('fsOfflineRule', { s: Math.round(data.offlineAfterMs / 1000) })}</p>
       </Card>
 
+      {/* «این برنامه روی کدام سرور» (1.50.95) — فقط روی مرکزی که سرورِ دیگری دارد */}
+      {!isNode && data.nodes.some((n) => n.status === 'active') && <PlacementCard data={data} load={load} />}
+      {!isNode && (data.moves || []).length > 0 && <MovesCard moves={data.moves || []} />}
+
       {/* وصلِ همین سرور به مرکزِ دیگر — همین‌جا هم، چون صفحهٔ «تنظیمات» در features.ts خاموش است */}
       {(isNode || !data.nodes.some((n) => n.status === 'active')) && <FleetLinkBody data={data} load={load} />}
 
@@ -437,6 +491,237 @@ function FleetLinkBody({ data, load }: { data: Overview; load: () => void }) {
         <p className="mt-3 text-xs" style={{ color: msg.tone === 'good' ? 'var(--status-good)' : 'var(--status-critical)' }}>{msg.text}</p>
       )}
       <ConfirmDialog open={confirmLeave} title={t('fsLeaveQ')} message={t('fsLeaveMsg')} danger onConfirm={leave} onCancel={() => setConfirmLeave(false)} />
+    </Card>
+  );
+}
+
+/* ─────────────── «این برنامه روی کدام سرور» (1.50.95) — سرور: src/fleet/placement.js ───────────────
+ *  ⛔ «جابه‌جا به…» فقط مالک؛ `api()` خودش پنجرهٔ احرازِ دوباره را باز می‌کند (ReauthHost). تأییدِ صریح: نامِ برنامه
+ *     نوشته می‌شود و نامِ دو سرور همان که این‌جا دیده شد به سرور می‌رود (سرور دوباره می‌سنجد).
+ *  ⛔ هیچ کلیدی این‌جا نیست — کلیدِ بسته فقط در حافظهٔ مرکز و همان دو سرور.
+ */
+
+const TYPE_KEY: Record<string, keyof Dict> = { account: 'fpTypeAccount', site: 'fpTypeSite', pump: 'fpTypePump' };
+const STEP_KEY: Record<string, keyof Dict> = {
+  freeze: 'fpStepFreeze', export: 'fpStepExport', import: 'fpStepImport', start: 'fpStepStart', route: 'fpStepRoute', retire: 'fpStepRetire',
+  'rollback:unfreeze': 'fpStepUnfreeze', 'rollback:discard': 'fpStepDiscard',
+};
+const eligible = (e: Entry) => e.status === 'active' && e.online && !e.maintenance.wanted && !e.maintenance.applied;
+
+function WhereCell({ a }: { a: Placed }) {
+  const { t } = useApp();
+  const running = a.holders.filter((h) => h.running);
+  return (
+    <div className="flex flex-col gap-0.5">
+      {a.node ? (
+        <span className="font-medium text-ink">{a.node.name || '—'}</span>
+      ) : running.length > 1 ? (
+        <Badge tone="bad">{t('fpUnknown', { n: running.length })}</Badge>
+      ) : (
+        <span className="text-xs text-ink-muted">{t('fpNowhere')}</span>
+      )}
+      {a.node && <span className="text-[11px] text-ink-muted">{a.source === 'table' ? t('fpFromTable') : t('fpObserved')}</span>}
+      {a.mismatch && (
+        <span className="text-[11px]" style={{ color: 'var(--status-warning)' }}>
+          {t('fpMismatch', { table: a.node?.name || '', where: running.map((h) => h.name).join('، ') })}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function MoveProgress({ m, servers }: { m: MoveView; servers: Entry[] }) {
+  const { t } = useApp();
+  const step = m.step ? (m.state === 'rolling_back' ? STEP_KEY[`rollback:${m.step}`] : STEP_KEY[m.step]) : null;
+  const waiting = m.waitingFor && m.waitingFor !== 'self' && !m.delivered ? servers.find((s) => s.id === m.waitingFor)?.name : null;
+  return (
+    <div className="flex flex-col gap-0.5 text-xs">
+      <Badge tone={m.state === 'rolling_back' ? 'warn' : 'info'}>{m.state === 'rolling_back' ? t('fpStateRolling') : t('fpStateRunning')}</Badge>
+      {step && <span className="text-ink-soft">{t(step)}{m.bytes ? ` · ${bytes(m.bytes)}` : ''}</span>}
+      {waiting && <span className="text-[11px] text-ink-muted">{t('fpWaiting', { name: waiting })}</span>}
+    </div>
+  );
+}
+
+function PlacementCard({ data, load }: { data: Overview; load: () => void }) {
+  const { t } = useApp();
+  const [moving, setMoving] = useState<Placed | null>(null);
+  const rows = data.placement || [];
+  const servers = [data.self, ...data.nodes.filter((n) => n.status === 'active')];
+  if (!rows.length) return null;
+  //  ⛔ پنجره بیرون از کارت: `.card.rise` با transform برای `position: fixed` ِ فرزند قاب می‌سازد و پنجره بریده می‌شد
+  return (
+    <>
+    <Card title={t('fpTitle')} icon={<ArrowRightLeft className="h-4 w-4" />}>
+      <p className="mb-3 text-xs leading-6 text-ink-soft">{t('fpIntro')}</p>
+      <Table head={[t('fpColApp'), t('fpColWhere'), t('fpColState'), '']}>
+        {rows.map((a) => {
+          const targets = servers.filter((s) => s.id !== a.node?.id && eligible(s));
+          return (
+            <Row key={a.id}>
+              <Cell>
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-medium text-ink">{a.name}</span>
+                  <span className="text-[11px] text-ink-muted">{TYPE_KEY[a.type] ? t(TYPE_KEY[a.type]) : a.type}{a.dataful ? ` · ${t('fsDataful')}` : ''}</span>
+                </div>
+              </Cell>
+              <Cell><WhereCell a={a} /></Cell>
+              <Cell>{a.move ? <MoveProgress m={a.move} servers={servers} /> : <span className="text-xs text-ink-muted">—</span>}</Cell>
+              <Cell>
+                {a.movable ? (
+                  <div className="flex flex-col items-end gap-1">
+                    <button className="btn btn-sm" disabled={Boolean(a.move) || !a.node || !targets.length} onClick={() => setMoving(a)}>
+                      <ArrowRightLeft className="h-3.5 w-3.5" /> {t('fpMove')}
+                    </button>
+                    {!a.move && a.node && !targets.length && <span className="text-[11px] text-ink-muted">{t('fpNoTarget')}</span>}
+                  </div>
+                ) : (
+                  <span className="block max-w-[18rem] text-[11px] leading-5 text-ink-muted">{a.why === 'pump_cli_only' ? t('fpPumpCli') : t('fpMainSite')}</span>
+                )}
+              </Cell>
+            </Row>
+          );
+        })}
+      </Table>
+    </Card>
+    {moving && <MoveDialog app={moving} servers={servers} onClose={() => { setMoving(null); load(); }} />}
+    </>
+  );
+}
+
+function MoveDialog({ app, servers, onClose }: { app: Placed; servers: Entry[]; onClose: () => void }) {
+  const { t } = useApp();
+  const from = servers.find((s) => s.id === app.node?.id) || null;
+  const targets = servers.filter((s) => s.id !== app.node?.id && eligible(s));
+  const [to, setTo] = useState(targets[0]?.id || '');
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const dest = targets.find((s) => s.id === to) || null;
+  const ready = Boolean(from && dest && typed.trim() === app.name.trim());
+  const destHasAccount = Boolean(dest?.apps.some((x) => x.type === 'account'));
+
+  const go = async () => {
+    if (!from || !dest) return;
+    setBusy(true);
+    setErr('');
+    try {
+      await api('/api/fleet/moves', { method: 'POST', body: { app: app.id, from: from.id, to: dest.id, confirm: { app: typed, from: from.name, to: dest.name } } });
+      toast(t('fpStarted', { app: app.name }));
+      onClose();
+    } catch (e) {
+      setErr(errText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={t('fpDialogTitle', { app: app.name })}
+      footer={
+        <>
+          <button className="btn" onClick={onClose}>{t('cancel')}</button>
+          <button className="btn btn-danger" disabled={!ready || busy} onClick={go}>
+            <ArrowRightLeft className="h-3.5 w-3.5" /> {t('fpGo')}
+          </button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-3 text-sm">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label={t('fpFrom')}>
+            <input className="input" value={from?.name || ''} disabled />
+          </Field>
+          <Field label={t('fpTo')}>
+            <Select value={to} onChange={setTo} options={targets.map((s) => ({ value: s.id, label: s.name }))} />
+          </Field>
+        </div>
+        <ol className="list-decimal space-y-0.5 ps-5 text-xs text-ink-soft">
+          {(['freeze', 'export', 'import', 'start', 'route', 'retire'] as const).map((op) => <li key={op}>{t(STEP_KEY[op])}</li>)}
+        </ol>
+        <Notice tone="warn">{t('fpDowntime')}</Notice>
+        {app.type === 'account' && <Notice tone="info">{t('fpAccountFull')}</Notice>}
+        {app.type === 'account' && destHasAccount && dest && <Notice tone="warn">{t('fpDestHasAccount', { name: dest.name })}</Notice>}
+        {dest && <p className="text-xs text-ink-muted">{dest.tunnel?.auto ? t('fpRouteAuto', { name: dest.name }) : t('fpRouteManual')}</p>}
+        <Field label={t('fpTypeName', { app: app.name })}>
+          <input className="input" autoComplete="off" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={app.name} />
+        </Field>
+        {err && <Notice tone="bad">{err}</Notice>}
+      </div>
+    </Modal>
+  );
+}
+
+function RouteGuide({ m }: { m: MoveView }) {
+  const { t } = useApp();
+  if (!m.route) return null;
+  return (
+    <div className="mt-2 flex flex-col gap-1.5 text-xs leading-6">
+      <span className="font-medium text-ink">{t('fpRouteTitle')}</span>
+      {m.route.steps.map((s, i) => (
+        <div key={`${s.hostname || 'none'}-${i}`} className="rounded-lg bg-surface-sunken px-3 py-2">
+          {s.how === 'auto' && <span style={{ color: 'var(--status-good)' }}>✅ <span dir="ltr">{s.hostname}</span> — {t('fpRouteAutoDone', { host: s.hostname || '', tunnel: s.tunnel || '', server: s.server || '' })}</span>}
+          {s.how === 'cname' && (
+            <>
+              <span>{t('fpRouteCname', { host: s.hostname || '', tunnel: s.tunnel || '', server: s.server || '' })}</span>
+              <pre dir="ltr" className="mt-1 overflow-x-auto rounded bg-surface px-2 py-1 text-[11px]">{s.command}</pre>
+            </>
+          )}
+          {s.how === 'public-hostname' && <span>{t('fpRoutePublic', { host: s.hostname || '', server: s.server || '', port: s.port ?? '—', from: s.fromServer || m.from.name })}</span>}
+          {s.how === 'a-record' && <span>{t('fpRouteA', { host: s.hostname || '', server: s.server || '' })}</span>}
+          {s.how === 'no-hostname' && (
+            <span>
+              {t('fpRouteNone')}
+              {s.url && <> {t('fpRouteNewUrl')} <span dir="ltr" className="font-mono">{s.url}</span></>}
+            </span>
+          )}
+          {s.detail && !s.done && <div className="text-[11px] text-ink-muted">{t('fpDetail', { d: s.detail })}</div>}
+        </div>
+      ))}
+      {m.route.manual > 0 && <Notice tone="warn">{t('fpRouteManualWarn', { from: m.from.name })}</Notice>}
+      {(m.route.guarded || []).length > 0 && <span className="text-[11px] text-ink-muted">{t('fpGuarded', { list: (m.route.guarded || []).join('، ') })}</span>}
+    </div>
+  );
+}
+
+function MovesCard({ moves }: { moves: MoveView[] }) {
+  const { t, lang } = useApp();
+  return (
+    <Card title={t('fpMovesTitle')} icon={<ArrowRightLeft className="h-4 w-4" />}>
+      <div className="flex flex-col gap-3">
+        {moves.map((m) => (
+          <div key={m.id} className="rounded-xl border border-line p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-sm font-medium text-ink">{m.appName}: {m.from.name} {lang === 'en' ? '⇒' : '⇐'} {m.to.name}</span>
+              <div className="flex items-center gap-2">
+                <Badge tone={m.state === 'done' ? 'good' : m.state === 'failed' ? 'bad' : m.state === 'rolling_back' ? 'warn' : 'info'}>
+                  {m.state === 'done' ? t('fpStateDone') : m.state === 'failed' ? t('fpStateFailed') : m.state === 'rolling_back' ? t('fpStateRolling') : t('fpStateRunning')}
+                </Badge>
+                <span className="text-[11px] text-ink-muted">{relative(m.createdAt, lang)}</span>
+              </div>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {m.steps.map((s, i) => (
+                <span
+                  key={`${s.op}-${i}`}
+                  className="chip"
+                  style={{
+                    color: s.state === 'done' ? 'var(--status-good)' : s.state === 'failed' ? 'var(--status-critical)' : 'var(--text-secondary)',
+                    background: 'color-mix(in srgb, currentColor 10%, transparent)',
+                  }}
+                >
+                  {s.state === 'done' ? '✓' : s.state === 'failed' ? '✗' : s.state === 'skipped' ? '–' : '…'} {STEP_KEY[s.op] ? t(STEP_KEY[s.op]) : s.op}
+                </span>
+              ))}
+            </div>
+            {m.error && <p className="mt-2 text-xs" style={{ color: m.state === 'done' ? 'var(--status-warning)' : 'var(--status-critical)' }}>{t('fpError', { e: m.error })}</p>}
+            {m.state === 'done' && <RouteGuide m={m} />}
+          </div>
+        ))}
+      </div>
     </Card>
   );
 }

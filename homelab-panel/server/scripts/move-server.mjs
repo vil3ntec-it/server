@@ -6,6 +6,7 @@
 //      node scripts/move-server.mjs inspect <فایل.vmove>
 //      node scripts/move-server.mjs import  <فایل.vmove> --data <پوشهٔ دادهٔ تازه>
 //      node scripts/move-server.mjs compare <فایل.vmove> --data <پوشهٔ داده>
+//      … export|import --only <site:نامک | account-server | stations>   فقط یک برنامه (۱.۵۰.۹۵)
 //
 //  رمزِ بسته: VILL3N_MOVE_PASSPHRASE (دستِ‌کم ۱۲ نویسه)، وگرنه از صفحه‌کلید پرسیده می‌شود.
 //  راهنمای کامل: docs/DEPLOY-ANYWHERE-fa.md، بخشِ «جابه‌جاییِ داده».
@@ -450,7 +451,7 @@ export function outsidePaths(dbFile, dataDir) {
  *        فایل‌های سرورِ حساب و تطبیقِ دیتابیسش از همین، نه از پوشهٔ زنده
  * @param {object} [live] برای مانیفست: از کجا و چطور گرفته شد (پنلِ روشن، مکثِ سرورِ حساب)
  */
-export async function exportData({ dataDir, out, pass, include = {}, force = false, accountTool = '', panelDbSnapshot = '', accountSnapshot = '', live = null }) {
+export async function exportData({ dataDir, out, pass, include = {}, force = false, accountTool = '', panelDbSnapshot = '', accountSnapshot = '', live = null, only = '', sitesyncDir = '' }) {
   const src = path.resolve(dataDir);
   if (!fs.existsSync(path.join(src, 'panel.db'))) throw new Error(`این پوشهٔ دادهٔ پنل نیست (panel.db نیست): ${src}`);
   checkPassphrase(pass);
@@ -459,6 +460,7 @@ export async function exportData({ dataDir, out, pass, include = {}, force = fal
     throw new Error(`پنل روشن است (پروسهٔ ${running}). اول ببندیدش (برنامهٔ ویندوز: خروج از کنارِ ساعت؛ لینوکس: systemctl stop vill3n-panel) — ` +
       'سرورِ حسابِ روشن کپیِ سالم نمی‌دهد. بعد از export دوباره بازش کنید؛ سرورِ خانه همان‌طور کار می‌کند.');
   }
+  if (only) return exportOnly({ src, out, pass, only, running, accountTool, panelDbSnapshot, accountSnapshot, live, sitesyncDir });
 
   const work = await fsp.mkdtemp(path.join(os.tmpdir(), 'vill3n-move-'));
   try {
@@ -539,6 +541,7 @@ export async function inspectBundle({ file, pass }) {
 export async function stageImport({ file, pass, staging, finalDir, accountTool = '' }) {
   try {
     const { manifest, files } = await readBundle(file, pass, staging);
+    if (manifest.only) throw new Error(`این بستهٔ «فقط ${manifest.only}» است، نه کلِ سرور — با ‎import --only‎ وارد کنید؛ هیچ چیزی جابه‌جا نشد.`);
     //  ۱) هر فایل با sha256
     const bad = manifest.files.filter((f) => files.get(f.name)?.sha256 !== f.sha256 || files.get(f.name)?.size !== f.size);
     if (bad.length) throw new Error(`${bad.length} فایل با مانیفست نمی‌خواند: ${bad.slice(0, 5).map((f) => f.name).join('، ')}`);
@@ -693,6 +696,7 @@ export function compareManifest({ manifest, dataDir, accountTool = '', checkAcco
 /** پس از import (یا هر وقت): پوشهٔ داده هنوز همان بسته است؟ */
 export async function compareData({ file, dataDir, pass, accountTool = '' }) {
   const { manifest } = await readBundle(file, pass, null);
+  if (manifest.only) throw coded('only_bundle', `بستهٔ «فقط ${manifest.only}» را ‎import --only‎ خودش پس از جای‌نشستن با sha256 می‌سنجد.`);
   return compareManifest({ manifest, dataDir, accountTool });
 }
 
@@ -706,6 +710,7 @@ export const LAST_IMPORT = '.vmove-last-import.json';
 export function manifestSummary(m) {
   return {
     createdAt: m.createdAt,
+    only: m.only || null,
     source: { host: m.source?.host || null, platform: m.source?.platform || null, panelVersion: m.source?.panelVersion || null },
     files: m.files?.length || 0,
     bytes: m.bytes || 0,
@@ -757,6 +762,433 @@ export function applyPendingMove(dataDir) {
   }
 }
 
+/* ───────────────── «فقط یک برنامه»: ‎--only <app>‎ (۱.۵۰.۹۵) ─────────────────
+ *
+ *  همان قالبِ ‎.vmove‎، همان رمز (AES-256-GCM)، همان sha256 ِ هر فایل — فقط پوشه‌های **همان یک** برنامه:
+ *    site:<نامک>     ریشهٔ سایت (‎data/site-root/‎)، فضای کاری (‎data/sites/<نامک>/‎) و دفترِ سرورِ سایت
+ *                    (‎data/site-sync/sites/<نامک>/‎)؛ ردیفِ سایت و دامنه‌هایش در مانیفست (‎app‎).
+ *    account-server  کلِ ‎<داده>/account-server/‎ — سرورِ حساب همیشه کامل (همهٔ دکان‌ها یک دفتر)، با تطبیقِ move-db.js.
+ *    stations        ‎<داده>/stations/‎ — ⛔ فقط با پنلِ بسته: پمپ‌ها داخلِ پروسهٔ پنل‌اند و راهِ ایستاندنِ جدا ندارند؛
+ *                    کدِ پمپ دست نمی‌خورد.
+ *  شمارِ ردیفِ هر جدولِ هر دیتابیسِ SQLite ِ داخلِ همین پوشه‌ها در مانیفست (`sqlite`)، از **رونوشت** (فایلِ اصلی
+ *  بایت‌به‌بایت همان می‌ماند)، و پس از باز شدن دوباره شمرده می‌شود.
+ *  ⛔ import ِ ‎--only‎ فقط همین پوشه‌ها را جابه‌جا می‌کند. هم‌نامِ پیشینِ مقصد ⇒ ‎<داده>/.vmove-aside/<زمان>-…/‎ (پاک نه)؛
+ *     هیچ فایل یا ردیفِ دیگری از مقصد (سایت‌های دیگر، پنل، سرورِ حساب) دست نمی‌خورد. بستهٔ کامل با ‎--only‎ و برعکس رد.
+ */
+
+const SLUG_RE = /^[a-z0-9؀-ۿ_-]{1,64}$/;
+export const ASIDE_DIR = '.vmove-aside';
+const SQLITE_HEAD = Buffer.from('SQLite format 3\0');
+
+/** ‎site:<نامک>‎ (یا خودِ نامک) · ‎account-server‎ · ‎stations‎ ⇒ ‎{ kind, id, slug? }‎ */
+export function parseOnly(spec) {
+  const s = String(spec ?? '').trim();
+  if (s === 'account-server' || s === 'account') return { kind: 'account', id: 'account-server' };
+  if (s === 'stations' || s === 'pumps' || s === 'pump') return { kind: 'stations', id: 'stations' };
+  const slug = s.startsWith('site:') ? s.slice(5) : s;
+  if (!SLUG_RE.test(slug)) throw new Error(`برنامهٔ ناشناخته برای ‎--only‎: «${s.slice(0, 80)}» (site:<نامکِ سایت>، account-server یا stations)`);
+  return { kind: 'site', id: `site:${slug}`, slug };
+}
+
+const onlyPrefixes = (only) => (only.kind === 'site'
+  ? ['data/site-root/', `data/sites/${only.slug}/`, `data/site-sync/sites/${only.slug}/`]
+  : [only.kind === 'account' ? 'data/account-server/' : 'data/stations/']);
+
+const coded = (code, message) => Object.assign(new Error(message), { code });
+
+function isSqliteFile(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const b = Buffer.alloc(16);
+    return fs.readSync(fd, b, 0, 16, 0) === 16 && b.equals(SQLITE_HEAD);
+  } catch { return false; } finally { if (fd !== undefined) fs.closeSync(fd); }
+}
+
+/** شمارِ ردیفِ هر جدول از **رونوشت** (با ‎-wal‎ ِ کنارش) — فایلِ اصلی و پوشه‌اش هیچ ‎-shm‎ ِ تازه‌ای نمی‌گیرند */
+function countSqliteCopy(file, work) {
+  const dir = fs.mkdtempSync(path.join(work, 'sq-'));
+  try {
+    const copy = path.join(dir, 'x.db');
+    fs.copyFileSync(file, copy);
+    if (fs.existsSync(`${file}-wal`)) fs.copyFileSync(`${file}-wal`, `${copy}-wal`);
+    const db = new DatabaseSync(copy);
+    try {
+      const out = {};
+      for (const { name } of db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`).all()) {
+        out[name] = Number(db.prepare(`SELECT COUNT(*) AS n FROM "${String(name).replace(/"/g, '""')}"`).get().n);
+      }
+      return out;
+    } finally { db.close(); }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
+/** ردیفِ سایت، دامنه‌هایش و «سایتِ اصلی است؟» از عکسِ دیتابیسِ پنل */
+function readSiteRow(dbFile, slug) {
+  const db = new DatabaseSync(dbFile, { readOnly: true });
+  try {
+    const row = db.prepare('SELECT * FROM sites WHERE slug = ?').get(slug);
+    if (!row) return null;
+    const domains = db.prepare('SELECT name FROM domains WHERE site_id = ? ORDER BY name').all(row.id).map((d) => d.name);
+    let main = null;
+    try { main = JSON.parse(db.prepare("SELECT value FROM settings WHERE key = 'main_site_id'").get()?.value ?? 'null'); } catch { main = null; }
+    return { row, domains, isMain: main != null && Number(main) === Number(row.id) };
+  } finally { db.close(); }
+}
+
+const isWithin = (parent, child) => {
+  const rel = path.relative(parent, child);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+};
+
+async function exportOnly({ src, out, pass, only: spec, running, accountTool, panelDbSnapshot, accountSnapshot, live, sitesyncDir }) {
+  const only = parseOnly(spec);
+  if (only.kind === 'stations' && (live || running)) {
+    throw coded('pump_cli_only', 'پمپ‌ها (تانک‌تیل) فقط با پنلِ بسته جابه‌جا می‌شوند: داخلِ پروسهٔ پنل‌اند و راهِ ایستاندنِ جدا ندارند '
+      + '(کدِ پمپ دست نمی‌خورد). پنل را ببندید و همین فرمان را از خطِ فرمان بزنید.');
+  }
+  const work = await fsp.mkdtemp(path.join(os.tmpdir(), 'vill3n-move-'));
+  try {
+    const items = [];
+    const excluded = [];
+    const addDir = async (dir, prefix, skip = () => false) => {
+      for (const file of await walkFiles(dir)) {
+        const rel = toPosix(path.relative(dir, file));
+        if (skip(rel)) continue;
+        if (rel.endsWith('.part')) { excluded.push(`${prefix.slice(5)}${rel}`); continue; } //  نوشتنِ نیمه‌کاره
+        items.push({ name: `${prefix}${rel}`, file });
+      }
+    };
+    let app;
+    let account = { ok: false, reason: 'سرورِ حساب جزوِ این بسته نیست.' };
+    if (only.kind === 'site') {
+      let snap = panelDbSnapshot ? path.resolve(panelDbSnapshot) : '';
+      if (!snap) {
+        //  همان راهِ بستهٔ کامل: رونوشت (با WAL) ⇒ ‎VACUUM INTO‎؛ خودِ دیتابیس باز نمی‌شود
+        snap = path.join(work, 'panel.db');
+        const copy = path.join(work, 'source.db');
+        await fsp.copyFile(path.join(src, 'panel.db'), copy);
+        if (fs.existsSync(path.join(src, 'panel.db-wal'))) await fsp.copyFile(path.join(src, 'panel.db-wal'), `${copy}-wal`);
+        const conn = new DatabaseSync(copy);
+        try { conn.exec(`VACUUM INTO '${snap.replace(/'/g, "''")}'`); } finally { conn.close(); }
+      }
+      const s = readSiteRow(snap, only.slug);
+      if (!s) throw coded('site_not_found', `سایتِ «${only.slug}» در این پنل نیست.`);
+      if (s.isMain) throw coded('main_site', 'سایتِ اصلی دفترِ اصلیِ سرورِ سایت (‎site-sync/‎) را دارد و جدا نمی‌رود — با «جابه‌جاییِ کامل» ببرید.');
+      if (s.row.kind === 'external') throw coded('external_site', 'این سایت روی این کامپیوتر نیست (بیرونی) — چیزی برای بردن ندارد.');
+      const root = path.resolve(String(s.row.root_path || ''));
+      if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) throw coded('path_missing', `پوشهٔ سایت پیدا نشد: ${root}`);
+      if (isWithin(root, src)) throw coded('bad_root', 'پوشهٔ این سایت پوشهٔ دادهٔ پنل را در بر دارد — یک سایت جدا نمی‌رود.');
+      const syncDir = path.resolve(sitesyncDir || path.join(src, 'site-sync'));
+      await addDir(root, 'data/site-root/');
+      await addDir(path.join(src, 'sites', only.slug), `data/sites/${only.slug}/`);
+      await addDir(path.join(syncDir, 'sites', only.slug), `data/site-sync/sites/${only.slug}/`);
+      app = {
+        type: 'site', slug: only.slug, name: s.row.name, kind: s.row.kind || 'static', port: s.row.port ?? null,
+        startCommand: s.row.start_command ?? null, autostart: Boolean(s.row.autostart), enabled: Boolean(s.row.enabled),
+        domain: s.row.domain || null, domains: s.domains, rootName: path.basename(root), rootPath: root,
+      };
+    } else if (only.kind === 'account') {
+      const acctDir = path.join(src, 'account-server');
+      if (!fs.existsSync(acctDir) && !accountSnapshot) throw coded('account_missing', 'سرورِ حساب در این پوشهٔ داده نیست (account-server/).');
+      if (accountSnapshot) {
+        //  پنلِ روشن: فایل‌های زنده از رونوشتِ لحظهٔ مکث، کدِ ‎app/‎ از خودِ پوشه (همان قاعدهٔ بستهٔ کامل)
+        await addDir(path.resolve(accountSnapshot), 'data/account-server/', (rel) => rel === 'app' || rel.startsWith('app/'));
+        await addDir(path.join(acctDir, 'app'), 'data/account-server/app/');
+      } else {
+        await addDir(acctDir, 'data/account-server/');
+      }
+      account = inspectAccountDb(findAccountTool(src, accountTool), path.join(accountSnapshot ? path.resolve(accountSnapshot) : acctDir, 'pg'));
+      app = { type: 'account' };
+    } else {
+      const stDir = path.join(src, 'stations');
+      if (!fs.existsSync(stDir)) throw coded('stations_missing', 'پوشهٔ پمپ‌ها (stations/) در این پوشهٔ داده نیست.');
+      await addDir(stDir, 'data/stations/');
+      app = { type: 'stations' };
+    }
+    if (!items.length) throw coded('empty_app', 'برای این برنامه هیچ فایلی پیدا نشد.');
+
+    const sqlite = {};
+    for (const it of items) {
+      if (/-(wal|shm|journal)$/.test(it.name) || !isSqliteFile(it.file)) continue;
+      try { sqlite[it.name] = countSqliteCopy(it.file, work); } catch { /* دیتابیسِ خراب: فقط sha256 */ }
+    }
+
+    let panelVersion = null;
+    try { panelVersion = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version; } catch { /* بی نسخه */ }
+    const manifest = {
+      format: FORMAT,
+      formatVersion: FORMAT_VERSION,
+      createdAt: new Date().toISOString(),
+      source: { host: os.hostname(), platform: process.platform, dataDir: src, panelVersion },
+      hot: Boolean(running),
+      ...(live ? { live } : {}),
+      only: only.id,
+      app,
+      include: {},
+      files: [],
+      bytes: 0,
+      panelDb: null,
+      sqlite,
+      account: account.ok ? { reconciled: true, report: account.report } : { reconciled: false, reason: account.reason },
+      excluded,
+      outside: [],
+    };
+    await writeBundle(path.resolve(out), items, manifest, pass);
+    return { out: path.resolve(out), manifest };
+  } finally {
+    await fsp.rm(work, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * بستهٔ ‎--only‎ را در `staging` باز و **همه** را می‌سنجد: sha256 و اندازهٔ هر فایل، نبودنِ فایلِ بیرون از همان برنامه،
+ * شمارِ ردیفِ هر دیتابیسِ SQLite، و برای سرورِ حساب شمار/هش/جمعِ مبلغ (move-db.js). ⛔ هنوز هیچ چیزِ مقصد جابه‌جا نشده؛
+ * یک اختلاف ⇒ `staging` پاک و خطا. (CLI و «سرورهای من» هر دو همین را صدا می‌زنند.)
+ */
+export async function stageOnlyImport({ file, pass, staging, accountTool = '', expect = '' }) {
+  try {
+    const { manifest, files } = await readBundle(file, pass, staging);
+    if (!manifest.only) throw coded('full_bundle', 'این بستهٔ کامل (کلِ سرور) است، نه یک برنامه — بی ‎--only‎ وارد کنید؛ هیچ چیزی جابه‌جا نشد.');
+    const only = parseOnly(manifest.only);
+    if (expect && parseOnly(expect).id !== only.id) throw coded('wrong_app', `این بستهٔ «${only.id}» است، نه «${parseOnly(expect).id}».`);
+    const bad = manifest.files.filter((f) => files.get(f.name)?.sha256 !== f.sha256 || files.get(f.name)?.size !== f.size);
+    if (bad.length) throw coded('bad_files', `${bad.length} فایل با مانیفست نمی‌خواند: ${bad.slice(0, 5).map((f) => f.name).join('، ')}`);
+    const extra = [...files.keys()].filter((n) => !manifest.files.some((f) => f.name === n));
+    if (extra.length) throw coded('extra_files', `${extra.length} فایل در بسته هست که در مانیفست نیست: ${extra.slice(0, 5).join('، ')}`);
+    const prefixes = onlyPrefixes(only);
+    const outside = manifest.files.filter((f) => !prefixes.some((p) => f.name.startsWith(p)));
+    if (outside.length) throw coded('outside_app', `بسته فایلی بیرون از «${only.id}» دارد: ${outside.slice(0, 5).map((f) => f.name).join('، ')}`);
+    if (only.kind === 'site' && (manifest.app?.type !== 'site' || manifest.app.slug !== only.slug)) throw coded('bad_manifest', 'مانیفستِ سایت ناقص است.');
+
+    const work = await fsp.mkdtemp(path.join(os.tmpdir(), 'vill3n-move-'));
+    try {
+      for (const [name, want] of Object.entries(manifest.sqlite || {})) {
+        const p = path.join(staging, ...name.slice('data/'.length).split('/'));
+        const got = countSqliteCopy(p, work);
+        const diff = Object.keys({ ...want, ...got }).filter((t) => want[t] !== got[t]);
+        if (diff.length) throw coded('row_counts', `شمارِ ردیفِ ${name.slice(5)} نمی‌خواند: ${diff.join('، ')}`);
+      }
+    } finally {
+      await fsp.rm(work, { recursive: true, force: true }).catch(() => {});
+    }
+
+    let account = { reconciled: false, reason: manifest.account?.reason || 'در بسته گزارشی نبود' };
+    if (only.kind === 'account' && manifest.account?.reconciled) {
+      const now = inspectAccountDb(findAccountTool(staging, accountTool), path.join(staging, 'account-server', 'pg'));
+      if (!now.ok) {
+        account = { reconciled: false, reason: now.reason };
+      } else {
+        const cmp = sameAccountReport(manifest.account.report, now.report);
+        if (!cmp.same) throw coded('account_mismatch', `دیتابیسِ سرورِ حساب پس از باز شدن با مبدأ نمی‌خواند: ${cmp.diffs.slice(0, 5).join(' · ')}`);
+        account = { reconciled: true, tables: Object.keys(now.report.tables || {}).length, totals: now.report.totals || null };
+      }
+    }
+    return { manifest, only, files: files.size, account, sqlite: Object.keys(manifest.sqlite || {}).length };
+  } catch (e) {
+    await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
+    throw e;
+  }
+}
+
+/** نامِ امنِ یک تکهٔ مسیر (برای پوشهٔ تازهٔ سایت) */
+const safeSegment = (s) => String(s || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/^[.\s-]+|[.\s]+$/g, '').slice(0, 80);
+
+/**
+ * جای دادنِ بستهٔ سنجیده‌شده — هم‌گام، فقط rename (روی دیسکِ دیگر: رونوشت):
+ *   • هم‌نامِ پیشینِ مقصد (همان سایت/سرورِ حساب/پمپ‌ها) ⇒ ‎<داده>/.vmove-aside/<stamp>-<برنامه>/‎ + ‎aside.json‎ (پاک نه)
+ *   • سایت: پوشهٔ تازه زیرِ `sitesRoot` (نامِ آزاد؛ هرگز روی پوشهٔ موجود)، ردیف و دامنه‌ها در **همان تراکنش** با `db`
+ *     (اتصالِ خودِ پنل یا DatabaseSync ِ CLI). `enabled=false` ⇒ ثبت می‌شود ولی خاموش و بی «اجرای خودکار» (سرورهای من).
+ * ⛔ شکستِ وسطِ راه ⇒ ROLLBACK و همهٔ جابه‌جایی‌ها برمی‌گردند؛ مقصد همان است که بود.
+ * `replace`: ‎'refuse'‎ (سایتِ هم‌نامِ فعالِ مقصد ⇒ رد) یا ‎'aside'‎ (کنار گذاشتنش).
+ */
+export function promoteOnly({ staging, manifest, dataDir, stamp, db = null, sitesRoot = '', sitesyncDir = '', port = null, enabled = null, replace = 'refuse' }) {
+  const only = parseOnly(manifest.only);
+  const root = path.resolve(dataDir);
+  const syncDir = path.resolve(sitesyncDir || path.join(root, 'site-sync'));
+  const asideBase = path.join(root, ASIDE_DIR, `${stamp}-${only.id.replace(/[^A-Za-z0-9؀-ۿ_-]+/g, '-')}`);
+  const undo = [];
+  const aside = [];
+  const putAside = (from, what) => {
+    if (!fs.existsSync(from)) return;
+    fs.mkdirSync(asideBase, { recursive: true });
+    let to = path.join(asideBase, what);
+    try {
+      renameRetry(from, to);
+    } catch (e) {
+      if (e.code !== 'EXDEV') throw e;
+      to = `${from}.vmove-aside-${stamp}`; //  دیسکِ دیگر: کنارِ خودش، همان دیسک
+      renameRetry(from, to);
+    }
+    undo.push({ kind: 'rename', from, to });
+    aside.push({ what, from, to });
+  };
+  const place = (from, to) => {
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    try {
+      renameRetry(from, to);
+      undo.push({ kind: 'rename', from, to });
+    } catch (e) {
+      if (e.code !== 'EXDEV') throw e;
+      fs.cpSync(from, to, { recursive: true, errorOnExist: true, force: false, verbatimSymlinks: true });
+      undo.push({ kind: 'copy', to });
+    }
+  };
+  const rollback = () => {
+    for (const u of undo.reverse()) {
+      try {
+        if (u.kind === 'rename') renameRetry(u.to, u.from);
+        else fs.rmSync(u.to, { recursive: true, force: true }); //  فقط رونوشتی که همین حالا از بسته ساخته شد
+      } catch { /* بماند تا دستی */ }
+    }
+  };
+  const writeAsideNote = (extra) => {
+    if (!aside.length) return;
+    try {
+      fs.writeFileSync(path.join(asideBase, 'aside.json'), JSON.stringify({ at: new Date().toISOString(), app: only.id, reason: 'import', items: aside, ...extra }, null, 2), { mode: 0o600 });
+    } catch { /* یادداشت است، نه داده */ }
+  };
+
+  if (only.kind !== 'site') {
+    const sub = only.kind === 'account' ? 'account-server' : 'stations';
+    if (!fs.existsSync(path.join(staging, sub))) throw coded('bad_manifest', `پوشهٔ ${sub} در بسته نیست.`);
+    try {
+      putAside(path.join(root, sub), sub);
+      place(path.join(staging, sub), path.join(root, sub));
+      writeAsideNote({});
+    } catch (e) { rollback(); throw e; }
+    return { kind: only.kind, id: only.id, aside, asideDir: aside.length ? asideBase : null };
+  }
+
+  if (!db) throw coded('no_db', 'برای جای دادنِ سایت دیتابیسِ پنلِ مقصد لازم است.');
+  const app = manifest.app;
+  const slug = only.slug;
+  const sRoot = path.resolve(sitesRoot || path.join(root, 'websites'));
+  const markedAside = (s) => { try { return Boolean(db.prepare('SELECT 1 FROM fleet_aside WHERE app_id = ? AND restored_at IS NULL').get(`site:${s}`)); } catch { return false; } };
+  const existing = db.prepare('SELECT * FROM sites WHERE slug = ?').get(slug) || null;
+  if (existing && replace !== 'aside' && !markedAside(slug)) {
+    throw coded('slug_taken', `سایتی با نامکِ «${slug}» از پیش روی این سرور هست — برای کنار گذاشتنش (نه پاک کردن) ‎--force‎ بدهید؛ هیچ چیزی جابه‌جا نشد.`);
+  }
+  const domainNames = [...new Set((app.domains || []).map((d) => String(typeof d === 'string' ? d : d?.name || '').toLowerCase()).filter(Boolean))];
+  for (const name of domainNames) {
+    const d = db.prepare('SELECT site_id FROM domains WHERE name = ?').get(name);
+    if (!d || d.site_id == null || d.site_id === existing?.id) continue;
+    const owner = db.prepare('SELECT slug FROM sites WHERE id = ?').get(d.site_id);
+    if (owner && !markedAside(owner.slug)) throw coded('domain_taken', `دامنهٔ ${name} روی این سرور مالِ سایتِ «${owner.slug}» است؛ هیچ چیزی جابه‌جا نشد.`);
+  }
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    if (existing?.root_path && fs.existsSync(existing.root_path)) putAside(existing.root_path, 'root');
+    putAside(path.join(root, 'sites', slug), 'workspace');
+    putAside(path.join(syncDir, 'sites', slug), 'store');
+    const base = safeSegment(app.rootName) || slug;
+    let target = null;
+    for (let i = 1; i <= 50 && !target; i++) {
+      const cand = path.join(sRoot, i === 1 ? base : `${base}-${i}`);
+      if (!fs.existsSync(cand) && !db.prepare('SELECT 1 FROM sites WHERE root_path = ? AND slug <> ?').get(cand, slug)) target = cand;
+    }
+    if (!target) throw coded('no_root_name', 'نامِ آزادی برای پوشهٔ سایت پیدا نشد.');
+    if (fs.existsSync(path.join(staging, 'site-root'))) place(path.join(staging, 'site-root'), target);
+    else { fs.mkdirSync(target, { recursive: true }); undo.push({ kind: 'copy', to: target }); }
+    if (fs.existsSync(path.join(staging, 'sites', slug))) place(path.join(staging, 'sites', slug), path.join(root, 'sites', slug));
+    if (fs.existsSync(path.join(staging, 'site-sync', 'sites', slug))) place(path.join(staging, 'site-sync', 'sites', slug), path.join(syncDir, 'sites', slug));
+
+    const on = enabled == null ? (app.enabled ? 1 : 0) : (enabled ? 1 : 0);
+    const auto = on && app.autostart ? 1 : 0;
+    const finalPort = port ?? app.port ?? null;
+    const t = Date.now();
+    let siteId;
+    if (existing) {
+      db.prepare(`UPDATE sites SET name = ?, root_path = ?, domain = ?, port = ?, kind = ?, start_command = ?, autostart = ?, enabled = ?, updated_at = ? WHERE id = ?`)
+        .run(String(app.name || slug), target, app.domain || null, finalPort, app.kind || 'static', app.startCommand ?? null, auto, on, t, existing.id);
+      siteId = existing.id;
+    } else {
+      siteId = Number(db.prepare(`INSERT INTO sites(slug, name, root_path, domain, port, kind, start_command, autostart, enabled, created_at, updated_at)
+                                 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(slug, String(app.name || slug), target, app.domain || null, finalPort, app.kind || 'static', app.startCommand ?? null, auto, on, t, t).lastInsertRowid);
+    }
+    for (const name of domainNames) {
+      const has = db.prepare('SELECT id FROM domains WHERE name = ?').get(name);
+      if (has) db.prepare('UPDATE domains SET site_id = ? WHERE id = ?').run(siteId, has.id);
+      else db.prepare('INSERT INTO domains(name, site_id, created_at) VALUES(?, ?, ?)').run(name, siteId, t);
+    }
+    db.exec('COMMIT');
+    writeAsideNote({ previousRow: existing || null });
+    return {
+      kind: 'site', id: only.id, slug, siteId, rootPath: target, port: finalPort, domains: domainNames,
+      original: { enabled: app.enabled ? 1 : 0, autostart: app.autostart ? 1 : 0 },
+      previousRow: existing || null,
+      aside, asideDir: aside.length ? asideBase : null,
+    };
+  } catch (e) {
+    try { db.exec('ROLLBACK'); } catch { /* بسته */ }
+    rollback();
+    throw e;
+  }
+}
+
+/** پس از جای‌نشستن: هر فایل همان sha256 ِ مانیفست است؟ (پیش از روشن شدنِ برنامه) */
+export function compareOnly({ manifest, placed, dataDir, sitesyncDir = '' }) {
+  const only = parseOnly(manifest.only);
+  const root = path.resolve(dataDir);
+  const syncDir = path.resolve(sitesyncDir || path.join(root, 'site-sync'));
+  const map = only.kind === 'site'
+    ? [['data/site-root/', placed.rootPath], [`data/sites/${only.slug}/`, path.join(root, 'sites', only.slug)], [`data/site-sync/sites/${only.slug}/`, path.join(syncDir, 'sites', only.slug)]]
+    : [[onlyPrefixes(only)[0], path.join(root, only.kind === 'account' ? 'account-server' : 'stations')]];
+  const diffs = [];
+  for (const f of manifest.files) {
+    const hit = map.find(([p]) => f.name.startsWith(p));
+    if (!hit) { diffs.push(`بیرون: ${f.name}`); continue; }
+    const p = path.join(hit[1], ...f.name.slice(hit[0].length).split('/'));
+    if (!fs.existsSync(p)) { diffs.push(`نیست: ${f.name}`); continue; }
+    if (sha256FileSync(p) !== f.sha256) diffs.push(`عوض شده: ${f.name}`);
+  }
+  return { same: diffs.length === 0, diffs, files: manifest.files.length };
+}
+
+/** پورتِ آزاد از روی ردیف‌های همین دیتابیس (CLI با پنلِ بسته؛ پنل خودش `allocatePort` دارد) */
+function freePortFromRows(db, preferred, slug) {
+  const used = new Set(db.prepare('SELECT port FROM sites WHERE port IS NOT NULL AND slug <> ?').all(slug).map((r) => Number(r.port)));
+  if (preferred && !used.has(Number(preferred))) return Number(preferred);
+  for (let p = 8100; p <= 8999; p++) if (!used.has(p)) return p;
+  return null;
+}
+
+/** CLI: ‎import <فایل> --data <پوشه> --only‎ — پنلِ مقصد بسته، پوشه‌اش یک نصبِ راه‌افتاده */
+export async function importOnly({ file, dataDir, pass, accountTool = '', sitesRoot = '', force = false, expect = '' }) {
+  const target = path.resolve(dataDir);
+  if (!fs.existsSync(path.join(target, 'panel.db'))) {
+    throw coded('not_installed', `پوشهٔ مقصد پنلِ راه‌افتاده نیست (panel.db نیست): ${target} — برای یک برنامه، پنلِ مقصد یک بار بالا آمده باشد؛ برای کلِ سرور بی ‎--only‎.`);
+  }
+  if (panelRunning(target)) throw coded('panel_running', 'پنلِ مقصد روشن است — اول خاموشش کنید، یا از «سرورهای من» ِ مرکز جابه‌جا کنید.');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const staging = path.join(target, `.vmove-importing-${stamp}`);
+  let db = null;
+  try {
+    const r = await stageOnlyImport({ file, pass, staging, accountTool, expect });
+    let placed;
+    if (r.only.kind === 'site') {
+      db = new DatabaseSync(path.join(target, 'panel.db'));
+      db.exec('PRAGMA busy_timeout = 5000');
+      db.exec('PRAGMA foreign_keys = ON');
+      let sRoot = sitesRoot;
+      if (!sRoot) { try { sRoot = JSON.parse(db.prepare("SELECT value FROM settings WHERE key = 'sites_root'").get()?.value ?? 'null') || ''; } catch { sRoot = ''; } }
+      placed = promoteOnly({
+        staging, manifest: r.manifest, dataDir: target, stamp, db, sitesRoot: typeof sRoot === 'string' && sRoot ? sRoot : path.join(target, 'websites'),
+        port: freePortFromRows(db, r.manifest.app.port, r.manifest.app.slug), replace: force ? 'aside' : 'refuse',
+      });
+    } else {
+      placed = promoteOnly({ staging, manifest: r.manifest, dataDir: target, stamp });
+    }
+    const after = compareOnly({ manifest: r.manifest, placed, dataDir: target });
+    return { target, manifest: r.manifest, only: r.only, files: r.files, account: r.account, sqlite: r.sqlite, placed, after };
+  } finally {
+    db?.close();
+    await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 /* ─────────────────────────────── خطِ فرمان ─────────────────────────────── */
 
 function parseArgs(argv) {
@@ -780,6 +1212,10 @@ const HELP = `جابه‌جاییِ برنامهٔ سرور (docs/DEPLOY-ANYWHER
   import  <فایل.vmove> --data <پوشهٔ تازه> [--force] [--account-env <فایلِ env>]
   compare <فایل.vmove> --data <پوشهٔ داده>
 
+  فقط یک برنامه (پنلِ هر دو طرف بسته؛ همان قالب و رمز):
+  export  --data <پوشهٔ داده> --out <فایل.vmove> --only <site:نامک | account-server | stations>
+  import  <فایل.vmove> --data <پوشهٔ دادهٔ مقصد> --only [همان] [--sites-root <ریشهٔ سایت‌ها>] [--force]
+
   رمز: VILL3N_MOVE_PASSPHRASE (یا از صفحه‌کلید) · --account-tool <مسیرِ move-db.js>`;
 
 function fmtBytes(n) {
@@ -796,7 +1232,21 @@ async function main() {
   const accountTool = args['account-tool'] || '';
   if (cmd === 'export') {
     if (!args.data || !args.out) { console.error(HELP); return 2; }
+    if (args.only === true) { console.error('‎--only‎ نامِ برنامه می‌خواهد: site:<نامک>، account-server یا stations'); return 2; }
+    if (args.only) parseOnly(args.only); //  نامِ نادرست پیش از پرسیدنِ رمز
     const pass = await askPassphrase('رمزِ بسته (دستِ‌کم ۱۲ نویسه — به مقصد هم لازم است): ');
+    if (args.only) {
+      const r = await exportData({ dataDir: args.data, out: args.out, pass, force: !!args.force, accountTool, only: args.only });
+      const m = r.manifest;
+      console.log(`✅ بستهٔ «فقط ${m.only}» ساخته شد: ${r.out}`);
+      console.log(`   ${m.files.length} فایل · ${fmtBytes(m.bytes)} · ${Object.keys(m.sqlite || {}).length} دیتابیسِ SQLite شمرده شد · رمزشده (AES-256-GCM)`);
+      if (m.app?.type === 'site') console.log(`   سایت «${m.app.name}» · دامنه‌ها: ${(m.app.domains || []).join('، ') || '—'}`);
+      if (m.only === 'account-server') {
+        console.log(m.account.reconciled ? `   سرورِ حساب: ${Object.keys(m.account.report.tables || {}).length} جدول شمرده و هش شد` : `   ⚠️ سرورِ حساب: ${m.account.reason}`);
+      }
+      console.log('   پوشهٔ مبدأ دست نخورد. پس از import، برنامه را روی مبدأ روشن نکنید (دو دفتر).');
+      return 0;
+    }
     const include = { tunnel: !!args['with-tunnel'], mirrors: !!args['with-mirrors'], backups: !!args['with-backups'], logs: !!args['with-logs'] };
     const r = await exportData({ dataDir: args.data, out: args.out, pass, include, force: !!args.force, accountTool });
     const m = r.manifest;
@@ -816,9 +1266,11 @@ async function main() {
     const pass = await askPassphrase('رمزِ بسته: ');
     const r = await inspectBundle({ file, pass });
     const m = r.manifest;
-    console.log(`${r.ok ? '✅' : '❌'} ${file}`);
+    console.log(`${r.ok ? '✅' : '❌'} ${file}${m.only ? ` — فقط «${m.only}»` : ''}`);
     console.log(`   از ${m.source.host} (${m.source.platform}) · ${m.createdAt} · پنل ${m.source.panelVersion || '؟'}`);
-    console.log(`   ${m.files.length} فایل · ${fmtBytes(m.bytes)} · جدول‌های پنل: ${Object.entries(m.panelDb.tables).map(([k, v]) => `${k}=${v}`).join(' ')}`);
+    console.log(m.only
+      ? `   ${m.files.length} فایل · ${fmtBytes(m.bytes)} · ${Object.keys(m.sqlite || {}).length} دیتابیسِ SQLite`
+      : `   ${m.files.length} فایل · ${fmtBytes(m.bytes)} · جدول‌های پنل: ${Object.entries(m.panelDb.tables).map(([k, v]) => `${k}=${v}`).join(' ')}`);
     console.log(m.account.reconciled ? `   سرورِ حساب: ${JSON.stringify(m.account.report.totals || {})}` : `   ⚠️ سرورِ حساب: ${m.account.reason}`);
     if (!r.ok) console.log(`   ❌ نمی‌خواند: ${[...r.bad, ...r.extra].slice(0, 10).join('، ')}`);
     return r.ok ? 0 : 1;
@@ -826,7 +1278,23 @@ async function main() {
   if (cmd === 'import') {
     const file = args._[1];
     if (!file || !args.data) { console.error(HELP); return 2; }
+    if (args.only !== undefined && args.only !== true) parseOnly(args.only);
     const pass = await askPassphrase('رمزِ بسته: ');
+    if (args.only !== undefined) {
+      const r = await importOnly({
+        file, dataDir: args.data, pass, accountTool, force: !!args.force,
+        sitesRoot: typeof args['sites-root'] === 'string' ? args['sites-root'] : '', expect: args.only === true ? '' : args.only,
+      });
+      console.log(`✅ «${r.only.id}»: ${r.files} فایل باز و با sha256 سنجیده شد${r.sqlite ? ` · شمارِ ردیفِ ${r.sqlite} دیتابیس همان مبدأ` : ''}`);
+      if (r.placed.kind === 'site') console.log(`   سایت ⇐ ${r.placed.rootPath} · پورت ${r.placed.port ?? '—'} · دامنه‌ها: ${r.placed.domains.join('، ') || '—'}`);
+      if (r.only.kind === 'account') {
+        console.log(r.account.reconciled ? `   سرورِ حساب: ${r.account.tables} جدول — شمار، هش و جمعِ مبلغ همان مبدأ ✅` : `   ⚠️ سرورِ حساب سنجیده نشد: ${r.account.reason}`);
+      }
+      console.log(r.after.same ? '   پس از جای‌نشستن: هر فایل همان بسته است ✅' : `   ❌ ${r.after.diffs.length} اختلاف پس از جای‌نشستن: ${r.after.diffs.slice(0, 5).join('، ')}`);
+      if (r.placed.asideDir) console.log(`   هم‌نامِ پیشینِ مقصد کنار رفت (پاک نه): ${r.placed.asideDir}`);
+      console.log('   دادهٔ برنامه‌های دیگرِ این سرور دست نخورد. نشانی/تونلِ این برنامه را به این سرور ببرید (docs/DEPLOY-ANYWHERE-fa.md).');
+      return r.after.same ? 0 : 1;
+    }
     const r = await importData({ file, dataDir: args.data, pass, force: !!args.force, accountTool, accountEnv: args['account-env'] || '' });
     console.log(`✅ ${r.files} فایل باز و با sha256 سنجیده شد ⇐ ${r.target}`);
     console.log(`   جدول‌های پنل: شمارِ ردیف‌ها همان مبدأ · ${r.remapped} نشانیِ پوشهٔ داده به پوشهٔ تازه برگشت`);

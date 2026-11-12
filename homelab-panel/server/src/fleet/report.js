@@ -47,9 +47,12 @@ async function readMetrics() {
 /** برنامه‌ها و سایت‌های همین نصب. `dataful`: دیتابیس دارد ⇒ روشن بودنش روی دو گره یعنی «دو دفتر». */
 async function readApps() {
   const apps = [];
+  //  ⛔ (۱.۵۰.۹۵) برنامه‌ای که از این نصب رفته و کنار گذاشته شده («سرورهای من») این‌جا دیگر نیست
+  const { holdOf } = await import('./hold.js');
+  const gone = (id) => holdOf(id)?.reason === 'aside';
   const { accountStatus } = await import('../account/supervisor.js');
   const acct = accountStatus();
-  if (acct.installed || acct.running) {
+  if ((acct.installed || acct.running) && !gone('account-server')) {
     apps.push({ id: 'account-server', type: 'account', name: 'سرورِ حساب', dataful: true, running: Boolean(acct.running) });
   }
   //  ⛔ پمپ: فقط خواندنِ «چند پمپ ثبت است» — کدِ پمپ دست نمی‌خورد و ایستاندنش در نگه‌داری نیست
@@ -60,10 +63,12 @@ async function readApps() {
     try { count = st.list().length; } catch { count = 0; }
     if (count > 0) apps.push({ id: 'stations', type: 'pump', name: 'پمپ‌ها (تانک‌تیل)', dataful: true, running: true, count });
   }
-  const { listSitesRaw } = await import('../sites/registry.js');
+  const { listSitesRaw, mainSiteId } = await import('../sites/registry.js');
   const { isRunning } = await import('../sites/process.js');
+  const mainId = mainSiteId();
   for (const s of listSitesRaw()) {
     if (s.kind === 'external') continue; //  روی این کامپیوتر نیست
+    if (gone(`site:${s.slug}`)) continue;
     apps.push({
       id: `site:${s.slug}`,
       type: 'site',
@@ -71,6 +76,8 @@ async function readApps() {
       kind: s.kind || 'static',
       dataful: (s.kind || 'static') !== 'static',
       running: isRunning(s.slug),
+      //  سایتِ اصلی دفترِ اصلیِ سرورِ سایت را دارد ⇒ جدا جابه‌جا نمی‌شود (گامِ ۳)
+      ...(mainId === s.id ? { main: true } : {}),
     });
   }
   return apps;
@@ -79,6 +86,8 @@ async function readApps() {
 /** گزارشِ کامل. `link`: ردیفِ وصلِ همین گره (نام و گونه‌ای که هنگامِ وصل شدن داده شد) */
 export async function buildReport(link = null) {
   const { tunnelRunning, publicState } = await import('../tunnel.js');
+  let route = { mode: null, auto: false };
+  try { route = (await import('./route.js')).routeInfo(); } catch { /* تونل نیست */ }
   const m = maintenanceState();
   let metrics = null;
   try { metrics = await readMetrics(); } catch { metrics = null; }
@@ -91,7 +100,8 @@ export async function buildReport(link = null) {
     platform: process.platform,
     metrics,
     apps,
-    tunnel: { running: tunnelRunning(), status: publicState().status },
+    //  ‎mode/auto‎ (۱.۵۰.۹۵): «عوض شدنِ مسیر» خودکار است یا دستی — بی نامِ تونل و بی هیچ راز
+    tunnel: { running: tunnelRunning(), status: publicState().status, mode: route.mode, auto: Boolean(route.auto) },
     maintenance: { active: m.active, source: m.source, since: m.since, pumpsKeepRunning: m.active && apps.some((a) => a.type === 'pump') },
     at: Date.now(),
   };
@@ -125,9 +135,13 @@ export function sanitizeReport(raw) {
       kind: str(a.kind, 20),
       dataful: a.dataful === true,
       running: a.running === true,
+      ...(a.main === true ? { main: true } : {}),
       ...(num(a.count) != null ? { count: num(a.count) } : {}),
     })),
-    tunnel: { running: r.tunnel?.running === true, status: str(r.tunnel?.status, 20) },
+    tunnel: {
+      running: r.tunnel?.running === true, status: str(r.tunnel?.status, 20),
+      mode: ['named', 'token', 'quick', 'none'].includes(r.tunnel?.mode) ? r.tunnel.mode : null, auto: r.tunnel?.auto === true,
+    },
     maintenance: {
       active: r.maintenance?.active === true,
       source: ['center', 'self'].includes(r.maintenance?.source) ? r.maintenance.source : null,
