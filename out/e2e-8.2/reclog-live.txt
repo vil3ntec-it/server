@@ -1,0 +1,28 @@
+2026-11-12 13:12:39  start: c2.android.avc.encoder 1152x720@60 7 Mbps level 3.2 • Android 34
+2026-11-12 13:12:39  screen sources: metrics 2560x1600, rotation 0, display context 2560x1600, config 2
+2026-11-12 13:12:39  captured app on screen
+2026-11-12 13:12:42  rtmp: CONNECTING
+2026-11-12 13:12:43  rtmp: LIVE via=direct 10.0.2.2
+2026-11-12 13:12:43  rate: sent 0 kbps, target 6000, behind 0 ms, lost 0 frames, 0 pictures a second sent, picture 1152×720 at 60
+2026-11-12 13:12:47  screen: 12 pictures, 12 drawn
+2026-11-12 13:12:47  mirror: not on the screen: null
+2026-11-12 13:12:47  chat panel: whole screen captured
+2026-11-12 13:12:47  mirror: on the screen, 1 pictures
+2026-11-12 13:12:59  screen: 35 pictures, 34 drawn
+2026-11-12 13:12:59  mirror: on the screen, 1 pictures
+2026-11-12 13:13:11  screen: 54 pictures, 54 drawn
+2026-11-12 13:13:11  mirror: on the screen, 1 pictures
+2026-11-12 13:13:13  rate: sent 383 kbps, target 3000, behind 4 ms, lost 0 frames, 2 pictures a second sent, picture 1152×720 at 60
+2026-11-12 13:13:44  rate: sent 384 kbps, target 3000, behind 0 ms, lost 0 frames, 2 pictures a second sent, picture 1152×720 at 60
+2026-11-12 13:14:14  rate: sent 638 kbps, target 3000, behind 0 ms, lost 0 frames, 9 pictures a second sent, picture 1152×720 at 60
+2026-11-12 13:14:45  rate: sent 202 kbps, target 3000, behind 20 ms, lost 0 frames, 1 pictures a second sent, picture 1152×720 at 60
+2026-11-12 13:15:15  rate: sent 159 kbps, target 3000, behind 0 ms, lost 0 frames, 0 pictures a second sent, picture 1152×720 at 60
+2026-11-12 13:15:46  rate: sent 357 kbps, target 3000, behind 0 ms, lost 0 frames, 2 pictures a second sent, picture 1152×720 at 60
+2026-11-12 13:16:17  rate: sent 362 kbps, target 3000, behind 0 ms, lost 0 frames, 4 pictures a second sent, picture 1152×720 at 60
+2026-11-12 13:16:48  rate: sent 318 kbps, target 3000, behind 15 ms, lost 0 frames, 2 pictures a second sent, picture 1152×720 at 60
+2026-11-12 13:16:57  record: started beside the stream
+2026-11-12 13:16:58  notice: record: H.264 1712x1072 33 fps 12 Mbps beside the stream
+2026-11-12 13:17:19  record: closed and kept
+2026-11-12 13:17:19  rate: sent 824 kbps, target 3000, behind 0 ms, lost 0 frames, 10 pictures a second sent, picture 1152×720 at 60
+2026-11-12 13:17:22  stop: APP
+2026-11-12 13:17:26  rtmp: ENDED via=direct 10.0.2.2
