@@ -6,6 +6,7 @@
 //  ⛔ بازبینی (تأیید/رد/بایگانی/جست‌وجو): فقط admin (مرز در سرور) + دلیل + تأیید + یک کلیدِ یکتایی برای همان پنجره؛
 //     قاعده‌های انتشار (مجوزِ تجاری، کالای وصل، تطبیقِ قطعی) را **سرورِ حساب** می‌سنجد و خطایش با کدِ خودش دیده می‌شود.
 //  ⛔ (۱.۵۰.۸۸، ۳-۹) بارگذاری، کالای بانک و ورودِ گروهی برای admin: `ImageBankTools.tsx`.
+//  ⛔ (۱.۵۰.۹۶، IMG-PRO-17) تغییرهای دسته‌ایِ عکسِ یک دکان و برگرداندن با اجازهٔ پشتیبانی: `ImageChangesCard.tsx`.
 // ---------------------------------------------------------------------------
 import { useEffect, useState, type FormEvent } from 'react';
 import { Images } from 'lucide-react';
@@ -20,6 +21,7 @@ import { shown } from '../consoleData';
 import { SensitiveDialog, StateEmpty, fmtTime } from './parts';
 import { useTx, type Tx } from './text';
 import ImageBankTools from './ImageBankTools';
+import ImageChangesCard from './ImageChangesCard';
 
 const IB = '/api/account-admin/console/image-bank';
 type Product = { id: string; gtin: string; sku: string; name: string; brand: string; status: string; missing?: boolean } | null;
@@ -245,6 +247,8 @@ export default function ImageBankModule() {
         <SourceLine source="/api/admin/image-bank/status" data={status.data} at={status.at} />
       </Card>
       {open && <ImageDetail key={open} id={open} onClose={() => setOpen('')} />}
+      {/* ۱.۵۰.۹۶ (IMG-PRO-17): دسته‌های تغییرِ عکسِ یک دکان — جدا از پرچمِ بانکِ مرکزی (پرچمِ هر دکان: shop.image_bank) */}
+      <ImageChangesCard />
     </div>
   );
 }

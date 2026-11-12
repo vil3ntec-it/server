@@ -55,6 +55,7 @@ import { mountConsoleMarket, MARKET_CAPABILITIES } from './console-market.js';
 import { mountConsoleStaff } from './console-staff.js';
 import { mountConsoleImageBank } from './console-image-bank.js';
 import { mountConsoleHolidays } from './console-holidays.js';
+import { mountConsoleImageChanges } from './console-image-changes.js';
 import { mountConsoleSynonyms } from './console-synonyms.js';
 import { mountConsoleSupportAccess } from './console-support-access.js';
 import { mountConsoleParity, shapeBeta } from './console-parity.js';
@@ -2211,6 +2212,8 @@ export const PHASE3 = Object.freeze({
   'synonyms.v1': 'GET|PUT /api/admin/search/synonyms ({version, updatedAt, groups: string[][]}؛ ارشد + دلیل + نسخه؛ ۴۰۹ synonyms_version)',
   //  ۱.۵۰.۹۰ (۲-۹، G1، ACP-D1/D2): اجازهٔ موقتِ پشتیبانی — ‎routes/console-support-access.js‎ (هنوز روی shop نیست)
   'support-access.v1': 'GET|POST /api/admin/shops/:id/access-grants · POST …/access-grants/break-glass · POST …/access-grants/:gid/revoke (۶۰ دقیقه، سقفِ ۲۴ ساعت؛ شکستنِ شیشه با دلیل و خبرِ فوری به صاحبِ دکان)',
+  //  ۱.۵۰.۹۶ (IMG-PRO-17، shop ‎claude/e-rows-13x‎): دسته‌های تغییرِ عکسِ یک دکان و برگرداندن — ‎routes/console-image-changes.js‎
+  'image-changes.v1': 'GET /api/admin/shops/:id/images/changes[/:cid] · POST …/:cid/rollback (ارشد + دلیل + اجازهٔ زندهٔ restore + Idempotency-Key؛ ۴۰۹ changed_since)',
   ...MARKET_CAPABILITIES,
 });
 const CAP_RE = /^[a-z][a-z0-9-]{0,40}\.v\d{1,3}$/;
@@ -2578,6 +2581,8 @@ mountConsoleStaff(router, { guard, badInput, actorOf, capListed, missingErr });
 mountConsoleImageBank(router, { guard, badInput, actorOf, capListed });
 /* ۱.۵۰.۷۸ (LOC-04): جدولِ تعطیلاتِ رسمی در «تنظیماتِ مرکزی» — ‎routes/console-holidays.js‎، روی **همین** روتر */
 mountConsoleHolidays(router, { guard, badInput, actorOf, capListed, missingErr, unavailable });
+//  ۱.۵۰.۹۶ (IMG-PRO-17، `image-changes.v1`): دسته‌های تغییرِ عکسِ یک دکان و برگرداندن با اجازهٔ پشتیبانی
+mountConsoleImageChanges(router, { guard, badInput, actorOf, capListed, missingErr, unavailable });
 /* ۱.۵۰.۸۹ (۴-۱ «ب»): فهرستِ مرکزیِ مترادف در «تنظیماتِ مرکزی» — ‎routes/console-synonyms.js‎، روی **همین** روتر */
 mountConsoleSynonyms(router, { guard, badInput, actorOf, capListed, missingErr, unavailable });
 /*
