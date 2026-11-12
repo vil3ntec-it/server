@@ -37,6 +37,7 @@ const NOW = Date.now();
 const DAY = 86400e3;
 const posted = [];
 let summaryFail = false;
+let noMoney = false;
 const svcKeys = new Set();
 const pay = (id, extra = {}) => ({
   id, app: 'shop', tenantId: 's1', tenantName: 'دکانِ مالی', subscriptionId: 'sub1', plan: 'm1', amount: 600, currency: 'AFN',
@@ -123,7 +124,11 @@ const fake = http.createServer((req, res) => {
     }
     if (p === '/api/admin/system/reconciliation') {
       return j(200, { checkedAt: NOW, local: { fromDate: '2026-10-01', toDate: '2026-10-31', timezone: 'Asia/Kabul' },
-        totals: { salesMinor: 1234500, refundsMinor: 10000, netMinor: 1224500, issues: 2, courierHeldMinor: 5000 }, shops: [] });
+        totals: { salesMinor: 1234500, refundsMinor: 10000, netMinor: 1224500, issues: 2, courierHeldMinor: 5000 }, shops: [],
+        //  S124: بلوکِ ‎money‎ فقط با ‎money=1‎ و فقط وقتی سرورِ حساب تازه است (‎noMoney‎ ⇒ سرورِ کهنه)
+        ...(u.searchParams.get('money') === '1' && !noMoney ? { money: { currency: 'AFN', testShopsExcluded: 1, gmvMinor: 3000000, posSalesMinor: 2000000,
+          onlineSalesMinor: 1000000, refundsMinor: 50000, netMinor: 2950000, collectedMinor: 700000, handedOverMinor: 600000, unsettledMinor: 100000,
+          pos: { partial: false, truncated: false }, platformRevenue: { app: 'shop', currencies: ['AFN'], totals: { AFN: { net: 900 } } } } } : {}) });
     }
     if (p === '/api/admin/finance/history') {
       return j(200, { entries: [{ id: 'au1', at: NOW - DAY, action: 'admin.finance_adjustment_created', adminId: 'svk1', actor: { kind: 'panel', id: 'panel:1', name: 'admin' }, targetType: 'payment', targetId: 'pay1', shopId: 's1', detail: { reason: 'برگشتِ حواله' } }],
@@ -258,6 +263,15 @@ try {
   body = await open('recon');
   check('یافتهٔ مغایرت با برچسب و نمونه؛ یافتهٔ صفر پنهان', body.includes('پرداختِ بی اشتراک') && body.includes('دکانِ بی‌اشتراک') && !body.includes('شمارهٔ رسیدِ تکراری'), body.slice(0, 900));
   check('تطبیقِ فروشِ آنلاین (#411) برای مالک، به افغانی', body.includes('تطبیقِ فروشِ آنلاینِ دکان‌ها') && body.includes('۱۲٬۲۴۵'), body.slice(0, 1500));
+  check('S124: گزارشِ پولِ مدیر کنارِ تطبیق — GMV ۳۰٬۰۰۰، صندوق ۲۰٬۰۰۰، آنلاین ۱۰٬۰۰۰، بازپرداخت ۵۰۰، وصول ۷٬۰۰۰، تسویه‌نشده ۱٬۰۰۰ و درآمدِ پلتفرم جدا',
+    body.includes('گزارشِ پولِ مدیر') && body.includes('۳۰٬۰۰۰ افغانی') && body.includes('۲۰٬۰۰۰ افغانی') && body.includes('۱۰٬۰۰۰ افغانی')
+      && body.includes('۵۰۰ افغانی') && body.includes('۷٬۰۰۰ افغانی') && body.includes('۱٬۰۰۰ افغانی') && body.includes('درآمدِ پلتفرم') && body.includes('کنارگذاشته: ۱'),
+    body.slice(body.indexOf('گزارشِ پولِ مدیر'), body.indexOf('گزارشِ پولِ مدیر') + 700));
+  noMoney = true;
+  body = await open('recon');
+  check('S124: ⛔ سرورِ حسابِ بی ‎money‎ ⇒ «روی این نسخه نیست»، نه صفر', body.includes('گزارشِ پولِ مدیر» (‎money=1‎، S124) را ندارد') || body.includes('(money=1، S124) را ندارد'),
+    body.slice(body.indexOf('گزارشِ پولِ مدیر'), body.indexOf('گزارشِ پولِ مدیر') + 300));
+  noMoney = false;
   body = await open('history');
   check('تاریخچه: سندِ اصلاحی با انجام‌دهندهٔ پنل و دلیل', body.includes('سندِ اصلاحی') && body.includes('برگشتِ حواله') && body.includes('admin'), body.slice(0, 700));
 

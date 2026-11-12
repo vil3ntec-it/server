@@ -52,6 +52,19 @@ console.log('\n── ۰) marketData.ts: «نیامده = —»، پول، سن�
       && m.sumMismatches([{ a: 1 }], { a: 2, c: null }).join() === 'a');
     check('آستانه: فقط عددِ صحیحِ ۱ تا ۱۰٬۰۸۰', m.thresholdOk(1) && m.thresholdOk(10080) && !m.thresholdOk(0) && !m.thresholdOk(1.5)
       && !m.thresholdOk('30') && !m.thresholdOk(10081));
+    check('S109: نشانیِ شمارش و نشان (شناسه رمزگذاری‌شده)', m.MC?.regions === '/api/account-admin/console/market/regions'
+      && m.MC?.census?.('a/b') === '/api/account-admin/console/market/census/a%2Fb', `${m.MC?.regions} ${m.MC?.census?.('a/b')}`);
+    const RG = { provinces: [{ code: 'AF-BAL', name: 'بلخ', registered: 0 }, { code: 'AF-KAB', name: 'کابل', registered: 2, accepting: 1, temporarilyClosed: 1 },
+      { code: 'AF-HER', name: 'هرات', registered: 1, accepting: 1, temporarilyClosed: 0 }], unknownProvince: { registered: 1, accepting: 0, temporarilyClosed: 1 },
+      totals: { registered: 4, accepting: 2, temporarilyClosed: 2 } };
+    check('S109: ولایتِ دکان‌دار اول؛ جمعِ ولایت‌ها + نامعلوم = جمعِ کل، ناهم‌خوان ⇒ نامِ ستون',
+      m.regionRows?.(RG)?.map((p) => p.code).join() === 'AF-KAB,AF-HER,AF-BAL' && m.regionRows?.(null)?.length === 0
+        && m.regionMismatches?.(RG)?.length === 0 && m.regionMismatches?.({ ...RG, totals: { ...RG.totals, accepting: 3 } })?.join() === 'accepting',
+      JSON.stringify(m.regionRows?.(RG)));
+    check('OPS-09: پرچمِ ویترینِ یک دکان ⇒ scope همان دکان و مقدارِ وارونه؛ حالتِ نیامده ⇒ دکمه نیست',
+      JSON.stringify(m.storefrontFlagEdit?.({ shopId: 's1', gates: { storefrontFlag: false } })) === JSON.stringify({ scope: 's1', key: 'shop.storefront', from: false, to: true })
+        && m.storefrontFlagEdit?.({ shopId: 's1', gates: { storefrontFlag: true } })?.to === false
+        && m.storefrontFlagEdit?.({ shopId: 's1', gates: {} }) === null && m.storefrontFlagEdit?.({ shopId: '', gates: { storefrontFlag: true } }) === null);
     check('کدها به ترتیب و نوع؛ نیامده ⇒ خالی', JSON.stringify(m.issuesOf({ mismatch: ['x'], stuck: ['y'] })) === '[{"code":"y","kind":"stuck"},{"code":"x","kind":"mismatch"}]'
       && m.issuesOf(null).length === 0);
     check('هر کدِ سرور برچسبِ سه‌زبانه دارد', ['accept_overdue', 'dispatch_overdue', 'courier_unaccepted', 'pickup_overdue', 'delivery_overdue',
@@ -65,7 +78,8 @@ console.log('\n── ۰) marketData.ts: «نیامده = —»، پول، سن�
 /* ───────────── سرورِ حسابِ ساختگی ───────────── */
 const NOW = Date.now();
 const seen = [];
-let caps = ['market-admin.v1', 'delivery-watch.v1'];
+const ALL_CAPS = ['market-admin.v1', 'delivery-watch.v1', 'market-regions.v1'];
+let caps = [...ALL_CAPS];
 let decided = false;
 const ORDERS = Array.from({ length: 230 }, (_, i) => ({
   id: `o${i}`, shopId: 's1', shopName: i === 0 ? '=HYPERLINK("x")' : 'دکانِ یک', orderNo: i + 1, status: 'new',
@@ -95,6 +109,15 @@ const fake = http.createServer((req, res) => {
     }
     if (p === '/api/admin/market/commission') return j(200, { serverTime: NOW, inModel: false, reason: 'not_in_schema' });
     if (p === '/api/admin/market/history') return j(200, { serverTime: NOW, entries: [] });
+    if (p === '/api/admin/market/regions') {
+      const z = (a, b, c) => ({ registered: a, accepting: b, temporarilyClosed: c });
+      return j(200, { generatedAt: NOW, provinces: [{ code: 'AF-KAB', name: 'کابل', ...z(2, 1, 1), districts: [{ name: 'ناحیهٔ ۴', ...z(2, 1, 1) }] }],
+        unknownProvince: z(1, 1, 0), totals: z(3, 2, 1), excluded: { test: 1, duplicate: 0, suspended: 2, notPublic: 0 },
+        statuses: ['registered', 'accepting', 'temporarilyClosed'], onlineNow: null });
+    }
+    if (p === '/api/admin/shops/s1/census' && req.method === 'PUT') {
+      return j(200, { shopId: 's1', mark: body?.kind === 'none' ? null : { kind: body?.kind, duplicateOf: body?.duplicateOf || null, reason: body?.reason } });
+    }
     if (p === '/api/admin/trust/cases') return j(200, { cases: [{ id: 'tc_1', kind: 'report', status: 'open' }] });
     if (p === '/api/admin/trust/cases/tc_1') return j(200, { case: { id: 'tc_1', kind: 'report' } });
     if (p === '/api/admin/trust/sanctions') return j(200, { sanctions: [] });
@@ -204,7 +227,7 @@ try {
   check('نوشتنِ آستانه ⇒ ۵۰۱ capability_missing، نه «انجام شد»', nw.status === 501 && nw.json?.error === 'capability_missing' && up(n, '/api/admin/delivery/thresholds').length === 0, JSON.stringify(nw.json));
   const ncsv = await api('GET', `${C}/market/orders.csv`, undefined, admin);
   check('CSV بی توانایی ⇒ ۵۰۱', ncsv.status === 501);
-  caps = ['market-admin.v1', 'delivery-watch.v1'];
+  caps = [...ALL_CAPS];
 
   console.log('\n── ۳) نقش: پرونده، CSV و نوشتن فقط admin، و ۴۰۳ پیش از پل ──');
   for (const [method, pth, body] of [
@@ -291,6 +314,56 @@ try {
     check(`دفترِ پنل: ${a}`, logText.includes(a));
   }
   check('⛔ هیچ رمزی در دفترِ پنل نیست', !logText.includes('Market-1405-test') && !logText.includes('wrong-1'));
+
+  console.log('\n── ۷) S109: شمارشِ منطقه‌ای و نشانِ «آزمایشی/تکراری» ──');
+  n = seen.length;
+  const rg = await api('GET', `${C}/market/regions?evil=1`, undefined, viewer);
+  const rgUp = up(n, '/api/admin/market/regions')[0];
+  check('viewer: شمارشِ منطقه‌ای ۲۰۰ با available، fetchedAt و همان دادهٔ بالادست (onlineNow: null)',
+    rg.status === 200 && rg.json?.available === true && Number.isFinite(rg.json?.fetchedAt) && rg.json?.provinces?.[0]?.code === 'AF-KAB'
+      && rg.json?.provinces?.[0]?.districts?.[0]?.registered === 2 && rg.json?.excluded?.test === 1 && rg.json?.onlineNow === null,
+    `${rg.status} ${JSON.stringify(rg.json).slice(0, 200)}`);
+  check('هیچ پارامتری (حتی evil) به سرورِ حساب نرفت', rgUp && Object.keys(rgUp.query).length === 0, JSON.stringify(rgUp));
+  const cgood = { kind: 'duplicate', duplicateOf: 's2', reason: 'دو بار ثبت شده', confirm: true };
+  for (const [who, h] of [['operator', op], ['viewer', viewer]]) {
+    n = seen.length;
+    const r = await api('PUT', `${C}/market/census/s1`, cgood, h);
+    check(`⛔ ${who}: نشانِ سرشماری ۴۰۳ و هیچ درخواستی بالا نرفت`, r.status === 403 && since(n).length === 0, `${r.status} ${since(n).map((x) => x.path)}`);
+  }
+  for (const [why, sid, b] of [
+    ['نوعِ ناشناخته', 's1', { ...cgood, kind: 'fake' }], ['بی نوع', 's1', { ...cgood, kind: undefined }],
+    ['تکراری بی دکانِ اصل', 's1', { ...cgood, duplicateOf: '' }], ['تکراریِ خودش', 's1', { ...cgood, duplicateOf: 's1' }],
+    ['بی دلیل', 's1', { ...cgood, reason: '' }], ['بی تأیید', 's1', { ...cgood, confirm: false }], ['شناسهٔ بد', 'a%20b', cgood],
+  ]) {
+    n = seen.length;
+    const r = await api('PUT', `${C}/market/census/${sid}`, b, admin);
+    check(`نشانِ بد (${why}) ⇒ ۴۰۰ پیش از پل`, r.status === 400 && since(n).length === 0, `${r.status} ${JSON.stringify(r.json)}`);
+  }
+  n = seen.length;
+  const cs = await api('PUT', `${C}/market/census/s1`, { ...cgood, extra: 'x' }, admin);
+  const csUp = up(n, '/api/admin/shops/s1/census')[0];
+  check('admin: نشان ⇒ PUT ِ ‎/api/admin/shops/s1/census‎ فقط با kind، duplicateOf و reason؛ «تأییدشده از سرور»',
+    cs.status === 200 && cs.json?.confirmedByServer === true && cs.json?.mark?.kind === 'duplicate' && csUp?.method === 'PUT'
+      && JSON.stringify(csUp.body) === JSON.stringify({ kind: 'duplicate', duplicateOf: 's2', reason: 'دو بار ثبت شده' }),
+    `${cs.status} ${JSON.stringify(cs.json)} ${JSON.stringify(csUp)}`);
+  n = seen.length;
+  const cn = await api('PUT', `${C}/market/census/s1`, { kind: 'none', duplicateOf: 's2', reason: 'برداشتنِ نشان', confirm: true }, admin);
+  check('برداشتنِ نشان (none) ⇒ duplicateOf نمی‌رود', cn.status === 200
+    && JSON.stringify(up(n, '/api/admin/shops/s1/census')[0]?.body) === JSON.stringify({ kind: 'none', reason: 'برداشتنِ نشان' }), JSON.stringify(cn.json));
+  caps = ['market-admin.v1', 'delivery-watch.v1'];
+  n = seen.length;
+  const rgNo = await api('GET', `${C}/market/regions`, undefined, viewer);
+  const csNo = await api('PUT', `${C}/market/census/s1`, cgood, admin);
+  check('بی ‎market-regions.v1‎: خواندن «در دسترس نیست» با نامِ توانایی، نوشتن ۵۰۱ — هیچ‌کدام به مقصد نرسید',
+    rgNo.json?.available === false && rgNo.json?.capability === 'market-regions.v1' && csNo.status === 501 && csNo.json?.error === 'capability_missing'
+      && up(n, '/api/admin/market/regions').length === 0 && up(n, '/api/admin/shops/s1/census').length === 0, `${JSON.stringify(rgNo.json)} ${csNo.status}`);
+  caps = [...ALL_CAPS];
+  n = seen.length;
+  const pubR = [await api('GET', `${C}/market/regions`, undefined, admin, `http://127.0.0.1:${PUBLIC}`),
+    await api('PUT', `${C}/market/census/s1`, cgood, admin, `http://127.0.0.1:${PUBLIC}`)];
+  check('⛔ شمارش و نشان روی پورتِ عمومی نیستند', pubR.every((r) => r.status === 404) && since(n).length === 0, pubR.map((r) => r.status).join(' '));
+  const log2 = await api('GET', '/api/control/audit?limit=80', undefined, admin);
+  check('دفترِ پنل: account.market.census_marked', JSON.stringify(log2.json || {}).includes('account.market.census_marked'));
 
   console.log('\n── ۶) پورتِ عمومی ──');
   n = seen.length;

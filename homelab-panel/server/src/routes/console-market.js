@@ -10,6 +10,8 @@
 //    market/trust/cases/:id/assign (POST)         ⇐ همان                                           admin      ارشد
 //    market/trust/cases/:id/decide · appeal-decision · sanctions/:id/lift (POST)
 //                                                 ⇐ همان، با دلیل + تأیید + احرازِ دوباره            admin      ارشد + دلیل
+//    market/regions                               ⇐ ‎/api/admin/market/regions‎ (`market-regions.v1`، S109)  viewer     مدیر
+//    market/census/:id (PUT)                      ⇐ ‎/api/admin/shops/:id/census‎ (همان)، دلیل + تأیید    admin      مدیر + دلیل
 //    delivery/overview|queue|events|connectivity|report|thresholds ⇐ ‎/api/admin/delivery/*‎ (`delivery-watch.v1`) viewer مدیر
 //    delivery/queue.csv                           ⇐ همان ‎queue‎ (سقفِ ۵۰۰۰)                        admin      —
 //    delivery/thresholds (PUT)                    ⇐ همان، با دلیل + تأیید + احرازِ دوباره            admin      ارشد + دلیل
@@ -38,6 +40,7 @@ const actorOf = (req) => req.user?.username || 'admin';
 export const MARKET_CAPABILITIES = Object.freeze({
   'market-admin.v1': 'GET /api/admin/market/overview|sellers|orders|commission|history (shop: claude/console-market-api)',
   'delivery-watch.v1': 'GET /api/admin/delivery/overview|queue|events|connectivity|report|thresholds · PUT …/thresholds',
+  'market-regions.v1': 'GET /api/admin/market/regions · PUT /api/admin/shops/:id/census (shop S109)',
 });
 const CAP_RE = /^[a-z][a-z0-9-]{0,40}\.v\d{1,3}$/;
 
@@ -107,6 +110,7 @@ const OUTCOMES = ['upheld', 'dismissed'];
 const APPEAL_OUTCOMES = ['upheld', 'reversed'];
 const SANCTIONS = ['warning', 'hide_listing', 'suspend_storefront'];
 const SEVERITIES = ['low', 'medium', 'high'];
+const CENSUS_KINDS = ['test', 'duplicate', 'none'];
 const THRESHOLD_KEYS = ['acceptMin', 'dispatchMin', 'courierAcceptMin', 'pickupMin', 'inDeliveryMin', 'failedMin', 'recallMin'];
 
 /* ───────────── کارِ حساس: دلیل، تأیید، احرازِ دوباره ───────────── */
@@ -184,9 +188,10 @@ const issuesText = (i) => (i ? [...(i.stuck || []), ...(i.mismatch || []), ...(i
 export function mountConsoleMarket(router) {
   const MARKET = 'market-admin.v1';
   const DELIVERY = 'delivery-watch.v1';
+  const REGIONS = 'market-regions.v1';
   //  خواندن: همان `minRole` ِ ردیفِ ماژول در ‎console/modules.js‎ (منو و سرور یکی)
   const read = (cap, localPath, remotePath, queryOf) => {
-    router.get(localPath, requireModule(cap === MARKET ? 'market' : 'courier'), guard(async (req, res) => {
+    router.get(localPath, requireModule(cap === DELIVERY ? 'courier' : 'market'), guard(async (req, res) => {
       const query = clean(queryOf(req.query || {}));
       if (!(await hasCap(cap))) return res.json(unavailable(cap));
       res.json({ available: true, ...stamped(await cloudRaw('GET', remotePath, { query })) });
@@ -206,6 +211,24 @@ export function mountConsoleMarket(router) {
   read(MARKET, '/console/market/commission', '/api/admin/market/commission', (q) => windowQuery(q));
   read(MARKET, '/console/market/history', '/api/admin/market/history', (q) => ({
     limit: intOf(q.limit, 1, 200, 'تعداد'), before: intOf(q.before, 0, Number.MAX_SAFE_INTEGER, 'پیش از'), shopId: optId(q.shopId),
+  }));
+
+  /*  S109 — شمارشِ منطقه‌ای (۳۴ ولایت و ولسوالی، سه وضعیتِ جدا، `onlineNow: null`) همان‌طور که سرورِ حساب می‌شمارد؛
+   *  نشانِ «آزمایشی/تکراری» ِ دکان (بیرون از شمارش) فقط admin، با دلیل و تأیید — سابقه‌اش در سرورِ حساب (مهاجرتِ ۲۰۶).
+   *  ⛔ کم‌خطر است (نه پول، نه دسترسی، فقط شمردن) ⇒ احرازِ دوباره نمی‌خواهد؛ همان مرزِ «حالت‌های دکان». */
+  read(REGIONS, '/console/market/regions', '/api/admin/market/regions', () => ({}));
+  router.put('/console/market/census/:id', requireModule('market'), requireRole('admin'), guard(async (req, res) => {
+    const id = idOf(req.params.id, 'شناسهٔ دکان');
+    const kind = oneOf(req.body?.kind, CENSUS_KINDS, 'نوعِ نشان');
+    if (!kind) throw fail('bad_kind', 400, 'نوعِ نشان: آزمایشی، تکراری یا برداشتن');
+    const duplicateOf = kind === 'duplicate' ? idOf(req.body?.duplicateOf, 'دکانِ اصل') : '';
+    if (duplicateOf === id) throw fail('bad_duplicate_of', 400, 'دکانِ اصل نمی‌تواند همین دکان باشد');
+    const reason = reasonOf(req);
+    requireConfirm(req);
+    if (!(await hasCap(REGIONS))) throw fail('capability_missing', 501, `این کار روی نسخهٔ فعلیِ سرورِ حساب نیست (${REGIONS})`);
+    const out = await cloudRaw('PUT', `/api/admin/shops/${id}/census`, { body: { kind, ...(duplicateOf ? { duplicateOf } : {}), reason } });
+    audit({ actor: actorOf(req), action: 'account.market.census_marked', entity: 'shop', entityId: id, detail: { kind, duplicateOf: duplicateOf || null, reason } });
+    res.json({ ...stamped(out), confirmedByServer: true });
   }));
 
   router.get('/console/market/orders.csv', requireRole('admin'), guard(async (req, res) => {

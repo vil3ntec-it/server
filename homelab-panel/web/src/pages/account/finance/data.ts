@@ -85,6 +85,15 @@ export type OnlineRecon = {
   local?: { fromDate: string; toDate: string; timezone: string };
   totals?: { salesMinor?: number; refundsMinor?: number; netMinor?: number; issues?: number; courierHeldMinor?: number; cancellations?: number };
   shops?: { shopId: string; shopName: string; netMinor: number; issues: unknown[]; courier?: { heldMinor?: number } }[];
+  /** S124: فقط با ‎?money=1‎ و فقط روی سرورِ حسابِ تازه (‎shop/server/src/lib/admin-money.js‎) — نبود ⇒ «روی این نسخه نیست» */
+  money?: MoneyReport;
+};
+export type MoneyReport = {
+  currency?: string; testShopsExcluded?: number;
+  gmvMinor?: number; posSalesMinor?: number; onlineSalesMinor?: number; refundsMinor?: number; netMinor?: number;
+  collectedMinor?: number; handedOverMinor?: number; unsettledMinor?: number;
+  pos?: { partial?: boolean; truncated?: boolean };
+  platformRevenue?: { app?: string; currencies?: string[]; totals?: Record<string, { net?: number }> };
 };
 export type History = { available: true; entries: AuditEntry[]; actions: string[]; nextCursor: string | null; checkedAt?: number };
 export type AdjustResult = { adjustment?: Adjustment; payment?: { id: string; net: number }; replayed?: boolean; checkedAt?: number };

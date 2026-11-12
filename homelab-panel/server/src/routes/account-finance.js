@@ -142,6 +142,9 @@ router.get('/payments/:id', requireModule('finance'), guard(async (req, res) => 
  */
 router.get('/online-reconciliation', requireRole('admin'), guard(async (req, res) => {
   const query = pick(req.query, ['from', 'to', 'fromDate', 'toDate']);
+  //  S124 (shop `claude/e-rows-2`): «گزارشِ پولِ مدیر» = بلوکِ ‎money‎ ِ همان پاسخ؛ فقط «1» می‌رود. سرورِ حسابِ کهنه آن را
+  //  نادیده می‌گیرد ⇒ پاسخ بی ‎money‎ و رابط «روی این نسخه نیست» می‌گوید، نه صفر.
+  if (req.query?.money === '1') query.money = '1';
   try {
     res.json(stamped(await cloudRaw('GET', '/api/admin/system/reconciliation', { query })));
   } catch (err) {
