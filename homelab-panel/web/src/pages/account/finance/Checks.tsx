@@ -16,7 +16,7 @@ import { fa, money, useLoad } from '../shared';
 import { useFinT, type FinKey } from './strings';
 import {
   actorText, dateOf, finUrl, isUnavail, minorText, timeOf,
-  type Discrepancies, type Gateway, type History, type OnlineRecon, type Pending, type Receivables, type Unavail,
+  type Discrepancies, type Gateway, type History, type MoneyReport, type OnlineRecon, type Pending, type Receivables, type Unavail,
 } from './data';
 import { AppSelect, FinCard, Pager, SourceLine, appLabel } from './parts';
 import { actionLabel } from './Ledger';
@@ -150,7 +150,8 @@ export function PendingView() {
 function OnlineReconCard() {
   const ft = useFinT();
   const { can } = useApp();
-  const load = useLoad<OnlineRecon>(can('admin') ? finUrl('/online-reconciliation') : null);
+  //  S124: همان پاسخ + بلوکِ ‎money‎ (سرورِ حسابِ کهنه ‎money‎ را نادیده می‌گیرد ⇒ پاسخ همان پیشین)
+  const load = useLoad<OnlineRecon>(can('admin') ? finUrl('/online-reconciliation?money=1') : null);
   return (
     <Card title={ft('onlineRecon')} icon={<Store size={16} />}>
       <p className="mb-2 text-[11px] text-ink-muted">{ft('onlineReconWhy')}</p>
@@ -184,7 +185,41 @@ function OnlineReconCard() {
             <SourceLine source="/api/admin/system/reconciliation" data={load.data} at={load.at} />
           </>
         )}
+      {can('admin') && load.data && load.data.available !== false && <MoneyBlock m={load.data.money} />}
     </Card>
+  );
+}
+
+/** S124 — هفت عددِ جدا کنارِ هم، هیچ‌کدام ساختهٔ پنل نیست؛ نیامده «—» (‎minorText‎). درآمدِ پلتفرم هر ارز جدا. */
+function MoneyBlock({ m }: { m: MoneyReport | undefined }) {
+  const ft = useFinT();
+  return (
+    <div className="mt-4 border-t pt-3" data-block="money">
+      <div className="mb-1 text-sm font-semibold">{ft('moneyTitle')}</div>
+      {!m ? <Notice tone="warn">{ft('moneyMissing')}</Notice> : (
+        <>
+          <p className="mb-2 text-[11px] text-ink-muted">{ft('moneyWhy')}</p>
+          <div className="grid gap-3 sm:grid-cols-4">
+            <Stat label={ft('gmv')} value={minorText(m.gmvMinor)} tone="info" />
+            <Stat label={ft('posSales')} value={minorText(m.posSalesMinor)} />
+            <Stat label={ft('onlineSales')} value={minorText(m.onlineSalesMinor)} />
+            <Stat label={ft('moneyRefunds')} value={minorText(m.refundsMinor)} />
+            <Stat label={ft('net')} value={minorText(m.netMinor)} />
+            <Stat label={ft('collected')} value={minorText(m.collectedMinor)} />
+            <Stat label={ft('handedOver')} value={minorText(m.handedOverMinor)} />
+            <Stat label={ft('unsettled')} value={minorText(m.unsettledMinor)} tone={Number(m.unsettledMinor) ? 'warn' : undefined} />
+          </div>
+          <div className="mt-2 text-xs">
+            <b>{ft('platformRevenue')}:</b>{' '}
+            {(m.platformRevenue?.currencies || []).length
+              ? (m.platformRevenue?.currencies || []).map((c) => `${money(m.platformRevenue?.totals?.[c]?.net, c)}`).join(' · ')
+              : '—'}
+          </div>
+          <p className="mt-1 text-[11px] text-ink-muted">{ft('testExcluded', { n: fa(m.testShopsExcluded ?? null) })}</p>
+          {(m.pos?.partial || m.pos?.truncated) && <Notice tone="warn">{ft('posPartial')}</Notice>}
+        </>
+      )}
+    </div>
   );
 }
 
