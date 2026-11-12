@@ -1510,6 +1510,32 @@ node test/console-support-access.mjs  تازه: بی توانایی ⇒ در د�
 node test/bridge-roles.mjs     + ‎support-access.v1‎ در «فاز ۳» و بدنهٔ نمونهٔ سه درِ نوشتن                                     ۳۰
 ```
 
+### ⛔ ۱.۵۰.۹۶ — تغییرهای دسته‌ایِ عکسِ یک دکان و برگرداندن (IMG-PRO-17)
+
+دسته را خودِ دکان در برنامه‌اش می‌سازد (`/api/shop/images/changes` ِ shop)؛ پنل فقط می‌بیند و برمی‌گرداند. سمتِ پنل:
+`routes/console-image-changes.js` و `ImageChangesCard.tsx` در ماژولِ «بانکِ عکس» (`/shop?tab=imagebank`، جدا از پرچمِ بانکِ مرکزی).
+
+- ⛔ **قرارداد پشتِ ‎image-changes.v1‎** (shop ‎claude/e-rows-13x‎، `routes/admin-image-changes.js`): ‎GET /api/admin/shops/:id/images/changes
+  [?limit=1..50]‎ ⇒ ‎{shopId, enabled, changes}‎ (بانکِ خاموشِ دکان ⇒ ‎enabled:false‎)؛ ‎GET …/:cid‎ ⇒ ‎{change + items: پیش و پس}‎ — با پرچمِ
+  ‎security / admin.support_grant‎ اجازهٔ `read_private` (پیش‌فرض؛ صاحب‌کار می‌تواند عوض کند)؛ ‎POST …/:cid/rollback {reason}‎ ⇒ ‎{change,
+  already}‎: ارشد + **همیشه** اجازهٔ زندهٔ `restore` ِ همین آدم (کارتِ «دسترسیِ پشتیبانی» ِ ۱.۵۰.۹۰) + ‎Idempotency-Key‎. بی توانایی ⇒
+  «در دسترس نیست» و نوشتن ‎501‎. اعمالِ دسته از پنل **نیست**.
+- ⛔ پنل پیش از پل: limit ِ بد ‎400 bad_limit‎ (نه بریدن)، شناسهٔ دکان/دسته، admin + دلیلِ ۳ تا ۲۰۰ + تأیید + کلید؛ کلید با `makeUpstreamOnce`
+  به خودِ سرورِ حساب (بسته به کاربرِ پنل؛ این توانایی همیشه کلید را می‌شناسد، پس راهِ دومی نیست). ‎409 changed_since‎ ⇒ پاسخ و پیام با
+  شناسهٔ کالاهای عوض‌شده (فقط متن) و هیچ ردیفی؛ ‎403 grant_required‎ همان‌طور. ردیفِ `account.image_changes.rolled_back` (و ‎resolved‎ برای
+  «نامعلومی» که همان کلید روشن کرد)، بی کلید.
+- ⛔ `cloudRaw`: بدنهٔ خطای بالادست در `err.upstream` می‌ماند (‎bridgeFail‎ آن را به مرورگر نمی‌فرستد) — هر در فقط فیلدِ سنجیدهٔ خودش را برمی‌دارد.
+- ⛔ `bridge-roles.mjs` حالا **همهٔ** `require` های یک ‎router.use‎ ِ shop را می‌خواند (پیش‌تر فقط نخستین ⇒ درهای ‎access-grants‎ و این‌ها بی‌صدا
+  بیرون از جدولِ نقش بودند؛ با کدِ ‎claude/e-rows-13x‎ ۲۸۵ مسیر، ۸۳ ارشد).
+
+```
+node test/console-image-changes.mjs  تازه: بی توانایی؛ شکلِ پاسخ؛ limit/شناسهٔ بد؛ بانکِ خاموش؛ ۴۰۴؛ grant_required؛ نقش؛ ۵ ردِ پیش از پل؛
+                               ۴۰۹ changed_since؛ کلید (همان/کاربرِ دیگر/دستهٔ دیگر)؛ نامعلوم ⇒ resolved؛ دفتر؛ سقفِ نرخ (سرخ روی پایه)  ۲۱
+node test/image-changes-ui.mjs       تازه، کرومیوم: کهنه، شناسهٔ بد، بانکِ خاموش، خالی، جزئیات، HTML ِ متن، ۴۰۹ با نامِ کالا، دوکلیک، viewer، ۳۹۰px ۱۳
+node test/bridge-roles.mjs           + سه درِ ‎image-changes.v1‎ و خواندنِ همهٔ require ها                                      ۳۰
+node test/bridge-contract.mjs        + سه درِ تازه در «نیست» ِ سرورِ کهنه و نه در قراردادِ ‎e-rows-13x‎                                ۲۴
+```
+
 ## 🧾 مشتری، پول و پیام در خودِ پنل — قاعده‌هایی که نباید برگردند (از ۱۴۰۵/۰۷/۰۳)
 
 تا ۱.۴۴.۰ همهٔ منطقِ اشتراک، قیمت، تخفیف، اعلان، فروش، رسید و Sync روی

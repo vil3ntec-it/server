@@ -918,6 +918,9 @@ async function authedSend(method, path, { query = {}, body = null, headers = {},
     const err = new Error(out?.error?.message || 'سرورِ حساب جواب نداد');
     err.code = out?.error?.code || 'cloud_error';
     err.status = res.status;
+    //  بدنهٔ خطای بالادست برای درهایی که فیلدِ شناخته‌ای از آن می‌خواهند (مثلاً ‎products‎ ِ ‎409 changed_since‎) —
+    //  ‎bridgeFail‎ آن را به مرورگر نمی‌فرستد؛ هر در خودش فقط همان فیلدِ سنجیده را برمی‌دارد
+    if (out?.error && typeof out.error === 'object' && !Array.isArray(out.error)) err.upstream = out.error;
     throw err;
   }
   return out;

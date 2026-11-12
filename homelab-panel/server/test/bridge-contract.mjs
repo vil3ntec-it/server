@@ -221,6 +221,16 @@ try {
   const k2 = c2.json?.contract;
   check('⛔ نسخهٔ ۲ ⇒ «ناسازگار»؛ اثرِ انگشتِ تازه ⇒ سنجشِ تازه (پشتیبان دیگر «نیست» نیست)',
     k2?.compatible === false && k2?.apiVersion === 2 && k2?.routesHash === 'h-bbbb' && !k2?.missing?.includes('POST /api/admin/backups') && contractCalls === 2, String(JSON.stringify(k2)).slice(0, 300));
+  //  ۱.۵۰.۹۶ (IMG-PRO-17، `image-changes.v1`): سه درِ تازهٔ پل از سورس دیده می‌شوند — سرورِ حسابی که ندارد ⇒ «نیست»، که دارد ⇒ نه
+  const IMGCHG = ['GET /api/admin/shops/:p/images/changes', 'GET /api/admin/shops/:p/images/changes/:p', 'POST /api/admin/shops/:p/images/changes/:p/rollback'];
+  check('درهای «تغییرِ دسته‌ایِ عکس» ِ پل در «نیست» ِ سرورِ حسابی که ندارد', IMGCHG.every((x) => k2?.missing?.includes(x)), JSON.stringify(k2?.missing?.filter((x) => x.includes('images'))));
+  contract = { ...contract, version: 1, routesHash: 'h-cccc', routes: [...contract.routes,
+    { method: 'GET', path: '/api/admin/shops/:id/images/changes', superadmin: false }, { method: 'GET', path: '/api/admin/shops/:id/images/changes/:cid', superadmin: false },
+    { method: 'POST', path: '/api/admin/shops/:id/images/changes/:cid/rollback', superadmin: true }] };
+  const c3 = await api('GET', '/api/account-admin/console/capabilities?refresh=1', undefined, H(owner));
+  const k3 = c3.json?.contract;
+  check('قراردادِ shop ‎claude/e-rows-13x‎ (سه درِ ‎image-changes.v1‎) ⇒ سازگار و هیچ‌کدام «نیست» نیست',
+    k3?.compatible === true && k3?.routesHash === 'h-cccc' && IMGCHG.every((x) => !k3?.missing?.includes(x)), String(JSON.stringify(k3)).slice(0, 300));
 } catch (e) {
   check('خطای غیرمنتظره', false, e.stack || e.message);
 } finally {
