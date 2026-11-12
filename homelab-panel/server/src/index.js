@@ -60,6 +60,7 @@ import notifyRoutes, { adminRouter as notifyAdminRoutes } from './routes/notify.
 import appRoutes, { adminRouter as appAdminRoutes } from './routes/app.js';
 import codeRoutes, { adminRouter as codeAdminRoutes } from './routes/codes.js';
 import storageRoutes from './routes/storage.js';
+import moveRoutes from './routes/move.js';
 import platformRoutes from './routes/platform.js';
 import agentRoutes from './routes/agent.js';
 import databaseRoutes from './routes/databases.js';
@@ -472,6 +473,8 @@ app.use('/api/codes', codeRoutes);
 app.use('/api/codes-admin', codeAdminRoutes);
 // کتابخانه: یک جای مرتب برای سایت‌ها، برنامه‌ها، پشتیبان‌ها و فایل‌های موقت
 app.use('/api/storage', storageRoutes);
+//  جابه‌جایی به کامپیوترِ دیگر (۱.۵۰.۹۳) — نگهبان داخلِ خودِ روتر (مالک + احرازِ دوباره؛ نصبِ تازه: مرزِ ‎/setup‎)
+app.use('/api/move', moveRoutes);
 // زیرساخت: خودترمیمی، وضعیت، پشتیبان و دستیار — همان چیزی که «vill3n» صدا می‌زند
 app.use('/api/platform', platformRoutes);
 // دستیارِ هوشمند — فقط پورتِ پنل؛ خواندن برای همه، گفت‌وگو و تأیید دستِ‌کم operator

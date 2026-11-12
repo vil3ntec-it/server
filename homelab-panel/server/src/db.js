@@ -11,6 +11,16 @@ import { paths } from './config.js';
 import { runMigrations } from './db/migrate.js';
 import { vacuumInto, backupFileName, applyPendingRestore } from './backup/sqlite.js';
 import { tightenDataPerms } from './lib/data-perms.js';
+import { applyPendingMove } from '../scripts/move-server.mjs';
+
+//  ⛔ (۱.۵۰.۹۳) «بازگرداندن از فایلِ جابه‌جایی»: بسته‌ای که پنل پیشتر **کامل سنجیده** (sha256، شمارِ ردیف، سرورِ
+//  حساب) و در ‎.vmove-ready-‎ گذاشته، همین‌جا — پیش از ساختنِ هر پوشه و باز شدنِ دیتابیس — جای داده می‌نشیند؛
+//  دادهٔ قبلی ‎.vmove-before-‎ می‌شود (پاک نه) و نتیجهٔ مقایسه در ‎.vmove-last-import.json‎ (`backup/move.js`).
+{
+  const moved = applyPendingMove(path.dirname(paths.db));
+  if (moved?.ok) console.log(`[جابه‌جایی] دادهٔ کامپیوترِ قبلی جای داده نشست — ${moved.compare?.same ? 'همان بسته است ✅' : `${moved.compare?.diffs?.length || 0} اختلاف ⚠️`}`);
+  else if (moved) console.error(`[جابه‌جایی] انجام نشد؛ دادهٔ قبلی سرِ جایش ماند: ${moved.error || ''}`);
+}
 
 // ماژول‌های ESM قبل از کد index اجرا می‌شوند، پس پوشه‌ها را همین‌جا می‌سازیم
 fs.mkdirSync(path.dirname(paths.db), { recursive: true });
