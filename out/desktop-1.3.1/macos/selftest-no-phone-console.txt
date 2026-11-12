@@ -4,13 +4,13 @@ WARNING: GL pipe is running in software mode (Renderer ID=0x1020400)
 screen capture: standard; monitors: مانیتورِ 1 — 1024×768 (اصلی)
 capture: avfoundation
 noise model: 297646 bytes
-Nov 12, 2026 12:38:28 PM com.sun.javafx.application.PlatformImpl startup
+Nov 12, 2026 1:50:06 PM com.sun.javafx.application.PlatformImpl startup
 WARNING: Unsupported JavaFX configuration: classes were loaded from 'unnamed module @13805618'
-2026-11-12 12:38:29.624 RawRec Desktop[10730:35956] CGLChoosePixelFormat: No matching pixel format exists for the requested attributes, trying again with limited capabilities
+2026-11-12 13:50:07.497 RawRec Desktop[13695:42351] CGLChoosePixelFormat: No matching pixel format exists for the requested attributes, trying again with limited capabilities
 browser: ok
 app nap: off while the app runs
-[libopenh264 @ 0xbce548000] [OpenH264] this = 0x0xbcea5cb10, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
-[libopenh264 @ 0xbce548000] [OpenH264] this = 0x0xbcea5cb10, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+[libopenh264 @ 0xab3acc380] [OpenH264] this = 0x0xab68e6c10, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0xab3acc380] [OpenH264] this = 0x0xab68e6c10, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
 Svt[info]: -------------------------------------------
 Svt[info]: SVT [version]:	SVT-AV1 Encoder Lib v2.2.0
 Svt[info]: SVT [build]  :	Apple LLVM 14.0.0 (clang-1400.0.29.202)	 64 bit
