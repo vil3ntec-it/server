@@ -5,6 +5,7 @@ import { api, ApiError, getToken, logoUrl } from '../api';
 import { LANGUAGES, type Lang } from '../i18n';
 import { Card, Field, Loading, toast } from '../components/ui';
 import AccountSecurity from '../components/AccountSecurity';
+import { MoveServerCard } from '../components/MoveServer';
 
 type SettingsPayload = {
   settings: {
@@ -36,7 +37,7 @@ type SettingsPayload = {
 };
 
 export default function Settings() {
-  const { t, lang, setLang, theme, setTheme, refreshPublic, logout } = useApp();
+  const { t, lang, setLang, theme, setTheme, refreshPublic, logout, owner } = useApp();
   const [data, setData] = useState<SettingsPayload | null>(null);
   const [serverName, setServerName] = useState('');
   const [scanRoots, setScanRoots] = useState('');
@@ -283,6 +284,9 @@ export default function Settings() {
           <Row label="platform" value={data.system.platform} />
         </dl>
       </Card>
+
+      {/* جابه‌جایی به کامپیوترِ دیگر (۱.۵۰.۹۳) — کنارِ پوشهٔ داده، فقط مالک (سرور هم فقط مالک را راه می‌دهد) */}
+      {owner && <MoveServerCard />}
     </div>
   );
 }

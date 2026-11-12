@@ -44,6 +44,8 @@ import { Writable } from 'node:stream';
 import { DatabaseSync } from 'node:sqlite';
 
 const MAGIC = Buffer.from('VILL3NMV1\0');          // ۱۰ بایت
+/** نخستین بایت‌های هر بسته — پنل پیش از نوشتنِ بارگذاری روی دیسک همین را می‌سنجد */
+export const BUNDLE_MAGIC = Buffer.from(MAGIC);
 const PLAIN_HEAD = 'vill3n-move-plain/1\n';
 const SALT_LEN = 16;
 const IV_LEN = 12;
@@ -54,27 +56,21 @@ export const FORMAT_VERSION = 1;
 
 /** آن‌چه با پوشهٔ داده نمی‌رود — هر کدام دلیلی دارد (و گزینه‌ای برای آوردنش) */
 export const EXCLUDES = Object.freeze([
-  { match: (r) => ['panel.pid', 'restart.flag', '.ready-probe'].includes(r), why: 'نشانهٔ پروسهٔ همین کامپیوتر' },
-  { match: (r) => /^panel\.db(-wal|-shm|-journal)?$/.test(r), why: 'جایش عکسِ سالمِ VACUUM INTO می‌رود' },
-  { match: (r) => r.endsWith('.part'), why: 'نوشتنِ نیمه‌کاره' },
-  { match: (r) => /^\.vmove-/.test(r), why: 'پوشهٔ کنارگذاشتهٔ import پیشین (راهِ برگشت، نه داده)' },
-  { match: (r) => /^(tmp|logs)\//.test(r), opt: 'logs', why: 'موقت و لاگ' },
-  { match: (r) => /^cloudflared\//.test(r), opt: 'tunnel', why: 'کلیدِ تونلِ خانه — دو سرور با یک تونل ترافیک را نصف می‌کنند' },
-  { match: (r) => /^bin\//.test(r), why: 'ابزارِ مخصوصِ سیستم‌عاملِ همین کامپیوتر' },
-  { match: (r) => /^(updates|offsite-queue)\//.test(r), why: 'بستهٔ به‌روزرسانی و صفِ پشتیبانِ بیرونی' },
-  { match: (r) => /^(pump-updates|site-updates)\//.test(r), opt: 'mirrors', why: 'آینهٔ دانلود — سرورِ تازه خودش می‌گیرد' },
-  { match: (r) => /^backups\//.test(r), opt: 'backups', why: 'نسخه‌های قدیمیِ دیتابیسِ پنل (روی خانه می‌مانند)' },
+  { what: 'panel.pid · restart.flag', match: (r) => ['panel.pid', 'restart.flag', '.ready-probe'].includes(r), why: 'نشانهٔ پروسهٔ همین کامپیوتر' },
+  { what: 'panel.db-wal', match: (r) => /^panel\.db(-wal|-shm|-journal)?$/.test(r), why: 'جایش عکسِ سالمِ VACUUM INTO می‌رود' },
+  { what: '*.part', match: (r) => r.endsWith('.part'), why: 'نوشتنِ نیمه‌کاره' },
+  { what: '.vmove-*', match: (r) => /^\.vmove-/.test(r), why: 'پوشهٔ کنارگذاشتهٔ import پیشین (راهِ برگشت، نه داده)' },
+  { what: 'tmp/ · logs/', match: (r) => /^(tmp|logs)\//.test(r), opt: 'logs', why: 'موقت و لاگ' },
+  { what: 'cloudflared/', match: (r) => /^cloudflared\//.test(r), opt: 'tunnel', why: 'کلیدِ تونلِ خانه — دو سرور با یک تونل ترافیک را نصف می‌کنند' },
+  { what: 'bin/', match: (r) => /^bin\//.test(r), why: 'ابزارِ مخصوصِ سیستم‌عاملِ همین کامپیوتر' },
+  { what: 'updates/ · offsite-queue/', match: (r) => /^(updates|offsite-queue)\//.test(r), why: 'بستهٔ به‌روزرسانی و صفِ پشتیبانِ بیرونی' },
+  { what: 'pump-updates/ · site-updates/', match: (r) => /^(pump-updates|site-updates)\//.test(r), opt: 'mirrors', why: 'آینهٔ دانلود — سرورِ تازه خودش می‌گیرد' },
+  { what: 'backups/', match: (r) => /^backups\//.test(r), opt: 'backups', why: 'نسخه‌های قدیمیِ دیتابیسِ پنل (روی خانه می‌مانند)' },
 ]);
 
 /* ─────────────────────────────── کمکی‌ها ─────────────────────────────── */
 
 const toPosix = (p) => p.split(path.sep).join('/');
-
-async function sha256File(file) {
-  const h = crypto.createHash('sha256');
-  await pipeline(fs.createReadStream(file), new Writable({ write(c, _e, cb) { h.update(c); cb(); } }));
-  return h.digest('hex');
-}
 
 async function walkFiles(root) {
   const out = [];
@@ -128,8 +124,9 @@ async function askPassphrase(label) {
   try { return await ask(label); } finally { rl.close(); process.stdout.write('\n'); }
 }
 
-function checkPassphrase(p) {
-  if (String(p || '').length < 12) throw new Error('رمزِ بسته دستِ‌کم ۱۲ نویسه باشد — این بسته رازهای سرور را دارد.');
+export const MIN_PASSPHRASE = 12;
+export function checkPassphrase(p) {
+  if (String(p || '').length < MIN_PASSPHRASE) throw new Error('رمزِ بسته دستِ‌کم ۱۲ نویسه باشد — این بسته رازهای سرور را دارد.');
 }
 
 const kdf = (pass, salt) => crypto.scryptSync(String(pass), salt, 32, SCRYPT);
@@ -139,6 +136,10 @@ const kdf = (pass, salt) => crypto.scryptSync(String(pass), salt, 32, SCRYPT);
 /**
  * بسته را می‌نویسد. `items`: [{ name, file }] — هر فایل همان‌طور که هست.
  * ⚠️ متنِ ساده هرگز روی دیسک نمی‌نشیند: رکورد ⇒ gzip ⇒ رمز ⇒ فایل، جریانی.
+ * ⛔ (۱.۵۰.۹۳) sha256 ِ هر فایل **همان بایت‌هایی است که در بسته رفت** (هنگامِ نوشتن، نه یک دورِ جدا پیش از آن):
+ *    از پنلِ روشن فایلی که میانِ «هش» و «نوشتن» عوض می‌شد بسته‌ای می‌ساخت که مقصد حتماً ردش می‌کرد.
+ *    هر فایل دقیقاً به اندازهٔ سرآیندش خوانده می‌شود؛ کوتاه‌تر شده ⇒ شکست (فایلِ نیمه‌نوشته پاک می‌شود).
+ *    مانیفست (`files`، `bytes`) در پایانِ بسته است، پس همین‌جا پر می‌شود.
  */
 async function writeBundle(out, items, manifest, pass) {
   const salt = crypto.randomBytes(SALT_LEN);
@@ -147,30 +148,46 @@ async function writeBundle(out, items, manifest, pass) {
   cipher.setAAD(MAGIC);
   const tmp = `${out}.part`;
   const sink = fs.createWriteStream(tmp, { mode: 0o600 });
-  await new Promise((r, j) => sink.write(Buffer.concat([MAGIC, salt, iv]), (e) => (e ? j(e) : r())));
-
   const gz = zlib.createGzip({ level: 6 });
-  const done = pipeline(gz, cipher, sink, { end: false });
-  const put = (buf) => new Promise((r) => (gz.write(buf) ? r() : gz.once('drain', r)));
+  let done = null;
+  try {
+    await new Promise((r, j) => sink.write(Buffer.concat([MAGIC, salt, iv]), (e) => (e ? j(e) : r())));
+    done = pipeline(gz, cipher, sink, { end: false });
+    done.catch(() => {});
+    const put = (buf) => new Promise((r) => (gz.write(buf) ? r() : gz.once('drain', r)));
 
-  await put(Buffer.from(PLAIN_HEAD));
-  for (const item of items) {
-    const st = await fsp.stat(item.file);
-    await put(Buffer.from(`${JSON.stringify({ t: 'f', name: item.name, size: st.size })}\n`));
-    let sent = 0;
-    for await (const chunk of fs.createReadStream(item.file)) {
-      sent += chunk.length;
-      await put(chunk);
+    await put(Buffer.from(PLAIN_HEAD));
+    const files = [];
+    for (const item of items) {
+      const st = await fsp.stat(item.file);
+      await put(Buffer.from(`${JSON.stringify({ t: 'f', name: item.name, size: st.size })}\n`));
+      const h = crypto.createHash('sha256');
+      let sent = 0;
+      if (st.size > 0) {
+        for await (const chunk of fs.createReadStream(item.file, { start: 0, end: st.size - 1 })) {
+          sent += chunk.length;
+          h.update(chunk);
+          await put(chunk);
+        }
+      }
+      if (sent !== st.size) throw new Error(`فایل وسطِ کار عوض شد: ${item.name} — دوباره بزنید.`);
+      files.push({ name: item.name, size: st.size, sha256: h.digest('hex') });
     }
-    if (sent !== st.size) throw new Error(`فایل وسطِ کار عوض شد: ${item.name}`);
+    manifest.files = files;
+    manifest.bytes = files.reduce((a, f) => a + f.size, 0);
+    const m = Buffer.from(JSON.stringify(manifest, null, 2));
+    await put(Buffer.from(`${JSON.stringify({ t: 'manifest', size: m.length })}\n`));
+    await put(m);
+    gz.end();
+    await done;
+    await new Promise((r, j) => sink.end(cipher.getAuthTag(), (e) => (e ? j(e) : r())));
+    await fsp.rename(tmp, out);
+  } catch (e) {
+    gz.destroy();
+    await new Promise((r) => { if (sink.closed) r(); else { sink.once('close', r); sink.destroy(); } });
+    await fsp.rm(tmp, { force: true }).catch(() => {});
+    throw e;
   }
-  const m = Buffer.from(JSON.stringify(manifest, null, 2));
-  await put(Buffer.from(`${JSON.stringify({ t: 'manifest', size: m.length })}\n`));
-  await put(m);
-  gz.end();
-  await done;
-  await new Promise((r, j) => sink.end(cipher.getAuthTag(), (e) => (e ? j(e) : r())));
-  await fsp.rename(tmp, out);
 }
 
 /* ────────────── خواندن: AES-GCM ⇒ gunzip ⇒ رکوردها (جریانی) ────────────── */
@@ -407,7 +424,7 @@ export function remapPanelDb(dbFile, oldRoot, newRoot) {
 }
 
 /** تنظیم‌هایی که به بیرونِ پوشهٔ داده اشاره می‌کنند — با پوشه نمی‌روند و باید گفت */
-function outsidePaths(dbFile, dataDir) {
+export function outsidePaths(dbFile, dataDir) {
   const keys = ['cc_storage_root', 'sites_root', 'extra_file_roots', 'scan_roots'];
   const out = [];
   const db = new DatabaseSync(dbFile, { readOnly: true });
@@ -427,7 +444,13 @@ function outsidePaths(dbFile, dataDir) {
 
 /* ─────────────────────────────── فرمان‌ها ─────────────────────────────── */
 
-export async function exportData({ dataDir, out, pass, include = {}, force = false, accountTool = '' }) {
+/**
+ * @param {string} [panelDbSnapshot] عکسِ سالمِ آماده (پنلِ روشن: ‎VACUUM INTO‎ از همان اتصالِ خودش) ⇒ جای رونوشت+VACUUM
+ * @param {string} [accountSnapshot] رونوشتِ ‎<داده>/account-server‎ (بی ‎app/‎) که وقتی سرورِ حساب مکث کرده بود گرفته شد ⇒
+ *        فایل‌های سرورِ حساب و تطبیقِ دیتابیسش از همین، نه از پوشهٔ زنده
+ * @param {object} [live] برای مانیفست: از کجا و چطور گرفته شد (پنلِ روشن، مکثِ سرورِ حساب)
+ */
+export async function exportData({ dataDir, out, pass, include = {}, force = false, accountTool = '', panelDbSnapshot = '', accountSnapshot = '', live = null }) {
   const src = path.resolve(dataDir);
   if (!fs.existsSync(path.join(src, 'panel.db'))) throw new Error(`این پوشهٔ دادهٔ پنل نیست (panel.db نیست): ${src}`);
   checkPassphrase(pass);
@@ -442,34 +465,40 @@ export async function exportData({ dataDir, out, pass, include = {}, force = fal
     //  ۱) عکسِ سالمِ دیتابیسِ پنل — از **رونوشت** (با WALش)، نه خودِ فایل: باز کردنِ
     //  خودِ دیتابیس، حتی فقط‌خواندنی، کنارش ‎-wal/-shm‎ می‌سازد یا WAL را در آن
     //  می‌ریزد؛ پوشهٔ مبدأ باید بایت‌به‌بایت همان بماند.
-    const copy = path.join(work, 'source.db');
-    await fsp.copyFile(path.join(src, 'panel.db'), copy);
-    if (fs.existsSync(path.join(src, 'panel.db-wal'))) await fsp.copyFile(path.join(src, 'panel.db-wal'), `${copy}-wal`);
-    const snap = path.join(work, 'panel.db');
-    const live = new DatabaseSync(copy);
-    try { live.exec(`VACUUM INTO '${snap.replace(/'/g, "''")}'`); } finally { live.close(); }
+    let snap = panelDbSnapshot ? path.resolve(panelDbSnapshot) : path.join(work, 'panel.db');
+    if (!panelDbSnapshot) {
+      const copy = path.join(work, 'source.db');
+      await fsp.copyFile(path.join(src, 'panel.db'), copy);
+      if (fs.existsSync(path.join(src, 'panel.db-wal'))) await fsp.copyFile(path.join(src, 'panel.db-wal'), `${copy}-wal`);
+      const conn = new DatabaseSync(copy);
+      try { conn.exec(`VACUUM INTO '${snap.replace(/'/g, "''")}'`); } finally { conn.close(); }
+    }
     const panelTables = sqliteCounts(snap);
 
     //  ۲) فهرستِ فایل‌ها
     const items = [{ name: 'data/panel.db', file: snap }];
     const excluded = [];
+    //  فایل‌های زندهٔ سرورِ حساب (جز کدِ ‎app/‎) وقتی رونوشتِ لحظهٔ مکث هست از همان رونوشت می‌آیند
+    const fromSnapshot = (rel) => Boolean(accountSnapshot) && rel.startsWith('account-server/') && !rel.startsWith('account-server/app/');
+    const take = (rel, file) => {
+      const rule = EXCLUDES.find((x) => x.match(rel));
+      if (rule && !(rule.opt && include[rule.opt])) { excluded.push(rel); return; }
+      items.push({ name: `data/${rel}`, file });
+    };
     for (const file of await walkFiles(src)) {
       const rel = toPosix(path.relative(src, file));
-      const rule = EXCLUDES.find((x) => x.match(rel));
-      if (rule && !(rule.opt && include[rule.opt])) { excluded.push(rel); continue; }
-      items.push({ name: `data/${rel}`, file });
+      if (!fromSnapshot(rel)) take(rel, file);
+    }
+    if (accountSnapshot) {
+      for (const file of await walkFiles(path.resolve(accountSnapshot))) {
+        const rel = `account-server/${toPosix(path.relative(path.resolve(accountSnapshot), file))}`;
+        if (fromSnapshot(rel)) take(rel, file);
+      }
     }
 
-    //  ۳) sha256 ِ هر فایل
-    const files = [];
-    for (const it of items) {
-      const st = await fsp.stat(it.file);
-      files.push({ name: it.name, size: st.size, sha256: await sha256File(it.file) });
-    }
-
-    //  ۴) تطبیقِ سرورِ حساب (اگر ابزارش هست)
+    //  ۳) تطبیقِ سرورِ حساب (اگر ابزارش هست) — sha256 ِ هر فایل هنگامِ نوشتنِ بسته (writeBundle)
     const tool = findAccountTool(src, accountTool);
-    const account = inspectAccountDb(tool, path.join(src, 'account-server', 'pg'));
+    const account = inspectAccountDb(tool, path.join(accountSnapshot ? path.resolve(accountSnapshot) : path.join(src, 'account-server'), 'pg'));
 
     let panelVersion = null;
     try { panelVersion = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version; } catch { /* بی نسخه */ }
@@ -479,9 +508,10 @@ export async function exportData({ dataDir, out, pass, include = {}, force = fal
       createdAt: new Date().toISOString(),
       source: { host: os.hostname(), platform: process.platform, dataDir: src, panelVersion },
       hot: Boolean(running),
+      ...(live ? { live } : {}),
       include,
-      files,
-      bytes: files.reduce((a, f) => a + f.size, 0),
+      files: [],
+      bytes: 0,
       panelDb: { tables: panelTables },
       account: account.ok ? { reconciled: true, report: account.report } : { reconciled: false, reason: account.reason },
       excluded,
@@ -501,29 +531,19 @@ export async function inspectBundle({ file, pass }) {
   return { manifest, ok: bad.length === 0 && extra.length === 0, bad: bad.map((f) => f.name), extra };
 }
 
-export async function importData({ file, dataDir, pass, force = false, accountTool = '', accountEnv = '' }) {
-  const target = path.resolve(dataDir);
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  /*
-   *  ⚠️ پوشهٔ موقت **داخلِ** خودِ مقصد است، نه کنارش: در داکر مقصد خودِ volume
-   *  است (‎/data‎) و نه جابه‌جا می‌شود نه می‌شود از بیرونش rename کرد (EXDEV).
-   *  داخلِ همان دیسک، جابه‌جاییِ نهایی فقط چند rename است.
-   */
-  const staging = path.join(target, `.vmove-importing-${stamp}`);
-  const previousDir = path.join(target, `.vmove-before-${stamp}`);
-  const existing = fs.existsSync(target) ? fs.readdirSync(target).filter((n) => !n.startsWith('.vmove-importing-')) : [];
-  if (existing.length && !force) {
-    throw new Error(`پوشهٔ مقصد خالی نیست: ${target} — برای کنار گذاشتنش (نه پاک کردن) --force بدهید.`);
-  }
-  if (panelRunning(target)) throw new Error('پنلِ مقصد روشن است — اول خاموشش کنید.');
-  await fsp.mkdir(target, { recursive: true });
-
-  let promoted = false;
+/**
+ * بسته را در `staging` (پوشهٔ موقتِ **داخلِ** مقصد) باز می‌کند و همه را می‌سنجد: هر فایل با sha256، هر جدولِ پنل با
+ * شمارِ ردیف، سرورِ حساب با شمار/هش/جمعِ مبلغ؛ و نشانی‌های پوشهٔ داده در دیتابیسِ پنل را به `finalDir` برمی‌گرداند.
+ * ⛔ هنوز هیچ چیزِ مقصد جابه‌جا نشده؛ یک اختلاف ⇒ `staging` پاک و خطا. (CLI و پنل هر دو همین را صدا می‌زنند.)
+ */
+export async function stageImport({ file, pass, staging, finalDir, accountTool = '' }) {
   try {
     const { manifest, files } = await readBundle(file, pass, staging);
     //  ۱) هر فایل با sha256
     const bad = manifest.files.filter((f) => files.get(f.name)?.sha256 !== f.sha256 || files.get(f.name)?.size !== f.size);
     if (bad.length) throw new Error(`${bad.length} فایل با مانیفست نمی‌خواند: ${bad.slice(0, 5).map((f) => f.name).join('، ')}`);
+    const extra = [...files.keys()].filter((n) => !manifest.files.some((f) => f.name === n));
+    if (extra.length) throw new Error(`${extra.length} فایل در بسته هست که در مانیفست نیست: ${extra.slice(0, 5).join('، ')}`);
     //  ۲) هر جدولِ پنل با شمارِ ردیف
     const counts = sqliteCounts(path.join(staging, 'panel.db'));
     const tableDiff = Object.keys({ ...manifest.panelDb.tables, ...counts })
@@ -543,16 +563,76 @@ export async function importData({ file, dataDir, pass, force = false, accountTo
       }
     }
     //  ۴) نشانی‌های پوشهٔ داده در دیتابیسِ پنل ⇒ پوشهٔ تازه
-    const remapped = remapPanelDb(path.join(staging, 'panel.db'), manifest.source.dataDir, target);
+    const remapped = remapPanelDb(path.join(staging, 'panel.db'), manifest.source.dataDir, path.resolve(finalDir));
+    return { manifest, files: files.size, remapped, account };
+  } catch (e) {
+    await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
+    throw e;
+  }
+}
 
-    //  ۵) فقط حالا جابه‌جا — آن‌چه در مقصد بود کنار می‌رود، پاک نمی‌شود
-    let previous = null;
-    if (existing.length) {
-      await fsp.mkdir(previousDir, { recursive: true });
-      for (const name of existing) await fsp.rename(path.join(target, name), path.join(previousDir, name));
-      previous = previousDir;
+/** ویندوز فایلی را که تازه بسته شده گاهی چند لحظه قفل نگه می‌دارد (ضدویروس، نمایه‌گر) */
+function renameRetry(from, to) {
+  for (let i = 0; ; i++) {
+    try { fs.renameSync(from, to); return; } catch (e) {
+      if (i >= 15 || !['EBUSY', 'EPERM', 'EACCES'].includes(e.code)) throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
     }
-    for (const name of await fsp.readdir(staging)) await fsp.rename(path.join(staging, name), path.join(target, name));
+  }
+}
+
+/**
+ * جابه‌جاییِ نهایی — فقط rename: آن‌چه در مقصد بود ⇒ `‎.vmove-before-<stamp>‎` (کنار، **نه پاک**)، سپس محتوای
+ * `staging` ⇒ مقصد. پوشه‌های ‎.vmove-*‎ (کنارگذاشته‌های پیشین، کارِ پنل) سرِ جایشان می‌مانند.
+ * ⛔ شکستِ وسطِ راه ⇒ هر چه جابه‌جا شده بود برمی‌گردد و خطا. هم‌گام، تا پنل پیش از باز کردنِ دیتابیس صدایش بزند.
+ */
+export function promoteStaged({ staging, target, stamp, keep = [] }) {
+  const root = path.resolve(target);
+  const previousDir = path.join(root, `.vmove-before-${stamp}`);
+  const stagingName = path.basename(path.resolve(staging));
+  const existing = fs.readdirSync(root).filter((n) => !n.startsWith('.vmove-') && n !== stagingName);
+  const moved = [];
+  const placed = [];
+  try {
+    if (existing.length) {
+      fs.mkdirSync(previousDir, { recursive: true });
+      for (const name of existing) { renameRetry(path.join(root, name), path.join(previousDir, name)); moved.push(name); }
+    }
+    for (const name of fs.readdirSync(staging)) {
+      if (keep.includes(name)) continue;
+      renameRetry(path.join(staging, name), path.join(root, name));
+      placed.push(name);
+    }
+  } catch (e) {
+    for (const name of placed.reverse()) { try { fs.renameSync(path.join(root, name), path.join(staging, name)); } catch { /* بماند تا دستی */ } }
+    for (const name of moved.reverse()) { try { fs.renameSync(path.join(previousDir, name), path.join(root, name)); } catch { /* بماند تا دستی */ } }
+    try { fs.rmdirSync(previousDir); } catch { /* خالی نیست یا نیست */ }
+    throw e;
+  }
+  return { previous: existing.length ? previousDir : null };
+}
+
+export async function importData({ file, dataDir, pass, force = false, accountTool = '', accountEnv = '' }) {
+  const target = path.resolve(dataDir);
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  /*
+   *  ⚠️ پوشهٔ موقت **داخلِ** خودِ مقصد است، نه کنارش: در داکر مقصد خودِ volume
+   *  است (‎/data‎) و نه جابه‌جا می‌شود نه می‌شود از بیرونش rename کرد (EXDEV).
+   *  داخلِ همان دیسک، جابه‌جاییِ نهایی فقط چند rename است.
+   */
+  const staging = path.join(target, `.vmove-importing-${stamp}`);
+  const existing = fs.existsSync(target) ? fs.readdirSync(target).filter((n) => !n.startsWith('.vmove-importing-')) : [];
+  if (existing.length && !force) {
+    throw new Error(`پوشهٔ مقصد خالی نیست: ${target} — برای کنار گذاشتنش (نه پاک کردن) --force بدهید.`);
+  }
+  if (panelRunning(target)) throw new Error('پنلِ مقصد روشن است — اول خاموشش کنید.');
+  await fsp.mkdir(target, { recursive: true });
+
+  let promoted = false;
+  try {
+    const r = await stageImport({ file, pass, staging, finalDir: target, accountTool });
+    //  ۵) فقط حالا جابه‌جا — آن‌چه در مقصد بود کنار می‌رود، پاک نمی‌شود
+    const { previous } = promoteStaged({ staging, target, stamp });
     await fsp.rm(staging, { recursive: true, force: true });
     promoted = true;
 
@@ -568,34 +648,113 @@ export async function importData({ file, dataDir, pass, force = false, accountTo
       envFile = path.resolve(accountEnv);
       fs.writeFileSync(envFile, lines.join('\n'), { mode: 0o600 });
     }
-    return { target, previous, manifest, files: files.size, remapped, account, envFile };
+    return { target, previous, manifest: r.manifest, files: r.files, remapped: r.remapped, account: r.account, envFile };
   } finally {
     if (!promoted) await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
   }
 }
 
-/** پس از import (یا هر وقت): پوشهٔ داده هنوز همان بسته است؟ */
-export async function compareData({ file, dataDir, pass, accountTool = '' }) {
-  const { manifest } = await readBundle(file, pass, null);
+function sha256FileSync(file) {
+  const h = crypto.createHash('sha256');
+  const fd = fs.openSync(file, 'r');
+  try {
+    const buf = Buffer.allocUnsafe(1 << 20);
+    for (let n; (n = fs.readSync(fd, buf, 0, buf.length, null)) > 0;) h.update(buf.subarray(0, n));
+  } finally { fs.closeSync(fd); }
+  return h.digest('hex');
+}
+
+/**
+ * پوشهٔ داده هنوز همان مانیفست است؟ (هر فایل با sha256 — جز panel.db که نشانی‌هایش عوض شده و جدول‌هایش
+ * با شمارِ ردیف سنجیده می‌شود؛ و سرورِ حساب با ابزارِ خودش اگر `checkAccount`). هم‌گام: پنل پس از جابه‌جاییِ
+ * هنگامِ بالا آمدن، پیش از روشن شدنِ هر چیزی که در پوشه می‌نویسد، همین را می‌زند.
+ */
+export function compareManifest({ manifest, dataDir, accountTool = '', checkAccount = true }) {
   const root = path.resolve(dataDir);
   const diffs = [];
   for (const f of manifest.files) {
     if (f.name === 'data/panel.db') continue; //  پس از import نشانی‌ها عوض می‌شوند؛ جدول‌ها پایین سنجیده می‌شوند
     const p = path.join(root, ...f.name.slice(5).split('/'));
     if (!fs.existsSync(p)) { diffs.push(`نیست: ${f.name}`); continue; }
-    if ((await sha256File(p)) !== f.sha256) diffs.push(`عوض شده: ${f.name}`);
+    if (sha256FileSync(p) !== f.sha256) diffs.push(`عوض شده: ${f.name}`);
   }
   const counts = sqliteCounts(path.join(root, 'panel.db'));
   for (const t of Object.keys(manifest.panelDb.tables)) {
     if ((counts[t] ?? -1) < manifest.panelDb.tables[t]) diffs.push(`جدولِ ${t}: ${manifest.panelDb.tables[t]} ⇐ ${counts[t] ?? 'نیست'}`);
   }
-  let account = null;
-  if (manifest.account?.reconciled) {
+  if (checkAccount && manifest.account?.reconciled) {
     const now = inspectAccountDb(findAccountTool(root, accountTool), path.join(root, 'account-server', 'pg'));
-    account = now.ok ? sameAccountReport(manifest.account.report, now.report) : { same: false, diffs: [now.reason] };
+    const account = now.ok ? sameAccountReport(manifest.account.report, now.report) : { same: false, diffs: [now.reason] };
     if (!account.same) diffs.push(...account.diffs.map((d) => `سرورِ حساب: ${d}`));
   }
-  return { same: diffs.length === 0, diffs };
+  return { same: diffs.length === 0, diffs, files: manifest.files.length };
+}
+
+/** پس از import (یا هر وقت): پوشهٔ داده هنوز همان بسته است؟ */
+export async function compareData({ file, dataDir, pass, accountTool = '' }) {
+  const { manifest } = await readBundle(file, pass, null);
+  return compareManifest({ manifest, dataDir, accountTool });
+}
+
+/* ───────────── پنل: «بازگرداندن از فایلِ جابه‌جایی» هنگامِ بالا آمدن ───────────── */
+
+export const READY_PREFIX = '.vmove-ready-';
+export const READY_MARK = '.vmove-ready.json';
+export const LAST_IMPORT = '.vmove-last-import.json';
+
+/** خلاصهٔ بی‌راز و بی‌نامِ فایل — برای رابط و دفتر */
+export function manifestSummary(m) {
+  return {
+    createdAt: m.createdAt,
+    source: { host: m.source?.host || null, platform: m.source?.platform || null, panelVersion: m.source?.panelVersion || null },
+    files: m.files?.length || 0,
+    bytes: m.bytes || 0,
+    tables: Object.keys(m.panelDb?.tables || {}).length,
+    rows: Object.values(m.panelDb?.tables || {}).reduce((a, n) => a + Number(n || 0), 0),
+    account: m.account?.reconciled ? { reconciled: true, tables: Object.keys(m.account.report?.tables || {}).length } : { reconciled: false, reason: m.account?.reason || null },
+    outside: (m.outside || []).map((o) => o.path),
+    excluded: (m.excluded || []).length,
+  };
+}
+
+/**
+ * پنل این را **پیش از باز کردنِ دیتابیس** صدا می‌زند (src/db.js). اگر بستهٔ سنجیده‌شده‌ای منتظر است
+ * (‎.vmove-ready-<stamp>/‎ با نشانه‌اش، که پنل فقط پس از سنجشِ کامل می‌سازد): دادهٔ فعلی کنار، بسته جای داده،
+ * و همان دم دوباره با مانیفست مقایسه (پیش از آن‌که سرورِ حساب یا سایتی روشن شود و فایلی بنویسد).
+ * نتیجه در ‎.vmove-last-import.json‎. شکست ⇒ همه سرِ جایش برمی‌گردد و پوشهٔ بسته ‎.vmove-failed-‎ می‌شود (پاک نه).
+ */
+export function applyPendingMove(dataDir) {
+  const root = path.resolve(dataDir);
+  let names;
+  try { names = fs.readdirSync(root); } catch { return null; }
+  const ready = names.filter((n) => n.startsWith(READY_PREFIX)).sort();
+  if (!ready.length) return null;
+  const dir = path.join(root, ready[ready.length - 1]);
+  const write = (obj) => { try { fs.writeFileSync(path.join(root, LAST_IMPORT), JSON.stringify(obj, null, 2), { mode: 0o600 }); } catch { /* بی‌خیال */ } };
+  let mark = null;
+  try { mark = JSON.parse(fs.readFileSync(path.join(dir, READY_MARK), 'utf8')); } catch { /* نشانه نیست */ }
+  const stamp = String(mark?.stamp || ready[ready.length - 1].slice(READY_PREFIX.length)).replace(/[^\w.-]/g, '');
+  if (!mark?.manifest) {
+    try { fs.renameSync(dir, path.join(root, `.vmove-failed-${stamp}`)); } catch { /* بماند */ }
+    write({ at: new Date().toISOString(), stamp, ok: false, error: 'نشانهٔ بستهٔ سنجیده‌شده نبود — چیزی جابه‌جا نشد.' });
+    return { ok: false };
+  }
+  try {
+    const { previous } = promoteStaged({ staging: dir, target: root, stamp, keep: [READY_MARK] });
+    fs.rmSync(dir, { recursive: true, force: true });
+    const compare = compareManifest({ manifest: mark.manifest, dataDir: root, checkAccount: false });
+    const result = {
+      at: new Date().toISOString(), stamp, ok: true, previous, by: mark.by || null, mode: mark.mode || null,
+      summary: manifestSummary(mark.manifest), account: mark.account || null, remapped: mark.remapped ?? null,
+      compare: { same: compare.same, diffs: compare.diffs.slice(0, 50), files: compare.files },
+    };
+    write(result);
+    return result;
+  } catch (e) {
+    try { fs.renameSync(dir, path.join(root, `.vmove-failed-${stamp}`)); } catch { /* بماند */ }
+    write({ at: new Date().toISOString(), stamp, ok: false, error: `جابه‌جایی انجام نشد و دادهٔ قبلی سرِ جایش ماند: ${e.code || e.message}` });
+    return { ok: false, error: e.message };
+  }
 }
 
 /* ─────────────────────────────── خطِ فرمان ─────────────────────────────── */

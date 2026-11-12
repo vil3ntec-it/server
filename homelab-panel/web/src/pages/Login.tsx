@@ -4,6 +4,7 @@ import { useApp } from '../app-context';
 import { ApiError, logoUrl } from '../api';
 import { LANGUAGES } from '../i18n';
 import CodeInput from '../components/CodeInput';
+import { MoveRestore, MoveResultBanner } from '../components/MoveServer';
 
 export default function Login() {
   const { t, initialized, setupCodeNeeded, login, loginTotp, setup, serverName, hasLogo, lang, setLang, resolvedTheme, setTheme } = useApp();
@@ -14,6 +15,7 @@ export default function Login() {
   const [setupCode, setSetupCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [restore, setRestore] = useState(false);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -64,7 +66,11 @@ export default function Login() {
           </div>
         </div>
 
-        {ticket ? (
+        {initialized && !ticket && <MoveResultBanner />}
+
+        {!initialized && restore ? (
+          <MoveRestore setupCodeNeeded={setupCodeNeeded} onBack={() => setRestore(false)} />
+        ) : ticket ? (
           <div className="card rise p-5">
             <h2 className="mb-1 text-sm font-semibold">{t('totpTitle')}</h2>
             <p className="mb-4 text-xs text-ink-muted">{t('totpLoginHint')}</p>
@@ -171,6 +177,12 @@ export default function Login() {
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
             {initialized ? t('login') : t('createAdmin')}
           </button>
+          {/* نصبِ تازه: یا مدیرِ تازه، یا همهٔ کامپیوترِ قبلی از «فایلِ جابه‌جایی» (۱.۵۰.۹۳) */}
+          {!initialized && (
+            <button type="button" className="btn mt-2 w-full" onClick={() => { setRestore(true); setError(null); }}>
+              {t('mvFromFile')}
+            </button>
+          )}
         </form>
         )}
 
