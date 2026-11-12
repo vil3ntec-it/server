@@ -297,6 +297,11 @@ async function doImport({ move, app, args = {} }, io) {
       db.prepare('UPDATE fleet_aside SET restored_at = ? WHERE id = ?').run(Date.now(), a.id);
       restored.push(a.id);
     }
+  } catch (e) {
+    //  `promoteOnly` خودش همه را برگرداند ⇒ چیزی جای نگرفت؛ نگه برداشته و سرورِ حسابِ خودِ این سرور دوباره همان که بود
+    setLocal(move, app, 'dest', 'discarded', { failed: e?.code || 'failed' });
+    if (prevAccount?.running) startAccountServer();
+    throw e;
   } finally {
     await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
   }
