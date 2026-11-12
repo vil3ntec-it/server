@@ -41,7 +41,7 @@ data class Settings(
     // recording
     val recEncoder: String = "", val recHeight: Int = 1080, val recKbps: Int = 16000, val recEnhance: Boolean = false,
     // live
-    val liveEncoder: String = "", val liveKbps: Int = 6000, val dests: List<Destination> = emptyList(),
+    val liveEncoder: String = "", val liveKbps: Int = 6000, val liveHeight: Int = 0, val dests: List<Destination> = emptyList(),
     // sound
     val mic: String = "", val micGain: Float = 1f, val phoneGain: Float = 1f,
     // chat
@@ -63,7 +63,7 @@ data class Settings(
     fun toJson(): String = JSONObject().apply {
         put("phoneCodec", phoneCodec); put("phoneMbps", phoneMbps); put("phoneSize", phoneSize); put("phoneFps", phoneFps); put("phoneAudio", phoneAudio)
         put("recEncoder", recEncoder); put("recHeight", recHeight); put("recKbps", recKbps); put("recEnhance", recEnhance)
-        put("liveEncoder", liveEncoder); put("liveKbps", liveKbps)
+        put("liveEncoder", liveEncoder); put("liveKbps", liveKbps); put("liveHeight", liveHeight)
         put("dests", JSONArray(dests.map { d ->
             JSONObject().put("id", d.id).put("platform", d.platform.name).put("name", d.name).put("url", d.url).put("key", d.keyEnc).put("enabled", d.enabled).put("vertical", d.vertical)
         }))
@@ -89,7 +89,7 @@ data class Settings(
             return Settings(
                 o.optString("phoneCodec", d.phoneCodec), o.optInt("phoneMbps", d.phoneMbps), o.optInt("phoneSize", d.phoneSize), o.optInt("phoneFps", d.phoneFps), o.optBoolean("phoneAudio", d.phoneAudio),
                 o.optString("recEncoder", d.recEncoder), o.optInt("recHeight", d.recHeight), o.optInt("recKbps", d.recKbps), o.optBoolean("recEnhance", d.recEnhance),
-                o.optString("liveEncoder", d.liveEncoder), o.optInt("liveKbps", d.liveKbps),
+                o.optString("liveEncoder", d.liveEncoder), o.optInt("liveKbps", d.liveKbps), o.optInt("liveHeight", 0).coerceIn(0, 2160),
                 (0 until ds.length()).mapNotNull { i ->
                     val x = ds.getJSONObject(i)
                     val p = runCatching { Platform.valueOf(x.getString("platform")) }.getOrNull() ?: return@mapNotNull null

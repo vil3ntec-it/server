@@ -129,6 +129,12 @@ fun RecordPanel(app: StudioApp, encoders: List<Encoders.Encoder>?, studio: Studi
         Label("کیفیت (مگابیت در ثانیه)")
         Seg(listOf(8000 to "8", 16000 to "16", 30000 to "30", 50000 to "50", 80000 to "80"), s.recKbps, { v -> app.update { it.copy(recKbps = v) } }, enabled = !recording)
         Hint(adviceRec(s.recHeight, studio.fps, s.recKbps), K.Accent)
+        Spacer(Modifier.height(8.dp))
+        val yt = s.recHeight == 2160 && s.recKbps >= 80000
+        Btn(if (yt) "✓ برای یوتیوب: 4K، بالاترین کیفیت" else "برای یوتیوب (آپلود)", { app.update { it.copy(recHeight = 2160, recKbps = 80000) } },
+            Modifier.fillMaxWidth(), on = yt, enabled = !recording, height = 32.dp, bold = true)
+        Hint("یوتیوب هر ویدیو را دوباره فشرده می‌کند و به 1080p کمترین کیفیت را می‌دهد؛ به 4K کدکِ بهتر و چند برابر بیت‌ریت. همان تصویر بی‌کم‌وکاست در 4K ضبط می‌شود؛ چیزی تیز یا رنگ‌عوض نمی‌شود." +
+            if (studio.fps > 60) " یوتیوب بیش از ۶۰ فریم نشان نمی‌دهد؛ نرخِ فریمِ استودیو را ۶۰ بگذار." else "")
     }
     Section("ضبط‌های بلند و عمودی") {
         Label("یک فایلِ تازه هر…")
@@ -262,8 +268,17 @@ fun LivePanel(app: StudioApp, encoders: List<Encoders.Encoder>?, onAir: Boolean)
     Section("کیفیتِ پخش", subtitle = "اگر اینترنت نکشد خودکار پایین می‌آید و بعد دوباره بالا می‌رود؛ پخش قطع نمی‌شود.") {
         EncoderPick(encoders, s.liveEncoder, Encoders.Family.H264, enabled = !onAir) { v -> app.update { it.copy(liveEncoder = v) } }
         Label("بیشترین کیفیت (مگابیت در ثانیه)")
-        Seg(listOf(3000 to "3", 4500 to "4.5", 6000 to "6", 8000 to "8", 12000 to "12"), s.liveKbps, { v -> app.update { it.copy(liveKbps = v) } }, enabled = !onAir)
-        Hint("یوتیوب 1080p60: ۶ تا ۱۲؛ توییچ: حداکثر ۶ تا ۸.")
+        Seg(listOf(3000 to "3", 4500 to "4.5", 6000 to "6", 8000 to "8", 12000 to "12", 18000 to "18"), s.liveKbps, { v -> app.update { it.copy(liveKbps = v) } }, enabled = !onAir)
+        Hint("یوتیوب 1080p60: ۶ تا ۱۲؛ 1440p60: ۱۲ تا ۱۸؛ توییچ: حداکثر ۶ تا ۸.")
+        Label("اندازهٔ پخش")
+        Seg(listOf(0 to "همان تصویر", 1440 to "1440p (یوتیوب)"), if (s.liveHeight >= 1440) 1440 else 0,
+            { v -> app.update { it.copy(liveHeight = v, liveKbps = if (v == 1440 && it.liveKbps < 12000) 12000 else it.liveKbps) } }, enabled = !onAir)
+        if (s.liveHeight >= 1440) {
+            val others = s.dests.any { it.enabled && !it.vertical && it.platform != Platform.YOUTUBE }
+            Hint(if (others) "یکی از پلتفرم‌ها یوتیوب نیست (آن‌ها حداکثر 1080p می‌گیرند)؛ پخش با همان اندازهٔ تصویر می‌رود."
+                else "یوتیوب به پخشِ 1440p کدکِ بهتر (VP9) می‌دهد؛ حتی بیننده‌ای که 1080p نگاه می‌کند تصویرِ تمیزتری می‌بیند. دست‌کم ۱۵ مگابیت سرعتِ آپلود لازم است.",
+                if (others) K.Warn else K.Accent)
+        }
         if (s.dests.any { it.vertical }) {
             Label("کیفیتِ پخشِ عمودی (مگابیت)")
             Seg(listOf(3000 to "3", 4500 to "4.5", 6000 to "6", 8000 to "8"), s.vKbps, { v -> app.update { it.copy(vKbps = v) } }, enabled = !onAir)

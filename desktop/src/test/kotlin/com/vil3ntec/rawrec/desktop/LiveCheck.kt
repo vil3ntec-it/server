@@ -20,7 +20,8 @@ fun main(args: Array<String>) {
     s = s.add(SourceKind.TEXT, "عنوان", mapOf("text" to "آزمونِ پخشِ زنده — RawRec", "size" to "56", "bg" to "#99000000")).first
     s = s.addVerticalScene("عمودی").let { it.open(it.scene.id) }
     app.studio = s
-    app.update { it.copy(liveKbps = 4500, dests = listOf(
+    // 1.3.1: the main stream at 1440p (every main platform is YouTube); the canvas stays 1080p
+    app.update { it.copy(liveKbps = 4500, liveHeight = 1440, dests = listOf(
         Destination("a", Platform.YOUTUBE, "سرورِ ۱", args[2].substringBeforeLast('/'), Secrets.seal(args[2].substringAfterLast('/'))),
         Destination("b", Platform.YOUTUBE, "سرورِ ۲", args[3].substringBeforeLast('/'), Secrets.seal(args[3].substringAfterLast('/')), vertical = true),
     )) }

@@ -207,7 +207,8 @@ class StudioApp(val adb: Adb?, private val studioFile: File = File(AppPaths.data
         val enc = pickEncoder(settings.liveEncoder, Encoders.Family.H264) ?: return "هیچ انکودرِ H.264 کار نمی‌کند"
         liveStartedMs = System.currentTimeMillis(); liveStatus = null
         if (dests.isNotEmpty()) {
-            val l = LiveOutput(enc, st.width, st.height, st.fps, settings.liveKbps,
+            val (lw, lh) = liveSize(st, dests)
+            val l = LiveOutput(enc, lw, lh, st.fps, settings.liveKbps,
                 dests.mapIndexed { i, d -> LiveSettings.Dest(i, d.name.ifBlank { d.platform.label }, d.url, d.key) }) { s -> liveStatus = s }
             live = l; engine.outputs.add(l)
         }
@@ -218,6 +219,17 @@ class StudioApp(val adb: Adb?, private val studioFile: File = File(AppPaths.data
         }
         return if (vDests.isNotEmpty() && st.verticalScene == null) "پخشِ عمودی شروع نشد: صحنهٔ عمودی نداری" else null
     }
+    /**
+     * The main stream's size: the canvas, or bigger (1440p) when chosen and every main platform is YouTube. YouTube
+     * gives a 1440p stream its better codec (VP9) for all its qualities, so even a 1080p viewer sees a cleaner
+     * picture; Twitch, Kick and the rest take at most 1080p, so with one of them the canvas size is kept.
+     */
+    fun liveSize(st: Studio, dests: List<Destination>): Pair<Int, Int> {
+        val want = settings.liveHeight
+        if (want <= st.height || dests.any { it.platform != Platform.YOUTUBE }) return st.width to st.height
+        return ((st.width.toLong() * want / st.height).toInt() and 1.inv()) to (want and 1.inv())
+    }
+
     // ------------------------------------------------------------------ quick switches
 
     /** The microphone silenced (or back), at once, in everything that goes out. */

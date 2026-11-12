@@ -14,7 +14,7 @@ on:
 permissions:
   contents: write
 env:
-  VER: "1.3.0"
+  VER: "1.3.1"
   SCRCPY: "3.1"
   VAZIR: "33.003"
 jobs:
@@ -201,6 +201,8 @@ jobs:
           grep -q LIVE_DONE $O/live-two-platforms.txt
           # the second server got the upright picture
           ffprobe -v error -select_streams v -show_entries stream=width,height -of csv=p=0 $T/b.flv | grep -q '^1080,1920$'
+          # 1.3.1: the main server got 1440p (YouTube's VP9 tier) from the 1080p canvas
+          ffprobe -v error -select_streams v -show_entries stream=width,height -of csv=p=0 $T/a.flv | grep -q '^2560,1440$'
       - name: Edit — cut, join, enhance to 1440p (and the same without the treatment, to compare)
         if: matrix.tag == 'linux'
         run: |

@@ -102,6 +102,22 @@ class RecordingLogicTest {
 
     // ---- bit rates and codec levels
 
+    @Test fun smartCompressionNeverGoesBelowTheChosenQuality() {
+        val plan = 40_000_000; val peak = 160_000_000
+        // a long calm scene: the rate stays at the plan, it does not sink to a fifth
+        var r = plan
+        repeat(60) { r = smartNext(5f, 18, r, plan, peak) }
+        assertEquals(plan, r)
+        // the action: more bits at once, up to the peak
+        repeat(3) { r = smartNext(25f, 18, r, plan, peak) }
+        assertTrue("rose to ${r / 1_000_000}", r > plan)
+        repeat(30) { r = smartNext(25f, 18, r, plan, peak) }
+        assertEquals(peak, r)
+        // calm again: back to the plan, never under it
+        repeat(60) { r = smartNext(5f, 18, r, plan, peak) }
+        assertEquals(plan, r)
+    }
+
     @Test fun youtubePresetIs4kAt60WithTheCleanestQualityAndKeepsTheRest() {
         val base = RecordConfig(audioMode = RecordConfig.AUDIO_BOTH, facecam = 2).withLook(1)
         val yt = RecordConfig.withPreset(base, RecordConfig.PRESET_YOUTUBE)

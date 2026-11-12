@@ -33,7 +33,7 @@ class LiveOutput(
     private val sink: MultiSink
     private val free = ArrayBlockingQueue<ByteBuffer>(POOL)
     private val queue = ArrayBlockingQueue<Item>(POOL + 128)
-    private class Item(val buf: ByteBuffer?, val ptsUs: Long, val pcm: ByteArray?)
+    private class Item(val buf: ByteBuffer?, val ptsUs: Long, val pcm: ByteArray?, val w: Int = 0, val h: Int = 0)
     @Volatile private var running = true
     @Volatile var dropped = 0L; private set
     @Volatile var error: String? = null; private set
@@ -65,7 +65,7 @@ class LiveOutput(
         b!!.clear()
         val src = f.bgra.duplicate(); src.clear(); src.limit(need)
         b.put(src); b.flip()
-        if (!queue.offer(Item(b, f.ptsUs, null))) { free.offer(b); dropped++ }
+        if (!queue.offer(Item(b, f.ptsUs, null, f.width, f.height))) { free.offer(b); dropped++ }
     }
 
     override fun audio(pcm: ByteArray, ptsUs: Long) {
@@ -104,7 +104,8 @@ class LiveOutput(
                         }
                     }
                     val key = wantKey; wantKey = false
-                    venc!!.encode(VideoFrame(width, height, it.buf!!, it.ptsUs), (it.ptsUs - firstVideoUs) / 1000, key) { p ->
+                    // the picture at its own (canvas) size; the encoder scales it to the stream's size (e.g. 1080p → 1440p for YouTube)
+                    venc!!.encode(VideoFrame(it.w, it.h, it.buf!!, it.ptsUs), (it.ptsUs - firstVideoUs) / 1000, key) { p ->
                         val data = ByteArray(p.size()); p.data().get(data)
                         val isKey = p.flags() and AV_PKT_FLAG_KEY != 0
                         if (isKey) formatFrom(data)?.let { mf -> sink.videoFormat(mf); sentFormat = true }

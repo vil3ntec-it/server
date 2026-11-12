@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.vil3ntec.rawrec"
-version = "1.3.0"
+version = "1.3.1"
 
 /** FFmpeg's native libraries for the system this build runs on (each system builds its own installer). */
 val fxPlatform: String = run {
@@ -81,7 +81,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "RawRec Desktop"
-            packageVersion = "1.3.0"
+            packageVersion = "1.3.1"
             description = "Phone screen over USB, recording and live streaming"
             vendor = "VIL3NTEC"
             appResourcesRootDir.set(layout.projectDirectory.dir("appres"))

@@ -970,12 +970,7 @@ class Recorder(
         qpSum = 0; qpN = 0; qpWindowNs = now
         val p = plan
         if (ctlBitrate <= 0) ctlBitrate = p.bitrate
-        val target = p.qpMax.toFloat()
-        val next = when {
-            avg > target + 0.5f -> (ctlBitrate * 1.25).toInt()
-            avg < target - 2.5f -> (ctlBitrate * 0.85).toInt()
-            else -> ctlBitrate
-        }.coerceIn(maxOf(2_000_000, p.bitrate / 5), maxOf(p.peakBitrate, p.bitrate))
+        val next = smartNext(avg, p.qpMax, ctlBitrate, p.bitrate, p.peakBitrate)
         if (next != ctlBitrate) {
             try {
                 codec.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, next) })
@@ -1249,4 +1244,20 @@ class Recorder(
 /** When a key frame is due: [everyUs] of video time since the last one (none yet = not due). */
 object KeyClock {
     fun due(lastKeyUs: Long, nowUs: Long, everyUs: Long): Boolean = lastKeyUs >= 0 && nowUs - lastKeyUs >= everyUs - 20_000L
+}
+
+/**
+ * The next bit rate from a second's average quantizer. 8.2: never below the plan. Until 8.1 a calm
+ * scene squeezed it down to a fifth; when the action came back it took the +25 % steps seconds to
+ * climb up again, and in those seconds the picture went blocky and the colours grey («رنگ در
+ * گردش»: vivid, then colourless, then vivid — the owner). Now it only adds bits when a frame
+ * needs them and comes back to the plan, never under it: the quality the owner chose holds.
+ */
+internal fun smartNext(avgQp: Float, qpMax: Int, cur: Int, planBitrate: Int, peak: Int): Int {
+    val target = qpMax.toFloat()
+    return when {
+        avgQp > target + 0.5f -> (cur * 1.25).toInt()
+        avgQp < target - 2.5f -> (cur * 0.85).toInt()
+        else -> cur
+    }.coerceIn(planBitrate, maxOf(peak, planBitrate))
 }
