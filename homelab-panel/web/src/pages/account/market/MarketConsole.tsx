@@ -7,13 +7,15 @@
 //     تسویه با فروشنده (پول فقط نقد و به دکان می‌رسد، D-08) — نه عددِ ساختگی، نه دکمهٔ بی‌عمل.
 //  ⛔ تعلیقِ فروشنده = همان حالتِ «خاموشیِ سرویس» ِ دکان (`market.directory` / `shop.storefront`)، نه درِ دوم.
 //  ⛔ مجوز در سرور است؛ پنهان کردنِ دکمه برای غیرِ admin فقط برای این است که درخواستِ بی‌نتیجه نزند.
+//  ⛔ مدرکِ پیوستِ پرونده (۱.۵۰.۹۸): فقط admin، بایت با سرآیندِ نشست (`fetchBlobUrl`، نه توکن در نشانی)، بندانگشتی + بزرگ‌نمایی؛
+//     پاسخِ غیرِتصویر یا بزرگ را پل رد می‌کند و این‌جا فقط «نشان داده نشد» با دلیل.
 // ---------------------------------------------------------------------------
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertTriangle, BadgePercent, FileClock, Flag, MapPin, ShoppingBag, Store } from 'lucide-react';
 
-import { api } from '../../../api';
+import { ApiError, api, fetchBlobUrl } from '../../../api';
 import { useApp } from '../../../app-context';
-import { Card } from '../../../components/ui';
+import { Card, Modal } from '../../../components/ui';
 import { Cell, KV, Notice, Row, Stat, Table, Tabs } from '../../../control/ui';
 import { isUnavailable, newIdemKey, reasonOk } from '../consoleData';
 import { SHELL_API } from '../console/contract';
@@ -458,6 +460,58 @@ function Assignee({ c }: { c: TrustCase }) {
   return <span className="text-ink-muted">{tx('بی مسئول', 'Unassigned', 'بې مسئوله')}</span>;
 }
 
+type Evidence = { id: string; mime?: string; size?: number; createdAt?: number };
+
+/** چرا مدرک نشان داده نشد — از کدِ پل/سرورِ حساب، نه «خطا» ِ گنگ */
+function evidenceProblem(tx: (fa: string, en: string, ps: string) => string, code: string) {
+  if (code === 'evidence_not_image') return tx('پاسخ عکس نبود — نشان داده نشد', 'Not an image — not shown', 'انځور نه و');
+  if (code === 'evidence_too_large' || code === 'account_server_too_large') return tx('بزرگ‌تر از سقف — نشان داده نشد', 'Too large — not shown', 'ډېر لوی');
+  if (code === 'media_gone' || code === 'not_found') return tx('روی سرورِ حساب نیست', 'Not on the account server', 'په سرور کې نشته');
+  if (code === 'forbidden') return tx('فقط مدیرِ پنل', 'Panel admins only', 'یوازې مدیر');
+  if (code === 'rate_limited') return tx('زیاد دیده شد — کمی بعد', 'Too many views — try later', 'وروسته');
+  return tx('عکس نیامد', 'Could not load', 'انځور رانغی');
+}
+
+/** یک مدرک: بندانگشتی (دکمه) و بزرگ‌نمایی در پنجره — یک بار گرفته می‌شود (هر دیدن یک ردیفِ دفتر است) */
+function EvidenceThumb({ caseId, ev, index, total }: { caseId: string; ev: Evidence; index: number; total: number }) {
+  const { tx } = useTx();
+  const [src, setSrc] = useState('');
+  const [err, setErr] = useState('');
+  const [zoom, setZoom] = useState(false);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    let made = '';
+    setSrc(''); setErr('');
+    fetchBlobUrl(MC.caseEvidence(caseId, ev.id), ctrl.signal)
+      .then((u) => { made = u; setSrc(u); })
+      .catch((e) => { if (!ctrl.signal.aborted) setErr(e instanceof ApiError ? e.code : 'request_failed'); });
+    return () => { ctrl.abort(); if (made) URL.revokeObjectURL(made); };
+  }, [caseId, ev.id]);
+  const alt = tx('مدرکِ {i} از {n} ِ پروندهٔ {c} — عکسی که شاکی پیوست کرده', 'Evidence {i} of {n} for case {c} — photo attached by the reporter',
+    'د {c} دوسیې {n} څخه {i} ضمیمه — د شکایت کوونکي انځور', { i: shownNum(index + 1), n: shownNum(total), c: caseId });
+  const box = 'inline-flex h-16 w-16 items-center justify-center rounded border border-line bg-surface-sunken';
+  if (err) {
+    return <span className={`${box} p-1 text-center text-[10px] leading-tight`} role="img" aria-label={`${alt} — ${evidenceProblem(tx, err)}`} title={err} data-evidence-error={err}>{evidenceProblem(tx, err)}</span>;
+  }
+  if (!src) return <span className={`${box} animate-pulse`} role="img" aria-label={alt} aria-busy="true" data-evidence-loading={ev.id} />;
+  const meta = [ev.mime, ev.size ? `${shownNum(Math.max(1, Math.round(ev.size / 1024)))} KB` : '', ev.createdAt ? moment(ev.createdAt) : ''].filter(Boolean).join(' · ');
+  return (
+    <>
+      <button type="button" className="rounded focus-visible:outline focus-visible:outline-2" data-evidence-thumb={ev.id} onClick={() => setZoom(true)}
+              title={tx('بزرگ‌نمایی', 'Zoom', 'لوی کول')}>
+        <img src={src} alt={alt} className="h-16 w-16 rounded border border-line object-cover" />
+      </button>
+      {zoom && (
+        <Modal open wide onClose={() => setZoom(false)} title={tx('مدرکِ {i} از {n} — پروندهٔ {c}', 'Evidence {i} of {n} — case {c}', 'ضمیمه {i} له {n} — {c}',
+          { i: shownNum(index + 1), n: shownNum(total), c: caseId })}>
+          <img src={src} alt={alt} className="mx-auto block max-h-[70vh] max-w-full object-contain" data-evidence-full={ev.id} />
+          {meta && <p className="mt-2 text-center text-[11px] text-ink-muted" dir="ltr">{meta}</p>}
+        </Modal>
+      )}
+    </>
+  );
+}
+
 function CaseDetail({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
   const { tx, tri } = useTx();
   //  نوشتن فقط admin ِ پنل (مرز در پل و سرورِ حساب است؛ این فقط دکمهٔ بی‌نتیجه نمی‌سازد)
@@ -489,6 +543,7 @@ function CaseDetail({ id, onClose, onChanged }: { id: string; onClose: () => voi
     } finally { setBusy(false); }
   };
   const open = Boolean(c && OPEN_STATES.includes(String(c.status)));
+  const evidence = (Array.isArray(c?.evidence) ? c!.evidence : []).filter((e) => ID_RE.test(String(e?.id || ''))).slice(0, 10);
   return (
     <Box title={`${tx('پرونده', 'Case', 'دوسیه')} ${id}`} icon={<Flag size={16} />} source="/api/admin/trust/cases/:id" load={load}
          action={<button className="btn btn-sm" data-case-close onClick={onClose}>{tx('بستن', 'Close', 'بندول')}</button>}>
@@ -554,7 +609,22 @@ function CaseDetail({ id, onClose, onChanged }: { id: string; onClose: () => voi
               );
             })}
           </ol>
-          <p className="text-[11px] text-ink-muted">{tx('مدرکِ پیوست ({n}) فقط در کنسولِ خودِ سرورِ حساب دیده می‌شود (این‌جا پل نشده).', 'Attached evidence ({n}) is viewable only in the account server console (not bridged here).', 'ضمیمه ({n}) یوازې د حساب سرور په کنسول کې.', { n: shownNum(c.evidenceCount) })}</p>
+          {/* ۱.۵۰.۹۸: مدرکِ پیوست — همان قاعدهٔ «مدرک فقط ارشد» ِ سرورِ حساب ⇒ فقط admin ِ پنل */}
+          {writer && evidence.length > 0 ? (
+            <div data-case-evidence>
+              <h4 className="mt-2 text-[11px] font-semibold">{tx('مدرکِ پیوست ({n})', 'Attached evidence ({n})', 'ضمیمه ({n})', { n: shownNum(evidence.length) })}</h4>
+              <ul className="mt-1 flex flex-wrap gap-2">
+                {evidence.map((ev, i) => <li key={ev.id}><EvidenceThumb caseId={id} ev={ev} index={i} total={evidence.length} /></li>)}
+              </ul>
+              <p className="mt-1 text-[11px] text-ink-muted">{tx('برای بزرگ‌نمایی روی عکس بزنید. هر دیدن در دفترِ پنل و سابقهٔ سرورِ حساب می‌ماند.',
+                'Tap a photo to zoom. Every view is logged in the panel ledger and on the account server.', 'د لویولو لپاره پر انځور ووهئ. هر لیدل ثبتېږي.')}</p>
+            </div>
+          ) : (c.evidenceCount || 0) > 0 && (
+            <p className="text-[11px] text-ink-muted" data-evidence-hidden>{writer
+              ? tx('مدرکِ پیوست ({n}) — سرورِ حساب فهرستش را نداد.', 'Attached evidence ({n}) — the account server did not list it.', 'ضمیمه ({n}) — لېست رانغی.', { n: shownNum(c.evidenceCount) })
+              : tx('مدرکِ پیوست ({n}) فقط برای مدیرِ پنل نشان داده می‌شود (سرورِ حساب هم مدرک را فقط به ارشد می‌دهد).',
+                'Attached evidence ({n}) is shown to panel admins only (the account server gives evidence to super admins only).', 'ضمیمه ({n}) یوازې د پینل مدیر ته.', { n: shownNum(c.evidenceCount) })}</p>
+          )}
           {writer && <div className="flex flex-wrap gap-2">
             {/* ⛔ برچسب در حالِ فرستادن عوض نمی‌شود: کوتاه شدنش دکمهٔ «تصمیم» را زیرِ کلیکِ دومِ دوکلیک می‌آورد */}
             {open && <button className="btn btn-sm" data-case-assign disabled={busy} aria-busy={busy} onClick={assign}>{tx('مسئولش من', 'Assign to me', 'زه مسئول')}</button>}

@@ -237,6 +237,29 @@ router.get('/shop-accounts', guard(async (req, res) => {
 }));
 
 /**
+ * TEN-04 (shop `support-grant-read.v1`): با پرچمِ ‎security / admin.support_grant‎ ِ سرورِ حساب و بی اجازهٔ زندهٔ `read_private` ِ
+ * همین آدم، پرونده‌های دکان/کاربر فقط فراداده می‌دهند با ‎restricted: { code: 'grant_required', hidden }‎ (shop ‎lib/admin-dossier.js‎).
+ * پل فقط همان کد و نامِ بخش‌های پنهانِ شناخته را جلو می‌برد + دکان(های)ی که اجازه‌اش آن را باز می‌کند — تا رابط «اجازه لازم است»
+ * بگوید و به کارتِ «دسترسیِ پشتیبانی» ببرد، نه «دستگاهی ثبت نشده» ِ دروغ.
+ */
+const HIDDEN_PARTS = ['location', 'devices', 'locations', 'lastLocation'];
+export function restrictedOf(parts, shops) {
+  const hidden = new Set();
+  let hit = false;
+  for (const r of parts) {
+    if (!r || typeof r !== 'object' || Array.isArray(r) || r.code !== 'grant_required') continue;
+    hit = true;
+    for (const h of Array.isArray(r.hidden) ? r.hidden : []) if (HIDDEN_PARTS.includes(h)) hidden.add(h);
+  }
+  if (!hit) return null;
+  const list = (Array.isArray(shops) ? shops : [])
+    .map((x) => ({ id: String(x?.id ?? ''), name: typeof x?.name === 'string' ? x.name.slice(0, 80) : '' }))
+    .filter((x) => /^[A-Za-z0-9_-]{1,80}$/.test(x.id));
+  return { code: 'grant_required', hidden: [...hidden], shops: [...new Map(list.map((x) => [x.id, x])).values()].slice(0, 5) };
+}
+const membershipShops = (u) => (Array.isArray(u?.memberships) ? u.memberships : []).map((m) => ({ id: m?.shop_id, name: m?.shop_name }));
+
+/**
  * پروندهٔ یک دکان: صاحبش، اشتراک‌ها، دستگاه‌ها.
  *
  * دو خواندن از سرورِ حساب: دکان (اعضا، اشتراک، تاریخچه) و کاربرِ صاحبش
@@ -248,11 +271,13 @@ router.get('/shop-accounts/:id', guard(async (req, res) => {
   const shop = detail.shop || {};
   let owner = null;
   let devices = [];
+  let ownerRestricted = null;
   if (shop.ownerUserId) {
     try {
       const u = await cloudRaw('GET', `/api/admin/users/${idOf(shop.ownerUserId)}`);
       owner = u.user || null;
       devices = Array.isArray(u.devices) ? u.devices : [];
+      ownerRestricted = u.restricted || null;
     } catch { /* صاحبِ حذف‌شده — پرونده بی او هم خواندنی است */ }
   }
   let plans = [];
@@ -310,6 +335,7 @@ router.get('/shop-accounts/:id', guard(async (req, res) => {
     members: detail.members || [],
     counts: detail.counts || {},
     location: detail.location || null,
+    restricted: restrictedOf([detail.restricted, ownerRestricted], [{ id: shop.id || id, name: shop.name }]),
   });
 }));
 
@@ -758,13 +784,17 @@ router.get('/pump-accounts/:id', guard(async (req, res) => {
   const id = idOf(req.params.id);
   const detail = await cloudRaw('GET', `/api/admin/pump/stations/${id}`);
   let devices = [];
+  let restricted = null;
   if (detail.owner?.id) {
     try {
       const u = await cloudRaw('GET', `/api/admin/users/${idOf(detail.owner.id)}`);
       devices = Array.isArray(u.devices) ? u.devices : [];
+      //  صاحبِ پمپ که عضوِ دکانی هم هست ⇒ اجازهٔ یکی از همان دکان‌ها (TEN-04)
+      restricted = restrictedOf([u.restricted], membershipShops(u));
     } catch { /* صاحبِ حذف‌شده — پرونده بی او هم خواندنی است */ }
   }
   res.json({
+    restricted,
     station: detail.station || null,
     accessCode: detail.accessCode || '',
     owner: detail.owner || null,
@@ -2571,7 +2601,7 @@ mountConsoleShell(router);
  *  🏪 ۴.۶ مدیریتِ بازار و ۴.۷ نظارت بر پیک — درهایش در ‎routes/console-market.js‎، ولی روی **همین** روتر تا
  *  فهرستِ سفید، «انجام‌دهنده» و ‎bridge-roles.mjs‎ یکی بمانند.
  */
-mountConsoleMarket(router);
+mountConsoleMarket(router, { capListed });
 
 /*
  *  🏪 ممیزی §۳-۴ (۱.۵۰.۷۵): کارکنان/مجوز/دستگاهِ هر دکان (پروندهٔ دکان) و بانکِ عکسِ مرکزی — تا امروز فقط در

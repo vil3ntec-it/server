@@ -95,7 +95,8 @@ export default function StaffCard({ shopId }: { shopId: string }) {
       <h3 className="flex items-center gap-1 text-xs font-semibold"><Users size={13} />{tx('کارکنان، مجوزها و دستگاه‌ها', 'Staff, permissions & devices', 'کارکوونکي، اجازې او وسایل')}</h3>
       {load.error ? (
         <>
-          <Problem load={load as Load<unknown>} />
+          <Problem load={load as Load<unknown>} shopId={shopId}
+                   grantWhat={tx('اجازه‌ها و دستگاه‌های کارکنانِ این دکان', 'This shop’s staff permissions and devices', 'د دې هټۍ د کارکوونکو اجازې او وسایل')} />
           {offset > 0 && <button className="btn btn-sm" onClick={() => goto(0)}>{tx('صفحهٔ نخست', 'First page', 'لومړی مخ')}</button>}
         </>
       ) : !d ? <Loading /> : (

@@ -10,6 +10,8 @@
 //  ردیفِ دوم؛ همان کلید برای کارِ دیگر ⇒ ۴۰۹؛ همان پرونده هم‌زمان ⇒ ‎409 action_in_progress‎؛ «نامعلوم» با همان کلید کارِ دوم
 //  نمی‌سازد؛ ۴۰۹ های ماشینِ وضعیت همان‌طور؛ «مسئول» به نامِ کاربرِ پنل فقط وقتی همان مسئولِ امروزِ سرورِ حساب است؛
 //  ردیفِ دفتر برای هر کارِ تأییدشده (بی کلید و رمز)؛ سقفِ نرخِ هر کاربر.
+//  ۱.۵۰.۹۸: مدرکِ پیوست (بایتِ عکس) فقط admin، سنجشِ نوع/اندازهٔ پاسخ، ‎no-store‎، ردیفِ دفتر؛ و با ‎idempotent-writes.v1‎ کلیدِ پنجره
+//  (بسته به کاربرِ پنل) در ‎Idempotency-Key‎ به خودِ سرورِ حساب (`makeUpstreamOnce`) — بازپخشِ آن‌جا بی ردیفِ دوم، «نامعلوم» ⇒ ‎resolved‎.
 // ---------------------------------------------------------------------------
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -46,6 +48,11 @@ const cases = {
   tc_4: mk('tc_4', 'appealed', { outcome: 'upheld' }),
   tc_5: mk('tc_5', 'open', { shopId: 'shpB' }),
   tc_9: mk('tc_9', 'closed', { outcome: 'upheld', appealOutcome: 'upheld', assignee: 'panel:3', assigneeName: 'علی' }),
+  //  ۱.۵۰.۹۸ (‎idempotent-writes.v1‎) — دکانِ جدا تا شمارش‌های بالا عوض نشوند
+  tc_6: mk('tc_6', 'open', { shopId: 'shpC' }),
+  tc_7: mk('tc_7', 'open', { shopId: 'shpC' }),
+  tc_8: mk('tc_8', 'open', { shopId: 'shpC' }),
+  tc_10: mk('tc_10', 'appealed', { shopId: 'shpC', outcome: 'upheld' }),
 };
 //  پروندهٔ کاملِ «ارشد» (همان شکلِ ‎adminView‎ ِ shop) — برای سنجشِ نمای کم‌ترِ پنل
 const FULL9 = { reporterHint: '+937•••201', reporterStats: { total: 3, upheld: 1, dismissed: 0, shops: 2 }, sameText: ['tc_8'],
@@ -57,8 +64,20 @@ const FULL9 = { reporterHint: '+937•••201', reporterStats: { total: 3, uph
     { type: 'assigned', at: NOW, actor: 'admin', actorId: 'panel:3', body: '', data: { assignee: 'panel:3' } }] };
 const sanctions = {
   tsn_1: { id: 'tsn_1', caseId: 'tc_4', shopId: 'shpA', kind: 'hide_listing', productId: 'rice', reason: 'تقلبی', createdAt: NOW - 5000, active: true, liftedAt: null },
+  tsn_3: { id: 'tsn_3', caseId: 'tc_10', shopId: 'shpC', kind: 'warning', productId: '', reason: 'هشدار', createdAt: NOW - 5000, active: true, liftedAt: null },
 };
 const history = [];
+//  ۱.۵۰.۹۸ — مدرکِ پیوست: هر شناسه یک پاسخِ بالادست (عکسِ درست، یا آن‌چه پل باید رد کند)
+const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]), Buffer.alloc(300, 7)]);
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]), Buffer.alloc(200, 3)]);
+const HTML = Buffer.from('<html><body><script>window.top.__pwn=1</script>evidence</body></html>');
+const BIG = Buffer.concat([JPEG, Buffer.alloc(5 * 1024 * 1024, 1)]);
+const EVIDENCE = {
+  tev_ok: ['image/jpeg', JPEG], tev_png: ['image/png', PNG], tev_html: ['text/html', HTML], tev_lie: ['image/jpeg', HTML],
+  tev_mix: ['image/jpeg', PNG], tev_svg: ['image/svg+xml', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>1</script></svg>')],
+  tev_big: ['image/jpeg', BIG], tev_chunk: ['image/jpeg', BIG, 'chunked'],
+};
+const idemStore = new Map();          //  ‎idempotent-writes.v1‎ ِ ساختگی: کلید ⇒ { hash, code, obj } (همان ‎lib/admin-write-once.js‎)
 
 const fake = http.createServer((req, res) => {
   held.add(res);
@@ -71,11 +90,39 @@ const fake = http.createServer((req, res) => {
     let body = null;
     try { body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : null; } catch { body = null; }
     const j = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
-    const later = (code, obj) => (hangNext ? (hangNext = false, undefined) : slow ? setTimeout(() => j(code, obj), slow) : j(code, obj));
+    //  ‎idempotent-writes.v1‎: کار انجام شد ⇒ پاسخ برای همان کلید ثبت می‌شود حتی اگر به پنل نرسد (همان ‎writeOnce‎ ِ shop)
+    let pendingIdem = null;
+    const later = (code, obj) => {
+      if (pendingIdem && code < 300) idemStore.set(pendingIdem.key, { hash: pendingIdem.hash, code, obj });
+      return hangNext ? (hangNext = false, undefined) : slow ? setTimeout(() => j(code, obj), slow) : j(code, obj);
+    };
     if (p === '/api/health') return j(200, { ok: true, version: '9.9.9' });
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
     if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: caps, serverTime: NOW });
     seen.push({ method: req.method, path: p, query: Object.fromEntries(u.searchParams), body, idem: String(req.headers['idempotency-key'] || '') });
+    const em = /^\/api\/admin\/trust\/cases\/([^/]+)\/evidence\/([^/]+)$/.exec(p);
+    if (em && req.method === 'GET') {
+      const ev = cases[em[1]] ? EVIDENCE[em[2]] : null;
+      if (!ev) return j(404, { error: { code: 'media_gone', message: 'این فایل روی سرور نیست' } });
+      if (ev[2] === 'chunked') {          //  بی طولِ اعلام‌شده — پل باید وسطِ جریان ببُرد
+        res.writeHead(200, { 'content-type': ev[0] });
+        for (let i = 0; i < ev[1].length; i += 64 * 1024) res.write(ev[1].subarray(i, i + 64 * 1024));
+        return res.end();
+      }
+      res.writeHead(200, { 'content-type': ev[0], 'content-length': String(ev[1].length), 'cache-control': 'private, no-store' });
+      return res.end(ev[1]);
+    }
+    const idemKey = String(req.headers['idempotency-key'] || '');
+    if (req.method === 'POST' && idemKey && caps.includes('idempotent-writes.v1') && p.startsWith('/api/admin/trust/')) {
+      const hash = `${p}|${JSON.stringify(body)}`;
+      const prev = idemStore.get(idemKey);
+      if (prev && prev.hash !== hash) return j(409, { error: { code: 'idempotency_key_reused', message: 'این کلیدِ یکتایی پیش‌تر برای درخواستِ دیگری به کار رفته است' } });
+      if (prev) {
+        res.writeHead(prev.code, { 'content-type': 'application/json', 'idempotent-replayed': 'true' });
+        return res.end(JSON.stringify(prev.obj));
+      }
+      pendingIdem = { key: idemKey, hash };
+    }
     if (p === '/api/admin/trust/cases' && req.method === 'GET') {
       const st = u.searchParams.get('status') || 'pending';
       const shop = u.searchParams.get('shopId') || '';
@@ -175,19 +222,19 @@ try {
   await api('POST', '/api/auth/setup', { username: 'owner', password: 'Trust-1405-owner' });
   const login = async (u, pw) => (await api('POST', '/api/auth/login', { username: u, password: pw })).json?.token;
   const owner = await login('owner', 'Trust-1405-owner');
-  for (const [u, role] of [['adm1', 'admin'], ['adm2', 'admin'], ['op1', 'operator'], ['view1', 'viewer']]) {
+  for (const [u, role] of [['adm1', 'admin'], ['adm2', 'admin'], ['adm3', 'admin'], ['op1', 'operator'], ['view1', 'viewer']]) {
     await api('POST', '/api/auth/users', { username: u, password: `Trust-${role}-1405-${u}`, role }, owner);
   }
   const T = { owner, adm: await login('adm1', 'Trust-admin-1405-adm1'), adm2: await login('adm2', 'Trust-admin-1405-adm2'),
-    op: await login('op1', 'Trust-operator-1405-op1'), view: await login('view1', 'Trust-viewer-1405-view1') };
-  check('پنج نشست', Object.values(T).every(Boolean));
-  const PW = { adm: 'Trust-admin-1405-adm1', adm2: 'Trust-admin-1405-adm2' };
+    adm3: await login('adm3', 'Trust-admin-1405-adm3'), op: await login('op1', 'Trust-operator-1405-op1'), view: await login('view1', 'Trust-viewer-1405-view1') };
+  check('شش نشست', Object.values(T).every(Boolean));
+  const PW = { adm: 'Trust-admin-1405-adm1', adm2: 'Trust-admin-1405-adm2', adm3: 'Trust-admin-1405-adm3' };
   const decide = (k, extra = {}) => ({ outcome: 'upheld', severity: 'high', sanction: { kind: 'hide_listing', productId: 'rice' }, reason: 'کالای تقلبی',
     confirm: true, password: PW.adm, idempotencyKey: `trust-dec-${k}-0001`, ...extra });
 
-  console.log('\n── ۱) نقش: هر هفت در فقط admin؛ ۴۰۳ پیش از هر درخواست به سرورِ حساب ──');
+  console.log('\n── ۱) نقش: هر هشت در فقط admin؛ ۴۰۳ پیش از هر درخواست به سرورِ حساب ──');
   const doors = [
-    ['GET', `${C}/cases`], ['GET', `${C}/cases/tc_1`], ['GET', `${C}/sanctions`],
+    ['GET', `${C}/cases`], ['GET', `${C}/cases/tc_1`], ['GET', `${C}/sanctions`], ['GET', `${C}/cases/tc_1/evidence/tev_ok`],
     ['POST', `${C}/cases/tc_1/assign`, { confirm: true, idempotencyKey: 'trust-role-0001' }],
     ['POST', `${C}/cases/tc_1/decide`, decide('role', { password: 'x' })],
     ['POST', `${C}/cases/tc_4/appeal-decision`, { outcome: 'upheld', reason: 'آزمونِ نقش', confirm: true, password: 'x', idempotencyKey: 'trust-role-0002' }],
@@ -197,7 +244,7 @@ try {
     const n = seen.length;
     const codes = [];
     for (const [m, p, b] of doors) codes.push((await api(m, p, b, tok)).status);
-    check(`⛔ ${who}: هر هفت در ۴۰۳ و هیچ درخواستی به سرورِ حساب`, codes.every((c) => c === 403) && seen.length === n, `${codes.join(' ')} · ${seen.slice(n).map((s) => s.path)}`);
+    check(`⛔ ${who}: هر هشت در (با مدرک) ۴۰۳ و هیچ درخواستی به سرورِ حساب`, codes.every((c) => c === 403) && seen.length === n, `${codes.join(' ')} · ${seen.slice(n).map((s) => s.path)}`);
   }
   const anon = await api('GET', `${C}/cases`);
   check('بی نشست ⇒ ۴۰۱', anon.status === 401);
@@ -223,7 +270,7 @@ try {
     const n2 = seen.length;
     const codes = [];
     for (const [m, p, b] of doors.slice(3)) codes.push((await api(m, p, b, tok)).status);
-    check(`⛔ ${who} با ‎trust-read.v1‎ هم هیچ نوشتنی ندارد (۴۰۳، هیچ درخواست)`, codes.every((c) => c === 403) && seen.length === n2, codes.join(' '));
+    check(`⛔ ${who} با ‎trust-read.v1‎ هم نه مدرک می‌بیند و نه نوشتنی دارد (۴۰۳، هیچ درخواست — «مدرک فقط ارشد»)`, codes.every((c) => c === 403) && seen.length === n2, codes.join(' '));
   }
   const a9 = await api('GET', `${C}/cases/tc_9`, undefined, T.adm);
   check('admin ِ پنل همان نمای کامل', SECRET.every((k) => k in (a9.json?.case || {})) && a9.json.case.decision.by === 'adm_root'
@@ -363,6 +410,106 @@ try {
   check('سقفِ نرخِ نوشتنِ هر کاربر (۳۰ در ده دقیقه، ردِ ۴۰۰ هم): سی‌ویکمین ‎429‎ برای adm2 (با کارهای پیشینش)؛ کاربرِ دیگر جدا؛ بی درخواست',
     lim.includes(429) && lim.at(-1) === 429 && lim.filter((s) => s === 400).length >= 25 && other.status === 400 && writes().length === before,
     `${lim.join(' ')} · ${other.status}`);
+
+  console.log('\n── ۷) مدرکِ پیوست (۱.۵۰.۹۸): بایتِ عکس فقط admin، پاسخِ سنجیده، no-store، دفتر ──');
+  const bin = async (p, tok) => {
+    const r = await fetch(BASE + p, { headers: tok ? { authorization: `Bearer ${tok}` } : {}, signal: AbortSignal.timeout(15_000) });
+    const buf = Buffer.from(await r.arrayBuffer());
+    let json = null;
+    try { json = JSON.parse(buf.toString()); } catch { json = null; }
+    return { status: r.status, buf, json, headers: r.headers };
+  };
+  const E = (cid, eid) => `${C}/cases/${cid}/evidence/${eid}`;
+  let ne = seen.length;
+  const e1 = await bin(E('tc_1', 'tev_ok'), T.adm);
+  const eu = seen.slice(ne);
+  check('admin: عکسِ JPEG ⇒ ۲۰۰ همان بایت‌ها، ‎image/jpeg‎، ‎no-store‎، ‎nosniff‎، CSP ِ بسته؛ یک درخواست به همان درِ سرورِ حساب',
+    e1.status === 200 && e1.buf.equals(JPEG) && e1.headers.get('content-type') === 'image/jpeg' && /no-store/.test(e1.headers.get('cache-control') || '')
+      && e1.headers.get('x-content-type-options') === 'nosniff' && /default-src 'none'/.test(e1.headers.get('content-security-policy') || '')
+      && eu.length === 1 && eu[0].path === '/api/admin/trust/cases/tc_1/evidence/tev_ok',
+    `${e1.status} ${e1.headers.get('content-type')} ${e1.headers.get('cache-control')} ${eu.map((x) => x.path)}`);
+  const e2 = await bin(E('tc_1', 'tev_png'), T.adm);
+  check('PNG هم (نوع از روی بایت = نوعِ اعلام‌شده)', e2.status === 200 && e2.buf.equals(PNG) && e2.headers.get('content-type') === 'image/png', `${e2.status} ${e2.headers.get('content-type')}`);
+  ne = seen.length;
+  const eb = [await bin(`${C}/cases/${encodeURIComponent('tc 1')}/evidence/tev_ok`, T.adm), await bin(E('tc_1', encodeURIComponent('../x')), T.adm),
+    await bin(E('tc_1', 'x'.repeat(81)), T.adm)];
+  check('⛔ شناسهٔ پرونده/مدرکِ بد ⇒ ۴۰۰ پیش از پل', eb.every((r) => r.status === 400) && seen.length === ne, eb.map((r) => `${r.status}/${r.json?.error}`).join(' '));
+  const bad = {};
+  for (const eid of ['tev_html', 'tev_lie', 'tev_mix', 'tev_svg', 'tev_big', 'tev_chunk']) bad[eid] = await bin(E('tc_1', eid), T.adm);
+  const noBytes = (r) => !r.buf.includes(Buffer.from('<script')) && !r.buf.includes(Buffer.from([0x89, 0x50, 0x4e, 0x47])) && r.buf.length < 2000
+    && /application\/json/.test(r.headers.get('content-type') || '');
+  check('⛔ پاسخِ غیرِتصویر (HTML، HTML با برچسبِ ‎image/jpeg‎، PNG با برچسبِ JPEG، SVG) ⇒ ‎502 evidence_not_image‎ و هیچ بایتی از آن به مرورگر',
+    ['tev_html', 'tev_lie', 'tev_mix', 'tev_svg'].every((k) => bad[k].status === 502 && bad[k].json?.error === 'evidence_not_image' && noBytes(bad[k])),
+    ['tev_html', 'tev_lie', 'tev_mix', 'tev_svg'].map((k) => `${k}:${bad[k].status}/${bad[k].json?.error}`).join(' '));
+  check('⛔ بزرگ‌تر از ۴ مگابایت (با طولِ اعلام‌شده و بی آن، جریانی) ⇒ ‎502 evidence_too_large‎ و هیچ بایتی',
+    ['tev_big', 'tev_chunk'].every((k) => bad[k].status === 502 && bad[k].json?.error === 'evidence_too_large' && noBytes(bad[k])),
+    ['tev_big', 'tev_chunk'].map((k) => `${k}:${bad[k].status}/${bad[k].json?.error}`).join(' '));
+  const eg = await bin(E('tc_1', 'tev_gone'), T.adm);
+  check('مدرکِ ناموجود ⇒ ‎404 media_gone‎ ِ سرورِ حساب همان‌طور', eg.status === 404 && eg.json?.error === 'media_gone', `${eg.status} ${eg.json?.error}`);
+  const erows = ((await api('GET', '/api/control/audit?q=account.market.evidence&limit=100&offset=0', undefined, T.owner)).json?.rows || []);
+  const viewed = erows.filter((r) => r.action === 'account.market.evidence_viewed');
+  const rejected = erows.filter((r) => r.action === 'account.market.evidence_rejected');
+  check('دفتر: هر دیدنِ موفق یک ردیفِ ‎evidence_viewed‎ (پرونده، شناسهٔ مدرک، نوع، اندازه — نه بایت) و هر ردِ پاسخ یک ‎evidence_rejected‎',
+    viewed.length === 2 && viewed.every((r) => r.actor === 'adm1' && r.entity_id === 'tc_1') && JSON.stringify(viewed).includes('tev_ok') && JSON.stringify(viewed).includes('image/png')
+      && rejected.length === 6 && !JSON.stringify(erows).includes('__pwn'), `${viewed.length} ${rejected.length} ${JSON.stringify(erows).slice(0, 300)}`);
+
+  console.log('\n── ۸) ‎idempotent-writes.v1‎ (۱.۵۰.۹۸): کلیدِ پنجره به خودِ سرورِ حساب ──');
+  const sticky = await api('POST', `${C}/cases/tc_8/assign`, { confirm: true, idempotencyKey: 'trust-sticky-0001' }, T.adm3);
+  check('پیش از توانایی: کلید با یادِ پل رفت (بی سرآیند)', sticky.status === 200 && writes().at(-1).idem === '', `${sticky.status} ${writes().at(-1)?.idem}`);
+  caps = ['actor.v1', 'idempotent-writes.v1'];
+  const me3 = (await api('GET', '/api/auth/me', undefined, T.adm3)).json;
+  const uid3 = me3?.user?.id ?? me3?.id;
+  let nw8 = writes().length;
+  const s2 = await api('POST', `${C}/cases/tc_8/assign`, { confirm: true, idempotencyKey: 'trust-sticky-0001' }, T.adm3);
+  check('⛔ راهِ کلید عوض نمی‌شود: همان کلیدِ پیشین پس از آمدنِ توانایی ⇒ بازپخشِ یادِ پل، بی درخواست و بی سرآیند', s2.json?.replayed === true && writes().length === nw8,
+    `${s2.status} ${writes().length - nw8}`);
+  const i1 = await api('POST', `${C}/cases/tc_6/assign`, { confirm: true, idempotencyKey: 'trust-srv-asg-0001' }, T.adm3);
+  const up1i = writes().at(-1);
+  const i2 = await api('POST', `${C}/cases/tc_6/assign`, { confirm: true, idempotencyKey: 'trust-srv-asg-0001' }, T.adm3);
+  const up2i = writes().at(-1);
+  check('«مسئولش من» ⇒ ‎Idempotency-Key: u<id>.<کلید>‎ به سرورِ حساب (بدنه همان ‎{}‎)؛ همان کلید ⇒ بازپخشِ خودِ سرورِ حساب (‎Idempotent-Replayed‎) ⇒ ‎replayed‎',
+    i1.status === 200 && up1i?.idem === `u${uid3}.trust-srv-asg-0001` && JSON.stringify(up1i.body) === '{}' && i2.status === 200 && i2.json?.replayed === true
+      && up2i?.idem === up1i.idem && writes().length === nw8 + 2 && cases.tc_6.status === 'in_review',
+    `${i1.status} ${up1i?.idem} uid=${uid3} ${i2.status} ${i2.text.slice(0, 120)}`);
+  const i3 = await api('POST', `${C}/cases/tc_6/assign`, { confirm: true, idempotencyKey: 'trust-srv-asg-0001' }, T.owner);
+  check('همان کلیدِ رابط از کاربرِ دیگر ⇒ کلیدِ بالادستِ دیگر (‎u<id>.‎)، کارِ خودِ او', i3.status === 200 && i3.json?.replayed !== true
+    && writes().at(-1).idem !== up1i.idem && writes().at(-1).idem.endsWith('.trust-srv-asg-0001'), `${i3.status} ${writes().at(-1)?.idem}`);
+  const i4 = await api('POST', `${C}/cases/tc_7/assign`, { confirm: true, idempotencyKey: 'trust-srv-asg-0001' }, T.adm3);
+  check('⛔ همان کلید برای پروندهٔ دیگر ⇒ ‎409 idempotency_key_reused‎ ِ سرورِ حساب همان‌طور', i4.status === 409 && i4.json?.error === 'idempotency_key_reused',
+    `${i4.status} ${i4.json?.error}`);
+  const dec = (k, extra = {}) => decide(k, { outcome: 'dismissed', sanction: undefined, password: PW.adm3, ...extra });
+  nw8 = writes().length;
+  hangNext = true;
+  const g1 = await api('POST', `${C}/cases/tc_7/decide`, dec('srv1'), T.adm3);
+  const g2 = await api('POST', `${C}/cases/tc_7/decide`, dec('srv1'), T.adm3);
+  const g3 = await api('POST', `${C}/cases/tc_7/decide`, dec('srv1'), T.adm3);
+  check('پاسخِ گم‌شده ⇒ ‎504 outcome_unknown‎؛ همان کلید ⇒ سرورِ حساب پاسخِ همان کار را بازپخش می‌کند (۲۰۰، ‎replayed‎) — کارِ دوم نه',
+    g1.status === 504 && g1.json?.outcome === 'unknown' && g2.status === 200 && g2.json?.replayed === true && g3.json?.replayed === true
+      && writes().length === nw8 + 3 && history.filter((h) => h.caseId === 'tc_7' && h.type === 'decided').length === 1,
+    `${g1.status} ${g2.status} ${g2.text.slice(0, 120)} ${writes().length - nw8}`);
+  const ap = await api('POST', `${C}/cases/tc_10/appeal-decision`, { outcome: 'reversed', reason: 'رسید آمد', confirm: true, password: PW.adm3, idempotencyKey: 'trust-srv-app-0001' }, T.adm3);
+  const apUp = writes().at(-1);
+  const lf = await api('POST', `${C}/sanctions/tsn_3/lift`, { reason: 'دیگر لازم نیست', confirm: true, password: PW.adm3, idempotencyKey: 'trust-srv-lift-0001' }, T.adm3);
+  check('رأیِ اعتراض و برداشتنِ جریمه هم با کلیدِ بالادست (بدنه بی رمز، تأیید و کلید)؛ ۴۰۹ ِ ماشینِ وضعیت همان‌طور',
+    ap.status === 200 && apUp.idem === `u${uid3}.trust-srv-app-0001` && JSON.stringify(apUp.body) === JSON.stringify({ outcome: 'reversed', reason: 'رسید آمد' })
+      && lf.status === 409 && lf.json?.error === 'already_lifted' && writes().at(-1).idem === `u${uid3}.trust-srv-lift-0001`,
+    `${ap.status} ${apUp?.idem} ${lf.status}/${lf.json?.error}`);
+  slow = 400;
+  nw8 = writes().length;
+  const [k1, k2] = await Promise.all([
+    api('POST', `${C}/cases/tc_8/decide`, dec('cc1'), T.adm3),
+    (async () => { await sleep(60); return api('POST', `${C}/cases/tc_8/decide`, dec('cc2'), T.adm3); })(),
+  ]);
+  slow = 0;
+  check('⛔ همان پرونده هم‌زمان از دو پنجره (راهِ سرورِ حساب) ⇒ دومی ‎409 action_in_progress‎ پیش از پل؛ یک درخواست',
+    k1.status === 200 && k2.status === 409 && k2.json?.error === 'action_in_progress' && writes().length === nw8 + 1, `${k1.status} ${k2.status} ${k2.json?.error}`);
+  const rows8 = (await ledger(T.owner)).filter((r) => r.actor === 'adm3');
+  const d7 = rows8.filter((r) => r.action === 'account.market.case_decided' && r.entity_id === 'tc_7');
+  check('دفتر: بازپخش‌های سرورِ حساب بی ردیفِ دوم؛ «نامعلوم» ِ روشن‌شده یک ردیفِ ‎resolved‎ (نه دو)؛ کلید در دفتر نیست',
+    rows8.filter((r) => r.action === 'account.market.case_assigned' && r.entity_id === 'tc_6').length === 1 && d7.length === 1 && String(d7[0].detail).includes('"resolved":true')
+      && rows8.filter((r) => r.action === 'account.market.appeal_decided').length === 1 && !/trust-srv-/.test(JSON.stringify(rows8)),
+    JSON.stringify(rows8.map((r) => [r.action, r.entity_id, r.detail])).slice(0, 600));
+  caps = ['actor.v1'];
 } catch (e) {
   check('خطای غیرمنتظره', false, e.stack || e.message);
 } finally {

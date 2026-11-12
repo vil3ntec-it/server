@@ -27,6 +27,7 @@ import { CloudProblem, useLoad, type Load } from './shared';
 import ShopFinance from './ShopFinance';
 import StaffCard from './console/StaffCard';
 import SupportAccessCard from './console/SupportAccessCard';
+import GrantNeeded, { GRANT_REQUIRED } from './console/GrantNeeded';
 import BetaCard from './console/BetaCard';
 import TenantBackupsCard from './console/TenantBackupsCard';
 import ContractCard from './console/ContractCard';
@@ -71,9 +72,13 @@ export function SourceLine({ source, data, at }: { source: string; data?: unknow
   );
 }
 
-/** خطای بالادست با پیام و **کدِ خودش**؛ گذرا ⇒ خودش دوباره (همان `useLoad`). */
-export function Problem({ load }: { load: Load<unknown> }) {
+/**
+ * خطای بالادست با پیام و **کدِ خودش**؛ گذرا ⇒ خودش دوباره (همان `useLoad`).
+ * ‎403 grant_required‎ (TEN-04، ۱.۵۰.۹۸) خطا نیست: «اجازهٔ پشتیبانی لازم است» با پیوند به کارتِ همان دکان (`GrantNeeded`).
+ */
+export function Problem({ load, shopId, grantWhat }: { load: Load<unknown>; shopId?: string; grantWhat?: string }) {
   const { t } = useApp();
+  if (load.code === GRANT_REQUIRED) return <GrantNeeded shops={shopId ? [{ id: shopId }] : []} what={grantWhat} />;
   return (
     <div>
       <CloudProblem code={load.code} message={load.error || ''} onRetry={load.reload} />

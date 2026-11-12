@@ -182,6 +182,8 @@ export const MC = {
   caseAssign: (id: string) => `${C}/market/trust/cases/${encodeURIComponent(id)}/assign`,
   caseDecide: (id: string) => `${C}/market/trust/cases/${encodeURIComponent(id)}/decide`,
   caseAppeal: (id: string) => `${C}/market/trust/cases/${encodeURIComponent(id)}/appeal-decision`,
+  //  ۱.۵۰.۹۸: بایتِ عکسِ مدرک (فقط admin؛ پل نوع و اندازه را می‌سنجد، ‎no-store‎)
+  caseEvidence: (id: string, eid: string) => `${C}/market/trust/cases/${encodeURIComponent(id)}/evidence/${encodeURIComponent(eid)}`,
   sanctions: (active: boolean, shopId?: string) => `${C}/market/trust/sanctions${qs({ active: active ? '1' : '', shopId, limit: 200 })}`,
   sanctionLift: (id: string) => `${C}/market/trust/sanctions/${encodeURIComponent(id)}/lift`,
   dOverview: (days: number) => `${C}/delivery/overview${qs({ days })}`,

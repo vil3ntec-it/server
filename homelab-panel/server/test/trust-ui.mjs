@@ -10,6 +10,8 @@
 //    ⛔ پاسخِ گم‌شده ⇒ «نتیجه معلوم نیست» (نه سرخ)، پرونده دوباره خوانده و «تصمیم گرفته شد»؛ تکرارِ همان پنجره ⇒ هیچ POST ِ دوم
 //    ⛔ رأیِ اعتراض «برگشت» و برداشتنِ جریمه (هر کدام یک POST)؛ «فقط فعال» خاموش ⇒ «برداشته شد»
 //    ⛔ viewer فقط پیامِ «فقط admin» و هیچ درخواستِ پرونده؛ گوشی (۳۹۰px) افقی نمی‌لغزد؛ هیچ خطای جاوااسکریپت
+//    ⛔ ۱.۵۰.۹۸ — مدرکِ پیوست: admin بندانگشتی با ‎alt‎ ِ گویا (یک بار گرفته)، بزرگ‌نمایی در پنجره (همان عکس، بی درخواستِ دوم، Esc می‌بندد)؛
+//       پاسخِ غیرِتصویر ⇒ «پاسخ عکس نبود» و هیچ ‎<img>‎؛ بیننده فقط «فقط برای مدیرِ پنل» و هیچ درخواستِ مدرک؛ گوشی افقی نمی‌لغزد
 // ---------------------------------------------------------------------------
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -56,13 +58,18 @@ const sanctions = {
   tsn_4: { id: 'tsn_4', caseId: 'tc_4', shopId: 'shpA', kind: 'suspend_storefront', productId: null, reason: 'بار سوم', createdAt: NOW - 50000, active: true, liftedAt: null },
   tsn_9: { id: 'tsn_9', caseId: 'tc_9', shopId: 'shpA', kind: 'warning', productId: null, reason: 'هشدارِ قبلی', createdAt: NOW - 70000, active: true, liftedAt: null },
 };
+//  ۱.۵۰.۹۸ — مدرک: یک PNG ِ واقعی (۱×۱) و یک پاسخِ HTML که پل باید رد کند
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+const EVIDENCE = { tc_1: [{ id: 'tev_ok1', mime: 'image/png', size: PNG.length, createdAt: NOW - 80000 }, { id: 'tev_bad1', mime: 'image/jpeg', size: 70, createdAt: NOW - 79000 }],
+  tc_5: [{ id: 'tev_ok5', mime: 'image/png', size: PNG.length, createdAt: NOW - 80000 }] };
+const evReads = [];
 const hist = { tc_1: [{ type: 'filed', at: NOW - 90000, actor: 'customer', actorId: '', body: '', data: {} },
   { type: 'flagged', at: NOW - 89000, actor: 'system', actorId: '', body: '', data: { flags: ['same_ip'] } }] };
 const full = (c) => ({
   ...c, body: `این کالا تقلبی است ${XSS}`, reporterHint: '07•••12', reporterStats: { total: 2, upheld: 1, dismissed: 0, shops: 1 }, sameText: [],
   decision: c.outcome ? { outcome: c.outcome, reason: c.decisionReason || 'تقلبی بود', by: KEY_ID, at: c.decidedAt || NOW - 60000 } : null,
   appeal: c.id === 'tc_4' ? { body: 'ما کالا را فرستادیم', by: 'usr_1', at: NOW - 40000, outcome: c.appealOutcome, reason: c.appealReason || '', decidedAt: c.appealOutcome ? Date.now() : null } : null,
-  evidence: [], sanctions: Object.values(sanctions).filter((s) => s.caseId === c.id), history: hist[c.id] || [],
+  evidence: EVIDENCE[c.id] || [], sanctions: Object.values(sanctions).filter((s) => s.caseId === c.id), history: hist[c.id] || [],
 });
 
 const fake = http.createServer((req, res) => {
@@ -80,6 +87,14 @@ const fake = http.createServer((req, res) => {
     if (p.startsWith('/api/admin/trust/')) {
       if (req.method === 'GET') reads.push({ path: p, query: Object.fromEntries(u.searchParams) });
       else posts.push({ path: p, body: b });
+    }
+    const em = /^\/api\/admin\/trust\/cases\/([^/]+)\/evidence\/([^/]+)$/.exec(p);
+    if (em) {
+      evReads.push(em[2]);
+      if (!(EVIDENCE[em[1]] || []).some((e) => e.id === em[2])) return j(404, { error: { code: 'media_gone', message: 'این فایل روی سرور نیست' } });
+      if (em[2] === 'tev_bad1') { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<img src=x onerror="window.top.__ev=1">'); }
+      res.writeHead(200, { 'content-type': 'image/png', 'content-length': String(PNG.length) });
+      return res.end(PNG);
     }
     if (p === '/api/admin/trust/cases') {
       const st = u.searchParams.get('status') || 'pending';
@@ -179,8 +194,8 @@ try {
   browser = await chromium.launch({ executablePath: CHROME, args: ['--no-sandbox'] });
   const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
   page.on('pageerror', (e) => jsErrors.push(String(e.message)));
-  //  ‎504‎ ِ «نامعلوم» خطای خودِ همین آزمون است (رابط باید بگویدش)، نه خطای صفحه
-  page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource.*\b504\b/.test(m.text())) jsErrors.push(m.text()); });
+  //  ‎504‎ ِ «نامعلوم» و ‎502‎ ِ مدرکِ ردشده (۱.۵۰.۹۸) خطای خودِ همین آزمون است (رابط باید بگویدش)، نه خطای صفحه
+  page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource.*\b(502|504)\b/.test(m.text())) jsErrors.push(m.text()); });
   await signIn(page, 'admin', PW);
 
   console.log('\n── صف و پالایش ──');
@@ -208,8 +223,34 @@ try {
   let text = await det.innerText();
   check('پرونده: متنِ شاکی، تاریخچه با برچسبِ فارسی («ثبتِ پرونده»، «نشانهٔ خودکار»، «شاکی»)',
     text.includes('این کالا تقلبی است') && text.includes('ثبتِ پرونده') && text.includes('نشانهٔ خودکار') && text.includes('شاکی'), text.slice(0, 400));
-  check('⛔ HTML ِ متنِ شاکی متن می‌ماند: هیچ ‎<img>‎ ساخته نشد و ‎onerror‎ نَدَوید',
-    text.includes('<img src=x') && (await det.locator('img').count()) === 0 && (await page.evaluate(() => window.__xss)) === undefined);
+  check('⛔ HTML ِ متنِ شاکی متن می‌ماند: هیچ ‎<img>‎ ساخته نشد و ‎onerror‎ نَدَوید (تنها عکس‌ها بندانگشتی‌های مدرک‌اند)',
+    text.includes('<img src=x') && (await det.locator('[data-case-body] img').count()) === 0
+      && (await det.locator('img').count()) === (await det.locator('[data-evidence-thumb] img').count()) && (await page.evaluate(() => window.__xss)) === undefined);
+
+  console.log('\n── مدرکِ پیوست (۱.۵۰.۹۸) ──');
+  await page.waitForSelector('[data-evidence-thumb="tev_ok1"] img', { timeout: 10000 });
+  await page.waitForSelector('[data-evidence-error="evidence_not_image"]', { timeout: 10000 });
+  await page.waitForFunction(() => document.querySelector('[data-evidence-thumb="tev_ok1"] img')?.complete, null, { timeout: 5000 });
+  const thumb = det.locator('[data-evidence-thumb="tev_ok1"] img');
+  const alt1 = await thumb.getAttribute('alt');
+  const evBox = await det.locator('[data-case-evidence]').innerText();
+  check('admin: «مدرکِ پیوست (۲)»؛ بندانگشتیِ واقعی (بلاب، نه نشانیِ توکن‌دار) با ‎alt‎ ِ گویا؛ پاسخِ HTML ⇒ «پاسخ عکس نبود» و هیچ ‎<img>‎ برایش؛ هر مدرک یک بار؛ چیدمانِ راست‌به‌چپ',
+    evBox.includes('مدرکِ پیوست (۲)') && /^blob:/.test(await thumb.getAttribute('src') || '') && (await thumb.evaluate((i) => i.naturalWidth)) > 0
+      && alt1?.includes('مدرکِ ۱ از ۲') && alt1?.includes('tc_1') && evBox.includes('پاسخ عکس نبود')
+      && (await det.locator('[data-evidence-error] img').count()) === 0 && (await page.evaluate(() => window.__ev)) === undefined
+      && JSON.stringify([...evReads].sort()) === JSON.stringify(['tev_bad1', 'tev_ok1'])
+      && (await det.locator('[data-case-evidence] ul').evaluate((u) => getComputedStyle(u).direction)) === 'rtl',
+    `${evBox.slice(0, 200)} · ${alt1} · ${JSON.stringify(evReads)}`);
+  await det.locator('[data-evidence-thumb="tev_ok1"]').click();
+  await page.waitForSelector('[role="dialog"] [data-evidence-full="tev_ok1"]', { timeout: 5000 });
+  const full = page.locator('[role="dialog"] [data-evidence-full="tev_ok1"]');
+  const dlgEv = await page.locator('[role="dialog"]').innerText();
+  check('بزرگ‌نمایی: پنجره با عنوانِ «مدرکِ ۱ از ۲ — پروندهٔ tc_1»، همان عکس (همان بلاب، بی درخواستِ دوم)، ‎alt‎ و نوع/اندازه',
+    dlgEv.includes('مدرکِ ۱ از ۲') && (await full.getAttribute('src')) === (await thumb.getAttribute('src')) && (await full.getAttribute('alt')) === alt1
+      && (await full.evaluate((i) => i.complete && i.naturalWidth > 0)) && dlgEv.includes('image/png') && evReads.length === 2, dlgEv.slice(0, 200));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  check('Esc پنجرهٔ بزرگ‌نمایی را می‌بندد', (await page.locator('[role="dialog"]').count()) === 0);
   await det.locator('[data-case-assign]').dblclick();
   await page.waitForSelector('[data-case-assignee="admin"]', { timeout: 10000 });
   text = await det.innerText();
@@ -317,8 +358,9 @@ try {
   await vpage.locator('[data-case-open="tc_5"]').click();
   await vpage.waitForSelector('[data-case-detail="tc_5"]', { timeout: 10000 });
   vtext = await vpage.locator('main').innerText();
-  check('viewer با ‎trust-read.v1‎: صف و پرونده (متنِ شاکی، تاریخچه) — بی سابقهٔ شاکی، بی دکمهٔ مسئول/تصمیم و بی «برداشتن»؛ افقی نمی‌لغزد',
+  check('viewer با ‎trust-read.v1‎: صف و پرونده (متنِ شاکی، تاریخچه) — بی سابقهٔ شاکی، بی دکمهٔ مسئول/تصمیم و بی «برداشتن»؛ مدرک فقط «برای مدیرِ پنل» و هیچ درخواستِ مدرک؛ افقی نمی‌لغزد',
     vtext.includes('این کالا تقلبی است') && !vtext.includes('سابقهٔ همین گزارش‌دهنده') && (await vpage.locator('[data-case-assign], [data-case-decide], [data-sanction-lift]').count()) === 0
+      && vtext.includes('فقط برای مدیرِ پنل') && (await vpage.locator('[data-evidence-thumb], [data-case-evidence]').count()) === 0 && !evReads.includes('tev_ok5')
       && (await vpage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)), vtext.slice(0, 400));
   caps = ['actor.v1'];
   await vctx.close();
@@ -332,6 +374,13 @@ try {
   await mpage.locator('[data-case-open="tc_5"]').click();
   await mpage.waitForSelector('[data-case-detail="tc_5"]', { timeout: 10000 });
   check('گوشی (۳۹۰px): صف و پرونده، صفحه افقی نمی‌لغزد', await mpage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+  await mpage.waitForSelector('[data-evidence-thumb="tev_ok5"] img', { timeout: 10000 });
+  await mpage.locator('[data-evidence-thumb="tev_ok5"]').click();
+  await mpage.waitForSelector('[role="dialog"] [data-evidence-full="tev_ok5"]', { timeout: 5000 });
+  check('گوشی: بزرگ‌نمایی در پهنای صفحه جا می‌شود و صفحه افقی نمی‌لغزد', await mpage.evaluate(() => {
+    const img = document.querySelector('[data-evidence-full="tev_ok5"]');
+    return document.documentElement.scrollWidth <= window.innerWidth + 1 && img.getBoundingClientRect().width <= window.innerWidth;
+  }));
   await mctx.close();
 
   check('هیچ خطای جاوااسکریپت', jsErrors.length === 0, jsErrors.join(' | '));
