@@ -7,19 +7,13 @@ jobs:
   pack:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Join the parts and check them against the delivered files
+      - name: Only the APK (not the whole branch)
         run: |
           set -e
-          mkdir -p dl
-          cat "out/desktop-1.3.0/windows/RawRec Desktop-1.3.0.exe.part00" "out/desktop-1.3.0/windows/RawRec Desktop-1.3.0.exe.part01" > dl/RawRec-Studio-1.3.0-Setup.exe
-          cat "out/desktop-1.3.0/macos/RawRec Desktop-1.3.0.dmg.part00" "out/desktop-1.3.0/macos/RawRec Desktop-1.3.0.dmg.part01" > dl/RawRec-Studio-1.3.0-macOS.dmg
-          cp out/RawRec-8.1.apk dl/RawRec-8.1.apk
-          printf '%s  %s\n' 85e70b942e970dae736cd3912b2ffed18727031c1c5667c5b9a0d7bb9fc5c2ab dl/RawRec-Studio-1.3.0-Setup.exe b07b615cc5b76f9854f989ce1b5fa1a0e139019b4d015ca7703d849085558940 dl/RawRec-Studio-1.3.0-macOS.dmg 565a6323610eae12084046d7dece9e1499220a434e266b30470b1b747ed1c74f dl/RawRec-8.1.apk | sha256sum -c
-          ls -la dl
+          git init -q dl && cd dl
+          git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git fetch -q --depth 1 --filter=blob:none origin ${{ github.sha }}
+          git checkout -q FETCH_HEAD -- out/RawRec-8.4.apk
+          echo "bbcde031e899802367da1fa9321697a8dab64c70ae34814a2614d3cdc127237a  out/RawRec-8.4.apk" | sha256sum -c
       - uses: actions/upload-artifact@v4
-        with: { name: RawRec-Studio-1.3.0-Windows, path: dl/RawRec-Studio-1.3.0-Setup.exe, retention-days: 90, compression-level: 0 }
-      - uses: actions/upload-artifact@v4
-        with: { name: RawRec-Studio-1.3.0-macOS, path: dl/RawRec-Studio-1.3.0-macOS.dmg, retention-days: 90, compression-level: 0 }
-      - uses: actions/upload-artifact@v4
-        with: { name: RawRec-8.1-Android, path: dl/RawRec-8.1.apk, retention-days: 90, compression-level: 0 }
+        with: { name: RawRec-8.4-Android, path: dl/out/RawRec-8.4.apk, retention-days: 90, compression-level: 0 }
