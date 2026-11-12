@@ -355,10 +355,10 @@ const SPECIAL = {
   'PUT /api/account-admin/console/flags': { body: { scope: 'all', key: 'shop.receipt_v2', value: true, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, confirmKey: 'shop.receipt_v2', idempotencyKey: 'bridge-roles-flag-0001', password: 'Bridge-1405-roles' } },
   'POST /api/account-admin/console/flags/reset': { body: { scope: 'all', key: 'shop.receipt_v2', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, confirmKey: 'shop.receipt_v2', idempotencyKey: 'bridge-roles-flag-0002', password: 'Bridge-1405-roles' } },
   //  ۴.۶ و ۴.۷: کارِ حساس با رمزِ همان admin (احرازِ دوباره) تا مقصدِ «فقط ارشد» واقعاً دیده و سنجیده شود
-  'POST /api/account-admin/console/market/trust/cases/:id/assign': { body: { confirm: true } },
-  'POST /api/account-admin/console/market/trust/cases/:id/decide': { body: { outcome: 'upheld', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
-  'POST /api/account-admin/console/market/trust/cases/:id/appeal-decision': { body: { outcome: 'upheld', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
-  'POST /api/account-admin/console/market/trust/sanctions/:id/lift': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
+  'POST /api/account-admin/console/market/trust/cases/:id/assign': { body: { confirm: true, idempotencyKey: 'bridge-roles-trust-0001' } },
+  'POST /api/account-admin/console/market/trust/cases/:id/decide': { body: { outcome: 'upheld', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles', idempotencyKey: 'bridge-roles-trust-0002' } },
+  'POST /api/account-admin/console/market/trust/cases/:id/appeal-decision': { body: { outcome: 'upheld', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles', idempotencyKey: 'bridge-roles-trust-0003' } },
+  'POST /api/account-admin/console/market/trust/sanctions/:id/lift': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles', idempotencyKey: 'bridge-roles-trust-0004' } },
   //  S109: نشانِ «آزمایشی/تکراری» (۱.۵۰.۹۲) — بدنهٔ همگانی ‎kind‎ ِ معتبر ندارد
   'PUT /api/account-admin/console/market/census/:id': { body: { kind: 'test', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true } },
   'PUT /api/account-admin/console/delivery/thresholds': { body: { thresholds: { dispatchMin: 45 }, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },

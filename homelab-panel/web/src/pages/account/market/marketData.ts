@@ -80,6 +80,43 @@ export const SANCTION_LABEL: Record<string, Tri> = {
   hide_listing: T('پنهان کردنِ کالا', 'Hide product', 'توکی پټول'),
   suspend_storefront: T('تعلیقِ ویترین', 'Suspend storefront', 'ننداریز ځنډول'),
 };
+/* ABUSE-01 — پرونده‌های اعتماد (همان واژه‌های ‎lib/market-trust.js‎ ِ shop) */
+export const CASE_STATUSES = ['pending', 'open', 'in_review', 'appealed', 'decided', 'closed', 'all'];
+export const CASE_STATUS_LABEL: Record<string, Tri> = {
+  pending: T('در انتظارِ رسیدگی', 'Awaiting action', 'د رسیدګۍ په تمه'),
+  open: T('باز', 'Open', 'خلاص'),
+  in_review: T('در بررسی', 'In review', 'د کتنې لاندې'),
+  appealed: T('اعتراض شده', 'Appealed', 'اعتراض شوی'),
+  decided: T('تصمیم گرفته شد', 'Decided', 'پرېکړه شوې'),
+  closed: T('بسته', 'Closed', 'تړل شوی'),
+  all: T('همه', 'All', 'ټول'),
+};
+export const OUTCOME_LABEL: Record<string, Tri> = {
+  upheld: T('وارد است', 'Upheld', 'وارد دی'),
+  dismissed: T('رد', 'Dismissed', 'رد'),
+  reversed: T('برگشت', 'Reversed', 'بېرته'),
+};
+export const CASE_EVENT_LABEL: Record<string, Tri> = {
+  filed: T('ثبتِ پرونده', 'Filed', 'دوسیه ثبت شوه'),
+  flagged: T('نشانهٔ خودکار', 'Auto flag', 'اتومات نښه'),
+  evidence_added: T('مدرک افزوده شد', 'Evidence added', 'ضمیمه زیاته شوه'),
+  shop_response: T('پاسخِ دکان', 'Shop response', 'د هټۍ ځواب'),
+  assigned: T('مسئول تعیین شد', 'Assigned', 'مسئول وټاکل شو'),
+  decided: T('تصمیم', 'Decision', 'پرېکړه'),
+  sanction_applied: T('جریمه', 'Sanction applied', 'جریمه ولګېده'),
+  appealed: T('اعتراضِ دکان', 'Shop appealed', 'د هټۍ اعتراض'),
+  appeal_decided: T('رأیِ اعتراض', 'Appeal decided', 'د اعتراض پرېکړه'),
+  sanction_lifted: T('جریمه برداشته شد', 'Sanction lifted', 'جریمه لرې شوه'),
+};
+export const CASE_ACTOR_LABEL: Record<string, Tri> = {
+  customer: T('شاکی', 'Reporter', 'شکایت کوونکی'),
+  shop: T('دکان', 'Shop', 'هټۍ'),
+  admin: T('مدیر', 'Admin', 'مدیر'),
+  system: T('سامانه', 'System', 'سیستم'),
+};
+/** فیلترِ شناسهٔ دکان: خالی (همه) یا همان مرزِ شناسهٔ پل — نادرست ⇒ هیچ درخواستی */
+export const shopFilterOk = (v: string) => v === '' || /^[A-Za-z0-9_-]{1,80}$/.test(v);
+
 export const THRESHOLD_LABEL: Record<string, Tri> = {
   acceptMin: T('پذیرشِ سفارش', 'Order acceptance', 'د فرمایش منل'),
   dispatchMin: T('ارسالِ سفارشِ آماده', 'Dispatch of packed order', 'د چمتو فرمایش لېږل'),
@@ -232,16 +269,24 @@ export type HistoryEntry = { id: string; shopId?: string | null; actorType?: str
   targetType?: string | null; targetId?: string | null; detail?: Record<string, unknown> | null; at?: number | null };
 export type History = Stamped & { entries?: HistoryEntry[] };
 export type TrustCase = { id: string; shopId?: string; shopName?: string; kind?: string; subject?: string; category?: string;
-  severity?: string; status?: string; orderNo?: number | null; productId?: string; createdAt?: number | null;
-  evidenceCount?: number; flags?: string[]; outcome?: string };
+  severity?: string; status?: string; orderNo?: number | null; productId?: string | null; createdAt?: number | null; updatedAt?: number | null;
+  evidenceCount?: number; flags?: string[]; outcome?: string | null; appealOutcome?: string | null; duplicateOf?: string | null;
+  /** مسئول در سرورِ حساب (از راهِ پل: شناسهٔ کلیدِ سرویس) */
+  assignee?: string;
+  /** نامِ کاربرِ پنل از دفترِ همین پنل — فقط وقتی همان مسئولِ امروزِ سرورِ حساب است (‎console-market.js‎ `withPanelAssignee`) */
+  panelAssignee?: { by: string; at: number } | null };
+export type CaseSanction = { id: string; kind: string; productId?: string | null; reason?: string; createdAt?: number | null;
+  active?: boolean; liftedAt?: number | null; liftReason?: string; createdBy?: string; liftedBy?: string };
 export type TrustCaseFull = TrustCase & { body?: string; reporterHint?: string;
   reporterStats?: { total?: number; upheld?: number; dismissed?: number; shops?: number };
+  sameText?: string[];
   decision?: { outcome?: string; reason?: string; by?: string; at?: number } | null;
-  appeal?: { body?: string; at?: number; outcome?: string | null; reason?: string } | null;
-  sanctions?: { id: string; kind: string; productId?: string; liftedAt?: number | null }[];
-  history?: { type: string; at?: number; actor?: string; body?: string }[] };
-export type Sanction = { id: string; shopId?: string; caseId?: string; kind: string; productId?: string; reason?: string;
-  createdAt?: number | null; liftedAt?: number | null };
+  appeal?: { body?: string; by?: string; at?: number; outcome?: string | null; reason?: string; decidedBy?: string; decidedAt?: number | null } | null;
+  evidence?: { id: string; mime?: string; size?: number; createdAt?: number }[];
+  sanctions?: CaseSanction[];
+  history?: { type: string; at?: number; actor?: string; actorId?: string; body?: string; data?: Record<string, unknown> }[] };
+export type Sanction = { id: string; shopId?: string; caseId?: string; kind: string; productId?: string | null; reason?: string;
+  createdAt?: number | null; active?: boolean; liftedAt?: number | null; liftReason?: string };
 
 export type DeliveryOverview = Stamped & {
   windowDays?: number; scanned?: number; truncated?: boolean;

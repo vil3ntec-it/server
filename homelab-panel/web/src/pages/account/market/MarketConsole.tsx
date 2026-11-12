@@ -15,16 +15,17 @@ import { api } from '../../../api';
 import { useApp } from '../../../app-context';
 import { Card } from '../../../components/ui';
 import { Cell, KV, Notice, Row, Stat, Table, Tabs } from '../../../control/ui';
-import { isUnavailable, reasonOk } from '../consoleData';
+import { isUnavailable, newIdemKey, reasonOk } from '../consoleData';
 import { SHELL_API } from '../console/contract';
-import { SensitiveDialog as KeyDialog, type SensitiveSubmit } from '../console/parts';
+import { SensitiveDialog as KeyDialog, outcomeUnknown, type SensitiveSubmit } from '../console/parts';
 import { useLoad } from '../shared';
 import {
-  CENSUS_KINDS, GATE_LABEL, MC, ORDER_GROUPS, SANCTION_LABEL, SELLER_STATES, STOREFRONT_FLAG, money, regionMismatches, regionRows, shownNum,
+  CASE_ACTOR_LABEL, CASE_EVENT_LABEL, CASE_STATUSES, CASE_STATUS_LABEL, CENSUS_KINDS, GATE_LABEL, MC, ORDER_GROUPS, OUTCOME_LABEL, SANCTION_LABEL,
+  SELLER_STATES, STOREFRONT_FLAG, money, regionMismatches, regionRows, shopFilterOk, shownNum,
   storefrontFlagEdit, type Commission, type Regions, type History, type MarketOrders, type MarketOverview, type Sanction, type Seller, type Sellers,
   type TrustCase, type TrustCaseFull,
 } from './marketData';
-import { Box, Chip, CsvButton, IssueChips, Pager, SensitiveDialog, ServiceHoldDialog, errText, moment } from './parts';
+import { Box, Chip, CsvButton, IssueChips, Pager, ServiceHoldDialog, errText, moment } from './parts';
 import { useTx } from './tx';
 
 export type ModuleProps = { params: URLSearchParams; setParams: (next: Record<string, string>) => void };
@@ -433,7 +434,25 @@ function Orders({ params, setParams }: ModuleProps) {
   );
 }
 
-/* ───────────────────────────── گزارش‌ها، شکایت‌ها و جریمه‌ها ───────────────────────────── */
+/* ───────────────────────────── گزارش‌ها، شکایت‌ها و جریمه‌ها (ABUSE-01) ───────────────────────────── */
+//  ⛔ هر نوشتن با کلیدِ یکتاییِ همان پنجره/پرونده (دوکلیک یا تکرار پس از قطعِ شبکه = همان یک کار) و پاسخِ «نامعلوم» ⇒ هشدار و
+//     خواندنِ دوبارهٔ پرونده، نه سرخِ «نشد». متنِ شاکی، دلیل و شناسه‌ها فقط متن‌اند (هیچ HTML).
+
+const OPEN_STATES = ['open', 'in_review', 'appealed'];
+
+function Assignee({ c }: { c: TrustCase }) {
+  const { tx } = useTx();
+  const { username } = useApp();
+  if (c.panelAssignee?.by) {
+    return (
+      <span data-case-assignee={c.panelAssignee.by}>
+        {c.panelAssignee.by}{c.panelAssignee.by === username ? ` (${tx('شما', 'you', 'تاسو')})` : ''}
+      </span>
+    );
+  }
+  if (c.assignee) return <span className="font-mono text-xs" dir="ltr" title={tx('شناسهٔ مسئول در سرورِ حساب', 'Assignee id on the account server', 'د حساب سرور مسئول')}>{c.assignee}</span>;
+  return <span className="text-ink-muted">{tx('بی مسئول', 'Unassigned', 'بې مسئوله')}</span>;
+}
 
 function CaseDetail({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
   const { tx, tri } = useTx();
@@ -445,83 +464,138 @@ function CaseDetail({ id, onClose, onChanged }: { id: string; onClose: () => voi
   const [productId, setProductId] = useState('');
   const [done, setDone] = useState('');
   const [err, setErr] = useState('');
+  const [unknown, setUnknown] = useState(false);
+  const [busy, setBusy] = useState(false);
+  //  یک کلید برای «مسئولش من» ِ همین پرونده تا تأییدِ سرور؛ پس از آن کلیدِ تازه
+  const [assignKey, setAssignKey] = useState(newIdemKey);
+  const refresh = () => { void load.reload(); onChanged(); };
   const assign = async () => {
-    setErr('');
-    try { await api(MC.caseAssign(id), { method: 'POST', body: { confirm: true } }); setDone(tx('مسئولِ پرونده شدید (تأییدِ سرور).', 'You are now the assignee (server-confirmed).', 'تاسو مسئول شوئ.')); void load.reload(); onChanged(); }
-    catch (e) { setErr(errText(e)); }
+    if (busy) return;
+    setBusy(true); setErr(''); setDone(''); setUnknown(false);
+    try {
+      await api(MC.caseAssign(id), { method: 'POST', body: { confirm: true, idempotencyKey: assignKey } });
+      setAssignKey(newIdemKey());
+      setDone(tx('مسئولِ پرونده شدید (تأییدِ سرور).', 'You are now the assignee (server-confirmed).', 'تاسو مسئول شوئ (د سرور تایید).'));
+      refresh();
+    } catch (e) {
+      if (outcomeUnknown(e)) { setUnknown(true); refresh(); } else setErr(errText(e));
+    } finally { setBusy(false); }
   };
+  const open = Boolean(c && OPEN_STATES.includes(String(c.status)));
   return (
     <Box title={`${tx('پرونده', 'Case', 'دوسیه')} ${id}`} icon={<Flag size={16} />} source="/api/admin/trust/cases/:id" load={load}
-         action={<button className="btn btn-sm" onClick={onClose}>{tx('بستن', 'Close', 'بندول')}</button>}>
+         action={<button className="btn btn-sm" data-case-close onClick={onClose}>{tx('بستن', 'Close', 'بندول')}</button>}>
       {() => c && (
-        <div className="space-y-2 text-sm">
+        <div className="space-y-2 text-sm" data-case-detail={id}>
           {done && <Notice tone="good">{done}</Notice>}
           {err && <Notice tone="bad">{err}</Notice>}
-          <KV label={tx('دکان', 'Shop', 'هټۍ')}>{c.shopName || c.shopId}</KV>
-          <KV label={tx('نوع', 'Kind', 'ډول')}>{c.kind} · {c.subject} · {c.category}{c.productId ? ` · ${c.productId}` : ''}</KV>
-          <KV label={tx('شدت / وضعیت', 'Severity / status', 'شدت / حالت')}>{c.severity} · {c.status}</KV>
+          {unknown && <div data-outcome="unknown"><Notice tone="warn">{tx('نتیجه معلوم نیست — سرورِ حساب به‌موقع جواب نداد؛ وضعِ پرونده دوباره خوانده شد. پیش از تکرار همین‌جا ببینید.',
+            'Outcome unknown — the account server did not answer in time; the case was re-read. Check it here before retrying.', 'پایله معلومه نه ده — له بیا هڅې مخکې همدلته وګورئ.')}</Notice></div>}
+          <KV label={tx('دکان', 'Shop', 'هټۍ')}>{c.shopName || '—'} <span className="font-mono text-xs" dir="ltr">{c.shopId}</span></KV>
+          <KV label={tx('نوع', 'Kind', 'ډول')}>{c.kind === 'report' ? tx('گزارشِ کالا', 'Product report', 'د توکي راپور') : tx('شکایت', 'Complaint', 'شکایت')} · {c.category}{c.productId ? ` · ${c.productId}` : ''}</KV>
+          <KV label={tx('شدت / وضعیت', 'Severity / status', 'شدت / حالت')}>{c.severity} · <span data-case-status={c.status}>{tri(CASE_STATUS_LABEL[String(c.status)], c.status)}</span></KV>
+          <KV label={tx('مسئول', 'Assignee', 'مسئول')}><Assignee c={c} /></KV>
           <KV label={tx('سابقهٔ همین گزارش‌دهنده (۳۰ روز)', 'Same reporter (30d)', 'همدا راپور ورکوونکی')}>
             {tx('همه {a} · وارد {b} · رد {c} · دکان {d}', 'all {a} · upheld {b} · dismissed {c} · shops {d}', '{a} · {b} · {c} · {d}', {
               a: shownNum(c.reporterStats?.total), b: shownNum(c.reporterStats?.upheld), c: shownNum(c.reporterStats?.dismissed), d: shownNum(c.reporterStats?.shops),
             })}
           </KV>
-          <div className="rounded-lg bg-surface-raised p-2 text-xs whitespace-pre-wrap">{c.body || '—'}</div>
-          {(c.sanctions || []).length > 0 && <KV label={tx('جریمه‌ها', 'Sanctions', 'جریمې')}>{(c.sanctions || []).map((s) => `${tri(SANCTION_LABEL[s.kind], s.kind)}${s.liftedAt ? ' ✓' : ''}`).join('، ')}</KV>}
+          <div className="rounded-lg bg-surface-raised p-2 text-xs whitespace-pre-wrap break-words" data-case-body>{c.body || '—'}</div>
+          {(c.sameText || []).length > 0 && (
+            <p className="text-[11px] text-ink-muted">{tx('پرونده‌های هم‌متن در همین دکان:', 'Same-text cases at this shop:', 'ورته متن:')} <span className="font-mono" dir="ltr">{(c.sameText || []).join(' ')}</span></p>
+          )}
+          {c.decision && (
+            <div className="rounded-lg border border-line p-2 text-xs" data-case-decision>
+              <span className="font-semibold">{tx('تصمیم', 'Decision', 'پرېکړه')}: {tri(OUTCOME_LABEL[String(c.decision.outcome)], c.decision.outcome)}</span>
+              <span className="text-ink-muted"> · {moment(c.decision.at)}</span>
+              <span className="block whitespace-pre-wrap break-words">{c.decision.reason || '—'}</span>
+            </div>
+          )}
+          {c.appeal && (
+            <div className="rounded-lg border border-line p-2 text-xs" data-case-appeal-box>
+              <span className="font-semibold">{tx('اعتراضِ دکان', 'Shop appeal', 'د هټۍ اعتراض')}</span>
+              <span className="text-ink-muted"> · {moment(c.appeal.at)}</span>
+              <span className="block whitespace-pre-wrap break-words">{c.appeal.body || '—'}</span>
+              {c.appeal.outcome && (
+                <span className="mt-1 block">{tx('رأی', 'Ruling', 'پرېکړه')}: {tri(OUTCOME_LABEL[c.appeal.outcome], c.appeal.outcome)} — {c.appeal.reason || '—'} <span className="text-ink-muted">· {moment(c.appeal.decidedAt)}</span></span>
+              )}
+            </div>
+          )}
+          {(c.sanctions || []).length > 0 && (
+            <ul className="space-y-1 text-xs" data-case-sanctions>
+              {(c.sanctions || []).map((s) => (
+                <li key={s.id}>
+                  <Chip tone={s.liftedAt ? 'neutral' : 'bad'}>{tri(SANCTION_LABEL[s.kind], s.kind)}</Chip>
+                  {s.productId ? <span className="font-mono" dir="ltr"> {s.productId}</span> : null}
+                  {' · '}{s.liftedAt ? `${tx('برداشته شد', 'lifted', 'لرې شوه')} ${moment(s.liftedAt)} — ${s.liftReason || '—'}` : tx('فعال', 'active', 'فعاله')}
+                </li>
+              ))}
+            </ul>
+          )}
           <h4 className="mt-2 text-[11px] font-semibold">{tx('تاریخچه', 'History', 'تاریخچه')}</h4>
-          <ul className="space-y-1 text-[11px]">
-            {(c.history || []).map((h, i) => <li key={i}>{moment(h.at)} · {h.actor} · {h.type}{h.body ? ` — ${h.body}` : ''}</li>)}
-          </ul>
+          <ol className="space-y-1 text-[11px]" data-case-history>
+            {(c.history || []).map((h, i) => {
+              const o = typeof h.data?.outcome === 'string' ? h.data.outcome : '';
+              return (
+                <li key={i} data-event={h.type} className="break-words">
+                  <span className="text-ink-muted">{moment(h.at)}</span> · {tri(CASE_ACTOR_LABEL[String(h.actor)], h.actor)} · {tri(CASE_EVENT_LABEL[h.type], h.type)}
+                  {o ? ` (${tri(OUTCOME_LABEL[o], o)})` : ''}{h.body ? ` — ${h.body}` : ''}
+                </li>
+              );
+            })}
+          </ol>
           <p className="text-[11px] text-ink-muted">{tx('مدرکِ پیوست ({n}) فقط در کنسولِ خودِ سرورِ حساب دیده می‌شود (این‌جا پل نشده).', 'Attached evidence ({n}) is viewable only in the account server console (not bridged here).', 'ضمیمه ({n}) یوازې د حساب سرور په کنسول کې.', { n: shownNum(c.evidenceCount) })}</p>
           <div className="flex flex-wrap gap-2">
-            {(c.status === 'open' || c.status === 'in_review' || c.status === 'appealed') && <button className="btn btn-sm" onClick={assign}>{tx('مسئولش من', 'Assign to me', 'زه مسئول')}</button>}
-            {(c.status === 'open' || c.status === 'in_review') && <button className="btn btn-sm btn-danger" onClick={() => setMode('decide')}>{tx('تصمیم', 'Decide', 'پرېکړه')}</button>}
-            {c.status === 'appealed' && <button className="btn btn-sm btn-danger" onClick={() => { setOutcome('upheld'); setMode('appeal'); }}>{tx('رأیِ اعتراض', 'Decide appeal', 'د اعتراض پرېکړه')}</button>}
+            {/* ⛔ برچسب در حالِ فرستادن عوض نمی‌شود: کوتاه شدنش دکمهٔ «تصمیم» را زیرِ کلیکِ دومِ دوکلیک می‌آورد */}
+            {open && <button className="btn btn-sm" data-case-assign disabled={busy} aria-busy={busy} onClick={assign}>{tx('مسئولش من', 'Assign to me', 'زه مسئول')}</button>}
+            {(c.status === 'open' || c.status === 'in_review') && <button className="btn btn-sm btn-danger" data-case-decide onClick={() => { setDone(''); setMode('decide'); }}>{tx('تصمیم', 'Decide', 'پرېکړه')}</button>}
+            {c.status === 'appealed' && <button className="btn btn-sm btn-danger" data-case-appeal onClick={() => { setDone(''); setOutcome('upheld'); setMode('appeal'); }}>{tx('رأیِ اعتراض', 'Decide appeal', 'د اعتراض پرېکړه')}</button>}
           </div>
           {mode === 'decide' && (
-            <SensitiveDialog title={tx('تصمیمِ پرونده', 'Decide case', 'د دوسیې پرېکړه')} onClose={() => setMode(null)}
-              ready={outcome === 'upheld' || !sanction}
-              effect={tx('تصمیم و جریمه در سابقهٔ پرونده و سرورِ حساب می‌ماند؛ جریمه برگشت‌پذیر است (برداشتن با دلیل). پرونده دوباره تصمیم نمی‌گیرد.',
-                'The decision and sanction are recorded on the case and the account server; sanctions are reversible (lift with reason). A case is decided once.',
-                'پرېکړه او جریمه ثبتېږي؛ جریمه بېرته کېدونکې ده.')}
-              send={async (reason, password) => {
-                const body: Record<string, unknown> = { outcome, reason, password, confirm: true };
+            <KeyDialog danger needPassword title={tx('تصمیمِ پرونده', 'Decide case', 'د دوسیې پرېکړه')} onClose={() => setMode(null)}
+              disabled={!(outcome === 'upheld' || !sanction)} onUnknown={refresh}
+              effect={tx('تصمیم و جریمه در سابقهٔ پرونده و سرورِ حساب می‌ماند و دکان دلیل را می‌بیند؛ جریمه برگشت‌پذیر است (برداشتن با دلیل). پرونده فقط یک بار تصمیم می‌گیرد.',
+                'The decision and sanction are recorded on the case and the account server and the shop sees the reason; sanctions are reversible (lift with reason). A case is decided once.',
+                'پرېکړه او جریمه ثبتېږي او هټۍ لامل ویني؛ جریمه بېرته کېدونکې ده.')}
+              onSubmit={async (x: SensitiveSubmit) => {
+                const body: Record<string, unknown> = { outcome, ...x, confirm: true };
                 if (outcome === 'upheld' && sanction) body.sanction = { kind: sanction, ...(sanction === 'hide_listing' && productId ? { productId } : {}) };
                 const out = await api<{ sanction?: { id: string } | null }>(MC.caseDecide(id), { method: 'POST', body });
                 setMode(null);
                 setDone(tx('تصمیم ثبت شد (تأییدِ سرور){s}.', 'Decision recorded (server-confirmed){s}.', 'پرېکړه ثبت شوه{s}.', { s: out?.sanction?.id ? ` · ${out.sanction.id}` : '' }));
-                void load.reload();
-                onChanged();
+                refresh();
               }}>
               <div className="flex flex-wrap gap-2 text-xs">
-                <select className="input w-auto" value={outcome} onChange={(e) => setOutcome(e.target.value)} aria-label="outcome">
-                  <option value="upheld">{tx('وارد است', 'Upheld', 'وارد دی')}</option>
-                  <option value="dismissed">{tx('رد', 'Dismissed', 'رد')}</option>
+                <select className="input w-auto" value={outcome} onChange={(e) => { setOutcome(e.target.value); if (e.target.value !== 'upheld') setSanction(''); }} aria-label={tx('نتیجه', 'Outcome', 'پایله')}>
+                  <option value="upheld">{tri(OUTCOME_LABEL.upheld)}</option>
+                  <option value="dismissed">{tri(OUTCOME_LABEL.dismissed)}</option>
                 </select>
-                <select className="input w-auto" value={sanction} onChange={(e) => setSanction(e.target.value)} disabled={outcome !== 'upheld'} aria-label="sanction">
+                <select className="input w-auto" value={sanction} onChange={(e) => setSanction(e.target.value)} disabled={outcome !== 'upheld'} aria-label={tx('جریمه', 'Sanction', 'جریمه')}>
                   <option value="">{tx('بی جریمه', 'No sanction', 'بې جریمې')}</option>
                   {Object.keys(SANCTION_LABEL).map((k) => <option key={k} value={k}>{tri(SANCTION_LABEL[k], k)}</option>)}
                 </select>
                 {sanction === 'hide_listing' && (
-                  <input className="input w-40" dir="ltr" value={productId} onChange={(e) => setProductId(e.target.value)} placeholder={c.productId || 'productId'} />
+                  <input className="input w-40" dir="ltr" value={productId} onChange={(e) => setProductId(e.target.value)} placeholder={c.productId || 'productId'}
+                         aria-label={tx('شناسهٔ کالا', 'Product id', 'د توکي پېژند')} />
                 )}
               </div>
-            </SensitiveDialog>
+            </KeyDialog>
           )}
           {mode === 'appeal' && (
-            <SensitiveDialog title={tx('رأیِ اعتراض', 'Appeal decision', 'د اعتراض پرېکړه')} onClose={() => setMode(null)}
-              effect={tx('«برگشت» جریمه‌های همین پرونده را برمی‌دارد؛ «تصمیم می‌ماند» چیزی را عوض نمی‌کند.', '"Reversed" lifts this case\'s sanctions; "upheld" changes nothing.', '«بېرته» جریمې لرې کوي.')}
-              send={async (reason, password) => {
-                await api(MC.caseAppeal(id), { method: 'POST', body: { outcome, reason, password, confirm: true } });
+            <KeyDialog danger needPassword title={tx('رأیِ اعتراض', 'Appeal decision', 'د اعتراض پرېکړه')} onClose={() => setMode(null)} onUnknown={refresh}
+              effect={tx('«برگشت» همهٔ جریمه‌های فعالِ همین پرونده را برمی‌دارد؛ «تصمیم می‌ماند» چیزی را عوض نمی‌کند. پرونده پس از رأی بسته می‌شود.',
+                '"Reversed" lifts all active sanctions of this case; "Decision stands" changes nothing. The case closes after the ruling.', '«بېرته» جریمې لرې کوي.')}
+              onSubmit={async (x: SensitiveSubmit) => {
+                await api(MC.caseAppeal(id), { method: 'POST', body: { outcome, ...x, confirm: true } });
                 setMode(null);
                 setDone(tx('رأیِ اعتراض ثبت شد (تأییدِ سرور).', 'Appeal decided (server-confirmed).', 'ثبت شو.'));
-                void load.reload();
-                onChanged();
+                refresh();
               }}>
-              <select className="input w-auto text-xs" value={outcome} onChange={(e) => setOutcome(e.target.value)} aria-label="appeal">
+              <select className="input w-auto text-xs" value={outcome} onChange={(e) => setOutcome(e.target.value)} aria-label={tx('رأی', 'Ruling', 'پرېکړه')}>
                 <option value="upheld">{tx('تصمیم می‌ماند', 'Decision stands', 'پرېکړه پاتې')}</option>
-                <option value="reversed">{tx('برگشت', 'Reversed', 'بېرته')}</option>
+                <option value="reversed">{tri(OUTCOME_LABEL.reversed)}</option>
               </select>
-            </SensitiveDialog>
+            </KeyDialog>
           )}
         </div>
       )}
@@ -533,47 +607,59 @@ function Reports() {
   const { tx, tri } = useTx();
   const { can } = useApp();
   const [status, setStatus] = useState('pending');
+  const [shopDraft, setShopDraft] = useState('');
+  const [shop, setShop] = useState('');
+  const [activeOnly, setActiveOnly] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
   const [lift, setLift] = useState<Sanction | null>(null);
   const [done, setDone] = useState('');
-  const cases = useLoad<{ cases?: TrustCase[]; fetchedAt?: number }>(can('admin') ? MC.cases(status) : null, [status]);
-  const sanctions = useLoad<{ sanctions?: Sanction[]; fetchedAt?: number }>(can('admin') ? MC.sanctions(true) : null, []);
+  const cases = useLoad<{ cases?: TrustCase[]; fetchedAt?: number }>(can('admin') ? MC.cases(status, shop) : null, [status, shop]);
+  const sanctions = useLoad<{ sanctions?: Sanction[]; fetchedAt?: number }>(can('admin') ? MC.sanctions(activeOnly, shop) : null, [activeOnly, shop]);
   if (!can('admin')) {
-    return <Notice tone="info">{tx('پرونده‌های گزارش و شکایت دادهٔ حساس‌اند و سرورِ حساب فقط به مدیرِ ارشد می‌دهد؛ این‌جا فقط admin ِ پنل.',
-      'Report/complaint cases are sensitive; the account server serves them to superadmins only — here admin only.', 'دا یوازې د admin لپاره.')}</Notice>;
+    return <Notice tone="info">{tx('پرونده‌های گزارش و شکایت دادهٔ حساس‌اند (متنِ شاکی و سابقه‌اش) و سرورِ حساب فقط به مدیرِ ارشد می‌دهد؛ این‌جا فقط admin ِ پنل.',
+      'Report/complaint cases are sensitive (reporter text and history); the account server serves them to superadmins only — here panel admins only.', 'دا یوازې د admin لپاره.')}</Notice>;
   }
+  const shopOk = shopFilterOk(shopDraft.trim());
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2 text-xs">
-        <select className="input w-auto" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="status">
-          {['pending', 'open', 'in_review', 'appealed', 'decided', 'closed', 'all'].map((s) => <option key={s} value={s}>{s}</option>)}
+      <form className="flex flex-wrap items-center gap-2 text-xs" onSubmit={(e) => { e.preventDefault(); if (shopOk) { setShop(shopDraft.trim()); setOpen(null); } }}>
+        <select className="input w-auto" value={status} onChange={(e) => setStatus(e.target.value)} aria-label={tx('وضعیت', 'Status', 'حالت')} data-trust-status>
+          {CASE_STATUSES.map((s) => <option key={s} value={s}>{tri(CASE_STATUS_LABEL[s], s)}</option>)}
         </select>
-      </div>
+        <input className="input w-48" dir="ltr" value={shopDraft} onChange={(e) => setShopDraft(e.target.value)} data-trust-shop
+               placeholder={tx('شناسهٔ دکان (همه)', 'Shop id (all)', 'د هټۍ پېژند (ټول)')} aria-label={tx('شناسهٔ دکان', 'Shop id', 'د هټۍ پېژند')} />
+        <button className="btn btn-sm" type="submit" disabled={!shopOk}>{tx('پالایش', 'Filter', 'چاڼ')}</button>
+        {shop && <button className="btn btn-sm" type="button" onClick={() => { setShop(''); setShopDraft(''); }}>{tx('همهٔ دکان‌ها', 'All shops', 'ټولې هټۍ')}</button>}
+        {!shopOk && <span className="text-[11px]" style={{ color: 'var(--status-critical)' }}>{tx('فقط حرف و رقمِ لاتین، _ و -', 'Latin letters, digits, _ and - only', 'یوازې لاتیني توري او شمېرې')}</span>}
+      </form>
       {done && <Notice tone="good">{done}</Notice>}
       {open && <CaseDetail id={open} onClose={() => setOpen(null)} onChanged={() => { void cases.reload(); void sanctions.reload(); }} />}
       <Box title={tx('صفِ گزارش‌های کالا و شکایت‌ها', 'Product reports & complaints queue', 'د راپورونو کتار')} icon={<Flag size={16} />}
            source="/api/admin/trust/cases" load={cases}>
         {(d) => (
           <Table head={[tx('نوع', 'Kind', 'ډول'), tx('دکان', 'Shop', 'هټۍ'), tx('دسته', 'Category', 'ډله'), tx('شدت', 'Severity', 'شدت'),
-            tx('وضعیت', 'Status', 'حالت'), tx('مدرک', 'Evidence', 'ضمیمه'), tx('نشانه', 'Flags', 'نښې'), tx('ثبت', 'Created', 'ثبت')]}
+            tx('وضعیت', 'Status', 'حالت'), tx('مسئول', 'Assignee', 'مسئول'), tx('مدرک', 'Evidence', 'ضمیمه'), tx('نشانه', 'Flags', 'نښې'), tx('ثبت', 'Created', 'ثبت'), '']}
                  empty={(d.cases || []).length === 0}>
             {(d.cases || []).map((c) => (
               <Row key={c.id} onClick={() => setOpen(c.id)}>
-                <Cell>{c.kind === 'report' ? tx('گزارشِ کالا', 'Product report', 'د توکي راپور') : tx('شکایت', 'Complaint', 'شکایت')}{c.productId ? <span dir="ltr"> · {c.productId}</span> : null}</Cell>
+                <Cell><span data-case-row={c.id}>{c.kind === 'report' ? tx('گزارشِ کالا', 'Product report', 'د توکي راپور') : tx('شکایت', 'Complaint', 'شکایت')}</span>{c.productId ? <span dir="ltr"> · {c.productId}</span> : null}</Cell>
                 <Cell>{c.shopName || c.shopId}</Cell>
                 <Cell mono>{c.category}</Cell>
                 <Cell><Chip tone={c.severity === 'high' ? 'bad' : c.severity === 'medium' ? 'warn' : 'neutral'}>{c.severity}</Chip></Cell>
-                <Cell mono>{c.status}</Cell>
+                <Cell>{tri(CASE_STATUS_LABEL[String(c.status)], c.status)}{c.outcome ? ` · ${tri(OUTCOME_LABEL[c.outcome], c.outcome)}` : ''}</Cell>
+                <Cell><Assignee c={c} /></Cell>
                 <Cell>{shownNum(c.evidenceCount)}</Cell>
                 <Cell mono>{(c.flags || []).join(' ') || '—'}</Cell>
                 <Cell>{moment(c.createdAt)}</Cell>
+                <Cell><button className="btn btn-sm" data-case-open={c.id} onClick={(e) => { e.stopPropagation(); setOpen(c.id); }}>{tx('باز کردن', 'Open', 'خلاصول')}</button></Cell>
               </Row>
             ))}
           </Table>
         )}
       </Box>
-      <Box title={tx('جریمه‌های فعال', 'Active sanctions', 'فعالې جریمې')} icon={<AlertTriangle size={16} />}
-           source="/api/admin/trust/sanctions" load={sanctions}>
+      <Box title={activeOnly ? tx('جریمه‌های فعال', 'Active sanctions', 'فعالې جریمې') : tx('همهٔ جریمه‌ها', 'All sanctions', 'ټولې جریمې')} icon={<AlertTriangle size={16} />}
+           source="/api/admin/trust/sanctions" load={sanctions}
+           action={<label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} data-trust-active />{tx('فقط فعال', 'Active only', 'یوازې فعالې')}</label>}>
         {(d) => (
           <Table head={[tx('نوع', 'Kind', 'ډول'), tx('دکان', 'Shop', 'هټۍ'), tx('کالا', 'Product', 'توکی'), tx('دلیل', 'Reason', 'لامل'), tx('از', 'Since', 'له'), '']}
                  empty={(d.sanctions || []).length === 0}>
@@ -584,18 +670,20 @@ function Reports() {
                 <Cell mono>{s.productId || '—'}</Cell>
                 <Cell>{s.reason || '—'}</Cell>
                 <Cell>{moment(s.createdAt)}</Cell>
-                <Cell><button className="btn btn-sm" onClick={() => { setDone(''); setLift(s); }}>{tx('برداشتن', 'Lift', 'لرې کول')}</button></Cell>
+                <Cell>{s.liftedAt
+                  ? <span className="text-[11px] text-ink-muted">{tx('برداشته شد', 'Lifted', 'لرې شوه')} {moment(s.liftedAt)}</span>
+                  : <button className="btn btn-sm" data-sanction-lift={s.id} onClick={() => { setDone(''); setLift(s); }}>{tx('برداشتن', 'Lift', 'لرې کول')}</button>}</Cell>
               </Row>
             ))}
           </Table>
         )}
       </Box>
       {lift && (
-        <SensitiveDialog title={`${tx('برداشتنِ جریمه', 'Lift sanction', 'جریمه لرې کول')} · ${tri(SANCTION_LABEL[lift.kind], lift.kind)}`}
-          effect={tx('جریمه همان دم برداشته می‌شود؛ ردیفش و دلیل در سابقه می‌ماند.', 'The sanction is lifted at once; its row and reason stay in history.', 'جریمه سمدستي لرې کېږي.')}
-          onClose={() => setLift(null)}
-          send={async (reason, password) => {
-            await api(MC.sanctionLift(lift.id), { method: 'POST', body: { reason, password, confirm: true } });
+        <KeyDialog needPassword title={`${tx('برداشتنِ جریمه', 'Lift sanction', 'جریمه لرې کول')} · ${tri(SANCTION_LABEL[lift.kind], lift.kind)}`}
+          effect={tx('جریمه همان دم برداشته می‌شود؛ ردیفش و دلیل در سابقهٔ پرونده می‌ماند و دکان می‌بیند.', 'The sanction is lifted at once; its row and reason stay in the case history and the shop sees it.', 'جریمه سمدستي لرې کېږي.')}
+          onClose={() => setLift(null)} onUnknown={() => void sanctions.reload()}
+          onSubmit={async (x: SensitiveSubmit) => {
+            await api(MC.sanctionLift(lift.id), { method: 'POST', body: { ...x, confirm: true } });
             setLift(null);
             setDone(tx('برداشته شد (تأییدِ سرور).', 'Lifted (server-confirmed).', 'لرې شوه.'));
             void sanctions.reload();
