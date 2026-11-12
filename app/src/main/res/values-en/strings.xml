@@ -1131,6 +1131,14 @@ Your internet needs about %2$s Mbps upload.</string>
     <string name="sc_k_viewers">Viewer count</string>
     <string name="sc_k_likes">Like count</string>
     <string name="sc_likes_text">👍 {likes}</string>
+    <string name="live_delay_title">Allowed delay (for a weak connection)</string>
+    <string name="live_delay_desc">If the stream being behind does not matter to you, raise it: a busy scene may take up to twice the bits and wait a few seconds in line, the calm scene after it catches up — fewer blocks in fights and fast motion, no stall. No app sends more than the connection carries; this only moves the bits to where they are needed. If viewers see the stream stall, lower it. (Android 13 and newer: the phone must report how busy each moment is.)</string>
+    <string name="live_delay_4">4 s (as before)</string>
+    <string name="live_delay_fmt">%1$d s</string>
+    <string name="live_gop_title">Full-picture interval</string>
+    <string name="live_gop_desc">A whole picture is sent every few seconds. 4 s (the most YouTube takes) leaves more bits for the picture itself on a weak connection; 2 s starts sooner for a viewer who just joined.</string>
+    <string name="live_gop_2">2 s</string>
+    <string name="live_gop_4">4 s (weak connection)</string>
     <string name="live_auto_title">Quality control</string>
     <string name="live_auto_desc">Automatic: the quality always fits the internet (or VPN), so the stream never stalls or cuts; up to 5 s of delay. Manual: exactly the bit rate below, never changed; smooth only if your upload carries it.</string>
     <string name="live_auto_on">Automatic (recommended)</string>

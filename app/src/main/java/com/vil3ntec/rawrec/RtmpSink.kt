@@ -31,7 +31,9 @@ class RtmpSink(
     private val adaptive: Boolean = true,
     /** Where the automatic rate starts (bits a second; 0 = the controller's own start): what the link carried last time. */
     private val startBps: Int = 0,
-) : MediaSink {
+    /** 8.3: how far behind real time the stream may fall ([RateControl]). */
+    private val maxLagUs: Long = RateControl.HARD_US,
+) : MediaSink, SceneAware {
 
     enum class State { CONNECTING, LIVE, RECONNECTING, FAILED, ENDED }
 
@@ -173,7 +175,7 @@ class RtmpSink(
     private var state = State.CONNECTING
     private var kbps = 0
 
-    private fun status() = listener.onStatus(Status(state, kbps, target / 1000, dropped, reconnects, lastError, lastWhy, route, noPicture, lastLagMs,
+    private fun status() = listener.onStatus(Status(state, kbps, rate.target / 1000, dropped, reconnects, lastError, lastWhy, route, noPicture, lastLagMs,
         lastFps, if (target > 0) (kbps * 100_000L / target).toInt() else 100))
     private var framesThisSecond = 0
     @Volatile private var lastFps = 0
@@ -212,7 +214,7 @@ class RtmpSink(
                         keyWanted.set(true)
                         state = State.LIVE
                         // the encoder starts at the controller's gentle starting rate (it runs by now)
-                        if (!started) { started = true; apply(rate.target) }
+                        if (!started) { started = true; apply(eff(rate.target)) }
                         if (liveSinceMs == 0L || failingSince != 0L) liveSinceMs = System.currentTimeMillis()
                         failingSince = 0L
                         backoffMs = 1_000L
@@ -254,6 +256,13 @@ class RtmpSink(
                     lastStat = now
                     sent = sentBefore + p.bytesSent
                     if (bound()) { needKey = true; keyWanted.set(true) }
+                    // once a second: the scene's share of the link (only with a longer allowed delay)
+                    if (burst.on && lastQp > 0f) {
+                        val given = if (rate.target > 0) target.toFloat() / rate.target else 1f
+                        burst.scene(lastQp, given, lastLagMs * 1000L)
+                        val want = eff(rate.target)
+                        if (kotlin.math.abs(want - target) * 20 > target) apply(want)
+                    }
                     status()
                 }
                 if (k == null) { try { p.flush() } catch (e: IOException) { lost(e) }; continue }
@@ -278,10 +287,10 @@ class RtmpSink(
                         dropped += queue.count { it.video }
                         queue.removeIf { it.video }
                         needKey = true; keyWanted.set(true)
-                        apply(rate.target)
+                        apply(eff(rate.target))
                         continue
                     }
-                    RateControl.Act.SET -> apply(rate.target)
+                    RateControl.Act.SET -> apply(eff(rate.target))
                     RateControl.Act.NONE -> {}
                 }
 
@@ -330,7 +339,7 @@ class RtmpSink(
         needKey = true
         keyWanted.set(true)
         // when it is back, the frames made meanwhile go out first: at half the rate, so they drain
-        rate.lost(System.nanoTime()); apply(rate.target)
+        rate.lost(System.nanoTime()); apply(eff(rate.target))
         status()
     }
 
@@ -353,7 +362,14 @@ class RtmpSink(
         return true
     }
 
-    private val rate = RateControl(maxBitrate, startBps = if (adaptive) startBps else maxBitrate)
+    private val rate = RateControl(maxBitrate, startBps = if (adaptive) startBps else maxBitrate, maxLagUs = maxLagUs)
+    private val burst = Burst(if (adaptive) maxLagUs else 0L)
+    @Volatile private var lastQp = 0f
+
+    override fun sceneQp(qp: Float) { lastQp = qp }
+
+    /** What the encoder is asked for: the link's rate ([RateControl]) shared by the scene ([Burst]). */
+    private fun eff(base: Int) = if (burst.on) (base * burst.factor).toInt().coerceIn(minOf(RateControl.FLOOR_BPS, base), maxOf(base * 2, base)) else base
     private var started = false
 
     companion object {
@@ -387,7 +403,19 @@ class RtmpSink(
  *    fed slower than real time, made its viewers wait («a second, then ten seconds nothing»).
  *  - the start is where the link was last time ([startBps]), so a narrow link is not hit at 6 Mbps.
  */
-class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLOOR_BPS, maxBps), startBps: Int = 0) {
+class RateControl(
+    private val maxBps: Int, private val floorBps: Int = minOf(FLOOR_BPS, maxBps), startBps: Int = 0,
+    /**
+     * 8.3: how far behind real time the owner lets the stream fall («عقب بودنش مهم نیست»). 4 s as before;
+     * more lets a busy scene take more bits than the link carries for a while, the calm after it drains
+     * what waited — the thresholds below grow with it (at 4 s they are exactly the old ones).
+     */
+    maxLagUs: Long = HARD_US,
+) {
+    private val hardUs = maxLagUs.coerceAtLeast(HARD_US)
+    private val slowUs0 = maxOf(SLOW_US, hardUs * 3 / 8)
+    private val farUs = maxOf(FAR_US, hardUs * 5 / 8)
+    private val thirdUs = maxOf(3_000_000L, hardUs * 3 / 4)
     enum class Act { NONE, SET, DROP }
 
     /**
@@ -438,12 +466,12 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLO
 
     fun step(nowNs: Long, lagUs: Long, video: Boolean): Act {
         if (firstNs == 0L) firstNs = nowNs
-        if (lagUs < SLOW_US) { if (okSince == 0L) okSince = nowNs; if (nowNs - okSince > 10_000_000_000L && target > goodBps) goodBps = target }
+        if (lagUs < slowUs0) { if (okSince == 0L) okSince = nowNs; if (nowNs - okSince > 10_000_000_000L && target > goodBps) goodBps = target }
         else okSince = 0L
         // the first 15 s: the chosen rate may be far above what the link carries — found out sooner,
         // before the frames made meanwhile pile up into a cut
-        val slowUs = if (nowNs - firstNs < 15_000_000_000L) 700_000L else SLOW_US
-        if (video && lagUs > HARD_US) {
+        val slowUs = if (nowNs - firstNs < 15_000_000_000L) 700_000L else slowUs0
+        if (video && lagUs > hardUs) {
             behind(nowNs)
             set(minOf((target * 0.6).toInt(), link.takeIf { it > 0 }?.let { (it * 0.8).toInt() } ?: Int.MAX_VALUE))
             lastAdjust = nowNs; calmSince = 0L
@@ -454,23 +482,23 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLO
             // once lowered (to what the link carried), the frames made before still have to go out and the
             // delay grows a little longer: lowered again only after 4 s, or sooner when 3 s behind
             val starting = nowNs - firstNs < 15_000_000_000L
-            val far = lagUs > FAR_US
+            val far = lagUs > farUs
             val wait = when {
                 lagAtAdjust == 0L -> 0L
                 far || blind || starting -> 1_000_000_000L    // far behind, or lowered before the link was known: look again soon
-                lagUs > 3_000_000L -> 1_500_000_000L
+                lagUs > thirdUs -> 1_500_000_000L
                 else -> 4_000_000_000L
             }
             if (nowNs - lastAdjust < wait) return Act.NONE
             val l = link
             // already below what the link carries: the delay is only frames made before going out —
             // lowered further only when 3 s behind, and never below 70 % of the link (no needless blocks)
-            if (l > 0 && target <= l * 0.85 && lagUs <= 3_000_000L) return Act.NONE
+            if (l > 0 && target <= l * 0.85 && lagUs <= thirdUs) return Act.NONE
             // far behind and already at half the link: what waits is draining; nothing more to do
             if (far && l > 0 && target <= l * 0.5) return Act.NONE
             // lowered once without knowing the link: not again until a second with a backlog has measured it
             // (or it is 3 s behind) — a hiccup costs one step, not a fall to the floor
-            if (l <= 0 && blind && lagAtAdjust != 0L && lagUs <= 3_000_000L) return Act.NONE
+            if (l <= 0 && blind && lagAtAdjust != 0L && lagUs <= thirdUs) return Act.NONE
             behind(nowNs)
             lastAdjust = nowNs; lagAtAdjust = lagUs; blind = l <= 0
             val want = when {
@@ -549,6 +577,44 @@ class RateControl(private val maxBps: Int, private val floorBps: Int = minOf(FLO
 }
 
 /** Where the recorder writes: an MP4 file ([SegMuxer]) or a live stream ([RtmpSink]). */
+/** A live sink that hears how hard the picture is to encode (the encoder's quantizer, once a second). */
+interface SceneAware { fun sceneQp(qp: Float) }
+
+/**
+ * 8.3: the link's rate shared by the scene, within the wait the owner allows («عقب بودنش مهم نیست»).
+ *
+ * A steady rate gives a fight the same bits as a menu, so the fight turns into blocks. Here the
+ * encoder's own quantizer says how hard each second is: the bits it would need for the stream's usual
+ * quality are rate × 2^((QP − usual)/6) (six QP steps = twice the bits). The rate asked for follows
+ * that — up to twice the link's rate in a busy scene while the wait has room (at most a third of the
+ * allowed delay, so [RateControl] never has to step in), down to 85 % in a calm one, so on average it
+ * stays what the link carries and what waited drains. «Usual» is the stream's own long average.
+ * Off (factor 1) at the old 4 s or without the encoder's numbers (Android 12 and older).
+ */
+class Burst(private val budgetUs: Long) {
+    val on: Boolean get() = budgetUs > RateControl.HARD_US
+    private var usual = -1f
+    private var smooth = 1f
+    /** How much of the link's rate to ask for now. */
+    var factor = 1f; private set
+
+    fun scene(qp: Float, givenFactor: Float, lagUs: Long): Float {
+        if (!on || qp <= 0f) { factor = 1f; return factor }
+        // what this second would need at the usual quality, as a share of the link's rate
+        if (usual < 0f) usual = qp
+        val need = givenFactor * Math.pow(2.0, ((qp - usual) / 6f).toDouble()).toFloat()
+        usual += (qp - usual) * 0.02f                      // about a minute's memory
+        // a fight starting gets its bits at once; the way down is gentle (a short pause in a fight is not a calm)
+        smooth = if (need > smooth) need else smooth + (need - smooth) * 0.35f
+        val room = (1f - lagUs.toFloat() / (budgetUs / 3f)).coerceIn(0f, 1f)
+        factor = when {
+            smooth > 1f -> 1f + (minOf(smooth, 2f) - 1f) * room
+            else -> maxOf(smooth, 0.85f)
+        }
+        return factor
+    }
+}
+
 interface MediaSink {
     fun submitVideo(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int): Boolean
     fun submitAudio(src: ByteBuffer, offset: Int, size: Int, ptsUs: Long, flags: Int)

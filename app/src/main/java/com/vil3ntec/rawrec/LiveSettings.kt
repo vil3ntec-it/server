@@ -162,6 +162,19 @@ object LiveSettings {
     fun autoQuality(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_auto_quality", true)
     fun setAutoQuality(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("live_auto_quality", on).apply()
 
+    /**
+     * 8.3 «تأخیرِ مجاز»: how far behind real time the stream may fall. 4 s: as before. More: the rate
+     * follows the scene ([Burst]) — a busy one gets up to twice it while the wait has room, a calm one
+     * a little less so what waited drains — fewer blocks in fights on a narrow link, a later picture.
+     */
+    val DELAYS = intArrayOf(4, 8, 15)
+    fun maxDelay(ctx: Context) = SafePrefs.int(prefs(ctx), "live_delay", 4).let { d -> DELAYS.firstOrNull { it == d } ?: 4 }
+    fun setMaxDelay(ctx: Context, s: Int) = prefs(ctx).edit().putInt("live_delay", s).apply()
+    /** 8.3: seconds between key frames; 4 (YouTube's most) leaves more of a narrow link for the picture. */
+    val GOPS = intArrayOf(2, 4)
+    fun gop(ctx: Context) = SafePrefs.int(prefs(ctx), "live_gop", 2).let { g -> if (g in GOPS) g else 2 }
+    fun setGop(ctx: Context, s: Int) = prefs(ctx).edit().putInt("live_gop", s).apply()
+
     /** Record on the phone while live too: the very same pictures (no second encoder, so no extra heat). */
     fun recordToo(ctx: Context) = SafePrefs.bool(prefs(ctx), "live_record", false)
     fun setRecordToo(ctx: Context, on: Boolean) = prefs(ctx).edit().putBoolean("live_record", on).apply()
@@ -280,7 +293,8 @@ object LiveSettings {
             else -> RecordConfig.AUDIO_INTERNAL
         }
         return base.copy(
-            preset = RecordConfig.PRESET_CUSTOM, codec = if (useHevc(ctx)) RecordConfig.CODEC_HEVC else RecordConfig.CODEC_AVC, mode = RecordConfig.MODE_CBR,
+            preset = RecordConfig.PRESET_CUSTOM, codec = if (useHevc(ctx)) RecordConfig.CODEC_HEVC else RecordConfig.CODEC_AVC,
+            mode = RecordConfig.MODE_CBR, liveGop = gop(ctx),
             bitrate = mbps(ctx), fps = q.fps, resShort = startRes(ctx, q.res), orient = RecordConfig.ORIENT_LANDSCAPE,
             smartStart = false, rotateNewFile = false, ghostControl = false, invisibleControl = true,
             countdown = 0, testSeconds = 0, teamVoice = teamVoice(ctx), audioMode = audio,

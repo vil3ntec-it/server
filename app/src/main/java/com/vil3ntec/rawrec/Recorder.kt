@@ -306,6 +306,7 @@ class Recorder(
         val stamp = SimpleDateFormat("yyyy-MM-dd HH-mm", Locale.US).format(Date())
         val prefix = if (cfg.testSeconds > 0) "RawRec test " else "RawRec "
         val liveSink = sinkFactory?.invoke()
+        sceneSink = liveSink as? SceneAware
         muxer = when (liveSink) {
             null -> SegMuxer(ctx, cfg.hasAudio, cfg.segmentBytes, prefix + stamp, this)
             // live: a file beside the stream, from the start when chosen, else when the owner presses ⏺ on the panel
@@ -657,7 +658,7 @@ class Recorder(
                 // ahead and then the picture «teleported» (the owner). 1.0's «pulsing» with a 1 s GOP
                 // came from CBR; the quality range (QP) now keeps every frame at the same quality.
                 // live: a key frame every 2 s (what the platforms ask; at 1 s half the bits went into key frames)
-                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, if (sinkFactory != null) 2 else 1)
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, if (sinkFactory != null) cfg.liveGop.coerceIn(1, 4) else 1)
                 // Static screens still produce frames, but only after two frame periods, so normal
                 // frame-time jitter never inserts duplicate frames (judder).
                 setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 2_000_000L / p.fps)
@@ -699,7 +700,7 @@ class Recorder(
                 }
                 // Android 13+: the encoder reports each frame's real quantizer, so the bit rate can follow
                 // the picture's needs (see [onFrameQp]).
-                if ("stats" !in drop && Build.VERSION.SDK_INT >= 33 && p.qpMax > 0 && p.mime != Encoders.AV1)
+                if ("stats" !in drop && Build.VERSION.SDK_INT >= 33 && (p.qpMax > 0 || sinkFactory != null) && p.mime != Encoders.AV1)
                     setInteger(MediaFormat.KEY_VIDEO_ENCODING_STATISTICS_LEVEL, MediaFormat.VIDEO_ENCODING_STATISTICS_LEVEL_1)
                 if ("realtime" !in drop) {
                     setInteger(MediaFormat.KEY_PRIORITY, 0)
@@ -821,7 +822,7 @@ class Recorder(
         if (!isConfig && info.size > 0) {
             val out = codec.getOutputBuffer(idx)
             if (out != null) handleVideoFrame(out, info)
-            if (Build.VERSION.SDK_INT >= 33 && plan.qpMax > 0 && codec === enc?.codec) {
+            if (Build.VERSION.SDK_INT >= 33 && (plan.qpMax > 0 || sceneSink != null) && codec === enc?.codec) {
                 try {
                     val f = codec.getOutputFormat(idx)
                     if (f.containsKey(MediaFormat.KEY_VIDEO_QP_AVERAGE))
@@ -947,6 +948,8 @@ class Recorder(
     // finer than needed → fewer (−15 %). So the quality stays at the ceiling the owner chose and
     // only the waste goes. An encoder that reports nothing keeps its bit rate: no squeezing then.
 
+    /** Live: hears each second's quantizer ([Burst]). */
+    private var sceneSink: SceneAware? = null
     private var ctlBitrate = 0
     private var qpSum = 0L
     private var qpN = 0
@@ -968,6 +971,8 @@ class Recorder(
         if (now - qpWindowNs < 1_000_000_000L || qpN < 10) return
         val avg = qpSum.toFloat() / qpN
         qpSum = 0; qpN = 0; qpWindowNs = now
+        // live: the sink shares the link by the scene; the recording's own controller is not for a stream
+        if (sinkFactory != null) { sceneSink?.sceneQp(avg); return }
         val p = plan
         if (ctlBitrate <= 0) ctlBitrate = p.bitrate
         val next = smartNext(avg, p.qpMax, ctlBitrate, p.bitrate, p.peakBitrate)

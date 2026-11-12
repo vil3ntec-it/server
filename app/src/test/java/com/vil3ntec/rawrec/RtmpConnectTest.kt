@@ -260,6 +260,53 @@ class RtmpConnectTest {
         }
     }
 
+    /**
+     * 8.3 «تأخیرِ مجاز»: a game on a 2 Mbps link — calm 20 s, a fight 10 s, again and again. The encoder's
+     * quantizer follows the bits it gets (six steps = twice the bits). With 15 s allowed, the fight gets
+     * more of the link (lower QP) and the calm a little less; no cut, the wait well inside the allowance.
+     */
+    private fun game(lagS: Int, linkBps: Double): DoubleArray {
+        val rc = RateControl(12_000_000, startBps = 3_000_000, maxLagUs = lagS * 1_000_000L)
+        val b = Burst(lagS * 1_000_000L)
+        val q = ArrayDeque<DoubleArray>(); var t = 0.0; var drops = 0; var maxLag = 0L; var sentSec = 0.0; var minLag = Long.MAX_VALUE
+        var qpSec = 0.0; var qpN = 0; var fightQ = 0.0; var fightN = 0
+        var applied = rc.target
+        while (t < 900.0) {
+            val fight = (t % 30.0) >= 20.0
+            val made = applied.toDouble()
+            val qp = 26 + 6 * kotlin.math.ln((if (fight) 2.0 else 0.6) * 3_000_000 / made) / kotlin.math.ln(2.0)
+            qpSec += qp; qpN++
+            if (t > 120 && fight) { fightQ += qp; fightN++ }
+            q.addLast(doubleArrayOf(made * 0.1, made * 0.1))
+            var room = linkBps * 0.1
+            while (room > 0 && q.isNotEmpty()) { val x = q.first(); val n = minOf(room, x[1]); x[1] -= n; room -= n; sentSec += n; if (x[1] <= 0.0) q.removeFirst() }
+            val lagUs = (q.sumOf { it[1] / it[0] } * 100_000).toLong()
+            minLag = minOf(minLag, lagUs)
+            if (((t * 10 + 0.5).toLong() % 10L) == 9L) {
+                rc.measured(sentSec.toInt(), backlogged = minLag > 250_000L); sentSec = 0.0; minLag = Long.MAX_VALUE
+                if (b.on) b.scene((qpSec / qpN).toFloat(), applied.toFloat() / rc.target, lagUs)
+                qpSec = 0.0; qpN = 0
+            }
+            if (t > 120) maxLag = maxOf(maxLag, lagUs / 1000)
+            if (rc.step((t * 1e9).toLong(), lagUs, true) == RateControl.Act.DROP) { drops++; q.clear() }
+            applied = if (b.on) (rc.target * b.factor).toInt().coerceIn(minOf(RateControl.FLOOR_BPS, rc.target), rc.target * 2) else rc.target
+            t += 0.1
+        }
+        return doubleArrayOf(fightQ / fightN, drops.toDouble(), maxLag.toDouble())
+    }
+
+    @Test fun aLongerAllowedDelayGivesTheFightMoreOfAWeakLinkWithoutACut() {
+        for (link in listOf(1_500_000.0, 2_000_000.0, 4_000_000.0)) {
+            val old = game(4, link); val more = game(15, link)
+            assertEquals("${link / 1e6} Mbps, 4 s: no cut", 0.0, old[1], 0.0)
+            assertEquals("${link / 1e6} Mbps, 15 s: no cut", 0.0, more[1], 0.0)
+            assertTrue("${link / 1e6} Mbps: the fight gets clearly more bits (QP ${old[0]} → ${more[0]})", more[0] < old[0] - 1.5)
+            assertTrue("${link / 1e6} Mbps: the wait stays inside the allowed 15 s (${more[2]} ms)", more[2] < 10_000)
+        }
+        // at the old 4 s nothing changes: the scene is not followed
+        assertFalse(Burst(RateControl.HARD_US).on)
+    }
+
     @Test fun aNarrowLinkSettlesInsteadOfCuttingOutEveryFewSeconds() {
         // 12 Mbps chosen, the VPN carries 4: down to what gets through, then steady
         val s = Sim(12_000_000) { 4_000_000.0 }

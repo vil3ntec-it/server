@@ -43,6 +43,8 @@ data class RecordConfig(
     // No split by size since 2.0 (RawRec's own MP4 writer has no 4 GB limit); MediaMuxer files
     // (AV1) still stop at MediaStoreSink.MEDIA_MUXER_LIMIT. Tests set a small value.
     val segmentBytes: Long = Long.MAX_VALUE,
+    /** Live only (not saved): seconds between key frames (YouTube takes up to 4). */
+    val liveGop: Int = 2,
 ) {
     val hasAudio get() = audioMode != AUDIO_NONE
     val usesMic get() = audioMode == AUDIO_MIC || audioMode == AUDIO_BOTH
@@ -78,6 +80,7 @@ data class RecordConfig(
         i.putExtra("lk", intArrayOf(lookSharp, lookContrast, lookColor, lookBright, lookWarm, lookClarity))
         i.putExtra("kinds", audioKinds); i.putExtra("team", teamVoice)
         i.putExtra("test", testSeconds); i.putExtra("seg", segmentBytes)
+        i.putExtra("lgop", liveGop)
     }
 
     companion object {
@@ -125,6 +128,7 @@ data class RecordConfig(
             codec = i.getIntExtra("codec", CODEC_AUTO),
             bitrate = i.getIntExtra("br", BR_AUTO_HIGH),
             mode = i.getIntExtra("mode", MODE_VBR),
+            liveGop = i.getIntExtra("lgop", 2),
             audioMode = i.getIntExtra("am", AUDIO_INTERNAL),
             gameGain = i.getFloatExtra("gg", 1f),
             micGain = i.getFloatExtra("mg", 1f),

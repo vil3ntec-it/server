@@ -1512,6 +1512,15 @@ class MainActivity : Activity() {
             LiveSettings.LIVE_RATES.map { if (it == 0) str(R.string.live_rate_auto) else "$it Mbps" }, top = 14) { i ->
             LiveSettings.setLiveRate(this, LiveSettings.LIVE_RATES[i]); renderDests()
         }
+        // 8.3: the owner's own trade — a later picture for fewer blocks in busy scenes; key frames further apart
+        rows["live_delay"] = Row(qc, str(R.string.live_delay_title), str(R.string.live_delay_desc),
+            LiveSettings.DELAYS.map { if (it == 4) str(R.string.live_delay_4) else getString(R.string.live_delay_fmt, it) }, top = 14) { i ->
+            LiveSettings.setMaxDelay(this, LiveSettings.DELAYS[i])
+        }
+        rows["live_gop"] = Row(qc, str(R.string.live_gop_title), str(R.string.live_gop_desc),
+            listOf(str(R.string.live_gop_2), str(R.string.live_gop_4)), top = 14) { i -> LiveSettings.setGop(this, LiveSettings.GOPS[i]) }
+        rows["live_delay"]?.select(LiveSettings.DELAYS.indexOf(LiveSettings.maxDelay(this)))
+        rows["live_gop"]?.select(LiveSettings.GOPS.indexOf(LiveSettings.gop(this)))
         toggles["live_record"] = Toggle(qc, "tog:live_record", R.drawable.ic_quality, str(R.string.live_record_title), str(R.string.live_record_desc), top = 14) { on ->
             LiveSettings.setRecordToo(this, on); toggles["live_record"]?.set(on)
         }

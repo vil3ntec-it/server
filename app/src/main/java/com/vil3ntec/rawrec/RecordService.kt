@@ -569,7 +569,8 @@ class RecordService : Service(), Recorder.Events {
                     val auto = LiveSettings.autoQuality(this)
                     val start = LiveSettings.startBps(this)
                     lastRateSave = 0L
-                    (if (liveTargets.size > 1) MultiSink(liveTargets, plan.bitrate, liveListener, auto, start) else RtmpSink(lv.url, lv.key, plan.bitrate, liveListener, auto, start))
+                    val lag = LiveSettings.maxDelay(this) * 1_000_000L
+                    (if (liveTargets.size > 1) MultiSink(liveTargets, plan.bitrate, liveListener, auto, start, lag) else RtmpSink(lv.url, lv.key, plan.bitrate, liveListener, auto, start, lag))
                         .also { liveSink = it }
                 }, forceLook = true, alsoRecord = LiveSettings.recordToo(this), shorts = shortsOut(), canvas = liveCanvas(plan))
             else Recorder(this, p, c, plan, this, keptDisplay, keepDisplay = instantEnabled(this))
