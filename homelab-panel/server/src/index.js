@@ -61,6 +61,9 @@ import appRoutes, { adminRouter as appAdminRoutes } from './routes/app.js';
 import codeRoutes, { adminRouter as codeAdminRoutes } from './routes/codes.js';
 import storageRoutes from './routes/storage.js';
 import moveRoutes from './routes/move.js';
+import fleetRoutes, { hubRouter as fleetHubRoutes } from './routes/fleet.js';
+import { startFleetNode, stopFleetNode } from './fleet/node.js';
+import { maintenanceActive } from './fleet/maintenance.js';
 import platformRoutes from './routes/platform.js';
 import agentRoutes from './routes/agent.js';
 import databaseRoutes from './routes/databases.js';
@@ -475,6 +478,9 @@ app.use('/api/codes-admin', codeAdminRoutes);
 app.use('/api/storage', storageRoutes);
 //  جابه‌جایی به کامپیوترِ دیگر (۱.۵۰.۹۳) — نگهبان داخلِ خودِ روتر (مالک + احرازِ دوباره؛ نصبِ تازه: مرزِ ‎/setup‎)
 app.use('/api/move', moveRoutes);
+//  «سرورهای من» (۱.۵۰.۹۴): درِ امضاشدهٔ گره‌ها پیش از درِ مالک — src/routes/fleet.js
+app.use('/api/fleet/hub', fleetHubRoutes);
+app.use('/api/fleet', fleetRoutes);
 // زیرساخت: خودترمیمی، وضعیت، پشتیبان و دستیار — همان چیزی که «vill3n» صدا می‌زند
 app.use('/api/platform', platformRoutes);
 // دستیارِ هوشمند — فقط پورتِ پنل؛ خواندن برای همه، گفت‌وگو و تأیید دستِ‌کم operator
@@ -1036,7 +1042,9 @@ async function main() {
   }
 
   ensureSitesRoot();
-  await autostartAll();
+  //  ⛔ (۱.۵۰.۹۴) در حالتِ نگه‌داری («سرورهای من») هیچ سایتی خودکار روشن نمی‌شود — src/fleet/maintenance.js
+  if (!maintenanceActive()) await autostartAll();
+  else console.log('  🛠️  حالتِ نگه‌داری روشن است — سایت‌ها، تونل و سرورِ حساب خودکار روشن نمی‌شوند (سرورهای من)');
 
   // ── مرکز فرمان ──────────────────────────────────────────────────────────
   // سرورِ خانگی (همین کامپیوتر) یک‌بار خودش ثبت می‌شود؛ بعد فهرستِ هدف‌های
@@ -1109,7 +1117,7 @@ async function main() {
     //  روی PGlite، بی داکر و بی PostgreSQL — و بعد دوباره می‌پرسد.
     (async () => {
       let acct = await probeAccountServer().catch(() => ({ enabled: true, up: false }));
-      if (acct.enabled && !acct.up) {
+      if (acct.enabled && !acct.up && !maintenanceActive()) {
         const started = await autostartAccountServer({ probe: () => probeAccountServer() });
         if (started.ok && started.reason !== 'external') {
           //  چند ثانیه تا PGlite باز شود و migration بدود
@@ -1176,12 +1184,14 @@ async function main() {
     //  مدیرِ محیطِ نصب (install.sh/داکر) از قبل ساخته شده ⇒ هیچ کدی ساخته نمی‌شود. `lib/setup-code.js`
     if (!isInitialized()) issueSetupCode();
     logEvent('info', 'panel', `پنل روی پورت ${config.port} اجرا شد`);
+    //  «سرورهای من»: اگر این نصب گرهٔ مرکزی است، تپشِ بیرون‌رو (src/fleet/node.js)
+    try { startFleetNode(); } catch (e) { console.warn(`⚠️  سرورهای من: ${e.message}`); }
 
     // تونل اینترنتی: به‌صورت پیش‌فرض روشن است تا سایت از هر دستگاهی وصل شود.
     // برای خاموش کردن، در پنل دکمه‌اش را بزنید یا HLP_TUNNEL=0 بگذارید.
     //  HLP_TUNNEL همان معنای قدیم؛ روی میزبانِ عمومی پیش‌فرض خاموش — Caddy جلوست (src/deploy.js)
     const tunnelWanted =
-      deploy.features.tunnel && getSetting('tunnel_autostart', true) !== false;
+      deploy.features.tunnel && getSetting('tunnel_autostart', true) !== false && !maintenanceActive();
     if (siteSync && tunnelWanted) {
       /*
        *  پیش از راه‌اندازی، شناسهٔ تونلِ داخلِ config.yml با حسابِ Cloudflare
@@ -1232,6 +1242,7 @@ async function shutdown(signal) {
   stopTelegramPoller();
   try { await markTelegramOffline(signal === 'SIGINT' ? 'برنامه بسته شد' : 'خاموش‌سازی یا ری‌استارت'); } catch { /* بی‌خیال */ }
   clearInterval(housekeeping);
+  try { stopFleetNode(); } catch { /* بی‌خیال */ }
   stopCollector();
   stopWinSampler();
   try {

@@ -6,6 +6,7 @@ import { LANGUAGES, type Lang } from '../i18n';
 import { Card, Field, Loading, toast } from '../components/ui';
 import AccountSecurity from '../components/AccountSecurity';
 import { MoveServerCard } from '../components/MoveServer';
+import { FleetLinkCard } from './MyServers';
 
 type SettingsPayload = {
   settings: {
@@ -287,6 +288,9 @@ export default function Settings() {
 
       {/* جابه‌جایی به کامپیوترِ دیگر (۱.۵۰.۹۳) — کنارِ پوشهٔ داده، فقط مالک (سرور هم فقط مالک را راه می‌دهد) */}
       {owner && <MoveServerCard />}
+
+      {/* سرورهای من (۱.۵۰.۹۴) — وصلِ همین سرور به یک مرکز؛ فقط مالک */}
+      {owner && <FleetLinkCard />}
     </div>
   );
 }

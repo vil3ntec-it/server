@@ -4,6 +4,7 @@ import { PageBoundary } from './PageBoundary';
 import {
   Activity,
   Bot,
+  Boxes,
   Archive,
   ChevronDown,
   Workflow,
@@ -56,6 +57,8 @@ type NavItem = {
   feature?: FeatureKey;
   /** اگر سرور بگوید این قابلیت روی این میزبان نیست (VPS/داکر)، در منو نمی‌آید */
   server?: ServerFeature;
+  /** فقط مالکِ پنل (سرور هم فقط مالک را راه می‌دهد) — «سرورهای من» */
+  owner?: boolean;
 };
 type NavGroup = {
   id: string;
@@ -85,6 +88,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/assistant', key: 'agTitle', icon: Bot, server: 'agent' },
       { to: '/control', key: 'ccCommand', icon: CommandIcon, end: true, feature: 'commandCenter' },
       { to: '/sites', key: 'websites', icon: Server, server: 'sites' },
+      { to: '/my-servers', key: 'fsTitle', icon: Boxes, owner: true },
       { to: '/site-server', key: 'siteServer', icon: Globe },
       { to: '/stations', key: 'stations', icon: Fuel },
       /*
@@ -210,7 +214,7 @@ const DEFAULT_COLLAPSED = NAV_GROUPS.filter((g) => g.collapsed).map((g) => g.id)
 const COLLAPSE_KEY = 'hlp.nav.collapsed';
 
 export default function Layout() {
-  const { t, serverName, hasLogo, resolvedTheme, setTheme, lang, setLang, logout, connected, username, role, can, serverOn } = useApp();
+  const { t, serverName, hasLogo, resolvedTheme, setTheme, lang, setLang, logout, connected, username, role, can, serverOn, owner } = useApp();
   const [open, setOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -233,10 +237,10 @@ export default function Layout() {
   const paletteItems: PaletteItem[] = useMemo(
     () => NAV_GROUPS.flatMap((group) =>
       group.items
-        .filter((item) => (!item.feature || featureOn(item.feature)) && (!item.server || serverOn(item.server)) && (!item.needs || can(item.needs)))
+        .filter((item) => (!item.feature || featureOn(item.feature)) && (!item.server || serverOn(item.server)) && (!item.needs || can(item.needs)) && (!item.owner || owner))
         .map((item) => ({ to: item.to, label: t(item.key), group: t(group.key) })))
       .concat(PALETTE_EXTRA.map((x) => ({ to: x.to, label: t(x.key), group: t(x.group) }))),
-    [t, can, serverOn]
+    [t, can, serverOn, owner]
   );
   usePaletteKey(useCallback(() => setPaletteOpen(true), []));
 
@@ -256,7 +260,7 @@ export default function Layout() {
         const isCollapsed = collapsed.includes(group.id);
         // چیزی که خاموش است یا نقشِ کاربر به آن دسترسی ندارد، اصلاً نشان داده نمی‌شود
         const items = group.items.filter(
-          (item) => (!item.feature || featureOn(item.feature)) && (!item.server || serverOn(item.server)) && (!item.needs || can(item.needs))
+          (item) => (!item.feature || featureOn(item.feature)) && (!item.server || serverOn(item.server)) && (!item.needs || can(item.needs)) && (!item.owner || owner)
         );
         if (items.length === 0) return null;
         return (

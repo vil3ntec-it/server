@@ -51,6 +51,7 @@ const FILE_OF = {
   '/assistant': 'pages/Assistant.tsx',
   '/control': 'pages/control/Command.tsx',
   '/sites': 'pages/Sites.tsx',
+  '/my-servers': 'pages/MyServers.tsx',
   '/site-server': 'pages/SiteServer.tsx',
   '/stations': 'pages/Stations.tsx',
   '/shop': 'pages/account/ShopDesk.tsx',

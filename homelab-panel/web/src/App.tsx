@@ -10,6 +10,7 @@ import Sites from './pages/Sites';
 import Files from './pages/Files';
 import SiteServer from './pages/SiteServer';
 import Settings from './pages/Settings';
+import MyServers from './pages/MyServers';
 import Account from './pages/Account';
 import ForceChangePassword from './pages/ForceChangePassword';
 import CodesPage from './pages/Codes';
@@ -53,6 +54,7 @@ function Shell() {
         {serverOn('agent') && <Route path="/assistant" element={<Assistant />} />}
         {serverOn('sites') && <Route path="/sites" element={<Sites />} />}
         <Route path="/domains" element={<DomainsHub />} />
+        <Route path="/my-servers" element={<MyServers />} />
         {featureOn('files') && serverOn('files') && <Route path="/files" element={<Files />} />}
         {serverOn('databases') && <Route path="/databases" element={<DatabasesPage />} />}
         {serverOn('terminal') && <Route path="/terminal" element={<TerminalPage />} />}

@@ -30,6 +30,7 @@ import notifyRoutes from '../routes/notify.js';
 import stationRoutes from '../routes/stations.js';
 import { router as announceRoutes } from '../routes/announce.js';
 import pumpUpdateRoutes from '../routes/pump-updates.js';
+import { hubRouter as fleetHubRoutes } from '../routes/fleet.js';
 import { readyPayload } from '../platform/health.js';
 import { versionInfo } from '../version.js';
 import { config } from '../config.js';
@@ -147,6 +148,9 @@ export function createPublicApi() {
   router.use('/stations', stationRoutes);
   router.use('/announce', announceRoutes);
   router.use('/pump-updates', pumpUpdateRoutes);
+  //  «سرورهای من» (۱.۵۰.۹۴): گرهٔ بیرون از خانه از راهِ تونل به مرکز می‌رسد — فقط درِ امضاشده (وصل/تپش/جدا شدن)،
+  //  نه هیچ کارِ مالک. هر پیام امضای Ed25519 + ‎ts‎ + nonce دارد (src/fleet/hub.js).
+  router.use('/fleet/hub', fleetHubRoutes);
 
   router.use((req, res) => res.status(404).json({ error: 'not_found' }));
   return router;
