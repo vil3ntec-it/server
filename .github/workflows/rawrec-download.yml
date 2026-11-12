@@ -13,7 +13,7 @@ jobs:
           git init -q dl && cd dl
           git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
           git fetch -q --depth 1 --filter=blob:none origin ${{ github.sha }}
-          git checkout -q FETCH_HEAD -- out/RawRec-8.4.apk
-          echo "bbcde031e899802367da1fa9321697a8dab64c70ae34814a2614d3cdc127237a  out/RawRec-8.4.apk" | sha256sum -c
+          git checkout -q FETCH_HEAD -- out/RawRec-8.6.apk
+          echo "851e5352b20b9d250cd517dcc62253f721b3f3f937fe18a8102f8f86ddb5b5e2  out/RawRec-8.6.apk" | sha256sum -c
       - uses: actions/upload-artifact@v4
-        with: { name: RawRec-8.4-Android, path: dl/out/RawRec-8.4.apk, retention-days: 90, compression-level: 0 }
+        with: { name: RawRec-8.6-Android, path: dl/out/RawRec-8.6.apk, retention-days: 90, compression-level: 0 }
