@@ -12,6 +12,7 @@ import { ensureWorkspace, workspacePaths, siteEnv } from './workspace.js';
 import { staticRootOf } from './detect.js';
 import { logEvent } from '../db.js';
 import { featureOn, disabledPayload } from '../lib/feature-gate.js';
+import { siteHold, HOLD_MESSAGE } from '../fleet/hold.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATIC_SERVER = path.join(__dirname, 'static-server.js');
@@ -147,6 +148,9 @@ function buildCommand(site) {
 
 export async function startSite(site) {
   if (isRunning(site.slug)) return { ok: true, already: true, ...processInfo(site.slug) };
+  //  ⛔ (۱.۵۰.۹۵) در میانهٔ جابه‌جایی یا رفته به سرورِ دیگر («سرورهای من») روشن نمی‌شود — یک نویسنده (src/fleet/hold.js)
+  const held = siteHold(site.slug);
+  if (held) return { ok: false, error: 'fleet_held', reason: held.reason, message: HOLD_MESSAGE[held.reason] };
   //  ⛔ اجرای فرمانِ شروعِ سایت — روی میزبانِ عمومی پیش‌فرض خاموش (src/deploy.js)
   if (!featureOn('sites')) return disabledPayload('sites');
   if (!fs.existsSync(site.root_path)) {

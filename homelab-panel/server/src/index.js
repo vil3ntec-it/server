@@ -63,6 +63,7 @@ import storageRoutes from './routes/storage.js';
 import moveRoutes from './routes/move.js';
 import fleetRoutes, { hubRouter as fleetHubRoutes } from './routes/fleet.js';
 import { startFleetNode, stopFleetNode } from './fleet/node.js';
+import { startPlacement } from './fleet/placement.js';
 import { maintenanceActive } from './fleet/maintenance.js';
 import platformRoutes from './routes/platform.js';
 import agentRoutes from './routes/agent.js';
@@ -1186,6 +1187,8 @@ async function main() {
     logEvent('info', 'panel', `پنل روی پورت ${config.port} اجرا شد`);
     //  «سرورهای من»: اگر این نصب گرهٔ مرکزی است، تپشِ بیرون‌رو (src/fleet/node.js)
     try { startFleetNode(); } catch (e) { console.warn(`⚠️  سرورهای من: ${e.message}`); }
+    //  (۱.۵۰.۹۵) «این برنامه روی کدام سرور»: کارهای نیمه‌کاره ادامه یا برگشت، کارگاه پاک (src/fleet/placement.js)
+    try { startPlacement(); } catch (e) { console.warn(`⚠️  جابه‌جاییِ برنامه‌ها: ${e.message}`); }
 
     // تونل اینترنتی: به‌صورت پیش‌فرض روشن است تا سایت از هر دستگاهی وصل شود.
     // برای خاموش کردن، در پنل دکمه‌اش را بزنید یا HLP_TUNNEL=0 بگذارید.

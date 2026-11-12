@@ -48,6 +48,15 @@ export function safeKey(value) {
     .slice(0, 64);
 }
 
+/**
+ *  ⛔ (۱.۵۰.۹۵) دفترِ سایتی که در میانهٔ جابه‌جایی یا رفته به سرورِ دیگر است («سرورهای من») باز نمی‌شود — وگرنه
+ *  کاربرانِ همان سایت هنوز در دفترِ مبدأ می‌نوشتند (دو دفتر). `src/fleet/mover.js` نگهبان را می‌گذارد؛ پیش‌فرض: هیچ.
+ */
+let tenantGuard = () => false;
+export function setTenantGuard(fn) {
+  tenantGuard = typeof fn === 'function' ? fn : () => false;
+}
+
 export function createSiteSync({ dataDir, token = '' }) {
   const sitesDir = path.join(dataDir, 'sites');
   fs.mkdirSync(sitesDir, { recursive: true });
@@ -75,6 +84,7 @@ export function createSiteSync({ dataDir, token = '' }) {
     if (!key || key === MAIN_KEY) return main;
     const existing = stores.get(key);
     if (existing) return existing;
+    if (tenantGuard(key)) return null;
 
     const store = createStore({ key, label: label || key, dataDir: dirFor(key) });
     stores.set(key, store);
@@ -103,6 +113,22 @@ export function createSiteSync({ dataDir, token = '' }) {
     return true;
   }
 
+  /**
+   * دفترِ یک سایت را **می‌بندد بی پاک کردن** (۱.۵۰.۹۵): نوشته‌های در صف روی دیسک، اتصال‌ها بسته، از فهرست بیرون —
+   * تا پوشه‌اش دست‌نخورده جابه‌جا شود. باز کردنِ دوباره همان `ensureTenant` است.
+   */
+  async function releaseTenant(slug) {
+    const key = safeKey(slug);
+    if (!key || key === MAIN_KEY) return false;
+    const store = stores.get(key);
+    if (!store) return false;
+    await store.flush().catch(() => {});
+    store.closeClients();
+    store.stop?.();
+    stores.delete(key);
+    return true;
+  }
+
   /** همهٔ پوشه‌هایی که از قبل روی دیسک هستند را بازمی‌خواند */
   async function loadAll() {
     const loaded = [];
@@ -113,7 +139,7 @@ export function createSiteSync({ dataDir, token = '' }) {
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       const key = safeKey(entry.name);
-      if (!key || stores.has(key)) continue;
+      if (!key || stores.has(key) || tenantGuard(key)) continue;
       await ensureTenant(key);
       loaded.push(key);
     }
@@ -192,6 +218,7 @@ export function createSiteSync({ dataDir, token = '' }) {
     handleUpgrade,
     ensureTenant,
     removeTenant,
+    releaseTenant,
     tenant,
     loadAll,
     list,

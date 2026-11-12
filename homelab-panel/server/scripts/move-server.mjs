@@ -1118,6 +1118,7 @@ export function promoteOnly({ staging, manifest, dataDir, stamp, db = null, site
     return {
       kind: 'site', id: only.id, slug, siteId, rootPath: target, port: finalPort, domains: domainNames,
       original: { enabled: app.enabled ? 1 : 0, autostart: app.autostart ? 1 : 0 },
+      previousRow: existing || null,
       aside, asideDir: aside.length ? asideBase : null,
     };
   } catch (e) {
