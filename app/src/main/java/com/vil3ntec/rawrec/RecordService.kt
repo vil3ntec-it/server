@@ -1168,6 +1168,8 @@ class RecordService : Service(), Recorder.Events {
         scenes = null
         try { mirror?.hide() } catch (_: Exception) {}
         mirror = null
+        try { inPlace?.close() } catch (_: Exception) {}
+        inPlace = null
     }
 
     private val botTick = object : Runnable {
@@ -1334,14 +1336,29 @@ class RecordService : Service(), Recorder.Events {
         }
     }
 
+    private var inPlace: InPlaceEditor? = null
+
+    private fun openFullEditor() {
+        try { startActivity(Intent(this, SceneEditorActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        catch (e: Exception) { RecLog.add(this, "layout editor: ${e.message}") }
+    }
+
     private val hudActions = object : ChatHud.Actions {
         override fun send(text: String) = sendOut(text, mine = true)
         override fun delete(m: LiveChat.Msg) { chat?.delete(m); hud?.remove(m.id); scenes?.unchat(m.id) }
         override fun onScene(id: String) { scenes?.select(id) }
         override fun onLayer(id: String, on: Boolean) { scenes?.setLayerVisible(id, on) }
         override fun editLayout() {
-            try { startActivity(Intent(this@RecordService, SceneEditorActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            catch (e: Exception) { RecLog.add(this@RecordService, "layout editor: ${e.message}") }
+            // 8.4: over the game itself — the owner stays in the game (before, the editor opened RawRec)
+            val sr = scenes
+            if (sr != null) try {
+                inPlace?.close()
+                inPlace = InPlaceEditor(this@RecordService, sr,
+                    geo = { recorder?.let { rr -> OwnerMirror.Geo(rr.plan.width, rr.plan.height, rr.filter?.regionNow ?: floatArrayOf(0f, 0f, 1f, 1f)) } },
+                    openFull = { openFullEditor() }, onClose = { inPlace = null }).also { it.show() }
+                return
+            } catch (e: Exception) { inPlace = null; RecLog.add(this@RecordService, "in-game editor: ${e.message}") }
+            openFullEditor()
         }
         override fun timeout(m: LiveChat.Msg, seconds: Int) {
             chat?.timeout(m, seconds)

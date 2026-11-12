@@ -35,7 +35,7 @@ class SceneRenderer(
     private val filter: LookFilter,
     /** The scene's own background instead of the game (null = the game). */
     private val coverSink: (Bitmap?) -> Unit,
-) {
+) : InPlaceEditor.Target {
     private val main = Handler(Looper.getMainLooper())
     val data = LayerPainter.Data()
     var project: Scenes.Project = Scenes.reload(ctx); private set
@@ -323,11 +323,27 @@ class SceneRenderer(
 
     private fun numId(layerId: String) = numIds.getOrPut(layerId) { nextNum++ }
 
+    /** Where a layer lies on the stream now: centre and size as fractions of the picture (the in-game editor). */
+    class Box(val id: String, val name: String, val kind: Scenes.Kind, val x: Float, val y: Float, val w: Float, val h: Float, val rot: Float, val locked: Boolean)
+    @Volatile override var boxes: List<Box> = emptyList(); private set
+
+    override fun layerOf(id: String) = showing.layers.firstOrNull { it.id == id }
+
+    /** 8.4: moved / resized over the game ([InPlaceEditor]): on the stream at once, saved by [commitEdit]. */
+    override fun editLayer(id: String, x: Float, y: Float, scale: Float) {
+        val l = layerOf(id) ?: return
+        l.x = x.coerceIn(0f, 1f); l.y = y.coerceIn(0f, 1f); l.scale = scale.coerceIn(0.05f, 8f)
+        push()
+    }
+
+    override fun commitEdit() { Scenes.save(ctx, project); onChanged() }
+
     /** The scene's layers, back to front, as the GPU stage draws them. */
-    fun push() {
+    override fun push() {
         if (released) return
         val out = ArrayList<LookFilter.Layer>()
         val mirror = ArrayList<OwnerMirror.Item>()
+        val placed = ArrayList<Box>()
         // the scene's own background replaces the screen (or «برمی‌گردم» does): the screen is not in the picture then
         val covered = away || !showing.game
         for (l in showing.layers) {
@@ -374,6 +390,7 @@ class SceneRenderer(
             val hF = natH * (c[3] - c[1]) * l.scale * unit / fh
             val x = l.x - wF / 2f
             val y = l.y - hF / 2f + dy * unit / fh
+            placed += Box(l.id, l.name, l.kind, l.x, l.y + dy * unit / fh, wF, hF, l.rot, l.locked)
             // on the phone only over the game: a scene of its own (the game hidden) is told in one line instead
             if (mine && bmp != null && !away && showing.game)
                 mirror += OwnerMirror.Item(l.kind, ownerPic(l, bmp), l.x, l.y, dy, l.scale, l.rot, c.copyOf(), alpha, corner, Scenes.hasNumbers(l))
@@ -381,6 +398,7 @@ class SceneRenderer(
             out += LookFilter.Layer(numId(l.id), bmp, g, x, y, wF, hF, alpha, l.rot, c.copyOf(), ext, corner * l.scale,
                 l.kind == Scenes.Kind.CAMERA && l.bool("mirror", true))
         }
+        boxes = placed
         onMirror(mirror)
         filter.setLayers(out)
     }

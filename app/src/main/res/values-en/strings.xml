@@ -731,6 +731,11 @@ Recording ends cleanly before the storage is full.</string>
     <string name="vs_on_now_toast_fmt">«%1$s» is recorded.</string>
     <string name="vs_need_one">At least one part must be recorded. To record no app sound at all, set «Audio» at the top of this page to «Microphone» or «No audio».</string>
     <string name="hud_on_stream">On the stream: what viewers see</string>
+    <string name="ipe_done">✓ Done</string>
+    <string name="ipe_undo">↶ Undo</string>
+    <string name="ipe_full">Full editor</string>
+    <string name="ipe_hint">Drag to move; two fingers or the corner circle to resize. The stream changes at once.</string>
+    <string name="ipe_empty">Nothing to move in this scene; tap «Full editor» to add the chat, a goal or a counter.</string>
     <string name="hud_edit_layout">Move the chat, goal, viewers and subscribers on the stream</string>
     <string name="hud_s_chat">Chat</string>
     <string name="hud_s_alerts">Thank-yous</string>
