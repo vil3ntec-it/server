@@ -17,6 +17,7 @@ import { bytes, percent, relative } from '../format';
 import type { Dict } from '../i18n';
 import { Badge, Card, ConfirmDialog, CopyButton, Field, Loading, StatusDot, toast } from '../components/ui';
 import { Cell, Notice, Row, Select, Table } from '../control/ui';
+import { MoveServerCard } from '../components/MoveServer';
 
 type App = { id: string; type: 'account' | 'pump' | 'site'; name: string; kind?: string | null; dataful: boolean; running: boolean; count?: number };
 type Entry = {
@@ -315,6 +316,9 @@ export default function MyServers() {
 
       {/* وصلِ همین سرور به مرکزِ دیگر — همین‌جا هم، چون صفحهٔ «تنظیمات» در features.ts خاموش است */}
       {(isNode || !data.nodes.some((n) => n.status === 'active')) && <FleetLinkBody data={data} load={load} />}
+
+      {/* «جابه‌جایی به کامپیوترِ دیگر» (1.50.93) — همین‌جا، چون «تنظیمات» در features.ts خاموش است و کارت آن‌جا دیده نمی‌شد */}
+      <MoveServerCard />
 
       <ConfirmDialog
         open={Boolean(pending)}
