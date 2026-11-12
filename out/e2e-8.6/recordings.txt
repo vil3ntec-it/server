@@ -1,0 +1,30 @@
+== live: /storage/emulated/0/Movies/RawRec/RawRec 2026-11-12 18-06.mp4
+stream|codec_name=h264|width=1712|height=1072|avg_frame_rate=4860000/1390909
+stream|codec_name=aac|avg_frame_rate=0/0
+format|duration=22.110167|size=789138
+decode errors: 0
+at 1s picture area: crop=1698:1072:6:0
+at 4s picture area: crop=1698:1072:6:0
+at 8s picture area: crop=1698:1072:6:0
+at 14s picture area: crop=1698:1072:6:0
+at 20s picture area: 
+== rotation: /storage/emulated/0/Movies/RawRec/RawRec 2026-11-12 18-07.mp4
+stream|codec_name=h264|width=1080|height=1728|avg_frame_rate=11970000/2280001
+stream|codec_name=aac|avg_frame_rate=0/0
+format|duration=29.695063|size=2676156
+decode errors: 0
+at 1s picture area: crop=1080:1728:0:0
+at 4s picture area: crop=1080:1728:0:0
+at 8s picture area: crop=1080:1728:0:0
+at 14s picture area: crop=1080:1728:0:0
+at 20s picture area: crop=1080:1728:0:0
+== rotation: /storage/emulated/0/Movies/RawRec/RawRec 2026-11-12 18-07 (2).mp4
+stream|codec_name=h264|width=1728|height=1080|avg_frame_rate=5040000/1156363
+stream|codec_name=aac|avg_frame_rate=0/0
+format|duration=13.599875|size=871505
+decode errors: 0
+at 1s picture area: crop=1728:1080:0:0
+at 4s picture area: crop=1728:1080:0:0
+at 8s picture area: crop=1728:1080:0:0
+at 14s picture area: 
+at 20s picture area: 
