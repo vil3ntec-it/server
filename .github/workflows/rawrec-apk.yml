@@ -38,13 +38,13 @@ jobs:
         run: |
           (sudo apt-get install -y -qq glslang-tools || (sudo apt-get update -qq && sudo apt-get install -y -qq glslang-tools)) >/dev/null
           mkdir -p out
-          python3 .github/glsl_check.py app/src/main/java/com/vil3ntec/rawrec/LookFilter.kt out/shaders-8.4.txt
+          python3 .github/glsl_check.py app/src/main/java/com/vil3ntec/rawrec/LookFilter.kt out/shaders-8.5.txt
       - name: All unit tests (every control tapped like a finger) + preview pictures
         continue-on-error: true
         timeout-minutes: 60
         run: |
-          mkdir -p out/previews-8.4
-          gradle :app:testReleaseUnitTest --no-daemon --continue -Drawrec.previewDir=$PWD/out/previews-8.4 || true
+          mkdir -p out/previews-8.5
+          gradle :app:testReleaseUnitTest --no-daemon --continue -Drawrec.previewDir=$PWD/out/previews-8.5 || true
           python3 - <<'PY'
           import glob, xml.etree.ElementTree as ET
           tot = fail = skip = 0; lines = []
@@ -58,21 +58,21 @@ jobs:
                       tr = (bad.text or '').strip().splitlines()
                       keep = tr[:3] + [l for l in tr[3:] if 'com.vil3ntec' in l or 'Caused by' in l][:14]
                       lines.append(f"FAIL {tc.get('classname')}.{tc.get('name')}: {msg}\n    " + "\n    ".join(keep))
-          open('out/tests-8.4.txt', 'w').write(f"tests {tot}, failed {fail}, skipped {skip}\n" + "\n".join(lines) + "\n")
-          print(open('out/tests-8.4.txt').read())
+          open('out/tests-8.5.txt', 'w').write(f"tests {tot}, failed {fail}, skipped {skip}\n" + "\n".join(lines) + "\n")
+          print(open('out/tests-8.5.txt').read())
           PY
-          ls -la out/previews-8.4
+          ls -la out/previews-8.5
       - name: Commit APK back to this temporary branch
         run: |
           set -e
           ls -la app/build/outputs/apk/release/
           mkdir -p out
-          cp app/build/outputs/apk/release/app-release-unsigned.apk out/RawRec-8.4-unsigned.apk
-          sha256sum out/RawRec-8.4-unsigned.apk
+          cp app/build/outputs/apk/release/app-release-unsigned.apk out/RawRec-8.5-unsigned.apk
+          sha256sum out/RawRec-8.5-unsigned.apk
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f out/RawRec-8.4-unsigned.apk
-          git add -f out/previews-8.4 out/tests-8.4.txt out/shaders-8.4.txt || true
+          git add -f out/RawRec-8.5-unsigned.apk
+          git add -f out/previews-8.5 out/tests-8.5.txt out/shaders-8.5.txt || true
           git commit -m "APK (unsigned) — temporary"
           for i in 1 2 3 4 5; do git pull --rebase -q && git push -q && exit 0; sleep 5; done; exit 1
   e2e:

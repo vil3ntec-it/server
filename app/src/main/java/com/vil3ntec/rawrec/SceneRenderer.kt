@@ -351,7 +351,11 @@ class SceneRenderer(
             val who = Scenes.audience(l)
             val mine = who != 1          // on the owner's screen
             val onlyMine = who == 2      // on the owner's screen and never on the stream
-            val inPicture = onlyMine || (screenInPicture && !covered && ((mine && mirrorOn) || (l.kind == Scenes.Kind.CHAT && phoneChat)))
+            // 8.5: the chat the owner reads translated, with the whole screen captured: the owner's copy goes in a
+            // window screen capture leaves out ([OwnerMirror.Item.secure]) and the stream draws the original words
+            // itself — the viewers saw the owner's Persian lines before (the owner: «برای اون‌ها انگلیسی باشه»)
+            val ownCopy = l.kind == Scenes.Kind.CHAT && screenInPicture && mirrorOn && !onlyMine && data.chat.any { it.id in ownerText }
+            val inPicture = !ownCopy && (onlyMine || (screenInPicture && !covered && ((mine && mirrorOn) || (l.kind == Scenes.Kind.CHAT && phoneChat))))
             var alpha = l.alpha
             var dy = 0f
             var natW: Float
@@ -393,7 +397,7 @@ class SceneRenderer(
             placed += Box(l.id, l.name, l.kind, l.x, l.y + dy * unit / fh, wF, hF, l.rot, l.locked)
             // on the phone only over the game: a scene of its own (the game hidden) is told in one line instead
             if (mine && bmp != null && !away && showing.game)
-                mirror += OwnerMirror.Item(l.kind, ownerPic(l, bmp), l.x, l.y, dy, l.scale, l.rot, c.copyOf(), alpha, corner, Scenes.hasNumbers(l))
+                mirror += OwnerMirror.Item(l.kind, ownerPic(l, bmp), l.x, l.y, dy, l.scale, l.rot, c.copyOf(), alpha, corner, Scenes.hasNumbers(l), secure = ownCopy)
             if (inPicture) continue
             out += LookFilter.Layer(numId(l.id), bmp, g, x, y, wF, hF, alpha, l.rot, c.copyOf(), ext, corner * l.scale,
                 l.kind == Scenes.Kind.CAMERA && l.bool("mirror", true))

@@ -28,6 +28,12 @@ class OwnerMirror(private val ctx: Context) {
         val crop: FloatArray, val alpha: Float, val corner: Float,
         /** A text with live numbers (viewers, subscribers…): the chat panel's own number line steps aside. */
         val numbers: Boolean,
+        /**
+         * 8.5: the owner's own copy (the chat in Persian) while the whole screen is captured: drawn in a
+         * window of its own that screen capture leaves out (FLAG_SECURE), so viewers get the stream's own
+         * layer (the original words) there and never the owner's translation.
+         */
+        val secure: Boolean = false,
     )
 
     /**
@@ -57,25 +63,84 @@ class OwnerMirror(private val ctx: Context) {
             getLocationOnScreen(loc)
             val scrW = real.x.toFloat(); val scrH = real.y.toFloat()
             if (scrW <= 0f || scrH <= 0f) return
-            val m = Mapping.of(geometry?.invoke(), scrW, scrH)
-            // sizes as on the stream: pixels of a frame 1080 high, then onto this screen
-            val unit = minOf(m.frameW, m.frameH) / 1080f * m.px
-            for (it in list) {
-                val (nw, nh) = Scenes.fit(it.bmp.width.toFloat(), it.bmp.height.toFloat(), m.frameW / (minOf(m.frameW, m.frameH) / 1080f))
-                val cr = it.crop
-                val sw = nw * (cr[2] - cr[0]) * it.scale * unit
-                val sh = nh * (cr[3] - cr[1]) * it.scale * unit
-                if (sw < 1f || sh < 1f) continue
-                c.save()
-                c.translate(m.x(it.x) - loc[0], m.y(it.y) - loc[1] + it.dy * unit)
-                c.rotate(it.rot)
-                val dst = RectF(-sw / 2, -sh / 2, sw / 2, sh / 2)
-                val r = minOf(it.corner * it.scale * unit, minOf(sw, sh) / 2)
-                if (r > 0f) c.clipPath(Path().apply { addRoundRect(dst, r, r, Path.Direction.CW) })
-                paint.alpha = (255 * it.alpha).toInt().coerceIn(0, 255)
-                val b = it.bmp
-                c.drawBitmap(b, Rect((cr[0] * b.width).toInt(), (cr[1] * b.height).toInt(), (cr[2] * b.width).toInt(), (cr[3] * b.height).toInt()), dst, paint)
-                c.restore()
+            for (it in list) if (!it.secure) drawItem(c, it, scrW, scrH, loc, paint)
+        }
+    }
+
+    /** Where an item lies on the screen: centre x, y and size w, h (screen pixels), or null when too small. */
+    private fun place(it: Item, scrW: Float, scrH: Float): FloatArray? {
+        val m = Mapping.of(geometry?.invoke(), scrW, scrH)
+        // sizes as on the stream: pixels of a frame 1080 high, then onto this screen
+        val unit = minOf(m.frameW, m.frameH) / 1080f * m.px
+        val (nw, nh) = Scenes.fit(it.bmp.width.toFloat(), it.bmp.height.toFloat(), m.frameW / (minOf(m.frameW, m.frameH) / 1080f))
+        val cr = it.crop
+        val sw = nw * (cr[2] - cr[0]) * it.scale * unit
+        val sh = nh * (cr[3] - cr[1]) * it.scale * unit
+        if (sw < 1f || sh < 1f) return null
+        return floatArrayOf(m.x(it.x), m.y(it.y) + it.dy * unit, sw, sh, unit)
+    }
+
+    private fun drawItem(c: Canvas, it: Item, scrW: Float, scrH: Float, loc: IntArray, paint: Paint) {
+        val pl = place(it, scrW, scrH) ?: return
+        val sw = pl[2]; val sh = pl[3]; val unit = pl[4]
+        val cr = it.crop
+        c.save()
+        c.translate(pl[0] - loc[0], pl[1] - loc[1])
+        c.rotate(it.rot)
+        val dst = RectF(-sw / 2, -sh / 2, sw / 2, sh / 2)
+        val r = minOf(it.corner * it.scale * unit, minOf(sw, sh) / 2)
+        if (r > 0f) c.clipPath(Path().apply { addRoundRect(dst, r, r, Path.Direction.CW) })
+        paint.alpha = (255 * it.alpha).toInt().coerceIn(0, 255)
+        val b = it.bmp
+        c.drawBitmap(b, Rect((cr[0] * b.width).toInt(), (cr[1] * b.height).toInt(), (cr[2] * b.width).toInt(), (cr[3] * b.height).toInt()), dst, paint)
+        c.restore()
+    }
+
+    /** One owner-only picture in a window screen capture leaves out ([Item.secure]). */
+    @SuppressLint("ViewConstructor")
+    private inner class SecureView(var item: Item) : View(ctx) {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        private val real = Point()
+        private val loc = IntArray(2)
+        override fun onDraw(c: Canvas) {
+            @Suppress("DEPRECATION") (display ?: wm?.defaultDisplay)?.getRealSize(real) ?: return
+            getLocationOnScreen(loc)
+            drawItem(c, item, real.x.toFloat(), real.y.toFloat(), loc, paint)
+        }
+    }
+
+    private val secureViews = ArrayList<Pair<SecureView, WindowManager.LayoutParams>>()
+
+    /** The secure windows follow the secure items: one each, placed and sized over it (main thread). */
+    private fun syncSecure() {
+        val want = if (shown) items.filter { it.secure } else emptyList()
+        while (secureViews.size > want.size) { val (v, _) = secureViews.removeAt(secureViews.size - 1); OverlayWindows.remove(wm, v) }
+        val real = Point()
+        @Suppress("DEPRECATION") wm?.defaultDisplay?.getRealSize(real)
+        for ((i, it) in want.withIndex()) {
+            val pl = place(it, real.x.toFloat().coerceAtLeast(1f), real.y.toFloat().coerceAtLeast(1f)) ?: continue
+            // the rotated picture's bounds, a little margin round it
+            val a = Math.toRadians(it.rot.toDouble())
+            val bw = (kotlin.math.abs(pl[2] * kotlin.math.cos(a)) + kotlin.math.abs(pl[3] * kotlin.math.sin(a))).toInt() + 8
+            val bh = (kotlin.math.abs(pl[2] * kotlin.math.sin(a)) + kotlin.math.abs(pl[3] * kotlin.math.cos(a))).toInt() + 8
+            val x = (pl[0] - bw / 2f).toInt(); val y = (pl[1] - bh / 2f).toInt()
+            if (i < secureViews.size) {
+                val (v, p) = secureViews[i]
+                v.item = it
+                if (p.x != x || p.y != y || p.width != bw || p.height != bh) { p.x = x; p.y = y; p.width = bw; p.height = bh; OverlayWindows.update(wm, v, p) }
+                v.invalidate()
+            } else {
+                val p = WindowManager.LayoutParams(bw, bh, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                        WindowManager.LayoutParams.FLAG_SECURE,
+                    PixelFormat.TRANSLUCENT).apply {
+                    gravity = Gravity.TOP or Gravity.LEFT; this.x = x; this.y = y
+                    layoutInDisplayCutoutMode = lp.layoutInDisplayCutoutMode
+                    alpha = lp.alpha; title = "RawRec mirror (mine)"
+                }
+                val v = SecureView(it)
+                try { OverlayWindows.add(wm, v, p); secureViews += v to p } catch (e: Exception) { problem = "secure: " + (e.message ?: e.javaClass.simpleName).take(120) }
             }
         }
     }
@@ -118,19 +183,20 @@ class OwnerMirror(private val ctx: Context) {
                 problem += " / " + (e2.javaClass.simpleName + ": " + (e2.message ?: "")).take(160)
             }
         }
-        if (shown) view.post { view.invalidate() }
+        if (shown) view.post { view.invalidate(); syncSecure() }
     }
 
     fun hide() {
         if (!shown) return
         OverlayWindows.remove(wm, view)
         shown = false
+        syncSecure()
     }
 
     /** What is drawn now (any thread: drawn on the main one). */
     fun set(list: List<Item>) {
         items = list
-        if (shown) view.postInvalidate()
+        if (shown) { view.postInvalidate(); view.post { syncSecure() } }
     }
 
     /** How many pictures it holds now (the report). */
