@@ -1,0 +1,7 @@
+rawrec-desktop selftest: os Linux amd64, java 17.0.21
+capture: unavailable — ضبطِ صفحه، وب‌کم و صدای کامپیوتر به کتابخانه‌های سیستم نیاز دارند: sudo apt install libpulse0 libasound2 libxcb1 libxcb-shm0 libdrm2
+noise model: 297646 bytes
+browser: skipped (no screen)
+encoders: libopenh264(cpu), libsvtav1(cpu)
+adb: /home/runner/.config/rawrec/platform-tools/adb
+FAIL: no usable phone: []

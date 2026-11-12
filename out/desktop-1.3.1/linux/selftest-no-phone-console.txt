@@ -1,0 +1,31 @@
+Picked up JAVA_TOOL_OPTIONS: -Drawrec.selftestOut=/home/runner/work/_temp/selftest.log
+rawrec-desktop selftest: os Linux amd64, java 17.0.21
+capture: unavailable — ضبطِ صفحه، وب‌کم و صدای کامپیوتر به کتابخانه‌های سیستم نیاز دارند: sudo apt install libpulse0 libasound2 libxcb1 libxcb-shm0 libdrm2
+noise model: 297646 bytes
+browser: skipped (no screen)
+[hevc_nvenc @ 0x7f6c7c6f5b80] Cannot load libcuda.so.1
+[h264_nvenc @ 0x7f6c7c6f5b80] Cannot load libcuda.so.1
+[av1_nvenc @ 0x7f6c7c6f5b80] Cannot load libcuda.so.1
+[libopenh264 @ 0x7f6c7c6f5b80] [OpenH264] this = 0x0x7f6c7c2cd870, Warning:layerId(0) doesn't support profile(578), change to UNSPECIFIC profile
+[libopenh264 @ 0x7f6c7c6f5b80] [OpenH264] this = 0x0x7f6c7c2cd870, Warning:bEnableFrameSkip = 0,bitrate can't be controlled for RC_QUALITY_MODE,RC_BITRATE_MODE and RC_TIMESTAMP_MODE without enabling skip frame.
+Svt[info]: -------------------------------------------
+Svt[info]: SVT [version]:	SVT-AV1 Encoder Lib v2.2.0
+Svt[info]: SVT [build]  :	GCC 9.4.0	 64 bit
+Svt[info]: LIB Build date: Nov 16 2024 01:13:32
+Svt[info]: -------------------------------------------
+Svt[info]: Number of logical cores available: 4
+Svt[info]: Number of PPCS 59
+Svt[info]: [asm level on system : up to avx512]
+Svt[info]: [asm level selected : up to avx2]
+Svt[info]: -------------------------------------------
+Svt[info]: SVT [config]: main profile	tier (auto)	level (auto)
+Svt[info]: SVT [config]: width / height / fps numerator / fps denominator 		: 640 / 360 / 30 / 1
+Svt[info]: SVT [config]: bit-depth / color format 					: 8 / YUV420
+Svt[info]: SVT [config]: preset / tune / pred struct 					: 10 / PSNR / random access
+Svt[info]: SVT [config]: gop size / mini-gop size / key-frame type 			: 161 / 16 / key frame
+Svt[info]: SVT [config]: BRC mode / target bitrate (kbps)				: VBR / 2000 
+Svt[info]: SVT [config]: AQ mode / variance boost 					: 2 / 0
+Svt[info]: -------------------------------------------
+encoders: libopenh264(cpu), libsvtav1(cpu)
+adb: /home/runner/.config/rawrec/platform-tools/adb
+FAIL: no usable phone: []
