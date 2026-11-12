@@ -19,13 +19,13 @@ jobs:
           java-version: "17"
       # ‎ubuntu-latest‎ خودش Android SDK دارد (ANDROID_HOME)؛ setup-android@v3 با «sdkmanager tools» می‌شکست
       # Gradle downloaded directly, with retries (GitHub's cache service answered 504 again and again)
-      - name: Gradle 8.20.2
+      - name: Gradle 8.10.2
         run: |
           for i in 1 2 3 4 5; do
-            curl -fsSL --retry 5 --retry-delay 10 -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.20.2-bin.zip && break
+            curl -fsSL --retry 5 --retry-delay 10 -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.10.2-bin.zip && break
             sleep 20
           done
-          unzip -q /tmp/gradle.zip -d /tmp && echo "/tmp/gradle-8.20.2/bin" >> "$GITHUB_PATH"
+          unzip -q /tmp/gradle.zip -d /tmp && echo "/tmp/gradle-8.10.2/bin" >> "$GITHUB_PATH"
       - name: Build unsigned release APK
         run: |
           for i in 1 2 3; do
@@ -84,13 +84,13 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - name: Gradle 8.20.2
+      - name: Gradle 8.10.2
         run: |
           for i in 1 2 3 4 5; do
-            curl -fsSL --retry 5 --retry-delay 10 -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.20.2-bin.zip && break
+            curl -fsSL --retry 5 --retry-delay 10 -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.10.2-bin.zip && break
             sleep 20
           done
-          unzip -q /tmp/gradle.zip -d /tmp && echo "/tmp/gradle-8.20.2/bin" >> "$GITHUB_PATH"
+          unzip -q /tmp/gradle.zip -d /tmp && echo "/tmp/gradle-8.10.2/bin" >> "$GITHUB_PATH"
       - name: Build debug APK (with the test hook)
         run: |
           for i in 1 2 3; do gradle :app:assembleDebug --no-daemon && exit 0; sleep 30; done; exit 1
