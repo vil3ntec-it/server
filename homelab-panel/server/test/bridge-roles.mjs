@@ -125,7 +125,8 @@ for (const [method, p, want] of [
   ['POST', '/api/admin/email/test', false],
   ['GET', '/api/admin/shops/x/staff-codes', false],
   ['POST', '/api/admin/shops/x/staff-codes/reveal', true],
-  ['GET', '/api/admin/trust/cases', true],
+  //  ABUSE-01: خواندنِ پرونده از shop ‎claude/e-rows-25s‎ (‎trust-read.v1‎) برای هر نقشِ خواننده است ⇒ لنگر همان نوشتنِ همیشه‌ارشد
+  ['POST', '/api/admin/trust/cases/x/decide', true],
   //  ۱.۵۰.۷۵ (ممیزی §۳-۴): کارکنان/دستگاه و بانکِ عکس
   ['GET', '/api/admin/shops/x/staff-perms', false],
   ['POST', '/api/admin/shops/x/staff-perms/devices/d1/disable', true],
@@ -475,7 +476,10 @@ try {
 
     for (const role of ['operator', 'viewer']) {
       for (const app of ['shop', 'pump']) {
-        const { status, up } = await run(r, role, app);
+        const { status, up: upRaw } = await run(r, role, app);
+        //  ‎GET /api/admin/me‎ فقط پرسشِ «توانایی» است (بی دادهٔ دکان): درِ پنل برای نقشِ پایین‌تر گاهی پیش از ۴۰۳ می‌پرسد سرورِ
+        //  حساب نمای کم‌ترِ همان نقش را دارد یا نه (مثلاً ‎trust-read.v1‎) — هر درخواستِ دیگر همچنان نشت است
+        const up = upRaw.filter((c) => !(c.method === 'GET' && c.path === '/api/admin/me'));
         if (needsAdmin && (status !== 403 || up.length)) {
           failures.superLeak.push(`${role} ${id} (${app}) ⇒ ${status} ${up.map((c) => `${c.method} ${c.path}`).join(', ')}`);
         }

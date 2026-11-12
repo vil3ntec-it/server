@@ -7,6 +7,7 @@
 //    market/overview|sellers|orders|commission|history ⇐ ‎/api/admin/market/*‎ (`market-admin.v1`)   viewer     مدیر/فقط‌خواندن
 //    market/orders.csv                            ⇐ همان ‎orders‎، صفحه‌به‌صفحه (سقفِ ۵۰۰۰)      admin      —
 //    market/trust/cases · cases/:id · sanctions    ⇐ ‎/api/admin/trust/*‎ (از پیش، ABUSE-01)        admin      ارشد
+//                                                   (+ ‎trust-read.v1‎: operator/viewer با نمای کم‌تر)  viewer     هر خواننده
 //    market/trust/cases/:id/assign (POST)         ⇐ همان، تأیید + کلید                              admin      ارشد
 //    market/trust/cases/:id/decide · appeal-decision · sanctions/:id/lift (POST)
 //                                                 ⇐ همان، با دلیل + تأیید + کلید + احرازِ دوباره     admin      ارشد + دلیل
@@ -183,6 +184,24 @@ export function withPanelAssignee(cases) {
   });
 }
 
+/**
+ * `trust-read.v1` (shop ‎claude/e-rows-25s‎): سرورِ حساب صف، پرونده و جریمه‌ها را به نقشِ زیرِ ارشد هم می‌دهد — با نمای کم‌تر.
+ * پنل همان را **خودش هم** برای نقشِ زیرِ admin ِ پنل می‌بُرد: راهِ پیشینِ پل (رمزِ ارشدِ مشترک، بی «انجام‌دهنده») نمای کامل
+ * می‌گیرد و نباید به بیننده برسد. همان فهرستِ ‎lib/trust-admin-view.js‎ ِ shop.
+ */
+export const TRUST_READ = 'trust-read.v1';
+const omit = (o, keys) => (o && typeof o === 'object' && !Array.isArray(o) ? Object.fromEntries(Object.entries(o).filter(([k]) => !keys.includes(k))) : o);
+export const trustSanctionLess = (s) => omit(s, ['createdBy', 'liftedBy']);
+export function trustCaseLess(c) {
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return c;
+  const out = omit(c, ['reporterHint', 'reporterStats', 'sameText', 'evidence']);
+  if (c.decision) out.decision = omit(c.decision, ['by']);
+  if (c.appeal) out.appeal = omit(c.appeal, ['by', 'decidedBy']);
+  if (Array.isArray(c.sanctions)) out.sanctions = c.sanctions.map(trustSanctionLess);
+  if (Array.isArray(c.history)) out.history = c.history.map((e) => ({ ...omit(e, ['actorId']), ...(e?.data ? { data: omit(e.data, ['assignee']) } : {}) }));
+  return out;
+}
+
 /* ───────────── CSV — فقط admin، با یک ردیفِ دفتر ───────────── */
 
 const CSV_CAP = 5000;
@@ -292,26 +311,41 @@ export function mountConsoleMarket(router) {
   const trustWriteLimit = rateLimit({ name: 'console-trust-write', max: TRUST_WRITES_MAX, windowMs: 10 * 60_000, key: (req) => `u${req.user?.id ?? 'x'}` });
   const caseIdOf = (v) => idOf(v, 'شناسهٔ پرونده');
   const noStore = (res) => res.setHeader('Cache-Control', 'no-store');
+  const fullTrust = (req) => panelRoles.atLeast(panelRoles.roleOf(req), 'admin');
+  /*  خواندن: admin ِ پنل مثلِ پیش؛ operator و viewer فقط وقتی سرورِ حساب `trust-read.v1` دارد (آن‌جا نقشِ خودشان نمای کم‌تر
+   *  می‌گیرد) — وگرنه ۴۰۳ پیش از هر درِ پرونده (تنها پرسش همان ‎GET /api/admin/me‎ ِ توانایی است). */
+  const trustRead = (req, res, next) => {
+    if (fullTrust(req)) return next();
+    hasCap(TRUST_READ).catch(() => false).then((ok) => {
+      if (ok) return next();
+      audit({ actor: actorOf(req), action: 'access.denied', entity: req.baseUrl + req.path, result: 'forbidden', detail: { capability: TRUST_READ } });
+      return res.status(403).json({ error: 'forbidden', reason: 'capability_missing', capability: TRUST_READ,
+        message: 'پرونده‌های شکایت برای این نقش فقط با سرورِ حسابِ تازه (trust-read.v1) دیده می‌شوند؛ تا آن روز فقط admin ِ پنل' });
+    });
+  };
 
-  router.get('/console/market/trust/cases', requireRole('admin'), guard(async (req, res) => {
+  router.get('/console/market/trust/cases', requireModule('market'), trustRead, guard(async (req, res) => {
     const q = req.query || {};
     const query = clean({ status: oneOf(q.status, CASE_STATUSES, 'وضعیت'), shopId: optId(q.shopId), limit: intOf(q.limit, 1, 200, 'تعداد') });
     noStore(res);
     const out = await cloudRaw('GET', '/api/admin/trust/cases', { query });
     res.json(stamped({ ...(out && typeof out === 'object' ? out : {}), cases: withPanelAssignee(out?.cases) }));
   }));
-  router.get('/console/market/trust/cases/:id', requireRole('admin'), guard(async (req, res) => {
+  router.get('/console/market/trust/cases/:id', requireModule('market'), trustRead, guard(async (req, res) => {
     const id = caseIdOf(req.params.id);
     noStore(res);
     const out = await cloudRaw('GET', `/api/admin/trust/cases/${id}`);
-    const c = out?.case && typeof out.case === 'object' && !Array.isArray(out.case) ? withPanelAssignee([out.case])[0] : out?.case;
+    let c = out?.case && typeof out.case === 'object' && !Array.isArray(out.case) ? withPanelAssignee([out.case])[0] : out?.case;
+    if (!fullTrust(req)) c = trustCaseLess(c);
     res.json(stamped({ ...(out && typeof out === 'object' ? out : {}), case: c }));
   }));
-  router.get('/console/market/trust/sanctions', requireRole('admin'), guard(async (req, res) => {
+  router.get('/console/market/trust/sanctions', requireModule('market'), trustRead, guard(async (req, res) => {
     const q = req.query || {};
     const query = clean({ shopId: optId(q.shopId), active: q.active === '1' || q.active === 'true' ? '1' : '', limit: intOf(q.limit, 1, 500, 'تعداد') });
     noStore(res);
-    res.json(stamped(await cloudRaw('GET', '/api/admin/trust/sanctions', { query })));
+    const out = await cloudRaw('GET', '/api/admin/trust/sanctions', { query });
+    const list = Array.isArray(out?.sanctions) ? out.sanctions : [];
+    res.json(stamped({ ...(out && typeof out === 'object' ? out : {}), sanctions: fullTrust(req) ? list : list.map(trustSanctionLess) }));
   }));
   router.post('/console/market/trust/cases/:id/assign', requireRole('admin'), trustWriteLimit, guard(async (req, res) => {
     const id = caseIdOf(req.params.id);

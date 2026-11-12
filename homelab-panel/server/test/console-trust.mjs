@@ -33,6 +33,7 @@ const seen = [];
 const held = new Set();
 let hangNext = false;                   //  کار انجام می‌شود، پاسخ گم می‌شود
 let slow = 0;                           //  تأخیرِ پاسخِ نوشتن (هم‌زمانی)
+let caps = ['actor.v1'];                //  + ‎trust-read.v1‎ (shop ‎claude/e-rows-25s‎) ⇒ خواندن برای operator/viewer
 const mk = (id, status, extra = {}) => ({
   id, shopId: 'shpA', shopName: 'دکانِ کریم', kind: 'report', subject: 'product', orderNo: null, productId: 'rice', category: 'counterfeit',
   status, createdAt: NOW - 9000, updatedAt: NOW - 9000, severity: 'high', assignee: '', outcome: null, appealOutcome: null,
@@ -44,7 +45,16 @@ const cases = {
   tc_3: mk('tc_3', 'open'),
   tc_4: mk('tc_4', 'appealed', { outcome: 'upheld' }),
   tc_5: mk('tc_5', 'open', { shopId: 'shpB' }),
+  tc_9: mk('tc_9', 'closed', { outcome: 'upheld', appealOutcome: 'upheld', assignee: 'panel:3', assigneeName: 'علی' }),
 };
+//  پروندهٔ کاملِ «ارشد» (همان شکلِ ‎adminView‎ ِ shop) — برای سنجشِ نمای کم‌ترِ پنل
+const FULL9 = { reporterHint: '+937•••201', reporterStats: { total: 3, upheld: 1, dismissed: 0, shops: 2 }, sameText: ['tc_8'],
+  evidence: [{ id: 'tev_secret', mime: 'image/jpeg', size: 10, createdAt: NOW }],
+  decision: { outcome: 'upheld', reason: 'ثابت شد', by: 'adm_root', at: NOW }, appeal: { body: 'فرستادیم', by: 'usr_shop_9', at: NOW, outcome: 'upheld',
+    reason: 'می‌ماند', decidedBy: 'adm_root', decidedAt: NOW },
+  sanctions: [{ id: 'tsn_9', kind: 'warning', reason: 'ثابت شد', createdAt: NOW, active: true, liftedAt: null, liftReason: '', shopId: 'shpA', createdBy: 'adm_root', liftedBy: '' }],
+  history: [{ type: 'shop_response', at: NOW, actor: 'shop', actorId: 'usr_shop_9', body: 'پاسخ', data: {} },
+    { type: 'assigned', at: NOW, actor: 'admin', actorId: 'panel:3', body: '', data: { assignee: 'panel:3' } }] };
 const sanctions = {
   tsn_1: { id: 'tsn_1', caseId: 'tc_4', shopId: 'shpA', kind: 'hide_listing', productId: 'rice', reason: 'تقلبی', createdAt: NOW - 5000, active: true, liftedAt: null },
 };
@@ -64,7 +74,7 @@ const fake = http.createServer((req, res) => {
     const later = (code, obj) => (hangNext ? (hangNext = false, undefined) : slow ? setTimeout(() => j(code, obj), slow) : j(code, obj));
     if (p === '/api/health') return j(200, { ok: true, version: '9.9.9' });
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
-    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['actor.v1'], serverTime: NOW });
+    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: caps, serverTime: NOW });
     seen.push({ method: req.method, path: p, query: Object.fromEntries(u.searchParams), body, idem: String(req.headers['idempotency-key'] || '') });
     if (p === '/api/admin/trust/cases' && req.method === 'GET') {
       const st = u.searchParams.get('status') || 'pending';
@@ -77,6 +87,7 @@ const fake = http.createServer((req, res) => {
     if (m) {
       const c = cases[m[1]];
       if (!c) return j(404, { error: { code: 'not_found', message: 'پرونده پیدا نشد' } });
+      if (!m[2] && c.id === 'tc_9') return j(200, { case: { ...c, body: 'متنِ شاکی', ...FULL9 } });
       if (!m[2]) {
         return j(200, { case: { ...c, body: 'کالای <b>تقلبی</b>', reporterHint: '07•••12', reporterStats: { total: 1, upheld: 0, dismissed: 0, shops: 1 },
           sameText: [], decision: null, appeal: null, evidence: [], sanctions: [], history: history.filter((h) => h.caseId === c.id) } });
@@ -110,7 +121,8 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/trust/sanctions' && req.method === 'GET') {
       const shop = u.searchParams.get('shopId') || '';
       const act = u.searchParams.get('active') === '1';
-      return j(200, { sanctions: Object.values(sanctions).filter((s) => (!shop || s.shopId === shop) && (!act || s.active)) });
+      return j(200, { sanctions: Object.values(sanctions).filter((s) => (!shop || s.shopId === shop) && (!act || s.active))
+        .map((s) => ({ ...s, createdBy: 'adm_root', liftedBy: s.active ? '' : 'adm_root' })) });
     }
     const sm = /^\/api\/admin\/trust\/sanctions\/([^/]+)\/lift$/.exec(p);
     if (sm && req.method === 'POST') {
@@ -190,6 +202,34 @@ try {
   const anon = await api('GET', `${C}/cases`);
   check('بی نشست ⇒ ۴۰۱', anon.status === 401);
 
+  console.log('\n── ۱ب) ‎trust-read.v1‎ (shop ‎claude/e-rows-25s‎): operator و viewer می‌خوانند، نمای کم‌تر؛ نوشتن همچنان فقط admin ──');
+  const nb = seen.length;
+  const noCap = await api('GET', `${C}/cases/tc_9`, undefined, T.view);
+  check('بی ‎trust-read.v1‎ ⇒ viewer ۴۰۳ با نامِ توانایی و هیچ درِ پرونده‌ای پرسیده نشد', noCap.status === 403 && noCap.json?.capability === 'trust-read.v1'
+    && seen.length === nb, `${noCap.status} ${noCap.text.slice(0, 160)}`);
+  caps = ['actor.v1', 'trust-read.v1'];
+  const SECRET = ['reporterHint', 'reporterStats', 'sameText', 'evidence'];
+  const less = (c) => c && SECRET.every((k) => !(k in c)) && !('by' in (c.decision || {})) && !('by' in (c.appeal || {})) && !('decidedBy' in (c.appeal || {}))
+    && (c.sanctions || []).every((x) => !('createdBy' in x) && !('liftedBy' in x)) && (c.history || []).every((e) => !('actorId' in e) && !('assignee' in (e.data || {})))
+    && !JSON.stringify(c).includes('usr_shop_9') && !JSON.stringify(c).includes('adm_root') && !JSON.stringify(c).includes('+937');
+  for (const [who, tok] of [['viewer', T.view], ['operator', T.op]]) {
+    const q0 = await api('GET', `${C}/cases?status=all`, undefined, tok);
+    const v9 = await api('GET', `${C}/cases/tc_9`, undefined, tok);
+    const sv = await api('GET', `${C}/sanctions`, undefined, tok);
+    check(`${who} با ‎trust-read.v1‎: صف، پرونده و جریمه‌ها ۲۰۰ — پنل خودش هم نمای کم‌تر می‌بُرد (راهِ پیشینِ پل نمای کامل می‌گیرد)`,
+      q0.status === 200 && v9.status === 200 && less(v9.json?.case) && v9.json.case.body === 'متنِ شاکی' && v9.json.case.assignee === 'panel:3'
+        && v9.json.case.assigneeName === 'علی' && v9.json.case.history.length === 2 && sv.status === 200 && sv.json.sanctions.length >= 1
+        && sv.json.sanctions.every((x) => !('createdBy' in x) && !('liftedBy' in x)), `${q0.status} ${v9.status} ${v9.text.slice(0, 300)}`);
+    const n2 = seen.length;
+    const codes = [];
+    for (const [m, p, b] of doors.slice(3)) codes.push((await api(m, p, b, tok)).status);
+    check(`⛔ ${who} با ‎trust-read.v1‎ هم هیچ نوشتنی ندارد (۴۰۳، هیچ درخواست)`, codes.every((c) => c === 403) && seen.length === n2, codes.join(' '));
+  }
+  const a9 = await api('GET', `${C}/cases/tc_9`, undefined, T.adm);
+  check('admin ِ پنل همان نمای کامل', SECRET.every((k) => k in (a9.json?.case || {})) && a9.json.case.decision.by === 'adm_root'
+    && a9.json.case.history.every((e) => 'actorId' in e), a9.text.slice(0, 200));
+  caps = ['actor.v1'];
+
   console.log('\n── ۲) صف و پالایش ──');
   const q1 = await api('GET', `${C}/cases?status=in_review&shopId=shpA&limit=20`, undefined, T.adm);
   const u1 = ups(/\/trust\/cases$/).at(-1);
@@ -207,7 +247,7 @@ try {
   const d1 = await api('GET', `${C}/cases/tc_1`, undefined, T.adm);
   check('جزئیات: همان پروندهٔ سرورِ حساب، ‎no-store‎', d1.status === 200 && d1.json?.case?.id === 'tc_1' && d1.json.case.body === 'کالای <b>تقلبی</b>'
     && /no-store/.test(d1.headers.get('cache-control') || ''), d1.text.slice(0, 200));
-  const d404 = await api('GET', `${C}/cases/tc_9`, undefined, T.adm);
+  const d404 = await api('GET', `${C}/cases/tc_77`, undefined, T.adm);
   check('پروندهٔ ناموجود ⇒ ‎404 not_found‎ ِ سرورِ حساب همان‌طور', d404.status === 404 && d404.json?.error === 'not_found', `${d404.status} ${d404.json?.error}`);
   const s1 = await api('GET', `${C}/sanctions?active=1&shopId=shpA`, undefined, T.adm);
   check('جریمه‌ها: «فقط فعال» و دکان همان‌طور به بالادست', s1.status === 200 && s1.json?.sanctions?.length === 1

@@ -450,12 +450,19 @@ function Assignee({ c }: { c: TrustCase }) {
       </span>
     );
   }
+  //  سرورِ حسابِ تازه (shop ‎claude/e-rows-25s‎): مسئولِ کارِ پل = کاربرِ پنل و نامش (‎assigneeName‎)
+  if (c.assigneeName) {
+    return <span data-case-assignee={c.assigneeName}>{c.assigneeName}{c.assigneeName === username ? ` (${tx('شما', 'you', 'تاسو')})` : ''}</span>;
+  }
   if (c.assignee) return <span className="font-mono text-xs" dir="ltr" title={tx('شناسهٔ مسئول در سرورِ حساب', 'Assignee id on the account server', 'د حساب سرور مسئول')}>{c.assignee}</span>;
   return <span className="text-ink-muted">{tx('بی مسئول', 'Unassigned', 'بې مسئوله')}</span>;
 }
 
 function CaseDetail({ id, onClose, onChanged }: { id: string; onClose: () => void; onChanged: () => void }) {
   const { tx, tri } = useTx();
+  //  نوشتن فقط admin ِ پنل (مرز در پل و سرورِ حساب است؛ این فقط دکمهٔ بی‌نتیجه نمی‌سازد)
+  const { can } = useApp();
+  const writer = can('admin');
   const load = useLoad<{ case?: TrustCaseFull; fetchedAt?: number }>(MC.caseOne(id), [id]);
   const c = load.data?.case;
   const [mode, setMode] = useState<'decide' | 'appeal' | null>(null);
@@ -495,11 +502,14 @@ function CaseDetail({ id, onClose, onChanged }: { id: string; onClose: () => voi
           <KV label={tx('نوع', 'Kind', 'ډول')}>{c.kind === 'report' ? tx('گزارشِ کالا', 'Product report', 'د توکي راپور') : tx('شکایت', 'Complaint', 'شکایت')} · {c.category}{c.productId ? ` · ${c.productId}` : ''}</KV>
           <KV label={tx('شدت / وضعیت', 'Severity / status', 'شدت / حالت')}>{c.severity} · <span data-case-status={c.status}>{tri(CASE_STATUS_LABEL[String(c.status)], c.status)}</span></KV>
           <KV label={tx('مسئول', 'Assignee', 'مسئول')}><Assignee c={c} /></KV>
-          <KV label={tx('سابقهٔ همین گزارش‌دهنده (۳۰ روز)', 'Same reporter (30d)', 'همدا راپور ورکوونکی')}>
-            {tx('همه {a} · وارد {b} · رد {c} · دکان {d}', 'all {a} · upheld {b} · dismissed {c} · shops {d}', '{a} · {b} · {c} · {d}', {
-              a: shownNum(c.reporterStats?.total), b: shownNum(c.reporterStats?.upheld), c: shownNum(c.reporterStats?.dismissed), d: shownNum(c.reporterStats?.shops),
-            })}
-          </KV>
+          {/* ⛔ سابقهٔ شاکی فقط برای ارشد (نقشِ زیرِ آن از سرورِ حساب و پل نمای کم‌تر می‌گیرد) */}
+          {c.reporterStats && (
+            <KV label={tx('سابقهٔ همین گزارش‌دهنده (۳۰ روز)', 'Same reporter (30d)', 'همدا راپور ورکوونکی')}>
+              {tx('همه {a} · وارد {b} · رد {c} · دکان {d}', 'all {a} · upheld {b} · dismissed {c} · shops {d}', '{a} · {b} · {c} · {d}', {
+                a: shownNum(c.reporterStats?.total), b: shownNum(c.reporterStats?.upheld), c: shownNum(c.reporterStats?.dismissed), d: shownNum(c.reporterStats?.shops),
+              })}
+            </KV>
+          )}
           <div className="rounded-lg bg-surface-raised p-2 text-xs whitespace-pre-wrap break-words" data-case-body>{c.body || '—'}</div>
           {(c.sameText || []).length > 0 && (
             <p className="text-[11px] text-ink-muted">{tx('پرونده‌های هم‌متن در همین دکان:', 'Same-text cases at this shop:', 'ورته متن:')} <span className="font-mono" dir="ltr">{(c.sameText || []).join(' ')}</span></p>
@@ -545,12 +555,12 @@ function CaseDetail({ id, onClose, onChanged }: { id: string; onClose: () => voi
             })}
           </ol>
           <p className="text-[11px] text-ink-muted">{tx('مدرکِ پیوست ({n}) فقط در کنسولِ خودِ سرورِ حساب دیده می‌شود (این‌جا پل نشده).', 'Attached evidence ({n}) is viewable only in the account server console (not bridged here).', 'ضمیمه ({n}) یوازې د حساب سرور په کنسول کې.', { n: shownNum(c.evidenceCount) })}</p>
-          <div className="flex flex-wrap gap-2">
+          {writer && <div className="flex flex-wrap gap-2">
             {/* ⛔ برچسب در حالِ فرستادن عوض نمی‌شود: کوتاه شدنش دکمهٔ «تصمیم» را زیرِ کلیکِ دومِ دوکلیک می‌آورد */}
             {open && <button className="btn btn-sm" data-case-assign disabled={busy} aria-busy={busy} onClick={assign}>{tx('مسئولش من', 'Assign to me', 'زه مسئول')}</button>}
             {(c.status === 'open' || c.status === 'in_review') && <button className="btn btn-sm btn-danger" data-case-decide onClick={() => { setDone(''); setMode('decide'); }}>{tx('تصمیم', 'Decide', 'پرېکړه')}</button>}
             {c.status === 'appealed' && <button className="btn btn-sm btn-danger" data-case-appeal onClick={() => { setDone(''); setOutcome('upheld'); setMode('appeal'); }}>{tx('رأیِ اعتراض', 'Decide appeal', 'د اعتراض پرېکړه')}</button>}
-          </div>
+          </div>}
           {mode === 'decide' && (
             <KeyDialog danger needPassword title={tx('تصمیمِ پرونده', 'Decide case', 'د دوسیې پرېکړه')} onClose={() => setMode(null)}
               disabled={!(outcome === 'upheld' || !sanction)} onUnknown={refresh}
@@ -613,11 +623,13 @@ function Reports() {
   const [open, setOpen] = useState<string | null>(null);
   const [lift, setLift] = useState<Sanction | null>(null);
   const [done, setDone] = useState('');
-  const cases = useLoad<{ cases?: TrustCase[]; fetchedAt?: number }>(can('admin') ? MC.cases(status, shop) : null, [status, shop]);
-  const sanctions = useLoad<{ sanctions?: Sanction[]; fetchedAt?: number }>(can('admin') ? MC.sanctions(activeOnly, shop) : null, [activeOnly, shop]);
-  if (!can('admin')) {
-    return <Notice tone="info">{tx('پرونده‌های گزارش و شکایت دادهٔ حساس‌اند (متنِ شاکی و سابقه‌اش) و سرورِ حساب فقط به مدیرِ ارشد می‌دهد؛ این‌جا فقط admin ِ پنل.',
-      'Report/complaint cases are sensitive (reporter text and history); the account server serves them to superadmins only — here panel admins only.', 'دا یوازې د admin لپاره.')}</Notice>;
+  const writer = can('admin');
+  //  ‎trust-read.v1‎: operator و viewer هم می‌خوانند (نمای کم‌تر، بی نوشتن)؛ سرورِ حسابِ کهنه ⇒ ۴۰۳ ِ پل با نامِ توانایی
+  const cases = useLoad<{ cases?: TrustCase[]; fetchedAt?: number }>(MC.cases(status, shop), [status, shop]);
+  const sanctions = useLoad<{ sanctions?: Sanction[]; fetchedAt?: number }>(MC.sanctions(activeOnly, shop), [activeOnly, shop]);
+  if (!writer && cases.code === 'forbidden') {
+    return <div data-trust-readonly-off><Notice tone="info">{tx('پرونده‌های گزارش و شکایت دادهٔ حساس‌اند (متنِ شاکی و سابقه‌اش)؛ برای نقشِ شما سرورِ حسابِ تازه (trust-read.v1) لازم است — تا آن روز فقط admin ِ پنل.',
+      'Report/complaint cases are sensitive (reporter text and history); your role needs an updated account server (trust-read.v1) — until then panel admins only.', 'ستاسو رول ته د حساب نوی سرور (trust-read.v1) پکار دی.')}</Notice></div>;
   }
   const shopOk = shopFilterOk(shopDraft.trim());
   return (
@@ -672,7 +684,7 @@ function Reports() {
                 <Cell>{moment(s.createdAt)}</Cell>
                 <Cell>{s.liftedAt
                   ? <span className="text-[11px] text-ink-muted">{tx('برداشته شد', 'Lifted', 'لرې شوه')} {moment(s.liftedAt)}</span>
-                  : <button className="btn btn-sm" data-sanction-lift={s.id} onClick={() => { setDone(''); setLift(s); }}>{tx('برداشتن', 'Lift', 'لرې کول')}</button>}</Cell>
+                  : !writer ? <span className="text-[11px] text-ink-muted">{tx('فعال', 'Active', 'فعاله')}</span> : <button className="btn btn-sm" data-sanction-lift={s.id} onClick={() => { setDone(''); setLift(s); }}>{tx('برداشتن', 'Lift', 'لرې کول')}</button>}</Cell>
               </Row>
             ))}
           </Table>

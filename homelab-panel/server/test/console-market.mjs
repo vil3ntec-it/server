@@ -242,7 +242,10 @@ try {
     for (const [who, t] of [['operator', op], ['viewer', viewer]]) {
       n = seen.length;
       const r = await api(method, `${C}/${pth}`, body, t);
-      check(`${who}: ${method} ${pth} ⇒ ۴۰۳ و هیچ درخواستی به سرورِ حساب`, r.status === 403 && since(n).length === 0, `${r.status} ${since(n).map((c) => c.path).join(',')}`);
+      //  ۱.۵۰.۹۷: خواندنِ پرونده برای operator/viewer فقط با ‎trust-read.v1‎ ِ سرورِ حساب ⇒ تنها پرسش همان ‎GET /api/admin/me‎ ِ توانایی است
+      //  (این‌جا نیست ⇒ ۴۰۳)؛ هیچ درِ پرونده/جریمه/نوشتن پرسیده نمی‌شود (‎console-trust.mjs‎ با توانایی)
+      const upNoProbe = since(n).filter((c) => !(c.method === 'GET' && c.path === '/api/admin/me'));
+      check(`${who}: ${method} ${pth} ⇒ ۴۰۳ و هیچ درخواستی به سرورِ حساب`, r.status === 403 && upNoProbe.length === 0, `${r.status} ${since(n).map((c) => c.path).join(',')}`);
     }
   }
   const noAuth = await api('GET', `${C}/market/overview`);

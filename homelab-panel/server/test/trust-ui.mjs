@@ -40,6 +40,7 @@ const XSS = '<img src=x onerror="window.__xss=1">';
 const reads = [];
 const posts = [];
 let hangNext = false;
+let caps = ['actor.v1'];          //  + ‎trust-read.v1‎ ⇒ بیننده هم می‌خواند (shop ‎claude/e-rows-25s‎)
 const mk = (id, status, extra = {}) => ({
   id, shopId: 'shpA', shopName: 'دکانِ کریم', kind: 'report', subject: 'product', orderNo: null, productId: 'rice', category: 'counterfeit',
   status, createdAt: NOW - 90000, updatedAt: NOW - 90000, severity: 'high', assignee: '', outcome: null, appealOutcome: null,
@@ -75,7 +76,7 @@ const fake = http.createServer((req, res) => {
     try { b = JSON.parse(raw || 'null'); } catch { /* */ }
     if (p === '/api/health') return j(200, { ok: true, server: 'online', version: '2.14.5' });
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
-    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['actor.v1'], serverTime: NOW });
+    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: caps, serverTime: NOW });
     if (p.startsWith('/api/admin/trust/')) {
       if (req.method === 'GET') reads.push({ path: p, query: Object.fromEntries(u.searchParams) });
       else posts.push({ path: p, body: b });
@@ -307,9 +308,19 @@ try {
   const nReads = reads.length;
   await vpage.goto(`${BASE}/shop?tab=market&view=reports`, { waitUntil: 'networkidle' });
   await vpage.waitForTimeout(800);
-  const vtext = await vpage.locator('main').innerText();
-  check('viewer: فقط پیامِ «فقط admin ِ پنل»، بی جدول و بی هیچ درخواستِ پرونده به سرورِ حساب',
-    vtext.includes('فقط admin') && (await vpage.locator('[data-case-row]').count()) === 0 && reads.length === nReads, vtext.slice(0, 300));
+  let vtext = await vpage.locator('main').innerText();
+  check('viewer با سرورِ حسابِ کهنه (بی ‎trust-read.v1‎): فقط پیامِ «trust-read.v1 … فقط admin»، بی جدول و بی هیچ درخواستِ پرونده',
+    vtext.includes('trust-read.v1') && vtext.includes('فقط admin') && (await vpage.locator('[data-case-row]').count()) === 0 && reads.length === nReads, vtext.slice(0, 300));
+  caps = ['actor.v1', 'trust-read.v1'];
+  await vpage.reload({ waitUntil: 'networkidle' });
+  await vpage.waitForSelector('[data-case-row="tc_5"]', { timeout: 15000 });
+  await vpage.locator('[data-case-open="tc_5"]').click();
+  await vpage.waitForSelector('[data-case-detail="tc_5"]', { timeout: 10000 });
+  vtext = await vpage.locator('main').innerText();
+  check('viewer با ‎trust-read.v1‎: صف و پرونده (متنِ شاکی، تاریخچه) — بی سابقهٔ شاکی، بی دکمهٔ مسئول/تصمیم و بی «برداشتن»؛ افقی نمی‌لغزد',
+    vtext.includes('این کالا تقلبی است') && !vtext.includes('سابقهٔ همین گزارش‌دهنده') && (await vpage.locator('[data-case-assign], [data-case-decide], [data-sanction-lift]').count()) === 0
+      && (await vpage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)), vtext.slice(0, 400));
+  caps = ['actor.v1'];
   await vctx.close();
 
   const mctx = await browser.newContext({ viewport: { width: 390, height: 844 } });

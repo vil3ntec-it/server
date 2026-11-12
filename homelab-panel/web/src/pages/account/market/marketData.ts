@@ -273,6 +273,8 @@ export type TrustCase = { id: string; shopId?: string; shopName?: string; kind?:
   evidenceCount?: number; flags?: string[]; outcome?: string | null; appealOutcome?: string | null; duplicateOf?: string | null;
   /** مسئول در سرورِ حساب (از راهِ پل: شناسهٔ کلیدِ سرویس) */
   assignee?: string;
+  /** نامِ کاربرِ پنل که مسئول شد (سرورِ حسابِ تازه، از ‎X-Actor-Name‎) */
+  assigneeName?: string;
   /** نامِ کاربرِ پنل از دفترِ همین پنل — فقط وقتی همان مسئولِ امروزِ سرورِ حساب است (‎console-market.js‎ `withPanelAssignee`) */
   panelAssignee?: { by: string; at: number } | null };
 export type CaseSanction = { id: string; kind: string; productId?: string | null; reason?: string; createdAt?: number | null;
