@@ -4424,4 +4424,7 @@ hold)، مهاجرتِ ۰۱۱ (فقط ۴ جدولِ تازه)، رابط: کار
 - ساختِ جدا: `npm run build:shop-standalone` ⇒ `web/dist/shop-standalone/` (جایی فرستاده نمی‌شود)؛ ورود با `/api/auth/login` ِ همان
   سرور و `/api` هم‌مبدأ (پراکسیِ معکوس یا پوستهٔ دسکتاپ/موبایل؛ `VITE_SHOP_ROUTER=hash`).
 - آزمون: `module-boundary.mjs` (در `npm test`؛ ۲۶، ۹ جهش کشته) · `npm run test:shop-standalone` (در CI بعد از ساختِ پنل؛ ۲۲) ·
-  `shop-standalone-ui.mjs` (کرومیوم؛ ۱۹) · `live-pages` ۱۵۷ و `console-shell` ۹۹ روی نشانی‌های تازه.
+  `shop-standalone-ui.mjs` (کرومیوم؛ ۲۰) · `live-pages` ۱۵۷ و `console-shell` ۹۹ روی نشانی‌های تازه · `shop-console-ui` ۸۰ (پایه هم ۸۰).
+- ⚠️ `shop-console-ui.mjs` از ۱.۵۰.۹۳ روی main سرخ بود (۰/۱) و کسی نمی‌دید (در `npm test` نیست): نصبِ تازه زیرِ «ساختنِ مدیر» دکمهٔ
+  «از فایلِ جابه‌جایی» دارد و «آخرین دکمهٔ فرم» دیگر ساختن نبود ⇒ حالا `form button.btn-primary`. همین الگو هنوز در `control-ui.mjs`
+  هست — جدا از این ماژول، دست نخورد.
