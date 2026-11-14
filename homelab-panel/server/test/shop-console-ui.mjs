@@ -242,7 +242,8 @@ try {
   await page.goto(BASE, { waitUntil: 'networkidle' });
   await page.fill('input[autocomplete="username"]', 'admin');
   await page.fill('input[type="password"]', 'ShopConsole!2026');
-  await page.locator('form button').last().click();
+  //  ⚠️ نصبِ تازه از ۱.۵۰.۹۳ زیرِ «ساختنِ مدیر» دکمهٔ «از فایلِ جابه‌جایی» هم دارد ⇒ «آخرین دکمه» دیگر ساختن نیست
+  await page.locator('form button.btn-primary').click();
   await page.waitForSelector('aside nav', { timeout: 20000 });
 
   const main = async () => page.locator('main').innerText();

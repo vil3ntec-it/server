@@ -31,7 +31,6 @@ import {
   UserCog,
   X,
   Fuel,
-  Store,
   Hash,
   LogIn,
   Megaphone,
@@ -46,6 +45,7 @@ import { featureOn, type FeatureKey, type ServerFeature } from '../features';
 import { logoUrl } from '../api';
 import CommandPalette, { usePaletteKey, type PaletteItem } from './CommandPalette';
 import { subsPath } from '../pages/account/subsPath';
+import { moduleMenu } from '../modules/registry';
 
 type NavItem = {
   to: string;
@@ -111,7 +111,8 @@ const NAV_GROUPS: NavGroup[] = [
        *  پمپ است (پوشه، رمزِ خواندن، دادهٔ زنده). فروشگاه چنین چیزی ندارد —
        *  کلاً روی سرورِ حساب است. پس دری که نیست ساخته نمی‌شود.
        */
-      { to: '/shop', key: 'navShops', icon: Store },
+      //  🏪 «فروشگاه» (‎/shop‎) — از ۱.۵۱.۰ ماژولِ جداشدنی؛ آیتمش از شناسنامهٔ خودش (‎modules/shop/index.ts‎)، همین‌جا
+      ...moduleMenu('daily'),
       { to: '/codes', key: 'codesTitle', icon: Hash },
     ],
   },

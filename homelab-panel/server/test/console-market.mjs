@@ -39,7 +39,7 @@ console.log('\n── ۰) marketData.ts: «نیامده = —»، پول، سن�
 {
   const webSrc = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..', 'web', 'src');
   let m = null;
-  try { m = await import(new URL('file://' + path.join(webSrc, 'pages', 'account', 'market', 'marketData.ts')).href); }
+  try { m = await import(new URL('file://' + path.join(webSrc, 'modules', 'shop', 'market', 'marketData.ts')).href); }
   catch (e) { check('marketData.ts با Node اجرا می‌شود', false, e.message); }
   if (m) {
     check('⛔ نیامده «—»، صفرِ واقعی «۰»', m.shownNum(undefined) === '—' && m.shownNum(null) === '—' && m.shownNum('') === '—'

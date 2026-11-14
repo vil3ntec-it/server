@@ -4450,3 +4450,30 @@ hold)، مهاجرتِ ۰۱۱ (فقط ۴ جدولِ تازه)، رابط: کار
 
 آزمون‌ها: `console-market` (۱۰۵)، `account-finance` (۴۱)، `market-console-ui` (۲۸، کرومیوم)، `shop-finance-ui` (۳۸، کرومیوم)،
 `bridge-roles` (۳۰، با کدِ shop).
+
+## 🏪 بخشِ فروشگاه جداشدنی است (از ۱۴۰۵/۰۸/۲۳، نسخه 1.51.0)
+
+دستورِ صاحب محصول: «کدهای بخشِ فروشگاه … درجا استخراج شود و برایش برنامهٔ جدا ساخته شود؛ الان روی برنامهٔ سرور باشد.» شرحِ
+کامل، سیاهه و راهِ ساختن: **`docs/SHOP-MODULE-fa.md`**.
+
+- ⛔ **کدِ فقط‌فروشگاه فقط در `web/src/modules/shop/` و `server/src/modules/shop/`.** صفحه، کارت، زیرماژول (`console/modules/<id>.tsx`)،
+  دادهٔ رابط و درِ `/console/*` ِ تازه همان‌جا ساخته می‌شود — نه در `pages/account/` یا `src/routes/`.
+- ⛔ **مرز:** بیرون از `modules/shop/` هیچ پرونده‌ای از درونش وارد نمی‌کند جز `modules/registry.ts` و `src/modules/registry.js`؛ درونِ
+  `modules/shop/` هیچ پرونده‌ای از پنل وارد نمی‌کند جز از `host.ts` / `host.js` (و `./`، `../` ِ خودِ ماژول، بسته‌های npm، `node:*`).
+  پنل نامِ ماژول را نمی‌داند: `App.tsx` مسیر و `Layout.tsx` منو را از `PANEL_MODULES` می‌گیرند؛ `account-admin.js` فقط
+  `mountModules` و `MODULE_CAPABILITIES`.
+- ⛔ **چیزی که ماژول از پنل تازه می‌خواهد ⇒ یک نام در `host`**، و همان نام با همان نوع در `standalone/host.tsx`
+  (`standalone/host.check.ts` با `tsc` می‌سنجد). تکهٔ مشترکِ تازه برای ساختِ جدا ⇒ یک خط در `standalone/shared-pieces.json`
+  (همان فهرستِ «برای بیرون بردن کپی شوند»)؛ هرگز صفحهٔ فقط‌پنل (ترمینال، فایل‌ها، پمپ‌ها…).
+- ⛔ **تکهٔ مشترک** (پمپ هم دارد: `AppSubscriptions`، `Sales`، `shared.tsx`، `console/parts.tsx`، `text.ts`، `GrantNeeded.tsx`) سرِ
+  جایش می‌ماند و ماژول فقط از `host` به آن می‌رسد. کپیِ کوچکِ `reasonOk`/`newIdemKey` در `parts.tsx` با `consoleData.ts` یکی می‌ماند.
+- ⛔ **`consoleData.ts`، `marketData.ts` و `consoleOpsI18n.ts` بی وارد کردن می‌مانند** — آزمون‌ها با خودِ Node می‌خوانندشان.
+- ⛔ پمپ و تانک‌تیل در این ماژول نیست و قراردادِ سرورِ حساب همان است: ماژول از همان پلِ پنل (کلیدِ سرویس، فهرستِ سفید،
+  «انجام‌دهنده»، `withPanelActor`) می‌رود؛ درهایش روی **همان** روترِ `account-admin.js` و به همان ترتیبِ پیشین سوار می‌شوند.
+- ساختِ جدا: `npm run build:shop-standalone` ⇒ `web/dist/shop-standalone/` (جایی فرستاده نمی‌شود)؛ ورود با `/api/auth/login` ِ همان
+  سرور و `/api` هم‌مبدأ (پراکسیِ معکوس یا پوستهٔ دسکتاپ/موبایل؛ `VITE_SHOP_ROUTER=hash`).
+- آزمون: `module-boundary.mjs` (در `npm test`؛ ۲۶، ۹ جهش کشته) · `npm run test:shop-standalone` (در CI بعد از ساختِ پنل؛ ۲۲) ·
+  `shop-standalone-ui.mjs` (کرومیوم؛ ۲۰) · `live-pages` ۱۵۷ و `console-shell` ۹۹ روی نشانی‌های تازه · `shop-console-ui` ۸۰ (پایه هم ۸۰).
+- ⚠️ `shop-console-ui.mjs` از ۱.۵۰.۹۳ روی main سرخ بود (۰/۱) و کسی نمی‌دید (در `npm test` نیست): نصبِ تازه زیرِ «ساختنِ مدیر» دکمهٔ
+  «از فایلِ جابه‌جایی» دارد و «آخرین دکمهٔ فرم» دیگر ساختن نبود ⇒ حالا `form button.btn-primary`. همین الگو هنوز در `control-ui.mjs`
+  هست — جدا از این ماژول، دست نخورد.

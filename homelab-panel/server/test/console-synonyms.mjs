@@ -25,7 +25,7 @@ const check = (name, ok, extra = '') => {
 
 /* ── واحد: همان سنجشِ پل، بی سرور ── */
 process.env.HLP_DATA_DIR = path.join(tmp, 'unit');
-const { validateSynonyms, synonymKey, shapeSynonyms } = await import('../src/routes/console-synonyms.js');
+const { validateSynonyms, synonymKey, shapeSynonyms } = await import('../src/modules/shop/routes/console-synonyms.js');
 const bad = (code, message) => Object.assign(new Error(message), { code, status: 400 });
 const tryV = (g) => { try { return { ok: true, out: validateSynonyms(g, bad) }; } catch (e) { return { ok: false, code: e.code, message: e.message }; } };
 check('کلیدِ یک‌شکل: «ي/ی»، «ك/ک»، نیم‌فاصله، رقمِ فارسی و بزرگی یکی‌اند', synonymKey('روغنِ نباتي') === synonymKey('روغنِ نباتی') && synonymKey('كشمش') === synonymKey('کشمش')

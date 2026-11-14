@@ -17,7 +17,7 @@ type Theme = 'dark' | 'light' | 'system';
 
 export type PanelRole = 'viewer' | 'operator' | 'admin';
 
-type AppState = {
+export type AppState = {
   ready: boolean;
   initialized: boolean;
   /** ساختِ نخستین مدیر از همین دستگاه کدِ یک‌بارِ کنسولِ سرور را می‌خواهد (۱.۵۰.۸۵) */
@@ -334,6 +334,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ]
   );
 
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+/**
+ *  همین زمینه با مقدارِ یک میزبانِ دیگر — فقط برای ساختِ جدای بخشِ «فروشگاه» (‎modules/shop/standalone/‎) که ورود و
+ *  نشستِ خودش را دارد ولی تکه‌های مشترکِ رابط (‎components/ui‎، ‎control/ui‎…) همین ‎useApp‎ را می‌خوانند. پنل از آن استفاده نمی‌کند.
+ */
+export function AppStateProvider({ value, children }: { value: AppState; children: ReactNode }) {
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

@@ -152,7 +152,7 @@ process.env.HLP_DATA_DIR = path.join(tmp, 'unit');
 process.env.HLP_ACCOUNT_API = '0';
 const accountAdmin = (await import('../src/routes/account-admin.js')).default;
 //  مالیِ مرکزی (ماژولِ ۴.۵) روترِ خودش را دارد و زیرِ ‎/console/finance‎ ِ همان پل سوار است
-const accountFinance = (await import('../src/routes/account-finance.js')).default;
+const accountFinance = (await import('../src/modules/shop/routes/account-finance.js')).default;
 const { adminRouter: stationsAdmin } = await import('../src/routes/stations.js');
 const listOf = (router, base, keep = () => true) => router.stack
   .filter((l) => l.route && keep(l.route.path))

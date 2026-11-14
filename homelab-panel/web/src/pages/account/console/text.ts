@@ -6,7 +6,9 @@
 // ---------------------------------------------------------------------------
 import { useCallback } from 'react';
 import { useApp } from '../../../app-context';
-import type { Tri } from './contract';
+
+/** برچسبِ سه‌زبانه (همان شکلِ ‎Tri‎ ِ قراردادِ ماژول‌های فروشگاه). */
+export type Tri = { fa: string; en: string; ps: string };
 
 export type Tx = (fa: string, en: string, ps: string, vars?: Record<string, string | number>) => string;
 

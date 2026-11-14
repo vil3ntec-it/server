@@ -34,8 +34,8 @@ const check = (name, ok, extra = '') => {
 };
 
 /* ── ۰) فهرستِ سرور و فایل‌های وب، از خودِ کد ── */
-const { CONSOLE_MODULES, CONSOLE_GROUPS } = await import('../src/console/modules.js');
-const webDir = path.join(here, '..', '..', 'web', 'src', 'pages', 'account', 'console', 'modules');
+const { CONSOLE_MODULES, CONSOLE_GROUPS } = await import('../src/modules/shop/console/modules.js');
+const webDir = path.join(here, '..', '..', 'web', 'src', 'modules', 'shop', 'console', 'modules');
 const webIds = fs.readdirSync(webDir).filter((f) => f.endsWith('.tsx'))
   .map((f) => ({ f, id: (/defineModule\(\{\s*id:\s*'([a-z][a-z0-9-]*)'/.exec(fs.readFileSync(path.join(webDir, f), 'utf8')) || [])[1] }));
 console.log('\n── فهرستِ ماژول‌ها: سرور ⇄ وب ──');

@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:shop-standalone": "vite build --config vite.shop-standalone.config.ts",
+    "dev:shop-standalone": "vite --config vite.shop-standalone.config.ts",
+    "preview:shop-standalone": "vite preview --config vite.shop-standalone.config.ts",
+    "test:shop-standalone": "npm run build:shop-standalone && node scripts/check-shop-standalone.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.469.0",
