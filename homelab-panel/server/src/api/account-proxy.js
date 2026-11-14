@@ -59,7 +59,8 @@ import { clientIp } from '../platform/security.js';
  * ⚠️ ‎sales‎ همین‌طور آمده بود و هیچ‌وقت روی سرورِ حساب وجود نداشت.
  */
 export const ACCOUNT_PREFIXES = Object.freeze([
-  'health', 'ready', 'config', 'plans', 'terms',
+  //  ‎terms‎ از shop (دستهٔ ۵۹، ۱۴۰۵/۰۸/۲۲) دیگر پیشوندِ جدا نیست؛ متنِ شرایط زیرِ ‎/api/auth/terms‎ است و ‎auth‎ همین‌جاست
+  'health', 'ready', 'config', 'plans',
   'auth', 'location', 'me', 'shop', 'pump', 'events', 'sync', 'errors',
   'admin', 'license', 'support', 'visit', 'vip', 'billing',
   'portal', 'downloads', 'rep', 'releases',

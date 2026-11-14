@@ -32,6 +32,7 @@ import { mailReady } from '../codes/mail.js';
 import { livePushSecret } from '../routes/live.js';
 import { pickDir } from './bundle.js';
 import { holdOf, HOLD_MESSAGE } from '../fleet/hold.js';
+import { accountPublicBaseUrls } from './public-urls.js';
 
 const RING = 200;
 const ring = [];
@@ -227,8 +228,36 @@ export function accountChildEnv(dir = resolveAccountDir()) {
     PANEL_LIVE_KEY: livePushSecret(),
     //  .envِ خودِ پوشهٔ کد خوانده نشود — همه‌چیز از همین‌جا می‌آید
     ENV_FILE: path.join(data, 'env.none'),
+    /*
+     *  (۱.۵۰.۹۹) «چند دامنه برای هر برنامه»: همهٔ نشانی‌های عمومیِ همین سرورِ حساب، نامِ اصلی اول، با کاما —
+     *  ‎config/server‎ ِ سرورِ حساب همین را به برنامه‌های دکان می‌دهد ⇒ دامنهٔ تازه بی ساختِ دوباره. فقط نامِ میزبان، بی راز.
+     *  دامنه که عوض شود `onAccountHostsChanged` فرزند را با فهرستِ تازه دوباره بالا می‌آورد.
+     */
+    ...publicUrlsEnv(),
     ...(dir ? {} : {}),
   };
+}
+
+function publicUrlsEnv() {
+  let list = [];
+  try { list = accountPublicBaseUrls(); } catch { list = []; }
+  return list.length ? { PUBLIC_BASE_URLS: list.join(',') } : {};
+}
+
+/** فهرستی که فرزندِ روشن با آن بالا آمد (برای «عوض شد؟») */
+let childPublicUrls = null;
+
+/**
+ * (۱.۵۰.۹۹) نام‌های سرورِ حساب عوض شد ⇒ اگر فرزندِ روشن فهرستِ دیگری دارد، با محیطِ تازه دوباره بالا می‌آید
+ * (همان راهِ `onPanelMailChanged`). خاموش/بیرونی ⇒ هیچ؛ بارِ بعدی که روشن شود همان فهرستِ تازه را می‌گیرد.
+ */
+export function onAccountHostsChanged() {
+  if (!child) return { ok: false, reason: 'روشن نبود' };
+  const next = publicUrlsEnv().PUBLIC_BASE_URLS || '';
+  if (next === (childPublicUrls ?? '')) return { ok: false, reason: 'همان فهرست' };
+  push('info', 'نشانی‌های عمومیِ سرورِ حساب عوض شد — با فهرستِ تازه دوباره بالا می‌آید');
+  restartForHosts().catch(() => {});
+  return { ok: true };
 }
 
 /**
@@ -260,6 +289,7 @@ export function accountStatus() {
     dir: dir || null,
     dataDir: accountDataDir(),
     running: !!child && !child.killed,
+    restarting,
     pid: child?.pid || null,
     port: url?.port ? Number(url.port) : null,
     startedAt: startedAt || null,
@@ -323,6 +353,7 @@ export function startAccountServer() {
 
   startedAt = Date.now();
   lastError = '';
+  childPublicUrls = env.PUBLIC_BASE_URLS || '';
   announce(`سرورِ حساب روشن شد (پورت ${env.PORT}، دیتابیس PGlite در ${accountDataDir()}) — از api.<دامنه> رد می‌شود`);
   logEvent('info', 'account', `سرورِ حساب روشن شد روی پورت ${env.PORT}`);
 
@@ -405,6 +436,17 @@ export async function restartAccountServer() {
   restarts = 0;
   await new Promise((r) => setTimeout(r, 300));
   return startAccountServer();
+}
+
+//  (۱.۵۰.۹۹) در میانهٔ «ایست ⇒ روشن» ِ تغییرِ نشانی‌ها: برنامه «روشن» شمرده می‌شود (برای «آخرین نامِ برنامهٔ روشن»)
+let restarting = false;
+async function restartForHosts() {
+  restarting = true;
+  try {
+    return await restartAccountServer();
+  } finally {
+    restarting = false;
+  }
 }
 
 /**

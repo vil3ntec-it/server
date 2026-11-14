@@ -17,8 +17,6 @@ import {
   describeSite,
   siteSize,
   invalidateSizeCache,
-  attachDomain,
-  detachDomain,
   domainsForSite,
   ensureSiteDataFolder,
 } from '../sites/registry.js';
@@ -31,7 +29,11 @@ import { readInterfaces } from '../metrics/network.js';
 import { q, db, logEvent } from '../db.js';
 import { config } from '../config.js';
 import { sitesRoot } from '../sites/root.js';
-import { denyUnlessShellAllowed } from '../lib/shell-owner.js';
+import { denyUnlessShellAllowed, shellAllowed } from '../lib/shell-owner.js';
+import { domainOwnerGuard, sendDomainResult } from './app-domains.js';
+import { addAppHostname, removeAppHostname, setPrimaryHostname, hostnamesOf, ownerOf } from '../app-hosts.js';
+import { freshUntil } from '../auth.js';
+import { parseHostname } from '../lib/hostname.js';
 
 const router = Router();
 // حسابِ مدیرِ پنل، یا کلیدِ محلیِ برنامهٔ رویِ همین کامپیوتر
@@ -134,29 +136,98 @@ function guardSite(req, res, before = null, body = req.body || {}) {
   return true;
 }
 
-router.post('/', async (req, res) => {
+/*
+ *  ⛔ (۱.۵۰.۹۹) دامنهٔ سایت (صریح در بدنه، یا از پروندهٔ خودِ پوشه هنگامِ ساخت) فقط مالک + احرازِ دوباره (یا کلیدِ محلی) —
+ *  همان مرزِ ‎/api/app-domains‎. کارگزار/مدیرِ دوم سایت را می‌سازد ولی دامنه‌ای نمی‌گذارد (صریح ⇒ ۴۰۳، از پوشه ⇒ نادیده).
+ */
+const wantsDomain = (body) => body && 'domain' in body && String(body.domain ?? '').trim() !== '';
+const domainFresh = (req) => Boolean(req.user?.local) || (shellAllowed(req.user) && Boolean(req.user?.sessionId) && freshUntil(req.user.sessionId) > Date.now());
+const siteDomainGuard = domainOwnerGuard('site.domain', { local: true });
+function guardDomainField(req, res, next) {
+  if (!wantsDomain(req.body) && !(req.method === 'PUT' && req.body && 'domain' in req.body)) return next();
+  return siteDomainGuard(req, res, next);
+}
+
+/**
+ * دامنهٔ سایتِ تازه پس از ساختنِ ردیف، از همان راهِ اتمیِ ‎app-hosts.js‎ (نه ‎attachDomain‎ + هم‌گام‌سازیِ پس‌زمینه).
+ * سنجش و «مالِ دیگری» **پیش از** ساختنِ سایت (رد ⇒ هیچ سایتی ساخته نمی‌شود).
+ */
+function precheckNewDomain(raw) {
+  if (!raw) return null;
+  const p = parseHostname(String(raw));
+  if (!p.ok) return { status: 400, body: { ok: false, error: 'invalid_domain', reason: p.reason, message: p.message } };
+  const owner = ownerOf(p.hostname);
+  if (owner) return { status: 409, body: { ok: false, error: 'domain_taken', message: `نامِ ${p.display} مالِ ${owner.label} است.`, owner: { app: owner.app, label: owner.label } } };
+  return null;
+}
+async function attachNewSiteDomain(req, result, raw) {
+  if (!raw || !result?.ok || !result.site) return result;
+  const app = `site:${result.site.slug}`;
+  const r = await addAppHostname({ app, hostname: String(raw), primary: true, by: req.user?.username });
+  sendDomainAudit(req, 'panel.domains.add', r, app, String(raw));
+  const site = getSite(result.site.id);
+  //  سایت ساخته شد ولی دامنه ننشست (مسیرِ تونل نوشته نشد ⇒ برگشت) — گفته می‌شود، پنهان نه
+  return r.ok ? { ...result, site } : { ...result, site, domainError: { error: r.error, message: r.message } };
+}
+
+router.post('/', guardDomainField, async (req, res) => {
   if (!guardSite(req, res)) return;
   const { path: rootPath, name, domain, port, kind, startCommand, autostart } = req.body || {};
-  const result = await addSite({ rootPath, name, domain, port, kind, startCommand, autostart });
+  //  دامنهٔ مؤثر: صریح، وگرنه از پروندهٔ خودِ پوشه — فقط برای مالکِ تازه‌احرازشده/کلیدِ محلی
+  let want = String(domain ?? '').trim();
+  if (!want && domainFresh(req) && rootPath) {
+    try { want = String(detectProject(path.resolve(String(rootPath).trim())).domain || '').trim(); } catch { want = ''; }
+  }
+  const bad = precheckNewDomain(want);
+  if (bad) return res.status(bad.status).json(bad.body);
+  const result = await addSite({ rootPath, name, domain: undefined, port, kind, startCommand, autostart, domainAllowed: false });
   if (!result.ok) return res.status(400).json(result);
-  res.json(result);
+  res.json(await attachNewSiteDomain(req, result, want));
 });
 
 // ساخت سایت تازه با پوشهٔ کاملاً مستقل زیر ریشهٔ سایت‌ها
-router.post('/create', async (req, res) => {
+router.post('/create', guardDomainField, async (req, res) => {
   const { name, kind, domain, port } = req.body || {};
-  const result = await createSiteFolder({ name, kind, domain, port });
+  const want = String(domain ?? '').trim();
+  const bad = precheckNewDomain(want);
+  if (bad) return res.status(bad.status).json(bad.body);
+  const result = await createSiteFolder({ name, kind, domain: undefined, port });
   if (!result.ok) return res.status(400).json(result);
-  res.json(result);
+  res.json(await attachNewSiteDomain(req, result, want));
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', guardDomainField, async (req, res) => {
   const before = getSite(req.params.id);
   if (!guardSite(req, res, before)) return;
-  const result = updateSite(req.params.id, req.body || {});
-  if (!result.ok) {
-    return res.status(result.error === 'invalid_domain' ? 400 : 404).json(result);
+  //  (۱.۵۰.۹۹) فیلدِ ‎domain‎ = «نامِ اصلیِ سایت» از همان راهِ اتمیِ ‎app-hosts.js‎ (سنجش، یک صاحب، آخرین نام، برگشت)
+  const body = { ...(req.body || {}) };
+  let domainResult = null;
+  if (before && 'domain' in body) {
+    const raw = String(body.domain ?? '').trim();
+    delete body.domain;
+    const app = `site:${before.slug}`;
+    if (!raw) {
+      domainResult = before.domain ? await removeAppHostname({ app, hostname: before.domain }) : { ok: true };
+      if (before.domain) sendDomainAudit(req, 'panel.domains.remove', domainResult, app, before.domain);
+    } else {
+      const own = (hostnamesOf(app)?.hostnames || []).map((h) => h.hostname);
+      const parsed = parseHostname(raw);
+      domainResult = parsed.ok && own.includes(parsed.hostname)
+        ? await setPrimaryHostname({ app, hostname: raw })
+        : await addAppHostname({ app, hostname: raw, primary: true, by: req.user?.username });
+      sendDomainAudit(req, own.includes(parsed.hostname) ? 'panel.domains.primary' : 'panel.domains.add', domainResult, app, raw);
+    }
+    if (!domainResult.ok) {
+      const { status, ...rest } = domainResult;
+      const code = rest.error === 'invalid_hostname' ? 'invalid_domain' : rest.error === 'hostname_taken' ? 'domain_taken' : rest.error;
+      return res.status(status || 400).json({ ...rest, ok: false, error: code, reason: rest.reason || rest.error });
+    }
   }
+  const result = updateSite(req.params.id, body);
+  if (!result.ok) {
+    return res.status(result.error === 'invalid_domain' ? 400 : result.error === 'domain_taken' ? 409 : 404).json(result);
+  }
+  if (domainResult) result.domainChanged = true;
   invalidateSizeCache(result.site.slug);
 
   // پورت یا دامنه عوض شده؟ مسیرهای اینترنتی هم باید همان‌جا برود
@@ -165,7 +236,7 @@ router.put('/:id', async (req, res) => {
       restartSiteTunnel(result.site).catch(() => {});
     }
   }
-  if (result.domainChanged || before?.port !== result.site.port) {
+  if (before?.port !== result.site.port) {
     syncTunnelRoutes().catch(() => {});
   }
   res.json(result);
@@ -194,7 +265,7 @@ router.post('/discover/import', async (req, res) => {
     const row = item && typeof item === 'object' ? item : {};
     if (!guardSite(req, res, null, { path: row.path, startCommand: row.startCommand })) return;
   }
-  const result = await importDiscovered(items);
+  const result = await importDiscovered(items, { domainAllowed: domainFresh(req) });
   res.json(result);
 });
 
@@ -269,22 +340,34 @@ router.get('/:id/domains', (req, res) => {
   res.json({ domains: domainsForSite(site.id).map((d) => d.name), primary: site.domain });
 });
 
-router.post('/:id/domains', async (req, res) => {
+//  ⛔ (۱.۵۰.۹۹) افزودن/برداشتن فقط مالک + احرازِ دوباره (یا کلیدِ محلی) و دفتر؛ از همان راهِ اتمیِ ‎app-hosts.js‎:
+//  سنجشِ سخت (punycode، بی ستاره…)، «یک نام یک صاحب» (مالِ سایتِ دیگر ⇒ ۴۰۹، نه کندن)، آخرین نامِ سایتِ روشن ⇒ ۴۰۹،
+//  نوشتنِ ناموفقِ مسیرِ تونل ⇒ همه برمی‌گردد (۵۰۲). جابه‌جاییِ عمدیِ دامنه به سایتِ دیگر: «دامنه‌ها» (‎PUT /api/domains/:id‎).
+function sendDomainAudit(req, action, r, app, hostname) {
+  //  همان ردیفِ دفترِ ‎sendDomainResult‎، بی فرستادنِ پاسخ
+  sendDomainResult(req, { setHeader() {}, status() { return this; }, json() { return this; } }, action, r, { app, hostname });
+}
+
+router.post('/:id/domains', siteDomainGuard, async (req, res) => {
   const site = getSite(req.params.id);
   if (!site) return res.status(404).json({ error: 'not_found' });
-  const result = attachDomain(site.id, req.body?.domain);
-  if (!result.ok) return res.status(400).json(result);
-  syncTunnelRoutes().catch(() => {});
-  res.json({ ...result, domains: domainsForSite(site.id).map((d) => d.name) });
+  const app = `site:${site.slug}`;
+  const r = await addAppHostname({ app, hostname: req.body?.domain, primary: req.body?.primary === true, by: req.user?.username });
+  if (!r.ok) {
+    sendDomainAudit(req, 'panel.domains.add', r, app, String(req.body?.domain || ''));
+    const { status, ...rest } = r;
+    const code = rest.error === 'invalid_hostname' ? 'invalid_domain' : rest.error === 'hostname_taken' ? 'domain_taken' : rest.error;
+    return res.status(status || 400).json({ ...rest, error: code, reason: rest.reason || rest.error });
+  }
+  sendDomainResult(req, res, 'panel.domains.add', { ...r, domain: r.hostname, domains: domainsForSite(site.id).map((d) => d.name) }, { app });
 });
 
-router.delete('/:id/domains', async (req, res) => {
+router.delete('/:id/domains', siteDomainGuard, async (req, res) => {
   const site = getSite(req.params.id);
   if (!site) return res.status(404).json({ error: 'not_found' });
-  const result = detachDomain(site.id, req.query.domain);
-  if (!result.ok) return res.status(404).json(result);
-  syncTunnelRoutes().catch(() => {});
-  res.json({ ...result, domains: domainsForSite(site.id).map((d) => d.name) });
+  const app = `site:${site.slug}`;
+  const r = await removeAppHostname({ app, hostname: req.query.domain ?? req.body?.domain });
+  sendDomainResult(req, res, 'panel.domains.remove', r.ok ? { ...r, domains: domainsForSite(site.id).map((d) => d.name) } : r, { app, hostname: String(req.query.domain ?? '') });
 });
 
 // --------------------- سرورِ اختصاصیِ داده برای هر سایت ---------------------

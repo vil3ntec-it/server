@@ -1076,6 +1076,12 @@ export function promoteOnly({ staging, manifest, dataDir, stamp, db = null, site
     const owner = db.prepare('SELECT slug FROM sites WHERE id = ?').get(d.site_id);
     if (owner && !markedAside(owner.slug)) throw coded('domain_taken', `دامنهٔ ${name} روی این سرور مالِ سایتِ «${owner.slug}» است؛ هیچ چیزی جابه‌جا نشد.`);
   }
+  //  (۱.۵۰.۹۹) یک نام، یک صاحب: نامِ افزودهٔ برنامهٔ دیگر (سرورِ حساب/پمپ‌ها، مهاجرتِ ۰۱۲) هم
+  for (const name of domainNames) {
+    let a = null;
+    try { a = db.prepare('SELECT app_id FROM app_hostnames WHERE hostname = ?').get(name); } catch { a = null; } //  جدول نیست
+    if (a) throw coded('domain_taken', `دامنهٔ ${name} روی این سرور مالِ «${a.app_id}» است؛ هیچ چیزی جابه‌جا نشد.`);
+  }
 
   db.exec('BEGIN IMMEDIATE');
   try {

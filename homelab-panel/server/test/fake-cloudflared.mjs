@@ -12,6 +12,7 @@
 //      FAKE_CF_STATE       مسیر فایلی که وضعیت تونل‌ها در آن نگه داشته می‌شود
 //      FAKE_CF_NO_TOKEN=1  دستور «tunnel token» را ناموفق کن
 //      FAKE_CF_NO_DELETE=1 دستور «tunnel delete» را ناموفق کن
+//      state.failDns       (در همان فایلِ وضعیت) «tunnel route dns» برای این نام‌ها ناموفق
 // ---------------------------------------------------------------------------
 import fs from 'node:fs';
 import path from 'node:path';
@@ -113,6 +114,11 @@ if (sub === 'tunnel') {
 
   if (verb === 'route') {
     const host = args[args.length - 1];
+    //  (۱.۵۰.۹۹) «DNS ِ این نام نشد» — برای آزمونِ برگشتِ اتمی (‎state.failDns‎ = فهرستِ نام‌ها)
+    if ((state.failDns || []).includes(host)) {
+      process.stderr.write(`failed to add route: code: 1003, reason: Failed to create record ${host}\n`);
+      process.exit(1);
+    }
     state.dns = [...new Set([...(state.dns || []), host])];
     writeState(state);
     process.stdout.write(`Added CNAME ${host}\n`);

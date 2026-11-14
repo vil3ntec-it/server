@@ -14,6 +14,7 @@ import { checkSiteOnline } from './health.js';
 import { dirSize } from '../metrics/system.js';
 import { getSiteSync } from '../state.js';
 import { siteTunnelState, siteTunnelWanted, stopSiteTunnel } from '../site-tunnels.js';
+import { parseHostname } from '../lib/hostname.js';
 
 const PORT_RANGE_START = 8100;
 const PORT_RANGE_END = 8999;
@@ -66,8 +67,24 @@ export function normalizeDomain(value) {
     .replace(/^https?:\/\//, '')
     .replace(/\/.*$/, '')
     .replace(/:\d+$/, '');
-  return DOMAIN_RE.test(clean) ? clean : null;
+  if (!DOMAIN_RE.test(clean)) {
+    //  (۱.۵۰.۹۹) نامِ یونیکدی (فارسی، …) ⇒ همان punycode ِ `lib/hostname.js`
+    const p = /[^\x00-\x7f]/.test(clean) ? parseHostname(clean) : null;
+    return p?.ok ? p.hostname : null;
+  }
+  //  ⛔ (۱.۵۰.۹۹) همان سنجشِ سخت‌گیرِ «دامنه‌های هر برنامه»: ‎.local‎/‎trycloudflare‎/‎ab--‎/پسوندِ عددی … رد
+  const p = parseHostname(clean);
+  return p.ok ? p.hostname : null;
 }
+
+/** (۱.۵۰.۹۹) صاحبِ دیگرِ این نام روی همین نصب؟ سایتِ دیگر یا ردیفِ `app_hostnames` (سرورِ حساب/پمپ‌ها) */
+function takenElsewhere(name, siteId) {
+  const d = q('SELECT site_id FROM domains WHERE name = ?').get(name);
+  if (d?.site_id && d.site_id !== Number(siteId)) return true;
+  try { if (q('SELECT 1 FROM app_hostnames WHERE hostname = ?').get(name)) return true; } catch { /* جدول نیست */ }
+  return false;
+}
+export { takenElsewhere as domainTakenElsewhere };
 
 /** همهٔ دامنه‌هایی که به این سایت وصل‌اند — یک سایت می‌تواند چند دامنه داشته باشد */
 export function domainsForSite(siteId) {
@@ -76,14 +93,18 @@ export function domainsForSite(siteId) {
 }
 
 /**
- * دامنه را به یک سایت وصل می‌کند. اگر دامنه از قبل جای دیگری بوده،
- * از آنجا کنده و به اینجا وصل می‌شود — یعنی «همین دامنه، سایتِ دیگر».
+ * دامنه را به یک سایت وصل می‌کند.
+ *
+ * ⛔ (۱.۵۰.۹۹) دامنه‌ای که مالِ سایتِ دیگر یا برنامهٔ دیگر (سرورِ حساب/پمپ‌ها) است دیگر بی‌صدا «کنده و آورده» نمی‌شود:
+ * ‎domain_taken‎. جابه‌جاییِ عمدیِ یک دامنه از سایتی به سایتِ دیگر فقط از درِ «دامنه‌ها» (‎PUT /api/domains/:id‎، مالک).
+ * دامنهٔ ثبت‌شدهٔ بی‌سایت (‎site_id = NULL‎) آزاد است و وصل می‌شود.
  */
 export function attachDomain(siteId, domainName) {
   const name = normalizeDomain(domainName);
   if (!name) return { ok: false, error: 'invalid_domain' };
   const site = getSite(siteId);
   if (!site) return { ok: false, error: 'not_found' };
+  if (takenElsewhere(name, site.id)) return { ok: false, error: 'domain_taken' };
 
   const existing = q('SELECT * FROM domains WHERE name = ?').get(name);
   if (existing) {
@@ -118,7 +139,7 @@ export function detachDomain(siteId, domainName) {
 }
 
 // -------------------------------- افزودن ----------------------------------
-export async function addSite({ rootPath, name, domain, port, kind, startCommand, autostart = false }) {
+export async function addSite({ rootPath, name, domain, port, kind, startCommand, autostart = false, domainAllowed = true }) {
   //  ⛔ (۱.۵۰.۷۳) مسیرِ خالی ⇒ `path.resolve('')` = پوشهٔ کاریِ خودِ پنل: کارگزاری که مسیر نمی‌فرستاد سایتی با ریشهٔ
   //  کدِ پنل و «npm start» ِ پیداشده می‌ساخت — فایل‌منیجر روی ‎src/‎ و اجرای کد. مسیر باید گفته شود.
   if (!String(rootPath ?? '').trim()) return { ok: false, error: 'path_required' };
@@ -134,11 +155,15 @@ export async function addSite({ rootPath, name, domain, port, kind, startCommand
   const slug = uniqueSlug(finalName);
   const now = Date.now();
 
+  //  ⛔ (۱.۵۰.۹۹) دامنه (صریح یا از پروندهٔ خودِ پوشه) فقط برای مالک/کلیدِ محلی (`domainAllowed`)؛ مالِ دیگری ⇒ رد
+  const wantDomain = domainAllowed ? normalizeDomain(domain || detected.domain) : null;
+  if (wantDomain && takenElsewhere(wantDomain, -1)) return { ok: false, error: 'domain_taken', domain: wantDomain };
+
   const row = {
     slug,
     name: finalName,
     root_path: resolved,
-    domain: normalizeDomain(domain || detected.domain),
+    domain: wantDomain,
     port: await allocatePort(port || detected.port),
     kind: kind || detected.kind || 'static',
     start_command: startCommand ?? detected.startCommand ?? null,
@@ -379,6 +404,8 @@ export function updateSite(id, patch) {
     } else {
       nextDomain = normalizeDomain(raw);
       if (!nextDomain) return { ok: false, error: 'invalid_domain' };
+      //  ⛔ (۱.۵۰.۹۹) مالِ سایت/برنامهٔ دیگر ⇒ پیش از هر نوشتن رد (نه «کندن و آوردن»)
+      if (nextDomain !== site.domain && takenElsewhere(nextDomain, site.id)) return { ok: false, error: 'domain_taken' };
     }
   }
 
@@ -438,7 +465,7 @@ export async function createSiteFolder({ name, kind = 'static', domain, port }) 
       'utf8'
     );
   }
-  return addSite({ rootPath: dir, name, kind, domain, port });
+  return addSite({ rootPath: dir, name, kind, domain, port, domainAllowed: Boolean(domain) });
 }
 
 // ------------------------------ کشف خودکار --------------------------------
@@ -492,7 +519,7 @@ export async function discoverSites({ roots } = {}) {
   return { roots: scanRoots, found };
 }
 
-export async function importDiscovered(items) {
+export async function importDiscovered(items, { domainAllowed = true } = {}) {
   const added = [];
   const skipped = [];
   for (const item of items || []) {
@@ -502,6 +529,8 @@ export async function importDiscovered(items) {
       kind: item.kind,
       port: item.port,
       startCommand: item.startCommand,
+      //  (۱.۵۰.۹۹) دامنهٔ پروندهٔ خودِ پوشه فقط برای مالکِ تازه‌احرازشده/کلیدِ محلی
+      domainAllowed,
     });
     if (res.ok) added.push(res.site);
     else skipped.push({ path: item.path, error: res.error });

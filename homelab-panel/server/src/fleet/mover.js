@@ -35,6 +35,7 @@ import { sitesRoot } from '../sites/root.js';
 import { isRunning, startSite, stopSite, probePort } from '../sites/process.js';
 import { startSiteTunnel, stopSiteTunnel, siteTunnelWanted, siteTunnelState } from '../site-tunnels.js';
 import { accountStatus, startAccountServer, stopAccountServer, waitAccountServerExit } from '../account/supervisor.js';
+import { registerMovedHostnames, dropMovedHostnames, takeAppAliases, ACCOUNT_APP } from '../app-hosts.js';
 
 //  ⛔ دفترِ سرورِ سایتِ نگه‌داشته باز نمی‌شود (پیش از `loadAll` ِ هنگامِ بالا آمدن — این ماژول زودتر بار می‌شود)
 setTenantGuard((key) => Boolean(holdOf(`site:${key}`)));
@@ -190,6 +191,7 @@ async function retire({ move, app, args = {} }) {
   setLocal(move, app, 'source', 'retiring', { ...cur.saved, asideBase: base });
   const hostnames = cur.saved.result?.domains || [];
   let release = null;
+  let movedAliases = [];
   if (only.kind === 'site') {
     const site = getSiteBySlug(only.slug);
     if (site) {
@@ -203,12 +205,15 @@ async function retire({ move, app, args = {} }) {
       aside.put(d.store, 'store');
     }
   } else {
+    //  (۱.۵۰.۹۹) نام‌های افزودهٔ سرورِ حساب با برنامه رفتند (مقصد در گامِ start ثبتشان کرد) ⇒ ردیفشان این‌جا برداشته و در
+    //  یادداشتِ «کنار» نگه داشته می‌شود (پاک نه) — دیگر در ingress ِ این سرور نیستند و DNS را پس نمی‌گیرند
+    movedAliases = takeAppAliases(ACCOUNT_APP).map((r) => ({ hostname: r.hostname, primary: Boolean(r.is_primary), createdBy: r.created_by || null }));
     release = await releaseRoutes({ hostnames }).catch((e) => ({ error: e.message }));
     aside.put(path.join(config.dataDir, 'account-server'), 'account-server');
   }
-  aside.note({ app, move, to: args.toName || null, reason: 'moved' });
+  aside.note({ app, move, to: args.toName || null, reason: 'moved', ...(movedAliases.length ? { hostnames: movedAliases } : {}) });
   db.prepare('INSERT INTO fleet_aside(app_id, slug, move_id, aside_dir, items, saved, at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(app, only.slug || null, move, base, JSON.stringify(aside.items), JSON.stringify({ to: args.toName || null, before: { autostart: cur.saved.autostart, enabled: cur.saved.enabled } }), Date.now());
+    .run(app, only.slug || null, move, base, JSON.stringify(aside.items), JSON.stringify({ to: args.toName || null, before: { autostart: cur.saved.autostart, enabled: cur.saved.enabled }, ...(movedAliases.length ? { hostnames: movedAliases } : {}) }), Date.now());
   const result = { aside: aside.items.filter((i) => !i.error).length, failed: aside.items.filter((i) => i.error).map((i) => i.what), released: release?.released?.length || 0 };
   setLocal(move, app, 'source', 'retired', { ...cur.saved, retireResult: result });
   logEvent('info', 'fleet', `«${app}» از این سرور رفت به «${args.toName || 'سرورِ دیگر'}» — نسخهٔ این‌جا خاموش و کنار گذاشته شد (پاک نه)`);
@@ -238,11 +243,11 @@ async function unfreeze({ move, app, args = {} }) {
       await getSiteSync()?.ensureTenant?.(site.slug, { label: site.name });
       if (saved.running) out.restarted = Boolean((await startSite(getSite(site.id)))?.ok);
       if (saved.siteTunnel && deploy.features.tunnel) startSiteTunnel(getSite(site.id)).catch(() => {});
-      if (args.reclaim) out.reclaimed = await claimRoutes({ hostnames: saved.result?.domains || [] }).catch((e) => ({ error: e.message }));
+      if (args.reclaim) out.reclaimed = await claimRoutes({ hostnames: saved.result?.domains || [], app }).catch((e) => ({ error: e.message }));
     }
   } else {
     if (saved.running) out.restarted = Boolean(startAccountServer()?.ok);
-    if (args.reclaim) out.reclaimed = await claimRoutes({ hostnames: saved.result?.domains || [], port: publicPort() }).catch((e) => ({ error: e.message }));
+    if (args.reclaim) out.reclaimed = await claimRoutes({ hostnames: saved.result?.domains || [], port: publicPort(), app }).catch((e) => ({ error: e.message }));
   }
   logEvent('warn', 'fleet', `جابه‌جاییِ «${app}» برگشت خورد — برنامه روی همین سرور دوباره همان شد که بود${out.restarted ? ' (روشن)' : ''}`);
   return out;
@@ -347,6 +352,10 @@ async function start({ move, app, args = {} }) {
     if (args.siteTunnel && deploy.features.tunnel) startSiteTunnel(getSite(site.id)).catch(() => {});
     result = { running, port: site.port };
   } else {
+    //  (۱.۵۰.۹۹) همهٔ نام‌های سرورِ حسابِ مبدأ (نامِ اصلی اول) ردیفِ همین برنامه روی این سرور — پیش از روشن شدن، تا
+    //  ‎PUBLIC_BASE_URLS‎ ِ فرزند از همان اول همه را داشته باشد؛ نامِ مالِ برنامهٔ دیگرِ این‌جا ⇒ شکست و برگشتِ کار
+    const registered = registerMovedHostnames(ACCOUNT_APP, args.hostnames || [], move);
+    setLocal(move, app, 'dest', 'starting', { ...cur.saved, registered });
     let running = false;
     if (args.wasRunning !== false) {
       const r = startAccountServer();
@@ -366,7 +375,11 @@ async function route({ move, app, args = {} }) {
   if (cur?.saved?.routeResult) return cur.saved.routeResult;
   if (!cur || cur.role !== 'dest' || cur.state !== 'active') throw coded('not_active', 'برنامه روی این سرور روشن نیست.');
   const only = parseOnly(app);
-  const claim = await claimRoutes({ hostnames: args.hostnames || [], port: only.kind === 'account' ? publicPort() : null });
+  const claim = await claimRoutes({ hostnames: args.hostnames || [], port: only.kind === 'account' ? publicPort() : null, app });
+  if (!claim.ok) {
+    //  ⛔ (۱.۵۰.۹۹) همه یا هیچ: یک نام نشد ⇒ هیچ نامی این‌جا نماند و کار برمی‌گردد (نه «فقط نامِ اصلی»)
+    throw coded('route_failed', `مسیرِ نام‌های برنامه به این سرور نیامد — ${claim.failures.filter((f) => f.detail !== 'rolled_back').map((f) => `${f.hostname}: ${String(f.detail).slice(0, 120)}`).join('؛ ')}`);
+  }
   let quickUrl = null;
   if (only.kind === 'site' && args.siteTunnel && deploy.features.tunnel) {
     await untilTrue(() => Boolean(siteTunnelState(only.slug).url), 15000);
@@ -408,7 +421,9 @@ async function discard({ move, app, args = {} }) {
   } else {
     stopAccountServer();
     await waitAccountServerExit(15000);
-    if (saved.routed || args.routed) released = await releaseRoutes({ hostnames: args.hostnames || [] }).catch((e) => ({ error: e.message }));
+    //  (۱.۵۰.۹۹) نام‌هایی که همین کار در گامِ start ثبت کرد — برداشته (مسیر رفته باشد یا نه)
+    dropMovedHostnames(move);
+    if (saved.routed || args.routed) released = await releaseRoutes({ hostnames: args.hostnames || [], moveId: move }).catch((e) => ({ error: e.message }));
     aside.put(path.join(config.dataDir, 'account-server'), 'account-server');
   }
   //  آن‌چه پیش از این کار این‌جا بود (و `promoteOnly` کنارش گذاشته بود) سرِ جایش
