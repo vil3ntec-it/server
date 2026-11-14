@@ -265,7 +265,7 @@ router.post('/discover/import', async (req, res) => {
     const row = item && typeof item === 'object' ? item : {};
     if (!guardSite(req, res, null, { path: row.path, startCommand: row.startCommand })) return;
   }
-  const result = await importDiscovered(items);
+  const result = await importDiscovered(items, { domainAllowed: domainFresh(req) });
   res.json(result);
 });
 

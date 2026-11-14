@@ -519,7 +519,7 @@ export async function discoverSites({ roots } = {}) {
   return { roots: scanRoots, found };
 }
 
-export async function importDiscovered(items) {
+export async function importDiscovered(items, { domainAllowed = true } = {}) {
   const added = [];
   const skipped = [];
   for (const item of items || []) {
@@ -529,6 +529,8 @@ export async function importDiscovered(items) {
       kind: item.kind,
       port: item.port,
       startCommand: item.startCommand,
+      //  (۱.۵۰.۹۹) دامنهٔ پروندهٔ خودِ پوشه فقط برای مالکِ تازه‌احرازشده/کلیدِ محلی
+      domainAllowed,
     });
     if (res.ok) added.push(res.site);
     else skipped.push({ path: item.path, error: res.error });

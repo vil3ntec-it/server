@@ -20,6 +20,8 @@ import {
 } from '../tunnel.js';
 import { accountHostList } from '../account/public-urls.js';
 import { ownerOf, dropMovedHostnames } from '../app-hosts.js';
+import { parseHostname } from '../lib/hostname.js';
+import { isProtectedHost } from '../protected-hosts.js';
 
 /** ‎{ mode: named|token|quick|none, tunnelName, auto }‎ — بی هیچ راز (نه توکن، نه شناسهٔ تونل) */
 export function routeInfo() {
@@ -52,8 +54,12 @@ export function accountHostnames() {
  */
 export async function claimRoutes({ hostnames = [], port = null, app = null } = {}) {
   const info = routeInfo();
-  const hosts = uniq(hostnames);
-  const out = { ok: true, ...info, applied: [], failures: [], guarded: [], port };
+  //  دامنهٔ قُرق هرگز به تونل نمی‌رود و نامِ کهنه‌ای که سنجشِ ۱.۵۰.۹۹ را نمی‌گذراند خودکار نمی‌شود ⇒ بیرون از «همه یا هیچ»
+  //  (گامِ دستی برایشان می‌ماند، همان رفتارِ پیشین) — وگرنه یک سایت با دامنهٔ قُرق هرگز جابه‌جا نمی‌شد
+  const all = uniq(hostnames);
+  const skipped = all.filter((h) => isProtectedHost(h) || !parseHostname(h).ok);
+  const hosts = all.filter((h) => !skipped.includes(h));
+  const out = { ok: true, ...info, applied: [], failures: [], guarded: [], port, skipped };
   if (!hosts.length) return out;
 
   //  یک نام، یک صاحب: مالِ برنامهٔ دیگرِ همین سرور ⇒ هیچ نامی گرفته نمی‌شود
