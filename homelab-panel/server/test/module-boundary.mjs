@@ -141,7 +141,9 @@ const partsSrc = web.get('pages/account/console/parts.tsx') || '';
 check('⛔ reasonOk و newIdemKey ِ ماژول و parts.tsx ِ مشترک یکی‌اند',
   ['reasonOk', 'newIdemKey'].every((n) => fnBody(modData, n) && fnBody(modData, n) === fnBody(partsSrc, n).replace(/^export\s+/, '')),
   ['reasonOk', 'newIdemKey'].map((n) => `${fnBody(modData, n)} ≠ ${fnBody(partsSrc, n)}`).join(' | '));
-check('⛔ consoleData.ts بی وارد کردن می‌ماند (آزمون‌ها با خودِ Node می‌خوانندش)', importsOf(modData).length === 0);
+const nodeRead = ['modules/shop/consoleData.ts', 'modules/shop/market/marketData.ts', 'modules/shop/consoleOpsI18n.ts'];
+check('⛔ consoleData.ts، marketData.ts و consoleOpsI18n.ts بی وارد کردن می‌مانند (آزمون‌ها با خودِ Node می‌خوانندشان)',
+  nodeRead.every((f) => web.has(f) && importsOf(web.get(f)).length === 0), nodeRead.filter((f) => !web.has(f) || importsOf(web.get(f)).length).join(' '));
 
 /* ═════════════════════════════ سرور ═════════════════════════════ */
 console.log('\n══ مرزِ ماژولِ «فروشگاه» — سرور (server/src/modules/shop) ══\n');
