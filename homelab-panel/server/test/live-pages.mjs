@@ -43,6 +43,11 @@ console.log('\n══ صفحه‌های «هر روز» زنده‌اند ══
 const layout = read('components/Layout.tsx');
 const daily = layout.slice(layout.indexOf("id: 'daily'"), layout.indexOf("id: 'money'"));
 const routes = [...daily.matchAll(/to: '([^']+)'/g)].map((m) => m[1]);
+//  ۱.۵۱.۰: آیتمِ «فروشگاه» از شناسنامهٔ ماژولِ جداشدنی می‌آید (‎...moduleMenu('daily')‎ در همان جای منو)
+if (/\.\.\.moduleMenu\('daily'\)/.test(daily)) {
+  const shopManifest = read('modules/shop/index.ts');
+  if (/group: 'daily', to: SHOP_HOME/.test(shopManifest) && /export const SHOP_HOME = '\/shop'/.test(read('modules/shop/host.ts'))) routes.splice(routes.indexOf('/codes'), 0, '/shop');
+}
 check('گروهِ «هر روز» از خودِ منو خوانده شد', routes.length >= 6, `${routes.length} آیتم`);
 
 /** هر مسیرِ منو ⇒ فایلِ صفحه‌اش. مسیری که این‌جا نباشد، آزمون را سرخ می‌کند. */
@@ -54,7 +59,7 @@ const FILE_OF = {
   '/my-servers': 'pages/MyServers.tsx',
   '/site-server': 'pages/SiteServer.tsx',
   '/stations': 'pages/Stations.tsx',
-  '/shop': 'pages/account/ShopDesk.tsx',
+  '/shop': 'modules/shop/ShopDesk.tsx',
   '/codes': 'pages/Codes.tsx',
 };
 
@@ -247,15 +252,15 @@ check('⛔ درِ دومی برای پوشه ساخته نشد',
 /*
  *  ══ گامِ ۴ — میزِ فروشگاه، تمام‌صفحه ═══════════════════════════════════
  */
-const shopDesk = read('pages/account/ShopDesk.tsx');
+const shopDesk = read('modules/shop/ShopDesk.tsx');
 
 //  ۴.۱ — صفحهٔ خودش؛ از ۱۴۰۵/۰۸/۱۰ داشبورد، سه گروه و کدِ شاگرد ماژول‌های پوستهٔ «فروشگاه»اند (همان سه تکهٔ این فایل)
-const shellDir = path.join(webSrc, 'pages', 'account', 'console');
+const shellDir = path.join(webSrc, 'modules', 'shop', 'console');
 const modFile = (id) => (fs.existsSync(path.join(shellDir, 'modules', `${id}.tsx`)) ? fs.readFileSync(path.join(shellDir, 'modules', `${id}.tsx`), 'utf8') : '');
 check('۴.۱ میزِ فروشگاه سه تکه دارد (داشبورد، سه گروه، کدِ شاگرد) و هر سه در پوسته‌اند',
   /export function Dash\(/.test(shopDesk) && /export function SubGroups\(/.test(shopDesk) && /export function Codes\(/.test(shopDesk)
   && /shopDeskGroups/.test(shopDesk) && /shopDeskCodes/.test(shopDesk)
-  && /<Dash \/>/.test(read('pages/account/console/Dashboard.tsx')) && /ShopSubs/.test(modFile('subs')) && /<Codes \/>/.test(modFile('codes')));
+  && /<Dash \/>/.test(read('modules/shop/console/Dashboard.tsx')) && /ShopSubs/.test(modFile('subs')) && /<Codes \/>/.test(modFile('codes')));
 
 //  ۴.۲ — شش عدد و فهرستِ رو به پایان با ایمیل
 /*
@@ -411,8 +416,10 @@ check('⛔ و هیچ کدِ شاگردی در خودِ صفحه نوشته نش�
   !/SHG-/.test(shopDesk));
 
 //  ⛔ و درِ منو یکی است: آیتم به `/shop` می‌رود، نه دو در برای یک موضوع
+//  ۱.۵۱.۰: آیتم در شناسنامهٔ ماژولِ فروشگاه است (همان کلید)، و منو فقط یک جا آن را می‌گذارد
 check('⛔ آیتمِ منوی فروشگاه یک در دارد',
-  /\{ to: '\/shop', key: 'navShops'/.test(layout)
+  /\{ group: 'daily', to: SHOP_HOME, key: 'navShops', icon: Store \}/.test(read('modules/shop/index.ts'))
+  && (layout.match(/\.\.\.moduleMenu\('daily'\)/g) || []).length === 1 && !/navShops/.test(layout)
   && !/to: '\/customers\?app=shop'/.test(layout));
 
 /* =========================================================================
@@ -502,7 +509,7 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
 {
   console.log('\n── کنسولِ فروشگاه (فاز ۲) ──');
   let m = null;
-  try { m = await import(new URL('file://' + path.join(webSrc, 'pages', 'account', 'consoleData.ts')).href); }
+  try { m = await import(new URL('file://' + path.join(webSrc, 'modules', 'shop', 'consoleData.ts')).href); }
   catch (e) { console.log('   ', e.message); }
   check('consoleData.ts با Node اجرا می‌شود', Boolean(m && m.shown && m.stampOf && m.CONSOLE));
   if (m) {
@@ -541,7 +548,10 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
     check('⇒ «انجام‌دهنده»: آدمِ پشتِ پنل اگر سرورِ حساب گفته؛ وگرنه شناسهٔ مدیر؛ هیچ ⇒ «—»',
       m.actorLabel({ name: 'کریم', id: 'panel:2' }, 'svk1') === 'کریم' && m.actorLabel(null, 'adm1') === 'adm1' && m.actorLabel(undefined, '') === '—');
     //  هر درِ کنسول که صفحه صدا می‌زند، در فهرستِ سفیدِ پل هست
-    const bridge = fs.readFileSync(path.join(here, '..', 'src', 'routes', 'account-admin.js'), 'utf8');
+    //  ۱.۵۱.۰: درهای ماژول‌دار (و ‎GET /console/release/beta‎) در ‎src/modules/shop/routes/‎ اند، روی **همان** روترِ پل
+    const shopRoutes = path.join(here, '..', 'src', 'modules', 'shop', 'routes');
+    const bridge = fs.readFileSync(path.join(here, '..', 'src', 'routes', 'account-admin.js'), 'utf8')
+      + fs.readdirSync(shopRoutes).map((f) => fs.readFileSync(path.join(shopRoutes, f), 'utf8')).join('\n');
     const wanted = ['system/health', 'system/providers', 'system/versions', 'system/chain-verify', 'release/beta', 'capabilities',
       'version-health', 'live-config', 'shops/:id/health', 'shops/:id/holds', 'shops/:id/holds/:holdId/lift', 'flags', 'flags/history',
       'service-key', 'service-key/revoke'];
@@ -550,7 +560,7 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
     check('⛔ درِ پیش‌نویسِ ‎/suspension‎ (هرگز در سرورِ حساب ساخته نشد) نه در پل است نه در صفحه',
       !bridge.includes("'/console/shops/:id/suspension'") && !('shopSuspension' in m.CONSOLE));
   }
-  const con = read('pages/account/ShopConsole.tsx');
+  const con = read('modules/shop/ShopConsole.tsx');
   check('⛔ کنسول خودش جمع نمی‌زند و نیامده را صفر نمی‌کند (نه reduce، نه «|| 0»، نه «?? 0»)',
     !/\.reduce\(/.test(con) && !/\|\|\s*0\b/.test(con) && !/\?\?\s*0\b/.test(con));
   check('⛔ هر کارت منبع و زمان دارد (SourceLine)، و خطا کدِ خودش را (Problem)',
@@ -567,11 +577,11 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
   //  ⛔ (پوستهٔ ۱۴۰۵/۰۸/۱۰) زبانه‌ها حالا ماژول‌اند: هر شناسهٔ پیشین یک فایل در ‎console/modules/‎ و یک ردیف در فهرستِ سرور —
   //  همان ‎?tab=‎، پس هیچ لینکی نمی‌شکند. (`test/console-shell.mjs` هم‌خوانیِ دوسویه و نقش را جدا می‌سنجد.)
   const tabs = ['dash', 'shops', 'subs', 'finance', 'versions', 'health', 'settings', 'integrations', 'audit', 'codes', 'users'];
-  const serverReg = fs.readFileSync(path.join(here, '..', 'src', 'console', 'modules.js'), 'utf8');
+  const serverReg = fs.readFileSync(path.join(here, '..', 'src', 'modules', 'shop', 'console', 'modules.js'), 'utf8');
   const lostTabs = tabs.filter((x) => !new RegExp(`id: '${x}'`).test(modFile(x)) || !serverReg.includes(`id: '${x}'`));
   check(`بخشِ فروشگاه همهٔ ${tabs.length} ماژولِ ساخته را دارد (فایلِ وب + ردیفِ سرور)`, lostTabs.length === 0, lostTabs.join(' '));
-  const shell = read('pages/account/console/Shell.tsx');
-  const reg = read('pages/account/console/registry.ts');
+  const shell = read('modules/shop/console/Shell.tsx');
+  const reg = read('modules/shop/console/registry.ts');
   check('⛔ پوسته: فهرستِ ماژول‌ها از سرور (نقش‌محور)، فقط «ساخته + فایلِ وب»، و هر ماژول در نگهبانِ خودش',
     /SHELL_API\.modules/.test(shell) && /m\.built && WEB_MODULES\.has\(m\.id\)/.test(shell) && /<Guarded key=\{info\.id\}/.test(shell)
     && /import\.meta\.glob<[^>]*>\('\.\/modules\/\*\.tsx', \{ eager: true \}\)/.test(reg));
@@ -583,9 +593,12 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
   const modSrcs = fs.readdirSync(path.join(shellDir, 'modules')).filter((f) => f.endsWith('.tsx')).map((f) => fs.readFileSync(path.join(shellDir, 'modules', f), 'utf8'));
   check('⛔ ماژول‌ها فقط از ‎../contract‎ وارد می‌کنند، نه ‎../registry‎ (حلقه ⇒ پنلِ سفید)',
     modSrcs.length >= 10 && modSrcs.every((x) => /from '\.\.\/contract'/.test(x) && !/from '\.\.\/registry'/.test(x))
-    && /export function defineModule\(/.test(read('pages/account/console/contract.ts')));
-  check('⛔ ‎/shop‎ همان پوسته است', /path="\/shop" element=\{<ConsoleShell \/>\}/.test(read('App.tsx')));
-  const cdash = read('pages/account/console/Dashboard.tsx');
+    && /export function defineModule\(/.test(read('modules/shop/console/contract.ts')));
+  //  ۱.۵۱.۰: مسیر از شناسنامهٔ ماژول (‎modules/shop/index.ts‎) و ‎App.tsx‎ همهٔ مسیرهای ماژول‌ها را زیرِ همان ‎Layout‎ می‌چیند
+  check('⛔ ‎/shop‎ همان پوسته است', /routes: \[\{ path: SHOP_HOME, component: ConsoleShell \}\]/.test(read('modules/shop/index.ts'))
+    && /import ConsoleShell from '\.\/console\/Shell'/.test(read('modules/shop/index.ts'))
+    && /PANEL_MODULES\.flatMap\(\(m\) => m\.routes\)\.map\(\(r\) => <Route key=\{r\.path\} path=\{r\.path\} element=\{<r\.component \/>\} \/>\)/.test(read('App.tsx')));
+  const cdash = read('modules/shop/console/Dashboard.tsx');
   check('⛔ داشبوردِ پوسته: کارتِ هر ماژول در نگهبانِ خودش، منبع و زمان، نسنجیده گفته می‌شود، و صفرِ ساختگی نه',
     /<Guarded key=\{m\.id\}[^>]*compact>/.test(cdash) && /<Stamp item=/.test(cdash) && /failed\.length > 0/.test(cdash)
     && !/\|\|\s*0\b/.test(cdash) && !/\?\?\s*0\b/.test(cdash));
@@ -608,10 +621,10 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
  */
 {
   console.log('\n── کنسولِ فروشگاه: ماژول‌های عملیات ──');
-  const ops = read('pages/account/ConsoleOps.tsx');
+  const ops = read('modules/shop/ConsoleOps.tsx');
   //  پوستهٔ کنسول: هر ماژولِ عملیات یک فایل در ‎console/modules/‎ (۴.۱۰ = شناسهٔ رزروِ `errors`، ۴.۱۱ = `alerts`)
-  const mod = (id) => read(`pages/account/console/modules/${id}.tsx`);
-  const bridgeOps = fs.readFileSync(path.join(here, '..', 'src', 'routes', 'console-ops.js'), 'utf8');
+  const mod = (id) => read(`modules/shop/console/modules/${id}.tsx`);
+  const bridgeOps = fs.readFileSync(path.join(here, '..', 'src', 'modules', 'shop', 'routes', 'console-ops.js'), 'utf8');
   check('⛔ عملیات خودش جمع نمی‌زند و نیامده را صفر نمی‌کند (نه reduce، نه «|| 0»، نه «?? 0»)',
     !/\.reduce\(/.test(ops) && !/\|\|\s*0\b/.test(ops) && !/\?\?\s*0\b/.test(ops));
   check('⛔ هر کارت منبع و زمان (SourceLine) و خطا با کد (Problem)', (ops.match(/<SourceLine /g) || []).length >= 7 && (ops.match(/<Problem /g) || []).length >= 6);
@@ -633,7 +646,7 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
     /id: 'errors'/.test(mod('errors')) && /<IncidentsTab /.test(mod('errors')) && /id: 'alerts'/.test(mod('alerts')) && /<AlertsTab /.test(mod('alerts'))
       && /<ReleasesTab /.test(mod('versions')) && /<OpsHealthTab /.test(mod('health')) && /<IntegrationsOpsTab /.test(mod('integrations')));
   let tr = null;
-  try { tr = await import(new URL('file://' + path.join(webSrc, 'pages', 'account', 'consoleOpsI18n.ts')).href); }
+  try { tr = await import(new URL('file://' + path.join(webSrc, 'modules', 'shop', 'consoleOpsI18n.ts')).href); }
   catch (e) { console.log('   ', e.message); }
   const used = [...new Set([...ops.matchAll(/\bt\('([A-Za-z_0-9]+)'/g)].map((x) => x[1]))];
   const dyn = ['st_ok', 'st_warn', 'st_down', 'st_unknown', 'inc_open', 'inc_investigating', 'inc_resolved', 'al_open', 'al_acknowledged',
@@ -695,7 +708,7 @@ console.log('\n── فاز ۱: «حسابِ من»، کاربرانِ پنل،
     !/admin\.password\b/.test(cloud) && /admin-password\/reveal/.test(cloud) && /passwordSet && owner/.test(cloud));
 
   //  ⚠️ ۱.۵۰.۷۴: دفترِ یکپارچه از «لاگ‌ها» به بخشِ «فروشگاه» رفت (ممیزی ۶-۷) — سنجهٔ جایش در بخشِ «۱.۵۰.۷۴» پایین است
-  const ua = read('pages/account/console/UnifiedAudit.tsx');
+  const ua = read('modules/shop/console/UnifiedAudit.tsx');
   check('۶-۷ صفحه‌بندی و فیلتر در سرور، و صفحه هیچ درِ نوشتنی ندارد',
     /\/api\/audit\?\$\{qs\}/.test(ua) && /offset: String\(offset\)/.test(ua) && !/method: '(DELETE|POST|PUT|PATCH)'/.test(ua));
 }
@@ -712,7 +725,7 @@ console.log('\n── ۱.۵۰.۷۱: ترمینال با احرازِ دوبار�
   const login = read('pages/Login.tsx');
   check('ورود: «رمزِ یک‌بارمصرف منقضی شد» پیامِ خودش را دارد (نه کدِ خام)',
     (login.match(/recovery_expired/g) || []).length >= 2 && /t\('recoveryExpired'\)/.test(login));
-  const ua = read('pages/account/console/UnifiedAudit.tsx');
+  const ua = read('modules/shop/console/UnifiedAudit.tsx');
   check('دفترِ یکپارچه می‌گوید ردیف‌های کهنه بایگانی شده‌اند، نه پاک', /data\?\.archive && data\.archive\.files\.length > 0/.test(ua));
 }
 
@@ -728,8 +741,8 @@ console.log('\n── ۱.۵۰.۷۴: بازگرداندنِ تعارض با دل�
 console.log('\n── ۱.۵۰.۷۴: یک نمای دفترِ رخداد، در بخشِ «فروشگاه» (۶-۷) ──\n');
 {
   const hubsSrc = read('pages/hubs.tsx');
-  const mod = read('pages/account/console/modules/audit.tsx');
-  const ua = read('pages/account/console/UnifiedAudit.tsx');
+  const mod = read('modules/shop/console/modules/audit.tsx');
+  const ua = read('modules/shop/console/UnifiedAudit.tsx');
   check('۶-۷ ماژولِ `audit` ِ فروشگاه برای admin همان دفترِ یکپارچه است، و برای بقیه دو کارتِ پیشین',
     /role === 'admin'\s*\?\s*<UnifiedAudit params=\{params\} setParams=\{setParams\} \/>\s*:\s*<AuditTab /.test(mod));
   check('۶-۷ ⛔ «لاگ‌ها ← دفتر» برای مدیر به همان ماژول می‌رود (نشانیِ کهنه کار می‌کند)، بی نسخهٔ دوم',
@@ -746,7 +759,7 @@ console.log('\n── ۱.۵۰.۷۴: یک نمای دفترِ رخداد، در �
     }
   };
   walk(webSrc);
-  check('۶-۷ ⛔ فقط یک جا دفترِ یکپارچه را نشان می‌دهد (ماژولِ audit)', users.join(',') === path.join('pages', 'account', 'console', 'modules', 'audit.tsx'), users.join(', '));
+  check('۶-۷ ⛔ فقط یک جا دفترِ یکپارچه را نشان می‌دهد (ماژولِ audit)', users.join(',') === path.join('modules', 'shop', 'console', 'modules', 'audit.tsx'), users.join(', '));
   check('۶-۷ «یک دکان» و «یک دفتر» در نشانی‌اند و به سرور می‌روند (‎shop‎ در پرس‌وجو)، و رشته‌ها سه‌زبانه',
     /params\.get\('source'\)/.test(ua) && /params\.get\('shop'\)/.test(ua) && /qs\.set\('shop', shop\)/.test(ua) && /useTx\(\)/.test(ua)
       && !/>\s*دفترِ رخدادِ یکپارچه\s*</.test(ua));

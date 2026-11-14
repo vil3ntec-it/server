@@ -45,20 +45,11 @@ import * as panelAuth from '../auth.js';
 import { requireRecentAuth, reauthMoneyEnforced } from '../auth.js';
 import { db } from '../db.js';
 import { rateLimit } from '../platform/rate-limit.js';
-import { mountConsoleOps, mayChangeRelease } from './console-ops.js';
-import financeRoutes from './account-finance.js';
 import {
   withPanelActor, readServiceKey, storeServiceKey, forgetServiceKey, publicServiceKey, SERVICE_KEY_RE,
 } from '../account/service-key.js';
-import { mountConsoleShell } from './console-shell.js';
-import { mountConsoleMarket, MARKET_CAPABILITIES } from './console-market.js';
-import { mountConsoleStaff } from './console-staff.js';
-import { mountConsoleImageBank } from './console-image-bank.js';
-import { mountConsoleHolidays } from './console-holidays.js';
-import { mountConsoleImageChanges } from './console-image-changes.js';
-import { mountConsoleSynonyms } from './console-synonyms.js';
-import { mountConsoleSupportAccess } from './console-support-access.js';
-import { mountConsoleParity, shapeBeta } from './console-parity.js';
+//  🏪 بخشِ «فروشگاه» (درهای ‎/console/*‎) از ۱.۵۱.۰ ماژولِ جداشدنی است: ‎src/modules/shop/‎ — فقط از راهِ فهرستِ ماژول‌ها
+import { MODULE_CAPABILITIES, mountModules } from '../modules/registry.js';
 
 const { requireRole } = panelRoles;
 const router = express.Router();
@@ -2171,14 +2162,7 @@ router.post('/console/system/chain-verify', requireRole('admin'), guard(async (r
   res.json(stamped(out));
 }));
 
-/**
- * کانالِ آزمایشیِ برنامهٔ دکان (F0-27) — سرورِ حساب حتی خواندنش را فقط به ارشد می‌دهد. ۱.۵۰.۸۰: فقط فیلدهای شناخته
- * (`shapeBeta`، همان نسخه‌ای که نوشتن می‌خواهد)؛ نوشتنش (‎PUT‎) در ‎routes/console-parity.js‎.
- */
-router.get('/console/release/beta', requireRole('admin'), guard(async (req, res) => {
-  //  `canChange` (۱.۵۰.۸۱): همان قاعدهٔ نوشتن (مالک یا «فنی») تا رابط دکمه را فقط به همان نشان دهد؛ مرزِ واقعی در خودِ ‎PUT‎ است
-  res.json(stamped({ ...shapeBeta(await cloudRaw('GET', '/api/admin/release/beta')), canChange: mayChangeRelease(req, isPanelOwner) }));
-}));
+/* ‎GET /console/release/beta‎ (کانالِ آزمایشی، F0-27) از ۱.۵۱.۰ کنارِ ‎PUT‎ ِ خودش در ماژولِ فروشگاه است (‎modules/shop/routes/console-parity.js‎). */
 
 /** «یک نسخه: چند دستگاه، چند خطا» — شمرده در سرورِ حساب، نه این‌جا. */
 router.get('/console/version-health', guard(async (req, res) => {
@@ -2244,7 +2228,8 @@ export const PHASE3 = Object.freeze({
   'support-access.v1': 'GET|POST /api/admin/shops/:id/access-grants · POST …/access-grants/break-glass · POST …/access-grants/:gid/revoke (۶۰ دقیقه، سقفِ ۲۴ ساعت؛ شکستنِ شیشه با دلیل و خبرِ فوری به صاحبِ دکان)',
   //  ۱.۵۰.۹۶ (IMG-PRO-17، shop ‎claude/e-rows-13x‎): دسته‌های تغییرِ عکسِ یک دکان و برگرداندن — ‎routes/console-image-changes.js‎
   'image-changes.v1': 'GET /api/admin/shops/:id/images/changes[/:cid] · POST …/:cid/rollback (ارشد + دلیل + اجازهٔ زندهٔ restore + Idempotency-Key؛ ۴۰۹ changed_since)',
-  ...MARKET_CAPABILITIES,
+  //  توانایی‌هایی که خودِ ماژول‌ها (فروشگاه: بازار و پیک) می‌خواهند
+  ...MODULE_CAPABILITIES,
 });
 const CAP_RE = /^[a-z][a-z0-9-]{0,40}\.v\d{1,3}$/;
 
@@ -2567,13 +2552,15 @@ router.post('/console/service-key/revoke', requireRole('admin'), ownerOnly, reau
   res.json({ ok: true, revoked: prev.id, ...(await serviceKeyStatus()) });
 }));
 
-/* ═══ 🛠 ماژول‌های عملیات (۴.۸ · ۴.۹ · ۴.۱۰ · ۴.۱۱ · ۴.۱۳) — ‎routes/console-ops.js‎، روی همین روتر ═══ */
-mountConsoleOps(router, {
-  guard, capabilities, unavailable, missingErr, badInput, stamped, actorOf, isPanelOwner, reauthLimit, reauth,
+/*
+ *  🏪 بخشِ «فروشگاه» — همهٔ درهای ماژول‌دارِ ‎/console/*‎ (عملیات ۴.۸–۴.۱۳، اجازهٔ پشتیبانی، پوسته، بازار و پیک، کارکنان،
+ *  بانکِ عکس، تعطیلات، تغییرِ عکس، مترادف، هم‌ترازی و مالیِ ۴.۵) با **یک** صدا: ‎src/modules/shop/index.js‎ به همان ترتیبِ پیشین.
+ *  ⛔ روی **همین** روتر — تا فهرستِ سفید، «انجام‌دهنده»، ‎withPanelActor‎ و ‎bridge-roles.mjs‎ یکی بمانند. همه با ‎/console/‎
+ *  شروع می‌شوند، پس جلو آمدنشان از شش خواندنیِ پایین (‎/stats‎، ‎/shops‎ …) هیچ مسیری را عوض نمی‌کند.
+ */
+mountModules(router, {
+  guard, capabilities, unavailable, missingErr, badInput, stamped, actorOf, isPanelOwner, reauthLimit, reauth, capListed,
 });
-
-/* ═══ 🔐 ۱.۵۰.۹۰ (۲-۹، G1): اجازهٔ موقتِ دسترسیِ پشتیبانی به دادهٔ یک دکان — ‎routes/console-support-access.js‎، روی همین روتر ═══ */
-mountConsoleSupportAccess(router, { guard, badInput, actorOf, capListed, missingErr, unavailable, isPanelOwner, reauthLimit, reauth });
 
 /* --------------------------- خواندنی‌های دیگر -------------------------- */
 
@@ -2590,39 +2577,6 @@ for (const [local, remote] of [
     res.json(await cloudRaw('GET', remote, { query: req.query }));
   }));
 }
-
-/*
- *  🏪 پوستهٔ کنسولِ «فروشگاه» (ماژول‌ها، داشبورد، جست‌وجو، کاربران و نقش‌ها، پرچم‌ها) — درهایش در
- *  ‎routes/console-shell.js‎، ولی روی **همین** روتر تا فهرستِ سفید و ‎bridge-roles.mjs‎ یکی بمانند.
- */
-mountConsoleShell(router);
-
-/*
- *  🏪 ۴.۶ مدیریتِ بازار و ۴.۷ نظارت بر پیک — درهایش در ‎routes/console-market.js‎، ولی روی **همین** روتر تا
- *  فهرستِ سفید، «انجام‌دهنده» و ‎bridge-roles.mjs‎ یکی بمانند.
- */
-mountConsoleMarket(router, { capListed });
-
-/*
- *  🏪 ممیزی §۳-۴ (۱.۵۰.۷۵): کارکنان/مجوز/دستگاهِ هر دکان (پروندهٔ دکان) و بانکِ عکسِ مرکزی — تا امروز فقط در
- *  ‎/admin/‎ ِ سرورِ حساب. درهایشان در ‎routes/console-staff.js‎ و ‎routes/console-image-bank.js‎، روی **همین** روتر.
- */
-mountConsoleStaff(router, { guard, badInput, actorOf, capListed, missingErr });
-mountConsoleImageBank(router, { guard, badInput, actorOf, capListed });
-/* ۱.۵۰.۷۸ (LOC-04): جدولِ تعطیلاتِ رسمی در «تنظیماتِ مرکزی» — ‎routes/console-holidays.js‎، روی **همین** روتر */
-mountConsoleHolidays(router, { guard, badInput, actorOf, capListed, missingErr, unavailable });
-//  ۱.۵۰.۹۶ (IMG-PRO-17، `image-changes.v1`): دسته‌های تغییرِ عکسِ یک دکان و برگرداندن با اجازهٔ پشتیبانی
-mountConsoleImageChanges(router, { guard, badInput, actorOf, capListed, missingErr, unavailable });
-/* ۱.۵۰.۸۹ (۴-۱ «ب»): فهرستِ مرکزیِ مترادف در «تنظیماتِ مرکزی» — ‎routes/console-synonyms.js‎، روی **همین** روتر */
-mountConsoleSynonyms(router, { guard, badInput, actorOf, capListed, missingErr, unavailable });
-/*
- *  ۱.۵۰.۸۰ (S11، ممیزی §۹ «هم‌ترازی»): نوشتنِ کانالِ آزمایشی، نشانیِ دانلود، مصرفِ پیام و پشتیبان‌های هر حساب — تا امروز
- *  فقط در ‎/admin/‎ ِ سرورِ حساب. ‎routes/console-parity.js‎، روی **همین** روتر.
- */
-mountConsoleParity(router, { guard, badInput, actorOf, isPanelOwner, reauthLimit, reauth });
-
-/* ماژولِ ۴.۵ ِ پنلِ مرکزی — مالیِ مرکزی (‎routes/account-finance.js‎؛ همین نشست، همین «انجام‌دهنده») */
-router.use('/console/finance', financeRoutes);
 
 /** هر چیزِ دیگری زیرِ این پیشوند «نیست» — نه «رد شد»، تا نقشهٔ آن‌طرف لو نرود. */
 router.use((req, res) => res.status(404).json({ error: 'not_found', message: 'این مسیر وجود ندارد' }));

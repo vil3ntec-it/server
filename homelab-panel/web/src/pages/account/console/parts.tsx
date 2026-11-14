@@ -9,8 +9,24 @@ import { Ban, Inbox, Wrench } from 'lucide-react';
 import { ApiError } from '../../../api';
 import { Loading, Modal } from '../../../components/ui';
 import { Notice } from '../../../control/ui';
-import { newIdemKey, reasonOk } from '../consoleData';
 import { useTx } from './text';
+
+/*
+ *  ⚠️ دو تابعِ کوچک و خالص، **کپیِ** همان دو در ‎modules/shop/consoleData.ts‎ — این فایل مشترک است (صفحهٔ «همگام‌سازی» هم
+ *  دارد) و نباید از درونِ ماژولِ فروشگاه وارد کند. ‎server/test/module-boundary.mjs‎ یکی بودنِ دو کپی را می‌سنجد.
+ */
+/** دلیلِ کارِ حساس: ۳ تا ۲۰۰ نویسه (همان قاعدهٔ سرور). */
+function reasonOk(v: unknown): boolean {
+  const s = typeof v === 'string' ? v.trim() : '';
+  return s.length >= 3 && s.length <= 200;
+}
+
+/** کلیدِ یکتاییِ هر پنجرهٔ کارِ حساس (نه هر کلیک) — شکلِ پذیرفتهٔ سرورِ حساب. */
+function newIdemKey(): string {
+  const b = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(b);
+  return `pnl-${Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')}`;
+}
 
 /* ───────────────────────── نگهبانِ خطای هر ماژول ───────────────────────── */
 

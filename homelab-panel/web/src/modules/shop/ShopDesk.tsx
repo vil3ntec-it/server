@@ -1,0 +1,350 @@
+// ---------------------------------------------------------------------------
+//  🏪 میزِ فروشگاه — تمام‌صفحه، سه تب
+//
+//  خواستهٔ صریحِ صاحب سامانه: «بخشِ فروشگاه را تمام‌صفحه کن. اول داشبورد…
+//  تعدادِ مشتری‌ها، اشتراک‌دارها، آنلاین‌ها، کسانی که اشتراکشان رو به پایان
+//  است با ایمیل و وقتِ مانده، و پیام‌های پشتیبانی. دوم اشتراک‌ها با سه
+//  گروه… سوم بخشِ کد که همهٔ حساب‌ها را نشان بدهد و روی هر کدام زدم کدِ
+//  شاگردش را ببینم و چند تا شاگرد به آن وصل است.»
+//
+//  ⚠️ **و قاعدهٔ «یک موضوع، یک صفحه» نشکست.** تا دیروز «فروشگاه‌ها»ی منو
+//  همان `/customers?app=shop` بود و یادداشتِ همان‌جا می‌گفت صفحهٔ تازه‌ای
+//  ساخته نشود. آن یادداشت وقتی نوشته شد که محتوای تازه‌ای در کار نبود؛
+//  حالا هست (داشبورد، سه گروه، کدِ شاگرد) و خودِ صاحب سامانه صریح
+//  خواسته. پس **درِ قدیمی به همین‌جا `Navigate` می‌شود** — باز هم یک در
+//  برای یک موضوع، فقط درش عوض شد.
+//
+//  ⛔ **هیچ عددی این‌جا حساب نمی‌شود.** جمع و گروه‌بندی روی سرورِ حساب
+//  است (`routes/admin-shop-desk.js`)، با همان `subs.stateOf` که خودِ
+//  برنامه با آن قفل باز می‌کند. دو جای تصمیم یعنی روزی پنل «دارد»
+//  می‌گوید و برنامه «تمام شده».
+// ---------------------------------------------------------------------------
+import { useState } from 'react';
+import { Navigate } from 'react-router-dom';
+import { Clock, KeyRound, MessagesSquare, Store, Users, Wifi } from 'lucide-react';
+
+import {
+  ActionButton,
+  api,
+  AppSubscriptions,
+  Card,
+  Cell,
+  CloudProblem,
+  CopyButton,
+  fa,
+  Loading,
+  Notice,
+  Row,
+  Stat,
+  Table,
+  toast,
+  useApp,
+  useLoad,
+} from './host';
+import { HealthCard, SourceLine } from './ShopConsole';
+
+type Overview = {
+  serverTime: number;
+  onlineWithinMs: number;
+  counts: { shops: number; customers: number; subscribed: number; online: number;
+            expiring: number; supportOpen: number; supportUnread: number };
+  expiring: { subscriptionId: string; tenantId: string; tenantName: string;
+              ownerName: string; ownerEmail: string; plan: string; endsAt: number; daysLeft: number }[];
+  support: { id: string; subject?: string; who?: string; status: string; unread_admin?: number; updated_at?: number }[];
+  days: number;
+};
+
+type GroupRow = {
+  tenantId: string; tenantName: string; ownerName: string; ownerEmail: string; ownerPhone: string;
+  subscriptionId: string; plan: string; status: string; endsAt: number; daysLeft: number; createdAt: number;
+};
+type Groups = { groups: { has: GroupRow[]; none: GroupRow[]; expired: GroupRow[] };
+                counts: { has: number; none: number; expired: number } };
+
+type StaffCodes = {
+  shop: { id: string; name: string };
+  students: { total: number; active: number; members: number };
+  standing: { id: string; role: string; generation: number; usedCount: number } | null;
+  codes: { id: string; hint: string; role: string; status: string; usedCount: number; maxUses: number }[];
+};
+
+const when = (ms?: number | null) => (ms ? new Date(Number(ms)).toLocaleDateString('fa-IR') : '—');
+
+/* ───────────────────────────── تبِ ۱: داشبورد ───────────────────────────── */
+
+export function Dash() {
+  const { t } = useApp();
+  const load = useLoad<Overview>('/api/account-admin/shop-desk/overview?days=7', [], ['customers', 'sales', 'support']);
+  if (load.error) return <CloudProblem code={load.code} message={load.error} onRetry={load.reload} />;
+  if (!load.data) return <Loading label={t('navShops')} />;
+
+  /*
+   *  ⛔ **شکلِ پاسخِ بالادست فرض نمی‌شود.**
+   *
+   *  گزارشِ صاحب سامانه (۱۴۰۵/۰۷/۱۰): «بخشِ فروشگاه را اصلاً باز نمی‌کند،
+   *  می‌زنم روش از برنامه می‌ندازه بیرون.»
+   *
+   *  ریشه: سرورِ حسابِ **کهنه** (پیش از ۲.۹.۰) این مسیر را ندارد یا
+   *  شکلِ دیگری می‌دهد، و `d.counts.shops` روی یک `undefined` می‌نشست ⇒
+   *  استثنا وسطِ رندر ⇒ کلِ درختِ React از ریشه می‌رفت ⇒ پنجرهٔ سفید.
+   *
+   *  ⛔ حالا دو لایه: این‌جا شکل را نمی‌سازیم و نمی‌شکنیم، و
+   *  `PageBoundary` هم پشتِ سرش هست تا هیچ صفحه‌ای هیچ‌وقت کلِ برنامه را
+   *  با خودش نبرد. یکی‌شان کافی نیست: این یکی همین صفحه را درست
+   *  نگه می‌دارد، آن یکی بیست‌وچند صفحهٔ دیگر را.
+   *
+   *  ⚠️ و عدد ساخته نمی‌شود — نیامده «—» است، نه صفر. صفرِ دروغ بدتر از
+   *  خالی است: مدیر می‌بیند «صفر مشتری» و باور می‌کند.
+   */
+  const d = load.data;
+  const counts = d.counts || ({} as Overview['counts']);
+  const expiring = Array.isArray(d.expiring) ? d.expiring : [];
+  const support = Array.isArray(d.support) ? d.support : [];
+  const mins = Math.round(Number(d.onlineWithinMs || 0) / 60000);
+
+  return (
+    <div className="space-y-4">
+      <div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <Stat label={t('shopDeskShops')} value={fa(counts.shops)} icon={<Store size={16} />} />
+        <Stat label={t('shopDeskCustomers')} value={fa(counts.customers)} icon={<Users size={16} />} />
+        <Stat label={t('shopDeskSubscribed')} value={fa(counts.subscribed)} tone="good" />
+        {/* ⚠️ تعریفِ «آنلاین» از خودِ سرور می‌آید، نه از یک عددِ نوشته‌شده این‌جا */}
+        <Stat label={t('shopDeskOnline')} value={fa(counts.online)} tone="info" icon={<Wifi size={16} />}
+              sub={t('shopDeskOnlineHint').replace('{n}', fa(mins))} />
+        <Stat label={t('shopDeskSupport')} value={fa(counts.supportUnread)}
+              tone={Number(counts.supportUnread) > 0 ? 'warn' : undefined}
+              icon={<MessagesSquare size={16} />}
+              sub={t('shopDeskSupportOpen').replace('{n}', fa(counts.supportOpen))} />
+      </div>
+      {/* ⛔ هر عدد منبع و زمان دارد — `serverTime` ِ خودِ سرورِ حساب */}
+      <SourceLine source="/api/admin/shop-desk/overview" data={d} at={load.at} />
+      </div>
+
+      {/* فاز ۲: کارتِ سلامت و نسخه‌ها، از ‎/api/admin/system/*‎ */}
+      <HealthCard />
+
+      <Card title={t('shopDeskExpiring').replace('{n}', fa(d.days))} icon={<Clock size={16} />}>
+        {expiring.length === 0 ? <Notice tone="good">{t('shopDeskExpiringNone')}</Notice> : (
+          <Table head={[t('shopDeskName'), t('shopDeskEmail'), t('shopDeskPlan'), t('shopDeskLeft'), t('shopDeskEnds')]}>
+            {expiring.map((r) => (
+              <Row key={r.subscriptionId}>
+                <Cell>{r.tenantName || r.tenantId}</Cell>
+                {/* ⚠️ ایمیل همان چیزی است که صاحبِ سامانه صریح خواست */}
+                <Cell mono>{r.ownerEmail || '—'}</Cell>
+                <Cell>{r.plan || '—'}</Cell>
+                <Cell style={{ color: r.daysLeft <= 3 ? 'var(--status-critical)' : 'var(--status-warning)' }}>
+                  {t('shopDeskDays').replace('{n}', fa(r.daysLeft))}
+                </Cell>
+                <Cell>{when(r.endsAt)}</Cell>
+              </Row>
+            ))}
+          </Table>
+        )}
+      </Card>
+
+      <Card title={t('shopDeskThreads')} icon={<MessagesSquare size={16} />}>
+        {support.length === 0 ? <Notice>{t('shopDeskThreadsNone')}</Notice> : (
+          <Table head={[t('shopDeskWho'), t('shopDeskSubject'), t('shopDeskUnread')]}>
+            {support.map((s) => (
+              <Row key={s.id}>
+                <Cell>{s.who || '—'}</Cell>
+                <Cell>{s.subject || '—'}</Cell>
+                <Cell style={Number(s.unread_admin) > 0 ? { color: 'var(--status-warning)' } : undefined}>
+                  {fa(Number(s.unread_admin) || 0)}
+                </Cell>
+              </Row>
+            ))}
+          </Table>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ──────────────────────── تبِ ۲: اشتراک‌ها، سه گروه ─────────────────────── */
+
+function GroupTable({ rows, empty }: { rows: GroupRow[]; empty: string }) {
+  const { t } = useApp();
+  if (rows.length === 0) return <Notice>{empty}</Notice>;
+  return (
+    <Table head={[t('shopDeskName'), t('shopDeskEmail'), t('shopDeskPlan'), t('shopDeskLeft')]}>
+      {rows.map((r) => (
+        <Row key={r.tenantId}>
+          <Cell>{r.tenantName || r.tenantId}</Cell>
+          <Cell mono>{r.ownerEmail || '—'}</Cell>
+          <Cell>{r.plan || '—'}</Cell>
+          <Cell style={r.daysLeft > 0 && r.daysLeft <= 7 ? { color: 'var(--status-warning)' } : undefined}>
+            {r.subscriptionId ? t('shopDeskDays').replace('{n}', fa(r.daysLeft)) : '—'}
+          </Cell>
+        </Row>
+      ))}
+    </Table>
+  );
+}
+
+export function SubGroups() {
+  const { t } = useApp();
+  const [q, setQ] = useState('');
+  const load = useLoad<Groups>(`/api/account-admin/shop-desk/groups?q=${encodeURIComponent(q)}`, [q], 'customers');
+  if (load.error) return <CloudProblem code={load.code} message={load.error} onRetry={load.reload} />;
+  if (!load.data) return <Loading label={t('shopDeskGroups')} />;
+  //  ⛔ همان قاعده: شکلِ بالادست فرض نمی‌شود
+  const g = load.data.groups || ({} as Groups['groups']);
+  const c = load.data.counts || ({} as Groups['counts']);
+  const arr = (x: GroupRow[] | undefined) => (Array.isArray(x) ? x : []);
+
+  return (
+    <div className="space-y-4">
+      <input className="input w-full sm:w-80" placeholder={t('shopDeskSearch')} value={q}
+             onChange={(e) => setQ(e.target.value)} />
+      {/*
+        ⛔ سه گروه، چون «هیچ‌وقت نداشت» با «داشت و تمام شد» یکی نیست و
+        صاحبِ سامانه صریح سه‌تا خواست. گروه‌بندی سمتِ سرور انجام شده.
+      */}
+      <Card title={`${t('shopDeskHas')} — ${fa(c.has)}`}>
+        <GroupTable rows={arr(g.has)} empty={t('shopDeskHasNone')} />
+      </Card>
+      <Card title={`${t('shopDeskNone')} — ${fa(c.none)}`}>
+        <GroupTable rows={arr(g.none)} empty={t('shopDeskNoneNone')} />
+      </Card>
+      <Card title={`${t('shopDeskExpired')} — ${fa(c.expired)}`}>
+        <GroupTable rows={arr(g.expired)} empty={t('shopDeskExpiredNone')} />
+      </Card>
+      <Notice>{t('shopDeskGrantHint')}</Notice>
+    </div>
+  );
+}
+
+/* ────────────────────────── تبِ ۳: کدِ شاگرد ───────────────────────────── */
+
+function StaffCodeCard({ shopId, onClose }: { shopId: string; onClose: () => void }) {
+  const { t } = useApp();
+  const load = useLoad<StaffCodes>(`/api/account-admin/shop-accounts/${encodeURIComponent(shopId)}/staff-codes`, [shopId]);
+  const [shown, setShown] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  /*
+   *  ⛔ کد با یک کلیکِ **جدا** می‌آید و همان یک کلیک ثبت می‌شود — همان
+   *  قاعدهٔ «نمایشِ کد» در میزِ کدها. بی آن، هر باز شدنِ صفحه یک ردیفِ
+   *  «کد دیده شد» برای هر دکان می‌ساخت و آن دفتر بی‌معنا می‌شد.
+   */
+  const reveal = async () => {
+    setBusy(true);
+    try {
+      const out = await api<{ code: string }>(
+        `/api/account-admin/shop-accounts/${encodeURIComponent(shopId)}/staff-codes/reveal`, { method: 'POST' });
+      setShown(out.code || '');
+    } catch (e) {
+      toast((e as Error).message, 'bad');
+    } finally { setBusy(false); }
+  };
+
+  if (load.error) return <CloudProblem code={load.code} message={load.error} onRetry={load.reload} />;
+  if (!load.data) return <Loading label={t('shopDeskCodes')} />;
+  //  ⛔ همان قاعدهٔ داشبورد: شکلِ بالادست فرض نمی‌شود
+  const d = load.data;
+  const shop = d.shop || ({} as StaffCodes['shop']);
+  const students = d.students || ({} as StaffCodes['students']);
+  const codes = Array.isArray(d.codes) ? d.codes : [];
+
+  return (
+    <Card title={shop.name || shop.id || '—'} icon={<KeyRound size={16} />}
+          action={<ActionButton onClick={onClose}>{t('close')}</ActionButton>}>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Stat label={t('shopDeskStudents')} value={fa(students.total)} icon={<Users size={16} />}
+              sub={t('shopDeskStudentsActive').replace('{n}', fa(students.active))} />
+        <Stat label={t('shopDeskCodesMade')} value={fa(codes.length)} />
+        <Stat label={t('shopDeskStanding')} value={d.standing ? fa(d.standing.usedCount) : '—'}
+              sub={d.standing ? t('shopDeskStandingUsed') : t('shopDeskStandingNone')} />
+      </div>
+
+      <div className="mt-4">
+        {!d.standing ? (
+          <Notice tone="warn">{t('shopDeskStandingNoneHint')}</Notice>
+        ) : shown ? (
+          <div className="flex items-center gap-2">
+            <code className="font-mono text-2xl tracking-[0.15em]" dir="ltr">{shown}</code>
+            <CopyButton value={shown} />
+          </div>
+        ) : (
+          <ActionButton onClick={reveal} disabled={busy}>{t('shopDeskReveal')}</ActionButton>
+        )}
+      </div>
+
+      {/*
+        ⛔ کدهای یک‌بارمصرف فقط چهار رقمِ آخرشان دیده می‌شود، برای همیشه:
+        از آن‌ها فقط HMAC روی سرور هست و هیچ‌کس — مدیرِ سامانه هم —
+        نمی‌تواند ببیندشان.
+      */}
+      <div className="mt-4">
+        <Table head={[t('shopDeskHint'), t('shopDeskRole'), t('shopDeskUses'), t('shopDeskStatus')]}
+               empty={codes.length === 0}>
+          {codes.map((c) => (
+            <Row key={c.id}>
+              <Cell mono>…{c.hint}</Cell>
+              <Cell>{c.role}</Cell>
+              <Cell>{fa(c.usedCount)}{c.maxUses ? ` / ${fa(c.maxUses)}` : ''}</Cell>
+              <Cell style={c.status === 'active' ? { color: 'var(--status-good)' } : undefined}>{c.status}</Cell>
+            </Row>
+          ))}
+        </Table>
+        <p className="mt-2 text-[11px] text-ink-muted">{t('shopDeskHintWhy')}</p>
+      </div>
+    </Card>
+  );
+}
+
+export function Codes() {
+  const { t } = useApp();
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState('');
+  const load = useLoad<Groups>(`/api/account-admin/shop-desk/groups?q=${encodeURIComponent(q)}`, [q], 'customers');
+  if (load.error) return <CloudProblem code={load.code} message={load.error} onRetry={load.reload} />;
+  if (!load.data) return <Loading label={t('shopDeskCodes')} />;
+  const g = load.data.groups || ({} as Groups['groups']);
+  const arr = (x: GroupRow[] | undefined) => (Array.isArray(x) ? x : []);
+  //  همهٔ حساب‌ها، نه فقط اشتراک‌دارها — خواستهٔ صریح بود
+  const all = [...arr(g.has), ...arr(g.none), ...arr(g.expired)];
+
+  return (
+    <div className="space-y-4">
+      <input className="input w-full sm:w-80" placeholder={t('shopDeskSearch')} value={q}
+             onChange={(e) => setQ(e.target.value)} />
+      {open && <StaffCodeCard shopId={open} onClose={() => setOpen('')} />}
+      <Card title={t('shopDeskAllShops')} icon={<Store size={16} />}>
+        <Table head={[t('shopDeskName'), t('shopDeskEmail'), t('shopDeskPlan'), '']} empty={all.length === 0}>
+          {all.map((r) => (
+            <Row key={r.tenantId} onClick={() => setOpen(r.tenantId)}>
+              <Cell>{r.tenantName || r.tenantId}</Cell>
+              <Cell mono>{r.ownerEmail || '—'}</Cell>
+              <Cell>{r.plan || '—'}</Cell>
+              <Cell>{t('shopDeskOpenCodes')}</Cell>
+            </Row>
+          ))}
+        </Table>
+      </Card>
+    </div>
+  );
+}
+
+/* ───────────────────────── اشتراک‌ها (ماژولِ ۴.۴) ───────────────────────── */
+
+/**
+ *  ⛔ اشتراکِ فروشگاه فقط همین‌جاست — بخشِ جدای «اشتراک‌ها» برداشته شد (دستورِ صاحب محصول ۱۴۰۵/۰۸/۰۹): همهٔ کارها
+ *  با بخشِ ثابتِ دکان، و سه گروهِ خواندنیِ میز یک زبانهٔ همان‌جا (‎?view=groups‎).
+ *  ⛔ «یک موضوع، یک در»: «فروش و درآمد»ِ دکان زبانهٔ «مالی» است؛ ‎?tab=subs&view=sales‎ (و ‎/sales?app=shop‎ از راهِ
+ *  `subsPath`) به همان‌جا می‌رسد، نه به رونوشتِ دوم.
+ */
+export function ShopSubs({ params }: { params: URLSearchParams }) {
+  if (params.get('view') === 'sales') return <Navigate to="/shop?tab=finance" replace />;
+  return <AppSubscriptions app="shop" groups={<SubGroups />} omit={['sales']} />;
+}
+
+/*
+ *  ══ بخشِ «فروشگاه» — پنلِ مرکزیِ مالک، یک برنامهٔ کامل داخلِ پنل (۱۴۰۵/۰۸/۱۰) ══
+ *  خودِ صفحه دیگر این‌جا نیست: پوسته، منوی گروه‌بندی‌شده، ردِ نان، جست‌وجو و نگهبانِ هر ماژول در
+ *  ‎./console/Shell.tsx‎ (مسیرِ ‎/shop‎ در `App.tsx`). این فایل تکه‌های داشبورد، سه گروه، کدِ شاگرد و اشتراک‌ها را
+ *  دارد که ماژول‌های ‎./console/modules/‎ به کار می‌برند. زبانه‌های پیشین (‎?tab=dash|shops|subs|finance|versions|
+ *  health|settings|integrations|audit|codes‎) همان نشانی‌اند، پس هیچ لینکی نمی‌شکند.
+ */

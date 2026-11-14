@@ -25,7 +25,7 @@ import PanelUsers from './pages/control/PanelUsers';
 import Assistant from './pages/Assistant';
 import { AccountServerHub, DomainsHub, LoginsHub, LogsHub, MonitoringHub, NetworkHub } from './pages/hubs';
 import SubscriptionsMoved from './pages/account/SubscriptionsMoved';
-import ConsoleShell from './pages/account/console/Shell';
+import { PANEL_MODULES } from './modules/registry';
 import DatabasesPage from './pages/Databases';
 import TerminalPage from './pages/Terminal';
 import AutomationPage from './pages/Automation';
@@ -94,8 +94,9 @@ function Shell() {
           ⛔ میزِ فروشگاه صفحهٔ خودش را گرفت (بندهای ۴.۱ تا ۴.۴ سندِ ریمیک):
           داشبورد، اشتراک‌ها (همهٔ کارها، از ۱۴۰۵/۰۸/۰۹) و کدِ شاگرد.
         */}
-        {/* ⛔ از ۱۴۰۵/۰۸/۱۰ بخشِ «فروشگاه» یک برنامهٔ کامل است: پوسته + ماژول‌ها (`console/`)، همان ‎?tab=‎ ِ پیشین */}
-        <Route path="/shop" element={<ConsoleShell />} />
+        {/* ⛔ از ۱۴۰۵/۰۸/۱۰ بخشِ «فروشگاه» یک برنامهٔ کامل است: پوسته + ماژول‌ها، همان ‎?tab=‎ ِ پیشین.
+            از ۱.۵۱.۰ ماژولِ جداشدنی است (‎modules/shop/‎) و مسیرش (‎/shop‎) را خودش از ‎modules/registry.ts‎ می‌دهد. */}
+        {PANEL_MODULES.flatMap((m) => m.routes).map((r) => <Route key={r.path} path={r.path} element={<r.component />} />)}
         <Route path="/account-server" element={<AccountServerHub />} />
         <Route path="/sales" element={<SalesPage />} />
         <Route path="/notices" element={<NoticesPage />} />
