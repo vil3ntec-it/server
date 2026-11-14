@@ -926,7 +926,9 @@ export async function syncTunnelRoutes({ restart = true, strict = null } = {}) {
     return { ok: true, applied: false, hostnames: routedHostnames() };
   }
 
-  absorbConfigHostnames();
+  //  ⛔ (۱.۵۰.۹۹) نامی که همین حالا عمداً برداشته شد (`strict.forget`) «ناشناسِ داخلِ فایل» نیست — وگرنه همین‌جا دوباره
+  //     زیردامنهٔ دستی می‌شد و هرگز از ingress بیرون نمی‌رفت
+  absorbConfigHostnames(new Set((strict?.forget || []).map((h) => String(h || '').toLowerCase())));
 
   const name = getSetting('tunnel_name', DEFAULT_TUNNEL_NAME);
   const alreadyRouted = new Set(getSetting('tunnel_routed_dns', []) || []);
@@ -1010,7 +1012,14 @@ export async function restoreIngress(snap, { restart = false } = {}) {
   setSetting('tunnel_hostnames', snap.tunnelHostnames || []);
   setSetting('tunnel_routed_dns', snap.routedDns || []);
   let ok = true;
-  if (snap.text != null) {
+  //  اول از روی دیتابیسِ برگشته (تغییرِ هم‌زمانِ دیگری گم نشود)؛ نشد ⇒ همان بایت‌های پیش از تغییر
+  const uuid = readTunnelIdFromConfig();
+  const credFile = readCredFromConfig();
+  let regenerated = false;
+  if (uuid && credFile && getSetting('tunnel_mode', 'quick') === 'named') {
+    try { await writeIngress(uuid, credFile); regenerated = true; } catch { regenerated = false; }
+  }
+  if (!regenerated && snap.text != null) {
     let now = null;
     try { now = fs.readFileSync(CONFIG_FILE, 'utf8'); } catch { now = null; }
     if (now !== snap.text) {
@@ -1049,11 +1058,11 @@ export async function restoreIngress(snap, { restart = false } = {}) {
  *
  *  @returns نام‌هایی که تازه ثبت شدند
  */
-function absorbConfigHostnames() {
+function absorbConfigHostnames(forget = new Set()) {
   const found = readIngressFromConfig();
   if (!found.length) return [];
 
-  const known = new Set(candidateHostnames().map((r) => r.hostname));
+  const known = new Set([...candidateHostnames().map((r) => r.hostname), ...forget]);
   const extra = [...(getSetting('tunnel_hostnames', []) || [])];
   const added = [];
   let main = getSetting('tunnel_hostname', null);
@@ -1099,8 +1108,20 @@ async function writeConfigAtomic(text) {
   }
 }
 
-/** فایل config.yml را با همهٔ زیردامنه‌ها بازنویسی می‌کند */
-async function writeIngress(uuid, credFile) {
+/**
+ * فایل config.yml را با همهٔ زیردامنه‌ها بازنویسی می‌کند.
+ * ⛔ (۱.۵۰.۹۹) یکی‌یکی: دو نوشتنِ هم‌زمان (مثلاً هم‌گام‌سازیِ پس‌زمینه و یک تغییرِ دامنه) فایلِ کناری را از زیرِ پای هم
+ *    برنمی‌دارند، و هر نوشتن فهرست را **همان لحظه** از دیتابیس می‌سازد ⇒ آخرین نوشتن تازه‌ترین حال است.
+ */
+let ingressChain = Promise.resolve();
+function writeIngress(uuid, credFile) {
+  const run = () => writeIngressNow(uuid, credFile);
+  const p = ingressChain.then(run, run);
+  ingressChain = p.catch(() => {});
+  return p;
+}
+
+async function writeIngressNow(uuid, credFile) {
   const lines = [`tunnel: ${uuid}`, `credentials-file: ${credFile.replaceAll('\\', '/')}`, 'ingress:'];
   for (const r of routedHostnames()) {
     //  ⛔ نامِ ناجور هرگز به فایل نمی‌رسد (‎\n‎ = قاعدهٔ دیگر) — همان شکلِ ‎addHostname‎

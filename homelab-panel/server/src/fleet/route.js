@@ -125,7 +125,9 @@ export async function releaseRoutes({ hostnames = [], moveId = null } = {}) {
   }
   if (changed) setSetting('tunnel_routed_dns', [...routed]);
   if (info.mode === 'named') {
-    try { await syncTunnelRoutes({ restart: true }); } catch { /* تونل نیست */ }
+    //  (۱.۵۰.۹۹) نام‌های رفته «ناشناسِ داخلِ فایل» نمی‌شوند (absorb) — واقعاً از ingress ِ این‌جا بیرون می‌روند
+    const forget = hosts.filter((h) => !listed.has(h));
+    try { await syncTunnelRoutes({ restart: true, strict: { verify: [], forget } }); } catch { /* تونل نیست */ }
   }
   return { mode: info.mode, released: hosts };
 }

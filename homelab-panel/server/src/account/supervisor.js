@@ -289,6 +289,7 @@ export function accountStatus() {
     dir: dir || null,
     dataDir: accountDataDir(),
     running: !!child && !child.killed,
+    restarting,
     pid: child?.pid || null,
     port: url?.port ? Number(url.port) : null,
     startedAt: startedAt || null,
@@ -429,12 +430,20 @@ export function waitAccountServerExit(ms = 8000) {
   });
 }
 
+//  (۱.۵۰.۹۹) در میانهٔ «ایست ⇒ روشن» ِ خودِ ناظر: برنامه «روشن» شمرده می‌شود (مثلاً برای «آخرین نامِ برنامهٔ روشن»)
+let restarting = false;
+
 export async function restartAccountServer() {
-  stopAccountServer();
-  await waitAccountServerExit(8000);
-  restarts = 0;
-  await new Promise((r) => setTimeout(r, 300));
-  return startAccountServer();
+  restarting = true;
+  try {
+    stopAccountServer();
+    await waitAccountServerExit(8000);
+    restarts = 0;
+    await new Promise((r) => setTimeout(r, 300));
+    return startAccountServer();
+  } finally {
+    restarting = false;
+  }
 }
 
 /**

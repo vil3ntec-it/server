@@ -465,7 +465,7 @@ export async function createSiteFolder({ name, kind = 'static', domain, port }) 
       'utf8'
     );
   }
-  return addSite({ rootPath: dir, name, kind, domain, port });
+  return addSite({ rootPath: dir, name, kind, domain, port, domainAllowed: Boolean(domain) });
 }
 
 // ------------------------------ کشف خودکار --------------------------------

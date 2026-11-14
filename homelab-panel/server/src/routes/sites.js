@@ -31,7 +31,7 @@ import { config } from '../config.js';
 import { sitesRoot } from '../sites/root.js';
 import { denyUnlessShellAllowed, shellAllowed } from '../lib/shell-owner.js';
 import { domainOwnerGuard, sendDomainResult } from './app-domains.js';
-import { addAppHostname, removeAppHostname, setPrimaryHostname, hostnamesOf } from '../app-hosts.js';
+import { addAppHostname, removeAppHostname, setPrimaryHostname, hostnamesOf, ownerOf } from '../app-hosts.js';
 import { freshUntil } from '../auth.js';
 import { parseHostname } from '../lib/hostname.js';
 
@@ -148,20 +148,52 @@ function guardDomainField(req, res, next) {
   return siteDomainGuard(req, res, next);
 }
 
+/**
+ * دامنهٔ سایتِ تازه پس از ساختنِ ردیف، از همان راهِ اتمیِ ‎app-hosts.js‎ (نه ‎attachDomain‎ + هم‌گام‌سازیِ پس‌زمینه).
+ * سنجش و «مالِ دیگری» **پیش از** ساختنِ سایت (رد ⇒ هیچ سایتی ساخته نمی‌شود).
+ */
+function precheckNewDomain(raw) {
+  if (!raw) return null;
+  const p = parseHostname(String(raw));
+  if (!p.ok) return { status: 400, body: { ok: false, error: 'invalid_domain', reason: p.reason, message: p.message } };
+  const owner = ownerOf(p.hostname);
+  if (owner) return { status: 409, body: { ok: false, error: 'domain_taken', message: `نامِ ${p.display} مالِ ${owner.label} است.`, owner: { app: owner.app, label: owner.label } } };
+  return null;
+}
+async function attachNewSiteDomain(req, result, raw) {
+  if (!raw || !result?.ok || !result.site) return result;
+  const app = `site:${result.site.slug}`;
+  const r = await addAppHostname({ app, hostname: String(raw), primary: true, by: req.user?.username });
+  sendDomainAudit(req, 'panel.domains.add', r, app, String(raw));
+  const site = getSite(result.site.id);
+  //  سایت ساخته شد ولی دامنه ننشست (مسیرِ تونل نوشته نشد ⇒ برگشت) — گفته می‌شود، پنهان نه
+  return r.ok ? { ...result, site } : { ...result, site, domainError: { error: r.error, message: r.message } };
+}
+
 router.post('/', guardDomainField, async (req, res) => {
   if (!guardSite(req, res)) return;
   const { path: rootPath, name, domain, port, kind, startCommand, autostart } = req.body || {};
-  const result = await addSite({ rootPath, name, domain, port, kind, startCommand, autostart, domainAllowed: domainFresh(req) });
-  if (!result.ok) return res.status(result.error === 'domain_taken' ? 409 : 400).json(result);
-  res.json(result);
+  //  دامنهٔ مؤثر: صریح، وگرنه از پروندهٔ خودِ پوشه — فقط برای مالکِ تازه‌احرازشده/کلیدِ محلی
+  let want = String(domain ?? '').trim();
+  if (!want && domainFresh(req) && rootPath) {
+    try { want = String(detectProject(path.resolve(String(rootPath).trim())).domain || '').trim(); } catch { want = ''; }
+  }
+  const bad = precheckNewDomain(want);
+  if (bad) return res.status(bad.status).json(bad.body);
+  const result = await addSite({ rootPath, name, domain: undefined, port, kind, startCommand, autostart, domainAllowed: false });
+  if (!result.ok) return res.status(400).json(result);
+  res.json(await attachNewSiteDomain(req, result, want));
 });
 
 // ساخت سایت تازه با پوشهٔ کاملاً مستقل زیر ریشهٔ سایت‌ها
 router.post('/create', guardDomainField, async (req, res) => {
   const { name, kind, domain, port } = req.body || {};
-  const result = await createSiteFolder({ name, kind, domain, port });
-  if (!result.ok) return res.status(result.error === 'domain_taken' ? 409 : 400).json(result);
-  res.json(result);
+  const want = String(domain ?? '').trim();
+  const bad = precheckNewDomain(want);
+  if (bad) return res.status(bad.status).json(bad.body);
+  const result = await createSiteFolder({ name, kind, domain: undefined, port });
+  if (!result.ok) return res.status(400).json(result);
+  res.json(await attachNewSiteDomain(req, result, want));
 });
 
 router.put('/:id', guardDomainField, async (req, res) => {
@@ -324,7 +356,8 @@ router.post('/:id/domains', siteDomainGuard, async (req, res) => {
   if (!r.ok) {
     sendDomainAudit(req, 'panel.domains.add', r, app, String(req.body?.domain || ''));
     const { status, ...rest } = r;
-    return res.status(status || 400).json({ ...rest, error: rest.error === 'invalid_hostname' ? 'invalid_domain' : rest.error, reason: rest.reason || rest.error });
+    const code = rest.error === 'invalid_hostname' ? 'invalid_domain' : rest.error === 'hostname_taken' ? 'domain_taken' : rest.error;
+    return res.status(status || 400).json({ ...rest, error: code, reason: rest.reason || rest.error });
   }
   sendDomainResult(req, res, 'panel.domains.add', { ...r, domain: r.hostname, domains: domainsForSite(site.id).map((d) => d.name) }, { app });
 });

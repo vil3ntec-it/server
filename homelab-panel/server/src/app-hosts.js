@@ -76,7 +76,7 @@ function stationsCount() {
 /** این برنامه روشن است؟ (پمپ‌ها داخلِ پروسهٔ پنل‌اند ⇒ با دستِ‌کم یک پمپِ ثبت‌شده همیشه روشن — همان تعریفِ «سرورهای من») */
 function appRunning(app) {
   if (app.kind === 'site') return isRunning(app.slug);
-  if (app.kind === 'account') { try { return Boolean(accountStatus().running); } catch { return false; } }
+  if (app.kind === 'account') { try { const st = accountStatus(); return Boolean(st.running || st.restarting); } catch { return false; } }
   return stationsCount() > 0;
 }
 
@@ -199,7 +199,7 @@ function bumpDomains() {
  * یک تغییرِ نام، همه یا هیچ. `mutate()` (هم‌گام، در تراکنش) کار را می‌کند و تابعِ برگرداندن می‌دهد.
  * @returns ‎{ ok, route, accountRestarted, publicBaseUrls }‎ یا ‎{ ok:false, status, error, message, ... }‎
  */
-async function applyAtomic({ mutate, verify = [], routes = true }) {
+async function applyAtomic({ mutate, verify = [], forget = [], routes = true }) {
   const before = runningCounts();
   const urlsBefore = accountPublicBaseUrls().join(',');
   const snap = routes ? ingressSnapshot() : null;
@@ -227,7 +227,7 @@ async function applyAtomic({ mutate, verify = [], routes = true }) {
   let sync = { ok: true, applied: false };
   if (routes) {
     try {
-      sync = await syncTunnelRoutes({ restart: true, strict: { verify } });
+      sync = await syncTunnelRoutes({ restart: true, strict: { verify, forget } });
     } catch (e) {
       sync = { ok: false, applied: true, ingressError: String(e?.message || e).slice(0, 200), restarted: false };
     }
@@ -338,6 +338,7 @@ export function removeAppHostname({ app: appId, hostname } = {}) {
     if (owner.source === 'auto') return coded(409, 'auto_hostname', `نامِ ${show(h)} خودکار از دامنهٔ ریشه ساخته می‌شود — برای برداشتنش همان دامنهٔ ریشه را بردارید.`);
     const r = await applyAtomic({
       verify: [],
+      forget: [h],
       mutate: () => {
         if (app.kind === 'site') {
           const undo = siteDomainUndo([h], app.site.id);
@@ -445,6 +446,7 @@ export function editDomain(id, { name, siteId, note } = {}) {
     if (h === row.name && nextSite === row.site_id && (note === undefined || note === row.note)) return { ok: true, name: h, unchanged: true };
     const r = await applyAtomic({
       verify: h !== row.name || nextSite !== row.site_id ? [h] : [],
+      forget: h !== row.name || !nextSite ? [row.name] : [],
       mutate: () => {
         const sites = [...new Set([row.site_id, nextSite].filter(Boolean))].map((sid) => q('SELECT id, domain FROM sites WHERE id = ?').get(sid)).filter(Boolean);
         const undo = () => {
@@ -471,6 +473,7 @@ export function deleteDomain(id) {
     if (!row) return coded(404, 'not_found', 'این دامنه نیست.');
     const r = await applyAtomic({
       verify: [],
+      forget: [row.name],
       mutate: () => {
         const site = row.site_id ? q('SELECT id, domain FROM sites WHERE id = ?').get(row.site_id) : null;
         q('DELETE FROM domains WHERE id = ?').run(row.id);
