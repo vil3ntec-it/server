@@ -117,6 +117,7 @@
     "test:move-only": "node test/move-only.mjs",
     "test:app-placement": "node test/app-placement.mjs",
     "test:app-domains": "node test/app-domains.mjs",
+    "test:app-domains-ui": "node test/app-domains-ui.mjs",
     "join": "node scripts/join.mjs",
     "test:deploy": "node test/deploy-profile.mjs && node test/move-server.mjs && node test/move-ui.mjs && node test/move-only.mjs && node test/deploy-compose.mjs",
     "move": "node scripts/move-server.mjs",
