@@ -7,7 +7,7 @@
 //  ⛔ کدام ماژول دیده می‌شود را **سرور** می‌گوید (‎/console/modules‎، به نقشِ همین نشست) و درهای همان ماژول هم با
 //     همان قاعده بسته‌اند — پنهان یعنی سرور هم نمی‌دهد. این پوسته فقط آن فهرست را می‌چیند.
 //  ⛔ ماژولِ «ساخته‌نشده» زبانهٔ خالی نمی‌گیرد؛ لینکِ مستقیم به آن صادقانه می‌گوید «هنوز ساخته نشده».
-//  افزودنِ ماژول: ‎docs/CONSOLE-SHELL-fa.md‎ (یک ردیف در ‎server/src/console/modules.js‎ + یک فایل در ‎./modules/‎).
+//  افزودنِ ماژول: ‎docs/CONSOLE-SHELL-fa.md‎ (یک ردیف در ‎server/src/modules/shop/console/modules.js‎ + یک فایل در ‎./modules/‎).
 // ---------------------------------------------------------------------------
 import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';

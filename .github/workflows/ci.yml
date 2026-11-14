@@ -87,6 +87,12 @@ jobs:
           fi
           echo "خروجی build با مخزن یکی است."
 
+      # 🏪 بخشِ «فروشگاه» جداشدنی است (1.51.0): ساختِ جدا سبز، در پوشهٔ جدا، و بی هیچ صفحهٔ فقط‌پنل
+      #    (docs/SHOP-MODULE-fa.md). مرزِ وارد کردن‌ها را test/module-boundary.mjs در «آزمون‌ها» می‌سنجد.
+      - name: ساختِ جدای بخشِ فروشگاه
+        working-directory: homelab-panel/web
+        run: npm run test:shop-standalone
+
   desktop:
     name: برنامهٔ ویندوز
     runs-on: ubuntu-latest

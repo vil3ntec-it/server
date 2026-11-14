@@ -2205,11 +2205,11 @@ export const PHASE3 = Object.freeze({
   'flags.v1': 'GET /api/admin/flags · GET /api/admin/flags/history',
   'actor.v1': 'سرآیندهای X-Actor-Id/Role/Name ⇒ «انجام‌دهنده» در سابقهٔ سرورِ حساب',
   'service-key.v1': 'Bearer vsk_… · /api/admin/service-keys',
-  //  ماژول‌های عملیات (‎routes/console-ops.js‎) و انتشارِ مرحله‌ایِ OPS-01 (shop #559)
+  //  ماژول‌های عملیات (‎modules/shop/routes/console-ops.js‎) و انتشارِ مرحله‌ایِ OPS-01 (shop #559)
   'ops.v1': 'GET /api/admin/ops/releases|health|integrations · /api/admin/ops/incidents* · /api/admin/ops/alerts*',
   'release-stage.v1': 'GET|PUT|DELETE /api/admin/release/stage (OPS-01، shop #559)',
-  'finance.v1': 'GET /api/admin/finance/* · POST /api/admin/finance/adjustments (ماژولِ ۴.۵ ِ مالیِ مرکزی، ‎routes/account-finance.js‎)',
-  //  کنسولِ یکپارچه: پوسته (‎routes/console-shell.js‎) و ۴.۶/۴.۷ (‎routes/console-market.js‎) هم در همین فهرست — تا
+  'finance.v1': 'GET /api/admin/finance/* · POST /api/admin/finance/adjustments (ماژولِ ۴.۵ ِ مالیِ مرکزی، ‎modules/shop/routes/account-finance.js‎)',
+  //  کنسولِ یکپارچه: پوسته (‎modules/shop/routes/console-shell.js‎) و ۴.۶/۴.۷ (‎modules/shop/routes/console-market.js‎) هم در همین فهرست — تا
   //  ‎GET /console/capabilities‎ (یکپارچه‌سازی) «هست/نیست» ِ همهٔ ماژول‌های بخشِ «فروشگاه» را یک‌جا بگوید
   'admin-sessions.v1': 'GET /api/admin/admins/:id/sessions · POST …/sessions/revoke (ماژولِ ۴.۳)',
   'search.v1': 'GET /api/admin/search (جست‌وجوی سراسریِ پوسته)',
@@ -2220,13 +2220,13 @@ export const PHASE3 = Object.freeze({
   //  ۱.۵۰.۷۷ (shop #1025، ‎claude/acct-console-2‎): برگرداندنِ دستگاه و صفحه‌بندیِ کارکنان، و کلیدِ یکتاییِ خودِ سرورِ حساب
   'staff-perms.v1': 'GET /api/admin/shops/:id/staff-perms?limit=&offset= · POST …/devices/:did/disable|enable (ارشد + دلیل)',
   'idempotent-writes.v1': 'Idempotency-Key روی دستگاه (disable/enable)، بازبینیِ بانکِ عکس و POST /api/admin/backups',
-  //  ۱.۵۰.۷۸ (shop ‎claude/loc-04‎، LOC-04): جدولِ تعطیلاتِ رسمی — ‎routes/console-holidays.js‎
+  //  ۱.۵۰.۷۸ (shop ‎claude/loc-04‎، LOC-04): جدولِ تعطیلاتِ رسمی — ‎modules/shop/routes/console-holidays.js‎
   'holidays.v1': 'GET|PUT /api/admin/calendar/holidays (ارشد + دلیل + نسخه؛ ۴۰۹ holiday_version)',
-  //  ۱.۵۰.۸۹ (۴-۱ «ب»، POS-04/WEB-05): فهرستِ مرکزیِ مترادف — ‎routes/console-synonyms.js‎ (هنوز روی shop نیست)
+  //  ۱.۵۰.۸۹ (۴-۱ «ب»، POS-04/WEB-05): فهرستِ مرکزیِ مترادف — ‎modules/shop/routes/console-synonyms.js‎ (هنوز روی shop نیست)
   'synonyms.v1': 'GET|PUT /api/admin/search/synonyms ({version, updatedAt, groups: string[][]}؛ ارشد + دلیل + نسخه؛ ۴۰۹ synonyms_version)',
-  //  ۱.۵۰.۹۰ (۲-۹، G1، ACP-D1/D2): اجازهٔ موقتِ پشتیبانی — ‎routes/console-support-access.js‎ (هنوز روی shop نیست)
+  //  ۱.۵۰.۹۰ (۲-۹، G1، ACP-D1/D2): اجازهٔ موقتِ پشتیبانی — ‎modules/shop/routes/console-support-access.js‎ (هنوز روی shop نیست)
   'support-access.v1': 'GET|POST /api/admin/shops/:id/access-grants · POST …/access-grants/break-glass · POST …/access-grants/:gid/revoke (۶۰ دقیقه، سقفِ ۲۴ ساعت؛ شکستنِ شیشه با دلیل و خبرِ فوری به صاحبِ دکان)',
-  //  ۱.۵۰.۹۶ (IMG-PRO-17، shop ‎claude/e-rows-13x‎): دسته‌های تغییرِ عکسِ یک دکان و برگرداندن — ‎routes/console-image-changes.js‎
+  //  ۱.۵۰.۹۶ (IMG-PRO-17، shop ‎claude/e-rows-13x‎): دسته‌های تغییرِ عکسِ یک دکان و برگرداندن — ‎modules/shop/routes/console-image-changes.js‎
   'image-changes.v1': 'GET /api/admin/shops/:id/images/changes[/:cid] · POST …/:cid/rollback (ارشد + دلیل + اجازهٔ زندهٔ restore + Idempotency-Key؛ ۴۰۹ changed_since)',
   //  توانایی‌هایی که خودِ ماژول‌ها (فروشگاه: بازار و پیک) می‌خواهند
   ...MODULE_CAPABILITIES,
