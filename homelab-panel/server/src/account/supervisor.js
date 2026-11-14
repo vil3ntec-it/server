@@ -256,7 +256,7 @@ export function onAccountHostsChanged() {
   const next = publicUrlsEnv().PUBLIC_BASE_URLS || '';
   if (next === (childPublicUrls ?? '')) return { ok: false, reason: 'همان فهرست' };
   push('info', 'نشانی‌های عمومیِ سرورِ حساب عوض شد — با فهرستِ تازه دوباره بالا می‌آید');
-  restartAccountServer().catch(() => {});
+  restartForHosts().catch(() => {});
   return { ok: true };
 }
 
@@ -430,17 +430,20 @@ export function waitAccountServerExit(ms = 8000) {
   });
 }
 
-//  (۱.۵۰.۹۹) در میانهٔ «ایست ⇒ روشن» ِ خودِ ناظر: برنامه «روشن» شمرده می‌شود (مثلاً برای «آخرین نامِ برنامهٔ روشن»)
-let restarting = false;
-
 export async function restartAccountServer() {
+  stopAccountServer();
+  await waitAccountServerExit(8000);
+  restarts = 0;
+  await new Promise((r) => setTimeout(r, 300));
+  return startAccountServer();
+}
+
+//  (۱.۵۰.۹۹) در میانهٔ «ایست ⇒ روشن» ِ تغییرِ نشانی‌ها: برنامه «روشن» شمرده می‌شود (برای «آخرین نامِ برنامهٔ روشن»)
+let restarting = false;
+async function restartForHosts() {
   restarting = true;
   try {
-    stopAccountServer();
-    await waitAccountServerExit(8000);
-    restarts = 0;
-    await new Promise((r) => setTimeout(r, 300));
-    return startAccountServer();
+    return await restartAccountServer();
   } finally {
     restarting = false;
   }
