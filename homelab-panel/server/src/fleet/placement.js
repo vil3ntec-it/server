@@ -107,7 +107,7 @@ function stepInfo(op, data) {
 function argsFor(job, op) {
   const fz = job.meta.freeze || {};
   if (op === 'import') { const e = job.meta.export || {}; return { size: e.size, sha256: e.sha256, chunkBytes: e.chunkBytes, chunks: e.chunks }; }
-  if (op === 'start') return { wasRunning: fz.wasRunning !== false, siteTunnel: Boolean(fz.siteTunnel) };
+  if (op === 'start') return { wasRunning: fz.wasRunning !== false, siteTunnel: Boolean(fz.siteTunnel), hostnames: fz.domains || [] };
   if (op === 'route') return { hostnames: fz.domains || [], siteTunnel: Boolean(fz.siteTunnel) };
   if (op === 'retire') return { toName: job.to.name };
   return {};

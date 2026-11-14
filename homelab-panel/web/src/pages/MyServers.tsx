@@ -18,6 +18,7 @@ import type { Dict } from '../i18n';
 import { Badge, Card, ConfirmDialog, CopyButton, Field, Loading, Modal, StatusDot, toast } from '../components/ui';
 import { Cell, Notice, Row, Select, Table } from '../control/ui';
 import { MoveServerCard } from '../components/MoveServer';
+import { AppDomainsCard } from '../components/AppDomainsCard';
 
 type App = { id: string; type: 'account' | 'pump' | 'site'; name: string; kind?: string | null; dataful: boolean; running: boolean; count?: number };
 type Entry = {
@@ -367,6 +368,9 @@ export default function MyServers() {
       {/* «این برنامه روی کدام سرور» (1.50.95) — فقط روی مرکزی که سرورِ دیگری دارد */}
       {!isNode && data.nodes.some((n) => n.status === 'active') && <PlacementCard data={data} load={load} />}
       {!isNode && (data.moves || []).length > 0 && <MovesCard moves={data.moves || []} />}
+
+      {/* «دامنه‌های هر برنامه» (1.50.99) — نام‌های همین سرور (مرکز یا گره)، هر برنامه چند نام */}
+      <AppDomainsCard />
 
       {/* وصلِ همین سرور به مرکزِ دیگر — همین‌جا هم، چون صفحهٔ «تنظیمات» در features.ts خاموش است */}
       {(isNode || !data.nodes.some((n) => n.status === 'active')) && <FleetLinkBody data={data} load={load} />}

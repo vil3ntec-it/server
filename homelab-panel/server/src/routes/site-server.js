@@ -6,6 +6,8 @@
 import { Router } from 'express';
 import QRCode from 'qrcode';
 import { requireAuth, requireWriteRole, requireRole, userRole } from '../auth.js';
+import { parseHostname } from '../lib/hostname.js';
+import { ownerOf } from '../app-hosts.js';
 import { getSiteSync } from '../state.js';
 import { config } from '../config.js';
 import { readInterfaces, readPublicIp } from '../metrics/network.js';
@@ -340,6 +342,12 @@ router.get('/domains', (req, res) => {
 // افزودن زیردامنهٔ تازه به همان تونل — برای سایت‌های بعدی
 router.post('/tunnel/hostname', async (req, res) => {
   const { hostname, port } = req.body || {};
+  //  ⛔ (۱.۵۰.۹۹) یک نام، یک صاحب: نامی که مالِ یک برنامه/سایت است زیردامنهٔ دستی نمی‌شود (پورتِ دیگر = ربودنِ مسیرش)
+  const parsed = parseHostname(String(hostname || ''));
+  const owner = parsed.ok ? ownerOf(parsed.hostname) : null;
+  if (owner && owner.source !== 'manual') {
+    return res.status(409).json({ ok: false, error: 'hostname_taken', message: `نامِ ${parsed.display} مالِ ${owner.label} است.`, owner: { app: owner.app, label: owner.label } });
+  }
   try {
     const result = await addHostname({ hostname, port });
     if (!result.ok) return res.status(400).json(result);

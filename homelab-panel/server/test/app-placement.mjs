@@ -14,6 +14,8 @@
 //      روشن کردنش روی مبدأ رد، مسیر به تونلِ N2 (‎cloudflared tunnel route dns --overwrite-dns‎ ِ ساختگی) خودکار
 //    • برگشتِ N2 ⇒ N1 که مقصد ردش کند (دامنهٔ مالِ سایتِ دیگر) ⇒ N2 دوباره روشن، جدول بی تغییر
 //    • سرورِ حساب N1 ⇒ N2 (کامل)؛ گرهٔ در نگه‌داری/آفلاین ⇒ رد
+//    • (۱.۵۰.۹۹) سرورِ حساب با دو نام: DNS ِ یکی روی N2 نشد ⇒ هیچ‌کدام جدا نمی‌رود و کار برمی‌گردد؛ بارِ دوم هر دو با هم،
+//      ردیف‌ها روی N2، ‎PUBLIC_BASE_URLS‎ ِ فرزندِ N2، و N1 نام‌ها را در یادداشتِ «کنار» نگه می‌دارد
 //    • هیچ کلیدِ بسته‌ای (که T به‌عنوانِ مقصد گرفت) در دیتابیس، دفتر، لاگ یا پاسخِ مالک نیست
 // ---------------------------------------------------------------------------
 import { spawn } from 'node:child_process';
@@ -51,6 +53,7 @@ fs.mkdirSync(dir, { recursive: true });
 let n = 0;
 const beat = () => fs.writeFileSync(path.join(dir, 'heartbeat'), String(++n).padStart(12, '0') + ':' + process.pid);
 beat(); setInterval(beat, 25);
+fs.writeFileSync(path.join(dir, 'public-urls'), process.env.PUBLIC_BASE_URLS ?? '<none>');
 http.createServer((req, res) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ ok: true, status: 'ok', version: '9.9.9' })); })
   .listen(Number(process.env.PORT), process.env.HOST || '127.0.0.1');
 process.on('SIGTERM', () => process.exit(0));
@@ -527,6 +530,33 @@ http.createServer((q, s) => {
     && readDb(DATA_1, 'SELECT enabled FROM sites WHERE slug = ?', SLUG)[0]?.enabled === 0 && !fs.existsSync(siteDir));
   check('… مسیر هنوز روی N2 (ingress دست نخورد)', fs.readFileSync(path.join(CF2, 'config.yml'), 'utf8').includes(SHOP_HOSTS[0]));
 
+  /* ══════════════ (۱.۵۰.۹۹) چند نامِ سرورِ حساب: همه یا هیچ ══════════════ */
+  console.log('── سرورِ حساب با دو نام: DNS ِ یکی روی N2 نشد ⇒ هیچ نامی جدا نمی‌رود، کار برمی‌گردد ──');
+  const ACC_HOSTS = ['acct.fleet-test.example', 'acct2.fleet-test.example'];
+  const urlsOf = (dataDir) => { try { return fs.readFileSync(path.join(dataDir, 'account-server', 'pg', 'public-urls'), 'utf8'); } catch { return null; } };
+  await N1.call('POST', '/api/auth/reauth', { password: pw.n1 }, o1);
+  const ad1 = await N1.call('POST', '/api/app-domains', { app: 'account-server', hostname: ACC_HOSTS[0], primary: true }, o1);
+  const ad2 = await N1.call('POST', '/api/app-domains', { app: 'account-server', hostname: ACC_HOSTS[1] }, o1);
+  const wantUrls = ACC_HOSTS.map((h) => `https://${h}`).join(',');
+  check('N1: دو نامِ سرورِ حساب (اصلی اول) و PUBLIC_BASE_URLS ِ فرزند', ad1.status === 200 && ad2.status === 200 && await until(() => urlsOf(DATA_1) === wantUrls, 15000), JSON.stringify([ad1.json, ad2.json, urlsOf(DATA_1)]).slice(0, 400));
+  const cfg2Before = fs.readFileSync(path.join(CF2, 'config.yml'), 'utf8');
+  fs.writeFileSync(CF_STATE, JSON.stringify({ ...JSON.parse(fs.readFileSync(CF_STATE, 'utf8')), failDns: [ACC_HOSTS[1]] }));
+  const mf = await C.call('POST', '/api/fleet/moves', { app: 'account-server', from: id1, to: id2, confirm: { app: 'سرورِ حساب', from: 'خانه', to: 'VPS آلمان' } }, owner);
+  const mfDone = await until(async () => {
+    const r = await C.call('GET', `/api/fleet/moves/${mf.json?.move?.id}`, undefined, owner);
+    return r.json?.move && !r.json.move.active ? r.json.move : null;
+  }, 90000, 300);
+  check('کار شکست خورد در گامِ مسیر (route_failed) و برگشت انجام شد', mfDone?.state === 'failed' && /route_failed/.test(mfDone.error || '')
+    && mfDone.steps.some((x) => x.op === 'rollback:discard' && x.state === 'done') && mfDone.steps.some((x) => x.op === 'rollback:unfreeze' && x.state === 'done'), JSON.stringify(mfDone).slice(0, 900));
+  const cfg2Fail = fs.readFileSync(path.join(CF2, 'config.yml'), 'utf8');
+  check('… ingress ِ N2 هیچ‌کدام از دو نام را ندارد (نه حتی آن که DNS اش شد)', !ACC_HOSTS.some((h) => cfg2Fail.includes(h)), cfg2Fail);
+  check('… ingress ِ N2 همان پیش از کار', cfg2Fail === cfg2Before, cfg2Fail);
+  check('… N2 هیچ ردیفی برای نام‌های سرورِ حساب نگرفت', readDb(DATA_2, "SELECT COUNT(*) AS n FROM app_hostnames WHERE app_id = 'account-server'")[0].n === 0);
+  check('… N1 هر دو نام را دارد (اصلی همان) و سرورِ حسابش دوباره روشن است', readDb(DATA_1, "SELECT hostname, is_primary FROM app_hostnames WHERE app_id = 'account-server' ORDER BY hostname").map((r) => `${r.hostname}:${r.is_primary}`).join(',') === `${ACC_HOSTS[0]}:1,${ACC_HOSTS[1]}:0`
+    && await until(() => accountAlive(DATA_1), 15000));
+  check('… جدولِ جا بی ردیفِ سرورِ حساب (هنوز «نامعلوم/هر دو»)', readDb(DATA_C, "SELECT COUNT(*) AS n FROM fleet_placement WHERE app_id = 'account-server'")[0].n === 0);
+  fs.writeFileSync(CF_STATE, JSON.stringify({ ...JSON.parse(fs.readFileSync(CF_STATE, 'utf8')), failDns: [] }));
+
   /* ══════════════ سرورِ حساب N1 ⇒ N2 ══════════════ */
   console.log('── سرورِ حساب از «خانه» به «VPS آلمان» (همیشه کامل) ──');
   const marker = crypto.randomBytes(24).toString('hex');
@@ -549,6 +579,17 @@ http.createServer((q, s) => {
   await wait(800);
   check('⛔ روشن کردنِ سرورِ حسابِ کنارگذاشته روی N1 رد/بی‌اثر است', !(await accountAlive(DATA_1)), JSON.stringify(acctTry));
   check('… جدولِ جا: سرورِ حساب ⇒ «VPS آلمان»', readDb(DATA_C, "SELECT node_id FROM fleet_placement WHERE app_id = 'account-server'")[0]?.node_id === id2);
+  //  (۱.۵۰.۹۹) هر دو نام با هم
+  const cfg2Acct = fs.readFileSync(path.join(CF2, 'config.yml'), 'utf8');
+  check('… ingress ِ N2: هر دو نامِ سرورِ حساب ⇒ پورتِ عمومیِ N2', ACC_HOSTS.every((h) => new RegExp(`hostname: ${h.replace(/\./g, '\\.')}\\s*\\n\\s*service: http://127\\.0\\.0\\.1:${N2_PORT + 1}`).test(cfg2Acct)), cfg2Acct);
+  check('… ‎--overwrite-dns‎ برای هر دو (ساختگی)', ACC_HOSTS.every((h) => (JSON.parse(fs.readFileSync(CF_STATE, 'utf8')).dns || []).includes(h)));
+  check('… گزارشِ کار: هر دو «خودکار»', maDone?.route?.steps?.length === 2 && maDone.route.steps.every((x) => x.how === 'auto'), JSON.stringify(maDone?.route));
+  const rows2 = readDb(DATA_2, "SELECT hostname, is_primary, move_id FROM app_hostnames WHERE app_id = 'account-server' ORDER BY hostname");
+  check('… N2: هر دو نام ردیفِ سرورِ حساب، اصلی همان، با شناسهٔ همین کار', rows2.map((r) => `${r.hostname}:${r.is_primary}`).join(',') === `${ACC_HOSTS[0]}:1,${ACC_HOSTS[1]}:0` && rows2.every((r) => r.move_id === ma.json?.move?.id), JSON.stringify(rows2));
+  check('… فرزندِ N2 با PUBLIC_BASE_URLS ِ هر دو نام بالا آمد (اصلی اول)', await until(() => urlsOf(DATA_2) === wantUrls, 15000), urlsOf(DATA_2));
+  const acctAside1 = readDb(DATA_1, "SELECT saved FROM fleet_aside WHERE app_id = 'account-server' ORDER BY id DESC LIMIT 1")[0];
+  check('… N1: ردیف‌ها برداشته و در یادداشتِ «کنار» نگه داشته شد (پاک نه)', readDb(DATA_1, "SELECT COUNT(*) AS n FROM app_hostnames WHERE app_id = 'account-server'")[0].n === 0
+    && ACC_HOSTS.every((h) => String(acctAside1?.saved || '').includes(h)), acctAside1?.saved);
 
   /* ══════════════ آفلاین ══════════════ */
   console.log('── گرهٔ آفلاین ⇒ رد ──');

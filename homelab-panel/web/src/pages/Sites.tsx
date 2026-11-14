@@ -809,7 +809,9 @@ function SiteDomains({ site, onDone }: { site: Site; onDone: () => Promise<void>
       await onDone();
       toast(t('saved'));
     } catch (e) {
-      toast(e instanceof ApiError && e.code === 'invalid_domain' ? t('invalidDomain') : t('error'), 'bad');
+      //  (1.50.99) پیامِ خودِ سرور: نامِ مالِ برنامهٔ دیگر، فقط مالک، برگشتِ مسیرِ تونل…
+      const msg = e instanceof ApiError && e.message && e.message !== e.code ? e.message : null;
+      toast(msg || (e instanceof ApiError && e.code === 'invalid_domain' ? t('invalidDomain') : t('error')), 'bad');
     } finally {
       setBusy(false);
     }
@@ -824,8 +826,8 @@ function SiteDomains({ site, onDone }: { site: Site; onDone: () => Promise<void>
       );
       setList(res.domains);
       await onDone();
-    } catch {
-      toast(t('error'), 'bad');
+    } catch (e) {
+      toast(e instanceof ApiError && e.message && e.message !== e.code ? e.message : t('error'), 'bad');
     } finally {
       setBusy(false);
     }

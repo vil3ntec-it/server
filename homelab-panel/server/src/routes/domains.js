@@ -1,11 +1,11 @@
 // دامنه‌ها: وضعیت DNS، گواهی SSL، تاریخ انقضا، سایت متصل و آنلاین/آفلاین
 import { Router } from 'express';
 import { requireAuth, requireWriteRole } from '../auth.js';
-import { q, db, logEvent } from '../db.js';
+import { q, logEvent } from '../db.js';
 import { checkDomain } from '../lib/domain-check.js';
-import { normalizeDomain } from '../sites/registry.js';
-import { syncTunnelRoutes } from '../tunnel.js';
 import { apiHostFor } from '../platform/domain.js';
+import { domainOwnerGuard, sendDomainResult } from './app-domains.js';
+import { registerDomain, editDomain, deleteDomain } from '../app-hosts.js';
 
 const router = Router();
 router.use(requireAuth, requireWriteRole('operator'));
@@ -58,102 +58,42 @@ router.get('/', (req, res) => {
   res.json({ domains: q(listQuery).all().map(rowToApi) });
 });
 
-/** دامنهٔ اصلیِ هر سایت را با جدول دامنه‌ها هم‌خط نگه می‌دارد */
-function refreshPrimaryDomain(siteId) {
-  if (!siteId) return;
-  const site = q('SELECT id, domain FROM sites WHERE id = ?').get(Number(siteId));
-  if (!site) return;
-  const own = q('SELECT name FROM domains WHERE site_id = ? ORDER BY name COLLATE NOCASE')
-    .all(site.id)
-    .map((r) => r.name);
-  const next = own.includes(site.domain) ? site.domain : (own[0] ?? null);
-  if (next !== site.domain) {
-    q('UPDATE sites SET domain = ?, updated_at = ? WHERE id = ?').run(next, Date.now(), site.id);
-  }
-}
+/*
+ *  ⛔ (۱.۵۰.۹۹) ثبت، عوض کردنِ نام/سایت و حذفِ دامنه فقط مالک + احرازِ دوباره، با ردیفِ دفتر (‎panel.domains.*‎). هر سه از
+ *  همان راهِ اتمیِ ‎app-hosts.js‎: سنجشِ سخت (punycode، بی ستاره…)، «یک نام یک صاحب»، آخرین نامِ برنامهٔ روشن ⇒ ۴۰۹، و نوشتنِ
+ *  ناموفقِ مسیرِ تونل ⇒ همه برمی‌گردد (۵۰۲). دامنهٔ ریشه (بی سایت) هم ‎api./admin.‎ ِ خودکار می‌سازد ⇒ همان مرز.
+ *  جابه‌جاییِ عمدیِ یک دامنه از سایتی به سایتِ دیگر (‎siteId‎) همین‌جا می‌ماند — کارِ آگاهانهٔ مالک، نه «کندن» ِ بی‌صدا.
+ */
+const legacyCode = (r) => (r.error === 'invalid_hostname' ? { ...r, error: 'invalid_domain', reason: r.reason } : r);
 
-router.post('/', (req, res) => {
-  const name = normalizeDomain(req.body?.name);
-  if (!name) return res.status(400).json({ error: 'invalid_domain' });
-  const exists = q('SELECT id FROM domains WHERE name = ?').get(name);
-  if (exists) return res.status(409).json({ error: 'already_exists' });
-  const siteId = req.body?.siteId ? Number(req.body.siteId) : null;
-  q('INSERT INTO domains(name, site_id, note, created_at) VALUES(?, ?, ?, ?)').run(
-    name,
-    siteId,
-    req.body?.note || null,
-    Date.now()
-  );
-  refreshPrimaryDomain(siteId);
-  const apiHost = apiHostFor(name);
-  logEvent(
-    'info',
-    'panel',
-    apiHost ? `دامنهٔ ${name} اضافه شد — آدرسِ API: https://${apiHost}` : `دامنهٔ ${name} اضافه شد`
-  );
-  syncTunnelRoutes().catch(() => {});
-  res.json({ ok: true, domain: rowToApi(q(oneQuery).get(name)) });
+router.post('/', domainOwnerGuard('panel.domains.add'), async (req, res) => {
+  const r = legacyCode(await registerDomain({ name: req.body?.name, siteId: req.body?.siteId || null, note: req.body?.note || null }));
+  if (r.ok) {
+    const apiHost = apiHostFor(r.name);
+    logEvent('info', 'panel', apiHost ? `دامنهٔ ${r.name} اضافه شد — آدرسِ API: https://${apiHost}` : `دامنهٔ ${r.name} اضافه شد`);
+    r.domain = rowToApi(q(oneQuery).get(r.name));
+  }
+  sendDomainResult(req, res, 'panel.domains.add', r, { hostname: String(req.body?.name || ''), extra: { siteId: req.body?.siteId || null } });
 });
 
 /**
  * تغییر دامنه: هم می‌شود سایتِ مقصد را عوض کرد (همین دامنه، سایتِ دیگر)،
  * هم خودِ نامِ دامنه را. بعدش مسیرهای تونل هم خودکار بازنویسی می‌شود.
  */
-router.put('/:id', (req, res) => {
-  const row = q('SELECT * FROM domains WHERE id = ?').get(Number(req.params.id));
-  if (!row) return res.status(404).json({ error: 'not_found' });
-
-  let name = row.name;
-  if ('name' in (req.body || {})) {
-    const next = normalizeDomain(req.body.name);
-    if (!next) return res.status(400).json({ error: 'invalid_domain' });
-    if (next !== row.name) {
-      const clash = q('SELECT id FROM domains WHERE name = ? AND id <> ?').get(next, row.id);
-      if (clash) return res.status(409).json({ error: 'already_exists' });
-      name = next;
-    }
-  }
-
-  const siteId =
-    'siteId' in (req.body || {})
-      ? req.body.siteId
-        ? Number(req.body.siteId)
-        : null
-      : row.site_id;
-
-  q('UPDATE domains SET name = ?, site_id = ?, note = ? WHERE id = ?').run(
-    name,
-    siteId,
-    req.body?.note ?? row.note,
-    row.id
-  );
-
-  // اگر دامنه از سایتی به سایت دیگر رفت، هر دو طرف باید بروز شوند
-  refreshPrimaryDomain(row.site_id);
-  refreshPrimaryDomain(siteId);
-
-  if (name !== row.name || siteId !== row.site_id) {
-    const to = siteId ? q('SELECT name FROM sites WHERE id = ?').get(siteId)?.name : null;
-    logEvent(
-      'info',
-      'panel',
-      to ? `دامنهٔ ${name} از این پس به سایت «${to}» می‌رود` : `دامنهٔ ${name} به هیچ سایتی وصل نیست`,
-      siteId
-    );
-    syncTunnelRoutes().catch(() => {});
-  }
-
-  res.json({ ok: true, domain: rowToApi(q(oneQuery).get(name)) });
+router.put('/:id', domainOwnerGuard('panel.domains.edit'), async (req, res) => {
+  const body = req.body || {};
+  const r = legacyCode(await editDomain(req.params.id, {
+    name: 'name' in body ? body.name : undefined,
+    siteId: 'siteId' in body ? body.siteId : undefined,
+    note: 'note' in body ? body.note : undefined,
+  }));
+  if (r.ok) r.domain = rowToApi(q(oneQuery).get(r.name));
+  sendDomainResult(req, res, 'panel.domains.edit', r, { hostname: String(body.name || req.params.id), extra: { id: Number(req.params.id), siteId: body.siteId } });
 });
 
-router.delete('/:id', (req, res) => {
-  const row = q('SELECT * FROM domains WHERE id = ?').get(Number(req.params.id));
-  if (!row) return res.status(404).json({ error: 'not_found' });
-  q('DELETE FROM domains WHERE id = ?').run(row.id);
-  refreshPrimaryDomain(row.site_id);
-  logEvent('warn', 'panel', `دامنهٔ ${row.name} حذف شد`);
-  syncTunnelRoutes().catch(() => {});
-  res.json({ ok: true });
+router.delete('/:id', domainOwnerGuard('panel.domains.remove'), async (req, res) => {
+  const r = await deleteDomain(req.params.id);
+  sendDomainResult(req, res, 'panel.domains.remove', r, { hostname: String(req.params.id) });
 });
 
 // بررسی واقعی و ذخیرهٔ نتیجه

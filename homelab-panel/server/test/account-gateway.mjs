@@ -351,7 +351,8 @@ try {
   console.log('\n── هر پیشوندِ سرورِ حساب از در رد می‌شود ──');
   {
     const PISHVAND = [
-      'health', 'ready', 'config', 'plans', 'terms', 'auth', 'sync', 'errors',
+      //  ‎terms‎ دیگر پیشوندِ جدا نیست (shop: ‎/api/auth/terms‎ زیرِ ‎auth‎)
+      'health', 'ready', 'config', 'plans', 'auth', 'sync', 'errors',
       'location', 'me', 'shop', 'pump', 'events', 'admin', 'license',
       'support', 'visit', 'vip', 'billing', 'portal', 'downloads',
     ];
