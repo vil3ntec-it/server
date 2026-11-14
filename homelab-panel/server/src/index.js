@@ -49,6 +49,7 @@ import auditRoutes from './routes/audit.js';
 import dashboardRoutes from './routes/dashboard.js';
 import sitesRoutes from './routes/sites.js';
 import domainsRoutes from './routes/domains.js';
+import appDomainsRoutes from './routes/app-domains.js';
 import filesRoutes from './routes/files.js';
 import logsRoutes from './routes/logs.js';
 import networkRoutes from './routes/network.js';
@@ -434,6 +435,8 @@ app.use('/api/audit', auditRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/sites', sitesRoutes);
 app.use('/api/domains', domainsRoutes);
+//  (۱.۵۰.۹۹) دامنه‌های هر برنامه — فقط مالک، هر تغییر با احرازِ دوباره و دفتر
+app.use('/api/app-domains', appDomainsRoutes);
 app.use('/api/files', filesRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/network', networkRoutes);

@@ -821,6 +821,15 @@ export function adminUrl() {
   return host ? `https://${host}` : null;
 }
 
+/** ‎app_hostnames‎ (مهاجرتِ ۰۱۲) — جدولِ نبوده ⇒ هیچ */
+function appHostnameRows() {
+  try {
+    return db.prepare('SELECT hostname, app_id FROM app_hostnames ORDER BY app_id, is_primary DESC, created_at, id').all();
+  } catch {
+    return [];
+  }
+}
+
 /** همهٔ نامزدهای مسیر — پیش از کنار گذاشتنِ دامنه‌های قُرق */
 function candidateHostnames() {
   const main = getSetting('tunnel_hostname', null);
@@ -862,6 +871,14 @@ function candidateHostnames() {
     list.push({ hostname: host, port: publicApiPort(), main: false, source: 'admin' });
   }
 
+  //  (۱.۵۰.۹۹) نام‌های افزودهٔ برنامه‌هایی که سایت نیستند (سرورِ حساب، پمپ‌ها) — همان پورتِ عمومی (‎api/public.js‎)
+  for (const row of appHostnameRows()) {
+    const host = String(row.hostname || '').toLowerCase();
+    if (!host || seen.has(host)) continue;
+    seen.add(host);
+    list.push({ hostname: host, port: publicApiPort(), main: false, source: 'app', app: row.app_id });
+  }
+
   // زیردامنه‌هایی که دستی اضافه شده‌اند
   for (const item of extra) {
     const host = String(item?.hostname || '').toLowerCase();
@@ -893,8 +910,14 @@ export function skippedProtectedHostnames() {
 /**
  * بعد از هر تغییر در دامنه‌ها: فایلِ مسیرها دوباره نوشته و تونل تازه می‌شود.
  * اگر دامنه‌ای تازه است، رکورد DNS‌اش هم یک‌بار ساخته می‌شود.
+ *
+ * ⛔ (۱.۵۰.۹۹) ترتیب: اول ingress (اتمی: فایلِ کناری + rename — نوشتنِ ناموفق فایلِ قبلی را دست نمی‌زند)، بعد DNS، بعد
+ *    راه‌اندازیِ دوبارهٔ تونل. `strict` (درهای «دامنه‌های هر برنامه» و جابه‌جایی): نوشتنِ ناموفق ⇒ ‎{ ok:false, ingressError }‎
+ *    بی DNS و بی راه‌اندازی؛ DNS ِ ناموفقِ یکی از `strict.verify` ⇒ ‎{ ok:false }‎ **بی** راه‌اندازی (تونلِ روشن هنوز همان
+ *    پیکربندیِ قبلی را دارد) تا صدازننده با `restoreIngress` همه را برگرداند. نبودنِ cloudflared ⇒ `dnsUnavailable` (گامِ دستی)،
+ *    نه شکست.
  */
-export async function syncTunnelRoutes({ restart = true } = {}) {
+export async function syncTunnelRoutes({ restart = true, strict = null } = {}) {
   const uuid = readTunnelIdFromConfig();
   const credFile = readCredFromConfig();
   const mode = getSetting('tunnel_mode', 'quick');
@@ -908,6 +931,7 @@ export async function syncTunnelRoutes({ restart = true } = {}) {
   const name = getSetting('tunnel_name', DEFAULT_TUNNEL_NAME);
   const alreadyRouted = new Set(getSetting('tunnel_routed_dns', []) || []);
   const failures = [];
+  let dnsUnavailable = null;
 
   // دامنه‌های قُرق: یک‌بار در گزارش بنویس تا معلوم باشد چرا به تونل نرفته‌اند
   const skipped = skippedProtectedHostnames();
@@ -919,6 +943,16 @@ export async function syncTunnelRoutes({ restart = true } = {}) {
       'panel',
       `دامنهٔ ${host} قُرق است: رکورد DNS آن بازنویسی نشد تا سایت عمومی روی GitHub Pages نخوابد`
     );
+  }
+
+  if (strict) {
+    try {
+      await writeIngress(uuid, credFile);
+    } catch (e) {
+      return { ok: false, applied: true, ingressError: String(e?.code || e?.message || e).slice(0, 200), failures: [], restarted: false, hostnames: routedHostnames() };
+    }
+  } else {
+    await writeIngress(uuid, credFile);
   }
 
   if (findCert()) {
@@ -939,16 +973,57 @@ export async function syncTunnelRoutes({ restart = true } = {}) {
       }
       setSetting('tunnel_routed_dns', [...alreadyRouted]);
     } catch (e) {
-      failures.push({ hostname: '*', detail: e.message });
+      if (strict) dnsUnavailable = String(e?.message || e).slice(0, 200);
+      else failures.push({ hostname: '*', detail: e.message });
     }
   }
 
-  await writeIngress(uuid, credFile);
+  const verify = new Set((strict?.verify || []).map((h) => String(h || '').toLowerCase()));
+  const verifyFailed = failures.filter((f) => verify.has(f.hostname));
+  if (strict && verifyFailed.length) {
+    return { ok: false, applied: true, failures, verifyFailed, restarted: false, skippedProtected: skipped, hostnames: routedHostnames() };
+  }
   if (restart) {
     stopTunnel();
     await startTunnel({});
   }
-  return { ok: !failures.length, applied: true, failures, skippedProtected: skipped, hostnames: routedHostnames() };
+  return { ok: !failures.length, applied: true, failures, dnsUnavailable, restarted: Boolean(restart), skippedProtected: skipped, hostnames: routedHostnames() };
+}
+
+/**
+ * (۱.۵۰.۹۹) عکسِ حالِ مسیرها پیش از یک تغییر — فایلِ ‎config.yml‎ و دو تنظیمِ مسیر — تا `restoreIngress` همه را برگرداند.
+ * ⛔ رکوردِ DNS ای که cloudflared ساخت برنمی‌گردد (دستورِ پاک کردن ندارد)؛ برگشتِ «جابه‌جایی» آن را با ‎--overwrite-dns‎
+ *    ِ مبدأ پس می‌گیرد.
+ */
+export function ingressSnapshot() {
+  let text = null;
+  try { text = fs.readFileSync(CONFIG_FILE, 'utf8'); } catch { text = null; }
+  return {
+    text,
+    tunnelHostnames: getSetting('tunnel_hostnames', []) || [],
+    routedDns: getSetting('tunnel_routed_dns', []) || [],
+  };
+}
+
+export async function restoreIngress(snap, { restart = false } = {}) {
+  if (!snap) return { ok: true };
+  setSetting('tunnel_hostnames', snap.tunnelHostnames || []);
+  setSetting('tunnel_routed_dns', snap.routedDns || []);
+  let ok = true;
+  if (snap.text != null) {
+    let now = null;
+    try { now = fs.readFileSync(CONFIG_FILE, 'utf8'); } catch { now = null; }
+    if (now !== snap.text) {
+      try { await writeConfigAtomic(snap.text); } catch {
+        try { await fsp.writeFile(CONFIG_FILE, snap.text, 'utf8'); } catch { ok = false; }
+      }
+    }
+  }
+  if (restart && getSetting('tunnel_mode', 'quick') === 'named') {
+    stopTunnel();
+    await startTunnel({});
+  }
+  return { ok };
 }
 
 /**
@@ -1008,15 +1083,33 @@ function absorbConfigHostnames() {
   return added;
 }
 
+/**
+ * ⛔ (۱.۵۰.۹۹) نوشتنِ اتمی: فایلِ کناری (‎config.yml.next‎) و rename ⇒ نوشتنِ نیمه‌کاره (دیسکِ پر، دسترسی) فایلِ روشنِ تونل را
+ * دست نمی‌زند. روی ویندوز اگر rename با قفل رد شود، همان نوشتنِ مستقیمِ قبلی.
+ */
+async function writeConfigAtomic(text) {
+  const next = `${CONFIG_FILE}.next`;
+  await fsp.writeFile(next, text, 'utf8');
+  try {
+    await fsp.rename(next, CONFIG_FILE);
+  } catch (e) {
+    if (!['EPERM', 'EACCES', 'EBUSY'].includes(e?.code)) throw e;
+    await fsp.writeFile(CONFIG_FILE, text, 'utf8');
+    await fsp.rm(next, { force: true }).catch(() => {});
+  }
+}
+
 /** فایل config.yml را با همهٔ زیردامنه‌ها بازنویسی می‌کند */
 async function writeIngress(uuid, credFile) {
   const lines = [`tunnel: ${uuid}`, `credentials-file: ${credFile.replaceAll('\\', '/')}`, 'ingress:'];
   for (const r of routedHostnames()) {
+    //  ⛔ نامِ ناجور هرگز به فایل نمی‌رسد (‎\n‎ = قاعدهٔ دیگر) — همان شکلِ ‎addHostname‎
+    if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(r.hostname)) continue;
     lines.push(`  - hostname: ${r.hostname}`);
-    lines.push(`    service: http://127.0.0.1:${r.port}`);
+    lines.push(`    service: http://127.0.0.1:${Number(r.port)}`);
   }
   lines.push('  - service: http_status:404', '');
-  await fsp.writeFile(CONFIG_FILE, lines.join('\n'), 'utf8');
+  await writeConfigAtomic(lines.join('\n'));
 }
 
 /**
