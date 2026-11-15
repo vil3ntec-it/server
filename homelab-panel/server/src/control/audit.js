@@ -42,6 +42,43 @@ export function audit({ actor = 'system', action, entity = null, entityId = null
   }
 }
 
+/**
+ * چند ردیف با هم — **همه یا هیچ** (یک تراکنشِ SQLite). برای کارِ دسته‌ای که هر جزئش ردیفِ خودش را می‌خواهد
+ * (پرچم‌های فروشگاه، ۱.۵۱.۱): دفتر هرگز نیمی از یک دسته را نشان نمی‌دهد. همان شکل و همان `scrub` ِ `audit`.
+ * @returns {boolean} نوشته شد؟ (مثلِ `audit`، شکستِ دفتر کارِ اصلی را نمی‌خواباند)
+ */
+export function auditMany(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.length) return true;
+  const at = Date.now();
+  try {
+    const st = db.prepare('INSERT INTO cc_audit(actor, action, entity, entity_id, project_id, detail, result, ip, at) VALUES(?,?,?,?,?,?,?,?,?)');
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const { actor = 'system', action, entity = null, entityId = null, projectId = null, detail = null, result = 'ok', ip = null } of list) {
+        st.run(
+          String(actor).slice(0, 100),
+          String(action).slice(0, 80),
+          entity ? String(entity).slice(0, 60) : null,
+          entityId != null ? String(entityId).slice(0, 60) : null,
+          projectId != null ? Number(projectId) : null,
+          detail == null ? null : JSON.stringify(scrub(detail)).slice(0, 4000),
+          String(result).slice(0, 40),
+          ip ? String(ip).slice(0, 60) : null,
+          at
+        );
+      }
+      db.exec('COMMIT');
+      return true;
+    } catch (e) {
+      try { db.exec('ROLLBACK'); } catch { /* تراکنش خودش بسته شد */ }
+      throw e;
+    }
+  } catch {
+    return false;
+  }
+}
+
 /** میان‌افزار: از روی درخواست، کاربر و IP را برمی‌دارد */
 export function auditFromReq(req, action, extra = {}) {
   audit({

@@ -35,4 +35,4 @@ export { default as Sales } from '../../../pages/account/Sales';
 /** کاربرانِ پنل مالِ پنل است — این میزبان ندارد و ماژول آن تکه را نشان نمی‌دهد. */
 export const PanelUsers: ComponentType | null = null;
 
-export type { PanelModule } from '../../types';
+export type { PanelModule, PanelSubNavProps } from '../../types';

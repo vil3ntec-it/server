@@ -583,11 +583,17 @@ check('⚠️ قاعده اتصالِ زنده را هم می‌شمارد، ن�
   const shell = read('modules/shop/console/Shell.tsx');
   const reg = read('modules/shop/console/registry.ts');
   check('⛔ پوسته: فهرستِ ماژول‌ها از سرور (نقش‌محور)، فقط «ساخته + فایلِ وب»، و هر ماژول در نگهبانِ خودش',
-    /SHELL_API\.modules/.test(shell) && /m\.built && WEB_MODULES\.has\(m\.id\)/.test(shell) && /<Guarded key=\{info\.id\}/.test(shell)
+    /useShellModules\(\)/.test(shell) && /SHELL_API\.modules/.test(read('modules/shop/console/useShellModules.ts')) && /m\.built && WEB_MODULES\.has\(m\.id\)/.test(shell) && /<Guarded key=\{info\.id\}/.test(shell)
     && /import\.meta\.glob<[^>]*>\('\.\/modules\/\*\.tsx', \{ eager: true \}\)/.test(reg));
-  check('⛔ پوسته: ردِ نان، جست‌وجوی سراسری، منوی گروه‌ها روی گوشی و صفحهٔ پهن، «ساخته نشده» و «برای نقشِ شما نیست» ِ صادق',
-    /aria-label=\{tx\('ردِ نان'/.test(shell) && /<ConsoleSearch \/>/.test(shell) && /<optgroup/.test(shell) && /<aside className="hidden lg:block"/.test(shell)
+  const subnav = read('modules/shop/console/SubNav.tsx');
+  check('⛔ پوسته: ردِ نان، جست‌وجوی سراسری، منوی گروه‌ها روی گوشی، «ساخته نشده» و «برای نقشِ شما نیست» ِ صادق',
+    /aria-label=\{tx\('ردِ نان'/.test(shell) && /<ConsoleSearch \/>/.test(shell) && /<optgroup/.test(shell)
     && /<NotSupported/.test(shell) && /<Forbidden>/.test(shell));
+  //  ۱.۵۱.۱: منوی بخش **جای** منوی پنل (drill-in) — نه ستونِ دومِ درونِ پوسته؛ یک خواندنِ مشترک برای هر دو
+  check('⛔ منوی بخش در نوارِ کناریِ پنل (subnav)، نه ستونِ دوم؛ همان قاعدهٔ «ساخته + فایلِ وب»',
+    !/<aside/.test(shell) && /subnav: \{ key: 'navShops', icon: Store, Nav: ShopSubNav \}/.test(read('modules/shop/index.ts'))
+    && /m\.built && WEB_MODULES\.has\(m\.id\)/.test(subnav) && /useShellModules\(\)/.test(subnav) && /useShellModules\(\)/.test(shell)
+    && /const active = moduleAt\(location\.pathname\)/.test(layout) && /setPeekMain\(false\), \[location\.key\]/.test(layout));
   //  ⛔ ریشهٔ واقعی (۱.۵۰.۶۵): ماژولی که `defineModule` را از `registry.ts` می‌گرفت حلقه می‌ساخت (registry ⇐ glob ⇐ ماژول ⇐
   //  registry) و بسته پیش از آماده شدنِ ثابت به آن می‌رسید ⇒ «Cannot access … before initialization» و **کلِ پنل سفید**.
   const modSrcs = fs.readdirSync(path.join(shellDir, 'modules')).filter((f) => f.endsWith('.tsx')).map((f) => fs.readFileSync(path.join(shellDir, 'modules', f), 'utf8'));

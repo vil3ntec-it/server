@@ -48,4 +48,4 @@ export { default as Sales } from '../../pages/account/Sales';
 export const PanelUsers: ComponentType | null = PanelUsersPage;
 
 /* ── ۸) قراردادِ ثبتِ ماژول در پنل (مسیر، منو، نقش) ─────────────────────────────────────────────────────── */
-export type { PanelModule } from '../types';
+export type { PanelModule, PanelSubNavProps } from '../types';

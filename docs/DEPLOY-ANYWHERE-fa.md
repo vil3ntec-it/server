@@ -247,6 +247,12 @@ import (دادهٔ تمرین کنار می‌رود به `/data/.vmove-before-�
 
 ## ۵. هاستِ اشتراکی (cPanel ⇐ Setup Node.js App) — فقط سرورِ حساب
 
+**از ۱.۵۱.۱ راهِ آسان:** پنل ⇐ «سرورهای من» ⇐ «افزودنِ سرور» ⇐ «هاستِ اشتراکی (cPanel)» ⇐ «دانلودِ vill3n-host.zip» (کدِ سرورِ حساب +
+نمایندهٔ هاست، بی هیچ راز). Application root ‏`vill3n-host`، startup file ‏`vill3n-agent/start.cjs`، متغیرِ ‏`VILL3N_JOIN_CODE` = کدِ همان
+پنجره (۱۰ دقیقه، یک بار) ⇐ «Run NPM Install» ⇐ «START APP» ⇐ پنجره «وصل شد ✓» می‌گوید و هاست با گونهٔ «هاستِ اشتراکی» در فهرست است.
+گام‌ها و متغیرهای سرورِ حساب در ‏`README-fa.txt` ِ همان بسته. ⚠️ جابه‌جاییِ خودکارِ **داده** به هاست هنوز نیست (نماینده بسته نمی‌گیرد) —
+دادهٔ پیشین را با گامِ ۴ ِ پایین ببرید. راهِ دستیِ کامل:
+
 1. File Manager: کدِ `server/` ِ ریپوی shop را در `~/shop-server` بگذارید.
 2. Setup Node.js App: Node 20 یا 22، Application root `shop-server`، startup file `src/index.js`، سپس «Run NPM Install».
 3. متغیرها (همان صفحه): `NODE_ENV=production` · `DATABASE_URL=pglite:/home/<کاربر>/shop-data/pg` · `BACKUP_PATH=/home/<کاربر>/shop-data/backups`

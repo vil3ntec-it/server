@@ -13,7 +13,10 @@ import { deploy } from '../config.js';
 import { versionInfo } from '../version.js';
 import { maintenanceState } from './maintenance.js';
 
-export const NODE_KINDS = Object.freeze(['home', 'vps', 'foreign', 'hosting']);
+//  ‎host‎ (۱.۵۱.۱): «هاستِ اشتراکی» با **نمایندهٔ هاست** (‎homelab-panel/host-agent‎) — نه پنلِ کامل؛ فقط سرورِ حساب
+export const NODE_KINDS = Object.freeze(['home', 'vps', 'foreign', 'hosting', 'host']);
+/** توانایی‌هایی که یک گره می‌تواند در گزارشش بگوید (فهرستِ سفید) */
+export const NODE_CAPS = Object.freeze(['move-import:account-server']);
 
 /** گونهٔ پیش‌فرضِ همین نصب: ‎HLP_NODE_KIND‎، وگرنه از نمایهٔ استقرار (home ⇒ خانه، vps/docker ⇒ VPS، paas ⇒ هاست) */
 export function defaultKind() {
@@ -148,5 +151,8 @@ export function sanitizeReport(raw) {
       since: num(r.maintenance?.since),
       pumpsKeepRunning: r.maintenance?.pumpsKeepRunning === true,
     },
+    //  ۱.۵۱.۱: نمایندهٔ هاست خودش را می‌گوید (پنلِ کامل این را ندارد) و فقط توانایی‌های شناخته
+    ...(r.agent === 'host' ? { agent: 'host' } : {}),
+    caps: Array.isArray(r.caps) ? r.caps.filter((c) => NODE_CAPS.includes(c)) : [],
   };
 }

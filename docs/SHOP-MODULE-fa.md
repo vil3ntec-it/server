@@ -112,13 +112,14 @@ homelab-panel/server/src/
 | زبان و قالب‌بندی | `Dict` (نوع) · `dateTime` · `useTx` · `usePick` · `Tx` |
 | تکه‌های مشترکِ سرورِ حساب | `useLoad` · `Load` · `CloudProblem` · `fa` · `money` · `SensitiveDialog` · `SensitiveSubmit` · `Guarded` · `Forbidden` · `NotSupported` · `StateEmpty` · `StateLoading` · `errCode` · `errText` · `fmtTime` · `outcomeUnknown` · `GrantNeeded` · `GRANT_REQUIRED` · `SUPPORT_ACCESS_ANCHOR` |
 | جای صفحه‌های مشترک | `AppSubscriptions` · `Sales` · `PanelUsers` (`ComponentType \| null` — میزبانِ جدا `null`) |
-| قرارداد | `PanelModule` (نوع) |
+| قرارداد | `PanelModule` (نوع؛ از ۱.۵۱.۱ با `subnav` ِ اختیاری) · `PanelSubNavProps` (نوع) |
 
 جای صفحه (layout): پنل مسیرهای `index.ts` را زیرِ `Layout` ِ خودش می‌گذارد؛ ساختِ جدا زیرِ یک نوارِ ساده. ماژول خودش چیدمانِ
-بیرونی نمی‌سازد.
+بیرونی نمی‌سازد. ⛔ از ۱.۵۱.۱ منوی درونیِ ماژول (`subnav.Nav` = `console/SubNav.tsx`) را **میزبان** می‌گذارد: پنل **جای** منوی اصلی در
+نوارِ کناری (drill-in، با ردیفِ «منوی اصلی»)، ساختِ جدا در کنارهٔ خودش — پوسته دیگر ستونِ دوم ندارد.
 
 **`server/src/modules/shop/host.js`:** `db` · `getSetting` · `setSetting` · `panelRoles` · `requireRole` · `roleOf` · `panelAuth` ·
-`audit` · `cloudRaw` · `cloudRawBytes` · `cloudRawText` · `cloudCall` · `cloudStatus` · `bridgeTimeouts` · `legacyAvailable` ·
+`audit` · `auditMany` (۱.۵۱.۱: چند ردیف، همه یا هیچ) · `cloudRaw` · `cloudRawBytes` · `cloudRawText` · `cloudCall` · `cloudStatus` · `bridgeTimeouts` · `legacyAvailable` ·
 `serviceKeyStatus` · `bridgeFail` · `ACCOUNT_PREFIXES` · `accountApiUrl` · `rateLimit` · `checkIdemKey` · `makeIdemOnce` ·
 `makeUpstreamOnce` · `serverPathFor` · `upstreamKey` · `versionInfo` · `CONSOLE_ALERT_RULES` · `consoleAlertPrefs` ·
 `setConsoleAlertPrefs`. و آن‌چه پل به ماژول می‌دهد در `deps` ِ `mount(router, deps)` است (`guard` · `capabilities` · `capListed` ·

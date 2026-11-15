@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
 //  ۴.۱۲ — تنظیماتِ مرکزی و پرچم‌ها، در یک جا
 //
-//   • پرچم‌های شناخته (کاتالوگِ سرورِ حساب): مقدارِ **نوع‌دار** (روشن/خاموش)، scope (همهٔ دکان‌ها یا یک دکان؛ امنیت در
-//     scope ِ خودش)، فقط admin، دلیل + تأیید؛ پرخطر (همه/امنیت/پول/سفارش) ⇒ نوشتنِ نامِ کلید + رمزِ پنل.
+//   • پرچم‌های شناخته (کاتالوگِ سرورِ حساب): `FlagsCard.tsx` (۱.۵۱.۱) — دامنهٔ پیش‌فرض یک دکان، ویرایشِ دسته‌ای با یک دلیل
+//     و یک درخواست (همه یا هیچ)، «حالتِ تغییر» (یک بار رمز، ۱۵ دقیقهٔ لغزان، سقفِ ۶۰)؛ نوشتنِ تأیید فقط برای «همه» یا پرخطر.
 //     «بازگشت به پیش‌فرض» = پاک کردنِ مقدارِ نوشته‌شده (با دلیل). تاریخچه: چه کسی، کی، پیشین ⇒ تازه، چرا.
 //   • روزهای آزمایشیِ دکان: عددِ ۰ تا ۳۶۵۰، دلیل و تأیید؛ تاریخچه از دفترِ پنل (پیشین ⇒ تازه).
 //   • انتشار (کانالِ آزمایشی): خواندن؛ عوض کردنش جای «نسخه‌ها و انتشار» است.
@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarClock, Flag, Gauge, Rocket } from 'lucide-react';
+import { CalendarClock, Gauge, Rocket } from 'lucide-react';
 
 import {
   api,
@@ -30,128 +30,16 @@ import {
   StateEmpty,
   StateLoading,
   Table,
-  type Tx,
   useApp,
   useLoad,
   useTx,
 } from '../host';
-import { FlagHistoryCard, LiveConfigCard, NotAvailable, Problem, SourceLine } from '../ShopConsole';
-import { CONSOLE, isUnavailable, shown, type FlagItem, type Flags, type KnownFlag, type ReleaseBeta, type Unavailable } from '../consoleData';
-import { SHELL_API, type ModuleProps } from './contract';
+import { FlagHistoryCard, LiveConfigCard, Problem, SourceLine } from '../ShopConsole';
+import { CONSOLE, shown, type ReleaseBeta } from '../consoleData';
+import type { ModuleProps } from './contract';
+import FlagsCard from './FlagsCard';
 import HolidaysCard from './HolidaysCard';
 import SynonymsCard from './SynonymsCard';
-
-/** همان قاعدهٔ سرور (`routes/console-shell.js` ⇒ `isRiskyFlag`) — فقط برای این‌که پنجره از پیش رمز و نام را بخواهد. */
-const RISKY_KEYS = new Set(['shop.orders', 'shop.orders.refunds', 'shop.delivery', 'shop.storefront', 'hashchain.audit', 'market.directory']);
-const risky = (key: string, scope: string) => scope === 'all' || scope === 'security' || RISKY_KEYS.has(key);
-const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
-
-const onOff = (tx: Tx, v: unknown) => (v === true ? tx('روشن', 'On', 'روښانه') : v === false ? tx('خاموش', 'Off', 'بند') : '—');
-
-type Edit = { mode: 'set' | 'reset'; k: KnownFlag; scope: string; from: unknown; to?: boolean };
-
-function FlagsEditor() {
-  const tx = useTx();
-  const { can } = useApp();
-  const admin = can('admin');
-  const [scopeInput, setScopeInput] = useState('');
-  const [scope, setScope] = useState('all');
-  const [edit, setEdit] = useState<Edit | null>(null);
-  const [done, setDone] = useState('');
-  const all = useLoad<Flags | Unavailable>(CONSOLE.flags('all'));
-  const shop = useLoad<Flags | Unavailable>(scope !== 'all' ? CONSOLE.flags(scope) : null, [scope]);
-  const sec = useLoad<Flags | Unavailable>(CONSOLE.flags('security'));
-
-  if (all.error) return <Card title={tx('پرچم‌ها', 'Flags', 'بیرغونه')} icon={<Flag size={15} />}><Problem load={all as Load<unknown>} /></Card>;
-  if (!all.data) return <Card title={tx('پرچم‌ها', 'Flags', 'بیرغونه')} icon={<Flag size={15} />}><StateLoading /></Card>;
-  if (isUnavailable(all.data)) return <Card title={tx('پرچم‌ها', 'Flags', 'بیرغونه')} icon={<Flag size={15} />}><NotAvailable data={all.data} /></Card>;
-
-  const known = (Array.isArray(all.data.known) ? all.data.known : []).filter((k) => typeof k.default === 'boolean');
-  const itemsOf = (d: Flags | Unavailable | null) => (d && !isUnavailable(d) && Array.isArray(d.items) ? d.items : []);
-  const allItems = itemsOf(all.data);
-  const shopItems = itemsOf(shop.data);
-  const secItems = itemsOf(sec.data);
-  //  کدام پرچم در این نما و scope ِ نوشتنش
-  type FlagRow = { k: KnownFlag; scope: string; it?: FlagItem; base?: FlagItem };
-  const rows = known.flatMap((k): FlagRow[] => {
-    if (scope === 'all') {
-      if (k.scope === 'shop' || k.scope === 'all') return [{ k, scope: 'all', it: allItems.find((x) => x.key === k.key) }];
-      if (k.scope === 'security') return [{ k, scope: 'security', it: secItems.find((x) => x.key === k.key) }];
-      return [];
-    }
-    return k.scope === 'shop' ? [{ k, scope, it: shopItems.find((x) => x.key === k.key), base: allItems.find((x) => x.key === k.key) }] : [];
-  });
-
-  const submit = async (x: SensitiveSubmit) => {
-    if (!edit) return;
-    if (edit.mode === 'set') {
-      await api(SHELL_API.flags, { method: 'PUT', body: { scope: edit.scope, key: edit.k.key, value: edit.to, ...x, confirm: true } });
-      setDone(tx('{k} در «{s}» ⇒ {v} — تأییدشده از سرورِ حساب', '{k} in “{s}” ⇒ {v} — confirmed by the account server', '{k} په «{s}» کې ⇒ {v} — تایید شوی', { k: edit.k.key, s: edit.scope, v: onOff(tx, edit.to) }));
-    } else {
-      await api(SHELL_API.flagsReset, { method: 'POST', body: { scope: edit.scope, key: edit.k.key, ...x, confirm: true } });
-      setDone(tx('{k} در «{s}» به پیش‌فرض برگشت — تأییدشده از سرورِ حساب', '{k} in “{s}” reset to default — confirmed by the account server', '{k} بېرته پیشفرض ته — تایید شوی', { k: edit.k.key, s: edit.scope }));
-    }
-    setEdit(null);
-    await Promise.all([all.reload(), sec.reload(), scope !== 'all' ? shop.reload() : Promise.resolve()]);
-  };
-
-  return (
-    <Card title={tx('پرچم‌ها', 'Flags', 'بیرغونه')} icon={<Flag size={15} />}>
-      <form className="mb-3 flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); const v = scopeInput.trim(); setScope(v && ID_RE.test(v) ? v : 'all'); }}>
-        <span className="text-xs text-ink-muted">{tx('دامنه', 'Scope', 'ساحه')}:</span>
-        <input className="input w-full sm:w-64" dir="ltr" placeholder={tx('خالی = همهٔ دکان‌ها؛ یا شناسهٔ یک دکان', 'Empty = all shops; or a shop id', 'تش = ټولې هټۍ؛ یا د یوې هټۍ پېژند')}
-               value={scopeInput} onChange={(e) => setScopeInput(e.target.value)} />
-        <button className="btn btn-sm" type="submit">{tx('نشان بده', 'Show', 'وښایه')}</button>
-        <code dir="ltr" className="text-xs">{scope}</code>
-      </form>
-      {!admin && <Notice>{tx('عوض کردنِ پرچم فقط برای مدیرِ پنل است (سرور هم همین را می‌سنجد).', 'Changing flags is for panel admins only (enforced by the server).', 'د بیرغ بدلول یوازې د پینل مدیر لپاره.')}</Notice>}
-      {done && <Notice tone="good">{done}</Notice>}
-      {scope !== 'all' && shop.error ? <Problem load={shop as Load<unknown>} /> : scope !== 'all' && !shop.data ? <StateLoading /> : (
-        <Table head={[tx('کلید', 'Key', 'کلي'), tx('چیست', 'What', 'څه'), tx('مقدار', 'Value', 'ارزښت'), tx('پیش‌فرض', 'Default', 'پیشفرض'), tx('آخرین تغییر', 'Last change', 'وروستی بدلون'), '']}
-               empty={rows.length === 0}>
-          {rows.map(({ k, scope: sc, it, base }) => {
-            const effective = it ? it.value : undefined;
-            return (
-              <Row key={`${sc}:${k.key}`}>
-                <Cell mono>{k.key}{risky(k.key, sc) && <span className="chip mr-1 ml-1" style={{ color: 'var(--status-warning)' }}>{tx('پرخطر', 'risky', 'خطرناک')}</span>}</Cell>
-                <Cell>{k.what || '—'}</Cell>
-                <Cell>{it ? onOff(tx, effective) : <span className="text-ink-muted">{tx('نوشته نشده', 'not set', 'نه دی لیکل شوی')}{base ? ` (${tx('همه', 'all', 'ټول')}: ${onOff(tx, base.value)})` : ''}</span>}</Cell>
-                <Cell>{onOff(tx, k.default)}</Cell>
-                <Cell>{it ? `${it.updatedBy || '—'} · ${fmtTime(it.updatedAt)}` : '—'}</Cell>
-                <Cell>
-                  {admin && (
-                    <div className="flex flex-wrap gap-1">
-                      <button className="btn btn-sm" onClick={() => { setDone(''); setEdit({ mode: 'set', k, scope: sc, from: effective, to: !(it ? effective === true : k.default === true) }); }}>
-                        {(it ? effective === true : k.default === true) ? tx('خاموش کن', 'Turn off', 'بند یې کړئ') : tx('روشن کن', 'Turn on', 'روښانه یې کړئ')}
-                      </button>
-                      {it && <button className="btn btn-sm" onClick={() => { setDone(''); setEdit({ mode: 'reset', k, scope: sc, from: effective }); }}>{tx('پیش‌فرض', 'Default', 'پیشفرض')}</button>}
-                    </div>
-                  )}
-                </Cell>
-              </Row>
-            );
-          })}
-        </Table>
-      )}
-      <p className="mt-2 text-[11px] text-ink-muted">{tx('فقط پرچم‌های شناختهٔ روشن/خاموش این‌جا عوض می‌شوند؛ فهرستِ کانالِ آزمایشی از «نسخه‌ها و انتشار». نوعِ مقدار و scope را سرورِ حساب هم می‌سنجد.', 'Only known on/off flags change here; the beta-channel lists change from “Versions & releases”. The account server validates type and scope too.', 'دلته یوازې پېژندل شوي روښانه/بند بیرغونه بدلېږي.')}</p>
-      <SourceLine source={`/api/admin/flags?scope=${scope}`} data={scope === 'all' ? all.data : shop.data} at={scope === 'all' ? all.at : shop.at} />
-
-      {edit && (
-        <SensitiveDialog
-          title={edit.mode === 'set' ? tx('پرچمِ {k}', 'Flag {k}', 'بیرغ {k}', { k: edit.k.key }) : tx('بازگشتِ {k} به پیش‌فرض', 'Reset {k} to default', '{k} پیشفرض ته', { k: edit.k.key })}
-          danger={risky(edit.k.key, edit.scope)} needPassword={risky(edit.k.key, edit.scope)} confirmKey={risky(edit.k.key, edit.scope) ? edit.k.key : undefined}
-          onClose={() => setEdit(null)} onSubmit={submit}
-          effect={<>
-            <code dir="ltr">{edit.scope}</code>: {edit.from === undefined ? tx('نوشته نشده', 'not set', 'نه دی لیکل شوی') : onOff(tx, edit.from)} ⇒{' '}
-            {edit.mode === 'set' ? onOff(tx, edit.to) : `${tx('پیش‌فرض', 'default', 'پیشفرض')} (${onOff(tx, edit.k.default)})`}
-            <span className="block">{edit.scope === 'all' ? tx('روی همهٔ دکان‌هایی اثر دارد که مقدارِ جدا ندارند.', 'Affects every shop without its own value.', 'په ټولو هټیو اغېز کوي.')
-              : edit.scope === 'security' ? tx('تنظیمِ امنیتیِ کلِ سرورِ حساب.', 'Security setting for the whole account server.', 'د ټول سرور امنیتي تنظیم.')
-                : tx('فقط همین یک دکان.', 'This one shop only.', 'یوازې همدا هټۍ.')}</span>
-          </>} />
-      )}
-    </Card>
-  );
-}
 
 type AuditRow = { id: number; actor?: string; action?: string; detail?: string; at?: number };
 const parse = (s?: string) => { try { return s ? JSON.parse(s) as Record<string, unknown> : {}; } catch { return {}; } };
@@ -253,7 +141,7 @@ function LimitsCard() {
 export default function SettingsModule(_props: ModuleProps) {
   return (
     <div className="space-y-4">
-      <FlagsEditor />
+      <FlagsCard />
       <FlagHistoryCard />
       <HolidaysCard />
       <SynonymsCard />

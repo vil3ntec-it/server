@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { PageBoundary } from './PageBoundary';
 import {
   Activity,
+  ArrowRight,
   Bot,
   Boxes,
   Archive,
@@ -21,6 +22,8 @@ import {
   Menu,
   Moon,
   Network,
+  PanelRightClose,
+  PanelRightOpen,
   ScrollText,
   Server,
   ServerCog,
@@ -45,7 +48,8 @@ import { featureOn, type FeatureKey, type ServerFeature } from '../features';
 import { logoUrl } from '../api';
 import CommandPalette, { usePaletteKey, type PaletteItem } from './CommandPalette';
 import { subsPath } from '../pages/account/subsPath';
-import { moduleMenu } from '../modules/registry';
+import { moduleMenu, PANEL_MODULES } from '../modules/registry';
+import type { PanelModule, PanelNavTip } from '../modules/types';
 
 type NavItem = {
   to: string;
@@ -213,9 +217,16 @@ const PALETTE_EXTRA: { to: string; key: keyof Dict; group: keyof Dict }[] = [
 const DEFAULT_COLLAPSED = NAV_GROUPS.filter((g) => g.collapsed).map((g) => g.id);
 
 const COLLAPSE_KEY = 'hlp.nav.collapsed';
+/** نوارِ باریک (فقط نشانه) — به ازای هر مرورگر (۱.۵۱.۱) */
+const RAIL_KEY = 'hlp.nav.rail';
+
+/** ماژولی که این نشانی مالِ اوست و منوی درونی دارد (drill-in) — نشانی می‌گوید کدام منو، نه حافظهٔ صفحه. */
+function moduleAt(pathname: string): PanelModule | null {
+  return PANEL_MODULES.find((m) => m.subnav && m.routes.some((r) => pathname === r.path || pathname.startsWith(`${r.path}/`))) || null;
+}
 
 export default function Layout() {
-  const { t, serverName, hasLogo, resolvedTheme, setTheme, lang, setLang, logout, connected, username, role, can, serverOn, owner } = useApp();
+  const { t, serverName, hasLogo, resolvedTheme, setTheme, lang, setLang, logout, connected, username, role, can, serverOn, owner, dir } = useApp();
   const [open, setOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -228,8 +239,47 @@ export default function Layout() {
     }
   });
   const location = useLocation();
+  /*
+   *  ⛔ ۱.۵۱.۱ — یک جای منو، drill-in (مثلِ Azure portal / تنظیماتِ macOS): نشانیِ زیرِ ماژولی که منوی درونی دارد ⇒ همان منو
+   *  **جای** منوی اصلی (ستونِ دوم رفت). ردیفِ «منوی اصلی» فقط نما را برمی‌گرداند (`peekMain`) تا نشانیِ بعدی؛ پس برگشت/جلوی
+   *  مرورگر، لینکِ مستقیم و بارگذاریِ دوباره همیشه همان منویی را نشان می‌دهند که نشانی می‌گوید.
+   */
+  const active = moduleAt(location.pathname);
+  const [peekMain, setPeekMain] = useState(false);
+  useEffect(() => setPeekMain(false), [location.key]);
+  const view: 'main' | 'module' = active && !peekMain ? 'module' : 'main';
+  //  سُرخوردنِ کوتاه فقط وقتی نما **عوض** می‌شود (نه در نخستین بارگذاری)؛ کلاس تا نمای بعدی همان می‌ماند
+  const slideRef = useRef<{ view: 'main' | 'module'; cls: string }>({ view, cls: '' });
+  if (slideRef.current.view !== view) slideRef.current = { view, cls: view === 'module' ? 'nav-pane-forward' : 'nav-pane-back' };
+  const slide = slideRef.current.cls;
 
-  useEffect(() => setOpen(false), [location.pathname]);
+  /*  نوارِ باریک (۶۴px، فقط نشانه + راهنمای کوچک روی ماوس و فوکوس)؛ در پنجرهٔ باریک همان کشوی رویِ صفحه می‌ماند  */
+  const [rail, setRail] = useState<boolean>(() => {
+    try { return localStorage.getItem(RAIL_KEY) === '1'; } catch { return false; }
+  });
+  const toggleRail = () => setRail((v) => {
+    try { localStorage.setItem(RAIL_KEY, v ? '0' : '1'); } catch { /* حالتِ خصوصیِ مرورگر */ }
+    return !v;
+  });
+  const [tip, setTip] = useState<{ text: string; top: number; edge: number } | null>(null);
+  const tipFor = useCallback((text: string): PanelNavTip => {
+    if (!rail) return {};
+    const show = (el: HTMLElement) => {
+      const r = el.getBoundingClientRect();
+      //  لبهٔ بیرونیِ نوار از سمتِ آغاز (راست در فارسی) — راهنما همان‌جا، رو به محتوا
+      setTip({ text, top: r.top + r.height / 2, edge: dir === 'rtl' ? window.innerWidth - r.left : r.right });
+    };
+    return { onMouseEnter: (e) => show(e.currentTarget), onFocus: (e) => show(e.currentTarget), onMouseLeave: () => setTip(null), onBlur: () => setTip(null) };
+  }, [rail, dir]);
+  useEffect(() => setTip(null), [location.key, rail, view]);
+
+  //  کشوی گوشی با رفتن به صفحهٔ دیگر بسته می‌شود — جز وقتی که همین کلیک به منوی درونیِ یک ماژول برد (منو را ببیند)
+  const lastActive = useRef<string | null>(active?.id ?? null);
+  useEffect(() => {
+    const entered = Boolean(active) && lastActive.current !== active?.id;
+    lastActive.current = active?.id ?? null;
+    if (!entered) setOpen(false);
+  }, [location.key, active]);
 
   /*
    *  فهرستِ جست‌وجو از همان منو ساخته می‌شود، با همان فیلترِ نقش و ویژگی —
@@ -255,53 +305,86 @@ export default function Layout() {
     });
   };
 
-  const nav = (
-    <nav className="flex flex-col gap-1 p-3">
-      {NAV_GROUPS.map((group) => {
-        const isCollapsed = collapsed.includes(group.id);
-        // چیزی که خاموش است یا نقشِ کاربر به آن دسترسی ندارد، اصلاً نشان داده نمی‌شود
-        const items = group.items.filter(
-          (item) => (!item.feature || featureOn(item.feature)) && (!item.server || serverOn(item.server)) && (!item.needs || can(item.needs)) && (!item.owner || owner)
-        );
-        if (items.length === 0) return null;
-        return (
-          <section key={group.id} className="mb-1">
-            <button
-              className="nav-group-title flex w-full items-center gap-1.5 hover:text-ink-soft"
-              onClick={() => toggleGroup(group.id)}
-              aria-expanded={!isCollapsed}
-            >
-              <ChevronDown className={`h-3 w-3 shrink-0 transition-transform ${isCollapsed ? 'ltr:-rotate-90 rtl:rotate-90' : ''}`} />
-              <span className="truncate">{t(group.key)}</span>
-            </button>
-            {!isCollapsed && (
-              <div className="flex flex-col gap-0.5">
-                {items.map(({ to, key, icon: Icon, end }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    end={end}
-                    className={({ isActive }) => `nav-item ${isActive ? 'is-active' : ''}`}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{t(key)}</span>
-                  </NavLink>
-                ))}
-              </div>
-            )}
-          </section>
-        );
-      })}
-    </nav>
-  );
+  /** یک منو در هر لحظه: منوی اصلی، یا منوی درونیِ ماژولِ همین نشانی (با ردیفِ «منوی اصلی» بالایش). */
+  const navBody = (compact: boolean) => {
+    if (view === 'module' && active?.subnav) {
+      const Sub = active.subnav.Nav;
+      const ModIcon = active.subnav.icon;
+      return (
+        <div key="module" className={`flex flex-col gap-1 p-2 ${slide}`}>
+          <button type="button" className="nav-back" onClick={() => setPeekMain(true)} data-testid="nav-back"
+                  aria-label={`${t('navMainMenu')} — ${t(active.subnav.key)}`} {...tipFor(t('navMainMenu'))}>
+            <ArrowRight className="nav-icon ltr:rotate-180" />
+            {!compact && <span className="text-xs">{t('navMainMenu')}</span>}
+          </button>
+          <p className={`nav-module-title ${compact ? 'justify-center' : ''}`} title={compact ? t(active.subnav.key) : undefined}>
+            <ModIcon className="nav-icon" />
+            <span className={compact ? 'sr-only' : 'truncate'}>{t(active.subnav.key)}</span>
+          </p>
+          <Sub rail={compact} tip={tipFor} />
+        </div>
+      );
+    }
+    return (
+      <nav key="main" className={`flex flex-col gap-1 p-2 ${slide}`} aria-label={t('navMainMenu')}>
+        {NAV_GROUPS.map((group) => {
+          const isCollapsed = collapsed.includes(group.id);
+          // چیزی که خاموش است یا نقشِ کاربر به آن دسترسی ندارد، اصلاً نشان داده نمی‌شود
+          const items = group.items.filter(
+            (item) => (!item.feature || featureOn(item.feature)) && (!item.server || serverOn(item.server)) && (!item.needs || can(item.needs)) && (!item.owner || owner)
+          );
+          if (items.length === 0) return null;
+          return (
+            <section key={group.id} className="mb-1">
+              <button
+                className={`nav-group-title flex w-full items-center gap-1.5 hover:text-ink-soft ${compact ? 'justify-center' : ''}`}
+                onClick={() => toggleGroup(group.id)}
+                aria-expanded={!isCollapsed}
+                aria-label={compact ? t(group.key) : undefined}
+                {...tipFor(t(group.key))}
+              >
+                <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${isCollapsed ? 'ltr:-rotate-90 rtl:rotate-90' : ''}`} />
+                <span className={compact ? 'sr-only' : 'truncate'}>{t(group.key)}</span>
+              </button>
+              {!isCollapsed && (
+                <div className="flex flex-col gap-0.5">
+                  {items.map(({ to, key, icon: Icon, end }) => (
+                    <NavLink
+                      key={to}
+                      to={to}
+                      end={end}
+                      //  دوباره زدنِ «فروشگاه» وقتی منوی اصلی را نگاه می‌کنید ⇒ همان منوی درونی
+                      onClick={() => setPeekMain(false)}
+                      className={({ isActive }) => `nav-item ${isActive ? 'is-active' : ''}`}
+                      {...tipFor(t(key))}
+                    >
+                      <Icon className="nav-icon" />
+                      <span className={compact ? 'sr-only' : 'truncate'}>{t(key)}</span>
+                    </NavLink>
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </nav>
+    );
+  };
 
   return (
     <div className="flex h-full">
-      {/* نوار کناری — دسکتاپ */}
-      <aside className="hidden w-[15rem] shrink-0 flex-col border-e border-line bg-surface-nav lg:flex">
-        <Brand serverName={serverName} hasLogo={hasLogo} subtitle={t('appName')} />
-        <div className="flex-1 overflow-y-auto">{nav}</div>
-        <footer className="border-t border-line p-3 text-[11px] text-ink-muted">
+      {/* نوار کناری — دسکتاپ (پهن ۱۵rem، یا باریکِ ۶۴px فقط با نشانه) */}
+      <aside className={`hidden shrink-0 flex-col border-e border-line bg-surface-nav transition-[width] duration-200 lg:flex ${rail ? 'w-16' : 'w-[15rem]'}`}
+             data-rail={rail ? '1' : '0'}>
+        <div className={`flex items-center border-b border-line ${rail ? 'flex-col gap-1 py-2' : 'justify-between'}`}>
+          {rail ? <BrandMark hasLogo={hasLogo} /> : <Brand serverName={serverName} hasLogo={hasLogo} subtitle={t('appName')} />}
+          <button type="button" className={`rounded-lg p-1.5 text-ink-soft hover:bg-surface-raised ${rail ? '' : 'me-3'}`} onClick={toggleRail}
+                  aria-label={rail ? t('navExpand') : t('navCollapse')} aria-pressed={rail} data-testid="nav-rail-toggle" {...tipFor(t('navExpand'))}>
+            {rail ? <PanelRightOpen className="h-[18px] w-[18px] ltr:-scale-x-100" /> : <PanelRightClose className="h-[18px] w-[18px] ltr:-scale-x-100" />}
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto overflow-x-hidden" onScroll={() => setTip(null)}>{navBody(rail)}</div>
+        <footer className={`border-t border-line p-3 text-[11px] text-ink-muted ${rail ? 'hidden' : ''}`}>
           {username && (
             <p className="flex items-center gap-1.5">
               <span className="truncate">{username}</span>
@@ -318,6 +401,9 @@ export default function Layout() {
           )}
         </footer>
       </aside>
+      {tip && rail && (
+        <div role="tooltip" className="nav-tip" style={{ top: tip.top, insetInlineStart: tip.edge + 8 }}>{tip.text}</div>
+      )}
 
       {/* کشوی موبایل */}
       {open && (
@@ -330,7 +416,7 @@ export default function Layout() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto">{nav}</div>
+            <div className="flex-1 overflow-y-auto overflow-x-hidden">{navBody(false)}</div>
           </aside>
         </div>
       )}
@@ -427,9 +513,20 @@ export default function Layout() {
   );
 }
 
+/** نشانهٔ تنها (نوارِ باریک) */
+function BrandMark({ hasLogo }: { hasLogo: boolean }) {
+  return hasLogo ? (
+    <img src={logoUrl()} alt="" className="h-8 w-8 rounded-lg object-cover" />
+  ) : (
+    <span className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}>
+      <Server className="h-4 w-4" />
+    </span>
+  );
+}
+
 function Brand({ serverName, hasLogo, subtitle }: { serverName: string; hasLogo: boolean; subtitle: string }) {
   return (
-    <div className="flex items-center gap-2.5 border-b border-line p-4">
+    <div className="flex min-w-0 items-center gap-2.5 p-4">
       {hasLogo ? (
         <img src={logoUrl()} alt="" className="h-8 w-8 rounded-lg object-cover" />
       ) : (

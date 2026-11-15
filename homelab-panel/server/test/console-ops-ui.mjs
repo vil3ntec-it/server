@@ -150,7 +150,9 @@ try {
   console.log('\n── بی ‎ops.v1‎ ──');
   let body = await open('errors');
   check('صفحه راست‌چین است', (await page.evaluate(() => document.documentElement.dir)) === 'rtl');
-  check('ماژول‌های «خطاها، رخدادها…» (۴.۱۰) و «هشدارها» (۴.۱۱) در منوی بخشِ فروشگاه', body.includes('رخدادها') && body.includes('هشدارها'), body.slice(0, 300));
+  //  ۱.۵۱.۱: منوی بخش جای منوی پنل در نوارِ کناری است (drill-in)، نه درونِ ‎main‎
+  const shopNav = await page.locator('aside nav[aria-label="ماژول‌های فروشگاه"]').innerText();
+  check('ماژول‌های «خطاها، رخدادها…» (۴.۱۰) و «هشدارها» (۴.۱۱) در منوی بخشِ فروشگاه', shopNav.includes('رخدادها') && shopNav.includes('هشدارها'), shopNav.slice(0, 300));
   check('⛔ «داده در دسترس نیست» با نامِ توانایی، نه جدولِ خالی', body.includes('داده در دسترس نیست') && body.includes('ops.v1'), body.slice(0, 600));
   caps = ['actor.v1', 'ops.v1', 'release-stage.v1'];
 

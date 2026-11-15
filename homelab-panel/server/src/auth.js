@@ -428,10 +428,84 @@ export function bodyStepUp(req) {
   const r = verifyReauth(req.user?.id, password, req.body?.code);
   if (r.ok) {
     if (req.user?.sessionId) markFresh(req.user.sessionId);
-    return { pass: true };
+    //  `verified`: رمز (و کد اگر دوعاملی روشن است) **در همین درخواست** سنجیده شد — نه «نشستِ تازه» —
+    //  تنها راهِ باز شدنِ «حالتِ تغییر» ِ پرچم‌ها (`openSudo`)
+    return { pass: true, verified: true };
   }
   if (r.error === 'totp_required') return fresh() ? { pass: true } : { pass: false, failed: false, totpRequired: true };
   return { pass: false, failed: true, error: r.error };
+}
+
+/* ------------------- «حالتِ تغییر» ِ پرچم‌ها (sudo، ۱.۵۱.۱) -------------------
+ *
+ *  دستورِ صاحب سامانه: «یک بار رمز را می‌زنم و هر کدام را خواستم روشن یا خاموش کنم.» همان «sudo mode» ِ GitHub:
+ *  یک احرازِ دوبارهٔ کامل (رمز، و کد اگر دوعاملی روشن است — `bodyStepUp().verified`) برای **همین نشست** پنجره‌ای
+ *  کوتاه باز می‌کند که در آن تغییرِ پرچم رمزِ دوباره نمی‌خواهد.
+ *
+ *  ⛔ پانزده دقیقه **لغزان** (هر تغییرِ پرچم تمدیدش می‌کند) و **سقفِ سخت** ِ شصت دقیقه از لحظهٔ باز شدن.
+ *  ⛔ جایش سرور است (`sessions.sudo_at`/`sudo_seen`، مهاجرتِ ۰۱۳)، نه پرچمِ مرورگر؛ نشستِ دیگر یا توکنِ دیگر بازش نمی‌کند.
+ *  ⛔ بیرون رفتن، بستنِ نشست و عوض کردنِ رمز ردیفِ نشست را پاک می‌کنند ⇒ پنجره هم می‌رود؛ عوض شدنِ دوعاملی ⇒ `closeSudoForUser`.
+ *  ⛔ فقط درهای پرچم این را می‌خوانند (`routes/console-shell.js` ِ ماژولِ فروشگاه). درهای حساسِ دیگر همان
+ *     `requireRecentAuth` / `bodyStepUp` ِ ده‌دقیقه‌ایِ بی‌لغزش را دارند — این پنجره آن‌ها را باز نمی‌کند.
+ */
+export const SUDO_IDLE_MS = 15 * 60_000;
+export const SUDO_MAX_MS = 60 * 60_000;
+
+/** حالِ پنجره از روی ردیفِ نشست — خالص، تا قاعده یک جا باشد و آزمون بی ساعتِ واقعی بسنجد. */
+export function sudoFromRow(row, now = Date.now()) {
+  const at = Number(row?.sudo_at) || 0;
+  const seen = Number(row?.sudo_seen) || 0;
+  if (!at || !seen) return { open: false };
+  const hardUntil = at + SUDO_MAX_MS;
+  const idleUntil = seen + SUDO_IDLE_MS;
+  const until = Math.min(hardUntil, idleUntil);
+  if (now >= until) return { open: false };
+  return { open: true, openedAt: at, lastUsedAt: seen, until, idleUntil, hardUntil };
+}
+
+export function sudoState(sessionId, now = Date.now()) {
+  if (!sessionId) return { open: false };
+  return sudoFromRow(q('SELECT sudo_at, sudo_seen FROM sessions WHERE id = ?').get(sessionId), now);
+}
+
+/** باز کردن (یا از نو باز کردن) — فقط پس از `bodyStepUp().verified` ِ همین درخواست. */
+export function openSudo(sessionId, now = Date.now()) {
+  if (!sessionId) return { open: false };
+  q('UPDATE sessions SET sudo_at = ?, sudo_seen = ? WHERE id = ?').run(now, now, sessionId);
+  return sudoState(sessionId, now);
+}
+
+/**
+ * پنجرهٔ باز را می‌لغزاند — «مقایسه و جایگذاری» در خودِ `UPDATE`: پنجرهٔ بسته (بی‌کاری یا سقفِ سخت) زنده نمی‌شود.
+ * @returns {boolean} هنوز باز بود و لغزید؟
+ */
+export function touchSudo(sessionId, now = Date.now()) {
+  if (!sessionId) return false;
+  const r = q('UPDATE sessions SET sudo_seen = ? WHERE id = ? AND sudo_at IS NOT NULL AND sudo_seen IS NOT NULL AND sudo_seen + ? > ? AND sudo_at + ? > ?')
+    .run(now, sessionId, SUDO_IDLE_MS, now, SUDO_MAX_MS, now);
+  return Number(r.changes) === 1;
+}
+
+export function closeSudo(sessionId) {
+  if (!sessionId) return;
+  q('UPDATE sessions SET sudo_at = NULL, sudo_seen = NULL WHERE id = ?').run(sessionId);
+}
+
+/** همهٔ نشست‌های یک کاربر — عوض شدنِ دوعاملی (روشن یا خاموش). */
+export function closeSudoForUser(userId) {
+  q('UPDATE sessions SET sudo_at = NULL, sudo_seen = NULL WHERE user_id = ?').run(Number(userId));
+}
+
+/**
+ * کارِ مالک در «سرورهای من» (۱.۵۱.۱): نشستِ تازه (ده دقیقهٔ `requireRecentAuth`) **یا** «حالتِ تغییر» ِ باز ِ همین نشست
+ * (همان پنجرهٔ پرچم‌ها: یک احرازِ دوبارهٔ کامل، ۱۵ دقیقهٔ لغزان، سقفِ ۶۰). استفاده پنجره را می‌لغزاند. کلیدِ محلی از این
+ * مرز نمی‌گذرد (همان `requireRecentAuth`).
+ */
+export function requireRecentAuthOrSudo(req, res, next) {
+  const sid = req.user?.sessionId;
+  if (sid && freshUntil(sid) > Date.now()) return next();
+  if (sid && sudoState(sid).open) { touchSudo(sid); return next(); }
+  return res.status(403).json({ error: 'reauth_required', message: REAUTH_MESSAGE });
 }
 
 /**
