@@ -54,7 +54,9 @@ const README = (centerUrl) => `VILL3N — هاستِ اشتراکی (cPanel): ف
      BACKUP_PATH           = /home/<نامِ کاربری>/vill3n-data/backups
      PUBLIC_URL            = https://<همان Application URL>
      TRUST_PROXY           = true
-     (و API_SECRET · OTP_SECRET · JWT_SECRET · ADMIN_BOOTSTRAP_USER · ADMIN_BOOTSTRAP_PASSWORD — بخشِ ۵ ِ docs/DEPLOY-ANYWHERE-fa.md)
+     (و API_SECRET · OTP_SECRET · JWT_SECRET · HESABPAY_CRED_KEY · ADMIN_BOOTSTRAP_USER · ADMIN_BOOTSTRAP_PASSWORD — بخشِ ۵ ِ docs/DEPLOY-ANYWHERE-fa.md)
+     ⛔ HESABPAY_CRED_KEY (حساب‌پیِ خودکارِ دکان‌ها): همان مقدارِ سرورِ پیشین (‎--account-env‎)؛ تازه ⇒ یک بار ‎openssl rand -hex 32‎ —
+        هرگز عوضش نکنید، وگرنه هر دکان کلیدِ حساب‌پی‌اش را دوباره می‌گذارد.
 ۴) «Run NPM Install» ⇐ «START APP» (یا RESTART).
 ۵) در پنل، پنجرهٔ «افزودنِ سرور» تا چند ثانیه «وصل شد ✓» می‌گوید. پس از آن VILL3N_JOIN_CODE را پاک کنید (دیگر لازم نیست).
 

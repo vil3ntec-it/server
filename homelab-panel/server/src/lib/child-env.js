@@ -20,6 +20,9 @@ export const PANEL_SECRET_ENV = Object.freeze([
   'OTP_SMS_PASS',
   'OTP_SMS_KEY',
   'MAIL_PASS',
+  //  کلیدِ رمزگذاریِ حساب‌پیِ دکان‌ها، اگر صاحب سرور در ‎.env‎ ِ پنل داده — فقط سرورِ حساب می‌گیردش (account/supervisor.js)
+  'HESABPAY_CRED_KEY',
+  'HESABPAY_CRED_KEY_PREVIOUS',
 ]);
 
 const SECRET_SET = new Set(PANEL_SECRET_ENV);

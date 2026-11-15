@@ -190,7 +190,7 @@ import (دادهٔ تمرین کنار می‌رود به `/data/.vmove-before-�
 **سرورِ حساب روی PostgreSQL (اختیاری):** `node scripts/move-db.js copy --from pglite:<پوشهٔ pg> --to postgres://…`
 (ریپوی shop). مقصد باید دیتابیسِ تازه باشد؛ همه در یک تراکنش؛ پس از کپی شمار، هشِ ردیف‌ها، جمعِ مبلغ‌ها و sequenceها
 مقایسه می‌شوند و یک اختلاف یعنی کدِ ۱. برگشت: همان دستور با جهتِ عکس (`--to pglite:<پوشهٔ تازه>`).
-رازهای سرورِ حساب (همان که در خانه بود، وگرنه همهٔ نشست‌ها باطل): `move-server.mjs import … --account-env account.env`.
+رازهای سرورِ حساب (همان که در خانه بود، وگرنه همهٔ نشست‌ها باطل و کلیدِ حساب‌پیِ هیچ دکانی خوانده نمی‌شود — `HESABPAY_CRED_KEY` هم در همین فایل است): `move-server.mjs import … --account-env account.env`.
 
 ### ۴.۱ فقط یک برنامه یا سایت به سرورِ دیگر (از ۱.۵۰.۹۵) — مثلاً «تانک‌تیل را از سرورِ خانه به VPS ببرم»
 
@@ -256,7 +256,8 @@ import (دادهٔ تمرین کنار می‌رود به `/data/.vmove-before-�
 1. File Manager: کدِ `server/` ِ ریپوی shop را در `~/shop-server` بگذارید.
 2. Setup Node.js App: Node 20 یا 22، Application root `shop-server`، startup file `src/index.js`، سپس «Run NPM Install».
 3. متغیرها (همان صفحه): `NODE_ENV=production` · `DATABASE_URL=pglite:/home/<کاربر>/shop-data/pg` · `BACKUP_PATH=/home/<کاربر>/shop-data/backups`
-   · `API_SECRET` / `OTP_SECRET` / `JWT_SECRET` / `ADMIN_BOOTSTRAP_USER` / `ADMIN_BOOTSTRAP_PASSWORD` (از `--account-env`ِ بخشِ ۴)
+   · `API_SECRET` / `OTP_SECRET` / `JWT_SECRET` / `HESABPAY_CRED_KEY` / `ADMIN_BOOTSTRAP_USER` / `ADMIN_BOOTSTRAP_PASSWORD` (از `--account-env`ِ بخشِ ۴؛
+   `HESABPAY_CRED_KEY` = حساب‌پیِ خودکارِ دکان‌ها — همان مقدارِ خانه، هرگز تازه نه، وگرنه هر دکان کلیدِ حساب‌پی‌اش را دوباره می‌گذارد)
    · `TRUST_PROXY=true` · `PUBLIC_URL=https://<دامنهٔ همان هاست>` · `SERVER_NAME`.
 4. داده: پوشهٔ `account-server/pg` و `account-server/backups` ِ خانه (یا خروجیِ `move-db.js copy --to pglite:…`) را در `~/shop-data` بگذارید؛
    با `node scripts/move-db.js inspect --db pglite:…` در ترمینالِ cPanel همان شمار و مبلغ را ببینید.

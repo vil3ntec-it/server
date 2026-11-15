@@ -401,6 +401,12 @@
 - ⛔ **مدیر از محیط**: فرزند `ADMIN_BOOTSTRAP_USER/PASSWORD` می‌گیرد و
   `stations/cloud.js` با همان وارد می‌شود (`managedAdminCreds`) — پس بخشِ
   «پمپ‌ها» بی هیچ تنظیمی وصل است. تنظیمِ صریحِ `HLP_ACCOUNT_ADMIN_*` جلوتر است.
+- ⛔ **(۱.۵۱.۳) HESABPAY_CRED_KEY را پنل یک بار می‌سازد، هرگز عوض نمی‌شود، با پشتیبانِ رازها می‌رود؛ گم شدنش یعنی هر دکان
+  کلیدِ حساب‌پی‌اش را دوباره بگذارد.** ۳۲ بایتِ تصادفی به ۶۴ hex در همان `secrets.json` (`hesabpayCredKey`) ⇐ محیطِ فرزند؛ بی آن
+  shop «حساب‌پیِ خودکار» را برای همهٔ دکان‌ها خاموش می‌کند. فایلِ خوانده‌نشده هرگز رونویسی نمی‌شود (خراب ⇒ `secrets.json.broken-*`)،
+  `move-server --account-env` و پشتیبانِ پنل می‌برندش، بستهٔ هاست فقط نامش را. `HESABPAY_CRED_KEY` ِ صریح در `.env` ِ پنل جلوتر است
+  (به سایت و ترمینال نمی‌رسد). صفحهٔ «سرورِ حساب ⇐ وضعیت» فقط حال را می‌گوید («حساب‌پیِ خودکار: آماده»)، هرگز مقدار.
+  آزمون: `test/hesabpay-cred-key.mjs` (قاعده با خودِ `lib/hesabpay-account.js` ِ shop، وب‌هوکِ خامِ بایت‌به‌بایت، نشتِ هیچ درِ GET).
 - ⛔ کدِ سرورِ حساب در این ریپو **نیست**: `windows-app.yml` ریپوی عمومیِ shop را
   کلون و بی dev نصب می‌کند و electron-builder آن را در `resources/account-server`
   می‌گذارد (`homelab-panel/account-server/` در `.gitignore`). لینوکس: symlink

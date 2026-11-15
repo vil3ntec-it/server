@@ -58,7 +58,7 @@ fs.mkdirSync(SRC, { recursive: true });
 write('vault.key', crypto.randomBytes(32));
 write('local-admin.key', 'k'.repeat(48));
 write('push-keys.json', JSON.stringify({ publicKey: 'pub', privateKey: 'priv' }));
-write('account-server/secrets.json', JSON.stringify({ apiSecret: 'A'.repeat(43), otpSecret: 'O'.repeat(43), jwtSecret: 'J'.repeat(43), adminUser: 'admin', adminPassword: 'Pxyz' }));
+write('account-server/secrets.json', JSON.stringify({ apiSecret: 'A'.repeat(43), otpSecret: 'O'.repeat(43), jwtSecret: 'J'.repeat(43), adminUser: 'admin', adminPassword: 'Pxyz', hesabpayCredKey: 'c'.repeat(64) }));
 write('account-server/pg/base/1/1259', crypto.randomBytes(200_000)); //  فایلِ دیتابیسِ PGlite (دودویی)
 write('account-server/pg/PG_VERSION', '17\n');
 write('account-server/backups/accounts/pump/t1/cloud-1.bin', crypto.randomBytes(5000)); //  پشتیبانِ ابریِ مشتری
@@ -186,6 +186,7 @@ try {
   check(`${imp.remapped} نشانی برگشت (۳ مورد: sites_root، scan_roots[0]، ردیفِ سایت)`, imp.remapped === 3, String(imp.remapped));
   const envText = fs.readFileSync(path.join(tmp, 'account.env'), 'utf8');
   check('رازهای سرورِ حساب برای سرورِ جدا، همان مقدارها', envText.includes(`API_SECRET=${'A'.repeat(43)}`) && envText.includes('ADMIN_BOOTSTRAP_USER=admin'));
+  check('… و کلیدِ حساب‌پیِ دکان‌ها همان (۱.۵۱.۳)', envText.includes(`HESABPAY_CRED_KEY=${'c'.repeat(64)}`));
   if (process.platform !== 'win32') check('فایلِ رازها ۶۰۰', (fs.statSync(path.join(tmp, 'account.env')).mode & 0o777) === 0o600);
   check('پوشهٔ موقت پاک شد', !fs.readdirSync(DEST).some((n) => n.startsWith('.vmove-')));
 

@@ -11,7 +11,7 @@
 //  دیتابیسش PGlite است — PostgreSQL داخلِ همان Node، با پوشه‌ای در پوشهٔ داده.
 //  هیچ نصبی لازم نیست؛ تونل ⇒ درگاه ⇒ همین پروسه.
 //
-//  ⛔ رازها (API_SECRET، OTP_SECRET، JWT_SECRET) و نام و رمزِ مدیر یک بار
+//  ⛔ رازها (API_SECRET، OTP_SECRET، JWT_SECRET، HESABPAY_CRED_KEY) و نام و رمزِ مدیر یک بار
 //  ساخته می‌شوند و در <dataDir>/account-server/secrets.json می‌نشینند (۰۶۰۰).
 //  همان مدیر برای ورودِ خودکارِ پلِ «پمپ‌ها» (stations/cloud.js) به کار می‌رود،
 //  پس هیچ چیزی دستی تنظیم نمی‌شود. اگر صاحب سرور HLP_ACCOUNT_ADMIN_USER/PASSWORD
@@ -58,6 +58,8 @@ let crashes = 0;
 let lastCrash = null;
 let backoffTimer = null;
 let lastError = '';
+/** حالِ `HESABPAY_CRED_KEY` ای که فرزندِ روشن با آن بالا آمد ('ok' | 'weak' | 'missing') — هرگز خودِ کلید */
+let childHesabpay = null;
 
 /**
  * پوشهٔ کدِ سرورِ حساب.
@@ -117,30 +119,89 @@ function announce(text) {
 const genSecret = () => crypto.randomBytes(32).toString('base64url');
 /** رمزی که قاعدهٔ خودِ سرورِ حساب را بگذراند (دستِ‌کم ۸، نه همه‌رقم). */
 const genPassword = () => `P${crypto.randomBytes(18).toString('base64url')}`;
+/** کلیدِ رمزگذاریِ حساب‌پیِ دکان‌ها: ۳۲ بایتِ تصادفی به ۶۴ رقمِ hex — قالبی که shop آن را بی‌درنگ همان ۳۲ بایت می‌خواند. */
+const genCredKey = () => crypto.randomBytes(32).toString('hex');
+
+/**
+ * حالِ یک `HESABPAY_CRED_KEY` به همان قاعدهٔ سرورِ حساب — shop ‎`server/src/lib/hesabpay-account.js`‎ ⇐ `keyFrom` و
+ * `credKeyState` (کپیِ دقیق؛ ‎test/hesabpay-cred-key.mjs‎ با خودِ آن فایل می‌سنجد):
+ *   خالی ⇒ 'missing' · ۶۴ hex یا base64/base64url ِ ۳۲ بایت یا هر متنِ ≥ ۳۲ نویسه ⇒ 'ok' · کوتاه‌تر ⇒ 'weak'.
+ * فقط حال؛ خودِ کلید هرگز برنمی‌گردد.
+ */
+export function hesabpayCredKeyState(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return 'missing';
+  if (/^[0-9a-fA-F]{64}$/.test(s)) return 'ok';
+  if (/^[A-Za-z0-9+/]{43}=$/.test(s) || /^[A-Za-z0-9_-]{43}$/.test(s)) {
+    if (Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64').length === 32) return 'ok';
+  }
+  return s.length >= 32 ? 'ok' : 'weak';
+}
+
+/**
+ * ‎secrets.json‎ ِ موجود — نبودِ فایل ⇒ {}. ⛔ فایلی که هست ولی خوانده نمی‌شود هرگز با رازهای تازه رونویسی نمی‌شود
+ * (کلیدِ حساب‌پی که عوض شود کلیدهای ذخیره‌شدهٔ همهٔ دکان‌ها خوانده نمی‌شوند): قفل/دسترسی ⇒ خطا و فرزند روشن نمی‌شود؛
+ * خراب (نیمه‌نوشته) ⇒ کنار گذاشته می‌شود، نه پاک، تا بشود کلیدها را از آن برگرداند.
+ */
+function readSecretsFile(file) {
+  let raw;
+  try { raw = fs.readFileSync(file, 'utf8'); } catch (e) {
+    if (e.code === 'ENOENT') return {};
+    throw new Error(`secrets.json ِ سرورِ حساب خوانده نشد (${e.code || e.message}) — تا رازها عوض نشوند، سرورِ حساب روشن نمی‌شود`);
+  }
+  try {
+    const j = JSON.parse(raw);
+    if (j && typeof j === 'object' && !Array.isArray(j)) return j;
+  } catch { /* پایین */ }
+  const aside = `${file}.broken-${Date.now()}`;
+  fs.renameSync(file, aside);
+  push('warn', `secrets.json خراب بود و کنار گذاشته شد (${path.basename(aside)})؛ رازهای تازه ساخته شد — اگر پشتیبان دارید، از آن برگردانید`);
+  return {};
+}
 
 /**
  * رازهای پایدارِ سرورِ حساب — یک بار ساخته، همیشه همان.
  *
- * ⚠️ عوض شدنِ API_SECRET یعنی همهٔ نشست‌های همهٔ برنامه‌ها بی‌اعتبار، پس
- * فایل هیچ‌وقت بازنویسی نمی‌شود؛ فقط کلیدِ نبوده اضافه می‌شود.
+ * ⚠️ عوض شدنِ API_SECRET یعنی همهٔ نشست‌های همهٔ برنامه‌ها بی‌اعتبار، و عوض شدنِ
+ * HESABPAY_CRED_KEY یعنی کلیدِ حساب‌پیِ هیچ دکانی دیگر خوانده نمی‌شود؛ پس هیچ
+ * مقدارِ موجودی بازنویسی نمی‌شود، فقط کلیدِ نبوده اضافه می‌شود (نوشتن اتمی: موقت ⇐ rename).
  */
 export function ensureSecrets() {
   const dir = accountDataDir();
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, 'secrets.json');
-  let cur = {};
-  try { cur = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { cur = {}; }
+  const cur = readSecretsFile(file);
+  //  نخستین بار و با کلیدِ صریحِ درستِ صاحب سرور در محیطِ پنل ⇒ همان نگه داشته می‌شود (پشتیبان و جابه‌جایی با آن)
+  const explicit = String(process.env.HESABPAY_CRED_KEY || '').trim();
   const next = {
+    ...cur,
     apiSecret: cur.apiSecret || genSecret(),
     otpSecret: cur.otpSecret || genSecret(),
     jwtSecret: cur.jwtSecret || genSecret(),
     adminUser: cur.adminUser || 'admin',
     adminPassword: cur.adminPassword || genPassword(),
+    hesabpayCredKey: cur.hesabpayCredKey || (hesabpayCredKeyState(explicit) === 'ok' ? explicit : genCredKey()),
   };
   if (JSON.stringify(next) !== JSON.stringify(cur)) {
-    fs.writeFileSync(file, JSON.stringify(next, null, 2), { encoding: 'utf8', mode: 0o600 });
+    const text = JSON.stringify(next, null, 2);
+    const tmp = `${file}.tmp-${process.pid}`;
+    fs.writeFileSync(tmp, text, { encoding: 'utf8', mode: 0o600 });
+    //  ویندوز: فایلی که برنامهٔ دیگری (ضدویروس) باز نگه داشته جای‌گزین نمی‌شود (EPERM) ⇒ همان نوشتنِ درجای پیشین
+    try { fs.renameSync(tmp, file); } catch {
+      fs.writeFileSync(file, text, { encoding: 'utf8', mode: 0o600 });
+      fs.rmSync(tmp, { force: true });
+    }
   }
   return next;
+}
+
+/**
+ * کلیدی که فرزند می‌گیرد: `HESABPAY_CRED_KEY` ِ صریح در محیطِ خودِ پنل (‎.env‎ ِ پنل — همان راهِ `LICENSE_PRIVATE_KEY`،
+ * که پیش از این هم به فرزند می‌رسید) جلوتر است؛ وگرنه همانی که ناظر یک بار ساخته.
+ */
+function hesabpayKeyOf(s) {
+  const explicit = String(process.env.HESABPAY_CRED_KEY || '').trim();
+  return explicit ? { key: explicit, source: 'env' } : { key: s.hesabpayCredKey, source: 'managed' };
 }
 
 /**
@@ -207,6 +268,8 @@ export function accountChildEnv(dir = resolveAccountDir()) {
     API_SECRET: s.apiSecret,
     OTP_SECRET: s.otpSecret,
     JWT_SECRET: s.jwtSecret,
+    //  حساب‌پیِ خودکارِ هر دکان: کلیدِ پذیرنده و رازِ وب‌هوکِ هر دکان با همین کلید رمز می‌شوند (shop lib/hesabpay-account.js)
+    HESABPAY_CRED_KEY: hesabpayKeyOf(s).key,
     //  IPِ واقعی از درگاهِ همین پنل می‌آید (X-Forwarded-For)
     TRUST_PROXY: 'true',
     //  HTTPS کارِ تونل است
@@ -303,10 +366,27 @@ export function accountStatus() {
     //  ⚠️ فقط از این مسیر (پورتِ پنل، پشتِ ورودِ مدیر) دیده می‌شود. تا پیش
     //  از این نام و رمزِ خودساخته فقط در secrets.json بود و صاحبِ سامانه
     //  هیچ راهی نداشت با اپِ مدیریت وارد سرورِ حسابِ خودش شود.
-    admin: adminInfo(),
+    //  (secrets.json ِ خوانده‌نشده ⇒ null، نه ۵۰۰ ِ صفحهٔ وضعیت — دلیلش در lastError/لاگ)
+    admin: (() => { try { return adminInfo(); } catch { return null; } })(),
     //  کدهای ثبت‌نام از رباتِ ایمیلِ پنل می‌روند؟
     mail: Object.keys(mailEnvForChild()).length > 0,
+    //  «حساب‌پیِ خودکار» ِ دکان‌ها — فقط حال، هرگز کلید
+    hesabpay: hesabpayInfo(),
   };
+}
+
+/**
+ * «حساب‌پیِ خودکار» روی سرورِ حسابی که همین ناظر بالا می‌آورد. ⇐ ‎{ ready, state, running, source }‎ یا null
+ * (ناظر خاموش/سرورِ حساب نصب نیست — سرورِ بیرونی کلیدِ خودش را دارد). روشن ⇒ حالِ همان کلیدی که فرزند با آن بالا آمد؛
+ * خاموش ⇒ حالِ کلیدی که با روشن شدن می‌گیرد. ⛔ نه کلید، نه حتی بخشی از آن.
+ */
+function hesabpayInfo() {
+  if (!config.accountApi?.enabled || !config.accountApi?.autostart || !resolveAccountDir()) return null;
+  let next;
+  try { next = hesabpayKeyOf(ensureSecrets()); } catch { return { ready: false, state: 'unreadable', running: !!child, source: null }; }
+  const running = !!child && !child.killed;
+  const state = running ? (childHesabpay || 'missing') : hesabpayCredKeyState(next.key);
+  return { ready: running && state === 'ok', state, running, source: next.source };
 }
 
 /** نام و رمزِ مدیرِ سرورِ حساب، و این‌که از کجا آمده — یا null اگر ناظر خاموش است. */
@@ -338,7 +418,13 @@ export function startAccountServer() {
 
   stopping = false;
   const entry = path.join(dir, 'src', 'index.js');
-  const env = { ...process.env, ...accountChildEnv(dir) };
+  let env;
+  //  ⛔ رازها خوانده نشد (secrets.json قفل/بی‌دسترسی) ⇒ روشن نمی‌شود، نه با رازهای تازه
+  try { env = { ...process.env, ...accountChildEnv(dir) }; } catch (e) {
+    lastError = e.message;
+    push('error', e.message);
+    return { ok: false, reason: e.message };
+  }
   //  رازهای خودِ پنل به فرزند نروند
   for (const k of Object.keys(env)) if (/^HLP_/.test(k)) delete env[k];
 
@@ -354,6 +440,7 @@ export function startAccountServer() {
   startedAt = Date.now();
   lastError = '';
   childPublicUrls = env.PUBLIC_BASE_URLS || '';
+  childHesabpay = hesabpayCredKeyState(env.HESABPAY_CRED_KEY);
   announce(`سرورِ حساب روشن شد (پورت ${env.PORT}، دیتابیس PGlite در ${accountDataDir()}) — از api.<دامنه> رد می‌شود`);
   logEvent('info', 'account', `سرورِ حساب روشن شد روی پورت ${env.PORT}`);
 
@@ -379,6 +466,7 @@ export function startAccountServer() {
     const was = child;
     child = null;
     startedAt = 0;
+    childHesabpay = null;
     if (stopping) { push('info', 'سرورِ حساب خاموش شد'); return; }
     lastError = `پروسه بسته شد (کد ${code ?? signal})`;
     crashes++;
