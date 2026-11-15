@@ -38,7 +38,7 @@ homelab-panel/server/src/
 │     ├─ index.js          ← شناسنامه + mount(router, deps): همهٔ درهای ماژول‌دارِ /console/* به همان ترتیبِ پیشین
 │     ├─ host.js           ← ⛔ تنها درِ ماژول به پنل
 │     ├─ routes/           ← console-shell · market · ops · staff · image-bank · holidays · image-changes · synonyms ·
-│     │                       support-access · parity (+ GET /console/release/beta) · account-finance
+│     │                       support-access · parity (+ GET /console/release/beta) · push (۱.۵۱.۲، اعلانِ گوشی) · account-finance
 │     └─ console/          ← modules.js (فهرستِ ۱۶ زیرماژول و minRole) · summaries.js (کارت‌های داشبورد)
 └─ routes/account-admin.js ← پلِ سرورِ حساب؛ ماژول را فقط با mountModules و MODULE_CAPABILITIES می‌شناسد
 ```

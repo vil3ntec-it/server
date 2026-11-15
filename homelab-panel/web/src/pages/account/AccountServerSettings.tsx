@@ -13,6 +13,7 @@
 //     (`passSet` / `keyHint`)، و خالی فرستادنِ رمز یعنی «دست نزن».
 // ---------------------------------------------------------------------------
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { AppWindow, KeyRound, Mail, MessageSquare, ScrollText, Smartphone } from 'lucide-react';
 
 import { api } from '../../api';
@@ -287,13 +288,14 @@ export function AccountSmsPush() {
           <div className="grid gap-2 sm:grid-cols-2">
             <KV label="روشن؟">{push.data?.push?.enabled ? 'بله' : 'نه'}</KV>
             <KV label="پروژه">{String(push.data?.push?.project ?? '—')}</KV>
-            <KV label="دستگاه‌های ثبت‌شده">{fa(Number(push.data?.push?.tokens ?? 0))}</KV>
+            {/* ⛔ (۱.۵۱.۲) سرورِ حساب ‎devices‎ می‌دهد؛ ‎tokens‎ هرگز نبود و این‌جا همیشه «۰» دیده می‌شد */}
+            <KV label="دستگاه‌های ثبت‌شده">{push.data?.push?.devices === undefined ? '—' : fa(Number(push.data.push.devices))}</KV>
+            <KV label="کلید گذاشته شده؟">{push.data?.push?.configured ? 'بله' : 'نه'}</KV>
           </div>
         )}
-        <Notice tone="warn">
-          ⚠️ سرور آمادهٔ فرستادنِ پوش است، ولی <b>هنوز هیچ برنامه‌ای توکنِ پوشش را ثبت نمی‌کند</b> —
-          پس «برنامه بسته باشد و پیام برسد» تا آن روز روی گوشی دیده نمی‌شود. خبر روی سرور می‌نشیند و
-          با باز شدنِ برنامه دیده می‌شود.
+        <Notice tone="info">
+          گذاشتنِ کلیدِ Firebase و روشن کردنِ پوش:{' '}
+          <Link className="underline" to="/shop?tab=settings&card=push">فروشگاه ← تنظیماتِ مرکزی و پرچم‌ها ← اعلانِ گوشی (Firebase)</Link>
         </Notice>
       </Card>
     </div>

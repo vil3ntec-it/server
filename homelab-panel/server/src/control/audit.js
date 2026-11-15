@@ -7,7 +7,8 @@ import { db } from '../db.js';
 import { archiveAndPrune } from '../lib/audit-archive.js';
 
 /** کلیدهایی که اگر در detail باشند، مقدارشان نوشته نمی‌شود */
-const SENSITIVE = /^(password|pass|pwd|otp|token|secret|api[_-]?key|authorization|cookie|private[_-]?key|value)$/i;
+//  ‎serviceAccount‎ (۱.۵۱.۲): کلیدِ Firebase ِ «اعلانِ گوشی» — درِ خودش آن را در دفتر نمی‌گذارد؛ این کمربندِ دوم است
+const SENSITIVE = /^(password|pass|pwd|otp|token|secret|api[_-]?key|authorization|cookie|private[_-]?key|service[_-]?account|value)$/i;
 
 export function scrub(value, depth = 0) {
   if (value == null || depth > 6) return value;

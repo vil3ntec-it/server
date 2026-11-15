@@ -354,7 +354,9 @@ app.use((req, res, next) => {
   // گزارشِ Agent باید خام بماند تا امضایش قابلِ سنجش باشد
   if (req.path.startsWith('/api/control/agent')) return next();
   // پیام‌رسان سقفِ خودش را دارد تا پیام‌های بلند رد نشوند
-  const limit = req.path.startsWith('/api/messenger') ? MSG_LIMIT : '5mb';
+  // «اعلانِ گوشی» (۱.۵۱.۲): کلیدِ Firebase حدودِ ۲٫۳ کیلوبایت است ⇒ سقفِ تنگِ ۶۴ کیلوبایت (‎modules/shop/routes/console-push.js‎؛
+  // بی‌حساسیت به بزرگی/کوچکی و «/» ِ آخر، مثلِ مسیریابیِ اکسپرس — راهِ دور زدنِ سقف نماند)
+  const limit = req.path.startsWith('/api/messenger') ? MSG_LIMIT : /^\/api\/account-admin\/console\/push\/?$/i.test(req.path) ? '64kb' : '5mb';
   express.json({ limit })(req, res, next);
 });
 

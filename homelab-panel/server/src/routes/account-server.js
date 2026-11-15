@@ -16,6 +16,7 @@ import {
 import { probeAccountServer } from '../api/account-proxy.js';
 import { check as checkBundle, start as startBundle, progress as bundleProgress } from '../account/updater.js';
 import { cloudStatus } from '../stations/cloud.js';
+import { adminWebInfo, checkAdminWeb } from '../account/admin-web.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -61,6 +62,34 @@ router.post('/admin-password/reveal', requireRole('admin'), (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json({ ok: true, username: st.admin.username, password: st.admin.password, source: st.admin.source });
   });
+});
+
+/**
+ * «پنلِ مدیرِ سرور» (۱.۵۱.۲): نشانیِ عمومیِ ‎/admin/‎ ِ سرورِ حساب از تنظیمِ خودِ پنل (‎PUBLIC_BASE_URLS‎، بی دامنهٔ
+ * نوشته‌شده در کد) و نامِ کاربریِ مدیرش — همان چیزی که ‎GET /status‎ به همین نقش‌ها می‌دهد (رمز نه؛ آن فقط از
+ * ‎POST /admin-password/reveal‎). بی شبکه، برای دکمه و منوی کناریِ فروشگاه.
+ */
+router.get('/admin-web', (req, res) => {
+  const st = accountStatus();
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    ...adminWebInfo(),
+    admin: st.admin ? { username: st.admin.username, source: st.admin.source, passwordSet: Boolean(st.admin.password) } : null,
+  });
+});
+
+/**
+ * «باز می‌شود؟» — یک ‎GET‎ ِ کوتاه از همین کامپیوتر به همان نشانی (بی کوکی و بی ورود) و دلیلِ روشن
+ * (`account/admin-web.js` ⇐ `classifyAdminWeb`). ۳۰ ثانیه نگه داشته؛ ‎?fresh=1‎ ⇒ از نو (نه زودتر از ۵ ثانیه).
+ */
+router.get('/admin-web/check', async (req, res) => {
+  try {
+    const out = await checkAdminWeb({ fresh: req.query.fresh === '1' });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(out);
+  } catch {
+    res.status(500).json({ error: 'check_failed', message: 'سنجش انجام نشد' });
+  }
 });
 
 /** آخرین سطرهای لاگِ خودِ سرورِ حساب */

@@ -8,10 +8,12 @@
 //    • رمز فقط اگر پرچمِ پرخطری در دسته است **و** «حالتِ تغییر» بسته است؛ پس از آن ۱۵ دقیقه (لغزان، سقفِ ۶۰) بی رمز.
 //    • نوشتنِ تأیید فقط برای «همهٔ دکان‌ها» یا پرچمِ پرخطر (یک پرچم ⇒ نامش، چند ⇒ scope)؛ یک دکان ⇒ فقط خلاصه.
 //    • شرحِ فارسی درشت، کلید کوچک و فرعی؛ جست‌وجو در هر دو.
+//  ۱.۵۱.۲: ‎only‎ ⇒ همین کارت برای چند پرچمِ معین (زیرِ «اعلانِ گوشی»: ‎shop.device_push‎ و ‎shop.order_notify‎) — همان دامنه، همان
+//  «حالتِ تغییر»، همان دسته و پنجرهٔ ذخیره؛ کلیدها از اول فعال‌اند (بی «ویرایش») و جست‌وجو نیست.
 //  ⛔ مرز همان سرور است (‎server/src/modules/shop/routes/console-shell.js‎): نقش، احراز، پنجره، همه یا هیچ و دفتر. این‌جا
 //     فقط از پیش می‌داند چه بخواهد (‎flagRisky‎ / ‎flagConfirmPhrase‎ ِ ‎consoleData.ts‎ — همان قاعدهٔ سرور، سنجیده).
 // ---------------------------------------------------------------------------
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Flag, LockOpen, Pencil, RotateCcw, Search, ShieldAlert, X } from 'lucide-react';
 
@@ -51,7 +53,7 @@ type Pending = Map<string, FlagChange>;
 
 /* ───────────────────────── «حالتِ تغییر» ───────────────────────── */
 
-function useSudo(enabled: boolean) {
+export function useSudo(enabled: boolean) {
   const [state, setState] = useState<{ s: FlagSudo; at: number } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const reload = useCallback(async () => {
@@ -71,10 +73,10 @@ function useSudo(enabled: boolean) {
   return { open: Boolean(state?.s.open) && left !== 0, left, reload, set };
 }
 
-function SudoBanner({ left, onClose }: { left: number | null; onClose: () => void }) {
+export function SudoBanner({ left, onClose, testid = 'flags' }: { left: number | null; onClose: () => void; testid?: string }) {
   const tx = useTx();
   return (
-    <div role="status" data-testid="flags-sudo" className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-sm"
+    <div role="status" data-testid={`${testid}-sudo`} className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-sm"
          style={{ borderColor: 'color-mix(in srgb, var(--status-good) 40%, transparent)', background: 'color-mix(in srgb, var(--status-good) 9%, transparent)' }}>
       <LockOpen size={16} style={{ color: 'var(--status-good)' }} />
       <span className="min-w-0 flex-1 font-medium">
@@ -100,19 +102,27 @@ function Switch({ on, label, onToggle, disabled }: { on: boolean; label: string;
 
 /* ───────────────────────── کارت ───────────────────────── */
 
-export default function FlagsCard() {
+export default function FlagsCard({ only, title: titleProp, intro, testid = 'flags' }: {
+  /** فقط همین کلیدها (به همین ترتیب)؛ نبود ⇒ همهٔ پرچم‌های شناختهٔ روشن/خاموش */
+  only?: readonly string[];
+  title?: string;
+  intro?: ReactNode;
+  /** پیشوندِ ‎data-testid‎ — دو کارت در یک صفحه با هم قاطی نشوند */
+  testid?: string;
+} = {}) {
   const tx = useTx();
   const { can } = useApp();
   const admin = can('admin');
-  const title = tx('پرچم‌ها', 'Flags', 'بیرغونه');
+  const title = titleProp || tx('پرچم‌ها', 'Flags', 'بیرغونه');
   const icon = <Flag size={15} />;
+  const quick = Array.isArray(only) && only.length > 0;
 
   const [recent, setRecent] = useState<string[]>(readRecent);
   const [scope, setScope] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
   const [other, setOther] = useState('');
   const [q, setQ] = useState('');
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(quick);
   const [pending, setPending] = useState<Pending>(() => new Map());
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState('');
@@ -141,15 +151,17 @@ export default function FlagsCard() {
     const itemsOf = (d: Flags | Unavailable | null) => (d && !isUnavailable(d) && Array.isArray(d.items) ? d.items : []);
     const allItems = itemsOf(all.data);
     const own = scope === 'all' ? allItems : itemsOf(scoped.data);
-    return known.filter((k) => (scope === 'all' ? k.scope === 'shop' || k.scope === 'all' : ID_RE.test(scope) && !['security', 'ops'].includes(scope) ? k.scope === 'shop' : k.scope === scope))
+    const inScope = known.filter((k) => (scope === 'all' ? k.scope === 'shop' || k.scope === 'all' : ID_RE.test(scope) && !['security', 'ops'].includes(scope) ? k.scope === 'shop' : k.scope === scope));
+    const picked = quick ? only!.map((key) => inScope.find((k) => k.key === key)).filter((k): k is KnownFlag => Boolean(k)) : inScope;
+    return picked
       .map((k) => {
         const it = own.find((x) => x.key === k.key);
         const base = scope !== 'all' && k.scope === 'shop' ? allItems.find((x) => x.key === k.key) : undefined;
         const effective = it ? it.value === true : base ? base.value === true : k.default === true;
         return { k, it, base, effective, inherited: it ? 'set' : base ? 'all' : 'default' } as Row;
       });
-  }, [scope, known, all.data, scoped.data]);
-  const visible = rows.filter((r) => flagMatches(r.k, q));
+  }, [scope, known, all.data, scoped.data, quick, only]);
+  const visible = quick ? rows : rows.filter((r) => flagMatches(r.k, q));
 
   const changeScope = (s: string) => {
     if (pending.size) return;
@@ -174,7 +186,7 @@ export default function FlagsCard() {
     if (next.get(r.k.key)?.reset) next.delete(r.k.key); else next.set(r.k.key, { key: r.k.key, reset: true });
     return next;
   });
-  const cancelEdit = () => { setPending(new Map()); setEditing(false); };
+  const cancelEdit = () => { setPending(new Map()); setEditing(quick); };
 
   const changes = [...pending.values()];
   const riskyKeys = scope ? changes.filter((c) => flagRisky(c.key, scope)).map((c) => c.key) : [];
@@ -186,7 +198,7 @@ export default function FlagsCard() {
       { n: fa(r.count), s: scope || '' }));
     toast(tx('{n} تغییر ذخیره شد', '{n} changes saved', '{n} بدلونونه خوندي شول', { n: fa(r.count) }));
     setPending(new Map());
-    setEditing(false);
+    setEditing(quick);
     setSaving(false);
     await Promise.all([all.reload(), scope && scope !== 'all' ? scoped.reload() : Promise.resolve(), sudo.reload()]);
   };
@@ -203,18 +215,19 @@ export default function FlagsCard() {
 
   return (
     <Card title={title} icon={icon}
-          action={admin && scope && !editing ? (
+          action={admin && scope && !editing && !quick ? (
             <button type="button" className="btn btn-sm" onClick={() => { setDone(''); setEditing(true); }}>
               <Pencil size={14} />{tx('ویرایش', 'Edit', 'سمول')}
             </button>
           ) : undefined}>
-      {admin && sudo.open && <SudoBanner left={sudo.left} onClose={async () => { try { sudo.set(await api<FlagSudo>(API.sudo, { method: 'DELETE' })); } catch (e) { toast(errText(e), 'bad'); } }} />}
+      {intro}
+      {admin && sudo.open && <SudoBanner testid={testid} left={sudo.left} onClose={async () => { try { sudo.set(await api<FlagSudo>(API.sudo, { method: 'DELETE' })); } catch (e) { toast(errText(e), 'bad'); } }} />}
 
       {/* دامنه و جست‌وجو */}
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         <label className="flex items-center gap-2 text-sm">
           <span className="shrink-0 text-ink-muted">{tx('برای', 'For', 'لپاره')}</span>
-          <select className="input w-full sm:w-64" value={selectValue} disabled={pending.size > 0} data-testid="flags-scope"
+          <select className="input w-full sm:w-64" value={selectValue} disabled={pending.size > 0} data-testid={`${testid}-scope`}
                   aria-label={tx('دامنهٔ پرچم‌ها', 'Flag scope', 'د بیرغونو ساحه')}
                   onChange={(e) => { if (e.target.value === '__other') setTouched(true); else changeScope(e.target.value); setOther(''); }}>
             {!scope && <option value="">{tx('— یک دکان را برگزینید —', '— Choose a shop —', '— یوه هټۍ وټاکئ —')}</option>}
@@ -237,11 +250,11 @@ export default function FlagsCard() {
             <button className="btn btn-sm" type="submit" disabled={!ID_RE.test(other.trim())}>{tx('نشان بده', 'Show', 'وښایه')}</button>
           </form>
         )}
-        <label className="relative flex-1 sm:min-w-[14rem]">
+        {!quick && <label className="relative flex-1 sm:min-w-[14rem]">
           <Search size={15} className="pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-muted" style={{ insetInlineStart: '0.65rem' }} />
           <input className="input w-full" style={{ paddingInlineStart: '2.1rem' }} type="search" value={q} onChange={(e) => setQ(e.target.value)}
                  placeholder={tx('جست‌وجوی پرچم (شرح یا کلید)…', 'Search flags (description or key)…', 'بیرغ لټول…')} aria-label={tx('جست‌وجوی پرچم', 'Search flags', 'بیرغ لټول')} />
-        </label>
+        </label>}
       </div>
       {pending.size > 0 && <p className="-mt-1 mb-2 text-xs text-ink-muted">{tx('برای عوض کردنِ دامنه، اول تغییرها را ذخیره یا لغو کنید.', 'Save or discard the pending changes to switch scope.', 'لومړی بدلونونه خوندي یا لغوه کړئ.')}</p>}
 
@@ -253,8 +266,8 @@ export default function FlagsCard() {
       {!scope ? (
         <StateEmpty>{tx('یک دکان را برگزینید (یا «همهٔ دکان‌ها») تا پرچم‌هایش را ببینید و عوض کنید.', 'Choose a shop (or “All shops”) to see and change its flags.', 'یوه هټۍ وټاکئ.')}</StateEmpty>
       ) : scope !== 'all' && scoped.error ? <Problem load={scoped as Load<unknown>} /> : scope !== 'all' && !scoped.data ? <StateLoading /> : (
-        <ul className="divide-y divide-line/70 overflow-hidden rounded-xl border border-line" data-testid="flags-list">
-          {visible.length === 0 && <li className="p-4 text-sm text-ink-muted">{q ? tx('پرچمی با این جست‌وجو نیست.', 'No flag matches.', 'هیڅ بیرغ ونه موندل شو.') : tx('در این دامنه پرچمِ روشن/خاموشی نیست.', 'No on/off flags in this scope.', 'په دې ساحه کې بیرغ نشته.')}</li>}
+        <ul className="divide-y divide-line/70 overflow-hidden rounded-xl border border-line" data-testid={`${testid}-list`}>
+          {visible.length === 0 && <li className="p-4 text-sm text-ink-muted">{quick ? tx('این پرچم‌ها در کاتالوگِ این سرورِ حساب نیستند — سرورِ حساب را به‌روز کنید.', 'These flags are not in this account server’s catalog — update the account server.', 'دا بیرغونه د دې حساب سرور په کتلاګ کې نشته.') : q ? tx('پرچمی با این جست‌وجو نیست.', 'No flag matches.', 'هیڅ بیرغ ونه موندل شو.') : tx('در این دامنه پرچمِ روشن/خاموشی نیست.', 'No on/off flags in this scope.', 'په دې ساحه کې بیرغ نشته.')}</li>}
           {visible.map((r) => {
             const p = pending.get(r.k.key);
             const shown = p ? (p.reset ? (r.base ? r.base.value === true : r.k.default === true) : p.value === true) : r.effective;
@@ -300,8 +313,8 @@ export default function FlagsCard() {
       )}
 
       {/* نوارِ «در انتظار» — فقط در ویرایش */}
-      {editing && admin && (
-        <div className="sticky bottom-0 mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface p-2.5 shadow-sm" data-testid="flags-pending">
+      {editing && admin && (!quick || pending.size > 0) && (
+        <div className="sticky bottom-0 mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface p-2.5 shadow-sm" data-testid={`${testid}-pending`}>
           <span className="flex-1 text-sm">
             {pending.size
               ? tx('{n} تغییر در انتظار', '{n} pending changes', '{n} بدلونونه په تمه', { n: fa(pending.size) })
@@ -314,11 +327,11 @@ export default function FlagsCard() {
         </div>
       )}
 
-      <p className="mt-2 text-[11px] text-ink-muted">{tx('فقط پرچم‌های شناختهٔ روشن/خاموش این‌جا عوض می‌شوند؛ فهرستِ کانالِ آزمایشی از «نسخه‌ها و انتشار». نوعِ مقدار و scope را سرورِ حساب هم می‌سنجد.', 'Only known on/off flags change here; the beta-channel lists change from “Versions & releases”. The account server validates type and scope too.', 'دلته یوازې پېژندل شوي روښانه/بند بیرغونه بدلېږي.')}</p>
+      {!quick && <p className="mt-2 text-[11px] text-ink-muted">{tx('فقط پرچم‌های شناختهٔ روشن/خاموش این‌جا عوض می‌شوند؛ فهرستِ کانالِ آزمایشی از «نسخه‌ها و انتشار». نوعِ مقدار و scope را سرورِ حساب هم می‌سنجد.', 'Only known on/off flags change here; the beta-channel lists change from “Versions & releases”. The account server validates type and scope too.', 'دلته یوازې پېژندل شوي روښانه/بند بیرغونه بدلېږي.')}</p>}
       {scope && <SourceLine source={`/api/admin/flags?scope=${scope}`} data={scope === 'all' ? all.data : scoped.data} at={scope === 'all' ? all.at : scoped.at} />}
 
       {saving && scope && (
-        <BatchDialog scope={scope} scopeLabel={scopeLabel(scope)} rows={rows} changes={changes} riskyKeys={riskyKeys}
+        <BatchDialog testid={testid} scope={scope} scopeLabel={scopeLabel(scope)} rows={rows} changes={changes} riskyKeys={riskyKeys}
                      sudoOpen={sudo.open} totpOn={totp.data?.enabled === true}
                      onClose={() => setSaving(false)} onDone={afterSave}
                      onUnknown={() => { void all.reload(); if (scope !== 'all') void scoped.reload(); }} />
@@ -329,8 +342,8 @@ export default function FlagsCard() {
 
 /* ───────────────────────── پنجرهٔ «ذخیرهٔ n تغییر» ───────────────────────── */
 
-function BatchDialog({ scope, scopeLabel, rows, changes, riskyKeys, sudoOpen, totpOn, onClose, onDone, onUnknown }: {
-  scope: string; scopeLabel: string; rows: Row[]; changes: FlagChange[]; riskyKeys: string[]; sudoOpen: boolean; totpOn: boolean;
+function BatchDialog({ testid, scope, scopeLabel, rows, changes, riskyKeys, sudoOpen, totpOn, onClose, onDone, onUnknown }: {
+  testid: string; scope: string; scopeLabel: string; rows: Row[]; changes: FlagChange[]; riskyKeys: string[]; sudoOpen: boolean; totpOn: boolean;
   onClose: () => void; onDone: (r: FlagBatchResult) => Promise<void>; onUnknown: () => void;
 }) {
   const tx = useTx();
@@ -379,7 +392,7 @@ function BatchDialog({ scope, scopeLabel, rows, changes, riskyKeys, sudoOpen, to
     <Modal open onClose={onClose} title={tx('ذخیرهٔ {n} تغییر', 'Save {n} changes', '{n} بدلونونه خوندي کړئ', { n: fa(changes.length) })}
            footer={<>
              <button className="btn" onClick={onClose}>{tx('انصراف', 'Cancel', 'لغوه')}</button>
-             <button className={wide || riskyKeys.length ? 'btn btn-danger' : 'btn btn-primary'} disabled={!ready || busy} onClick={send} data-testid="flags-save">
+             <button className={wide || riskyKeys.length ? 'btn btn-danger' : 'btn btn-primary'} disabled={!ready || busy} onClick={send} data-testid={`${testid}-save`}>
                {busy ? tx('در حالِ فرستادن…', 'Sending…', 'لېږل کېږي…') : tx('ذخیرهٔ {n} تغییر', 'Save {n} changes', '{n} بدلونونه خوندي کړئ', { n: fa(changes.length) })}
              </button>
            </>}>

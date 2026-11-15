@@ -9,9 +9,12 @@
 //   • حدها: سرورِ حساب امروز هیچ حدِ مرکزیِ تنظیم‌پذیری ندارد ⇒ صادقانه «پشتیبانی نمی‌شود».
 //   • تعطیلاتِ رسمی (۱.۵۰.۷۸، LOC-04، `holidays.v1`): `HolidaysCard.tsx`.
 //   • مترادف‌های جست‌وجو (۱.۵۰.۸۹، ۴-۱ «ب»، `synonyms.v1`): `SynonymsCard.tsx`.
+//   • «اعلانِ گوشی (Firebase)» (۱.۵۱.۲): `PushCard.tsx` — کلیدِ حسابِ سرویس و «روشن»، پشتِ «حالتِ تغییر»؛ زیرش همان `FlagsCard`
+//     فقط برای ‎shop.device_push‎ و ‎shop.order_notify‎؛ و `AdminWebCard.tsx` («پنلِ مدیرِ سرور»: دکمه، نام/رمز، «باز می‌شود؟»).
+//     لینکِ مستقیم: ‎?tab=settings&card=push‎ و ‎&card=admin‎ (منوی کناری و جست‌وجوی بخش).
 //  ⛔ مقدار همیشه از سرور؛ «نوشته نشده» با پیش‌فرضش کنارش، نه مقدارِ ساختگی. نتیجه «تأییدشده از سرورِ حساب».
 // ---------------------------------------------------------------------------
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CalendarClock, Gauge, Rocket } from 'lucide-react';
 
@@ -35,9 +38,11 @@ import {
   useTx,
 } from '../host';
 import { FlagHistoryCard, LiveConfigCard, Problem, SourceLine } from '../ShopConsole';
-import { CONSOLE, shown, type ReleaseBeta } from '../consoleData';
+import { CONSOLE, PUSH_FLAG_KEYS, shown, type ReleaseBeta } from '../consoleData';
 import type { ModuleProps } from './contract';
+import AdminWebCard from './AdminWebCard';
 import FlagsCard from './FlagsCard';
+import PushCard from './PushCard';
 import HolidaysCard from './HolidaysCard';
 import SynonymsCard from './SynonymsCard';
 
@@ -138,9 +143,32 @@ function LimitsCard() {
   );
 }
 
-export default function SettingsModule(_props: ModuleProps) {
+/** ‎?card=‎ ⇒ شناسهٔ همان کارت در صفحه */
+const CARD_IDS: Record<string, string> = { push: 'shop-push', admin: 'shop-admin-web' };
+
+export default function SettingsModule({ params, owner }: ModuleProps) {
+  const tx = useTx();
+  const card = params.get('card') || '';
+  //  لینکِ مستقیم از منو یا جست‌وجو ⇒ همان کارت جلوی چشم (پس از رسیدنِ داده، یک بار دیگر)
+  useEffect(() => {
+    const id = CARD_IDS[card];
+    if (!id) return undefined;
+    const go = () => document.getElementById(id)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    go();
+    const t = setTimeout(go, 600);
+    return () => clearTimeout(t);
+  }, [card]);
   return (
     <div className="space-y-4">
+      <div id="shop-push" className="scroll-mt-4 space-y-4">
+        <PushCard />
+        <FlagsCard only={PUSH_FLAG_KEYS} testid="pushflags"
+                   title={tx('کلیدهای اعلان در دکان‌ها', 'Notification switches for shops', 'په هټیو کې د خبرتیا کیلي')}
+                   intro={<p className="mb-3 text-xs leading-6 text-ink-muted">{tx('بی این دو، کلیدِ بالا تنهایی کافی نیست: «ثبتِ دستگاه» می‌گذارد گوشی‌های دکان نشانی‌شان را بدهند و «اعلانِ سفارش» خبرِ سفارشِ تازه را می‌فرستد. برای یک دکان یا «همهٔ دکان‌ها».', 'The key above is not enough alone: “device registration” lets the shop’s phones register, and “order alerts” sends new-order news. For one shop or “All shops”.', 'پورته کیلي یوازې بس نه ده؛ دا دوه هم روښانه کړئ.')}</p>} />
+      </div>
+      <div id="shop-admin-web" className="scroll-mt-4">
+        <AdminWebCard owner={owner} />
+      </div>
       <FlagsCard />
       <FlagHistoryCard />
       <HolidaysCard />

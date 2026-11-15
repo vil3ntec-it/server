@@ -309,6 +309,59 @@ export type ServiceKeyStatus = {
 };
 
 /** نشانیِ هر درِ پلِ کنسول — یک جا؛ صفحه نشانی را دستی نمی‌سازد. */
+/* ─────────────── «اعلانِ گوشی (Firebase)» (۱.۵۱.۲، ‎/console/push‎) ─────────────── */
+
+/** حالِ پوشیدهٔ پوش — همان فهرستِ سفیدِ ‎pushView‎ ِ سرور. ⛔ کلید هرگز در این شکل نیست. */
+export type PushView = { enabled: boolean; configured: boolean; source?: string; project?: string; account?: string;
+                         devices?: number | null; apns?: { configured?: boolean; env?: string; reason?: string } | null };
+export type PushRead = { push: PushView; fetchedAt?: number };
+export type PushSaved = { ok: true; push: PushView; confirmedByServer: boolean; sudo?: FlagSudo; fetchedAt?: number };
+/** دو پرچمِ همان کار در کاتالوگِ سرورِ حساب (shop ‎routes/admin-flags.js‎) — کارتِ کلیدهای زیرِ «اعلانِ گوشی» */
+export const PUSH_FLAG_KEYS: readonly string[] = ['shop.device_push', 'shop.order_notify'];
+/** همان سقفِ ‎PUSH_SA_MAX‎ ِ سرور (نویسه) */
+export const PUSH_SA_MAX = 60_000;
+
+/**
+ * متنِ فایلِ کلید درست است؟ ⇒ `null`؛ وگرنه کدِ مشکل — **همان قاعدهٔ** `checkServiceAccount` ِ سرور
+ * (‎server/src/modules/shop/routes/console-push.js‎؛ آزمونِ ‎console-push.mjs‎ یکی بودنشان را روی همان نمونه‌ها می‌سنجد).
+ */
+export function serviceAccountProblem(text: unknown): string | null {
+  if (typeof text !== 'string' || !text.trim()) return 'sa_empty';
+  if (text.length > PUSH_SA_MAX) return 'sa_too_large';
+  let sa: Record<string, unknown> | null;
+  try { sa = JSON.parse(text) as Record<string, unknown> | null; } catch { return 'sa_not_json'; }
+  if (!sa || typeof sa !== 'object' || Array.isArray(sa)) return 'sa_not_key';
+  if (sa.type !== 'service_account') return sa.project_info || sa.client ? 'sa_app_config' : 'sa_not_key';
+  const str = (v: unknown) => typeof v === 'string' && v.trim() !== '';
+  if (!str(sa.project_id) || !str(sa.client_email) || !str(sa.private_key) || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(sa.client_email))) return 'sa_incomplete';
+  if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(String(sa.project_id))) return 'sa_bad_project';
+  return null;
+}
+
+/** پروژه و حسابِ همان متن (برای «✓ کلیدِ پروژهٔ …») — فقط اگر درست است. ⛔ هرگز ‎private_key‎. */
+export function serviceAccountSummary(text: unknown): { project: string; account: string } | null {
+  if (serviceAccountProblem(text) !== null) return null;
+  const sa = JSON.parse(String(text)) as Record<string, unknown>;
+  return { project: String(sa.project_id), account: String(sa.client_email) };
+}
+
+/* ─────────────── «پنلِ مدیرِ سرور» (‎/api/account-server/admin-web‎) ─────────────── */
+
+export type AdminWebInfo = { host: string | null; url: string | null; auto?: boolean; others?: string[];
+                             admin?: { username: string; source?: string; passwordSet?: boolean } | null };
+export type AdminWebLocal = { tunnelMode?: string | null; tunnelRunning?: boolean | null; inTunnel?: boolean; protectedHost?: boolean;
+                              dnsRouted?: boolean; gateway?: boolean; accountManaged?: boolean | null; accountRunning?: boolean | null };
+export type AdminWebCheck = AdminWebInfo & { code: string; tone: 'good' | 'warn' | 'bad'; hints?: string[]; local?: AdminWebLocal;
+                                             http?: number | null; error?: string | null; errorCode?: string; health?: number | null;
+                                             ms?: number | null; checkedAt?: number };
+/** کجا درستش کنیم — راهِ همین پنل برای هر دلیل (نبود ⇒ `null`) */
+export function adminWebFixPath(code: string): string | null {
+  if (['no_domain', 'dns', 'route_missing', 'tunnel_quick', 'tunnel_down', 'tunnel_stopped', 'origin_down', 'admin_not_forwarded', 'not_found', 'dns_not_routed', 'protected_host'].includes(code)) return '/domains?tab=tunnel';
+  if (['tls', 'blocked', 'access'].includes(code)) return '/domains?tab=cloudflare';
+  if (['account_down', 'account_stopped', 'gateway_off'].includes(code)) return '/account-server?tab=status';
+  return null;
+}
+
 export const CONSOLE = {
   health: '/api/account-admin/console/system/health',
   providers: '/api/account-admin/console/system/providers',
@@ -326,6 +379,10 @@ export const CONSOLE = {
   flags: (scope = 'all') => `/api/account-admin/console/flags?scope=${encodeURIComponent(scope)}`,
   flagHistory: (key: string, before?: number | null, limit = 50) =>
     `/api/account-admin/console/flags/history?key=${encodeURIComponent(key)}&limit=${limit}${before ? `&before=${before}` : ''}`,
+  push: '/api/account-admin/console/push',
+  adminWeb: '/api/account-server/admin-web',
+  adminWebCheck: (fresh = false) => `/api/account-server/admin-web/check${fresh ? '?fresh=1' : ''}`,
+  adminPasswordReveal: '/api/account-server/admin-password/reveal',
   serviceKey: '/api/account-admin/console/service-key',
   serviceKeyRevoke: '/api/account-admin/console/service-key/revoke',
   accountAudit: (limit: number, shopId?: string) =>
