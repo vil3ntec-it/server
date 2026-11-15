@@ -142,6 +142,9 @@ for (const [method, p, want] of [
   ['GET', '/api/admin/system/notify-usage', false],
   ['GET', '/api/admin/accounts/shop/x/backups', false],
   ['DELETE', '/api/admin/accounts/shop/x/backups/b1', true],
+  //  ۱.۵۱.۲: کلیدِ پوش فقط ارشد؛ خواندنِ حالِ پوشیده مدیر
+  ['PUT', '/api/admin/push', true],
+  ['GET', '/api/admin/push', false],
 ]) {
   const r = shopRoleOf(method, p);
   check(`لنگر: ${method} ${p} ⇒ ${want ? 'فقط ارشد' : 'مدیر'}`, Boolean(r) && r.superOnly === want, r ? `${r.file} ${r.path} super=${r.superOnly}` : 'پیدا نشد');
@@ -362,6 +365,9 @@ const SPECIAL = {
   'PUT /api/account-admin/console/flags': { body: { scope: 'all', key: 'shop.receipt_v2', value: true, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, confirmKey: 'shop.receipt_v2', idempotencyKey: 'bridge-roles-flag-0001', password: 'Bridge-1405-roles' } },
   'POST /api/account-admin/console/flags/reset': { body: { scope: 'all', key: 'shop.receipt_v2', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, confirmKey: 'shop.receipt_v2', idempotencyKey: 'bridge-roles-flag-0002', password: 'Bridge-1405-roles' } },
   //  ۱.۵۱.۱: تغییرِ دسته‌ای — scope ِ «همه»، متنِ تأیید و رمزِ پنل تا مقصدِ «فقط ارشد» (‎PUT /api/admin/flags‎) واقعاً دیده شود
+  //  ۱.۵۱.۲: «اعلانِ گوشی» — کلیدِ ساختگیِ درست (همین لحظه) و رمزِ پنل تا مقصدِ «فقط ارشد» (‎PUT /api/admin/push‎) دیده شود
+  'PUT /api/account-admin/console/push': { body: { enabled: true, serviceAccount: JSON.stringify({ type: 'service_account', project_id: 'bridge-roles-push',
+    client_email: 'roles@bridge-roles-push.example', private_key: `TEST-ONLY-${Date.now().toString(36)}` }), password: 'Bridge-1405-roles' } },
   'POST /api/account-admin/console/flags/batch': { body: { scope: 'all', changes: [{ key: 'shop.receipt_v2', value: true }], reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, confirmText: 'shop.receipt_v2', idempotencyKey: 'bridge-roles-flag-0003', password: 'Bridge-1405-roles' } },
   //  ۴.۶ و ۴.۷: کارِ حساس با رمزِ همان admin (احرازِ دوباره) تا مقصدِ «فقط ارشد» واقعاً دیده و سنجیده شود
   'POST /api/account-admin/console/market/trust/cases/:id/assign': { body: { confirm: true, idempotencyKey: 'bridge-roles-trust-0001' } },
@@ -513,6 +519,7 @@ try {
   check('هر مسیرِ پل دستِ‌کم یک مقصد دارد — سنجه هیچ مسیری را کور رد نکرد',
     failures.unmapped.length === 0, failures.unmapped.join(' · '));
   check('مسیرهای محلیِ دلیل‌دار واقعاً به سرورِ حساب نمی‌روند', failures.localLeak.length === 0, failures.localLeak.join(' · '));
+  check('۱.۵۱.۲: درِ «اعلانِ گوشی» به مقصدِ «فقط ارشد» ِ ‎PUT /api/admin/push‎ رسید و سنجیده شد', superReached.has('PUT /api/admin/push'), [...superReached].join(' · '));
   check(`و سنجه دندان دارد: دستِ‌کم ده مقصدِ «فقط ارشد» از راهِ پل دیده و سنجیده شد (${superReached.size})`,
     superReached.size >= 10, [...superReached].join(' · '));
 } catch (e) {

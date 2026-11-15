@@ -14,6 +14,7 @@ import { mountConsoleHolidays } from './routes/console-holidays.js';
 import { mountConsoleImageChanges } from './routes/console-image-changes.js';
 import { mountConsoleSynonyms } from './routes/console-synonyms.js';
 import { mountConsoleParity } from './routes/console-parity.js';
+import { mountConsolePush } from './routes/console-push.js';
 import financeRoutes from './routes/account-finance.js';
 import { CONSOLE_MODULES } from './console/modules.js';
 
@@ -43,6 +44,8 @@ export function mount(router, deps) {
   mountConsoleSynonyms(router, { guard, badInput, actorOf, capListed, missingErr, unavailable });
   //  ۱.۵۰.۸۰ (S11): کانالِ آزمایشی، نشانیِ دانلود، مصرفِ پیام، پشتیبان‌های هر حساب
   mountConsoleParity(router, { guard, badInput, actorOf, isPanelOwner, reauthLimit, reauth, stamped });
+  //  ۱.۵۱.۲: «اعلانِ گوشی (Firebase)» — کلیدِ حسابِ سرویس و «روشن» ِ پوش، پشتِ «حالتِ تغییر»
+  mountConsolePush(router);
   //  ۴.۵ — مالیِ مرکزی
   router.use('/console/finance', financeRoutes);
 }

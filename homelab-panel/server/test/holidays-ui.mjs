@@ -51,6 +51,8 @@ const fake = http.createServer((req, res) => {
     const j = (code, obj) => { res.statusCode = code; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(obj)); };
     if (p === '/api/health') return j(200, { ok: true, server: 'online', version: '2.14.5' });
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
+    //  ۱.۵۱.۲: کارتِ «اعلانِ گوشی» در همان صفحه حالِ پوشیدهٔ پوش را می‌خواند
+    if (p === '/api/admin/push' && req.method === 'GET') return j(200, { push: { enabled: false, configured: false, source: '', project: '', account: '', devices: 0, apns: null } });
     if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: caps, serverTime: NOW });
     if (p === '/api/admin/calendar/holidays') {
       if (!caps.includes('holidays.v1')) return j(401, { error: { code: 'invalid_token', message: 'نشست' } });
@@ -173,7 +175,7 @@ try {
   await page.waitForTimeout(300);
   check('پنجرهٔ حساس: اثر پیش از تأیید گفته می‌شود (نسخه ⇒ سه روز، یکی افزوده) و بی دلیل بسته',
     await send.isDisabled() && (await page.locator('text=روزِ کاریِ همهٔ دکان‌ها').count()) > 0, '');
-  await page.locator('textarea').fill('اعلامِ رسمیِ امسال');
+  await page.locator('[role="dialog"] textarea').fill('اعلامِ رسمیِ امسال');   //  ۱.۵۱.۲: صفحه کادرِ کلیدِ «اعلانِ گوشی» را هم دارد
   await send.dblclick();
   await page.waitForTimeout(1500);
   text = await card(page).innerText();
@@ -189,7 +191,7 @@ try {
   await card(page).locator('[data-holiday-row="2"] button').click();   //  برداشتنِ ۲۰۲۸-۰۲-۲۹
   await card(page).locator('[data-holidays-save]').click();
   await page.waitForTimeout(300);
-  await page.locator('textarea').fill('روزِ نادرست برداشته شد');
+  await page.locator('[role="dialog"] textarea').fill('روزِ نادرست برداشته شد');
   await page.getByRole('button', { name: 'تأیید و فرستادن' }).click();
   await page.waitForTimeout(1200);
   text = await card(page).innerText();

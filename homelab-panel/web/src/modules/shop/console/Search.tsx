@@ -4,6 +4,7 @@
 //  ⛔ جست‌وجو در **سرور** است (‎/api/account-admin/console/search‎ ⇐ ‎/api/admin/search‎ ِ سرورِ حساب، به نقش) —
 //     مرورگر چیزی را برش نمی‌دهد. هر منبع جدا: یکی شکست بخورد یا نسخهٔ سرورِ حساب نداشته باشد، همان یکی با کدش
 //     «—»/«پشتیبانی نمی‌شود» است و بقیه می‌آیند. نتیجه پیوندِ مستقیم به جای خودش در همین بخش است.
+//  ۱.۵۱.۲: «میان‌بُرها» — چند کارتِ تنظیم که با واژه پیدا می‌شوند (پوش/Firebase، پنلِ مدیرِ سرور)؛ همین‌جا، بی سرور.
 // ---------------------------------------------------------------------------
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -17,6 +18,20 @@ type Source = { kind: string; module: string; ok: boolean; items?: Row[]; error?
 type Result = { q: string; results: Source[]; searchCapability: boolean; fetchedAt: number };
 
 const s = (x: unknown) => (x === null || x === undefined ? '' : String(x));
+
+/** کارت‌های تنظیم که با واژه پیدا می‌شوند — ‎?tab=settings&card=…‎ (‎SettingsModule.tsx‎) */
+const SHORTCUTS: { id: string; words: string[]; to: string }[] = [
+  { id: 'push', to: '/shop?tab=settings&card=push',
+    words: ['پوش', 'push', 'firebase', 'فایربیس', 'فایر بیس', 'fcm', 'اعلان', 'نوتیف', 'notification', 'service account', 'کلید سرویس', 'کلیدِ سرویس', 'خبرتیا'] },
+  { id: 'admin', to: '/shop?tab=settings&card=admin',
+    words: ['/admin', 'admin', 'ادمین', 'پنل مدیر', 'پنلِ مدیر', 'مدیر سرور', 'مدیرِ سرور', 'api.'] },
+];
+const norm = (v: string) => v.toLowerCase().replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/[\u200c\u200f\u200e]/g, ' ').replace(/\s+/g, ' ').trim();
+export function shortcutsFor(q: string): { id: string; to: string }[] {
+  const n = norm(q);
+  if (n.length < 2) return [];
+  return SHORTCUTS.filter((x) => x.words.some((w) => norm(w).includes(n) || n.includes(norm(w))));
+}
 
 function kindLabel(tx: Tx, kind: string) {
   switch (kind) {
@@ -84,6 +99,10 @@ export default function ConsoleSearch() {
   }, []);
 
   const total = res ? res.results.reduce((n, x) => n + (x.ok && x.items ? x.items.length : 0), 0) : 0;
+  const shortcuts = shortcutsFor(q);
+  const shortcutName = (id: string) => (id === 'push'
+    ? tx('اعلانِ گوشی (Firebase) — کلید و «روشن»', 'Phone notifications (Firebase) — key and “On”', 'د ګوشي خبرتیا (Firebase)')
+    : tx('پنلِ مدیرِ سرور — نشانی، نام و رمز، «باز می‌شود؟»', 'Server admin panel — address, login, reachability', 'د سرور د مدیر پینل'));
   return (
     <div ref={box} className="relative w-full sm:w-80" onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false); }}>
       <label className="sr-only" htmlFor="shop-console-search">{tx('جست‌وجو در بخشِ فروشگاه', 'Search the Shop section', 'په هټۍ برخه کې لټون')}</label>
@@ -101,12 +120,23 @@ export default function ConsoleSearch() {
       </div>
       {open && q.trim().length >= 1 && (
         <div className="card absolute z-40 mt-1 max-h-[70vh] w-full overflow-y-auto p-2 text-sm shadow-lg sm:w-[28rem]" style={{ insetInlineEnd: 0 }} role="listbox">
+          {shortcuts.length > 0 && (
+            <div className="mb-1" data-testid="search-shortcuts">
+              <p className="px-2 pt-1 text-[11px] font-semibold text-ink-muted">{tx('میان‌بُرها', 'Shortcuts', 'لنډې لارې')}</p>
+              {shortcuts.map((x) => (
+                <Link key={x.id} to={x.to} onClick={() => setOpen(false)}
+                      className="block rounded-lg px-2 py-1.5 hover:bg-surface-raised focus:bg-surface-raised focus:outline-none">
+                  <span className="block truncate">{shortcutName(x.id)}</span>
+                </Link>
+              ))}
+            </div>
+          )}
           {q.trim().length < 2 ? <p className="p-2 text-xs text-ink-muted">{tx('دستِ‌کم دو نویسه', 'At least two characters', 'لږ تر لږه دوه توري')}</p>
             : busy && !res ? <p className="p-2 text-xs text-ink-muted">{tx('در حالِ جست‌وجو…', 'Searching…', 'لټون کېږي…')}</p>
             : err ? <p className="p-2 text-xs" style={{ color: 'var(--status-critical)' }}>{err}</p>
             : res && (
               <>
-                {total === 0 && <p className="p-2 text-xs text-ink-muted">{tx('چیزی پیدا نشد', 'Nothing found', 'هیڅ ونه موندل شو')}</p>}
+                {total === 0 && !shortcuts.length && <p className="p-2 text-xs text-ink-muted">{tx('چیزی پیدا نشد', 'Nothing found', 'هیڅ ونه موندل شو')}</p>}
                 {res.results.map((src) => (
                   <div key={src.kind} className="mb-1">
                     <p className="px-2 pt-1 text-[11px] font-semibold text-ink-muted">{kindLabel(tx, src.kind)}</p>

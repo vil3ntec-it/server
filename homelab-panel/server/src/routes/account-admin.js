@@ -2068,11 +2068,12 @@ router.get('/push', guard(async (req, res) => {
   res.json(await cloudRaw('GET', '/api/admin/push'));
 }));
 
-router.put('/push', requireRole('admin'), guard(async (req, res) => {
-  const out = await cloudRaw('PUT', '/api/admin/push', { body: req.body || {} });
-  audit({ actor: actorOf(req), action: 'account.push.update' });
-  res.json(out);
-}));
+/*
+ *  ⛔ (۱.۵۱.۲) نوشتنِ پوش دیگر این‌جا نیست. این در هر بدنه‌ای را دست‌نخورده به ‎PUT /api/admin/push‎ می‌برد — بی احرازِ
+ *  دوباره، بی سنجشِ کلید و با ‎clearServiceAccount‎ — و هیچ رابطی صدایش نمی‌زد. تنها راهِ نوشتن حالا
+ *  ‎PUT /console/push‎ ِ ماژولِ فروشگاه است (‎modules/shop/routes/console-push.js‎): فقط ‎enabled‎ و ‎serviceAccount‎ ِ
+ *  سنجیده، پشتِ «حالتِ تغییر»، سقفِ ۶۴ کیلوبایت و بی کلید در دفتر.
+ */
 
 router.get('/sms', guard(async (req, res) => {
   res.json(await cloudRaw('GET', '/api/admin/sms'));

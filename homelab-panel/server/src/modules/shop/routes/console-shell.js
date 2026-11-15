@@ -227,7 +227,7 @@ export function flagConfirmPhrase(scope, riskyKeys) {
   return keys.length === 1 ? keys[0] : String(scope);
 }
 
-function sudoView(sessionId) {
+export function sudoView(sessionId) {
   const st = panelAuth.sudoState(sessionId);
   return {
     ...(st.open ? { open: true, openedAt: st.openedAt, until: st.until, idleUntil: st.idleUntil, hardUntil: st.hardUntil } : { open: false }),
@@ -238,8 +238,9 @@ function sudoView(sessionId) {
 /**
  * پرچمِ پرخطر ⇒ «حالتِ تغییر» ِ باز (بی رمز) یا همان احرازِ دوبارهٔ همیشگی (سقفِ نرخ + `bodyStepUp`) — پیش از هر
  * درخواست به سرورِ حساب. احرازِ کاملِ همین درخواست پنجره را باز می‌کند؛ «نشستِ تازه» ِ بی رمز بازش نمی‌کند.
+ * (۱.۵۱.۲) درِ «اعلانِ گوشی» (`console-push.js`) هم همین را با `() => true` دارد — همان پنجره، همان رمز.
  */
-function flagStepUp(needs) {
+export function flagStepUp(needs) {
   return (req, res, next) => {
     if (!needs(req)) return next();
     const sid = req.user?.sessionId;

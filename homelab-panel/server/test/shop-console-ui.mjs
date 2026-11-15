@@ -63,6 +63,8 @@ const fake = http.createServer((req, res) => {
       try { body = raw ? JSON.parse(raw) : null; } catch { /* نه JSON */ }
       posted.push({ method: req.method, path: p, body, idem: req.headers['idempotency-key'] || '', bearer, actor: req.headers['x-actor-id'] || '' });
     }
+    //  ۱.۵۱.۲: کارتِ «اعلانِ گوشی» در «تنظیماتِ مرکزی» حالِ پوشیدهٔ پوش را می‌خواند
+    if (p === '/api/admin/push' && req.method === 'GET') return j(200, { push: { enabled: false, configured: false, source: '', project: '', account: '', devices: 0, apns: { configured: false, env: '', reason: 'off' } } });
     //  بی capabilities ⇒ فاز ۳ نیامده؛ کلیدِ سرویس فقط وقتی همان کلیدِ ساخته‌شده است
     if (p === '/api/admin/me') {
       if (bearer.startsWith('vsk_') && bearer !== svcKey) return j(401, { error: { code: 'invalid_service_key', message: 'کلید' } });
