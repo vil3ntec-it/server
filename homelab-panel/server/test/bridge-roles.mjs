@@ -53,7 +53,9 @@ const check = (name, ok, extra = '') => {
 
 const read = (rel) => fs.readFileSync(path.join(SHOP, 'src', rel), 'utf8');
 //  توضیح‌ها بیرون، تا کدِ توضیح‌شده (مثلاً یک مسیرِ کنارگذاشته) خوانده نشود
-const bare = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
+//  اول توضیحِ تک‌خطی، بعد بلوکی: «`/shop/*`» درونِ یک توضیحِ ‎//‎ (app.js ِ سرورِ حساب، شعبه‌ها) آغازِ بلوک خوانده می‌شد و تا ‎*/‎ ِ
+//  بعدی همه‌چیز — از جمله ‎api.use('/admin/trust', …)‎ — از جدولِ نقش می‌افتاد
+const bare = (src) => src.replace(/(^|[^:'"`\\/*])\/\/[^\n]*/g, '$1').replace(/\/\*[\s\S]*?\*\//g, '');
 const join = (a, b) => (`${a}${b === '/' ? '' : b}`) || '/';
 
 const unparsed = [];
