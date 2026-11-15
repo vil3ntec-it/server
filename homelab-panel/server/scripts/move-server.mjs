@@ -615,6 +615,23 @@ export function promoteStaged({ staging, target, stamp, keep = [] }) {
   return { previous: existing.length ? previousDir : null };
 }
 
+/**
+ * خط‌های ‎--account-env‎: رازهای ‎secrets.json‎ ِ خانه برای سرورِ حسابِ جدا — همان مقدارها (عوض کردنِ رازها همهٔ نشست‌ها را
+ * باطل می‌کند؛ و `HESABPAY_CRED_KEY` ِ دیگر یعنی کلیدِ حساب‌پیِ هیچ دکانی دیگر خوانده نمی‌شود).
+ */
+export function accountEnvLines(sec) {
+  return [
+    '# رازهای سرورِ حسابِ منتقل‌شده — همان مقدارهای خانه (عوض کردنشان همهٔ نشست‌ها را باطل می‌کند)',
+    `API_SECRET=${sec.apiSecret}`, `OTP_SECRET=${sec.otpSecret}`, `JWT_SECRET=${sec.jwtSecret}`,
+    `ADMIN_BOOTSTRAP_USER=${sec.adminUser}`, `ADMIN_BOOTSTRAP_PASSWORD=${sec.adminPassword}`,
+    ...(sec.hesabpayCredKey
+      ? ['# کلیدِ رمزگذاریِ حساب‌پیِ دکان‌ها — هرگز عوض نشود، وگرنه هر دکان کلیدِ حساب‌پی‌اش را دوباره می‌گذارد',
+        `HESABPAY_CRED_KEY=${sec.hesabpayCredKey}`]
+      : ['# HESABPAY_CRED_KEY: پنلِ خانه نساخته بود — اگر در .env ِ پنلِ خانه دستی بود همان را بگذارید، وگرنه یک بار: openssl rand -hex 32']),
+    '',
+  ];
+}
+
 export async function importData({ file, dataDir, pass, force = false, accountTool = '', accountEnv = '' }) {
   const target = path.resolve(dataDir);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -643,13 +660,8 @@ export async function importData({ file, dataDir, pass, force = false, accountTo
     let envFile = null;
     if (accountEnv) {
       const sec = JSON.parse(fs.readFileSync(path.join(target, 'account-server', 'secrets.json'), 'utf8'));
-      const lines = [
-        '# رازهای سرورِ حسابِ منتقل‌شده — همان مقدارهای خانه (عوض کردنشان همهٔ نشست‌ها را باطل می‌کند)',
-        `API_SECRET=${sec.apiSecret}`, `OTP_SECRET=${sec.otpSecret}`, `JWT_SECRET=${sec.jwtSecret}`,
-        `ADMIN_BOOTSTRAP_USER=${sec.adminUser}`, `ADMIN_BOOTSTRAP_PASSWORD=${sec.adminPassword}`, '',
-      ];
       envFile = path.resolve(accountEnv);
-      fs.writeFileSync(envFile, lines.join('\n'), { mode: 0o600 });
+      fs.writeFileSync(envFile, accountEnvLines(sec).join('\n'), { mode: 0o600 });
     }
     return { target, previous, manifest: r.manifest, files: r.files, remapped: r.remapped, account: r.account, envFile };
   } finally {

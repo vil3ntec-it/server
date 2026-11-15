@@ -29,7 +29,20 @@ type Status = {
   lastCrash: { at: number; code: number | string; lines: string[] } | null;
   startedAt: number | null;
   uptimeMs: number;
+  /** «حساب‌پیِ خودکار» ِ دکان‌ها — فقط حال (‎account/supervisor.js‎ ⇐ hesabpayInfo)؛ null = سرورِ حسابی که این پنل بالا نمی‌آورد */
+  hesabpay?: { ready: boolean; state: string; running: boolean; source: string | null } | null;
 };
+
+/** حالِ کلیدِ رمزگذاریِ حساب‌پی به زبانِ صاحب سامانه — هرگز خودِ کلید (پنل آن را ندارد که نشان دهد) */
+function hesabpayBadge(h: NonNullable<Status['hesabpay']>, up: boolean) {
+  if (h.ready) return <Badge tone="good">آماده</Badge>;
+  //  سرورِ حسابِ روشنی که این پنل بالا نیاورده (مانده از پیش) کلیدِ پنل را ندارد
+  if (!h.running && up) return <Badge tone="warn">این سرورِ حساب را پنل روشن نکرده — پنل را یک بار ببندید و باز کنید</Badge>;
+  if (h.state === 'weak') return <Badge tone="bad">کلیدِ HESABPAY_CRED_KEY {h.source === 'env' ? 'در ‎.env‎ ِ پنل' : 'در secrets.json'} کوتاه است (کمتر از ۳۲ نویسه)</Badge>;
+  if (h.state === 'unreadable') return <Badge tone="bad">فایلِ رازها خوانده نشد — لاگ را ببینید</Badge>;
+  if (h.state === 'ok') return <Badge tone="warn">با روشن شدنِ سرورِ حساب آماده می‌شود</Badge>;
+  return <Badge tone="warn">کلید ندارد — «راه‌اندازیِ دوباره» بزنید</Badge>;
+}
 
 /** هر سطرِ لاگ: «زمان \t سطح \t متن» (همان `push`ِ ناظر). */
 function parse(line: string) {
@@ -98,6 +111,7 @@ export default function AccountServerLog() {
             <KV label="نسخه" mono>{st.version || '—'}</KV>
             <KV label="روشن از">{st.up && st.startedAt ? moment(st.startedAt) : '—'}</KV>
             <KV label="بازگشت‌ها پس از افتادن">{fa(st.restarts)}</KV>
+            {st.hesabpay && <KV label="حساب‌پیِ خودکار">{hesabpayBadge(st.hesabpay, st.up)}</KV>}
             {!st.installed && (
               <Notice tone="bad">پوشهٔ سرورِ حساب روی این کامپیوتر نیست — مرکز فرمان را از فایلِ نصبِ تازه دوباره نصب کنید.</Notice>
             )}
