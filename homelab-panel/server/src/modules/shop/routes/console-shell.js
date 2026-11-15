@@ -10,6 +10,9 @@
 //    GET  admins/:id/sessions             نشست‌های یک مدیر (توانایی `admin-sessions.v1`)
 //    POST admins/:id/sessions/revoke      بستنِ یکی/همه — مالک + احرازِ دوباره + دلیل + تأیید
 //    PUT  flags · POST flags/reset        پرچمِ شناخته (۴.۱۲): نوع، scope، دلیل، تأیید؛ پرخطر ⇒ نوشتنِ نامِ کلید + رمز
+//                                         (یا «حالتِ تغییر» ِ باز، ۱.۵۱.۱)
+//    GET|POST|DELETE flags/sudo           «حالتِ تغییر» ِ همین نشست: دیدن · باز کردن با رمز (و کد) · بستن
+//    POST flags/batch                     چند پرچم با یک دلیل در یک درخواست — همه یا هیچ؛ هر پرچم ردیفِ خودش در دفتر
 //
 //  ⛔ مدیرانِ سرورِ حساب فقط از **راهِ پیشین** (ورودِ ارشد): سرورِ حساب کلیدِ سرویس را به ‎/admin/admins‎ راه
 //     نمی‌دهد (‎SERVICE_DENY‎ ِ #597 — هویتِ ماشین مدیر نمی‌سازد). راهِ پیشین نیست ⇒ «پشتیبانی نمی‌شود» با دلیل،
@@ -18,7 +21,7 @@
 //  ⛔ هر درِ تازه در همین روتر است، پس ‎test/bridge-roles.mjs‎ خودش آن را با سه نقش می‌سنجد.
 // ---------------------------------------------------------------------------
 import crypto from 'node:crypto';
-import { audit, bridgeFail, cloudRaw, db, legacyAvailable, panelAuth, panelRoles, rateLimit } from '../host.js';
+import { audit, auditMany, bridgeFail, cloudRaw, db, legacyAvailable, panelAuth, panelRoles, rateLimit } from '../host.js';
 import { CONSOLE_GROUPS, isPanelOwner, moduleById, modulesFor, requireModule } from '../console/modules.js';
 import { SUMMARIES } from '../console/summaries.js';
 
@@ -76,7 +79,8 @@ const reauthLimit = rateLimit({
 //  ⛔ قاعده یکی است و در `auth.js` (`bodyStepUp`): رمز، و اگر دوعاملی روشن است کد هم (۱.۵۰.۷۱)
 function reauth(req, res, next) {
   const r = panelAuth.bodyStepUp(req);
-  if (r.pass) { res.locals.reauthed = true; return next(); }
+  //  `reauthVerified`: رمز (و کد) در همین درخواست سنجیده شد — نه «نشستِ تازه» — تنها راهِ «حالتِ تغییر» ِ پرچم‌ها
+  if (r.pass) { res.locals.reauthed = true; res.locals.reauthVerified = r.verified === true; return next(); }
   if (r.failed) {
     res.locals.reauthFailed = true;
     audit({ actor: actorOf(req), action: 'account.console.reauth_failed', entity: 'console', result: 'forbidden', detail: { path: req.path, step: r.error } });
@@ -195,12 +199,127 @@ function riskyGate(req, res, key, scope) {
   }
   return true;
 }
-/** پرخطر ⇒ همان احرازِ دوباره (رمزِ پنل)؛ پیش از هر درخواست به سرورِ حساب. */
-function reauthIfRisky(req, res, next) {
-  const key = String(req.body?.key || '').trim();
+/* ─────────────────── «حالتِ تغییر» (sudo) و تغییرِ دسته‌ای (۱.۵۱.۱) ───────────────────
+ *
+ *  دستورِ صاحب سامانه: «این صد تا دوصد تا رو دونه‌به‌دونه بزنم؟ یک بار رمز رو می‌زنم و هر کدوم رو خواستم روشن یا
+ *  خاموش کنم.» دو چیز، هر دو فقط در لایهٔ پنل (سرورِ حساب برای پرچم رمز نمی‌خواهد؛ رمز هرگز به آن‌جا نمی‌رود):
+ *
+ *  ۱) **حالتِ تغییر** — یک احرازِ دوبارهٔ کامل (`bodyStepUp().verified`: رمز، و کد اگر دوعاملی روشن است) پنجرهٔ
+ *     ۱۵ دقیقهٔ لغزان با سقفِ سخت ِ ۶۰ دقیقه برای **همین نشست** باز می‌کند (قاعده‌اش فقط `auth.js`). در پنجره، پرچمِ
+ *     پرخطر رمز نمی‌خواهد؛ رمزِ فرستاده‌شده همیشه سنجیده می‌شود (غلط ⇒ همان `reauth_failed` و همان سقفِ نرخ).
+ *  ۲) **تغییرِ دسته‌ای** — `POST flags/batch`: یک scope، یک دلیل، یک درخواست. همه یا هیچ: پیش از نخستین نوشتن همه
+ *     سنجیده می‌شوند (کاتالوگ، نوع، scope، تکرار)، حالِ پیشینِ هر پرچم برداشته می‌شود، نوشتن‌ها یکی‌یکی و پشتِ یک قفل،
+ *     و شکستِ هر کدام ⇒ برگرداندنِ همه به حالِ پیشین. هر پرچم ردیفِ خودش را در دفتر دارد با دلیلِ مشترک و شناسهٔ دسته
+ *     (`auditMany` ⇒ همه یا هیچ در دفتر هم).
+ *  ⛔ نوشتنِ نامِ کلید فقط وقتی scope همهٔ دکان‌ها (‎all‎/‎security‎) است یا پرچم در فهرستِ پرخطر است
+ *     (`flagConfirmPhrase`؛ همان قاعده در ‎web/src/modules/shop/consoleData.ts‎ ⇐ `flagConfirmPhrase`).
+ */
+const BATCH_MAX = 100;
+const KEY_RE = /^[A-Za-z0-9_.:-]{1,120}$/;
+
+/**
+ * متنی که آدم برای تأییدِ دستهٔ پرخطر می‌نویسد: یک پرچم ⇒ نامِ همان کلید (همان پنجرهٔ پیشین)؛ چند پرچم ⇒ نامِ
+ * scope (‎all‎، ‎security‎ یا شناسهٔ دکان) — نه بیست بار نوشتنِ بیست کلید. بی پرچمِ پرخطر ⇒ `null` (فقط تأییدِ خلاصه).
+ */
+export function flagConfirmPhrase(scope, riskyKeys) {
+  const keys = [...new Set((riskyKeys || []).map(String))];
+  if (!keys.length) return null;
+  return keys.length === 1 ? keys[0] : String(scope);
+}
+
+function sudoView(sessionId) {
+  const st = panelAuth.sudoState(sessionId);
+  return {
+    ...(st.open ? { open: true, openedAt: st.openedAt, until: st.until, idleUntil: st.idleUntil, hardUntil: st.hardUntil } : { open: false }),
+    idleMs: panelAuth.SUDO_IDLE_MS, maxMs: panelAuth.SUDO_MAX_MS, serverTime: Date.now(),
+  };
+}
+
+/**
+ * پرچمِ پرخطر ⇒ «حالتِ تغییر» ِ باز (بی رمز) یا همان احرازِ دوبارهٔ همیشگی (سقفِ نرخ + `bodyStepUp`) — پیش از هر
+ * درخواست به سرورِ حساب. احرازِ کاملِ همین درخواست پنجره را باز می‌کند؛ «نشستِ تازه» ِ بی رمز بازش نمی‌کند.
+ */
+function flagStepUp(needs) {
+  return (req, res, next) => {
+    if (!needs(req)) return next();
+    const sid = req.user?.sessionId;
+    const pw = typeof req.body?.password === 'string' ? req.body.password : '';
+    if (!pw && panelAuth.sudoState(sid).open) {
+      res.locals.reauthed = true;
+      res.locals.viaSudo = true;
+      return next();
+    }
+    return reauthLimit(req, res, () => reauth(req, res, () => {
+      if (res.locals.reauthVerified === true && sid) {
+        const st = panelAuth.openSudo(sid);
+        res.locals.sudoOpened = true;
+        audit({ actor: actorOf(req), action: 'account.flag.sudo_opened', entity: 'flag', detail: { via: req.path, until: st.until || null } });
+      }
+      next();
+    }));
+  };
+}
+const singleRisky = (req) => isRiskyFlag(String(req.body?.key || '').trim(), String(req.body?.scope ?? '').trim() || 'all');
+const batchRisky = (req) => {
   const scope = String(req.body?.scope ?? '').trim() || 'all';
-  if (!isRiskyFlag(key, scope)) return next();
-  return reauthLimit(req, res, () => reauth(req, res, next));
+  const changes = Array.isArray(req.body?.changes) ? req.body.changes : [];
+  return isRiskyFlag('', scope) || changes.some((c) => isRiskyFlag(String(c?.key || '').trim(), scope));
+};
+/** پس از نوشتنِ موفق: پنجرهٔ باز می‌لغزد (فعالیت = تغییرِ پرچم، نه خواندن). */
+const slideSudo = (req) => panelAuth.touchSudo(req.user?.sessionId);
+
+/** نوشتن‌های پرچم یکی‌یکی — دو دستهٔ هم‌زمان (دو زبانه) حالِ پیشینِ هم را خراب نمی‌کنند. */
+let flagChain = Promise.resolve();
+function serialFlags(fn) {
+  const run = flagChain.then(fn, fn);
+  flagChain = run.then(() => {}, () => {});
+  return run;
+}
+
+/** شکلِ دسته، پیش از احرازِ دوباره (کدِ دوعاملی برای درخواستِ بدشکل سوزانده نمی‌شود) و پیش از سرورِ حساب. */
+function batchShape(req, res, next) {
+  const bad = (error, message, status = 400) => res.status(status).json({ error, message });
+  const b = req.body || {};
+  const scope = String(b.scope ?? '').trim();
+  if (!scope || !ID_RE.test(scope)) return bad('bad_flag_scope', 'scope را بگویید: «all» یا شناسهٔ یک دکان (یا scope ِ خودِ پرچم)');
+  const reason = String(b.reason ?? '').trim();
+  if (reason.length < 3 || reason.length > 200) return bad('reason_required', 'دلیل را بنویسید (۳ تا ۲۰۰ نویسه) — در دفترِ رخداد می‌ماند');
+  if (b.confirm !== true) return bad('confirm_required', 'این کار پیش از فرستادن تأیید می‌خواهد');
+  const list = b.changes;
+  if (!Array.isArray(list) || !list.length) return bad('no_changes', 'هیچ تغییری نیامد');
+  if (list.length > BATCH_MAX) return bad('too_many_changes', `در هر دسته حداکثر ${BATCH_MAX} پرچم`);
+  const seen = new Set();
+  const changes = [];
+  for (const c of list) {
+    const key = typeof c?.key === 'string' ? c.key.trim() : '';
+    if (!KEY_RE.test(key)) return bad('bad_flag_key', 'نامِ پرچم درست نیست');
+    if (seen.has(key)) return bad('duplicate_flag', `«${key}» دو بار در یک دسته آمده است`);
+    seen.add(key);
+    if (c.reset === true && c.value === undefined) changes.push({ key, reset: true });
+    else if (c.reset === undefined && typeof c.value === 'boolean') changes.push({ key, value: c.value });
+    else return bad('bad_flag_value', `مقدارِ «${key}» «روشن» یا «خاموش» است، یا «بازگشت به پیش‌فرض»`);
+  }
+  res.locals.batch = { scope, reason, changes };
+  return next();
+}
+
+/** خطای دسته با جزئیاتش (کدام پرچم، چه برگشت، چه ماند)؛ بقیه همان `bridgeFail`. */
+function batchFail(res, err) {
+  if (err?.expose) return res.status(err.status || 502).json({ error: err.code, message: err.message, ...err.expose });
+  return bridgeFail(res, err);
+}
+
+/** شکستِ نوشتن «مبهم» است (شاید رسیده باشد)؟ ⇒ برگرداندنش هم لازم است. ردِ صریحِ ۴xx یعنی ننشست. */
+const maybeLanded = (err) => err?.outcome === 'unknown' || !(Number(err?.status) >= 400 && Number(err?.status) < 500);
+
+async function writeFlag(scope, c, reason) {
+  if (c.reset) return cloudRaw('DELETE', '/api/admin/flags', { body: { scope, key: c.key, reason } });
+  return cloudRaw('PUT', '/api/admin/flags', { body: { scope, key: c.key, value: c.value, reason } });
+}
+/** برگرداندنِ یک پرچم به حالِ پیشینش: نوشته بود ⇒ همان مقدار؛ نوشته نبود ⇒ پاک. */
+async function restoreFlag(scope, p, reason) {
+  if (p.prior.set) return cloudRaw('PUT', '/api/admin/flags', { body: { scope, key: p.key, value: p.prior.value, reason } });
+  return cloudRaw('DELETE', '/api/admin/flags', { body: { scope, key: p.key, reason } });
 }
 
 /* ═══════════════════════════════ سوار کردن ═══════════════════════════════ */
@@ -422,9 +541,11 @@ export function mountConsoleShell(router) {
 
   /* ═══ ۴.۱۲ — پرچم‌های شناخته ═══ */
 
-  const flagGate = [requireModule('settings'), requireRole('admin'), reauthIfRisky];
+  const flagGate = [requireModule('settings'), requireRole('admin')];
 
-  router.put('/console/flags', ...flagGate, guard(async (req, res) => {
+  //  ⛔ درِ تکیِ پیشین — شکلِ درخواست و پاسخ همان است (صداکننده‌های کهنه، «پرچمِ ویترین» ِ بازار)؛ فقط «حالتِ تغییر» را
+  //  هم می‌شناسد: پنجرهٔ باز ⇒ بی رمز؛ رمزِ درستِ همین درخواست ⇒ پنجره باز می‌شود.
+  router.put('/console/flags', ...flagGate, flagStepUp(singleRisky), guard(async (req, res) => {
     const key = String(req.body?.key || '').trim();
     const reason = reasonOf(req);
     requireConfirm(req);
@@ -434,14 +555,16 @@ export function mountConsoleShell(router) {
     const k = await knownFlag(key);
     const scope = scopeFor(k, req.body?.scope);
     const risky = riskyGate(req, res, key, scope);
-    await once(req, res, async () => {
+    await once(req, res, () => serialFlags(async () => {
       const out = await cloudRaw('PUT', '/api/admin/flags', { body: { scope, key, value: req.body.value, reason } });
-      audit({ actor: actorOf(req), action: 'account.flag.set', entity: 'flag', entityId: `${scope}:${key}`, detail: { scope, key, to: req.body.value, risky, reason } });
+      if (res.locals.viaSudo) slideSudo(req);
+      audit({ actor: actorOf(req), action: 'account.flag.set', entity: 'flag', entityId: `${scope}:${key}`,
+        detail: { scope, key, to: req.body.value, risky, reason, ...(res.locals.viaSudo ? { viaSudo: true } : {}) } });
       return { ok: true, scope: out?.scope || scope, key: out?.key || key, to: req.body.value, confirmedByServer: true, fetchedAt: Date.now() };
-    });
+    }));
   }));
 
-  router.post('/console/flags/reset', ...flagGate, guard(async (req, res) => {
+  router.post('/console/flags/reset', ...flagGate, flagStepUp(singleRisky), guard(async (req, res) => {
     const key = String(req.body?.key || '').trim();
     const reason = reasonOf(req);
     requireConfirm(req);
@@ -450,12 +573,147 @@ export function mountConsoleShell(router) {
     const k = await knownFlag(key);
     const scope = scopeFor(k, req.body?.scope);
     const risky = riskyGate(req, res, key, scope);
-    await once(req, res, async () => {
+    await once(req, res, () => serialFlags(async () => {
       const out = await cloudRaw('DELETE', '/api/admin/flags', { body: { scope, key, reason } });
-      audit({ actor: actorOf(req), action: 'account.flag.reset', entity: 'flag', entityId: `${scope}:${key}`, detail: { scope, key, removed: out?.removed === true, risky, reason } });
+      if (res.locals.viaSudo) slideSudo(req);
+      audit({ actor: actorOf(req), action: 'account.flag.reset', entity: 'flag', entityId: `${scope}:${key}`,
+        detail: { scope, key, removed: out?.removed === true, risky, reason, ...(res.locals.viaSudo ? { viaSudo: true } : {}) } });
       return { ok: true, removed: out?.removed === true, confirmedByServer: true, fetchedAt: Date.now() };
-    });
+    }));
   }));
+
+  /* ── «حالتِ تغییر»: دیدن، باز کردن با رمز (و کد)، بستن ── */
+  router.get('/console/flags/sudo', ...flagGate, (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(sudoView(req.user?.sessionId));
+  });
+
+  router.post('/console/flags/sudo', ...flagGate, reauthLimit, (req, res, next) => {
+    if (typeof req.body?.password !== 'string' || !req.body.password) {
+      return res.status(400).json({ error: 'password_required', message: 'رمزِ پنلِ خودتان را بزنید' });
+    }
+    return next();
+  }, reauth, (req, res) => {
+    //  رمزِ درست بی کد روی حسابِ دوعاملی‌دار (نشستِ تازه) ⇒ کار رد نمی‌شود ولی پنجره هم باز نمی‌شود
+    if (res.locals.reauthVerified !== true) {
+      return res.status(400).json({ error: 'totp_required', totpRequired: true, message: 'کدِ شش‌رقمیِ دوعاملی را هم بزنید' });
+    }
+    const st = panelAuth.openSudo(req.user?.sessionId);
+    audit({ actor: actorOf(req), action: 'account.flag.sudo_opened', entity: 'flag', detail: { via: 'sudo', until: st.until || null } });
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(sudoView(req.user?.sessionId));
+  });
+
+  router.delete('/console/flags/sudo', ...flagGate, (req, res) => {
+    const was = panelAuth.sudoState(req.user?.sessionId).open;
+    panelAuth.closeSudo(req.user?.sessionId);
+    if (was) audit({ actor: actorOf(req), action: 'account.flag.sudo_closed', entity: 'flag', detail: { by: 'user' } });
+    res.json(sudoView(req.user?.sessionId));
+  });
+
+  /* ── تغییرِ دسته‌ای: یک scope، یک دلیل، یک درخواست، همه یا هیچ ── */
+  router.post('/console/flags/batch', ...flagGate, batchShape, flagStepUp(batchRisky), async (req, res) => {
+    try {
+      const { scope, reason, changes } = res.locals.batch;
+      const caps = await capsOf();
+      if (!caps.list.includes('flags.v1')) throw fail('capability_missing', 501, `سرورِ حساب هنوز ${NEEDS['flags.v1']} را ندارد`);
+      //  کاتالوگ و حالِ امروزِ همین scope در یک خواندن — پیش از هر نوشتن
+      const cur = await cloudRaw('GET', '/api/admin/flags', { query: { scope } });
+      const known = Array.isArray(cur?.known) ? cur.known : [];
+      const items = new Map((Array.isArray(cur?.items) ? cur.items : []).filter((x) => x && typeof x.key === 'string').map((x) => [x.key, x.value]));
+      const plan = changes.map((c) => {
+        const k = knownIn(known, c.key);
+        scopeFor(k, scope);
+        return { ...c, risky: isRiskyFlag(c.key, scope), prior: items.has(c.key) ? { set: true, value: items.get(c.key) } : { set: false } };
+      });
+      const riskyKeys = plan.filter((p) => p.risky).map((p) => p.key);
+      //  ⛔ کمربندِ دوم (همان `riskyGate`): پرخطر بی احراز یا پنجره، همین‌جا می‌ایستد
+      if (riskyKeys.length && res.locals.reauthed !== true) throw fail('reauth_required', 403, 'برای این کار رمزِ پنلِ خودتان را دوباره بزنید');
+      const phrase = flagConfirmPhrase(scope, riskyKeys);
+      if (phrase && String(req.body?.confirmText ?? '') !== phrase) {
+        throw fail('confirm_text_required', 400, `این تغییر روی همهٔ دکان‌ها یا پول/امنیت اثر دارد — برای تأیید «${phrase}» را بنویسید`, { expose: { expected: phrase } });
+      }
+      await once(req, res, () => serialFlags(() => applyBatch(req, res, scope, reason, plan)));
+    } catch (err) {
+      batchFail(res, err);
+    }
+  });
+}
+
+/** کاتالوگِ همان خواندن — همان قاعده‌های `knownFlag`. */
+function knownIn(known, key) {
+  const k = known.find((x) => x && x.key === key);
+  if (!k) throw fail('unknown_flag', 400, `«${key}» در کاتالوگِ سرورِ حساب نیست — از کنسول فقط پرچمِ شناخته عوض می‌شود`, { expose: { key } });
+  if (Array.isArray(k.default) || k.scope === 'release') throw fail('use_versions_module', 400, 'فهرستِ کانالِ آزمایشی از «نسخه‌ها و انتشار» عوض می‌شود', { expose: { key } });
+  if (typeof k.default !== 'boolean') throw fail('unsupported_flag_type', 400, `نوعِ «${key}» در کنسول پشتیبانی نمی‌شود`, { expose: { key } });
+  return k;
+}
+
+/**
+ * نوشتنِ دسته — همه یا هیچ. سرورِ حساب درِ دسته‌ای ندارد (هر `PUT /api/admin/flags` تراکنشِ خودش است)، پس «هیچ» با
+ * برگرداندن ساخته می‌شود: هر پرچمِ نشسته (و پرچمِ شکسته‌ای که شاید نشسته باشد) به حالِ پیشینش. اگر برگرداندنی هم نشد،
+ * پاسخ دقیق می‌گوید کدام پرچم‌ها هنوز عوض‌شده‌اند — هرگز «انجام شد» یا «هیچ» ِ دروغ.
+ */
+async function applyBatch(req, res, scope, reason, plan) {
+  const batchId = `fb-${crypto.randomBytes(8).toString('hex')}`;
+  const actor = actorOf(req);
+  const viaSudo = res.locals.viaSudo === true;
+  const done = [];
+  let broken = null;
+  for (const p of plan) {
+    try {
+      const out = await writeFlag(scope, p, reason);
+      done.push({ ...p, removed: out?.removed === true });
+    } catch (err) {
+      broken = { p, err };
+      break;
+    }
+  }
+  const rowOf = (p, result = 'ok') => ({
+    actor, action: p.reset ? 'account.flag.reset' : 'account.flag.set', entity: 'flag', entityId: `${scope}:${p.key}`, result,
+    detail: {
+      scope, key: p.key, from: p.prior.set ? p.prior.value : null, ...(p.reset ? { removed: p.removed === true } : { to: p.value }),
+      risky: p.risky, reason, batch: batchId, of: plan.length, ...(viaSudo ? { viaSudo: true } : {}),
+    },
+  });
+
+  if (!broken) {
+    if (viaSudo) slideSudo(req);
+    const audited = auditMany(done.map((p) => rowOf(p)));
+    return {
+      ok: true, batchId, scope, count: done.length, confirmedByServer: true, audited,
+      applied: done.map((p) => (p.reset ? { key: p.key, reset: true, removed: p.removed === true } : { key: p.key, to: p.value })),
+      sudo: sudoView(req.user?.sessionId), fetchedAt: Date.now(),
+    };
+  }
+
+  //  ── شکست: برگرداندن به ترتیبِ وارونه ──
+  const undo = [...done].reverse();
+  if (maybeLanded(broken.err)) undo.unshift(broken.p);
+  const undoReason = `برگشتِ خودکارِ دستهٔ ${batchId}`;
+  const stuck = [];
+  for (const p of undo) {
+    try { await restoreFlag(scope, p, undoReason); } catch (e) { stuck.push({ p, code: e?.code || 'cloud_error', unknown: e?.outcome === 'unknown' }); }
+  }
+  const cause = { key: broken.p.key, code: broken.err?.code || 'cloud_error', message: broken.err?.message || '', ...(broken.err?.outcome === 'unknown' ? { outcome: 'unknown' } : {}) };
+  if (!stuck.length) {
+    audit({ actor, action: 'account.flag.batch_rolled_back', entity: 'flag', entityId: scope, result: 'failed',
+      detail: { scope, batch: batchId, keys: plan.map((p) => p.key), cause, rolledBack: undo.map((p) => p.key), reason } });
+    const st = Number(broken.err?.status);
+    throw fail('batch_rolled_back', st >= 400 && st < 500 ? st : 502,
+      `«${cause.key}» در سرورِ حساب نشست (${cause.code}) — هیچ تغییری نماند؛ ${undo.length ? 'آن‌چه نشسته بود برگشت' : 'چیزی نوشته نشده بود'}`,
+      { expose: { batchId, cause, applied: [], rolledBack: undo.map((p) => p.key) } });
+  }
+  //  ⛔ برگرداندنِ بخشی نشد: آن‌چه ماند تغییرِ واقعی است ⇒ ردیفِ خودش در دفتر، و پاسخ دقیق
+  const stuckKeys = new Set(stuck.map((x) => x.p.key));
+  auditMany([
+    ...done.filter((p) => stuckKeys.has(p.key)).map((p) => rowOf(p, 'partial')),
+    { actor, action: 'account.flag.batch_partial', entity: 'flag', entityId: scope, result: 'partial',
+      detail: { scope, batch: batchId, cause, stillChanged: [...stuckKeys], reason } },
+  ]);
+  throw fail('batch_partial', 502,
+    `«${cause.key}» نشست و برگرداندنِ ${stuck.length} پرچم هم نشد — پیش از تکرار، پرچم‌ها را ببینید`,
+    { expose: { batchId, cause, stillChanged: stuck.map((x) => ({ key: x.p.key, code: x.code, ...(x.unknown ? { outcome: 'unknown' } : {}) })) } });
 }
 
 export { moduleById };

@@ -23,6 +23,8 @@ import {
   recoveryExpired,
   consumeTotp,
   consumeRecoveryCode,
+  closeSudo,
+  closeSudoForUser,
 } from '../auth.js';
 import jwt from 'jsonwebtoken';
 import QRCode from 'qrcode';
@@ -308,6 +310,8 @@ router.post('/totp/enable', requireAuth, requireRecentAuth, (req, res) => {
   const won = db.prepare('UPDATE users SET totp_secret = ?, totp_pending = NULL, totp_enabled = 1, totp_recovery = ?, totp_last_step = ? WHERE id = ? AND totp_enabled = 0 AND totp_pending = ?')
     .run(u.totp_pending, JSON.stringify(codes.map(hashRecovery)), step, req.user.id, u.totp_pending);
   if (Number(won.changes) !== 1) return res.status(409).json({ error: 'totp_already_enabled' });
+  //  ⛔ عوض شدنِ دوعاملی ⇒ «حالتِ تغییر» ِ پرچم‌ها در همهٔ نشست‌های همین کاربر بسته (۱.۵۱.۱)
+  closeSudoForUser(req.user.id);
   logEvent('info', 'panel', `ورودِ دوعاملی برای «${u.username}» روشن شد`);
   audit(req, 'panel.totp.enable', { target: u.username });
   res.json({ ok: true, recoveryCodes: codes });
@@ -321,6 +325,7 @@ router.post('/totp/disable', requireAuth, (req, res) => {
   if (!consumeTotp(u.id, req.body?.code).ok) return res.status(400).json({ error: 'totp_invalid' });
   //  رازِ بعدی گام‌های خودش را دارد؛ «آخرین گام» ِ این راز با خودش می‌رود
   db.prepare('UPDATE users SET totp_secret = NULL, totp_pending = NULL, totp_enabled = 0, totp_recovery = NULL, totp_last_step = NULL WHERE id = ?').run(u.id);
+  closeSudoForUser(u.id);
   logEvent('warn', 'panel', `ورودِ دوعاملی برای «${u.username}» خاموش شد`);
   audit(req, 'panel.totp.disable', { target: u.username });
   res.json({ ok: true });
@@ -345,6 +350,8 @@ router.delete('/sessions/:id', requireAuth, (req, res) => {
 /** خروج از همهٔ دستگاه‌های دیگر؛ همین دستگاه می‌ماند */
 router.post('/logout-all', requireAuth, (req, res) => {
   const n = revokeOtherSessions(req.user.id, req.user.sessionId);
+  //  «خروج از همه» کارِ امنیتی است ⇒ «حالتِ تغییر» ِ پرچم‌های همین نشست هم بسته می‌شود (۱.۵۱.۱)
+  closeSudo(req.user.sessionId);
   logEvent('info', 'panel', `کاربر «${req.user.username}» از ${n} دستگاهِ دیگر خارج شد`);
   audit(req, 'panel.logout_all', { target: req.user.username, detail: { revoked: n } });
   res.json({ ok: true, revoked: n });

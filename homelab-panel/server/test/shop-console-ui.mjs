@@ -119,6 +119,10 @@ const fake = http.createServer((req, res) => {
         return j(200, { scope: 'all', version: 2, items: [{ key: 'shop.orders', value: false, updatedAt: NOW - DAY, updatedBy: 'boss' }],
           known: [{ key: 'shop.orders', scope: 'shop', default: false, what: 'سفارشِ آنلاین' }, { key: 'shop.chat', scope: 'shop', default: false, what: 'گفت‌وگو با مشتری' }] });
       }
+      //  ۱.۵۱.۱: کارتِ پرچم‌ها شرحِ بدشکل را تاب می‌آورد (نامِ کلید را نشان می‌دهد)؛ نگهبانِ ماژول با «دلیل» ِ شیء در تاریخچه سنجیده می‌شود
+      if (p === '/api/admin/flags/history' && breakFlags) {
+        return j(200, { entries: [{ id: 'lb', scope: 'all', key: 'shop.chat', action: 'set', oldValue: null, newValue: true, changedBy: 'boss', reason: { broken: true }, at: NOW }] });
+      }
       if (p === '/api/admin/flags/history') {
         return j(200, { entries: [{ id: 'l1', scope: 'all', key: 'shop.orders', action: 'set', oldValue: null, newValue: false, changedBy: 'boss',
           actor: { kind: 'panel', id: 'panel:1', name: 'مالکِ پنل' }, reason: 'هنوز نه', at: NOW - DAY }] });
@@ -259,9 +263,11 @@ try {
   let body = await open('');
   check('صفحه راست‌چین است', (await page.evaluate(() => document.documentElement.dir)) === 'rtl');
   //  (پوستهٔ ۱۴۰۵/۰۸/۱۰) منوی گروه‌بندی‌شدهٔ ماژول‌ها از سرور — مالک همهٔ ماژول‌های ساخته را می‌بیند
+  //  ۱.۵۱.۱: منوی بخش جای منوی پنل در نوارِ کناری است (drill-in)، نه ستونِ دوم درونِ ‎main‎
+  const shopNav = await page.locator('aside nav[aria-label="ماژول‌های فروشگاه"]').innerText();
   check('یازده ماژولِ ساختهٔ فروشگاه در منو', ['داشبورد', 'فروشگاه‌های عضو', 'اشتراک و مجوز', 'مالیِ مرکزی', 'نسخه‌ها و انتشار', 'سلامت و خطاها',
     'تنظیماتِ مرکزی و پرچم‌ها', 'یکپارچه‌سازی و API', 'دفترِ رخداد', 'کدِ شاگرد', 'کاربران و نقش‌ها']
-    .every((x) => body.includes(x)), body.slice(0, 300));
+    .every((x) => shopNav.includes(x)), shopNav.slice(0, 300));
   //  ⛔ آنلاین نیامده ⇒ «—»؛ پیامِ نخوانده صفرِ واقعی ⇒ «۰»
   const onlineCard = await page.locator('main .card', { hasText: 'آنلاین' }).first().innerText();
   check('⛔ «آنلاین» ِ نیامده «—» است، نه ۰', /—/.test(onlineCard) && !/(^|\s)۰(\s|$)/.test(onlineCard.split('\n')[1] || ''), onlineCard);
@@ -441,7 +447,13 @@ try {
     JSON.stringify(lifted));
 
   body = await open('settings');
-  check('پرچم‌ها: نوشته‌شده با مقدار، شناختهٔ نانوشته «نوشته نشده» با پیش‌فرض', body.includes('shop.orders') && body.includes('shop.chat') && body.includes('نوشته نشده'), body.slice(0, 900));
+  //  ۱.۵۱.۱: سه دکان و هیچ «اخیر» ⇒ دامنه خودش «همه» نمی‌شود (آدم برمی‌گزیند)؛ «همهٔ دکان‌ها» را دستی
+  check('⛔ پرچم‌ها: بی دکانِ اخیر و با چند دکان، دامنه خودش «همه» نیست', body.includes('یک دکان را برگزینید'), body.slice(0, 600));
+  await page.locator('select[data-testid="flags-scope"]').selectOption('all');
+  await page.waitForTimeout(500);
+  const flagsText = await page.locator('[data-testid="flags-list"]').innerText();
+  check('پرچم‌ها: نوشته‌شده با مقدار، شناختهٔ نانوشته با «پیش‌فرض»', /سفارشِ آنلاین[\s\S]*shop\.orders[\s\S]*نوشته‌شده/.test(flagsText)
+    && /گفت‌وگو با مشتری[\s\S]*shop\.chat[\s\S]*پیش‌فرض/.test(flagsText), flagsText.slice(0, 600));
   check('تاریخچهٔ پرچم: پیشین ⇒ تازه، «انجام‌دهنده» و دلیل', body.includes('مالکِ پنل') && body.includes('هنوز نه') && body.includes('null'), body.slice(0, 1200));
 
   body = await open('integrations');
@@ -475,18 +487,23 @@ try {
   body = await open('settings');
   const crumb = await page.locator('nav[aria-label="ردِ نان"]').innerText();
   check('ردِ نان: فروشگاه › دسترسی و تنظیمات › تنظیماتِ مرکزی و پرچم‌ها', /فروشگاه[\s\S]*دسترسی و تنظیمات[\s\S]*تنظیماتِ مرکزی و پرچم‌ها/.test(crumb), crumb);
-  check('منوی کناری: گروه‌ها و همین ماژول «جاری»', (await page.locator('main aside a[aria-current="page"]').innerText()).includes('تنظیماتِ مرکزی'));
-  await page.locator('main tr', { hasText: 'shop.chat' }).locator('button', { hasText: 'روشن کن' }).click();
+  check('منوی کناری: گروه‌ها و همین ماژول «جاری»', (await page.locator('aside nav[aria-label="ماژول‌های فروشگاه"] a[aria-current="page"]').innerText()).includes('تنظیماتِ مرکزی'));
+  //  ۱.۵۱.۱: کارتِ پرچم‌ها — دامنهٔ «همهٔ دکان‌ها» دستی، «ویرایش»، کلید، «ذخیرهٔ ۱ تغییر» (همان یک درخواست به سرورِ حساب)
+  await page.locator('select[data-testid="flags-scope"]').selectOption('all');
   await page.waitForTimeout(300);
-  const fsend = page.getByRole('button', { name: 'تأیید و فرستادن' });
-  await page.locator('textarea').last().fill('روشن برای همه');
+  await page.locator('main .card', { hasText: 'پرچم‌ها' }).getByRole('button', { name: 'ویرایش' }).click();
+  await page.locator('[data-testid="flags-list"] li', { hasText: 'shop.chat' }).getByRole('switch').click();
+  await page.locator('[data-testid="flags-pending"]').getByRole('button', { name: /ذخیرهٔ/ }).click();
+  await page.waitForTimeout(400);
+  const fsend = page.locator('[data-testid="flags-save"]');
+  await page.locator('[role="dialog"] textarea').fill('روشن برای همه');
   check('⛔ پرچمِ «همهٔ دکان‌ها» (پرخطر): بی نامِ کلید و رمزِ پنل دکمه بسته است', await fsend.isDisabled());
   await page.getByLabel('برای تأیید، «shop.chat» را بنویسید').fill('shop.chat');
   check('…و با نام ولی بی رمز هم بسته', await fsend.isDisabled());
-  await page.locator('input[autocomplete="current-password"]').last().fill('ShopConsole!2026');
+  await page.locator('[role="dialog"] input[autocomplete="current-password"]').fill('ShopConsole!2026');
   let n0 = posted.length;
   await fsend.dblclick();
-  await page.waitForTimeout(1000);
+  await page.waitForTimeout(1200);
   const puts = posted.slice(n0).filter((x) => x.method === 'PUT' && x.path === '/api/admin/flags');
   check('⛔ دوکلیک ⇒ یک PUT با {scope:all, key, value:true, reason}', puts.length === 1
     && JSON.stringify(puts[0].body) === JSON.stringify({ scope: 'all', key: 'shop.chat', value: true, reason: 'روشن برای همه' }), JSON.stringify(puts));
@@ -536,7 +553,7 @@ try {
   body = await open('settings');
   breakFlags = false;
   check('⛔ شکلِ خرابِ بالادست فقط همان ماژول را سرخ می‌کند؛ منو و جست‌وجو سرِ جایشان',
-    body.includes('باز نشد') && (await page.locator('main aside nav a').count()) >= 10 && (await page.locator('#shop-console-search').count()) === 1, body.slice(0, 400));
+    body.includes('باز نشد') && (await page.locator('aside nav[aria-label="ماژول‌های فروشگاه"] a').count()) >= 10 && (await page.locator('#shop-console-search').count()) === 1, body.slice(0, 400));
   jsErrors.splice(0, jsErrors.length, ...jsErrors.filter((e) => !/Objects are not valid as a React child|Minified React error #31|ماژولِ «|The above error occurred/.test(e)));
 
   //  نقش: viewer ِ پنل
@@ -556,7 +573,7 @@ try {
   const opts = await vpage.locator('select[aria-label="ماژول‌های فروشگاه"] option').allInnerTexts();
   check('⛔ viewer: «کاربران و نقش‌ها» در منو نیست (سرور هم نمی‌گوید)', opts.length >= 9 && !opts.some((o) => o.includes('کاربران و نقش‌ها')), opts.join('|'));
   check('گوشی (۳۹۰px): فهرستِ کشویی دیده می‌شود، کناره نه، و صفحه افقی نمی‌لغزد',
-    await vpage.locator('select[aria-label="ماژول‌های فروشگاه"]').isVisible() && !(await vpage.locator('main aside nav[aria-label="ماژول‌های فروشگاه"]').isVisible())
+    await vpage.locator('select[aria-label="ماژول‌های فروشگاه"]').isVisible() && !(await vpage.locator('aside nav[aria-label="ماژول‌های فروشگاه"]').isVisible())
       && (await vpage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)));
   await vpage.goto(`${BASE}/shop?tab=users`, { waitUntil: 'networkidle' });
   await vpage.waitForTimeout(600);

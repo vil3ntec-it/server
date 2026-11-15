@@ -9,16 +9,17 @@
 // ---------------------------------------------------------------------------
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ArrowRightLeft, Boxes, Link2, Plus, Power, RefreshCw, Unlink } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, Boxes, Link2, Plus, Power, Unlink } from 'lucide-react';
 import { api, ApiError } from '../api';
 import { useLive } from '../useLive';
 import { useApp } from '../app-context';
 import { bytes, percent, relative } from '../format';
 import type { Dict } from '../i18n';
-import { Badge, Card, ConfirmDialog, CopyButton, Field, Loading, Modal, StatusDot, toast } from '../components/ui';
+import { Badge, Card, ConfirmDialog, Field, Loading, Modal, StatusDot, toast } from '../components/ui';
 import { Cell, Notice, Row, Select, Table } from '../control/ui';
 import { MoveServerCard } from '../components/MoveServer';
 import { AppDomainsCard } from '../components/AppDomainsCard';
+import AddServerWizard from '../components/AddServerWizard';
 
 type App = { id: string; type: 'account' | 'pump' | 'site'; name: string; kind?: string | null; dataful: boolean; running: boolean; count?: number };
 type Entry = {
@@ -35,6 +36,8 @@ type Entry = {
   metrics: { cpu: number | null; memory: { usage: number | null; total: number | null }; disk: { usage: number | null; total: number | null } } | null;
   apps: App[];
   tunnel?: { running?: boolean; mode?: string | null; auto?: boolean } | null;
+  /** ۱.۵۱.۱: نمایندهٔ هاست (نه پنلِ کامل) */
+  agent?: 'host' | null;
 };
 type Holder = { id: string; name: string; self: boolean; running: boolean; online: boolean };
 type MoveStep = { op: string; state: 'running' | 'done' | 'failed' | 'skipped'; at: number; endedAt?: number; info?: Record<string, unknown> };
@@ -81,6 +84,8 @@ type Placed = {
   mismatch: boolean;
   movable: boolean;
   why: string | null;
+  /** ۱.۵۱.۱: سرورهای آنلاینی که این برنامه را می‌گیرند (‎blocked‎ ⇒ هاستی که نمی‌گیرد، با دلیل) */
+  targets?: { id: string; name: string; kind: string; self: boolean; agent: string | null; blocked: string | null }[];
   move: MoveView | null;
 };
 type Conflict = { id: string; name: string; type: string; holders: { id: string; name: string; online: boolean; self: boolean }[] };
@@ -110,7 +115,7 @@ type Overview = {
   moves?: MoveView[];
 };
 
-const KIND_KEY: Record<string, keyof Dict> = { home: 'fsKindHome', vps: 'fsKindVps', foreign: 'fsKindForeign', hosting: 'fsKindHosting' };
+const KIND_KEY: Record<string, keyof Dict> = { home: 'fsKindHome', vps: 'fsKindVps', foreign: 'fsKindForeign', hosting: 'fsKindHosting', host: 'fsKindHost' };
 
 function errText(e: unknown): string {
   if (e instanceof ApiError) return e.message && e.message !== e.code ? e.message : e.code;
@@ -137,54 +142,7 @@ function useFleet(enabled = true) {
   return { data, error, load };
 }
 
-/* ─────────────────────────────── کدِ وصل ─────────────────────────────── */
-
-function JoinCode({ onClose }: { onClose: () => void }) {
-  const { t } = useApp();
-  const [code, setCode] = useState<{ code: string; expiresAt: number } | null>(null);
-  const [error, setError] = useState('');
-  const [now, setNow] = useState(Date.now());
-  const make = useCallback(async () => {
-    setError('');
-    try {
-      const r = await api<{ code: string; expiresAt: number }>('/api/fleet/codes', { method: 'POST', body: {} });
-      setCode({ code: r.code, expiresAt: r.expiresAt });
-    } catch (e) {
-      setError(errText(e));
-    }
-  }, []);
-  useEffect(() => { make(); }, [make]);
-  useEffect(() => {
-    //  نبضِ آگاهانه: ساعتِ شمارشِ معکوسِ کدِ وصل — هیچ درخواستی نمی‌زند، فقط ثانیه‌شمار است
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  const left = code ? Math.max(0, Math.round((code.expiresAt - now) / 1000)) : 0;
-  return (
-    <Card title={t('fsCodeTitle')} icon={<Plus className="h-4 w-4" />} action={<button className="btn btn-sm" onClick={onClose}>{t('close')}</button>}>
-      {error && <Notice tone="bad">{error}</Notice>}
-      {code && (
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <span dir="ltr" className="tnum rounded-xl bg-surface-sunken px-4 py-2 font-mono text-2xl font-semibold tracking-widest text-ink" style={{ opacity: left ? 1 : 0.4 }}>
-              {code.code}
-            </span>
-            {left > 0 && <CopyButton value={code.code} />}
-          </div>
-          <p className="text-xs text-ink-muted">
-            {left > 0 ? t('fsCodeExpires', { s: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` }) : t('fsCodeExpired')} {t('fsCodeOnce')}
-          </p>
-          <p className="text-xs leading-6 text-ink-soft">{t('fsCodeHint')}</p>
-          <p className="text-xs text-ink-muted">
-            {t('fsCenterUrlHint')} <span dir="ltr" className="font-mono">{window.location.origin}</span>
-          </p>
-          <pre dir="ltr" className="overflow-x-auto rounded-xl bg-surface-sunken px-3 py-2 text-xs text-ink-soft">node scripts/join.mjs {window.location.origin} {code.code}</pre>
-          {left === 0 && <button className="btn btn-sm self-start" onClick={make}><RefreshCw className="h-3.5 w-3.5" /> {t('fsAdd')}</button>}
-        </div>
-      )}
-    </Card>
-  );
-}
+/* ───────── کدِ وصل ⇒ ‎components/AddServerWizard.tsx‎ (۱.۵۱.۱: «چه خریده‌اید؟»، دستورِ یک‌خطی، بستهٔ هاست، «وصل شد ✓») ───────── */
 
 /* ─────────────────────────────── ستون‌ها ─────────────────────────────── */
 
@@ -307,7 +265,7 @@ export default function MyServers() {
         {data.maintenance.active && data.maintenance.source === 'self' && <Notice tone="warn">{t('fsMaintOnSelf')}</Notice>}
       </Card>
 
-      {adding && <JoinCode onClose={() => { setAdding(false); load(); }} />}
+      {adding && <AddServerWizard onClose={() => { setAdding(false); load(); }} onConnected={load} />}
 
       {data.conflicts.map((c) => (
         <div
@@ -511,6 +469,12 @@ const STEP_KEY: Record<string, keyof Dict> = {
   'rollback:unfreeze': 'fpStepUnfreeze', 'rollback:discard': 'fpStepDiscard',
 };
 const eligible = (e: Entry) => e.status === 'active' && e.online && !e.maintenance.wanted && !e.maintenance.applied;
+/** ۱.۵۱.۱: مقصدهای مجاز از خودِ سرور (‎placement.targets‎ — هاست فقط سرورِ حساب)؛ مرکزِ کهنه ⇒ همان قاعدهٔ پیشین */
+function allowedTargets(a: Placed, servers: Entry[]): Entry[] {
+  if (!Array.isArray(a.targets)) return servers.filter((s) => s.id !== a.node?.id && eligible(s));
+  const ok = new Set(a.targets.filter((x) => !x.blocked).map((x) => x.id));
+  return servers.filter((s) => ok.has(s.id) && eligible(s));
+}
 
 function WhereCell({ a }: { a: Placed }) {
   const { t } = useApp();
@@ -560,7 +524,7 @@ function PlacementCard({ data, load }: { data: Overview; load: () => void }) {
       <p className="mb-3 text-xs leading-6 text-ink-soft">{t('fpIntro')}</p>
       <Table head={[t('fpColApp'), t('fpColWhere'), t('fpColState'), '']}>
         {rows.map((a) => {
-          const targets = servers.filter((s) => s.id !== a.node?.id && eligible(s));
+          const targets = allowedTargets(a, servers);
           return (
             <Row key={a.id}>
               <Cell>
@@ -596,7 +560,8 @@ function PlacementCard({ data, load }: { data: Overview; load: () => void }) {
 function MoveDialog({ app, servers, onClose }: { app: Placed; servers: Entry[]; onClose: () => void }) {
   const { t } = useApp();
   const from = servers.find((s) => s.id === app.node?.id) || null;
-  const targets = servers.filter((s) => s.id !== app.node?.id && eligible(s));
+  const targets = allowedTargets(app, servers);
+  const blocked = (app.targets || []).filter((x) => x.blocked);
   const [to, setTo] = useState(targets[0]?.id || '');
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
@@ -646,6 +611,11 @@ function MoveDialog({ app, servers, onClose }: { app: Placed; servers: Entry[]; 
         <ol className="list-decimal space-y-0.5 ps-5 text-xs text-ink-soft">
           {(['freeze', 'export', 'import', 'start', 'route', 'retire'] as const).map((op) => <li key={op}>{t(STEP_KEY[op])}</li>)}
         </ol>
+        {blocked.length > 0 && (
+          <p className="text-xs text-ink-muted" data-testid="move-blocked">
+            {t('fpHostBlocked', { list: blocked.map((x) => `${x.name} (${x.blocked === 'host_account_only' ? t('fpHostAccountOnly') : t('fpHostManual')})`).join('، ') })}
+          </p>
+        )}
         <Notice tone="warn">{t('fpDowntime')}</Notice>
         {app.type === 'account' && <Notice tone="info">{t('fpAccountFull')}</Notice>}
         {app.type === 'account' && destHasAccount && dest && <Notice tone="warn">{t('fpDestHasAccount', { name: dest.name })}</Notice>}

@@ -345,11 +345,28 @@ async function resolveNode(id) {
   let report = null;
   try { report = n.last_report ? JSON.parse(n.last_report) : null; } catch { report = null; }
   return {
-    id: n.id, name: n.name,
+    id: n.id, name: n.name, kind: n.kind,
     online: Boolean(n.last_seen_at) && now() - n.last_seen_at <= offlineAfterMs(),
     maintenance: Boolean(n.maintenance) || Boolean(report?.maintenance?.active),
     apps: report?.apps || [],
+    agent: report?.agent === 'host' ? 'host' : null,
+    caps: Array.isArray(report?.caps) ? report.caps : [],
   };
+}
+
+/**
+ * ۱.۵۱.۱ — مقصدِ «هاستِ اشتراکی» (نمایندهٔ هاست، نه پنلِ کامل): فقط سرورِ حساب، و فقط وقتی همان نماینده بگوید
+ * دریافتِ بستهٔ جابه‌جایی را دارد (‎move-import:account-server‎). مبدأ هم نمی‌شود (نماینده «فقط‌خواندنی/بیرون‌دادن» ندارد).
+ * ⇐ ‎null‎ (مجاز) یا ‎{ code, message }‎ — همان قاعده برای ‎startMove‎ و ستونِ «مقصدهای ممکن» ِ رابط.
+ */
+export function hostRule(app, node, role = 'to') {
+  if (!node || node.agent !== 'host') return null;
+  if (role === 'from') return { code: 'host_not_source', message: `«${node.name}» هاستِ اشتراکی است و بستهٔ بیرون‌دادن نمی‌سازد — سرورِ حسابِ آن‌جا را با پشتیبان برگردانید.` };
+  if (app.type !== 'account' && app.id !== 'account-server') return { code: 'host_account_only', message: `«${node.name}» هاستِ اشتراکی است: فقط سرورِ حساب رویش می‌نشیند — نه سایت، نه پمپ.` };
+  if (!node.caps.includes('move-import:account-server')) {
+    return { code: 'host_manual_import', message: `نمایندهٔ «${node.name}» هنوز بستهٔ جابه‌جایی را نمی‌گیرد — دادهٔ سرورِ حساب را با راهِ دستیِ بخشِ ۵ ِ docs/DEPLOY-ANYWHERE-fa.md ببرید (File Manager + move-db.js).` };
+  }
+  return null;
 }
 
 const clean = (v) => String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim();
@@ -371,6 +388,10 @@ export async function startMove({ app, from, to, confirm = {}, by = null }) {
       + 'move-server.mjs export --only stations ⇐ import --only stations (docs/DEPLOY-ANYWHERE-fa.md).');
   }
   if (a.main) throw new FleetError(409, 'main_site', 'سایتِ اصلی دفترِ اصلیِ سرورِ سایت را دارد و جدا نمی‌رود — «جابه‌جاییِ کامل».');
+  for (const [n, role] of [[src, 'from'], [dst, 'to']]) {
+    const h = hostRule(a, n, role);
+    if (h) throw new FleetError(409, h.code, h.message);
+  }
   for (const n of [src, dst]) {
     if (!n.online) throw new FleetError(409, 'node_offline', `«${n.name}» آفلاین است — هر دو سرور باید آنلاین باشند.`);
     if (n.maintenance) throw new FleetError(409, 'node_maintenance', `«${n.name}» در نگه‌داری (غیرفعال) است.`);
@@ -539,8 +560,13 @@ export function placementView({ self, nodes }) {
     const observed = running.length === 1 ? running[0].id : (running.length === 0 && a.holders.length === 1 ? a.holders[0].id : null);
     const nodeId = row?.node_id || observed;
     const why = a.type === 'pump' ? 'pump_cli_only' : a.main ? 'main_site' : null;
+    //  ۱.۵۱.۱: «انتقال به سرورِ دیگر» — سرورهای آنلاین و فعالی که این برنامه را می‌گیرند (هاست فقط سرورِ حساب)
+    const targets = why ? [] : entries.filter((e) => e.id !== nodeId && e.online && !e.maintenance?.wanted && !e.maintenance?.applied)
+      .map((e) => ({ id: e.id, name: e.name, kind: e.kind, self: Boolean(e.self), agent: e.agent || null,
+        blocked: hostRule(a, { name: e.name, agent: e.agent || null, caps: Array.isArray(e.caps) ? e.caps : [] })?.code || null }));
     out.push({
       ...a,
+      targets,
       node: nodeId ? { id: nodeId, name: nameOf(nodeId) } : null,
       source: row ? 'table' : observed ? 'observed' : 'unknown',
       mismatch: Boolean(row && running.length && !running.some((h) => h.id === row.node_id)),

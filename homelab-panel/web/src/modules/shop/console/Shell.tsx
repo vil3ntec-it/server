@@ -1,8 +1,9 @@
 // ---------------------------------------------------------------------------
 //  🏪 پوستهٔ بخشِ «فروشگاه» — یک برنامهٔ کامل داخلِ پنل (دستورِ صاحب محصول، ۱۴۰۵/۰۸/۱۰)
 //
-//  منوی گروه‌بندی‌شدهٔ ۱۳ ماژولِ پرامپتِ مالک (کناره روی صفحهٔ پهن، فهرستِ کشویی روی گوشی)، «ردِ نان»، جست‌وجوی
-//  سراسری، لینکِ مستقیم (‎/shop?tab=<id>&…‎، برگشتِ مرورگر) و یک نگهبانِ خطا برای هر ماژول.
+//  «ردِ نان»، جست‌وجوی سراسری، لینکِ مستقیم (‎/shop?tab=<id>&…‎، برگشتِ مرورگر) و یک نگهبانِ خطا برای هر ماژول.
+//  ⛔ منوی گروه‌بندی‌شدهٔ ماژول‌ها از ۱.۵۱.۱ **جای** منوی پنل در نوارِ کناری است (‎SubNav.tsx‎، drill-in) — ستونِ دومِ این‌جا
+//     رفت تا محتوا جا بگیرد. روی گوشی همان فهرستِ کشویی هم بالای صفحه هست (کشوی منو یک لمس دورتر است).
 //
 //  ⛔ کدام ماژول دیده می‌شود را **سرور** می‌گوید (‎/console/modules‎، به نقشِ همین نشست) و درهای همان ماژول هم با
 //     همان قاعده بسته‌اند — پنهان یعنی سرور هم نمی‌دهد. این پوسته فقط آن فهرست را می‌چیند.
@@ -13,9 +14,10 @@ import { useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Store } from 'lucide-react';
 
-import { Card, Forbidden, Guarded, type Load, Notice, NotSupported, StateLoading, useApp, useLoad, usePick, useTx } from '../host';
+import { Forbidden, Guarded, type Load, Notice, NotSupported, StateLoading, useApp, usePick, useTx } from '../host';
 import { Problem } from '../ShopConsole';
-import { SHELL_API, WEB_MODULES, type ModulesResponse, type ServerModule } from './registry';
+import { WEB_MODULES, type ServerModule } from './registry';
+import { useShellModules } from './useShellModules';
 import ConsoleSearch from './Search';
 
 export default function ConsoleShell() {
@@ -23,7 +25,7 @@ export default function ConsoleShell() {
   const tx = useTx();
   const pick = usePick();
   const [params, setParams] = useSearchParams();
-  const load = useLoad<ModulesResponse>(SHELL_API.modules);
+  const load = useShellModules();
 
   const data = load.data;
   const modules: ServerModule[] = useMemo(() => (Array.isArray(data?.modules) ? data!.modules : []), [data]);
@@ -89,7 +91,7 @@ export default function ConsoleShell() {
         {data && <ConsoleSearch />}
       </header>
 
-      <div className="grid gap-3 lg:grid-cols-[13rem_minmax(0,1fr)]">
+      <div className="flex flex-col gap-3">
         {/* روی گوشی: یک فهرستِ کشویی با گروه‌ها */}
         {data && (
           <select className="input w-full lg:hidden" value={info && nav.some((m) => m.id === info.id) ? info.id : ''}
@@ -104,37 +106,6 @@ export default function ConsoleShell() {
               ) : null;
             })}
           </select>
-        )}
-        {/* روی صفحهٔ پهن: کناره */}
-        {data && (
-          <aside className="hidden lg:block">
-            <Card className="!p-2">
-              <nav aria-label={tx('ماژول‌های فروشگاه', 'Shop modules', 'د هټۍ ماډلونه')}>
-                {groups.map((g) => {
-                  const items = nav.filter((m) => m.group === g.id);
-                  if (!items.length) return null;
-                  return (
-                    <div key={g.id} className="mb-2">
-                      <p className="px-2 pb-1 pt-2 text-[11px] font-semibold text-ink-muted">{pick(g.label)}</p>
-                      {items.map((m) => {
-                        const Icon = WEB_MODULES.get(m.id)!.icon;
-                        const active = m.id === wanted;
-                        return (
-                          <Link key={m.id} to={m.id === 'dash' ? '/shop' : `/shop?tab=${m.id}`} aria-current={active ? 'page' : undefined}
-                                className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${active ? 'font-semibold' : 'text-ink-soft hover:bg-surface-raised'}`}
-                                style={active ? { background: 'var(--accent)', color: 'var(--accent-ink)' } : undefined}>
-                            <Icon size={15} />
-                            <span className="min-w-0 flex-1 truncate">{pick(m.label)}</span>
-                            {m.spec && <span className="text-[10px] opacity-60" dir="ltr">{m.spec.split(' ')[0]}</span>}
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </nav>
-            </Card>
-          </aside>
         )}
         <section className="min-w-0">{body}</section>
       </div>

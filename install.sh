@@ -33,6 +33,9 @@
 #                               home (پیش‌فرض) همان سرورِ خانگی؛ vps: سرورِ اجاره‌ای —
 #                               بی Docker/Ollama، و پورتِ پنل فقط از Tailscale.
 #                               فقط نصبِ تازه؛ core.envِ موجود هرگز بازنویسی نمی‌شود.
+#    VILL3N_JOIN_CENTER=<نشانی> VILL3N_JOIN_CODE=<کد>   (۱.۵۱.۱) پس از بالا آمدنِ پنل، همین سرور یک بار به
+#                               آن «مرکز» وصل می‌شود (سرورهای من) — همان «وصل به مرکز» ِ پنل. کد یک‌بارمصرف و
+#                               ۱۰ دقیقه‌ای است و فقط در متغیرِ محیطِ همان یک فرمان می‌ماند: نه دیسک، نه لاگ.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -40,6 +43,10 @@ ROOT="${VILL3N_ROOT:-/srv/vill3n}"
 SKIP_SYSTEM="${VILL3N_SKIP_SYSTEM:-0}"
 NON_INTERACTIVE="${VILL3N_NON_INTERACTIVE:-0}"
 DEPLOY="${VILL3N_DEPLOY:-home}"
+#  ⛔ کدِ وصل (۱.۵۱.۱) همین‌جا از محیط برداشته می‌شود تا هیچ فرزندِ دیگری (apt، npm، …) آن را به ارث نبرد؛ فقط ‎join_center‎
+JOIN_CENTER="${VILL3N_JOIN_CENTER:-}"
+JOIN_CODE="${VILL3N_JOIN_CODE:-}"
+unset VILL3N_JOIN_CODE
 case "$DEPLOY" in home|vps) ;; *) echo "VILL3N_DEPLOY=$DEPLOY شناخته نیست — home یا vps (داکر: deploy/docker)" >&2; exit 2 ;; esac
 REPAIR=0
 LIST_STEPS=0
@@ -50,7 +57,7 @@ for arg in "$@"; do
     --list-steps) LIST_STEPS=1 ;;
     --root=*) ROOT="${arg#--root=}" ;;
     -h|--help)
-      sed -n '2,36p' "$0" | sed 's/^#//'
+      sed -n '2,39p' "$0" | sed 's/^#//'
       exit 0 ;;
     *) echo "گزینهٔ ناشناخته: $arg" >&2; exit 2 ;;
   esac
@@ -754,6 +761,32 @@ start_panel() {
   record panel-service failed "در ۶۰ ثانیه جواب نداد — journalctl -u $UNIT"
 }
 
+#  ۱.۵۱.۱ — وصل به «مرکز» با کدِ یک‌بارهٔ «افزودنِ سرور» (‎VILL3N_JOIN_CENTER‎ + ‎VILL3N_JOIN_CODE‎)
+#  ⛔ مرحلهٔ ثبت‌شده نیست (هر اجرا با کدِ تازه دوباره امتحان می‌کند؛ اگر وصل است پنل خودش «already_linked» می‌گوید).
+#  ⛔ کد فقط در متغیرِ محیطِ همان فرزند (‎scripts/join.mjs‎) — نه در خطِ فرمان (‎ps‎)، نه چاپ، نه دیسک؛ ‎xtrace‎ خاموش است.
+#  ⛔ شکست نصب را نمی‌شکند: پنل بالا است و همان کار از «سرورهای من ← وصل به مرکز» هم می‌شود.
+join_center() {
+  local center="$JOIN_CENTER"
+  if [ -z "$center" ] && [ -z "$JOIN_CODE" ]; then return 0; fi
+  log "▶ join_center"
+  if [ -z "$center" ] || [ -z "$JOIN_CODE" ]; then
+    record join-center failed "هر دو لازم است: VILL3N_JOIN_CENTER و VILL3N_JOIN_CODE"
+    return 0
+  fi
+  if ! curl -fsS "http://127.0.0.1:$PANEL_PORT/health" >/dev/null 2>&1; then
+    record join-center failed "پنل روی پورتِ $PANEL_PORT جواب نمی‌دهد — پس از بالا آمدن از «سرورهای من ← وصل به مرکز»"
+    return 0
+  fi
+  local kind="vps"; [ "$DEPLOY" = home ] && kind="home"
+  local out rc=0
+  out="$(cd "$SERVER_DIR" && VILL3N_JOIN_CENTER="$center" VILL3N_JOIN_CODE="$JOIN_CODE" VILL3N_JOIN_KIND="$kind" \
+        node scripts/join.mjs --port "$PANEL_PORT" --data-dir "$DATA_DIR" 2>&1)" || rc=$?
+  printf '%s\n' "$out"
+  if [ "$rc" -eq 0 ]; then record join-center installed "وصل به $center"; else record join-center failed "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"; fi
+  JOIN_CODE=""
+  return 0
+}
+
 # ---------------------------------------------------------------------------
 #  گزارشِ پایانی
 # ---------------------------------------------------------------------------
@@ -815,5 +848,6 @@ echo
 trap 'code=$?; if [ "$code" -ne 0 ] && [ "$code" -ne 75 ]; then log "❌ نصب با کدِ $code متوقف شد — اجرای دوباره از همین مرحله ادامه می‌دهد. لاگ: $LOG_FILE"; fi' EXIT
 
 for s in $STEPS; do step "$s"; done
+join_center
 report
 exit 0

@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 import { Store } from 'lucide-react';
 import ConsoleShell from './console/Shell';
+import ShopSubNav from './console/SubNav';
 import { SHOP_HOME, type PanelModule } from './host';
 
 const shop: PanelModule = {
@@ -13,6 +14,8 @@ const shop: PanelModule = {
   routes: [{ path: SHOP_HOME, component: ConsoleShell }],
   //  همان آیتمِ پیشینِ «هر روز» (بینِ پمپ‌بنزین‌ها و کدها)، همان کلید و نشانه
   menu: [{ group: 'daily', to: SHOP_HOME, key: 'navShops', icon: Store }],
+  //  ۱.۵۱.۱: منوی بخش جای منوی پنل می‌نشیند (drill-in) — نه ستونِ دوم کنارِ آن
+  subnav: { key: 'navShops', icon: Store, Nav: ShopSubNav },
   minRole: 'viewer',
   apiPrefixes: ['/api/account-admin'],
 };

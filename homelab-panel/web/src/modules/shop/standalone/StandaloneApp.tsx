@@ -181,6 +181,7 @@ function LoginForm({ state }: { state: AppState }) {
 /** چیدمانِ ساده: یک نوار (نام، کاربر، زبان، خروج) و جای ماژول — بی منوی پنل. */
 function PlainLayout({ state }: { state: AppState }) {
   const tx = useTx();
+  const SubNav = shop.subnav?.Nav;
   return (
     <div className="min-h-screen">
       <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3">
@@ -194,12 +195,20 @@ function PlainLayout({ state }: { state: AppState }) {
           <LogOut className="me-1 inline h-3.5 w-3.5" />{tx('خروج', 'Sign out', 'وتل')}
         </button>
       </header>
-      <main className="mx-auto max-w-7xl p-4">
-        <Routes>
-          {shop.routes.map((r) => <Route key={r.path} path={r.path} element={<r.component />} />)}
-          <Route path="*" element={<Navigate to={shop.routes[0].path} replace />} />
-        </Routes>
-      </main>
+      <div className="flex">
+        {/* ۱.۵۱.۱: منوی بخش (همان ‎SubNav‎ که در پنل جای منوی اصلی می‌نشیند) — کنارهٔ همین میزبان */}
+        {SubNav && (
+          <aside className="sticky top-0 hidden max-h-screen w-60 shrink-0 overflow-y-auto border-e border-line p-2 lg:block">
+            <SubNav rail={false} tip={() => ({})} />
+          </aside>
+        )}
+        <main className="mx-auto min-w-0 max-w-7xl flex-1 p-4">
+          <Routes>
+            {shop.routes.map((r) => <Route key={r.path} path={r.path} element={<r.component />} />)}
+            <Route path="*" element={<Navigate to={shop.routes[0].path} replace />} />
+          </Routes>
+        </main>
+      </div>
     </div>
   );
 }

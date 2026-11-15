@@ -14,6 +14,6 @@ export const sameNames: Same<keyof typeof PanelHost, keyof typeof StandaloneHost
 export const sameTypes: typeof StandaloneHost extends typeof PanelHost ? true : false = true;
 /** و نوع‌های هم‌نام (‎Load‎، ‎Tx‎ …) یکی‌اند */
 export const sameTypeExports: Same<
-  [PanelHost.HostApp, PanelHost.Load<unknown>, PanelHost.Tx, PanelHost.SensitiveSubmit, PanelHost.PanelModule, PanelHost.Dict],
-  [StandaloneHost.HostApp, StandaloneHost.Load<unknown>, StandaloneHost.Tx, StandaloneHost.SensitiveSubmit, StandaloneHost.PanelModule, StandaloneHost.Dict]
+  [PanelHost.HostApp, PanelHost.Load<unknown>, PanelHost.Tx, PanelHost.SensitiveSubmit, PanelHost.PanelModule, PanelHost.Dict, PanelHost.PanelSubNavProps],
+  [StandaloneHost.HostApp, StandaloneHost.Load<unknown>, StandaloneHost.Tx, StandaloneHost.SensitiveSubmit, StandaloneHost.PanelModule, StandaloneHost.Dict, StandaloneHost.PanelSubNavProps]
 > = true;

@@ -3,6 +3,8 @@
 //  وصل کردنِ همین سرور به یک «مرکز» (سرورهای من، ۱.۵۰.۹۴)
 //
 //      node scripts/join.mjs <نشانیِ مرکز> <کد>  [--name "VPS آلمان"] [--kind home|vps|foreign|hosting]
+//      VILL3N_JOIN_CENTER=<نشانی> VILL3N_JOIN_CODE=<کد> node scripts/join.mjs   (۱.۵۱.۱ — ‎install.sh‎ همین را می‌زند:
+//                                                    کد در متغیرِ محیط، نه در خطِ فرمان که در ‎ps‎ دیده می‌شود)
 //      node scripts/join.mjs --leave                 جدا شدن از مرکز
 //      node scripts/join.mjs --status                وضعیت
 //      (گزینه‌های ‎--port‎ و ‎--data-dir‎ اگر پنل جای دیگری است؛ پیش‌فرض از ‎.env‎ ِ کنارِ پنل)
@@ -51,8 +53,8 @@ function readEnvFile(file) {
 const env = readEnvFile(path.join(SERVER_ROOT, '.env'));
 const PORT = Number(flag('--port') || process.env.HLP_PORT || env.HLP_PORT || 4700);
 const DATA_DIR = path.resolve(flag('--data-dir') || process.env.HLP_DATA_DIR || env.HLP_DATA_DIR || path.join(SERVER_ROOT, 'data'));
-const NAME = flag('--name');
-const KIND = flag('--kind');
+const NAME = flag('--name') || process.env.VILL3N_JOIN_NAME || null;
+const KIND = flag('--kind') || process.env.VILL3N_JOIN_KIND || null;
 const LEAVE = has('--leave');
 const STATUS = has('--status');
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -91,7 +93,8 @@ async function main() {
       console.log(`  ✅ از مرکز جدا شد${r.json.centerNotified ? '' : ' (مرکز خبردار نشد — آن‌جا «جدا کردن» را بزنید)'}.`);
       return 0;
     }
-    const [center, code] = args;
+    //  ⛔ کد از متغیرِ محیط (۱.۵۱.۱): هیچ‌جا چاپ یا نوشته نمی‌شود؛ پیامِ خطا هم فقط از پنل است (بی کد)
+    const [center, code] = args.length ? args : [process.env.VILL3N_JOIN_CENTER, process.env.VILL3N_JOIN_CODE];
     if (!center || !code) return usage();
     const r = await call('POST', '/api/fleet/link', { center, code, ...(NAME ? { name: NAME } : {}), ...(KIND ? { kind: KIND } : {}) });
     if (r.status !== 200) { console.log(`  ❌ ${r.json?.message || r.json?.error || r.status}`); return 1; }

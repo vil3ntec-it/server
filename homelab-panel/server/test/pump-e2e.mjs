@@ -270,8 +270,9 @@ try {
 
   // ── ۱) دو مسیرِ بی‌توکن که برنامه سرِ باز شدن می‌زند ──────────────────────
   console.log('\n── ۱) پیش از هر ورودی ──');
+  //  سرورِ حساب (shop، دستهٔ ۶۳) نسخه‌اش را دیگر به اینترنت نمی‌دهد ⇒ «سرورِ حسابِ واقعی» = آنلاین + همان سرویس، و بی نسخه
   check('GET /api/health — سرورِ حسابِ واقعی، از راهِ درگاه',
-    health.json?.server === 'online' && !!health.json?.version, JSON.stringify(health.json));
+    health.json?.server === 'online' && health.json?.service === 'vill3n-auth' && !('version' in health.json), JSON.stringify(health.json));
   check('⛔ و جوابِ خودِ پنل نیست (control-center)',
     health.json?.service !== 'control-center', JSON.stringify(health.json));
   const cfg = await call('GET', '/api/config');

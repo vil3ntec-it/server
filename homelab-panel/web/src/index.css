@@ -297,33 +297,85 @@ body {
    *  آیتمِ فعال با یک نوارِ نازک در لبهٔ شروع مشخص می‌شود، نه با یک بلوکِ
    *  رنگیِ پُر. در فهرستی با نوزده آیتم، بلوکِ پُر کلِ ستون را شلوغ می‌کند.
    */
+  /*  منوی کناری (۱.۵۱.۱): ردیفِ یکسانِ ~۳۸px، متنِ ۱۴px، نشانهٔ ۱۸px، ردیفِ جاری آبیِ پُر (همان که صاحب سامانه پسندید) */
   .nav-item {
-    @apply relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px]
+    @apply relative flex min-h-[2.375rem] items-center gap-3 rounded-lg px-3 py-1.5 text-[14px] leading-5
            text-ink-soft transition-colors duration-150;
   }
   .nav-item:hover {
     background: var(--surface-2);
     color: var(--text-primary);
   }
+  .nav-item:focus-visible,
+  .nav-back:focus-visible,
+  .nav-group-title:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
   .nav-item.is-active {
-    background: var(--accent-soft);
-    color: var(--accent);
+    background: var(--accent);
+    color: var(--accent-ink);
     font-weight: 600;
   }
-  .nav-item.is-active::before {
-    content: '';
-    position: absolute;
-    inset-inline-start: 0;
-    top: 20%;
-    bottom: 20%;
-    width: 3px;
-    border-radius: 999px;
-    background: var(--accent);
+  .nav-icon {
+    @apply h-[18px] w-[18px] shrink-0;
   }
 
   .nav-group-title {
-    @apply px-2.5 pb-1 pt-3 text-[10px] font-semibold uppercase text-ink-muted;
-    letter-spacing: 0.08em;
+    @apply rounded-md px-3 pb-1 pt-3 text-[12px] font-semibold text-ink-muted;
+    letter-spacing: 0.02em;
+  }
+
+  /*  drill-in: ردیفِ «منوی اصلی» و نامِ ماژول بالای منوی درونی  */
+  .nav-back {
+    @apply flex min-h-[2.25rem] items-center gap-2 rounded-lg px-3 text-ink-soft transition-colors duration-150;
+  }
+  .nav-back:hover {
+    background: var(--surface-2);
+    color: var(--text-primary);
+  }
+  .nav-module-title {
+    @apply flex items-center gap-2.5 border-b border-line px-3 pb-2.5 pt-1 text-[15px] font-semibold text-ink;
+  }
+  .nav-rail-sep {
+    @apply mx-3 my-2 border-line;
+  }
+
+  /*  نوارِ باریک (۶۴px): فقط نشانه، وسط‌چین  */
+  aside[data-rail='1'] .nav-item,
+  aside[data-rail='1'] .nav-back {
+    @apply justify-center px-0;
+  }
+  aside[data-rail='1'] .nav-group-title {
+    @apply px-0 pt-2;
+  }
+  aside[data-rail='1'] .nav-module-title {
+    @apply px-0;
+  }
+
+  /*  راهنمای کوچکِ نوارِ باریک (روی ماوس و فوکوس) — بیرون از نوار، پس با اسکرولِ نوار بریده نمی‌شود  */
+  .nav-tip {
+    @apply pointer-events-none fixed z-50 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium shadow-lg;
+    transform: translateY(-50%);
+    background: var(--text-primary);
+    color: var(--surface-1);
+  }
+
+  /*  جابه‌جاییِ کوتاهِ دو منو (رو به جلو = از سمتِ پایان؛ برگشت = از سمتِ آغاز)  */
+  .nav-pane-forward { animation: nav-in-forward 180ms ease-out; }
+  .nav-pane-back { animation: nav-in-back 180ms ease-out; }
+  @keyframes nav-in-forward {
+    from { opacity: 0; transform: translateX(var(--nav-slide, 24px)); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes nav-in-back {
+    from { opacity: 0; transform: translateX(calc(-1 * var(--nav-slide, 24px))); }
+    to { opacity: 1; transform: none; }
+  }
+  [dir='rtl'] .nav-pane-forward,
+  [dir='rtl'] .nav-pane-back { --nav-slide: -24px; }
+  @media (prefers-reduced-motion: reduce) {
+    .nav-pane-forward, .nav-pane-back { animation: none; }
   }
 
   /* ----------------------------- جدول ----------------------------------- */

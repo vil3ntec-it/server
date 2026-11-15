@@ -16,7 +16,7 @@ export { requireRole, roleOf } from '../../control/roles.js';
 export * as panelAuth from '../../auth.js';
 
 /* ── ۳) دفترِ رخدادِ پنل ─────────────────────────────────────────────────────────────────────── */
-export { audit } from '../../control/audit.js';
+export { audit, auditMany } from '../../control/audit.js';
 
 /* ── ۴) پلِ سرورِ حساب (کلیدِ سرویس، مهلت‌ها، شکلِ خطا) — همان پلی که پمپ هم دارد ───────────────── */
 export {

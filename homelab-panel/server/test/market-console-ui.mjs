@@ -158,8 +158,10 @@ try {
 
   console.log('\n── ۴.۶ بازار ──');
   let body = await open('tab=market');
+  //  ۱.۵۱.۱: زبانه‌ها در منوی بخش‌اند که جای منوی پنل در نوارِ کناری نشسته (drill-in)، نه درونِ ‎main‎
+  const shopNav = await page.locator('aside nav[aria-label="ماژول‌های فروشگاه"]').innerText();
   check('صفحه راست‌چین و زبانه‌های «مدیریتِ بازار» و «نظارتِ پیک» در بخشِ فروشگاه', (await page.evaluate(() => document.documentElement.dir)) === 'rtl'
-    && body.includes('مدیریتِ بازار') && body.includes('نظارتِ پیک'), body.slice(0, 300));
+    && body.includes('مدیریتِ بازار') && shopNav.includes('مدیریتِ بازار') && shopNav.includes('نظارتِ پیک'), `${body.slice(0, 200)} | ${shopNav.slice(0, 200)}`);
   check('نمای کلی: فروشنده ۲ و «در فهرست: ۱»', body.includes('فروشنده (دکانِ VILL3N)') && /۲/.test(body) && body.includes('در فهرست: ۱'), body.slice(0, 600));
   check('⛔ «اعتراض» ِ نیامده «—»، شکایتِ صفر «۰»', body.includes('اعتراض: —') && body.includes('شکایت: ۰'), body.slice(0, 900));
   check('⛔ فروشندهٔ مستقل، سبدِ چنددکانی و کمیسیون «در مدل نیست» — نه عدد',

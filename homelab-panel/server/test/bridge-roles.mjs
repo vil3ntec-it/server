@@ -53,7 +53,9 @@ const check = (name, ok, extra = '') => {
 
 const read = (rel) => fs.readFileSync(path.join(SHOP, 'src', rel), 'utf8');
 //  توضیح‌ها بیرون، تا کدِ توضیح‌شده (مثلاً یک مسیرِ کنارگذاشته) خوانده نشود
-const bare = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
+//  اول توضیحِ تک‌خطی، بعد بلوکی: «`/shop/*`» درونِ یک توضیحِ ‎//‎ (app.js ِ سرورِ حساب، شعبه‌ها) آغازِ بلوک خوانده می‌شد و تا ‎*/‎ ِ
+//  بعدی همه‌چیز — از جمله ‎api.use('/admin/trust', …)‎ — از جدولِ نقش می‌افتاد
+const bare = (src) => src.replace(/(^|[^:'"`\\/*])\/\/[^\n]*/g, '$1').replace(/\/\*[\s\S]*?\*\//g, '');
 const join = (a, b) => (`${a}${b === '/' ? '' : b}`) || '/';
 
 const unparsed = [];
@@ -182,6 +184,10 @@ const LOCAL = new Map([
   //  ماژول‌های عملیات: انتخابِ نوعِ هشدار برای رباتِ تلگرامِ مالک — فقط تنظیمِ خودِ پنل (‎console-ops.mjs‎)
   ['GET /api/account-admin/console/ops/alerts/telegram', 'نوع‌های برگزیدهٔ هشدار برای رباتِ مالک و حالِ ربات — تنظیمِ خودِ پنل'],
   ['PUT /api/account-admin/console/ops/alerts/telegram', 'ذخیرهٔ همان انتخاب در تنظیماتِ پنل (فقط admin)'],
+  //  ۱.۵۱.۱: «حالتِ تغییر» ِ پرچم‌ها — فقط ستونِ نشستِ خودِ پنل (‎sessions.sudo_*‎)؛ رمز هرگز به سرورِ حساب نمی‌رود (‎console-flags-batch.mjs‎)
+  ['GET /api/account-admin/console/flags/sudo', 'حالِ پنجرهٔ «حالتِ تغییر» ِ همین نشست — از پایگاهِ پنل (فقط admin)'],
+  ['POST /api/account-admin/console/flags/sudo', 'باز کردنِ همان پنجره با رمز (و کدِ) پنل — احرازِ دوبارهٔ خودِ پنل (فقط admin)'],
+  ['DELETE /api/account-admin/console/flags/sudo', 'بستنِ همان پنجره (فقط admin)'],
 ]);
 
 /*
@@ -355,6 +361,8 @@ const SPECIAL = {
   'POST /api/account-admin/console/admins/:id/sessions/revoke': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-adm-0003', password: 'Bridge-1405-roles' } },
   'PUT /api/account-admin/console/flags': { body: { scope: 'all', key: 'shop.receipt_v2', value: true, reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, confirmKey: 'shop.receipt_v2', idempotencyKey: 'bridge-roles-flag-0001', password: 'Bridge-1405-roles' } },
   'POST /api/account-admin/console/flags/reset': { body: { scope: 'all', key: 'shop.receipt_v2', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, confirmKey: 'shop.receipt_v2', idempotencyKey: 'bridge-roles-flag-0002', password: 'Bridge-1405-roles' } },
+  //  ۱.۵۱.۱: تغییرِ دسته‌ای — scope ِ «همه»، متنِ تأیید و رمزِ پنل تا مقصدِ «فقط ارشد» (‎PUT /api/admin/flags‎) واقعاً دیده شود
+  'POST /api/account-admin/console/flags/batch': { body: { scope: 'all', changes: [{ key: 'shop.receipt_v2', value: true }], reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, confirmText: 'shop.receipt_v2', idempotencyKey: 'bridge-roles-flag-0003', password: 'Bridge-1405-roles' } },
   //  ۴.۶ و ۴.۷: کارِ حساس با رمزِ همان admin (احرازِ دوباره) تا مقصدِ «فقط ارشد» واقعاً دیده و سنجیده شود
   'POST /api/account-admin/console/market/trust/cases/:id/assign': { body: { confirm: true, idempotencyKey: 'bridge-roles-trust-0001' } },
   'POST /api/account-admin/console/market/trust/cases/:id/decide': { body: { outcome: 'upheld', reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles', idempotencyKey: 'bridge-roles-trust-0002' } },

@@ -162,6 +162,9 @@ try {
   await panelPage.goto(`${BASE}/shop?tab=users`, { waitUntil: 'networkidle' });
   await panelPage.waitForTimeout(800);
   check('و در خودِ پنل همان ماژول بخشِ «کاربرانِ پنل» را دارد (میزبانِ پنل)', (await panelUsersCard(panelPage)) === 1);
+  //  ۱.۵۱.۱: روی ‎/shop‎ منوی بخش جای منوی پنل است (drill-in) ⇒ «منوی اصلی» همان منوی پنل را برمی‌گرداند
+  await panelPage.locator('[data-testid="nav-back"]').click();
+  await panelPage.waitForTimeout(300);
   //  منوی پنل (نه منوی پوسته): آیتمِ «فروشگاه» یک بار، بینِ «پمپ‌بنزین‌ها» و «کدها» — همان جای پیش از ۱.۵۱.۰
   const daily = await panelPage.evaluate(() => [...document.querySelectorAll('aside nav a')].map((a) => a.getAttribute('href'))
     .filter((h) => !/^\/shop\?/.test(h)));

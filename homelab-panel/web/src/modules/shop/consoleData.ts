@@ -213,6 +213,69 @@ export type FlagItem = { key: string; value: unknown; updatedAt?: number; update
 export type KnownFlag = { key: string; scope?: string; default?: unknown; what?: string };
 export type Flags = { available: true; fetchedAt?: number; scope?: string; version?: number;
                       items?: FlagItem[]; known?: KnownFlag[]; reserved?: string[] };
+
+/*
+ *  ── پرچم‌ها، ۱.۵۱.۱: «حالتِ تغییر» و تغییرِ دسته‌ای ──
+ *  ⛔ دو قاعدهٔ زیر **کپیِ** همان دو در ‎server/src/modules/shop/routes/console-shell.js‎ است (‎isRiskyFlag‎، ‎flagConfirmPhrase‎)؛
+ *     ‎server/test/console-flags-batch.mjs‎ یکی بودنشان را روی خودِ این فایل می‌سنجد. مرز همان سرور است — این‌جا فقط تا پنجره
+ *     از پیش بداند چه بخواهد.
+ */
+/** پرچم‌های پول، سفارش، ویترین و امنیت — حتی برای یک دکان «پرخطر»اند. */
+export const FLAG_DANGER_KEYS: readonly string[] = ['shop.orders', 'shop.orders.refunds', 'shop.delivery', 'shop.storefront', 'hashchain.audit', 'market.directory'];
+
+/** پرخطر = روی همهٔ دکان‌ها (‎all‎ / ‎security‎) یا پرچمِ پول/سفارش/امنیت. */
+export function flagRisky(key: string, scope: string): boolean {
+  return scope === 'all' || scope === 'security' || FLAG_DANGER_KEYS.includes(key);
+}
+
+/** متنی که برای تأییدِ دستهٔ پرخطر نوشته می‌شود: یک پرچم ⇒ نامِ همان کلید؛ چند ⇒ scope؛ هیچ ⇒ `null`. */
+export function flagConfirmPhrase(scope: string, riskyKeys: readonly string[]): string | null {
+  const keys = Array.from(new Set((riskyKeys || []).map(String)));
+  if (!keys.length) return null;
+  return keys.length === 1 ? keys[0] : String(scope);
+}
+
+/** ‎GET|POST|DELETE /console/flags/sudo‎ — زمان‌ها با ساعتِ **سرورِ پنل** (‎serverTime‎). */
+export type FlagSudo = { open: boolean; openedAt?: number; until?: number; idleUntil?: number; hardUntil?: number;
+                         idleMs?: number; maxMs?: number; serverTime?: number };
+export type FlagChange = { key: string; value?: boolean; reset?: true };
+export type FlagBatchResult = { ok: true; batchId: string; scope: string; count: number; confirmedByServer: boolean; audited?: boolean;
+                                applied?: { key: string; to?: boolean; reset?: boolean; removed?: boolean }[]; sudo?: FlagSudo };
+
+/**
+ * دقیقه‌های ماندهٔ پنجره (گرد به بالا) — با ساعتِ سرور: `until − serverTime` منهای آن‌چه از دریافتِ پاسخ گذشته، نه ساعتِ
+ * مرورگر (ساعتِ جلو/عقبِ دستگاه دروغ نمی‌گوید). بسته یا نیامده ⇒ `null`؛ تمام‌شده ⇒ ۰.
+ */
+export function sudoMinutesLeft(s: FlagSudo | null | undefined, now: number, receivedAt: number): number | null {
+  if (!s || s.open !== true || typeof s.until !== 'number' || typeof s.serverTime !== 'number') return null;
+  const ms = s.until - s.serverTime - Math.max(0, now - receivedAt);
+  return ms <= 0 ? 0 : Math.ceil(ms / 60_000);
+}
+
+/** جست‌وجوی پرچم در کلید و شرحِ فارسی — «ي/ك» ِ عربی و نیم‌فاصله یکی، بزرگ/کوچک یکی. */
+export function flagMatches(k: { key: string; what?: unknown }, q: string): boolean {
+  const norm = (v: unknown) => String(v ?? '').toLowerCase().replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/[‌‏‎]/g, ' ').replace(/\s+/g, ' ').trim();
+  const needle = norm(q);
+  if (!needle) return true;
+  return norm(k.key).includes(needle) || norm(k.what).includes(needle);
+}
+
+/** فهرستِ «دکان‌های اخیر» (فقط شناسهٔ دکان، نه ‎all‎): تازه‌ترین اول، بی تکرار، حداکثر `max`. */
+export function pushRecentShop(list: readonly string[], id: string, max = 5): string[] {
+  const s = String(id || '').trim();
+  if (!s || s === 'all' || s === 'security' || s === 'ops') return list.slice(0, max);
+  return [s, ...list.filter((x) => x !== s)].slice(0, max);
+}
+
+/**
+ * scope ِ پیش‌فرضِ کارتِ پرچم‌ها: **یک دکان**، نه «همه» — تازه‌ترین دکانِ به‌کاررفته، وگرنه اگر فقط یک دکان هست همان؛
+ * وگرنه `null` (آدم خودش برمی‌گزیند). ⛔ هرگز ‎all‎ — تغییرِ همهٔ دکان‌ها با یک کلیکِ اتفاقی.
+ */
+export function defaultFlagScope(recent: readonly string[], shops: readonly { id: string }[] | null | undefined): string | null {
+  const r = (recent || []).find((x) => x && x !== 'all' && x !== 'security' && x !== 'ops');
+  if (r) return r;
+  return Array.isArray(shops) && shops.length === 1 && shops[0]?.id ? String(shops[0].id) : null;
+}
 /** ‎GET /api/admin/flags/history‎ — چه کسی، کی، پیشین ⇒ تازه، چرا. صفحه‌بندی با `before` (زمانِ آخرین ردیف). */
 export type FlagHistoryEntry = { id?: string; scope?: string; key: string; action?: string; oldValue?: unknown;
                                  newValue?: unknown; changedBy?: string; actor?: HoldActor; reason?: string | null; at?: number };

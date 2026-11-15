@@ -91,6 +91,26 @@ export function issueJoinCode(by) {
   return { id, code, expiresAt: t + codeTtlMs(), ttlMs: codeTtlMs() };
 }
 
+/**
+ * حالِ یک کدِ وصل (برای «منتظرِ وصل شدن…» ِ رابط) — بی خودِ کد: فقط شناسهٔ ردیف که در پاسخِ «افزودنِ سرور» آمده بود.
+ * ‎connected‎ = کد مصرف شد **و** نخستین تپشِ امضاشدهٔ همان گره رسید و هنوز آنلاین است.
+ */
+export function codeStatus(id) {
+  const r = db.prepare('SELECT id, expires_at, used_at, used_node, burned_at FROM fleet_join_codes WHERE id = ?').get(String(id || ''));
+  if (!r) throw new FleetError(404, 'code_not_found', 'این کد در فهرستِ کدهای این مرکز نیست.');
+  const t = now();
+  const state = r.used_at ? 'used' : r.burned_at ? 'burned' : r.expires_at <= t ? 'expired' : 'open';
+  let node = null;
+  if (r.used_node) {
+    const n = db.prepare('SELECT * FROM fleet_nodes WHERE id = ?').get(r.used_node);
+    if (n) {
+      const v = nodeView(n, t);
+      node = { id: v.id, name: v.name, kind: v.kind, agent: v.agent, status: v.status, online: v.online, beat: v.beat, joinedAt: v.joinedAt, lastSeenAt: v.lastSeenAt };
+    }
+  }
+  return { id: r.id, state, expiresAt: r.expires_at, node, connected: Boolean(node && node.status === 'active' && node.online && node.beat) };
+}
+
 export function openCodeCount() {
   return db.prepare('SELECT COUNT(*) AS n FROM fleet_join_codes WHERE used_at IS NULL AND burned_at IS NULL AND expires_at > ?').get(now()).n;
 }
@@ -169,7 +189,7 @@ export function joinNode(raw, { ip = null } = {}) {
     db.prepare(`INSERT INTO fleet_nodes(id, name, kind, public_key, status, joined_at, joined_by, join_ip, last_seen_at, last_ip, last_report)
                 VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?)`)
       .run(id, name, kind, env.body.publicKey, t, c.by, ip, t, ip,
-        JSON.stringify(sanitizeReport({ name, kind, version: env.body.version, apps: [], maintenance: {} })));
+        JSON.stringify(sanitizeReport({ name, kind, version: env.body.version, apps: [], maintenance: {}, agent: env.body.agent })));
     db.exec('COMMIT');
   } catch (e) {
     try { db.exec('ROLLBACK'); } catch { /* بسته */ }
@@ -304,6 +324,10 @@ function nodeView(n, t) {
     metrics: report?.metrics || null,
     apps: report?.apps || [],
     tunnel: report?.tunnel || null,
+    //  ۱.۵۱.۱: نمایندهٔ هاست (نه پنلِ کامل) و آن‌چه می‌تواند؛ «نخستین تپش رسید» = پس از ثبت پیامی آمده
+    agent: report?.agent === 'host' ? 'host' : null,
+    caps: Array.isArray(report?.caps) ? report.caps : [],
+    beat: Boolean(n.last_seen_at && n.joined_at && n.last_seen_at > n.joined_at),
   };
 }
 

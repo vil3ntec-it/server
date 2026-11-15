@@ -11,7 +11,7 @@
 //  ⛔ کدِ وصل فقط یک بار در پاسخِ «افزودنِ سرور» برمی‌گردد (‎no-store‎) — نه در دفتر، نه در لاگ، نه در فهرست.
 // ---------------------------------------------------------------------------
 import express, { Router } from 'express';
-import { requireAuth, requireRole, requireRecentAuth } from '../auth.js';
+import { requireAuth, requireRole, requireRecentAuthOrSudo } from '../auth.js';
 import { requireLocalOrAuth } from '../local-key.js';
 import { denyUnlessShellAllowed } from '../lib/shell-owner.js';
 import { audit } from '../lib/audit.js';
@@ -21,15 +21,18 @@ import * as node from '../fleet/node.js';
 import { maintenanceState, enterMaintenance, exitMaintenance } from '../fleet/maintenance.js';
 import * as placement from '../fleet/placement.js';
 import { CHUNK_BYTES } from '../fleet/mover.js';
+import { buildHostBundle } from '../fleet/host-bundle.js';
+import { config } from '../config.js';
 
 const router = Router();
 
 const ownerOnly = (what) => (req, res, next) => (denyUnlessShellAllowed(req, res, what) ? next() : undefined);
-const ownerChain = (what, { reauth = true } = {}) => [requireAuth, requireRole('admin'), ownerOnly(what), ...(reauth ? [requireRecentAuth] : [])];
+//  ۱.۵۱.۱: احرازِ دوباره = نشستِ تازه (ده دقیقه) **یا** «حالتِ تغییر» ِ باز (همان پنجرهٔ پرچم‌ها، لغزان) — `auth.js`
+const ownerChain = (what, { reauth = true } = {}) => [requireAuth, requireRole('admin'), ownerOnly(what), ...(reauth ? [requireRecentAuthOrSudo] : [])];
 
 /** کلیدِ محلیِ همین کامپیوتر (ابزارِ خطِ فرمان) یا زنجیرِ مالک با احرازِ دوباره */
 function localOrOwner(what) {
-  const chain = [requireRole('admin'), ownerOnly(what), requireRecentAuth];
+  const chain = [requireRole('admin'), ownerOnly(what), requireRecentAuthOrSudo];
   return [requireLocalOrAuth, (req, res, next) => {
     if (req.user?.local) return next();
     let i = 0;
@@ -71,13 +74,63 @@ router.get('/', ...ownerChain('panel.fleet', { reauth: false }), async (req, res
 
 /* ─────────────────────────────── مرکز ─────────────────────────────── */
 
+/*
+ *  نشانی‌هایی که سرورِ تازه با آن به این مرکز می‌رسد (۱.۵۱.۱) — فقط پیشنهاد به مالک برای دستورِ آماده:
+ *    ‎internet‎  ‎https://api.<دامنه>‎ (همان درِ عمومی که ‎/api/fleet/hub‎ رویش سوار است) — برای VPS و هاست
+ *    ‎lan‎       نشانیِ همین شبکه (کامپیوترِ دیگرِ خانه)        ‎local‎  همین کامپیوتر (برای سرورِ دیگر به کار نمی‌آید)
+ */
+const LOCAL_RE = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/i;
+const LAN_RE = /^(10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+|[a-z0-9-]+\.local)$/i;
+function centerUrls(req) {
+  const out = [];
+  const api = String(config.domains?.apiUrl || '').replace(/\/+$/, '');
+  if (/^https:\/\//.test(api)) out.push({ url: api, reach: 'internet' });
+  const host = String(req.headers.host || '').trim();
+  if (/^[A-Za-z0-9.\-[\]:]{1,255}$/.test(host)) {
+    const url = `${req.protocol === 'https' ? 'https' : 'http'}://${host}`;
+    const name = host.replace(/:\d+$/, '');
+    const reach = LOCAL_RE.test(name) ? 'local' : LAN_RE.test(name) ? 'lan' : url.startsWith('https://') ? 'internet' : 'lan';
+    if (!out.some((x) => x.url === url)) out.push({ url, reach });
+  }
+  return out;
+}
+
 router.post('/codes', ...ownerChain('panel.fleet.code'), (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   try {
     const c = hub.issueJoinCode(req.user?.username);
     audit(req, 'panel.fleet.code', { target: c.id, detail: { ttlMs: c.ttlMs } });
-    res.json({ ok: true, code: c.code, expiresAt: c.expiresAt, ttlMs: c.ttlMs });
+    //  ⛔ خودِ کد فقط همین یک بار (‎no-store‎)؛ ‎codeId‎ فقط شناسهٔ ردیف است (برای «منتظرِ وصل شدن…»)، نه کد
+    res.json({ ok: true, code: c.code, codeId: c.id, expiresAt: c.expiresAt, ttlMs: c.ttlMs, serverTime: Date.now(), centers: centerUrls(req) });
   } catch (e) { sendError(res, e); }
+});
+
+/** حالِ یک کد: باز/مصرف‌شده/کهنه و اگر مصرف شد، گرهٔ تازه و «نخستین تپش رسید؟» — بی خودِ کد */
+router.get('/codes/:id', ...ownerChain('panel.fleet', { reauth: false }), (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  try { res.json({ ok: true, serverTime: Date.now(), ...hub.codeStatus(req.params.id) }); } catch (e) { sendError(res, e); }
+});
+
+/*
+ *  بستهٔ «هاستِ اشتراکی» (۱.۵۱.۱): سرورِ حساب + نمایندهٔ هاست (‎homelab-panel/host-agent‎) + نشانی و کلیدِ عمومیِ همین مرکز.
+ *  ⛔ هیچ رازی در بسته نیست: نه کدِ وصل (در صفحهٔ «Setup Node.js App» ِ هاست به‌عنوانِ متغیر)، نه ‎.env‎، نه داده.
+ *  فقط مالک؛ فقط روی مرکز. پیوندِ دانلود با بلیتِ یک‌بارمصرف (‎openWithTicket‎) — توکن در نشانی نیست.
+ */
+router.get('/host-bundle', ...ownerChain('panel.fleet.bundle', { reauth: false }), async (req, res) => {
+  if (hub.isNode()) return res.status(409).json({ error: 'is_node', message: 'بستهٔ هاست فقط از مرکز ساخته می‌شود.' });
+  const center = String(req.query?.center || '').trim();
+  const ok = centerUrls(req).some((x) => x.url === center);
+  if (!ok) return res.status(400).json({ error: 'bad_center', message: 'نشانیِ مرکز یکی از نشانی‌های همین پنل نیست.' });
+  try {
+    const b = await buildHostBundle({ centerUrl: center });
+    audit(req, 'panel.fleet.bundle', { detail: { files: b.files, bytes: b.size, center } });
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="vill3n-host.zip"');
+    res.sendFile(b.file, (err) => { b.cleanup(); if (err && !res.headersSent) res.status(500).end(); });
+  } catch (e) {
+    res.status(e?.status || 500).json({ error: e?.code || 'bundle_failed', message: String(e?.message || e).slice(0, 300) });
+  }
 });
 
 router.post('/nodes/:id/maintenance', ...ownerChain('panel.fleet.maintenance'), (req, res) => {

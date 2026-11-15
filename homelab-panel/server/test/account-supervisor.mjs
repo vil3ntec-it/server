@@ -89,8 +89,9 @@ try {
     await new Promise((r) => setTimeout(r, 500));
   }
   check('از پورتِ عمومی، /api/health سرورِ حسابِ واقعی را می‌دهد', !!health, out.slice(-1200));
-  check('و نسخهٔ سرورِ حساب همان package.jsonِ آن است',
-    health?.json?.version === JSON.parse(fs.readFileSync(path.join(ACCOUNT_DIR, 'package.json'), 'utf8')).version, JSON.stringify(health?.json));
+  //  ⛔ سرورِ حساب (ریپوی shop، دستهٔ ۶۳ ِ «هیچ جزئیاتِ فنی در صفحه») نسخهٔ خودش را دیگر به اینترنت نمی‌دهد:
+  //  ‎/api/health‎ ِ عمومی فقط «آنلاین/وصل» است. نسخه را ناظرِ پنل از ‎package.json‎ ِ خودِ بسته می‌خواند، نه از درِ عمومی.
+  check('⛔ و درِ عمومیِ ‎/api/health‎ نسخهٔ سرورِ حساب را لو نمی‌دهد', health?.json && !('version' in health.json), JSON.stringify(health?.json));
   check('دیتابیسش وصل است (PGlite)', health?.json?.database === 'connected');
   check('پوشهٔ دیتابیس داخلِ پوشهٔ دادهٔ پنل ساخته شد', fs.existsSync(path.join(tmp, 'data', 'account-server', 'pg')));
   const secrets = path.join(tmp, 'data', 'account-server', 'secrets.json');

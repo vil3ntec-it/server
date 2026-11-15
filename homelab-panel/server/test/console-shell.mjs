@@ -172,9 +172,11 @@ const server = startPanel(PANEL, PUBLIC);
  *  همان که ده دقیقه بی رمز بگذرد. همان روشِ `roles-logs` / `totp` / `security`.
  */
 const { DatabaseSync } = await import('node:sqlite');
+//  ۱.۵۱.۱: «کهنه» یعنی «حالتِ تغییر» ِ پرچم‌ها هم بسته — رمزِ درستِ یک درخواستِ پیشین آن پنجره را باز می‌کند (قصدِ همین
+//  سنجه‌ها «بی احرازِ تازه» است؛ خودِ پنجره را ‎console-flags-batch.mjs‎ می‌سنجد)
 const staleAll = (port = PANEL) => {
   const d = new DatabaseSync(path.join(tmp, `data-${port}`, 'panel.db'));
-  try { d.exec('PRAGMA busy_timeout = 5000'); d.exec('UPDATE sessions SET auth_at = 0'); } finally { d.close(); }
+  try { d.exec('PRAGMA busy_timeout = 5000'); d.exec('UPDATE sessions SET auth_at = 0, sudo_at = NULL, sudo_seen = NULL'); } finally { d.close(); }
 };
 const BASE = `http://127.0.0.1:${PANEL}`;
 async function api(method, p, body, token, base = BASE) {
