@@ -9,6 +9,7 @@ import {
   Archive,
   ChevronDown,
   Workflow,
+  BellRing,
   Database,
   Command as CommandIcon,
   Download,
@@ -177,6 +178,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/monitoring', key: 'monitoring', icon: Activity },
       { to: '/automation', key: 'automation', icon: Workflow },
+      //  دروازهٔ پیام به مالک (۱.۵۳.۰): چه رفت، چه نرفت و چرا؛ تنظیمِ سقف، مهلت، خلاصه و ساعتِ آرام
+      { to: '/alerts', key: 'ownerAlerts', icon: BellRing, needs: 'admin' },
       { to: '/logs', key: 'logs', icon: ScrollText },
     ],
   },

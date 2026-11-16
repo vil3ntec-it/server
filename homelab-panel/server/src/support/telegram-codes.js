@@ -11,10 +11,12 @@
 //     بی گروه ⇒ گفت‌وگوی خصوصی. خاموش‌شدنی از ⚙️ تنظیمات.
 //  ⛔ هر کد یک پیام؛ تغییرِ حالش (رفت/استفاده شد/منقضی) همان پیام را ویرایش می‌کند.
 //  ⚠️ بارِ اولِ روشن شدن فقط کدهای از همان لحظه، نه تاریخچه.
+//  ⛔ (۱.۵۳.۰) کد هشدار نیست: پیش‌فرض **بی‌صدا** می‌رسد (پنل ⇒ اعلان‌ها ⇒ «کدها بی‌صدا»)، و در «امروز چند پیام» شمرده می‌شود.
 // ---------------------------------------------------------------------------
 import { getSetting, setSetting } from '../db.js';
 import { liveCodes } from '../routes/codes.js';
 import { deliver, CODES_REF } from './telegram-topics.js';
+import * as owner from '../notify/owner.js';
 
 const STATE = 'support_tg_codes';
 const KEEP_MS = 24 * 3600e3;
@@ -63,10 +65,12 @@ export async function syncCodes(tg, tok, privateChat, { enabled = true, log = ()
     if (!old) {
       if (!(Number(r.createdAt) >= since)) continue; // تاریخچه نه
       const text = codeText(r);
+      const silent = owner.settings().codesSilent;
       try {
         const d = await deliver(tg, tok, privateChat, CODES_REF, '🔐 کدهای شش‌رقمی', 'codes',
-          async (where) => (await tg(tok, 'sendMessage', { ...where, text, parse_mode: 'HTML', disable_web_page_preview: true })).message_id);
+          async (where) => (await tg(tok, 'sendMessage', { ...where, text, parse_mode: 'HTML', disable_web_page_preview: true, ...(silent ? { disable_notification: true } : {}) })).message_id);
         seen[key] = { chat: d.chatId, msg: d.messageId, sig: sig(r), at: Date.now() };
+        owner.count('codes');
         n++;
       } catch (e) { log(`کدها: ${e.message}`); }
     } else if (old.sig !== sig(r)) {

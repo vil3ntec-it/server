@@ -12,9 +12,13 @@
 //     برای همین «آخرین تپش» در پیام است: ساعتِ کهنه‌تر از ۲ دقیقه ⇒ خاموش یا بی‌اینترنت.
 //     و همین که برگشت، پیامِ «دوباره روشن شد» با مدتِ خاموشی می‌آید.
 //  ⚠️ HLP_TG_HEARTBEAT_MS (پیش‌فرض ۶۰ ثانیه؛ ۰ = خاموش).
+//  ⛔ (۱.۵۳.۰) «دوباره روشن شد» از دروازهٔ `notify/owner.js` می‌گذرد: ری‌استارتِ پشتِ هم (آپدیت، گیرِ برنامه) در
+//     مهلتِ تکرار فقط یک پیام است و بقیه در خلاصهٔ شب؛ ساعتِ آرام تا صبح. و ویرایشی که از شبکه نرسید دیگر
+//     پیامِ تازه و سنجاقِ تازه نمی‌سازد (هر دقیقه یک «📌 سنجاق شد» در گفت‌وگو) — فقط پیامی که واقعاً پاک شده.
 // ---------------------------------------------------------------------------
 import { getSetting, setSetting } from '../db.js';
 import { versionInfo } from '../version.js';
+import * as owner from '../notify/owner.js';
 
 const KEY = 'support_tg_beat';
 const GAP_MS = 3 * 60e3;
@@ -65,7 +69,11 @@ export async function beat(tg, tok, chatId) {
     // برگشت پس از خاموشی (عادی یا قطعِ برق): پیامِ زنگ‌دار با مدتِ خاموشی
     const since = b.offlineAt || (b.at && now - b.at > GAP_MS ? b.at : 0);
     if (since) {
-      await tg(tok, 'sendMessage', { chat_id: chatId, text: `🟢 سرور دوباره روشن شد — نسخهٔ ${versionInfo.version}\n🔴 از ${clock(since)} حدودِ ${span(now - since)} خاموش${b.offlineAt ? '' : ' یا بی‌اینترنت'} بود.` }).catch(() => {});
+      const text = `🟢 سرور دوباره روشن شد — نسخهٔ ${versionInfo.version}\n🔴 از ${clock(since)} حدودِ ${span(now - since)} خاموش${b.offlineAt ? '' : ' یا بی‌اینترنت'} بود.`;
+      const r = owner.report({ type: 'restart', key: 'restart', severity: 'warn', event: true, text,
+        title: `سرور دوباره روشن شد (${span(now - since)} خاموش${b.offlineAt ? '' : ' یا بی‌اینترنت'})` });
+      //  چراغ بی نشستِ ورود هم کار می‌کند، پس همین‌جا می‌فرستد؛ نرفت ⇒ در صف، نگهبانِ ربات دورِ بعد
+      if (r.decision === 'pending') await owner.deliver(r.id, (t, extra) => tg(tok, 'sendMessage', { chat_id: chatId, text: t, ...extra })).catch(() => {});
     }
     const msgId = await pinNew(tg, tok, chatId, b, greenText(now));
     save({ chatId, msgId, at: now, offlineAt: 0 });
@@ -79,8 +87,9 @@ export async function beat(tg, tok, chatId) {
     if (!msgId) throw new Error('none');
     await tg(tok, 'editMessageText', { chat_id: chatId, message_id: msgId, text: greenText(now) });
   } catch (e) {
-    // پیام پاک شده یا هنوز نیست ⇒ تازه و سنجاق
-    if (!/not modified/i.test(String(e.message))) msgId = await pinNew(tg, tok, chatId, { msgId: 0 }, greenText(now));
+    const why = String(e.message);
+    // پیام پاک شده یا هنوز نیست ⇒ تازه و سنجاق. ⛔ شبکه/تلگرامِ موقتاً ناجور ⇒ همان پیام، دورِ بعد (نه پیام و سنجاقِ تازه)
+    if (!msgId || /not found|can't be edited|can not be edited|MESSAGE_ID_INVALID/i.test(why)) msgId = await pinNew(tg, tok, chatId, { msgId: 0 }, greenText(now));
   }
   save({ chatId, msgId, at: now, offlineAt: 0 });
 }

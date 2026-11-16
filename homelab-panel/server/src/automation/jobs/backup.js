@@ -60,6 +60,8 @@ export const backupDaily = defineJob({
     const rotated = await ctx.backup.rotate({ Daily: 7, Weekly: 4 });
     ctx.log(`دور ریخته شد: پنل ${rotated.panel.length}، انبار ${rotated.storage.length}`);
     ctx.emit('backup.done', { kind: 'daily', ...made });
+    //  «خبر» است، نه هشدار: فقط در خلاصهٔ شبِ مالک («پشتیبان ✅»)، نه پیامِ جدا
+    await ctx.notify('info', `پشتیبانِ روزانه ساخته شد${made.storage ? ' (پنل و انبار)' : ''}`);
     return { ...made, rotated };
   },
   onFail: failHandler('روزانه'),
@@ -116,6 +118,7 @@ export const backupWeekly = defineJob({
     const made = await takeAll(ctx, { kind: 'Weekly', note: 'خودکار — هفتگی' });
     const test = await restoreTest(ctx, path.basename(made.panel));
     ctx.emit('backup.done', { kind: 'weekly', ...made });
+    await ctx.notify('info', 'پشتیبانِ هفتگی ساخته و آزمونِ بازگردانی گذرانده شد');
     return { ...made, restoreTest: test };
   },
   onFail: failHandler('هفتگی'),
@@ -143,6 +146,7 @@ export const backupMonthly = defineJob({
     if (st.ok) ctx.log(`انبار: ${st.folder}`);
     else if (st.error !== 'library_not_configured') throw new Error(st.message || st.error);
     ctx.emit('backup.done', { kind: 'monthly', panel: target, storage: st.ok ? st.path : null });
+    await ctx.notify('info', 'پشتیبانِ ماهانه ساخته شد');
     return { panel: target, storage: st.ok ? st.path : null, removed: old };
   },
   onFail: failHandler('ماهانه'),

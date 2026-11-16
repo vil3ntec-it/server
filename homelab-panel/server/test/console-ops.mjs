@@ -330,6 +330,8 @@ try {
   process.env.HLP_ACCOUNT_ADMIN_USER = 'boss';
   process.env.HLP_ACCOUNT_ADMIN_PASSWORD = 'top-secret';
   const m = await import('../src/support/telegram-console-alerts.js');
+  //  ساعتِ آرامِ دروازه (۲۳ تا ۷ کابل) این سنجه را به ساعتِ دیوار بند نکند: «مهم» در ساعتِ آرام تا صبح می‌ماند
+  (await import('../src/notify/owner.js')).setSettings({ quiet: false });
   const sent = [];
   let failNext = false;
   const send = async (text) => { if (failNext) { failNext = false; throw new Error('telegram 502'); } sent.push(text); };
@@ -346,7 +348,7 @@ try {
     { id: 'alr_x', rule: 'order_stuck', severity: 'medium', title: 'برگزیده نیست', liveSince: t1 + 1 },
   ];
   const r1 = await m.deliverConsoleAlerts(send);
-  check(`سقف: ${m.MAX_PER_RUN} پیام + یک پیامِ جمعی («و ۲ هشدارِ دیگر»)`, r1?.sent === m.MAX_PER_RUN && sent.length === m.MAX_PER_RUN + 1 && /و 2 هشدارِ دیگر/.test(sent.at(-1)), JSON.stringify(r1) + sent.join(' | '));
+  check(`سقف: ${m.MAX_PER_RUN} پیام + یک پیامِ جمعی («و ۲ هشدارِ دیگر»)`, r1?.sent === m.MAX_PER_RUN && sent.length === m.MAX_PER_RUN + 1 && /و (2|۲) هشدارِ دیگر/.test(sent.at(-1)), JSON.stringify(r1) + sent.join(' | '));
   check('نوعِ برگزیده‌نشده نرفت', !sent.some((s) => s.includes('برگزیده نیست')));
   check('پیام: نوع و اهمیت به فارسی، بی هیچ رازی', sent[0].includes('سرویسِ از کار افتاده') && sent[0].includes('بحرانی') && !sent.join('').includes('top-secret'));
   const n1 = sent.length;

@@ -9,16 +9,21 @@
 //  ⛔ یکی شدنِ تکرار: هر هشدار با (شناسه، ‎liveSince‎) یک بار؛ همان هشدار که در سرورِ حساب «تکرار» یا
 //     «چشمک» شد ‎liveSince‎ ِ تازه نمی‌گیرد ⇒ پیامِ دوم نمی‌رود. سرورِ حساب خودش هم یکی می‌کند.
 //  ⛔ سقف: حداکثر ‎MAX_PER_RUN‎ پیام در هر دور؛ بیشتر ⇒ یک پیامِ «و N هشدارِ دیگر».
+//  ⛔ (۱.۵۳.۰) از دروازهٔ `notify/owner.js` می‌گذرد: بحرانی ⇒ همان دم، مهم ⇒ هشدار (یک بار در مهلت)، متوسط/کم ⇒
+//     فقط خلاصهٔ شب؛ همان هشدار که پس از «چشمک» دوباره زنده شد، در مهلت دوباره نمی‌رود؛ سقفِ روزانه و ساعتِ آرام.
 //  ⛔ روشن کردن از «حالا» به بعد است — هشدارهای کهنهٔ زنده یک‌جا سرازیر نمی‌شوند.
 //  ⛔ پیام فقط عنوان، اهمیت و نوع؛ عنوان را خودِ سرورِ حساب از داده ساخته (نامِ دکان، شمار) و هیچ
 //     کلید، توکن، ایمیل یا شماره‌ای در آن نیست.
 // ---------------------------------------------------------------------------
 import { getSetting, setSetting } from '../db.js';
 import { cloudRaw } from '../stations/cloud.js';
+import * as owner from '../notify/owner.js';
 
 const PREFS = 'console_alerts_tg';
 const STATE = 'console_alerts_tg_state';
-export const MAX_PER_RUN = 5;
+export const MAX_PER_RUN = owner.MAX_PER_FLUSH;
+/** اهمیتِ سرورِ حساب ⇒ اهمیتِ دروازه */
+const OWNER_SEVERITY = { critical: 'critical', high: 'warn', medium: 'info', low: 'info' };
 const KEEP = 500;
 
 /** همان نام‌های قاعده در سرورِ حساب (‎lib/ops-alerts.js‎ ِ shop). */
@@ -88,28 +93,20 @@ export async function deliverConsoleAlerts(send, log = () => {}) {
     .filter((a) => a && typeof a.id === 'string' && Number(a.liveSince) > 0)
     .sort((x, y) => Number(x.liveSince) - Number(y.liveSince));
   const wanted = alerts.filter((a) => prefs.types.includes(a.rule) && state.sent[a.id] !== Number(a.liveSince));
-  let sent = 0;
-  for (const a of wanted.slice(0, MAX_PER_RUN)) {
-    try {
-      await send(formatAlert(a));
-      state.sent[a.id] = Number(a.liveSince);
-      sent += 1;
-    } catch (err) {
-      log(`هشدارِ کنسول به تلگرام نرفت: ${err.message}`);
-      break;
-    }
+  //  هر هشدار یک بار به دروازه می‌رود؛ رفتنش (یا نرفتنش و چرا) را دروازه ثبت می‌کند و پیامِ نرفته در صفش می‌ماند
+  for (const a of wanted) {
+    owner.report({
+      type: 'shop', key: `shop:${a.id}`, severity: OWNER_SEVERITY[a.severity] || 'warn', event: true,
+      title: `${RULE_FA[a.rule] || a.rule}: ${String(a.title || '').replace(/\s+/g, ' ').slice(0, 160)}`,
+      text: formatAlert(a),
+    });
+    state.sent[a.id] = Number(a.liveSince);
   }
-  const more = Math.max(0, wanted.length - MAX_PER_RUN);
-  if (more > 0) {
-    //  بقیه «دیده‌شده» حساب می‌شوند تا دورِ بعد دوباره سیل نشود — همان یک پیامِ جمعی بس است
-    for (const a of wanted.slice(MAX_PER_RUN)) state.sent[a.id] = Number(a.liveSince);
-    await send(`🛎 و ${more} هشدارِ دیگرِ فروشگاه — پنل ⇒ فروشگاه ⇒ هشدارها`).catch(() => {});
-  }
-  //  جلو بردنِ «از کی» فقط تا جایی که همه رسیدگی شد
-  const handled = alerts.filter((a) => !prefs.types.includes(a.rule) || state.sent[a.id] === Number(a.liveSince));
-  if (handled.length === alerts.length && alerts.length) state.since = Math.max(state.since, ...alerts.map((a) => Number(a.liveSince)));
+  if (alerts.length) state.since = Math.max(state.since, ...alerts.map((a) => Number(a.liveSince)));
+  const out = await owner.flush(send);
+  if (out.failed) log('هشدارِ کنسول به تلگرام نرفت — در صف ماند');
   const ids = Object.keys(state.sent);
   if (ids.length > KEEP) for (const id of ids.slice(0, ids.length - KEEP)) delete state.sent[id];
   setSetting(STATE, state);
-  return { sent, skipped: alerts.length - wanted.length, more };
+  return { sent: out.sent, skipped: alerts.length - wanted.length, more: out.more };
 }

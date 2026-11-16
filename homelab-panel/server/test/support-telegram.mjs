@@ -392,6 +392,10 @@ try {
   check('عوض شدنِ chat id ⇒ قفل و نشست پاک', r.body.bot?.loggedIn === false);
   void before5;
 
+  //  ساعتِ آرامِ دروازه (۲۳ تا ۷ کابل) «دوباره روشن شد» را تا صبح نگه می‌دارد؛ این سنجه به ساعتِ دیوار بند نباشد
+  r = await call('PUT', '/api/owner-alerts/settings', { quiet: false });
+  check('ساعتِ آرام برای این سنجه خاموش', r.status === 200 && r.body?.settings?.quiet === false, JSON.stringify(r.body));
+
   console.log('\n── ۸) چراغِ قرمز هنگامِ خاموش شدن ──');
   child.kill('SIGTERM');
   for (let i = 0; i < 40 && !tgEdits.some((e) => /🔴/.test(e.text || '')); i++) await wait(100);
