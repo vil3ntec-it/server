@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 import { mountConsoleOps } from './routes/console-ops.js';
 import { mountConsoleSupportAccess } from './routes/console-support-access.js';
+import { SUPPORT_REQUEST_CAPABILITIES, mountConsoleSupportRequests } from './routes/console-support-requests.js';
 import { mountConsoleShell } from './routes/console-shell.js';
 import { MARKET_CAPABILITIES, mountConsoleMarket } from './routes/console-market.js';
 import { mountConsoleStaff } from './routes/console-staff.js';
@@ -31,6 +32,8 @@ export function mount(router, deps) {
   mountConsoleOps(router, { guard, capabilities, unavailable, missingErr, badInput, stamped, actorOf, isPanelOwner, reauthLimit, reauth });
   //  ۱.۵۰.۹۰ (۲-۹، G1): اجازهٔ موقتِ دسترسیِ پشتیبانی به دادهٔ یک دکان
   mountConsoleSupportAccess(router, { guard, badInput, actorOf, capListed, missingErr, unavailable, isPanelOwner, reauthLimit, reauth });
+  //  ۱.۵۲.۰ «از پشتیبانی بخواه»: صفِ درخواست‌های ساخت‌یافتهٔ پشتیبانی و «درستش کن» ِ یک‌کلیکی (shop ‎claude/e-support‎)
+  mountConsoleSupportRequests(router, { guard, badInput, actorOf, capListed, missingErr, unavailable });
   //  پوسته: ماژول‌ها، داشبورد، جست‌وجو، کاربران و نقش‌ها، پرچم‌ها
   mountConsoleShell(router);
   //  ۴.۶ مدیریتِ بازار و ۴.۷ نظارت بر پیک
@@ -57,7 +60,7 @@ const shop = Object.freeze({
   /** زیرماژول‌های پوسته (‎?tab=‎) با ‎minRole‎ ِ هر کدام — همان که ‎GET /console/modules‎ می‌دهد */
   modules: CONSOLE_MODULES,
   /** توانایی‌های سرورِ حساب که فقط این ماژول می‌خواهد ⇒ در ‎PHASE3‎ ِ پل و ‎GET /console/capabilities‎ */
-  capabilities: MARKET_CAPABILITIES,
+  capabilities: Object.freeze({ ...MARKET_CAPABILITIES, ...SUPPORT_REQUEST_CAPABILITIES }),
   mount,
 });
 

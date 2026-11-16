@@ -252,7 +252,12 @@ const PHASE3 = ['GET /api/admin/shops/:id/health', 'GET /api/admin/shops/:id/hol
   'GET /api/admin/shops/:id/access-grants', 'POST /api/admin/shops/:id/access-grants', 'POST /api/admin/shops/:id/access-grants/break-glass',
   'POST /api/admin/shops/:id/access-grants/:gid/revoke',
   //  ۱.۵۰.۹۶ (IMG-PRO-17، پشتِ `image-changes.v1`): دسته‌های تغییرِ عکسِ یک دکان و برگرداندن — shop ‎claude/e-rows-13x‎، هنوز روی main نیست
-  'GET /api/admin/shops/:id/images/changes', 'GET /api/admin/shops/:id/images/changes/:cid', 'POST /api/admin/shops/:id/images/changes/:cid/rollback']
+  'GET /api/admin/shops/:id/images/changes', 'GET /api/admin/shops/:id/images/changes/:cid', 'POST /api/admin/shops/:id/images/changes/:cid/rollback',
+  //  ۱.۵۲.۰ («از پشتیبانی بخواه»، پشتِ `support-requests.v1`، shop ‎claude/e-support‎ — هنوز روی main نیست)
+  'GET /api/admin/support-requests', 'GET /api/admin/support-requests/:id', 'GET /api/admin/support-requests/:id/sync-error',
+  'POST /api/admin/support-requests/:id/resolve', 'POST /api/admin/support-requests/:id/fix/enable-flag',
+  'POST /api/admin/support-requests/:id/fix/grant-subscription', 'POST /api/admin/support-requests/:id/fix/raise-device-limit',
+  'POST /api/admin/support-requests/:id/fix/resend-email-code']
   .map((x) => { const [method, p] = x.split(' '); return { method, re: toRe(p), id: x }; });
 const phase3Of = (method, p) => PHASE3.find((x) => x.method === method && x.re.test(p)) || null;
 
@@ -297,7 +302,7 @@ const fake = http.createServer((req, res) => {
     if (p === '/api/admin/login') return j(200, { token: 'tok-1', expiresAt: NOW + 12 * 3600e3 });
     if (!BACKGROUND.test(p)) calls.push({ method: req.method, path: p });
     //  همهٔ تواناییِ فاز ۳ اعلام می‌شود تا مقصدِ آن مسیرها هم دیده و سنجیده شود
-    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1', 'admin-sessions.v1', 'search.v1', 'market-admin.v1', 'delivery-watch.v1', 'ops.v1', 'release-stage.v1', 'finance.v1', 'sync-restore-once.v1', 'subscription-period.v1', 'admin-contract.v1', 'staff-perms.v1', 'image-bank.v1', 'idempotent-writes.v1', 'holidays.v1', 'synonyms.v1', 'support-access.v1', 'market-regions.v1', 'image-changes.v1'], serverTime: NOW });
+    if (p === '/api/admin/me') return j(200, { admin: { id: 'a1', username: 'boss', role: 'superadmin' }, capabilities: ['shop-health.v1', 'shop-holds.v1', 'flags.v1', 'actor.v1', 'service-key.v1', 'admin-sessions.v1', 'search.v1', 'market-admin.v1', 'delivery-watch.v1', 'ops.v1', 'release-stage.v1', 'finance.v1', 'sync-restore-once.v1', 'subscription-period.v1', 'admin-contract.v1', 'staff-perms.v1', 'image-bank.v1', 'idempotent-writes.v1', 'holidays.v1', 'synonyms.v1', 'support-access.v1', 'market-regions.v1', 'image-changes.v1', 'support-requests.v1'], serverTime: NOW });
     //  ۱.۵۰.۸۰: نوشتنِ کانالِ آزمایشی نسخهٔ دیده‌شده را با همین می‌سنجد (‎sample‎ نسخه ندارد) تا ‎PUT‎ ِ «فقط ارشد» هم دیده شود
     if (p === '/api/admin/release/beta' && req.method === 'GET') return j(200, { ...sample, version: 7 });
     if (/\/receipt$/.test(p)) { res.setHeader('content-type', 'text/html; charset=utf-8'); return res.end('<html>رسید</html>'); }
@@ -400,6 +405,13 @@ const SPECIAL = {
   'POST /api/account-admin/console/shops/:id/access-grants': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-acc-0001' } },
   'POST /api/account-admin/console/shops/:id/access-grants/break-glass': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-acc-0002', password: 'Bridge-1405-roles' } },
   'POST /api/account-admin/console/shops/:id/access-grants/:gid/revoke': { params: { gid: 'g1' }, body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-acc-0003' } },
+  //  ۱.۵۲.۰ («از پشتیبانی بخواه»): «حل شد» و چهار «درستش کن» — دکانِ همان کارت + کلید (و تأیید برای پول)
+  'POST /api/account-admin/console/support-requests/:id/resolve': { body: { shopId: 'x1', idempotencyKey: 'bridge-roles-srq-0001' } },
+  'POST /api/account-admin/console/support-requests/:id/fix/enable-flag': { body: { shopId: 'x1', idempotencyKey: 'bridge-roles-srq-0002' } },
+  'POST /api/account-admin/console/support-requests/:id/fix/grant-subscription': { body: { shopId: 'x1', confirm: true, days: 30, idempotencyKey: 'bridge-roles-srq-0003' } },
+  'POST /api/account-admin/console/support-requests/:id/fix/raise-device-limit': { body: { shopId: 'x1', confirm: true, idempotencyKey: 'bridge-roles-srq-0004' } },
+  'POST /api/account-admin/console/support-requests/:id/fix/resend-email-code': { body: { shopId: '', idempotencyKey: 'bridge-roles-srq-0005' } },
+  'GET /api/account-admin/console/support-requests/:id/sync-error': { query: '&shopId=x1' },
   //  ۱.۵۰.۹۶ (IMG-PRO-17): برگرداندنِ دستهٔ عکس — دلیل + تأیید + کلید
   'POST /api/account-admin/console/shops/:id/images/changes/:cid/rollback': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, idempotencyKey: 'bridge-roles-ichg-0001' } },
   //  ۱.۵۰.۸۰ (S11): کانالِ آزمایشی (نسخهٔ همان ‎GET‎ ِ بالا) و نشانیِ دانلود — دلیل + تأیید + کلید

@@ -34,6 +34,7 @@ import { subsPath } from './subsPath';
 import type { Message, Thread } from './types';
 import { SupportTelegramButton } from './SupportTelegram';
 import { SiteChatsButton } from './SiteChats';
+import { ProblemCard, RequestBadge, RequestFilters, RequestsColumn, useSupportRequests, type SupportRequest } from './SupportRequests';
 
 const THREAD_STATUS: Record<string, string> = {
   open: 'باز', pending: 'منتظرِ مشتری', closed: 'بسته',
@@ -128,6 +129,12 @@ export default function Support() {
   const [q, setQ] = useState('');
   const [current, setCurrent] = useState<string>('');
   const [broadcast, setBroadcast] = useState(false);
+  //  ۱.۵۲.۰ «از پشتیبانی بخواه»: صفِ درخواست‌های ساخت‌یافته کنارِ گفت‌وگوها (همان رشته، کارتِ مشکل در ستونِ سوم)
+  const [mode, setMode] = useState<'threads' | 'requests'>('threads');
+  const [rf, setRf] = useState({ status: 'open', problem: '', minAge: '' });
+  const [picked, setPicked] = useState<SupportRequest | null>(null);
+  const requests = useSupportRequests(rf);
+  const openReqs = useSupportRequests({ status: 'open', problem: '', minAge: '' });
 
   const qs = new URLSearchParams();
   if (app !== 'both') qs.set('app', app);
@@ -144,7 +151,27 @@ export default function Support() {
       [th.who, partyOf(th), th.lastMessage, th.subject].some((s) => (s || '').toLowerCase().includes(needle)));
   }, [list.data, q]);
 
-  const selected = threads.find((t) => t.id === current) || (list.data?.threads || []).find((t) => t.id === current) || null;
+  //  رشتهٔ درخواستی که در فهرستِ گفت‌وگوهای همین پالایه نیست (بخش/حالِ دیگر) ⇒ همان رشته از روی خودِ درخواست
+  const fromRequest: Thread | null = picked && picked.threadId === current ? {
+    id: picked.threadId, app: 'shop', who: picked.who, status: picked.threadStatus || 'open', unreadAdmin: picked.unreadAdmin,
+    lastMessage: '', lastSender: '', createdAt: picked.createdAt || 0, updatedAt: picked.updatedAt || 0, shopName: picked.shopName, shopId: picked.shopId,
+  } : null;
+  const selected = threads.find((t) => t.id === current) || (list.data?.threads || []).find((t) => t.id === current) || fromRequest;
+  const reqsByThread = useMemo(() => {
+    const m = new Map<string, SupportRequest[]>();
+    for (const r of openReqs.data?.requests || []) m.set(r.threadId, [...(m.get(r.threadId) || []), r]);
+    return m;
+  }, [openReqs.data]);
+  //  کارتِ ستونِ سوم: درخواست‌های بازِ همین رشته، و درخواستِ برگزیده از صف (حتی حل‌شده)
+  const cards = useMemo(() => {
+    const out = [...(reqsByThread.get(current) || [])];
+    if (picked && picked.threadId === current && !out.some((r) => r.id === picked.id)) out.unshift(picked);
+    return out;
+  }, [reqsByThread, current, picked]);
+  const reloadAll = async () => { await Promise.all([list.reload(), requests.reload(), openReqs.reload()]); };
+  //  «درستش کن» ⇒ پاسخِ خودکارِ سرورِ حساب همان دم در گفت‌وگو (بی صبر برای گذرگاهِ زنده)
+  const [tick, setTick] = useState(0);
+  const afterFix = async () => { setTick((t) => t + 1); await reloadAll(); };
   const unread = list.data?.unread || 0;
 
   return (
@@ -158,6 +185,12 @@ export default function Support() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg border border-line p-0.5 text-xs" role="tablist" data-sr="mode">
+            <button type="button" role="tab" aria-selected={mode === 'threads'} className={`rounded-md px-2.5 py-1 ${mode === 'threads' ? 'bg-surface-raised font-bold text-ink' : 'text-ink-muted'}`} onClick={() => setMode('threads')}>گفت‌وگوها</button>
+            <button type="button" role="tab" aria-selected={mode === 'requests'} className={`rounded-md px-2.5 py-1 ${mode === 'requests' ? 'bg-surface-raised font-bold text-ink' : 'text-ink-muted'}`} onClick={() => setMode('requests')}>
+              درخواست‌ها{openReqs.data?.open ? <span className="mr-1 rounded-full bg-red-600 px-1.5 text-[10.5px] font-extrabold text-white">{fa(openReqs.data.open)}</span> : null}
+            </button>
+          </div>
           <AppPicker value={app} onChange={setApp} withBoth />
           <div className="w-32">
             <Select
@@ -178,6 +211,15 @@ export default function Support() {
       <div className="grid min-h-0 flex-1 gap-3" style={{ gridTemplateColumns: 'minmax(250px,310px) minmax(0,1fr) minmax(240px,320px)' }}>
         {/* ══ ۱) فهرستِ گفت‌وگوها ═══════════════════════════════════════════ */}
         <section className="card flex min-h-0 flex-col overflow-hidden p-0" data-chat="list">
+          {mode === 'requests' ? (
+            <>
+              <RequestFilters value={rf} onChange={setRf} />
+              <div className="min-h-0 flex-1 overflow-y-auto" data-sr="list">
+                <RequestsColumn list={requests} current={current} onPick={(r) => { setPicked(r); setCurrent(r.threadId); }} />
+              </div>
+              <p className="border-t border-line px-3 py-2 text-[10.5px] text-ink-muted">تازه‌ترین بالا · هر درخواست همان پیامِ مشتری در گفت‌وگوست.</p>
+            </>
+          ) : (<>
           <div className="border-b border-line p-3">
             <div className="relative">
               <Search className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" />
@@ -221,6 +263,7 @@ export default function Support() {
                       <span className="flex items-center gap-2">
                         <span className="truncate text-sm font-bold text-ink">{th.who || '—'}</span>
                         <Badge tone={th.app === 'pump' ? 'info' : 'neutral'}>{APP_LABEL[th.app as 'shop' | 'pump'] || th.app}</Badge>
+                        <RequestBadge n={reqsByThread.get(th.id)?.length || 0} />
                       </span>
                       <span className="block truncate text-[11.5px] text-ink-muted">
                         {th.lastMessage ? `${th.lastSender === 'admin' ? 'شما: ' : ''}${th.lastMessage}` : partyOf(th) || '—'}
@@ -242,12 +285,13 @@ export default function Support() {
           <p className="border-t border-line px-3 py-2 text-[10.5px] text-ink-muted">
             پیام‌ها ۱۵ روز روی سرورِ حساب؛ رسانه فقط تا رسیدن به طرفِ دیگر.
           </p>
+          </>)}
         </section>
 
         {/* ══ ۲) خودِ گفت‌وگو ══════════════════════════════════════════════ */}
         <section className="card flex min-h-0 flex-col overflow-hidden p-0" data-chat="conversation">
           {selected ? (
-            <Conversation key={selected.id} thread={selected} onChanged={list.reload} />
+            <Conversation key={selected.id} thread={selected} onChanged={reloadAll} tick={tick} />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-ink-muted">
               <span className="text-5xl">💬</span>
@@ -260,6 +304,7 @@ export default function Support() {
 
         {/* ══ ۳) مشخصاتِ همان کسی که پیام داده ═════════════════════════════ */}
         <section className="card min-h-0 overflow-y-auto p-0" data-chat="party">
+          {selected && cards.map((r) => <ProblemCard key={r.id} request={r} onChanged={afterFix} />)}
           {selected ? <PartyCard thread={selected} /> : (
             <div className="p-5 text-center text-xs text-ink-muted">مشخصاتِ طرفِ گفت‌وگو این‌جا می‌آید.</div>
           )}
@@ -271,7 +316,7 @@ export default function Support() {
   );
 }
 
-function Conversation({ thread, onChanged }: { thread: Thread; onChanged: () => Promise<void> }) {
+function Conversation({ thread, onChanged, tick = 0 }: { thread: Thread; onChanged: () => Promise<void>; tick?: number }) {
   const [text, setText] = useState('');
   const [close, setClose] = useState(false);
   const [sendingMedia, setSendingMedia] = useState(false);
@@ -291,6 +336,7 @@ function Conversation({ thread, onChanged }: { thread: Thread; onChanged: () => 
   const live = conv.data?.thread || thread;
 
   useEffect(() => { bottom.current?.scrollIntoView({ block: 'end' }); }, [conv.data]);
+  useEffect(() => { if (tick) void conv.reload(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [tick]);
   //  باز شدنِ گفت‌وگو، مدیر دیدش ⇒ شمارهٔ نخواندهٔ فهرست هم تازه شود
   useEffect(() => { if (conv.data) void onChanged(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [conv.data?.thread?.unreadAdmin]);
 
