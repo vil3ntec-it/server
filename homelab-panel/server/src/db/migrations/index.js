@@ -24,6 +24,8 @@ import { up as up012 } from './012_app_hostnames.js';
 import { up as up013 } from './013_flag_sudo.js';
 import { up as up014 } from './014_owner_alerts.js';
 import { up as up015 } from './015_totp_sealed.js';
+import { up as up016 } from './016_app_key_hashes.js';
+import { up as up017 } from './017_notify_token_hashes.js';
 
 export const migrations = [
   { version: 1, name: 'initial', up: up001 },
@@ -41,4 +43,6 @@ export const migrations = [
   { version: 13, name: 'flag_sudo', up: up013 },
   { version: 14, name: 'owner_alerts', up: up014 },
   { version: 15, name: 'totp_sealed', up: up015 },
+  { version: 16, name: 'app_key_hashes', up: up016 },
+  { version: 17, name: 'notify_token_hashes', up: up017 },
 ];

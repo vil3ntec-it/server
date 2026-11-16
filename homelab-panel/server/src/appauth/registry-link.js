@@ -22,7 +22,7 @@
 //  نمی‌شکند: ثبت در هر کدام، آن یکی را هم می‌سازد — با **همان کلید**، تا
 //  یک کلید روی هر دو مسیر کار کند.
 // ---------------------------------------------------------------------------
-import { getApp as getCodeApp, ensureApp as ensureCodeApp } from '../codes/store.js';
+import { getApp as getCodeApp, ensureApp as ensureCodeApp, newApiKey, setAppKey } from '../codes/store.js';
 import { getClient, ensureClient, syncClientKey } from './clients.js';
 import { cleanApp } from './identity.js';
 
@@ -67,11 +67,30 @@ export function linkApp(slug, { name = null, kind = 'app' } = {}) {
    *  شش‌رقمی دیده و کپی می‌شود.
    */
   if (codeApp?.api_key && client && client.api_key !== codeApp.api_key) {
-    client = syncClientKey(key, codeApp.api_key) || client;
+    client = syncClientKey(key, codeApp.api_key, codeApp.api_key_hint) || client;
     linked = true;
   }
 
   return { codeApp, client, linked };
+}
+
+/**
+ * کلیدِ تازهٔ **مشترکِ** هر دو دفتر (C-04، ۱.۵۳.۳) — ساختن و چرخاندن از هر دو صفحهٔ پنل.
+ *
+ * روی دیسک فقط هش است، پس خامِ کلید فقط همین یک بار برمی‌گردد و صدازننده همان را در پاسخ نشان می‌دهد. تا ۱.۵۳.۲ چرخاندن از
+ * صفحهٔ «برنامه‌ها» فقط دفترِ ورود را عوض می‌کرد و `linkApp` ِ بعدی کلیدِ دفترِ کدها را رویش می‌نشاند؛ با کلیدِ ناپیدا این یعنی
+ * برنامهٔ قفل‌شده. حالا هر دو دفتر همان هش را می‌گیرند.
+ *
+ * @returns {string|null} کلیدِ خام، یا null اگر برنامه در هیچ دفتری نیست
+ */
+export function issueSharedKey(slug, { name = null, kind = 'app' } = {}) {
+  const key = cleanApp(slug);
+  const { codeApp, client } = linkApp(key, { name, kind });
+  if (!codeApp || !client) return null;
+  const raw = newApiKey();
+  const row = setAppKey(key, raw);
+  syncClientKey(key, row.api_key, row.api_key_hint);
+  return raw;
 }
 
 /** هست یا نه — در هر کدام از دو دفتر */
