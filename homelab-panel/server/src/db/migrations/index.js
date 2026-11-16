@@ -23,6 +23,7 @@ import { up as up011 } from './011_fleet_placement.js';
 import { up as up012 } from './012_app_hostnames.js';
 import { up as up013 } from './013_flag_sudo.js';
 import { up as up014 } from './014_owner_alerts.js';
+import { up as up015 } from './015_totp_sealed.js';
 
 export const migrations = [
   { version: 1, name: 'initial', up: up001 },
@@ -39,4 +40,5 @@ export const migrations = [
   { version: 12, name: 'app_hostnames', up: up012 },
   { version: 13, name: 'flag_sudo', up: up013 },
   { version: 14, name: 'owner_alerts', up: up014 },
+  { version: 15, name: 'totp_sealed', up: up015 },
 ];
