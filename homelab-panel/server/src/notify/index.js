@@ -21,6 +21,7 @@ import { attachHeartbeat } from '../lib/ws-heartbeat.js';
 import { db, q, logEvent, getSetting, setSetting } from '../db.js';
 import { bumpSoon } from '../live/bus.js';
 import { pushToDevices, vapidPublicKey, isPushService } from '../messenger/push.js';
+import { hashTopicToken, topicTokenMatches } from '../lib/app-key.js';
 
 export const notifyEvents = new EventEmitter();
 
@@ -133,7 +134,8 @@ export function listTopics() {
 export function setWriteToken(name, token) {
   const topic = ensureTopic(name);
   if (!topic) return { ok: false, error: 'invalid_topic' };
-  const value = token === null || token === '' ? null : String(token);
+  //  C-05: روی دیسک فقط هش (lib/app-key.js)؛ خامِ رمز فقط پاسخِ ‎newWriteToken‎
+  const value = token === null || token === '' ? null : hashTopicToken(token);
   q('UPDATE ntf_topics SET write_token = ? WHERE name = ?').run(value, topic.name);
   touched();
   return { ok: true, hasToken: Boolean(value) };
@@ -154,7 +156,8 @@ function tokenOk(want, provided) {
 
 function mayWrite(topicRow, provided) {
   if (!topicRow?.write_token) return true; // موضوع باز است
-  return tokenOk(topicRow.write_token, provided);
+  //  C-05: رمزِ موضوع روی دیسک فقط هش است؛ مقایسهٔ ثابت‌زمانِ دو هش
+  return topicTokenMatches(provided, topicRow.write_token);
 }
 
 /* یک «رمزِ خواندنِ همگانی» هم هست که روی همهٔ موضوع‌ها کار می‌کند. در عمل همین
@@ -177,15 +180,17 @@ export function newReadKeyAll() {
 /** خواندنِ پیام‌ها و ثبتِ دستگاه — اگر هیچ رمزی تنظیم نشده باشد، باز است */
 export function mayRead(name, provided) {
   const row = getTopic(name);
-  const want = row?.read_token || readKeyAll();
-  if (!want) return true;
-  return tokenOk(want, provided);
+  //  رمزِ خودِ موضوع مقدم است (C-05: فقط هش روی دیسک)؛ وگرنه رمزِ همگانی (در پنل دیده می‌شود ⇒ رمزشده با گاوصندوق، نه هش)
+  if (row?.read_token) return topicTokenMatches(provided, row.read_token);
+  const all = readKeyAll();
+  if (!all) return true;
+  return tokenOk(all, provided);
 }
 
 export function setReadToken(name, token) {
   const topic = ensureTopic(name);
   if (!topic) return { ok: false, error: 'invalid_topic' };
-  const value = token === null || token === '' ? null : String(token);
+  const value = token === null || token === '' ? null : hashTopicToken(token);
   q('UPDATE ntf_topics SET read_token = ? WHERE name = ?').run(value, topic.name);
   touched();
   return { ok: true, hasReadToken: Boolean(value) };
@@ -239,10 +244,14 @@ const retained = new Map();
  * یک اعلان می‌فرستد: ذخیره، پخشِ زنده، و نوتیفیکیشن برای دستگاه‌های ثبت‌شده.
  * همین یک تابع پشتِ همهٔ راه‌های فرستادن است.
  */
-export async function publish(name, { title, body, priority, tags, click, token } = {}) {
+/*
+ *  ⚠️ `trusted`: فقط فرستندهٔ درونیِ خودِ پنل (هشدارِ پمپ، «فرستادن از پنل» پشتِ ورودِ مدیر). تا ۱.۵۳.۲ این‌ها رمزِ خامِ
+ *  ردیف را می‌فرستادند؛ از C-05 روی دیسک فقط هش است، پس درِ مطمئن جای «رمز از دیتابیس» را گرفت. هیچ مسیرِ HTTP آن را نمی‌دهد.
+ */
+export async function publish(name, { title, body, priority, tags, click, token, trusted = false } = {}) {
   const topicRow = ensureTopic(name);
   if (!topicRow) return { ok: false, error: 'invalid_topic' };
-  if (!mayWrite(topicRow, token)) return { ok: false, error: 'forbidden' };
+  if (trusted !== true && !mayWrite(topicRow, token)) return { ok: false, error: 'forbidden' };
 
   const text = String(body ?? '').trim();
   if (!text) return { ok: false, error: 'empty_message' };

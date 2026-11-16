@@ -197,14 +197,13 @@ adminRouter.post('/:topic/read-token', (req, res) => {
 
 // فرستادنِ دستی از داخل پنل
 adminRouter.post('/:topic/send', async (req, res) => {
-  const topicRow = notify.getTopic(req.params.topic);
   const result = await notify.publish(req.params.topic, {
     title: req.body?.title,
     body: req.body?.message ?? req.body?.body,
     priority: req.body?.priority,
     tags: req.body?.tags,
-    // مدیرِ پنل رمزِ موضوع را لازم ندارد
-    token: topicRow?.write_token,
+    // مدیرِ پنل رمزِ موضوع را لازم ندارد — پشتِ ورودِ مدیر است (C-05: درِ مطمئن، نه هشِ ردیف)
+    trusted: true,
   });
   if (!result.ok) return res.status(400).json(result);
   res.json(result);

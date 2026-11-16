@@ -13,7 +13,7 @@
 //  برنامه‌ای پشتِ در نماند و صاحبِ سرور بعداً در پنل ببیندش.
 // ---------------------------------------------------------------------------
 import crypto from 'node:crypto';
-import { sameSecret } from '../lib/secret-compare.js';
+import { hashAppKey, appKeyHint, appKeyMatches } from '../lib/app-key.js';
 import { db, logEvent } from '../db.js';
 import { otpSettings } from './settings.js';
 import { cleanApp } from './identity.js';
@@ -22,7 +22,8 @@ db.exec(`
 CREATE TABLE IF NOT EXISTS app_clients (
   slug          TEXT PRIMARY KEY,          -- pump / shop / site-1
   name          TEXT NOT NULL,             -- نامی که در پنل دیده می‌شود
-  api_key       TEXT,                      -- کلیدِ اختصاصیِ همین برنامه
+  api_key       TEXT,                      -- C-04: فقط هشِ کلید (sha256:، lib/app-key.js)؛ همان هشِ دفترِ کدها
+  api_key_hint  TEXT,                      -- نشانه برای فهرست — خودِ کلید فقط هنگامِ ساخت/چرخاندن
   require_key   INTEGER NOT NULL DEFAULT 0,
   enabled       INTEGER NOT NULL DEFAULT 1,
   channels      TEXT NOT NULL DEFAULT 'sms,email',
@@ -41,6 +42,8 @@ CREATE TABLE IF NOT EXISTS app_clients (
 try {
   const cols = db.prepare('PRAGMA table_info(app_clients)').all().map((c) => c.name);
   if (!cols.includes('kind')) db.exec("ALTER TABLE app_clients ADD COLUMN kind TEXT NOT NULL DEFAULT 'web'");
+  //  C-04: پایگاه‌داده‌ای که پیش از ۱.۵۳.۳ جدول را داشت این را از مهاجرتِ ۰۱۶ می‌گیرد؛ این فقط پشتیبان است
+  if (!cols.includes('api_key_hint')) db.exec('ALTER TABLE app_clients ADD COLUMN api_key_hint TEXT');
 } catch { /* ستون از قبل هست */ }
 
 /** سه نوعی که پشتیبانی می‌شود */
@@ -70,6 +73,8 @@ export const KIND_LABELS = {
 export const cleanKind = (value) => (KINDS.includes(String(value)) ? String(value) : 'web');
 
 const newKey = () => `hlp_${crypto.randomBytes(16).toString('hex')}`;
+/** کلیدِ خام ⇒ [هش، نشانه] — خامش هرگز روی دیسک نمی‌نشیند (C-04) */
+const storedKey = (raw) => [hashAppKey(raw), appKeyHint(raw)];
 
 export function getClient(slug) {
   return db.prepare('SELECT * FROM app_clients WHERE slug = ?').get(cleanApp(slug)) || null;
@@ -82,8 +87,8 @@ export function ensureClient(slug, { name = null, autoKey = true, kind = 'web' }
   if (found) return found;
 
   db.prepare(
-    'INSERT INTO app_clients(slug, name, api_key, kind, created_at) VALUES(?,?,?,?,?)'
-  ).run(key, name || key, autoKey ? newKey() : null, cleanKind(kind), Date.now());
+    'INSERT INTO app_clients(slug, name, api_key, api_key_hint, kind, created_at) VALUES(?,?,?,?,?,?)'
+  ).run(key, name || key, ...(autoKey ? storedKey(newKey()) : [null, null]), cleanKind(kind), Date.now());
   logEvent('info', 'panel', `برنامهٔ تازه ثبت شد: ${key}`);
   return getClient(key);
 }
@@ -121,7 +126,9 @@ export const publicClient = (row) => ({
   name: row.name,
   kind: cleanKind(row.kind),
   kindLabel: KIND_LABELS[cleanKind(row.kind)],
-  apiKey: row.api_key || null,
+  //  C-04: خودِ کلید فقط در پاسخِ ساخت/چرخاندن (‎issueSharedKey‎)؛ این‌جا فقط «دارد؟» و نشانه
+  hasKey: Boolean(row.api_key),
+  keyHint: row.api_key_hint || null,
   requireKey: Boolean(row.require_key),
   enabled: Boolean(row.enabled),
   channels: String(row.channels || 'sms,email').split(',').filter(Boolean),
@@ -178,20 +185,22 @@ export function updateClient(slug, patch = {}) {
  * هم‌ترازیِ دو دفترِ برنامه است (registry-link.js) تا یک کلید روی هر دو
  * مسیرِ ورود کار کند.
  */
-export function syncClientKey(slug, apiKey) {
-  const key = String(apiKey || '').trim();
+export function syncClientKey(slug, storedHash, hint = null) {
+  //  C-04: همان **هشِ** دفترِ کدها کپی می‌شود (هر دو با `hashAppKey`)، نه کلیدِ خام
+  const key = String(storedHash || '').trim();
   if (!key) return null;
-  db.prepare('UPDATE app_clients SET api_key = ? WHERE slug = ?').run(key, cleanApp(slug));
+  db.prepare('UPDATE app_clients SET api_key = ?, api_key_hint = ? WHERE slug = ?').run(key, hint || null, cleanApp(slug));
   return getClient(slug);
 }
 
+/** کلیدِ تازه فقط برای همین دفتر ⇒ ‎{ row, key }‎. مسیرهای پنل ‎registry-link.issueSharedKey‎ را می‌زنند (یک کلید، دو دفتر). */
 export function rotateKey(slug) {
   const row = getClient(slug);
   if (!row) return null;
   const key = newKey();
-  db.prepare('UPDATE app_clients SET api_key = ? WHERE slug = ?').run(key, row.slug);
+  db.prepare('UPDATE app_clients SET api_key = ?, api_key_hint = ? WHERE slug = ?').run(...storedKey(key), row.slug);
   logEvent('info', 'panel', `کلیدِ برنامهٔ ${row.slug} عوض شد`);
-  return getClient(row.slug);
+  return { row: getClient(row.slug), key };
 }
 
 export function removeClient(slug, { withUsers = false } = {}) {
@@ -238,7 +247,8 @@ export function checkAccess(slug, { key = null, channel = null } = {}) {
   }
   if (row.require_key) {
     // مقایسهٔ ثابت‌زمان — وگرنه مدتِ پاسخ می‌گوید چند بایتِ اول درست بوده
-    if (!sameSecret(key, row.api_key)) {
+    //  C-04: روی دیسک فقط هش است؛ مقایسهٔ ثابت‌زمانِ دو هش (lib/app-key.js)
+    if (!appKeyMatches(key, row.api_key)) {
       return { ok: false, status: 401, error: 'bad_api_key', message: 'کلیدِ برنامه درست نیست' };
     }
   }

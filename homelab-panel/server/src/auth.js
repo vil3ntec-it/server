@@ -7,6 +7,7 @@ import { q, db, getSetting, setSetting, logEvent } from './db.js';
 import { config } from './config.js';
 import { issueTicket, useTicket } from './lib/ws-ticket.js';
 import { matchTotpStep, useRecoveryCode } from './lib/totp.js';
+import { openTotp } from './lib/totp-seal.js';
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 
@@ -384,11 +385,14 @@ export function consumeTotp(userId, code, { at = Date.now() } = {}) {
   const id = Number(userId);
   const u = q('SELECT totp_enabled, totp_secret, totp_last_step FROM users WHERE id = ?').get(id);
   if (!u?.totp_enabled || !u.totp_secret) return { ok: false, reused: false };
+  //  C-02: روی دیسک پاکت است (‎lib/totp-seal.js‎)؛ باز نشد ⇒ هیچ کدی پذیرفته نیست
+  const secret = openTotp(id, u.totp_secret);
+  if (!secret) return { ok: false, reused: false };
   const last = u.totp_last_step === null || u.totp_last_step === undefined ? null : Number(u.totp_last_step);
-  const step = matchTotpStep(u.totp_secret, code, { at, after: last });
+  const step = matchTotpStep(secret, code, { at, after: last });
   if (step < 0) {
     //  فقط برای دفتر: کدِ درستی که گامش مصرف شده بود (بازپخش)، نه کدِ غلط
-    return { ok: false, reused: last !== null && matchTotpStep(u.totp_secret, code, { at }) >= 0 };
+    return { ok: false, reused: last !== null && matchTotpStep(secret, code, { at }) >= 0 };
   }
   const won = q('UPDATE users SET totp_last_step = ? WHERE id = ? AND totp_enabled = 1 AND totp_secret = ? AND (totp_last_step IS NULL OR totp_last_step < ?)')
     .run(step, id, u.totp_secret, step);

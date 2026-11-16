@@ -48,7 +48,6 @@ import {
   listClients,
   publicClient,
   updateClient,
-  rotateKey,
   removeClient,
   settingsFor,
   checkAccess,
@@ -67,7 +66,7 @@ router.use(express.urlencoded({ extended: false, limit: '1mb' }));
 import { clientIp } from '../platform/security.js';
 import { rateLimit } from '../lib/rate-limit.js';
 import { allowAutoRegister } from '../lib/auto-register.js';
-import { linkApp } from '../appauth/registry-link.js';
+import { issueSharedKey, linkApp } from '../appauth/registry-link.js';
 
 const appOf = (req) => cleanApp(req.body?.app || req.query?.app || req.headers['x-app'] || 'main');
 
@@ -367,9 +366,9 @@ adminRouter.post('/clients', (req, res) => {
     return res.status(409).json({ ok: false, error: 'exists', message: 'برنامه‌ای با همین شناسه هست' });
   }
   const client = ensureClient(slug, { name: req.body?.name || slug, kind: cleanKind(req.body?.kind) });
-  //  و در دفترِ کدها هم — یک ثبت، هر دو مسیر
-  linkApp(slug, { name: req.body?.name || slug, kind: cleanKind(req.body?.kind) });
-  res.json({ ok: true, client: publicClient(getClient(slug) || client) });
+  //  و در دفترِ کدها هم — یک ثبت، هر دو مسیر، یک کلید (C-04: خامش فقط همین پاسخ؛ روی دیسک فقط هش)
+  const apiKey = issueSharedKey(slug, { name: req.body?.name || slug, kind: cleanKind(req.body?.kind) });
+  res.json({ ok: true, client: { ...publicClient(getClient(slug) || client), apiKey } });
 });
 
 adminRouter.put('/clients/:slug', (req, res) => {
@@ -379,10 +378,12 @@ adminRouter.put('/clients/:slug', (req, res) => {
 });
 
 adminRouter.post('/clients/:slug/key', (req, res) => {
-  const client = rotateKey(req.params.slug);
-  if (!client) return res.status(404).json({ ok: false, error: 'not_found' });
+  if (!getClient(req.params.slug)) return res.status(404).json({ ok: false, error: 'not_found' });
+  //  C-04: یک کلیدِ تازه برای هر دو دفتر (تا ۱.۵۳.۲ فقط همین دفتر عوض می‌شد و `linkApp` ِ بعدی کلیدِ دفترِ کدها را رویش
+  //  می‌نشاند)؛ خامش فقط همین پاسخ
+  const apiKey = issueSharedKey(req.params.slug);
   audit(req, 'client.key.rotate', { target: req.params.slug });
-  res.json({ ok: true, client: publicClient(client) });
+  res.json({ ok: true, client: { ...publicClient(getClient(req.params.slug)), apiKey } });
 });
 
 adminRouter.delete('/clients/:slug', (req, res) => {

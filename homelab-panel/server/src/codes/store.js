@@ -21,6 +21,7 @@
 // ---------------------------------------------------------------------------
 import crypto from 'node:crypto';
 import { bumpSoon } from '../live/bus.js';
+import { hashAppKey, appKeyHint } from '../lib/app-key.js';
 
 /*
  *  صفحهٔ «کدهای زنده» بی رفتن و برگشتن تازه می‌شود.
@@ -41,7 +42,8 @@ CREATE TABLE IF NOT EXISTS code_apps (
   slug          TEXT PRIMARY KEY,           -- app-fuel / shop / site-1
   name          TEXT NOT NULL,              -- نامی که در پنل دیده می‌شود
   kind          TEXT NOT NULL DEFAULT 'app',-- app | site
-  api_key       TEXT,                       -- کلیدِ اختصاصیِ همین برنامه
+  api_key       TEXT,                       -- C-04: فقط هشِ کلیدِ اختصاصیِ همین برنامه (sha256:، lib/app-key.js)
+  api_key_hint  TEXT,                       -- نشانه برای فهرست («code_1a2b») — خودِ کلید فقط هنگامِ ساخت/چرخاندن
   require_key   INTEGER NOT NULL DEFAULT 1,
   enabled       INTEGER NOT NULL DEFAULT 1,
   code_ttl      INTEGER,                    -- ثانیه — خالی یعنی از تنظیماتِ کلی
@@ -125,6 +127,22 @@ export function cleanSlug(value) {
 
 export const newApiKey = () => `code_${crypto.randomBytes(20).toString('hex')}`;
 
+/*  C-04: پایگاه‌داده‌ای که پیش از ۱.۵۳.۳ جدول را داشت ستونِ نشانه را از مهاجرتِ ۰۱۶ می‌گیرد؛ این فقط پشتیبان است */
+try {
+  const cols = db.prepare('PRAGMA table_info(code_apps)').all().map((c) => c.name);
+  if (!cols.includes('api_key_hint')) db.exec('ALTER TABLE code_apps ADD COLUMN api_key_hint TEXT');
+} catch { /* ستون از قبل هست */ }
+
+/** کلیدِ خام ⇒ [هش، نشانه] — خامش هرگز روی دیسک نمی‌نشیند */
+const storedKey = (raw) => [hashAppKey(raw), appKeyHint(raw)];
+
+/** کلیدِ خامِ تازه روی همین برنامه (فقط هش و نشانه نوشته می‌شود). صدازننده خام را فقط یک بار نشان می‌دهد. */
+export function setAppKey(slug, raw) {
+  const [hash, hint] = storedKey(raw);
+  db.prepare('UPDATE code_apps SET api_key = ?, api_key_hint = ? WHERE slug = ?').run(hash, hint, cleanSlug(slug));
+  return getApp(slug);
+}
+
 export function getApp(slug) {
   return db.prepare('SELECT * FROM code_apps WHERE slug = ?').get(cleanSlug(slug)) || null;
 }
@@ -145,8 +163,8 @@ export function ensureApp(slug, { name = null, kind = 'app' } = {}) {
   const found = getApp(key);
   if (found) return found;
   db.prepare(
-    'INSERT INTO code_apps(slug, name, kind, api_key, created_at) VALUES(?,?,?,?,?)'
-  ).run(key, String(name || key).slice(0, 80), KINDS.includes(kind) ? kind : 'app', newApiKey(), Date.now());
+    'INSERT INTO code_apps(slug, name, kind, api_key, api_key_hint, created_at) VALUES(?,?,?,?,?,?)'
+  ).run(key, String(name || key).slice(0, 80), KINDS.includes(kind) ? kind : 'app', ...storedKey(newApiKey()), Date.now());
   return getApp(key);
 }
 
@@ -172,11 +190,12 @@ export function saveApp(slug, patch = {}) {
   return getApp(row.slug);
 }
 
+/** کلیدِ تازه ⇒ ‎{ row, key }‎ (کلیدِ خام فقط همین یک بار). هم‌ترازیِ دفترِ ورود: ‎registry-link.issueSharedKey‎ */
 export function rotateKey(slug) {
   const row = getApp(slug);
   if (!row) return null;
-  db.prepare('UPDATE code_apps SET api_key = ? WHERE slug = ?').run(newApiKey(), row.slug);
-  return getApp(row.slug);
+  const key = newApiKey();
+  return { row: setAppKey(row.slug, key), key };
 }
 
 export function deleteApp(slug) {
