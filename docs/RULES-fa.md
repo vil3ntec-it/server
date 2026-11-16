@@ -746,6 +746,10 @@ root دارد نه اینترنتِ آزاد. آن مسیر فقط `bash -n` و 
 - ⛔ **دوعاملیِ روشن با یک نشست جا زده نمی‌شود**: `totp/setup` و `totp/enable` روی حسابِ دوعاملی‌دار ۴۰۹
   `totp_already_enabled`؛ اول `totp/disable` (رمز + کد). آزمون: «مالکِ اصلی…» در `test/roles-logs.mjs`.
 
+
+- ⛔ **سنجاقِ الگوریتمِ JWT (۱.۵۳.۱، ممیزیِ ۱۴۰۵/۰۸/۲۶ R2-CC-01):** هر `jwt.verify` ِ پنل `algorithms: ['HS256']` دارد — نشستِ مدیر (`auth.js`)،
+  بلیتِ گامِ دومِ TOTP (`verifyTotpTicket` در `routes/auth.js`) و توکنِ برنامه (`APP_TOKEN_VERIFY` در `appauth`). همه با HS256 امضا می‌شوند؛
+  HS384/HS512 با همان راز و `alg: none` رد. سنجه: `test/jwt-alg-pin.mjs` (۱۰ سنجه، در زنجیرهٔ `npm test`).
 ## 🛡️ پنلِ مرکزی، فاز ۱ — پایهٔ امن (از ۱۴۰۵/۰۸/۰۹، نسخه 1.50.62؛ روی main با ۱.۵۰.۷۱)
 
 بندهای ۶-۲ تا ۶-۷ و §۸ ِ `docs/OWNER-CONSOLE-AUDIT-fa.md` (شاخهٔ `claude/console-audit`). #114 روی #107/#108/#109 ساخته شد؛

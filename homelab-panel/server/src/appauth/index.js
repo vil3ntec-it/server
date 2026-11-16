@@ -519,9 +519,12 @@ export const publicUser = (u) => ({
 // ---------------------------------------------------------------------------
 //  توکنِ برنامه
 // ---------------------------------------------------------------------------
+/** فقط HS256 (همان که `signAccess` امضا می‌کند) — ممیزیِ ۱۴۰۵/۰۸/۲۶، R2-CC-01؛ `test/jwt-alg-pin.mjs` */
+export const APP_TOKEN_VERIFY = Object.freeze({ algorithms: ['HS256'] });
+
 export function verifyAppToken(token) {
   try {
-    const payload = jwt.verify(String(token), jwtSecret());
+    const payload = jwt.verify(String(token), jwtSecret(), APP_TOKEN_VERIFY);
     if (payload.typ !== 'app') return null;
     const session = db.prepare('SELECT * FROM app_sessions WHERE id = ?').get(payload.sid);
     if (!session || session.expires_at < Date.now()) return null;
