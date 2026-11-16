@@ -152,9 +152,11 @@ try {
   //  همان فایل و همان شکلی که applyUpdate می‌نویسد
   fs.writeFileSync(path.join(DATA, 'updates', 'applied.json'),
     JSON.stringify({ version: '9.9.9', commit: null, at: Date.now(), layout: 'packaged' }), 'utf8');
+  //  اول دیده‌شدن، بعد متن: `showUpdated` متن را پیش از برداشتنِ `hidden` می‌نویسد؛ خواندنِ متن پیش از سنجشِ دیده‌شدن گاهی
+  //  متنِ پیش‌فرضِ HTML («به‌روزرسانی نصب شد.») را می‌گرفت اگر نوار درست میانِ این دو دیده می‌شد (CI ِ #153)
   const banner = await until(async () => {
-    const t = await win.textContent('#updatedText');
-    return (await win.locator('#updated').isVisible()) && t;
+    if (!(await win.locator('#updated').isVisible())) return null;
+    return win.textContent('#updatedText');
   }, 8000, 100).catch(() => null);
   check('نوار می‌گوید «خودش دوباره باز می‌شود»، نه «دکمه را بزنید»', /خودش دوباره باز می‌شود/.test(banner || ''), banner);
   const didClose = await Promise.race([closed, sleep(20000).then(() => false)]);
