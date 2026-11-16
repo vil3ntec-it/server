@@ -177,16 +177,24 @@ function finishLogin(req, res, user) {
   });
 }
 
+/**
+ *  بلیتِ گامِ دومِ ورود: فقط HS256 (همان که `/login` امضا می‌کند) — نه HS384/HS512 با همان راز و هرگز `alg: none`
+ *  (ممیزیِ ۱۴۰۵/۰۸/۲۶، R2-CC-01؛ `test/jwt-alg-pin.mjs`). نادرست یا منقضی ⇒ null.
+ */
+export function verifyTotpTicket(ticket) {
+  try {
+    const payload = jwt.verify(String(ticket || ''), jwtSecret(), { algorithms: ['HS256'] });
+    return payload && payload.typ === 'totp' ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
 /** گامِ دومِ ورود — کدِ TOTP یا کدِ بازیابی. همان سقفِ نرخِ /login رویش هست. */
 router.post('/login/totp', (req, res) => {
   const { ticket, code } = req.body || {};
-  let payload;
-  try {
-    payload = jwt.verify(String(ticket || ''), jwtSecret());
-  } catch {
-    return res.status(401).json({ error: 'ticket_invalid' });
-  }
-  if (payload.typ !== 'totp') return res.status(401).json({ error: 'ticket_invalid' });
+  const payload = verifyTotpTicket(ticket);
+  if (!payload) return res.status(401).json({ error: 'ticket_invalid' });
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(payload.uid);
   if (!user || user.disabled || !user.totp_enabled) return res.status(401).json({ error: 'ticket_invalid' });
   //  `owner-reset --keep-2fa`: مهلتِ رمزِ یک‌بارمصرف در گامِ دوم هم (۱.۵۰.۷۱)
