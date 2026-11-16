@@ -1067,6 +1067,7 @@ const fa = {
   cronPanelScheduler: 'این کارها را خودِ پنل اجرا می‌کند، نه crontab سیستم. یعنی روی ویندوز هم کار می‌کنند و تاریخچه‌شان این‌جا می‌ماند — ولی وقتی پنل خاموش باشد اجرا نمی‌شوند.',
 
   automation: 'اتوماسیون',
+  ownerAlerts: 'اعلان‌ها',
   autoSub: 'کارهای داخلیِ پنل — پشتیبان، پایش، نگهداری و دستیار — با دفترِ اجرا',
   autoIntro: 'این کارها در خودِ پنل تعریف شده‌اند؛ روشن/خاموششان کنید، دستی بدوانید و تاریخچه را ببینید. هیچ کاری دو بار هم‌زمان اجرا نمی‌شود و هیچ اجرایی بی ثبتِ نتیجه نمی‌ماند. فرمان‌های دلخواهِ خودتان در «زمان‌بندی» است.',
   autoOff: 'موتورِ اتوماسیون با HLP_AUTOMATION=0 خاموش است؛ کارها فقط دستی اجرا می‌شوند.',
@@ -2612,6 +2613,7 @@ const en: Dict = {
   cronPanelScheduler: 'These jobs are run by the panel itself, not the system crontab. That means they work on Windows too and keep their history here — but they do not run while the panel is stopped.',
 
   automation: 'Automation',
+  ownerAlerts: 'Alerts',
   autoSub: 'Built-in panel jobs — backups, monitoring, maintenance and the assistant — with a run log',
   autoIntro: 'These jobs are defined inside the panel; toggle them, run them by hand and read their history. No job ever runs twice at once and no run goes unrecorded. Your own shell commands live under “Scheduled jobs”.',
   autoOff: 'The automation engine is off (HLP_AUTOMATION=0); jobs only run manually.',
@@ -3318,6 +3320,7 @@ const ar: Dict = {
   agKnowledge: 'معرفة التطبيقات',
   agDocs: 'مستند',
   automation: 'الأتمتة',
+  ownerAlerts: 'التنبيهات',
   autoSub: 'مهام اللوحة الداخلية — النسخ الاحتياطي والمراقبة والصيانة والمساعد — مع سجل تنفيذ',
   autoIntro: 'هذه المهام معرّفة داخل اللوحة؛ فعّلها أو أوقفها، شغّلها يدوياً واقرأ سجلها. لا تعمل مهمة مرتين في الوقت نفسه ولا يمرّ تنفيذ دون تسجيل. أوامرك الخاصة في «الجدولة».',
   autoOff: 'محرّك الأتمتة متوقف (HLP_AUTOMATION=0)؛ المهام تعمل يدوياً فقط.',
@@ -3582,6 +3585,7 @@ const ps: Dict = {
   agKnowledge: 'د اپونو پوهه',
   agDocs: 'سند',
   automation: 'اتوماسیون',
+  ownerAlerts: 'خبرتیاوې',
   autoSub: 'د پینل داخلي کارونه — بیک اپ، څارنه، ساتنه او مرستیال — د اجرا له دفتر سره',
   autoIntro: 'دا کارونه په خپله پینل کې تعریف شوي؛ روښانه/ګل یې کړئ، لاسي یې وچلوئ او تاریخچه یې وګورئ. هیڅ کار دوه ځله یوځای نه چلېږي او هیڅ اجرا بې ثبت نه پاتې کېږي. ستاسو خپل کمانډونه په «مهالویش» کې دي.',
   autoOff: 'د اتوماسیون ماشین ګل دی (HLP_AUTOMATION=0)؛ کارونه یوازې لاسي چلېږي.',

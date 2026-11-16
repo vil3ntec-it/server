@@ -30,6 +30,7 @@ import * as topics from './telegram-topics.js';
 import { syncCodes } from './telegram-codes.js';
 import { beat } from './telegram-heartbeat.js';
 import { sessionOf, handleLogin, resetAuth, authStatus, logout } from './telegram-auth.js';
+import * as owner from '../notify/owner.js';
 
 export const TOKEN_SECRET = 'telegram:support-bot';
 const CONFIG = 'support_tg';
@@ -203,6 +204,7 @@ async function syncSite(tok, c, s, map, site) {
         async (where) => (await tg(tok, 'sendMessage', { ...where, text, disable_web_page_preview: true, reply_markup: messageKeys(key, null, label, { inGroup }) })).message_id);
       map.set(d.inGroup ? `g:${d.messageId}` : d.messageId, key);
       s.since[key] = Math.max(Number(s.since[key]) || 0, Number(m.at));
+      owner.count('inbox');
       sent++;
     }
     s.since[key] = Math.max(Number(s.since[key]) || 0, Number(ch.updatedAt) || 0);
@@ -480,6 +482,7 @@ async function syncInner({ log = () => {} } = {}) {
       });
       map.set(d.inGroup ? `g:${d.messageId}` : d.messageId, t.id);
       s.since[t.id] = Math.max(Number(s.since[t.id]) || 0, Number(m.createdAt));
+      owner.count('inbox'); // پیامِ آدم است نه هشدار: فقط در «امروز چند پیام» شمرده می‌شود
       sent++;
     }
     if (!fresh.length) s.since[t.id] = Number(t.updatedAt);

@@ -29,6 +29,7 @@ import { PANEL_MODULES } from './modules/registry';
 import DatabasesPage from './pages/Databases';
 import TerminalPage from './pages/Terminal';
 import AutomationPage from './pages/Automation';
+import OwnerAlertsPage from './pages/OwnerAlerts';
 import StationsPage from './pages/Stations';
 import StationProfile from './pages/StationProfile';
 
@@ -59,6 +60,7 @@ function Shell() {
         {serverOn('databases') && <Route path="/databases" element={<DatabasesPage />} />}
         {serverOn('terminal') && <Route path="/terminal" element={<TerminalPage />} />}
         <Route path="/automation" element={<AutomationPage />} />
+        <Route path="/alerts" element={<OwnerAlertsPage />} />
         <Route path="/tunnel-domains" element={<Navigate to="/domains?tab=tunnel" replace />} />
         {/*
           ⛔ پنج صفحه‌ای که از منو رفتند (۱۴۰۵/۰۷/۱۳): نشانیِ قدیمی نباید بشکند،

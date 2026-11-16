@@ -90,7 +90,13 @@ export function verifyReport({ serverId, timestamp, signature, rawBody }) {
 }
 
 /** آستانه‌هایی که هشدار می‌سازند */
-const THRESHOLDS = { cpu: 92, memory: 92, disk: 92 };
+const THRESHOLDS = { cpu: 92, memory: 90, disk: 92 };
+/*
+ *  ⛔ (۱.۵۳.۰) بی لرزش: «برطرف شد» فقط وقتی عدد به‌وضوح پایین آمد، نه همین که یک درصد زیرِ آستانه رفت.
+ *  پیش از این حافظه‌ای که میانِ ۹۱ و ۹۳ بالا و پایین می‌رفت با هر گزارش هشدارِ تازه می‌ساخت و می‌بست.
+ *  «پیوسته N دقیقه» پیش از رسیدن به تلگرام را دروازهٔ مالک می‌سنجد (`notify/owner.js`، SUSTAIN_MS).
+ */
+const CLEAR_BELOW = { cpu: 80, memory: 80, disk: 88 };
 
 /** گزارشِ پذیرفته‌شده را ذخیره و در صورت لزوم هشدار می‌سازد */
 export function storeReport(server, report) {
@@ -125,7 +131,7 @@ export function storeReport(server, report) {
     const key = `server:${server.server_id}:cpu`;
     if (cpuUsage >= THRESHOLDS.cpu) {
       raiseAlert({ key, kind: 'high_cpu', severity: 'warn', serverId: server.id, title: `پردازندهٔ «${server.name}» ${cpuUsage}٪ است`, detail: `آستانه: ${THRESHOLDS.cpu}٪` });
-    } else clearAlert(key);
+    } else if (cpuUsage < CLEAR_BELOW.cpu) clearAlert(key);
   }
 
   const memUsage = Number(clean.memory?.usage);
@@ -133,7 +139,7 @@ export function storeReport(server, report) {
     const key = `server:${server.server_id}:memory`;
     if (memUsage >= THRESHOLDS.memory) {
       raiseAlert({ key, kind: 'high_ram', severity: 'warn', serverId: server.id, title: `حافظهٔ «${server.name}» ${memUsage}٪ پر است`, detail: `آستانه: ${THRESHOLDS.memory}٪` });
-    } else clearAlert(key);
+    } else if (memUsage < CLEAR_BELOW.memory) clearAlert(key);
   }
 
   const disks = Array.isArray(clean.storage) ? clean.storage : [];
@@ -142,8 +148,8 @@ export function storeReport(server, report) {
     if (!Number.isFinite(usage)) continue;
     const key = `server:${server.server_id}:disk:${disk.mount || disk.name || '?'}`;
     if (usage >= THRESHOLDS.disk) {
-      raiseAlert({ key, kind: 'storage_low', severity: 'warn', serverId: server.id, title: `فضای «${disk.mount || disk.name}» روی ${server.name} کم است (${usage}٪)`, detail: `آزاد: ${disk.free ?? '?'} بایت` });
-    } else clearAlert(key);
+      raiseAlert({ key, kind: 'storage_low', severity: usage >= 97 ? 'critical' : 'warn', serverId: server.id, title: `فضای «${disk.mount || disk.name}» روی ${server.name} کم است (${usage}٪)`, detail: `آزاد: ${disk.free ?? '?'} بایت` });
+    } else if (usage < CLEAR_BELOW.disk) clearAlert(key);
   }
 
   return clean;

@@ -262,7 +262,9 @@ try {
   press(btnOf(/خاموش کردنِ گزارشِ روزانه/)); await run();
   check('خاموش کردنِ گزارشِ روزانه', /گزارشِ روزانه: ⛔ خاموش/.test(lastText()), lastText());
   press(btnOf(/^• ?۹$|^۱۰$/)); await run();
-  check('ساعتِ گزارش ⇒ روشن و ساعتِ تازه', /گزارشِ روزانه: ✅ ساعتِ/.test(lastText()), lastText());
+  //  ⚠️ ساعتِ تازه اگر امروز گذشته باشد، خلاصهٔ روزانه در همان دور پشتِ سرش می‌رود (به ساعتِ دیوار بند نشود)
+  const settingsMsg = msgs().slice(-3).map((x) => x.body.text || '').findLast((t) => /گزارشِ روزانه:/.test(t)) || '';
+  check('ساعتِ گزارش ⇒ روشن و ساعتِ تازه', /گزارشِ روزانه: ✅ ساعتِ ۱۰/.test(settingsMsg), msgs().slice(-3).map((x) => x.body.text).join(' | '));
 
   console.log('\n── ۱۰) هشدارِ سرورِ حساب، و دورِ بی‌سرورِ حساب نمی‌افتد ──');
   cloudDown = true;

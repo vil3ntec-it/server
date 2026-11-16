@@ -21,6 +21,7 @@ import { bumpSoon } from '../live/bus.js';
 import { parseSchedule, nextRunAt } from '../system/cron.js';
 import { automationEvents, emit as emitEvent } from './events.js';
 import { raiseAlert } from '../control/alerts.js';
+import { fromJob as ownerFromJob } from '../notify/owner.js';
 import { getIo } from '../state.js';
 import { buildContext } from './context.js';
 
@@ -252,7 +253,10 @@ function recordSkipped(def, trigger, payload, reason) {
   return id;
 }
 
-/** اعلانِ یک کار — به لاگ، و برای warn/critical به هشدارهای مرکز فرمان */
+/**
+ * اعلانِ یک کار — به لاگ، برای warn/critical به هشدارهای مرکز فرمان، و به دروازهٔ پیامِ مالک
+ * (`notify/owner.js`: بحرانی همان دم، هشدار یک بار در مهلت، خبر فقط در خلاصهٔ شب).
+ */
 export function notifyFrom(def, level, text) {
   const lvl = level === 'critical' ? 'critical' : level === 'warn' ? 'warn' : 'info';
   logEvent(lvl === 'critical' ? 'error' : lvl === 'warn' ? 'warn' : 'info', 'automation', `${def.title}: ${text}`);
@@ -261,6 +265,7 @@ export function notifyFrom(def, level, text) {
       raiseAlert({ key: `automation:${def.name}`, kind: 'automation', severity: lvl, title: String(text).slice(0, 200), detail: def.title });
     } catch { /* هشدار نباید کار را بخواباند */ }
   }
+  try { ownerFromJob(def.name, lvl, text); } catch { /* دروازه هم نباید کار را بخواباند */ }
   try {
     getIo()?.emit('automation:notice', { job: def.name, title: def.title, level: lvl, text: String(text).slice(0, 500), at: Date.now() });
   } catch { /* هنوز کسی وصل نیست */ }

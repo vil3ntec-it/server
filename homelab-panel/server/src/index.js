@@ -94,6 +94,8 @@ import { autostartAccountServer, stopAccountServer } from './account/supervisor.
 import accountServerRoutes from './routes/account-server.js';
 import pumpUpdatesAdminRoutes from './routes/pump-updates-admin.js';
 import supportTelegramRoutes from './routes/support-telegram.js';
+import ownerAlertRoutes from './routes/owner-alerts.js';
+import { attachAlertBridge as attachOwnerAlerts } from './notify/owner.js';
 import { markOffline as markTelegramOffline } from './support/telegram-heartbeat.js';
 import { startPoller as startTelegramPoller, stopPoller as stopTelegramPoller } from './support/telegram.js';
 import siteChatsRoutes from './routes/site-chats.js';
@@ -494,6 +496,8 @@ app.use('/api/agent', requireAuth, writeNeedsOperator, agentRoutes);
 app.use('/api/account-server', accountServerRoutes);
 app.use('/api/pump-updates-admin', pumpUpdatesAdminRoutes);
 app.use('/api/support-telegram', supportTelegramRoutes);
+//  دروازهٔ پیام به مالک (۱.۵۳.۰): تنظیم، شمارِ امروز و دفترِ همهٔ هشدارها — فقط مدیر
+app.use('/api/owner-alerts', ownerAlertRoutes);
 app.use('/api/site-chats', siteChatsRoutes);
 // دیتابیس‌های کاربر (MySQL/MariaDB و PostgreSQL) — رمز در گاوصندوق می‌ماند
 app.use('/api/databases', databaseRoutes);
@@ -942,6 +946,8 @@ siteTunnelEvents.on('change', (payload) => {
   } catch { /* هنوز کسی وصل نیست */ }
 });
 
+//  هشدارهای مرکز فرمان به دروازهٔ پیامِ مالک (فقط تغییرِ حال، تکرار و سقف و ساعتِ آرام همان‌جا)
+attachOwnerAlerts();
 // مرکز فرمان: هشدارها و نتیجهٔ بررسی‌ها زنده به پنل می‌روند
 alertEvents.on('alert', (payload) => {
   try {
