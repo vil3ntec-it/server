@@ -22,7 +22,7 @@ function reasonOk(v: unknown): boolean {
 }
 
 /** کلیدِ یکتاییِ هر پنجرهٔ کارِ حساس (نه هر کلیک) — شکلِ پذیرفتهٔ سرورِ حساب. */
-function newIdemKey(): string {
+export function newIdemKey(): string {
   const b = new Uint8Array(16);
   globalThis.crypto.getRandomValues(b);
   return `pnl-${Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')}`;

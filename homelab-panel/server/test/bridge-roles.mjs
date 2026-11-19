@@ -356,6 +356,7 @@ const bodyFor = (app) => ({
   slug: 'shop', url: 'https://x.af', until: NOW + 9e8, endsAt: NOW + 9e8, startsAt: NOW, maxUses: 1,
 });
 const SPECIAL = {
+  'POST /api/account-admin/plans': { body: { title: 'پلن آزمون', amount: 2, unit: 'week', price: 275, idempotencyKey: 'bridge-roles-plan-0001' } },
   'POST /api/account-admin/support/threads/:id/media': { body: Buffer.from([137, 80, 78, 71]), type: 'image/png', query: '&name=a.png' },
   //  ساختنِ کلیدِ سرویس: مالک با رمزِ درستِ خودش (احرازِ دوباره) تا مقصدِ «فقط ارشد» واقعاً دیده و سنجیده شود
   'POST /api/account-admin/console/service-key': { body: { reason: 'سنجهٔ هم‌خوانیِ نقش', confirm: true, password: 'Bridge-1405-roles' } },
