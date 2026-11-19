@@ -74,6 +74,11 @@ for (const [p, want] of [
   ['/api/sites', false],
   ['/api/settings', false],
   ['/adminx', false],
+  ['/r/01234567/0123456789abcdefghijklmnop', true],
+  ['/r/receipt.js', true],
+  ['/kit/kit.css', true],
+  ['/store/my-shop', true],
+  ['/storefront-local', false],
 ]) {
   check(`${p} ⇒ ${want ? 'سرورِ حساب' : 'همین سرور'}`, accountRoute(p) === want);
 }
@@ -108,6 +113,12 @@ const fake = http.createServer((req, res) => {
       res.setHeader('content-type', 'text/html; charset=utf-8');
       return res.end('<html><body>پنلِ مدیریتِ سرورِ حساب</body></html>');
     }
+    if (p === '/r/shop-tag/receipt-token') {
+      res.setHeader('content-type', 'text/html; charset=utf-8');
+      res.setHeader('cache-control', 'no-store');
+      return res.end('<script src="/r/receipt.js"></script>');
+    }
+    if (p === '/r/receipt.js' || p === '/kit/kit.css' || p === '/store/shop-qr') return res.end('asset');
     if (p === '/api/me/backups') return res.end(JSON.stringify({ ok: true, bytes: body.length }));
     res.statusCode = 404;
     res.end(JSON.stringify({ error: { code: 'not_found', message: 'این مسیر وجود ندارد' } }));
@@ -155,6 +166,14 @@ try {
   }
 
   console.log('\n── از راهِ پورتِ عمومی (همان چیزی که تونل می‌بیند) ──');
+
+  const receiptPage = await hit(PUBLIC, '/r/shop-tag/receipt-token');
+  check('صفحهٔ QR از پورت عمومی به سرور حساب می‌رسد', receiptPage.status === 200 && receiptPage.text.includes('/r/receipt.js'));
+  check('صفحهٔ QR در درگاه کش نمی‌شود', receiptPage.headers.get('cache-control') === 'no-store');
+  for (const path of ['/r/receipt.js', '/kit/kit.css', '/store/shop-qr']) {
+    check(`مسیر عمومی ${path}`, (await hit(PUBLIC, path)).status === 200);
+    check(`نوشتن از ${path} پذیرفته نمی‌شود`, (await hit(PUBLIC, path, { method: 'POST' })).status === 405);
+  }
 
   // سلامتِ سرورِ حساب — همان چیزی که برنامهٔ پمپ سرِ هر ۴۰۴ می‌پرسد
   {

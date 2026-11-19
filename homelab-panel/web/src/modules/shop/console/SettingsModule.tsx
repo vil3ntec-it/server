@@ -169,6 +169,16 @@ export default function SettingsModule({ params, owner }: ModuleProps) {
       <div id="shop-admin-web" className="scroll-mt-4">
         <AdminWebCard owner={owner} />
       </div>
+      <FlagsCard
+        only={['shop.orders', 'shop.storefront', 'shop.chat', 'shop.delivery', 'shop.receipt_v2']}
+        testid="shop-availability"
+        title={tx('دسترسی بخش‌های آنلاین فروشگاه', 'Shop online feature availability', 'د هټۍ آنلاین برخو لاسرسی')}
+        intro={<p className="mb-3 text-xs text-ink-muted">{tx(
+          'برای توقف موقت یا تعمیر، بخش مورد نظر را خاموش کنید. برای QR فاکتورهای تازه، فاکتور نسخهٔ ۲ را روشن کنید.',
+          'Switch off a section for maintenance. Enable receipt v2 for QR links on new invoices.',
+          'د ترمیم لپاره برخه بنده کړئ. د نوو بلونو QR لپاره د بل دوهمه بڼه فعاله کړئ.',
+        )}</p>}
+      />
       <FlagsCard />
       <FlagHistoryCard />
       <HolidaysCard />
