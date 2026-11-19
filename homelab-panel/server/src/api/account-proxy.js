@@ -81,9 +81,12 @@ const HOME_V1 = new Set(['health', 'ready', 'app', 'messenger', 'notify', 'stati
 /** زیرِ ‎/api‎ این‌ها مالِ خودِ این سرورند. */
 const HOME_ANY = new Set(['v1', 'app', 'messenger', 'notify', 'stations', 'announce', 'admin-gate', 'pump-updates']);
 
+const shopWeb = (p) => /^\/(?:r|kit|store)(?:\/|$)/.test(p);
+
 /** آیا این مسیر مالِ سرورِ حساب است؟ (بی توجه به روشن/خاموش بودنِ در) */
 export function accountRoute(urlPath) {
   const p = String(urlPath || '').split('?')[0];
+  if (shopWeb(p)) return true;
   //  پنلِ مدیریتِ سرورِ حساب — همان‌جایی که اشتراک داده می‌شود
   if (p === '/admin' || p.startsWith('/admin/')) return true;
   let m = /^\/api\/v1\/([^/?#]+)/.exec(p);
@@ -172,7 +175,7 @@ export function accountProxy(req, res, next) {
   if (!accountRoute(req.originalUrl)) return next();
 
   const method = req.method.toUpperCase();
-  if (!METHODS.has(method)) {
+  if (!METHODS.has(method) || (shopWeb(req.originalUrl.split('?')[0]) && method !== 'GET' && method !== 'HEAD')) {
     return res.status(405).json({ error: { code: 'method_not_allowed', message: 'متدِ پشتیبانی‌نشده' } });
   }
 
