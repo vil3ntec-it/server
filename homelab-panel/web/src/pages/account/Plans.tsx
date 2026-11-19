@@ -20,7 +20,7 @@ import { api } from '../../api';
 import { useApp } from '../../app-context';
 import { Badge, Card, Empty, Modal, Skeleton, toast } from '../../components/ui';
 import { ActionButton, Cell, Notice, Row, Table } from '../../control/ui';
-import { newIdemKey } from '../../modules/shop/consoleData';
+import { newIdemKey } from './console/parts';
 import { AppPicker, CloudProblem, PageHead, day, fa, money, toLocalInput, fromLocalInput, useLoad, type AppId } from './shared';
 import type { Plan, PriceChange } from './types';
 
