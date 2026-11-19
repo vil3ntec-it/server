@@ -295,6 +295,7 @@ const fake = http.createServer((req, res) => {
     //  ⚠️ رازها عمداً در همین پاسخ‌اند: سرورِ حسابِ پیش از ۲.۹.۱ همین‌طور می‌داد،
     //  و پنل نباید هیچ‌کدام را به مرورگر برساند (بندِ «رازِ app_config» پایین).
     if (p === '/api/admin/plans' && req.method === 'GET') return j(200, { plans, app: u.searchParams.get('app') || 'shop', config: { ...accountConfig, license_private_key: '-----BEGIN PRIVATE KEY-----fake', email_pass: 'smtp-fake-pass', vapid_private: 'vapid-fake' } });
+    if (p === '/api/admin/plans' && req.method === 'POST') return j(201, { plan: { code: 'p-new', ...body } });
     if ((m = /^\/api\/admin\/plans\/([^/]+)\/discount$/.exec(p))) {
       const plan = plans.find((x) => x.code === m[1]);
       if (!plan) return j(404, { error: { code: 'not_found', message: 'پلن پیدا نشد' } });
@@ -1159,6 +1160,17 @@ try {
   check('افزونه برداشته می‌شود', addonDel.status === 200 && last()?.method === 'DELETE');
 
   console.log('\n── پلن، قیمت و تاریخچه ──');
+  const draft = { title: 'دو هفته', amount: 2, unit: 'week', price: 275, maxDevices: 5, active: true };
+  const key = 'shop-plan-create-test';
+  const create = await api('POST', '/api/account-admin/plans?app=shop', { ...draft, idempotencyKey: key }, auth);
+  check('پلن تازه ⇒ POST فقط برای فروشگاه با قیمت و کلید یکتایی',
+    create.status === 201 && create.json?.plan?.code === 'p-new' && last()?.path === '/api/admin/plans' &&
+    last()?.method === 'POST' && last()?.query?.app === 'shop' && last()?.idem === key && last()?.body?.price === 275);
+  const beforeReject = seen.length;
+  const noKey = await api('POST', '/api/account-admin/plans?app=shop', draft, auth);
+  const pumpCreate = await api('POST', '/api/account-admin/plans?app=pump', { ...draft, idempotencyKey: key }, auth);
+  check('ساخت بی‌کلید یا برای پمپ به سرور حساب نمی‌رسد',
+    noKey.status === 400 && pumpCreate.status === 400 && seen.length === beforeReject);
   const patch = await api('PATCH', '/api/account-admin/plans/m1?app=shop', { title: 'یک‌ماههٔ تازه', price: 550 }, auth);
   check('ویرایشِ پلن ⇒ PATCH با app',
     patch.status === 200 && last()?.method === 'PATCH' && last()?.path === '/api/admin/plans/m1'

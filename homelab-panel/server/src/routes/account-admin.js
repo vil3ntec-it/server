@@ -484,6 +484,19 @@ router.get('/plans', guard(async (req, res) => {
   });
 }));
 
+router.post('/plans', money, guard(async (req, res) => {
+  if (appOf(req) !== 'shop') throw badInput('bad_section', 'ساخت پلن تازه در بخش فروشگاه انجام می‌شود');
+  const key = idemOf(req);
+  if (!key) throw badInput('idempotency_key_required', 'کلید یکتایی لازم است');
+  const { title, amount, unit, price, maxDevices, badge, active } = req.body || {};
+  const out = await cloudRaw('POST', '/api/admin/plans', {
+    query: { app: 'shop' },
+    body: { title, amount, unit, price, maxDevices, badge, active },
+    headers: { 'idempotency-key': key },
+  });
+  res.status(201).json(out);
+}));
+
 router.put('/plans/:code/discount', money, guard(async (req, res) => {
   const code = idOf(req.params.code);
   res.json(await cloudRaw('PUT', `/api/admin/plans/${code}/discount`, { query: { app: appOf(req) }, body: req.body || {} }));

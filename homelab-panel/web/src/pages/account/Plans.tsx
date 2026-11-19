@@ -17,8 +17,10 @@ import { useSearchParams } from 'react-router-dom';
 import { Gift, History, Tag } from 'lucide-react';
 
 import { api } from '../../api';
+import { useApp } from '../../app-context';
 import { Badge, Card, Empty, Modal, Skeleton, toast } from '../../components/ui';
 import { ActionButton, Cell, Notice, Row, Table } from '../../control/ui';
+import { newIdemKey } from '../../modules/shop/consoleData';
 import { AppPicker, CloudProblem, PageHead, day, fa, money, toLocalInput, fromLocalInput, useLoad, type AppId } from './shared';
 import type { Plan, PriceChange } from './types';
 
@@ -28,10 +30,11 @@ const UNIT_LABEL: Record<string, string> = { day: 'روزه', week: 'هفته‌
 
 /** ⛔ `fixedApp`: داخلِ بخشِ خودِ همان برنامه (`AppSubscriptions.tsx`) — بخشِ دیگری انتخاب نمی‌شود. */
 export default function Plans({ fixedApp }: { fixedApp?: AppId } = {}) {
+  const { can } = useApp();
   //  ⚠️ بی `fixedApp`، بخشِ آغازین از نشانی (`?app=`) و کادر آزاد است.
   const [params] = useSearchParams();
   const [app, setApp] = useState<AppId>(fixedApp || (params.get('app') === 'pump' ? 'pump' : 'shop'));
-  const [edit, setEdit] = useState<Plan | null>(null);
+  const [edit, setEdit] = useState<Plan | 'new' | null>(null);
   const [discount, setDiscount] = useState<Plan | null>(null);
 
   const plans = useLoad<PlansOut>(`/api/account-admin/plans?app=${app}`, [app], 'plans');
@@ -45,7 +48,7 @@ export default function Plans({ fixedApp }: { fixedApp?: AppId } = {}) {
       <PageHead
         title="پلن‌ها و قیمت‌ها"
         sub="قیمت‌ها فقط از سرورِ حساب — همان عددی که برنامه، پورتال و پنل می‌خوانند"
-        actions={<AppPicker only={fixedApp} value={app} onChange={(v) => setApp(v as AppId)} />}
+        actions={<AppPicker only={fixedApp} value={app} onChange={(v) => { setEdit(null); setDiscount(null); setApp(v as AppId); }} />}
       />
 
       {plans.error && <CloudProblem code={plans.code} message={plans.error} onRetry={plans.reload} />}
@@ -56,7 +59,10 @@ export default function Plans({ fixedApp }: { fixedApp?: AppId } = {}) {
         با تمام شدنِ مهلت، خودِ قیمت برمی‌گردد.
       </Notice>
 
-      <Card title="پلن‌ها" icon={<Tag className="h-4 w-4" />}>
+      <Card title="پلن‌ها" icon={<Tag className="h-4 w-4" />}
+        action={app === 'shop' && can('admin') && (
+          <button className="btn btn-primary btn-sm" onClick={() => setEdit('new')}>پلن تازه</button>
+        )}>
         {plans.busy && !plans.data ? (
           <Skeleton rows={4} />
         ) : (plans.data?.plans.length || 0) === 0 ? (
@@ -116,7 +122,7 @@ export default function Plans({ fixedApp }: { fixedApp?: AppId } = {}) {
 
       <FreeTrial app={app} />
 
-      {edit && <EditPlan app={app} plan={edit} onClose={() => setEdit(null)} onDone={reload} />}
+      {edit && <EditPlan app={app} plan={edit === 'new' ? null : edit} onClose={() => setEdit(null)} onDone={reload} />}
       {discount && <EditDiscount app={app} plan={discount} onClose={() => setDiscount(null)} onDone={reload} />}
     </div>
   );
@@ -202,33 +208,46 @@ function FreeTrial({ app }: { app: AppId }) {
   );
 }
 
-function EditPlan({ app, plan, onClose, onDone }: { app: AppId; plan: Plan; onClose: () => void; onDone: () => Promise<void> }) {
-  const [title, setTitle] = useState(plan.title);
-  const [amount, setAmount] = useState(String(plan.amount));
-  const [unit, setUnit] = useState(plan.unit);
-  const [price, setPrice] = useState(String(plan.fullPrice));
-  const [maxDevices, setMaxDevices] = useState(String(plan.maxDevices));
-  const [badge, setBadge] = useState(plan.badge || '');
-  const [active, setActive] = useState(plan.active);
+function wholeNumber(value: string): number {
+  const digits = value.trim()
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+  return /^\d+$/.test(digits) ? Number(digits) : NaN;
+}
+
+function EditPlan({ app, plan, onClose, onDone }: { app: AppId; plan: Plan | null; onClose: () => void; onDone: () => Promise<void> }) {
+  const [idem] = useState(() => plan ? '' : newIdemKey());
+  const [title, setTitle] = useState(plan?.title ?? '');
+  const [amount, setAmount] = useState(plan ? String(plan.amount) : '');
+  const [unit, setUnit] = useState(plan?.unit ?? 'month');
+  const [price, setPrice] = useState(plan ? String(plan.fullPrice) : '');
+  const [maxDevices, setMaxDevices] = useState(plan ? String(plan.maxDevices) : '10');
+  const [badge, setBadge] = useState(plan?.badge ?? '');
+  const [active, setActive] = useState(plan?.active ?? true);
+  const body = { title: title.trim(), amount: wholeNumber(amount), unit, price: wholeNumber(price), maxDevices: wholeNumber(maxDevices), badge, active };
+  const valid = body.title.length > 0 && body.amount >= 1 && body.amount <= 120 &&
+    body.price >= 0 && body.price <= 1e7 && body.maxDevices >= 1 && body.maxDevices <= 100;
 
   return (
     <Modal
       open
       onClose={onClose}
-      title={`پلنِ «${plan.title}» — ${plan.code}`}
+      title={plan ? `پلنِ «${plan.title}» — ${plan.code}` : 'پلن تازهٔ فروشگاه'}
       footer={
         <>
           <button className="btn" onClick={onClose}>انصراف</button>
           <ActionButton
             className="btn btn-primary"
             busyLabel="…"
+            disabled={!valid}
             onClick={async () => {
               try {
-                await api(`/api/account-admin/plans/${plan.code}?app=${app}`, {
-                  method: 'PATCH',
-                  body: { title, amount: Number(amount), unit, price: Number(price), maxDevices: Number(maxDevices), badge, active },
-                });
-                toast('پلن ذخیره شد');
+                if (plan) {
+                  await api(`/api/account-admin/plans/${encodeURIComponent(plan.code)}?app=${app}`, { method: 'PATCH', body });
+                } else {
+                  await api('/api/account-admin/plans?app=shop', { method: 'POST', body: { ...body, idempotencyKey: idem } });
+                }
+                toast(plan ? 'پلن ذخیره شد' : 'پلن تازه ساخته شد');
                 onClose();
                 await onDone();
               } catch (e) {
@@ -246,7 +265,7 @@ function EditPlan({ app, plan, onClose, onDone }: { app: AppId; plan: Plan; onCl
         عوض کردنش اشتراک‌های فروخته‌شده را دست نمی‌زند و یک ردیف در تاریخچهٔ قیمت می‌گذارد.
       </p>
       <label className="label">عنوان</label>
-      <input className="input mb-3 w-full" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <input className="input mb-3 w-full" maxLength={60} value={title} onChange={(e) => setTitle(e.target.value)} />
       <div className="mb-3 grid grid-cols-2 gap-3">
         <div>
           <label className="label">مدت</label>
@@ -270,7 +289,7 @@ function EditPlan({ app, plan, onClose, onDone }: { app: AppId; plan: Plan; onCl
         </div>
       </div>
       <label className="label">نشان (اختیاری)</label>
-      <input className="input mb-3 w-full" value={badge} onChange={(e) => setBadge(e.target.value)} />
+      <input className="input mb-3 w-full" maxLength={30} value={badge} onChange={(e) => setBadge(e.target.value)} />
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
         در فهرستِ خریدِ برنامه‌ها دیده شود
