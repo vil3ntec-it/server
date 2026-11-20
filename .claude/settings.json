@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'قاعدهٔ اسکیل‌ها (بندِ ۴ و ۷ِ CLAUDE.md): پیش از نخستین کار روی پروژه، هر سه اسکیل را با ابزارِ Skill بخوان: anthropic-skills:smart-coding-core و anthropic-skills:exact-implementation-pro-max و anthropic-skills:elite-product-engineering-ultimate-memory؛ یک بار در هر سیزن (و دوباره پس از compact)، و در همهٔ کارهای پروژه به کار ببر. چتِ معمولی: همان لحظه جواب بده، اسکیل نخوان و به پروژه دست نزن.'"
+          }
+        ]
+      }
+    ]
+  }
+}
