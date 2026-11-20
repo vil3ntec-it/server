@@ -120,7 +120,10 @@ try {
 
   //  دسترسیِ خراب — همان چیزی که با یک کپیِ بی‌دقت پیش می‌آید
   await fsp.chmod(path.join(ROOT, 'secrets'), 0o755);
-  await fsp.writeFile(path.join(ROOT, 'secrets', 'core.env'), 'HLP_PORT=4700\n', { mode: 0o644 });
+  const envFile = path.join(ROOT, 'secrets', 'core.env');
+  await fsp.writeFile(envFile, 'HLP_PORT=4700\n');
+  //  umask ممکن است دسترسیِ فایلِ تازه را محدودتر کند؛ حالتِ معیوب را صریح بساز.
+  await fsp.chmod(envFile, 0o644);
   const loose = await selfheal.checkDependencies();
   check('۷۵۵ روی پوشهٔ رازها ایراد شمرده می‌شود', byName(loose.items, 'perm', 'secrets/').ok === false && byName(loose.items, 'perm', 'secrets/').actual === '755');
   check('۶۴۴ روی core.env ایراد است و راهش chmod', byName(loose.items, 'secret', 'secrets/core.env').ok === false && byName(loose.items, 'secret', 'secrets/core.env').fix === 'chmod');
