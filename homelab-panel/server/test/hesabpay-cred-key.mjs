@@ -410,10 +410,20 @@ try {
       const logs = await hit(PANEL, '/api/account-server/logs?limit=200', { headers: auth });
       check('⛔ نه در لاگِ پنل (stdout/stderr) و نه در لاگِ سرورِ حساب', !out.includes(key) && logs.status === 200 && !logs.text.includes(key));
       await stop();
-      const files = [];
-      const walkFiles = (d) => { for (const n of fs.readdirSync(d)) { const p = path.join(d, n); const s = fs.lstatSync(p); if (s.isDirectory()) walkFiles(p); else if (s.isFile()) files.push(p); } };
+      const holders = [];
+      const walkFiles = (directory) => {
+        for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+          const file = path.join(directory, entry.name);
+          try {
+            if (entry.isDirectory()) walkFiles(file);
+            else if (entry.isFile() && fs.readFileSync(file).includes(key)) holders.push(path.relative(D9, file));
+          } catch (error) {
+            // PostgreSQL may remove transient files as the account server shuts down.
+            if (error.code !== 'ENOENT') throw error;
+          }
+        }
+      };
       walkFiles(D9);
-      const holders = files.filter((p) => fs.readFileSync(p).includes(key)).map((p) => path.relative(D9, p));
       check('⛔ در پوشهٔ داده فقط secrets.json کلید را دارد (نه panel.db، نه لاگ، نه دیتابیسِ سرورِ حساب)',
         holders.length === 1 && holders[0] === path.join('account-server', 'secrets.json'), holders.join(' | '));
     } finally {
