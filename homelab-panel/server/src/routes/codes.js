@@ -14,9 +14,10 @@ import { Router } from 'express';
 import { requireAuth, requireWriteRole } from '../auth.js';
 import { logEvent } from '../db.js';
 import { clientIp } from '../platform/security.js';
-import { sameSecret } from '../lib/secret-compare.js';
+import { appKeyMatches } from '../lib/app-key.js';
 import { allowAutoRegister } from '../lib/auto-register.js';
-import { linkApp } from '../appauth/registry-link.js';
+import { issueSharedKey, knownApp, linkApp } from '../appauth/registry-link.js';
+import { cleanApp } from '../appauth/identity.js';
 import { checkMailSettings, codeSettings, safeCodeSettings, saveCodeSettings } from '../codes/settings.js';
 import { onPanelMailChanged } from '../account/supervisor.js';
 import { cloudRaw } from '../stations/cloud.js';
@@ -121,7 +122,8 @@ function checkApp(slug, req) {
   }
   if (row.require_key) {
     // مقایسهٔ ثابت‌زمان — `!==` مدتِ پاسخ را به تعدادِ بایتِ درست گره می‌زد
-    if (!sameSecret(keyOf(req), row.api_key)) {
+    //  C-04: روی دیسک فقط هش است (lib/app-key.js)؛ مقایسهٔ ثابت‌زمانِ دو هش
+    if (!appKeyMatches(keyOf(req), row.api_key)) {
       return {
         ok: false,
         status: 401,
@@ -207,7 +209,9 @@ const publicApp = (row) => ({
   name: row.name,
   kind: row.kind,
   kindLabel: KIND_LABELS[row.kind] || row.kind,
-  apiKey: row.api_key,
+  //  C-04: خودِ کلید فقط در پاسخِ ساخت/چرخاندن؛ این‌جا فقط «دارد؟» و نشانه
+  hasKey: Boolean(row.api_key),
+  keyHint: row.api_key_hint || null,
   requireKey: Boolean(row.require_key),
   enabled: Boolean(row.enabled),
   codeTtl: row.code_ttl,
@@ -532,12 +536,20 @@ adminRouter.get('/apps', (req, res) => {
 adminRouter.post('/apps', (req, res) => {
   const slug = cleanSlug(req.body?.slug || req.body?.name);
   if (getApp(slug)) return res.status(409).json({ ok: false, error: 'exists' });
-  const row = ensureApp(slug, { name: req.body?.name || slug, kind: req.body?.kind });
-  //  یک بار ثبت، هر دو مسیرِ ورود — وگرنه نصفِ سرور این برنامه را نمی‌شناسد
-  linkApp(slug, { name: req.body?.name || slug, kind: req.body?.kind });
+  const options = { name: req.body?.name || slug, kind: req.body?.kind };
+  let apiKey = null;
+  if (cleanApp(slug) !== slug) {
+    ensureApp(slug, options);
+    apiKey = rotateKey(slug).key;
+  } else if (knownApp(slug)) {
+    linkApp(slug, options);
+  } else {
+    ensureApp(slug, options);
+    apiKey = issueSharedKey(slug, options);
+  }
   const saved = saveApp(slug, req.body || {});
-  logEvent('info', 'panel', `برنامهٔ «${row.slug}» به بخشِ کدهای شش‌رقمی اضافه شد`);
-  res.json({ ok: true, app: publicApp(saved || row) });
+  logEvent('info', 'panel', `برنامهٔ «${slug}» به بخشِ کدهای شش‌رقمی اضافه شد`);
+  res.json({ ok: true, app: { ...publicApp(saved || getApp(slug)), ...(apiKey ? { apiKey } : {}) } });
 });
 
 adminRouter.put('/apps/:slug', (req, res) => {
@@ -547,10 +559,13 @@ adminRouter.put('/apps/:slug', (req, res) => {
 });
 
 adminRouter.post('/apps/:slug/key', (req, res) => {
-  const row = rotateKey(req.params.slug);
-  if (!row) return res.status(404).json({ ok: false, error: 'not_found' });
-  logEvent('warn', 'panel', `کلیدِ برنامهٔ «${row.slug}» عوض شد — برنامه تا گرفتنِ کلیدِ تازه کار نمی‌کند`);
-  res.json({ ok: true, app: publicApp(row) });
+  const slug = cleanSlug(req.params.slug);
+  if (!getApp(slug)) return res.status(404).json({ ok: false, error: 'not_found' });
+  // شناسه‌های نقطه‌دار یا بلند در دفتر کدها مستقل‌اند و نباید کلیدِ شناسهٔ کوتاه را عوض کنند.
+  const apiKey = cleanApp(slug) === slug ? issueSharedKey(slug) : rotateKey(slug).key;
+  const row = getApp(slug);
+  logEvent('warn', 'panel', `کلیدِ برنامهٔ «${slug}» عوض شد — برنامه تا گرفتنِ کلیدِ تازه کار نمی‌کند`);
+  res.json({ ok: true, app: { ...publicApp(row), apiKey } });
 });
 
 adminRouter.delete('/apps/:slug', (req, res) => {

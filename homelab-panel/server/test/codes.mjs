@@ -263,7 +263,17 @@ check('برنامهٔ ناشناس کد نمی‌گیرد',
   issueCode({ app: 'nope', email: 'x@example.com', force: true }).error === 'unknown_app');
 
 console.log('\n── کلیدِ هر برنامه ──');
-check('برنامهٔ تازه کلید دارد', /^code_[0-9a-f]{40}$/.test(getApp('app-fuel').api_key));
+//  C-04 (۱.۵۳.۳): روی دیسک فقط هشِ کلید (sha256:) و نشانهٔ «code_xxxx»؛ خودِ کلید فقط در پاسخِ ساخت/چرخاندن
+check('برنامهٔ تازه کلید دارد — فقط هش روی دیسک', /^sha256:[0-9a-f]{64}$/.test(getApp('app-fuel').api_key)
+  && /^code_[0-9a-f]{4}$/.test(String(getApp('app-fuel').api_key_hint)));
+{
+  const { rotateKey } = await import('../src/codes/store.js');
+  const { appKeyMatches } = await import('../src/lib/app-key.js');
+  const r = rotateKey('app-fuel');
+  check('چرخاندن: کلیدِ خام فقط در پاسخ، هش و نشانه روی دیسک، و همان کلید می‌خورد',
+    /^code_[0-9a-f]{40}$/.test(r.key) && r.row.api_key !== r.key && appKeyMatches(r.key, getApp('app-fuel').api_key)
+    && r.key.startsWith(getApp('app-fuel').api_key_hint) && !appKeyMatches('code_' + '0'.repeat(40), getApp('app-fuel').api_key));
+}
 check('کلید اجباری است', getApp('app-fuel').require_key === 1);
 
 smtp.close();

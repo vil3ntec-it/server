@@ -22,7 +22,8 @@
 //  نمی‌شکند: ثبت در هر کدام، آن یکی را هم می‌سازد — با **همان کلید**، تا
 //  یک کلید روی هر دو مسیر کار کند.
 // ---------------------------------------------------------------------------
-import { getApp as getCodeApp, ensureApp as ensureCodeApp } from '../codes/store.js';
+import { getApp as getCodeApp, ensureApp as ensureCodeApp, rotateKey, syncAppKey } from '../codes/store.js';
+import { db } from '../db.js';
 import { getClient, ensureClient, syncClientKey } from './clients.js';
 import { cleanApp } from './identity.js';
 
@@ -53,6 +54,7 @@ export function linkApp(slug, { name = null, kind = 'app' } = {}) {
   // در دفترِ ورود هست ولی در دفترِ کدها نه
   if (client && !codeApp) {
     codeApp = ensureCodeApp(key, { name: name || client.name || key, kind: client.kind || kind });
+    if (client.api_key) codeApp = syncAppKey(key, client.api_key, client.api_key_hint);
     linked = true;
   }
 
@@ -67,11 +69,39 @@ export function linkApp(slug, { name = null, kind = 'app' } = {}) {
    *  شش‌رقمی دیده و کپی می‌شود.
    */
   if (codeApp?.api_key && client && client.api_key !== codeApp.api_key) {
-    client = syncClientKey(key, codeApp.api_key) || client;
+    client = syncClientKey(key, codeApp.api_key, codeApp.api_key_hint) || client;
     linked = true;
   }
 
   return { codeApp, client, linked };
+}
+
+/**
+ * کلیدِ تازهٔ **مشترکِ** هر دو دفتر (C-04، ۱.۵۳.۳) — ساختن و چرخاندن از هر دو صفحهٔ پنل.
+ *
+ * روی دیسک فقط هش است، پس خامِ کلید فقط همین یک بار برمی‌گردد و صدازننده همان را در پاسخ نشان می‌دهد. تا ۱.۵۳.۲ چرخاندن از
+ * صفحهٔ «برنامه‌ها» فقط دفترِ ورود را عوض می‌کرد و `linkApp` ِ بعدی کلیدِ دفترِ کدها را رویش می‌نشاند؛ با کلیدِ ناپیدا این یعنی
+ * برنامهٔ قفل‌شده. حالا هر دو دفتر همان هش را می‌گیرند.
+ *
+ * @returns {string|null} کلیدِ خام، یا null اگر برنامه در هیچ دفتری نیست
+ */
+export function issueSharedKey(slug, { name = null, kind = 'app' } = {}) {
+  const key = cleanApp(slug);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const { codeApp, client } = linkApp(key, { name, kind });
+    let raw = null;
+    if (codeApp && client) {
+      const { row, key: freshKey } = rotateKey(key);
+      syncClientKey(key, row.api_key, row.api_key_hint);
+      raw = freshKey;
+    }
+    db.exec('COMMIT');
+    return raw;
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 /** هست یا نه — در هر کدام از دو دفتر */
