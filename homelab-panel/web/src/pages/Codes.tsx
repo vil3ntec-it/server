@@ -98,7 +98,10 @@ type CodeApp = {
   name: string;
   kind: 'app' | 'site';
   kindLabel: string;
-  apiKey: string;
+  /** C-04 (۱.۵۳.۳): فقط در پاسخِ ساخت/چرخاندن — روی سرور فقط هش است */
+  apiKey?: string | null;
+  keyHint: string | null;
+  hasKey: boolean;
   requireKey: boolean;
   enabled: boolean;
   codeTtl: number | null;
@@ -873,7 +876,7 @@ function AppsTab() {
                 <Cell mono>{row.slug}</Cell>
                 <Cell>
                   <span className="font-mono text-[10px] text-ink-muted" dir="ltr">
-                    {row.apiKey.slice(0, 12)}…
+                    {row.keyHint ? `${row.keyHint}…` : '—'}
                   </span>
                 </Cell>
                 <Cell>
@@ -896,9 +899,11 @@ function AppsTab() {
                     </button>
                     <ActionButton
                       onClick={async () => {
-                        await api(`/api/codes-admin/apps/${row.slug}/key`, { method: 'POST' });
+                        const out = await api<{ app: CodeApp }>(`/api/codes-admin/apps/${row.slug}/key`, { method: 'POST' });
                         toast(t('codesKeyRotated'));
                         load();
+                        //  کلیدِ تازه فقط همین یک بار می‌آید ⇒ همان لحظه نشانش بده
+                        if (out?.app?.apiKey) setGuide(out.app);
                       }}
                       title={t('codesRotateHint')}
                     >
@@ -924,9 +929,10 @@ function AppsTab() {
       {adding && (
         <AddApp
           onClose={() => setAdding(false)}
-          onDone={() => {
+          onDone={(made) => {
             setAdding(false);
             load();
+            if (made?.apiKey) setGuide(made);
           }}
         />
       )}
@@ -935,7 +941,7 @@ function AppsTab() {
   );
 }
 
-function AddApp({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+function AddApp({ onClose, onDone }: { onClose: () => void; onDone: (made: CodeApp | null) => void }) {
   const { t } = useApp();
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
@@ -965,11 +971,11 @@ function AddApp({ onClose, onDone }: { onClose: () => void; onDone: () => void }
           className="btn btn-sm btn-primary"
           onClick={async () => {
             if (!name.trim() && !slug.trim()) return;
-            await api('/api/codes-admin/apps', {
+            const out = await api<{ app: CodeApp }>('/api/codes-admin/apps', {
               method: 'POST',
               body: { name: name.trim() || slug.trim(), slug: slug.trim() || name.trim(), kind },
             });
-            onDone();
+            onDone(out?.app ?? null);
           }}
         >
           {t('ccSave')}
@@ -988,15 +994,18 @@ function AddApp({ onClose, onDone }: { onClose: () => void; onDone: () => void }
 function ConnectGuide({ app, onClose }: { app: CodeApp; onClose: () => void }) {
   const { t } = useApp();
   const base = `${location.origin}/api/codes`;
+  //  C-04: خودِ کلید فقط پس از ساخت/چرخاندن در دست است؛ وگرنه جای‌نگهدار در نمونه‌ها
+  const key = app.apiKey || '';
+  const shown = key || 'YOUR_APP_KEY';
 
   const request = `curl -X POST ${base}/request \\
   -H "Content-Type: application/json" \\
-  -H "X-Api-Key: ${app.apiKey}" \\
+  -H "X-Api-Key: ${shown}" \\
   -d '{"app":"${app.slug}","email":"user@example.com","userId":"USER-1"}'`;
 
   const verify = `curl -X POST ${base}/verify \\
   -H "Content-Type: application/json" \\
-  -H "X-Api-Key: ${app.apiKey}" \\
+  -H "X-Api-Key: ${shown}" \\
   -d '{"app":"${app.slug}","email":"user@example.com","code":"123456"}'`;
 
   return (
@@ -1004,12 +1013,21 @@ function ConnectGuide({ app, onClose }: { app: CodeApp; onClose: () => void }) {
       <div className="space-y-4 text-sm">
         <div>
           <p className="label">{t('codesKey')}</p>
-          <div className="flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded-lg bg-surface-raised px-2 py-1.5 font-mono text-xs" dir="ltr">
-              {app.apiKey}
-            </code>
-            <CopyButton value={app.apiKey} />
-          </div>
+          {key ? (
+            <>
+              <div className="flex items-center gap-2">
+                <code className="min-w-0 flex-1 truncate rounded-lg bg-surface-raised px-2 py-1.5 font-mono text-xs" dir="ltr">
+                  {key}
+                </code>
+                <CopyButton value={key} />
+              </div>
+              <p className="mt-1 text-[11px] font-medium text-state-warn">{t('codesKeyOnce')}</p>
+            </>
+          ) : (
+            <p className="rounded-lg bg-surface-raised px-2 py-1.5 text-xs text-ink-muted">
+              <span className="font-mono" dir="ltr">{app.keyHint ? `${app.keyHint}…` : '—'}</span> · {t('codesKeyHidden')}
+            </p>
+          )}
           <p className="mt-1 text-[11px] text-ink-muted">{t('codesKeySecret')}</p>
         </div>
 

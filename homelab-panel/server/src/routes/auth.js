@@ -29,6 +29,7 @@ import {
 import jwt from 'jsonwebtoken';
 import QRCode from 'qrcode';
 import { newSecret, matchTotpStep, otpauthUrl, newRecoveryCodes, hashRecovery } from '../lib/totp.js';
+import { sealTotp, openTotp } from '../lib/totp-seal.js';
 import { getSetting } from '../db.js';
 import { db, logEvent } from '../db.js';
 import {
@@ -300,7 +301,8 @@ router.post('/totp/setup', requireAuth, requireRecentAuth, async (req, res) => {
   const cur = db.prepare('SELECT totp_enabled FROM users WHERE id = ?').get(req.user.id);
   if (cur?.totp_enabled) return res.status(409).json({ error: 'totp_already_enabled' });
   const secret = newSecret();
-  db.prepare('UPDATE users SET totp_pending = ? WHERE id = ?').run(secret, req.user.id);
+  //  C-02: روی دیسک فقط پاکت؛ خامِ راز فقط همین یک پاسخ
+  db.prepare('UPDATE users SET totp_pending = ? WHERE id = ?').run(sealTotp(req.user.id, secret), req.user.id);
   const issuer = String(getSetting('server_name', '') || 'VILL3N').slice(0, 40);
   const url = otpauthUrl({ issuer, account: req.user.username, secret });
   const qr = await QRCode.toDataURL(url, { margin: 1, width: 220 });
@@ -312,7 +314,7 @@ router.post('/totp/enable', requireAuth, requireRecentAuth, (req, res) => {
   if (u?.totp_enabled) return res.status(409).json({ error: 'totp_already_enabled' });
   if (!u?.totp_pending) return res.status(400).json({ error: 'totp_not_setup' });
   //  ⛔ S13: گامِ همین کد از همین حالا «مصرف‌شده» است — کدی که دوعاملی را روشن کرد ورود نمی‌دهد
-  const step = matchTotpStep(u.totp_pending, req.body?.code);
+  const step = matchTotpStep(openTotp(req.user.id, u.totp_pending) || '', req.body?.code);
   if (step < 0) return res.status(400).json({ error: 'totp_invalid' });
   const codes = newRecoveryCodes();
   const won = db.prepare('UPDATE users SET totp_secret = ?, totp_pending = NULL, totp_enabled = 1, totp_recovery = ?, totp_last_step = ? WHERE id = ? AND totp_enabled = 0 AND totp_pending = ?')

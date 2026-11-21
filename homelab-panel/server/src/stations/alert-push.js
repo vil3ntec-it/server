@@ -144,7 +144,8 @@ export function createAlertPusher({ dirFor, read, log = () => {} }) {
     const row = ensureTopic(code, live?.station?.name || '');
     if (!row) return { sent: 0 };
     //  ⚠️ پیام همیشه ذخیره می‌شود (تاریخچهٔ همان موضوع)، حتی بی گوشی
-    const r = await notify.publish(topicOf(code), { ...msg, token: row.write_token });
+    //  C-05: رمزِ موضوع روی دیسک فقط هش است؛ فرستندهٔ درونی از درِ مطمئن
+    const r = await notify.publish(topicOf(code), { ...msg, trusted: true });
     log(`خبرِ پمپِ ${code}: ${fresh.length} تازه، به ${r?.push?.sent ?? 0} گوشی`);
     return { sent: r?.push?.sent ?? 0, fresh: fresh.length };
   }
