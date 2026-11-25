@@ -24,6 +24,7 @@ import { cloudRaw } from '../stations/cloud.js';
 import { audit } from '../control/audit.js';
 import { atLeast, roleOf } from '../control/roles.js';
 import { mirrorAccountCodes } from '../codes/mirror.js';
+import { testCodeDisplay } from '../codes/display-policy.js';
 import { issueCode, maskEmail, revealCode, verifyCode } from '../codes/service.js';
 import { awaitDelivery, drainQueue, queueStatus } from '../codes/queue.js';
 import { mailReady, sendCodeEmail } from '../codes/mail.js';
@@ -262,7 +263,7 @@ export async function accountCodes(app, limit) {
     purpose: 'login',
     //  خالی می‌آید و آینهٔ `/live` پرش می‌کند — این تابع هیچ‌وقت نمی‌پرسد
     code: null,
-    canReveal: Boolean(r.active),
+    canReveal: testCodeDisplay && Boolean(r.can_reveal ?? r.active),
     createdAt: r.created_at,
     expiresAt: r.expires_at,
     expiresIn: r.active ? Math.max(0, Math.round((r.expires_at - Date.now()) / 1000)) : 0,
@@ -326,7 +327,7 @@ export async function accountOtpCodes(app, limit) {
       : r.purpose === 'login' ? 'ورود' : r.purpose,
     //  خالی می‌آید و آینهٔ `/live` پرش می‌کند — این تابع هیچ‌وقت نمی‌پرسد
     code: null,
-    canReveal: Boolean(r.can_reveal),
+    canReveal: testCodeDisplay && Boolean(r.can_reveal),
     createdAt: r.created_at,
     expiresAt: r.expires_at,
     expiresIn: r.active ? Math.max(0, Math.round((r.expires_at - Date.now()) / 1000)) : 0,
@@ -354,7 +355,7 @@ adminRouter.get('/live', async (req, res) => {
     reveal: atLeast(roleOf(req), 'admin'),
     actor: req.user?.username || 'admin',
   });
-  res.json(out);
+  res.set('Cache-Control', 'no-store').json(out);
 });
 
 /**
@@ -382,7 +383,7 @@ export async function liveCodes({ app = null, limit = 60, reveal = false, actor 
       subjectId: row.subject_id,
       purpose: row.purpose,
       // کد فقط تا وقتی زنده است دیده می‌شود
-      code: live ? revealCode(row) : null,
+      code: testCodeDisplay && reveal && live ? revealCode(row) : null,
       createdAt: row.created_at,
       expiresAt: row.expires_at,
       expiresIn: live ? Math.max(0, Math.round((row.expires_at - now) / 1000)) : 0,
@@ -443,7 +444,7 @@ export async function liveCodes({ app = null, limit = 60, reveal = false, actor 
    *  برای operator هم خواندنی است و او کد نمی‌بیند)، فقط پورتِ پنل، و
    *  فقط کدِ **زنده**.
    */
-  if (account.length && reveal) {
+  if (testCodeDisplay && account.length && reveal) {
     account = await mirrorAccountCodes(
       account,
       async (source, id) => {

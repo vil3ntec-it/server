@@ -36,6 +36,7 @@ import express from 'express';
 import {
   cloudRaw, cloudRawText, cloudRawBytes, cloudProbeServiceKey, serviceKeyReset, serviceKeyStatus, legacyAvailable, adminApiVersionSeen,
 } from '../stations/cloud.js';
+import { requireTestCodeDisplay } from '../codes/display-policy.js';
 import { contractStatus } from '../account/bridge-contract.js';
 import { fetchOnce, writeCached } from '../support-media-cache.js';
 import { bridgeFail } from '../account/bridge-fail.js';
@@ -209,7 +210,7 @@ const money = (req, res, next) =>
  *  ⛔ نمایشِ کدِ شاگرد = نمایشِ راز ⇒ احرازِ دوباره (۶-۵). فقط رابطِ وب این در
  *  را می‌زند و پنجرهٔ رمز را دارد.
  */
-router.post('/shop-accounts/:id/staff-codes/reveal', adminOnly, requireRecentAuth, guard(async (req, res) => {
+router.post('/shop-accounts/:id/staff-codes/reveal', adminOnly, requireTestCodeDisplay, requireRecentAuth, guard(async (req, res) => {
   const id = idOf(req.params.id);
   const out = await cloudRaw('POST', `/api/admin/shops/${id}/staff-codes/reveal`, { body: {} });
   //  ⛔ دو بار ثبت: دفترِ خودِ پنل و دفترِ خودِ سرورِ حساب — همان قاعدهٔ
@@ -1724,7 +1725,7 @@ router.get('/sync/errors', guard(async (req, res) => {
  *    کد (`codes/mirror.js`)، پس دفترِ ممیزی همان یک ردیف را می‌گیرد. این
  *    مسیر دست‌نخورده ماند: دکمهٔ دستی برای ردیفی است که آینه نگرفته.
  */
-router.post('/logins/:id/reveal', requireRole('admin'), guard(async (req, res) => {
+router.post('/logins/:id/reveal', requireRole('admin'), requireTestCodeDisplay, guard(async (req, res) => {
   const id = idOf(req.params.id);
   const out = await cloudRaw('POST', `/api/admin/logins/${id}/reveal`);
   audit({ actor: actorOf(req), action: 'account.login.reveal', entity: 'login_request', entityId: id });
@@ -1744,7 +1745,7 @@ router.post('/logins/:id/reveal', requireRole('admin'), guard(async (req, res) =
  *    ثبت (دفترِ پنل و `otp.code_revealed`ِ خودِ سرورِ حساب)، و فقط کدِ
  *    **زنده**.
  */
-router.post('/otp/:id/reveal', requireRole('admin'), guard(async (req, res) => {
+router.post('/otp/:id/reveal', requireRole('admin'), requireTestCodeDisplay, guard(async (req, res) => {
   const id = idOf(req.params.id);
   const out = await cloudRaw('POST', `/api/admin/otp/${id}/reveal`);
   audit({ actor: actorOf(req), action: 'account.otp.reveal', entity: 'otp_code', entityId: id });

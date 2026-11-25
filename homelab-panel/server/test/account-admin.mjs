@@ -800,7 +800,7 @@ const FAKE_URL = `http://127.0.0.1:${fake.address().port}`;
 
 // ── ۲) خودِ پنل ─────────────────────────────────────────────────────────────
 const server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'src/index.js'], {
-  env: { ...process.env, HLP_PORT: String(PANEL), HLP_HOST: '127.0.0.1',
+  env: { ...process.env, NODE_ENV: 'test', HLP_PORT: String(PANEL), HLP_HOST: '127.0.0.1',
          HLP_DATA_DIR: path.join(tmp, 'data'), HLP_SITES_ROOT: path.join(tmp, 'sites'),
          HLP_SITESYNC: '1', HLP_SITESYNC_PORT: String(PUBLIC),
          HLP_TUNNEL: '0', HLP_AI_ENABLED: '0', HLP_ACCOUNT_AUTOSTART: '0',

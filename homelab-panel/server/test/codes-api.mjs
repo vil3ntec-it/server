@@ -80,6 +80,7 @@ const child = spawn(
   {
     env: {
       ...process.env,
+      NODE_ENV: 'production',
       HLP_PORT: String(PORT),
       HLP_SITESYNC_PORT: String(PORT + 1),
       HLP_HOST: '127.0.0.1',
@@ -176,14 +177,20 @@ try {
   check('ایمیل درست نشسته', row?.email === 'ali@example.com', JSON.stringify(row));
   check('نامِ برنامه نشان داده می‌شود', row?.appName === 'پمپ بنزین');
   check('شناسهٔ کاربر ثبت شده', row?.subjectId === 'FUEL-001');
-  check('کدِ شش‌رقمی برای کپی آماده است', /^\d{6}$/.test(String(row?.code)), String(row?.code));
+  check('پنل کد ورود را برنمی‌گرداند', row?.code === null);
+  for (const path of ['logins/request/reveal', 'otp/request/reveal', 'shop-accounts/shop/staff-codes/reveal']) {
+    const denied = await call('POST', '/api/account-admin/' + path, {});
+    check('نمایش کد در محیط عملیاتی بسته است', denied.status === 403 && denied.body.error === 'code_display_disabled');
+  }
+  const plainPart = mail?.match(/Content-Type: text\/plain[^\r\n]*\r?\nContent-Transfer-Encoding: base64\r?\n\r?\n([a-zA-Z0-9+/=\r\n]+)/i)?.[1] || '';
+  const delivered = Buffer.from(plainPart, 'base64').toString().match(/^\s*(\d{6})\s*$/m)?.[1];
   check('وضعیتِ ارسال گزارش می‌شود', ['sent', 'sending', 'queued'].includes(row?.sendState), row?.sendState);
 
   console.log('\n── همان کد کار می‌کند ──');
   const wrong = await call(
     'POST',
     '/api/codes/verify',
-    { app: 'app-fuel-001', email: 'ali@example.com', code: '000000' },
+    { app: 'app-fuel-001', email: 'ali@example.com', code: delivered === '000000' ? '000001' : '000000' },
     { 'X-Api-Key': apiKey, noAuth: true },
   );
   check('کدِ غلط رد می‌شود', wrong.status === 400 && wrong.body.error === 'wrong_code', JSON.stringify(wrong.body));
@@ -191,7 +198,7 @@ try {
   const right = await call(
     'POST',
     '/api/codes/verify',
-    { app: 'app-fuel-001', email: 'ali@example.com', code: row.code },
+    { app: 'app-fuel-001', email: 'ali@example.com', code: delivered },
     { 'X-Api-Key': apiKey, noAuth: true },
   );
   check('کدِ درست قبول می‌شود', right.status === 200 && right.body.ok === true, JSON.stringify(right.body));
@@ -200,7 +207,7 @@ try {
   const twice = await call(
     'POST',
     '/api/codes/verify',
-    { app: 'app-fuel-001', email: 'ali@example.com', code: row.code },
+    { app: 'app-fuel-001', email: 'ali@example.com', code: delivered },
     { 'X-Api-Key': apiKey, noAuth: true },
   );
   check('بارِ دوم کار نمی‌کند', twice.body.ok !== true, JSON.stringify(twice.body));
