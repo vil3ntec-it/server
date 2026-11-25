@@ -47,7 +47,7 @@ const check = (name, ok, extra = '') => {
 
 const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', path.join(import.meta.dirname, '..', 'src', 'index.js')], {
   env: {
-    ...process.env,
+    ...process.env, NODE_ENV: 'test',
     HLP_PORT: String(PORT), HLP_HOST: '127.0.0.1', HLP_DATA_DIR: dataDir,
     HLP_SITES_ROOT: sitesRoot, HLP_TUNNEL: '0', HLP_AI_ENABLED: '0',
     HLP_SITESYNC_PORT: String(PORT + 1),

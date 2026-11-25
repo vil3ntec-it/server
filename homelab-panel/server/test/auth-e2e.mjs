@@ -45,7 +45,7 @@ await new Promise(r=>smtp.listen(SMTP,'127.0.0.1',r));
 
 const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning','src/index.js'], {
   cwd: path.join(import.meta.dirname, '..'),
-  env: { ...process.env, HLP_PORT:String(PORT), HLP_SITESYNC_PORT:String(PORT+1), HLP_HOST:'127.0.0.1',
+  env: { ...process.env, NODE_ENV: 'test', HLP_PORT:String(PORT), HLP_SITESYNC_PORT:String(PORT+1), HLP_HOST:'127.0.0.1',
     HLP_DATA_DIR:path.join(tmp,'data'), HLP_SITES_ROOT:path.join(tmp,'sites'),
     HLP_TUNNEL:'0', HLP_AI_ENABLED:'0', HLP_SITESYNC:'0',
     OTP_EMAIL_HOST:'127.0.0.1', OTP_EMAIL_PORT:String(SMTP), OTP_EMAIL_SECURE:'0',
